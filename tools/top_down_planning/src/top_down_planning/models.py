@@ -35,6 +35,19 @@ class FinalStatus(str, Enum):
     FAILED = "failed"
 
 
+class ReviewStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    NEEDS_REVISION = "needs_revision"
+    CONFIRMED = "confirmed"
+    BLOCKED = "blocked"
+    SKIPPED = "skipped"
+
+
+class BlockedConstraintCode(str, Enum):
+    MAX_CHILDREN_EXCEEDED = "max_children_exceeded"
+
+
 class RunActiveStatus(str, Enum):
     IDLE = "idle"
     RUNNING = "running"
@@ -53,6 +66,12 @@ class PlanningLimits(BaseModel):
     max_retries: int = 3
     session_timeout_seconds: int = 600
     parse_error_threshold: int = 20
+
+
+class ReviewConfig(BaseModel):
+    enabled: bool = True
+    max_revision_cycles: int = 1
+    max_retries: int = 3
 
 
 class SourceMetadata(BaseModel):
@@ -82,11 +101,14 @@ class PlanItem(BaseModel):
     risks: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
     blocked_reason: str | None = None
+    blocked_constraint_code: BlockedConstraintCode | None = None
+    blocked_required_min_children: int | None = None
     out_of_scope_reason: str | None = None
 
 
 class ResultMetadata(BaseModel):
     status: FinalStatus = FinalStatus.PLANNING
+    review_status: ReviewStatus = ReviewStatus.PENDING
     summary: str | None = None
 
 
@@ -158,6 +180,8 @@ class MarkBlockedOperation(BaseModel):
     reason: str = ""
     missing_information: str = ""
     open_question: str = ""
+    constraint_code: BlockedConstraintCode | None = None
+    required_min_children: int | None = None
 
 
 class MarkOutOfScopeOperation(BaseModel):
@@ -245,8 +269,82 @@ class RunState(BaseModel):
         return data
 
 
+class ReviewFindingSeverity(str, Enum):
+    BLOCKING = "blocking"
+    MAJOR = "major"
+    MINOR = "minor"
+
+
+class ReviewFindingCategory(str, Enum):
+    COVERAGE = "coverage"
+    OVERLAP = "overlap"
+    CONSISTENCY = "consistency"
+    DEPENDENCY = "dependency"
+    GRANULARITY = "granularity"
+    ACCEPTANCE = "acceptance"
+    SCOPE = "scope"
+    OTHER = "other"
+
+
+class ReviewFinding(BaseModel):
+    severity: ReviewFindingSeverity
+    category: ReviewFindingCategory
+    node_ids: list[str] = Field(default_factory=list)
+    description: str
+    recommended_change: str = ""
+
+
+class ReviewDecision(str, Enum):
+    APPROVE = "approve"
+    NEEDS_REVISION = "needs_revision"
+    BLOCKED = "blocked"
+
+
+class ConfirmationDecision(str, Enum):
+    CONFIRMED = "confirmed"
+    NEEDS_REVISION = "needs_revision"
+    BLOCKED = "blocked"
+
+
+class WholePlanReviewResult(BaseModel):
+    stage: Literal["whole_plan_review"] = "whole_plan_review"
+    plan_digest: str
+    decision: ReviewDecision
+    summary: str
+    findings: list[ReviewFinding] = Field(default_factory=list)
+
+
+class FinalConfirmationResult(BaseModel):
+    stage: Literal["final_confirmation"] = "final_confirmation"
+    plan_digest: str
+    decision: ConfirmationDecision
+    summary: str
+    findings: list[ReviewFinding] = Field(default_factory=list)
+
+
+class ReviewStage(str, Enum):
+    DECOMPOSITION = "decomposition"
+    WHOLE_PLAN_REVIEW = "whole_plan_review"
+    REVISION = "revision"
+    FINAL_CONFIRMATION = "final_confirmation"
+    RENDERING = "rendering"
+    COMPLETE = "complete"
+    BLOCKED = "blocked"
+
+
+class ReviewState(BaseModel):
+    schema_version: int = SCHEMA_VERSION
+    stage: ReviewStage = ReviewStage.DECOMPOSITION
+    plan_digest: str | None = None
+    revision_cycle: int = 0
+    whole_plan_decision: ReviewDecision | None = None
+    final_confirmation_decision: ConfirmationDecision | None = None
+    updated_at: datetime | None = None
+
+
 class PlanningReport(BaseModel):
     status: FinalStatus
+    review_status: ReviewStatus = ReviewStatus.PENDING
     items: int = 0
     actionable_items: int = 0
     blocked_items: int = 0

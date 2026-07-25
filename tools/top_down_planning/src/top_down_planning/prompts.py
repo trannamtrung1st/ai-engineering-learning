@@ -228,7 +228,11 @@ Operation JSON schema (one object per `record-operation` call):
 ```
 
 For `mark_actionable`, include `expected_outputs` and `acceptance_criteria` when required by
-the output goal. For `mark_blocked`, include `missing_information` and `open_question`."""
+the output goal. For `mark_blocked`, include `missing_information` and `open_question`.
+
+For a child-count constraint conflict, use `mark_blocked` with:
+`constraint_code: "max_children_exceeded"` and `required_min_children` set to the required
+direct-child count (greater than the configured limit)."""
 
 
 def build_planning_prompt(
@@ -239,6 +243,7 @@ def build_planning_prompt(
     plan: PlanState,
     selected_items: list[PlanItem],
     embed_threshold: int,
+    max_children_per_expansion: int = 12,
     stop_hint: LoadedStopHint | None = None,
     validation_feedback: list[str] | None = None,
     plan_tool_command: str = "planning-plan-tool",
@@ -273,7 +278,16 @@ Do not execute implementation work.
 ## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-{stop_hint_block}{_format_agent_context_section(agent_context)}## Rules
+{stop_hint_block}{_format_agent_context_section(agent_context)}## Expansion limits
+- `max_children_per_expansion`: {max_children_per_expansion} (per expand operation).
+- Do not merge, omit, or materially rename explicitly required sibling groups solely to
+  satisfy this limit.
+- When the required direct-child count exceeds the configured limit, do not distort the
+  requested structure. Use `mark_blocked` with `constraint_code: "max_children_exceeded"`
+  and `required_min_children` set to the minimum required count. Explain the minimum
+  required limit in `reason`.
+
+## Rules
 - Choose exactly one operation per selected item.
 - Use `expand` when the item still contains multiple meaningful planning concerns.
 - Use `mark_actionable` when the item is detailed enough for the output goal.

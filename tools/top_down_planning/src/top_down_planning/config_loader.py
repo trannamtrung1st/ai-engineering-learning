@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from top_down_planning.agent_context import AgentContextConfig
 from top_down_planning.errors import PlanningToolError
-from top_down_planning.models import PlanningLimits
+from top_down_planning.models import PlanningLimits, ReviewConfig
 
 
 class RunConfigFile(BaseModel):
@@ -45,6 +45,7 @@ class RunConfigFile(BaseModel):
     embed_threshold: int | None = Field(default=None, ge=0)
     agent_context: dict[str, Any] | None = None
     limits: PlanningLimits | None = None
+    review: ReviewConfig | None = None
 
     @model_validator(mode="after")
     def _validate_goal_sources(self) -> RunConfigFile:
@@ -82,6 +83,7 @@ class ResolvedRunOptions:
     skip_probe: bool
     embed_threshold: int | None
     agent_context: AgentContextConfig | None = None
+    review: ReviewConfig = field(default_factory=ReviewConfig)
 
 
 def load_run_config_file(path: Path) -> RunConfigFile:
@@ -181,6 +183,7 @@ def merge_run_options(
 
     file_limits = file_cfg.limits if file_cfg else None
     agent_context = _parse_agent_context(file_cfg.agent_context if file_cfg else None)
+    review = file_cfg.review if file_cfg and file_cfg.review is not None else ReviewConfig()
 
     return ResolvedRunOptions(
         input_path=resolved_input,
@@ -256,6 +259,7 @@ def merge_run_options(
             file_cfg.embed_threshold if file_cfg else None,
         ),
         agent_context=agent_context,
+        review=review,
     )
 
 

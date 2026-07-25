@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from top_down_planning.models import (
     AgentResponse,
+    BlockedConstraintCode,
     DecompositionStatus,
     ExpandOperation,
     MarkActionableOperation,
@@ -162,7 +163,7 @@ def _validate_operation(
     if isinstance(operation, MarkActionableOperation):
         return _validate_actionable(plan, item, operation)
     if isinstance(operation, MarkBlockedOperation):
-        return _validate_blocked(item, operation)
+        return _validate_blocked(item, operation, limits=limits)
     if isinstance(operation, MarkOutOfScopeOperation):
         return _validate_out_of_scope(item, operation)
     return [f"Unsupported operation type for node {item.id}"]
@@ -182,7 +183,10 @@ def _validate_expand(
     if len(operation.children) > limits.max_children_per_expansion:
         errors.append(
             f"Expand on {item.id} exceeds max children "
-            f"({len(operation.children)} > {limits.max_children_per_expansion})"
+            f"({len(operation.children)} > {limits.max_children_per_expansion}). "
+            "Do not merge or omit explicitly required siblings to satisfy the limit. "
+            "Use mark_blocked with constraint_code=max_children_exceeded and "
+            "required_min_children set to the required direct-child count."
         )
     if item.depth + 1 > limits.max_depth:
         errors.append(
@@ -251,10 +255,30 @@ def _validate_actionable(
     return errors
 
 
-def _validate_blocked(item: PlanItem, operation: MarkBlockedOperation) -> list[str]:
+def _validate_blocked(
+    item: PlanItem,
+    operation: MarkBlockedOperation,
+    *,
+    limits: PlanningLimits,
+) -> list[str]:
     errors: list[str] = []
     if not operation.reason.strip():
         errors.append(f"Blocked item {item.id} requires a reason")
+
+    if operation.constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED:
+        if operation.required_min_children is None:
+            errors.append(
+                f"Blocked item {item.id} with max_children_exceeded "
+                "requires required_min_children"
+            )
+        elif operation.required_min_children <= limits.max_children_per_expansion:
+            errors.append(
+                f"Blocked item {item.id} required_min_children "
+                f"({operation.required_min_children}) must exceed "
+                f"max_children_per_expansion ({limits.max_children_per_expansion})"
+            )
+        return errors
+
     if not operation.missing_information.strip():
         errors.append(f"Blocked item {item.id} requires missing_information")
     if not operation.open_question.strip():

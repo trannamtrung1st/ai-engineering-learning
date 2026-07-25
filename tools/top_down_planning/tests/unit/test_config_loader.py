@@ -89,6 +89,30 @@ def test_options_to_planning_limits_includes_advanced_fields(tmp_path: Path) -> 
     assert limits.concurrent_batches == 3
 
 
+def test_merge_run_options_loads_review_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "planning.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "input: ./idea.md",
+                "output: ./out",
+                "output_goal: Produce a plan",
+                "review:",
+                "  enabled: false",
+                "  max_revision_cycles: 2",
+                "  max_retries: 5",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    options = merge_run_options(config_path=config_path)
+
+    assert options.review.enabled is False
+    assert options.review.max_revision_cycles == 2
+    assert options.review.max_retries == 5
+
+
 def test_merge_run_options_cli_overrides_config(tmp_path: Path) -> None:
     config_path = tmp_path / "planning.yaml"
     config_path.write_text(

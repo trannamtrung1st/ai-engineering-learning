@@ -37,9 +37,19 @@ limits:
   batch_size: 3
   concurrent_batches: 3
   max_retries: 3
-  # max_children_per_expansion: 12 # default: 12 — max child items per expand
+  # max_children_per_expansion: 12 # default: 12 — max child items per expand operation
+  # Explicit source sibling groups must not be merged solely to satisfy this limit.
+  # When required direct-child count exceeds the limit, the agent should mark_blocked
+  # with constraint_code=max_children_exceeded and required_min_children.
   # session_timeout_seconds: 600 # default: 600 — Cursor agent session timeout
   # parse_error_threshold: 20 # default: 20 — stream parse errors before abort
+
+# --- Review gate (optional) ---------------------------------------------------
+
+review:
+  enabled: true
+  max_revision_cycles: 1
+  max_retries: 3
 
 # --- Agent / Cursor (optional) ------------------------------------------------
 
@@ -70,3 +80,8 @@ agent_context:
       - ./.cursor/skills/example-rendering/SKILL.md
     rules:
       - ./.cursor/rules/example-rendering.mdc
+  review:
+    skills:
+      - ./.cursor/skills/example-shared/SKILL.md
+    rules:
+      - ./.cursor/rules/example-shared.mdc

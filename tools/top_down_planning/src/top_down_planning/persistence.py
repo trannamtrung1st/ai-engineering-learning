@@ -19,6 +19,8 @@ from top_down_planning.models import (
     FinalStatus,
     PlanState,
     PlanningLimits,
+    ReviewState,
+    ReviewStatus,
     RunActiveStatus,
     RunState,
     SCHEMA_VERSION,
@@ -28,7 +30,9 @@ from top_down_planning.models import (
 
 PLAN_FILENAME = "plan.yaml"
 RUN_STATE_FILENAME = "run-state.json"
+REVIEW_STATE_FILENAME = "review-state.json"
 ITERATIONS_DIR = "iterations"
+REVIEWS_DIR = "reviews"
 STATE_DIRNAME = ".planning-output"
 LEGACY_STATE_DIRNAME = ".top-down-planning"
 
@@ -84,6 +88,53 @@ def iteration_prefix(output_dir: Path, iteration: int) -> str:
 def iteration_transaction_path(output_dir: Path, iteration: int) -> Path:
     prefix = Path(iteration_prefix(output_dir, iteration))
     return prefix.with_name(prefix.name + "-transaction.json")
+
+
+def reviews_dir(output_dir: Path) -> Path:
+    return state_dir(output_dir) / REVIEWS_DIR
+
+
+def review_state_path(output_dir: Path) -> Path:
+    return state_dir(output_dir) / REVIEW_STATE_FILENAME
+
+
+def whole_plan_review_result_path(output_dir: Path) -> Path:
+    return reviews_dir(output_dir) / "whole-plan-result.json"
+
+
+def final_confirmation_result_path(output_dir: Path) -> Path:
+    return reviews_dir(output_dir) / "final-confirmation-result.json"
+
+
+def revision_prefix(output_dir: Path, revision_cycle: int) -> str:
+    return str(reviews_dir(output_dir) / f"revision-{revision_cycle:03d}")
+
+
+def load_review_state(output_dir: Path) -> ReviewState | None:
+    path = review_state_path(output_dir)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return ReviewState.model_validate(data)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        raise PersistenceError(f"Failed to load review state from {path}: {exc}") from exc
+
+
+def save_review_state(output_dir: Path, state: ReviewState) -> None:
+    directory = state_dir(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / REVIEW_STATE_FILENAME
+    state.updated_at = datetime.now(timezone.utc)
+    _atomic_write_json(target, state.model_dump(mode="json"))
+
+
+def new_review_state() -> ReviewState:
+    return ReviewState()
+
+
+def update_review_status(plan: PlanState, review_status: ReviewStatus) -> None:
+    plan.result.review_status = review_status
 
 
 def render_attempt_prefix(output_dir: Path, attempt: int) -> str:

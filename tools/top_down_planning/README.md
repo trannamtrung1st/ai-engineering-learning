@@ -109,18 +109,25 @@ planning-output/
 └── .planning-output/
     ├── plan.yaml
     ├── run-state.json
+    ├── review-state.json
     └── iterations/
         ├── 001-request-prompt.md
         ├── 001-transaction.json
         ├── 001-response.json
         ├── render-brief.md
-        └── render-001-response.json
+        ├── render-001-response.json
+        └── reviews/
+            ├── whole-plan-request-prompt.md
+            ├── whole-plan-result.json
+            ├── final-confirmation-request-prompt.md
+            └── final-confirmation-result.json
 ```
 
-Goal-driven deliverables are written only when planning finishes with status `complete`.
-The render phase transforms the completed breakdown into deliverables that satisfy the
-output goal. Incomplete or failed runs keep internal state under `.planning-output/`
-but do not write new deliverables.
+Goal-driven deliverables are written only when planning finishes with status `complete`
+and review status `confirmed` (when review is enabled). The render phase transforms
+the completed breakdown into deliverables that satisfy the output goal. Incomplete,
+blocked, or failed runs keep internal state under `.planning-output/` but do not write
+new deliverables.
 
 Before render, the tool writes `render-brief.md` from `plan.yaml`. That brief lists
 every actionable leaf unit and is the authoritative scope contract for deliverables.
@@ -187,6 +194,9 @@ export PLANNING_TOOL_COMMAND="$PWD/.venv/bin/python -m top_down_planning.plan_to
 If unset, the orchestrator uses `planning-plan-tool` when installed, otherwise falls
 back to `python -m top_down_planning.plan_tool`.
 
+Review and confirmation sessions use `planning-review-tool` (or
+`python -m top_down_planning.review_tool`) to record structured results.
+
 Optional guidance for when to stop expanding versus marking items actionable:
 
 - CLI: `--stop-hint` or `--stop-hint-file`
@@ -216,9 +226,14 @@ agent_context:
       - ./.cursor/skills/rendering/SKILL.md
     rules:
       - ./.cursor/rules/rendering.mdc
+  review:
+    skills:
+      - ./.cursor/skills/review/SKILL.md
 ```
 
-Planning sessions receive `default` + `planning` references. Render sessions receive `default` + `rendering` references. Optional `model` on each block overrides the global `--model` / env default for that phase only; omit it to inherit the normal default.
+Planning sessions receive `default` + `planning` references. Render sessions receive
+`default` + `rendering` references. Whole-plan review and final confirmation receive
+`default` + `review` references.
 
 See [`examples/planning.config.yaml`](examples/planning.config.yaml).
 
@@ -233,15 +248,116 @@ digests of the resolved goal content.
 
 Actionability criteria are inferred from `--output-goal`. Implementation-oriented goals require expected outputs and acceptance criteria on actionable leaves.
 
-Planning completes when no expandable items remain and the graph is structurally valid. Safety limits (`--max-iterations`, `--max-depth`, `--max-items`, `--batch-size`, `--concurrent-batches`, `--max-retries`) preserve partial output with explicit final statuses.
+Planning completes when no expandable items remain and the graph is structurally valid.
+Safety limits (`--max-iterations`, `--max-depth`, `--max-items`, `max_children_per_expansion`,
+`--batch-size`, `--concurrent-batches`, `--max-retries`) preserve partial output with
+explicit final statuses.
+
+### `max_children_per_expansion` and explicit siblings
+
+`max_children_per_expansion` (default `12`) is a per-`expand` safety limit. It must
+not be used to silently merge or omit explicitly required sibling groups. When the
+source or stop hint requires more direct children than the limit allows, the planning
+agent should `mark_blocked` with:
+
+- `constraint_code: "max_children_exceeded"`
+- `required_min_children` greater than the configured limit
+
+Example blocked summary:
+
+```text
+Source requires at least 9 direct children under item-001, but
+max_children_per_expansion is 8. Increase the limit to at least 9
+or revise the source structure.
+```
+
+These runs finish as `incomplete_blocked` and do not enter review or render.
+
+### Whole-plan review and final confirmation
+
+After structural decomposition completes, the tool runs a bounded semantic quality gate
+before render (enabled by default):
+
+```yaml
+review:
+  enabled: true
+  max_revision_cycles: 1
+  max_retries: 3
+```
+
+Lifecycle:
+
+```text
+Decomposition → deterministic validation → whole-plan review →
+(optional targeted revision + replan) → final confirmation → render
+```
+
+Review sessions are read-only with respect to `plan.yaml`. Agents record structured
+results through `planning-review-tool` (not free-form chat approval). Each result is
+tied to a deterministic plan digest; stale approvals are rejected when the plan changes.
+
+When `review.enabled: false`, behavior matches the previous tool: structurally complete
+plans render immediately (`review_status: skipped`).
+
+Configure review agent context under `agent_context.review` (model, skills, rules).
+Planning replan after targeted revision reuses the planning context.
+
+Targeted revision reopens the smallest affected branch(es), removes descendant
+decomposition, and resumes normal top-down planning for at most `max_revision_cycles`.
+
+Render requires `review_status: confirmed` when review is enabled.
 
 ### Persistence and resume
 
-`run-state.json` stores iteration counters, limits, and SHA-256 digests of the input file and output goal. Resume rejects changed input, changed output goal, or mismatched limits. Resuming an already-complete run skips the render phase when prior deliverables still exist on disk.
+`run-state.json` stores iteration counters, limits, and SHA-256 digests of the input
+file and output goal. `review-state.json` stores review stage, plan digest, revision
+cycle, and decisions. On resume, decomposition continues when expandable items remain;
+otherwise the tool reuses stored review/confirmation results only when their plan digest
+matches the current canonical plan, then proceeds to the next unfinished stage
+(review, confirmation, or render).
+
+Resume rejects changed input, changed output goal, or mismatched limits. Resuming an
+already-complete, confirmed run skips render when prior deliverables still exist on disk.
 
 On resume, the tool detects when `plan.yaml` was reset but `run-state.json` still shows prior progress. It attempts to rebuild the plan by replaying stored `iterations/*-response.json` audit files (falling back to `*-transaction.json` when needed) before continuing.
 
-During render, `plan.yaml` is backed up and restored automatically if the render agent modifies canonical state. The same protection applies if a decomposition session mutates canonical state unexpectedly.
+During decomposition, render, and review/confirmation sessions, `plan.yaml` is backed
+up and restored automatically if an agent modifies canonical state unexpectedly.
+
+### Examples
+
+**Software implementation plan** (default bundled example):
+
+```bash
+top-down-planning --config ./examples/planning.config.yaml
+```
+
+Uses [`examples/idea.md`](examples/idea.md) with an implementation-oriented output goal.
+After review and confirmation, the render phase writes deliverables such as
+`implementation-plan.md`.
+
+**Generic non-software planning** — use a non-implementation goal; optionally disable
+review for a lightweight run:
+
+```yaml
+output_goal: Produce a structured event planning checklist with ordered phases.
+review:
+  enabled: false
+```
+
+**Explicit child-limit conflict** — when the source requires more direct siblings than
+the configured limit:
+
+```yaml
+limits:
+  max_children_per_expansion: 8
+stop_hint: |
+  Preserve these nine top-level workstreams as distinct direct children.
+```
+
+The agent should `mark_blocked` with `constraint_code: max_children_exceeded` and
+`required_min_children: 9`. The run finishes as `incomplete_blocked`; no review or
+render occurs.
 
 ### Stream events
 
@@ -260,6 +376,12 @@ Render-phase events include:
 - `render.validation_failed` (when deliverables omit breakdown items)
 - `render.fallback` (deterministic fallback artifact)
 - `render.retrying`
+
+Review-phase events include:
+
+- `review.started` / `review.completed` / `review.needs_revision` / `review.blocked`
+- `revision.started` / `revision.applied`
+- `confirmation.started` / `confirmation.confirmed` / `confirmation.needs_revision` / `confirmation.blocked`
 
 ## Testing
 

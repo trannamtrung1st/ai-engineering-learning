@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -207,6 +208,61 @@ def _write_default_render_artifact(prompt: str) -> None:
     target.write_text(_default_render_content(titles), encoding="utf-8")
 
 
+def _write_review_result(stage: str, prompt: str) -> None:
+    result_file = os.environ.get("PLANNING_REVIEW_RESULT_FILE")
+    if not result_file:
+        raise RuntimeError("PLANNING_REVIEW_RESULT_FILE is required for review sessions")
+
+    digest_match = re.search(r"## Plan digest\n`([a-f0-9]+)`", prompt)
+    plan_digest = digest_match.group(1) if digest_match else "0" * 64
+
+    if stage == "whole_plan_review":
+        override = os.environ.get("FAKE_AGENT_REVIEW_JSON")
+        if override:
+            payload = json.loads(override)
+        else:
+            payload = {
+                "stage": "whole_plan_review",
+                "plan_digest": plan_digest,
+                "decision": "approve",
+                "summary": "Plan approved by fake reviewer.",
+                "findings": [],
+            }
+    else:
+        override = os.environ.get("FAKE_AGENT_CONFIRMATION_JSON")
+        if override:
+            payload = json.loads(override)
+        else:
+            payload = {
+                "stage": "final_confirmation",
+                "plan_digest": plan_digest,
+                "decision": "confirmed",
+                "summary": "Plan confirmed by fake confirmer.",
+                "findings": [],
+            }
+
+    payload.setdefault("stage", stage)
+    if digest_match:
+        payload["plan_digest"] = digest_match.group(1)
+    else:
+        payload.setdefault("plan_digest", plan_digest)
+    _run_review_tool(
+        "set-result",
+        "--json",
+        json.dumps(payload, separators=(",", ":")),
+    )
+    _run_review_tool("finalize")
+
+
+def _run_review_tool(*args: str) -> None:
+    command = os.environ.get("PLANNING_REVIEW_TOOL_COMMAND", "planning-review-tool")
+    if " " in command.strip():
+        argv = shlex.split(command) + list(args)
+    else:
+        argv = [command, *args]
+    subprocess.run(argv, env=_plan_tool_env(), check=True)
+
+
 def main() -> int:
     argv = sys.argv[1:]
     if "--help" in argv or "-h" in argv:
@@ -227,6 +283,34 @@ def main() -> int:
         )
         _write_default_render_artifact(prompt)
         assistant("Wrote deliverables to the workspace.")
+        emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
+        return 0
+
+    if "Whole-plan review session" in prompt:
+        emit(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "fake-review-session",
+                "model": "fake-model",
+            }
+        )
+        _write_review_result("whole_plan_review", prompt)
+        assistant("Finalized whole-plan review result.")
+        emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
+        return 0
+
+    if "Final confirmation session" in prompt:
+        emit(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "fake-confirmation-session",
+                "model": "fake-model",
+            }
+        )
+        _write_review_result("final_confirmation", prompt)
+        assistant("Finalized final confirmation result.")
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
         return 0
 

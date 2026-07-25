@@ -101,7 +101,10 @@ def _apply_blocked(item: PlanItem, operation: MarkBlockedOperation) -> None:
     item.decomposition_status = DecompositionStatus.BLOCKED
     item.readiness_status = ReadinessStatus.BLOCKED
     item.blocked_reason = operation.reason.strip()
-    item.open_questions.append(operation.open_question.strip())
+    item.blocked_constraint_code = operation.constraint_code
+    item.blocked_required_min_children = operation.required_min_children
+    if operation.open_question.strip():
+        item.open_questions.append(operation.open_question.strip())
     if operation.missing_information.strip():
         item.notes.append(
             f"Missing information: {operation.missing_information.strip()}"

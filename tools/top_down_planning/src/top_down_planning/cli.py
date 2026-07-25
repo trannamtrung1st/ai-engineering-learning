@@ -173,6 +173,7 @@ def _execute_run(
         ),
         notify=notify_enabled,
         agent_context=options.agent_context,
+        review=options.review,
     )
     orch = Orchestrator(config)
     try:
@@ -194,7 +195,8 @@ def _execute_run(
     if not options.stream_json:
         console = Console(stderr=True)
         console.print(
-            f"status={report.status.value} items={report.items} "
+            f"status={report.status.value} review={report.review_status.value} "
+            f"items={report.items} "
             f"actionable={report.actionable_items} blocked={report.blocked_items} "
             f"iterations={report.iterations} output={report.output_dir}"
         )

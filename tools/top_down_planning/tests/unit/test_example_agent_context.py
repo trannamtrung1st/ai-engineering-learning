@@ -26,8 +26,10 @@ def test_bundled_planning_example_agent_context() -> None:
     )
     planning = resolve_phase_agent_context("planning", options.agent_context)
     rendering = resolve_phase_agent_context("rendering", options.agent_context)
+    review = resolve_phase_agent_context("review", options.agent_context)
     validate_agent_context_paths(examples_root, planning, label="planning")
     validate_agent_context_paths(examples_root, rendering, label="rendering")
+    validate_agent_context_paths(examples_root, review, label="review")
 
     loaded = LoadedInput(path=examples_root / "idea.md", text="# idea", digest="x")
     goal = LoadedOutputGoal(text="plan", digest="g")

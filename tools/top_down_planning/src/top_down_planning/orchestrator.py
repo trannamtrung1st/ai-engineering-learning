@@ -6,7 +6,7 @@ import asyncio
 import copy
 import os
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from top_down_planning.agent_context import (
@@ -40,6 +40,7 @@ from top_down_planning.models import (
     PlanItem,
     PlanningLimits,
     PlanningReport,
+    ReviewConfig,
     RunActiveStatus,
     RunState,
 )
@@ -72,6 +73,7 @@ from top_down_planning.recovery import (
     recover_plan_from_iterations,
     restore_canonical_plan,
 )
+from top_down_planning.review_flow import ReviewFlowDeps, run_post_decomposition_flow
 from top_down_planning.artifact_writer import (
     discover_written_artifacts,
     snapshot_deliverable_files,
@@ -108,6 +110,7 @@ class RunConfig:
     stop_hint: LoadedStopHint | None = None
     notify: bool = True
     agent_context: AgentContextConfig | None = None
+    review: ReviewConfig = field(default_factory=ReviewConfig)
 
 
 @dataclass(frozen=True)
@@ -140,7 +143,7 @@ class Orchestrator:
         if self.config.agent_context is None:
             return
         workspace = self.config.workspace_root.resolve()
-        for phase in ("planning", "rendering"):
+        for phase in ("planning", "rendering", "review"):
             resolved = resolve_phase_agent_context(
                 phase,  # type: ignore[arg-type]
                 self.config.agent_context,
@@ -274,6 +277,7 @@ class Orchestrator:
         counts = count_by_status(plan)
         report = PlanningReport(
             status=plan.result.status,
+            review_status=plan.result.review_status,
             items=len(plan.plan),
             actionable_items=leaf_actionable_count(plan),
             blocked_items=counts["blocked"],
@@ -294,6 +298,43 @@ class Orchestrator:
         return report
 
     async def _planning_loop(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan,
+        run_state: RunState,
+        output_dir: Path,
+    ):
+        plan, run_state = await self._decomposition_loop(
+            loaded=loaded,
+            plan=plan,
+            run_state=run_state,
+            output_dir=output_dir,
+        )
+
+        plan, run_state, should_render = await run_post_decomposition_flow(
+            self._review_flow_deps(loaded=loaded, output_dir=output_dir),
+            plan=plan,
+            run_state=run_state,
+        )
+
+        if should_render:
+            existing = _existing_generated_artifacts(
+                self.config.workspace_root, run_state
+            )
+            if existing:
+                self._artifacts = existing
+                self.stream.emit("render.skipped", artifacts=existing)
+            else:
+                self._artifacts = await self._run_final_render(
+                    loaded=loaded,
+                    plan=plan,
+                    output_dir=output_dir,
+                    run_state=run_state,
+                )
+        return plan, run_state
+
+    async def _decomposition_loop(
         self,
         *,
         loaded: LoadedInput,
@@ -351,7 +392,7 @@ class Orchestrator:
 
         status = compute_final_status(plan)
         summary = (
-            "Planning completed successfully."
+            "Planning decomposition completed."
             if status == FinalStatus.COMPLETE
             else "Planning finished with remaining incomplete items."
         )
@@ -359,21 +400,38 @@ class Orchestrator:
         run_state.active_status = RunActiveStatus.COMPLETED
         save_plan(output_dir, plan)
         save_run_state(output_dir, run_state)
-        if status == FinalStatus.COMPLETE:
-            existing = _existing_generated_artifacts(
-                self.config.workspace_root, run_state
-            )
-            if existing:
-                self._artifacts = existing
-                self.stream.emit("render.skipped", artifacts=existing)
-            else:
-                self._artifacts = await self._run_final_render(
-                    loaded=loaded,
-                    plan=plan,
-                    output_dir=output_dir,
-                    run_state=run_state,
-                )
         return plan, run_state
+
+    def _review_flow_deps(
+        self,
+        *,
+        loaded: LoadedInput,
+        output_dir: Path,
+    ) -> ReviewFlowDeps:
+        async def _resume_decomposition_only(plan, run_state):
+            return await self._decomposition_loop(
+                loaded=loaded,
+                plan=plan,
+                run_state=run_state,
+                output_dir=output_dir,
+            )
+
+        return ReviewFlowDeps(
+            workspace_root=self.config.workspace_root,
+            output_dir=output_dir,
+            loaded=loaded,
+            output_goal=self.config.output_goal,
+            stop_hint=self.config.stop_hint,
+            embed_threshold=self._embed_threshold,
+            review=self.config.review,
+            client=self.client,
+            renderer=self.renderer,
+            stream=self.stream,
+            audit=self.config.audit_iterations,
+            resolve_review_context=lambda: self._resolved_agent_context(phase="review"),
+            resolve_review_model=lambda: self._resolve_session_model(phase="review"),
+            run_planning_loop=_resume_decomposition_only,
+        )
 
     async def _run_planning_wave(
         self,
@@ -644,6 +702,7 @@ class Orchestrator:
             plan=plan,
             selected_items=spec.items,
             embed_threshold=self._embed_threshold,
+            max_children_per_expansion=limits.max_children_per_expansion,
             stop_hint=self.config.stop_hint,
             validation_feedback=validation_feedback,
             plan_tool_command=plan_tool_command,

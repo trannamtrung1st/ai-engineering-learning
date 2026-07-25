@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from top_down_planning.models import (
+    BlockedConstraintCode,
     DecompositionStatus,
     FinalStatus,
     PlanState,
@@ -36,12 +37,34 @@ def _is_leaf(plan: PlanState, item_id: str) -> bool:
     return not any(child.parent_id == item_id for child in plan.plan)
 
 
-def has_blocked_leaves(plan: PlanState) -> bool:
+def has_child_limit_blocked_leaves(plan: PlanState) -> bool:
     return any(
         item.decomposition_status == DecompositionStatus.BLOCKED
         and _is_leaf(plan, item.id)
+        and item.blocked_constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
         for item in plan.plan
     )
+
+
+def child_limit_blocked_summary(
+    plan: PlanState,
+    *,
+    max_children_per_expansion: int,
+) -> str | None:
+    for item in plan.plan:
+        if (
+            item.decomposition_status == DecompositionStatus.BLOCKED
+            and _is_leaf(plan, item.id)
+            and item.blocked_constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
+            and item.blocked_required_min_children is not None
+        ):
+            required = item.blocked_required_min_children
+            return (
+                f"Source requires at least {required} direct children under {item.id}, "
+                f"but max_children_per_expansion is {max_children_per_expansion}. "
+                f"Increase the limit to at least {required} or revise the source structure."
+            )
+    return None
 
 
 def leaf_actionable_count(plan: PlanState) -> int:
