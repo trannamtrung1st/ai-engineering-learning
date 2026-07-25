@@ -13,7 +13,6 @@ from top_down_planning.models import OutputMode, RenderBatchTransaction, RenderM
 from top_down_planning.persistence import render_assembled_dir, render_batch_transaction_path
 from top_down_planning.render_batcher import unique_batch_ids
 from top_down_planning.render_content_validation import validate_transaction_content
-from top_down_planning.render_set_level import synthesize_set_level_files
 from top_down_planning.render_tool import load_render_transaction
 
 
@@ -37,8 +36,6 @@ def load_valid_batch_transactions(
 def assemble_render_output(
     manifest: RenderManifest,
     transactions: dict[str, RenderBatchTransaction],
-    *,
-    plan_summary: str = "",
 ) -> AssembledOutput:
     errors = validate_assembly(manifest, transactions)
     if errors:
@@ -59,7 +56,6 @@ def assemble_render_output(
         content = _assemble_single_document(sections)
         files[final_path] = content
     else:
-        leaf_contents: dict[str, str] = {}
         for item in manifest.items:
             batch_txn = transactions[item.assigned_batch_id]
             artifact = next(
@@ -69,17 +65,9 @@ def assemble_render_output(
             if rel_path is None:
                 raise ValueError(f"missing relative_path for {item.plan_item_id}")
             files[rel_path] = artifact.content
-            leaf_contents[rel_path] = artifact.content
 
         internal_index = _build_folder_index(manifest)
         files[".internal/index.yaml"] = internal_index
-
-        synthesized = synthesize_set_level_files(
-            manifest,
-            leaf_contents=leaf_contents,
-            plan_summary=plan_summary,
-        )
-        files.update(synthesized)
 
     digest = compute_assembled_digest(files)
     return AssembledOutput(files=files, digest=digest)
@@ -133,7 +121,7 @@ def validate_assembly(
 
     missing = manifest_ids - rendered_ids
     if missing:
-        errors.append(f"missing actionable leaves: {sorted(missing)}")
+        errors.append(f"missing rendered artifacts: {sorted(missing)}")
 
     for item in manifest.items:
         if item.plan_item_id not in rendered_ids:
@@ -175,6 +163,7 @@ def _build_folder_index(manifest: RenderManifest) -> str:
             {
                 "plan_item_id": item.plan_item_id,
                 "artifact_key": item.artifact_key,
+                "artifact_role": item.artifact_role,
                 "staging_path": item.relative_path,
                 "publish_path": item.publish_relative_path,
                 "set_order": item.set_order,

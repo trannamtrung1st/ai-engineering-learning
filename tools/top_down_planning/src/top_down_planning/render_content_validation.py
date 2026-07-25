@@ -16,6 +16,8 @@ def validate_artifact_content(
     """Return validation errors for a single artifact's content."""
     if output_mode != OutputMode.MULTI_FILE:
         return []
+    if manifest_item.artifact_role == "set_level":
+        return []
 
     errors: list[str] = []
     try:

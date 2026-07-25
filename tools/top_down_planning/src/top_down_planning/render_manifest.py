@@ -22,6 +22,9 @@ from top_down_planning.output_goal_artifacts import (
 from top_down_planning.render_brief import actionable_leaf_items
 from top_down_planning.render_batcher import assign_render_batches
 
+SET_LEVEL_BATCH_ID = "render-batch-set-level"
+SET_LEVEL_ORDER_BASE = 9000
+
 
 def slugify_title(title: str) -> str:
     slug = re.sub(r"[^\w\s-]", "", title.lower())
@@ -89,6 +92,55 @@ def _publish_relative_path_for_item(
     return f"{set_order:02d}-{slug}.yaml"
 
 
+def _build_set_level_manifest_items(
+    *,
+    declared_set_level_files: list[str],
+    auxiliary_artifacts: list[str],
+    leaf_count: int,
+) -> list[RenderManifestItem]:
+    items: list[RenderManifestItem] = []
+    order = SET_LEVEL_ORDER_BASE
+
+    for filename in declared_set_level_files:
+        order += 1
+        items.append(
+            RenderManifestItem(
+                plan_item_id=f"set-level-{filename}",
+                top_level_branch_id="set-level",
+                order=order,
+                set_order=leaf_count + len(items) + 1,
+                title=f"Set-level file: {filename}",
+                dependencies=[],
+                assigned_batch_id=SET_LEVEL_BATCH_ID,
+                artifact_key=f"set-level-{filename}",
+                relative_path=filename,
+                publish_relative_path=filename,
+                artifact_role="set_level",
+            )
+        )
+
+    for path in auxiliary_artifacts:
+        order += 1
+        slug = slugify_title(path.replace("/", "-"))
+        items.append(
+            RenderManifestItem(
+                plan_item_id=f"set-level-{slug}",
+                top_level_branch_id="set-level",
+                order=order,
+                set_order=leaf_count + len(items) + 1,
+                title=f"Auxiliary deliverable: {path}",
+                dependencies=[],
+                assigned_batch_id=SET_LEVEL_BATCH_ID,
+                artifact_key=f"set-level-{slug}",
+                relative_path=path,
+                publish_relative_path=path,
+                artifact_role="set_level",
+            )
+        )
+
+    return items
+
+
 def build_render_manifest(
     plan: PlanState,
     *,
@@ -138,6 +190,15 @@ def build_render_manifest(
     for entry, batch_id in zip(manifest_items, batch_assignments, strict=True):
         entry.assigned_batch_id = batch_id
 
+    if output_mode == OutputMode.MULTI_FILE:
+        manifest_items.extend(
+            _build_set_level_manifest_items(
+                declared_set_level_files=goal_artifacts.declared_set_level_files,
+                auxiliary_artifacts=goal_artifacts.auxiliary_artifacts,
+                leaf_count=len(manifest_items),
+            )
+        )
+
     return RenderManifest(
         plan_digest=plan_digest,
         output_goal_digest=output_goal_digest,
@@ -145,9 +206,32 @@ def build_render_manifest(
         output_mode=output_mode,
         final_relative_path=final_path,
         deliverable_root=goal_artifacts.deliverable_root,
-        declared_set_level_files=list(goal_artifacts.declared_set_level_files),
         items=manifest_items,
     )
+
+
+def manifest_matches_output_goal(manifest: RenderManifest, output_goal_text: str) -> bool:
+    """Return False when a persisted manifest omits required set-level artifacts."""
+    if manifest.output_mode != OutputMode.MULTI_FILE:
+        return True
+    goal_artifacts = parse_output_goal_artifacts(output_goal_text)
+    expected = set(goal_artifacts.declared_set_level_files) | set(
+        goal_artifacts.auxiliary_artifacts
+    )
+    actual = {
+        item.relative_path
+        for item in manifest.items
+        if item.artifact_role == "set_level" and item.relative_path
+    }
+    if expected != actual:
+        return False
+    if expected and not any(
+        item.assigned_batch_id == SET_LEVEL_BATCH_ID
+        for item in manifest.items
+        if item.artifact_role == "set_level"
+    ):
+        return False
+    return True
 
 
 def compute_manifest_digest(manifest: RenderManifest) -> str:

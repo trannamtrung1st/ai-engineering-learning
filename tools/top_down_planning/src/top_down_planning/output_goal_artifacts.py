@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from top_down_planning.errors import PlanningToolError
@@ -41,6 +41,7 @@ class OutputGoalArtifacts:
     deliverable_root: str | None
     declared_set_level_files: list[str]
     item_paths: list[str]
+    auxiliary_artifacts: list[str] = field(default_factory=list)
 
 
 def resolve_output_goal_text(plan: PlanState) -> str:
@@ -64,11 +65,13 @@ def parse_output_goal_artifacts(output_goal: str) -> OutputGoalArtifacts:
     deliverable_root = _resolve_deliverable_root(paths)
     declared_set_level = _declared_set_level_files(paths, deliverable_root)
     item_paths = _item_paths(paths, deliverable_root)
+    auxiliary = _auxiliary_artifact_paths(paths, deliverable_root)
     return OutputGoalArtifacts(
         paths=paths,
         deliverable_root=deliverable_root,
         declared_set_level_files=declared_set_level,
         item_paths=item_paths,
+        auxiliary_artifacts=auxiliary,
     )
 
 
@@ -83,6 +86,7 @@ def _extract_raw_paths(output_goal: str) -> list[str]:
     in_section = False
     in_fence = False
     paths: list[str] = []
+    fence_dir_prefix = ""
 
     for line in lines:
         if re.match(r"^#+\s*output artifacts\s*$", line, re.IGNORECASE):
@@ -96,18 +100,44 @@ def _extract_raw_paths(output_goal: str) -> list[str]:
         stripped = line.strip()
         if stripped.startswith("```"):
             in_fence = not in_fence
+            if not in_fence:
+                fence_dir_prefix = ""
             continue
 
         if in_fence:
-            candidate = stripped.strip("`- ")
-            if candidate:
+            candidate = stripped.split("#", 1)[0].strip().strip("`- ")
+            if not candidate:
+                continue
+            if candidate.endswith("/"):
+                fence_dir_prefix = candidate
+                paths.append(candidate)
+                continue
+            if fence_dir_prefix and "/" not in candidate:
+                paths.append(f"{fence_dir_prefix.rstrip('/')}/{candidate}")
+            else:
                 paths.append(candidate)
             continue
 
-        for match in re.finditer(r"`([^`]+)`", line):
-            paths.append(match.group(1).strip())
+        if stripped.startswith("- `") or stripped.startswith("- `"):
+            for match in re.finditer(r"`([^`]+)`", stripped):
+                token = match.group(1).strip()
+                if _looks_like_artifact_path(token):
+                    paths.append(token)
 
     return paths
+
+
+def _looks_like_artifact_path(token: str) -> bool:
+    if not token or token in _FALSE_POSITIVE_TOKENS:
+        return False
+    if token.startswith("./scripts/"):
+        return False
+    suffix = PurePosixPath(token.split("#", 1)[0].strip()).suffix.lower()
+    if suffix in _KNOWN_EXTENSIONS:
+        return True
+    if token.endswith("/"):
+        return True
+    return "/" in token and not token.startswith("http")
 
 
 def _is_path_like(path: str) -> bool:
@@ -205,3 +235,22 @@ def _path_relative_to_root(path: str, deliverable_root: str | None) -> str | Non
         remainder = normalized[len(root.rstrip("/")) :].lstrip("/")
         return remainder or None
     return None
+
+
+def _auxiliary_artifact_paths(
+    paths: list[str],
+    deliverable_root: str | None,
+) -> list[str]:
+    if not deliverable_root:
+        return sorted({path for path in paths if "/" in path.replace("\\", "/")})
+    root = deliverable_root.rstrip("/") + "/"
+    auxiliary: list[str] = []
+    for path in paths:
+        if path.endswith("/"):
+            continue
+        normalized = path.replace("\\", "/")
+        if "/" not in normalized:
+            continue
+        if not normalized.startswith(root):
+            auxiliary.append(normalized)
+    return sorted(set(auxiliary))

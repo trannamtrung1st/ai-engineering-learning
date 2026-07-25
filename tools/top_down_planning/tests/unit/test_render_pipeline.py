@@ -84,8 +84,12 @@ def test_coherent_batching_groups_by_branch(tmp_path: Path, example_input: Path)
         output_goal_text=loaded_goal.text,
         render_config=RenderConfig(batch_strategy=RenderBatchStrategy.COHERENT, batch_size=5),
     )
-    batch_ids = [item.assigned_batch_id for item in manifest.items]
-    assert len(set(batch_ids)) == 1
+    leaf_batch_ids = [
+        item.assigned_batch_id
+        for item in manifest.items
+        if item.artifact_role == "leaf"
+    ]
+    assert len(set(leaf_batch_ids)) == 1
 
 
 def test_render_only_rejects_incomplete_plan(tmp_path: Path, example_input: Path) -> None:

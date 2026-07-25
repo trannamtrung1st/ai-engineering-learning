@@ -45,9 +45,11 @@ from top_down_planning.render_assembly import (
 from top_down_planning.render_batcher import items_for_batch, unique_batch_ids
 from top_down_planning.render_context import prepare_render_batch_context
 from top_down_planning.render_manifest import (
+    SET_LEVEL_BATCH_ID,
     build_render_manifest,
     compute_manifest_digest,
     load_render_manifest,
+    manifest_matches_output_goal,
     save_render_manifest as write_manifest_file,
 )
 from top_down_planning.render_publication import publish_assembled_output
@@ -144,14 +146,9 @@ async def render_from_confirmed_plan(
     save_render_state(deps.output_dir, render_state)
     deps.stream.emit("render.assembly.started")
 
-    plan_summary = plan.result.summary or ""
     transactions = load_valid_batch_transactions(deps.output_dir, manifest)
     try:
-        assembled = assemble_render_output(
-            manifest,
-            transactions,
-            plan_summary=plan_summary,
-        )
+        assembled = assemble_render_output(manifest, transactions)
     except ValueError as exc:
         deps.stream.emit("render.validation_failed", errors=[str(exc)])
         raise PlanningToolError(f"Render assembly failed: {exc}") from exc
@@ -175,11 +172,7 @@ async def render_from_confirmed_plan(
             force_rerender=force_rerender,
         )
         transactions = load_valid_batch_transactions(deps.output_dir, manifest)
-        assembled = assemble_render_output(
-            manifest,
-            transactions,
-            plan_summary=plan.result.summary or "",
-        )
+        assembled = assemble_render_output(manifest, transactions)
         write_assembled_output(deps.output_dir, assembled)
     else:
         render_state.output_review_status = RenderOutputReviewStatus.SKIPPED
@@ -261,7 +254,8 @@ def _ensure_manifest(
         and render_state.render_config_digest == compute_render_config_digest(render_config)
     ):
         manifest = load_render_manifest(path)
-        return manifest, render_state.render_manifest_digest, True
+        if manifest_matches_output_goal(manifest, deps.output_goal.text):
+            return manifest, render_state.render_manifest_digest, True
 
     manifest = build_render_manifest(
         plan,
@@ -308,14 +302,20 @@ async def _run_render_batches(
     run_state: RunState,
     force_rerender: bool,
 ) -> None:
-    batch_ids = [
+    all_batch_ids = unique_batch_ids(manifest.items)
+    pending = [
         batch_id
-        for batch_id in unique_batch_ids(manifest.items)
+        for batch_id in all_batch_ids
         if force_rerender
         or render_state.batches[batch_id].status != RenderBatchStatus.VALID
     ]
-    if not batch_ids:
+    if not pending:
         return
+
+    leaf_batch_ids = [batch_id for batch_id in pending if batch_id != SET_LEVEL_BATCH_ID]
+    set_level_batch_id = (
+        SET_LEVEL_BATCH_ID if SET_LEVEL_BATCH_ID in pending else None
+    )
 
     semaphore = asyncio.Semaphore(max(1, deps.render.concurrent_batches))
 
@@ -330,7 +330,10 @@ async def _run_render_batches(
                 run_state=run_state,
             )
 
-    await asyncio.gather(*(run_one(batch_id) for batch_id in batch_ids))
+    if leaf_batch_ids:
+        await asyncio.gather(*(run_one(batch_id) for batch_id in leaf_batch_ids))
+    if set_level_batch_id:
+        await run_one(set_level_batch_id)
 
 
 async def _run_single_batch(
@@ -395,6 +398,7 @@ async def _run_single_batch(
             validation_feedback=validation_feedback,
             agent_context=deps.resolve_render_context(),
             render_tool_command=resolve_render_tool_command(),
+            is_set_level_batch=batch_id == SET_LEVEL_BATCH_ID,
         )
         prompt_path = batch_dir / f"request-{attempt:03d}-prompt.md"
         prompt_path.write_text(prompt, encoding="utf-8")
@@ -530,14 +534,9 @@ async def _run_output_review_cycle(
     force_rerender: bool,
 ) -> None:
     max_cycles = deps.render.max_rerender_cycles
-    plan_summary = plan.result.summary or ""
     for cycle in range(max_cycles + 1):
         transactions = load_valid_batch_transactions(deps.output_dir, manifest)
-        assembled = assemble_render_output(
-            manifest,
-            transactions,
-            plan_summary=plan_summary,
-        )
+        assembled = assemble_render_output(manifest, transactions)
         write_assembled_output(deps.output_dir, assembled)
 
         deps.stream.emit("render.review.started", cycle=cycle)

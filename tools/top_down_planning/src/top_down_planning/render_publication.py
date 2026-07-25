@@ -131,11 +131,14 @@ def _build_publish_map(
             continue
         if staging_path not in assembled.files:
             continue
+        if (
+            item.artifact_role == "set_level"
+            and "/" in publish_name
+            and not publish_name.startswith(f"{root}/")
+        ):
+            publish_map[staging_path] = publish_name
+            continue
         publish_map[staging_path] = f"{root}/{publish_name}".replace("//", "/")
-
-    for filename in manifest.declared_set_level_files:
-        if filename in assembled.files:
-            publish_map[filename] = f"{root}/{filename}".replace("//", "/")
 
     return publish_map
 

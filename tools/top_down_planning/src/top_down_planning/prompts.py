@@ -437,6 +437,7 @@ def build_render_batch_prompt(
     validation_feedback: list[str] | None = None,
     agent_context: ResolvedAgentContext | None = None,
     render_tool_command: str = "planning-render-tool",
+    is_set_level_batch: bool = False,
 ) -> str:
     feedback_block = ""
     if validation_feedback:
@@ -445,9 +446,16 @@ def build_render_batch_prompt(
             + "\n".join(f"- {error}" for error in validation_feedback)
             + "\n\nFix every issue before finalizing the batch transaction.\n\n"
         )
+    batch_kind = (
+        "Produce staged set-level deliverables (manifest, index, summaries, etc.) "
+        "for the assigned artifact keys. Use the output goal as the format guide; "
+        "leaf item files are already rendered in earlier batches."
+        if is_set_level_batch
+        else "Produce staged render artifacts for the assigned plan items only."
+    )
     return f"""# Render batch session: {batch_id}
 
-Produce staged render artifacts for the assigned plan items only.
+{batch_kind}
 
 ## Plan digest
 `{plan_digest}`
@@ -505,9 +513,10 @@ Compare the confirmed plan, render manifest, assembled output, and output goal.
 The assembled output directory is **pre-publication staging**. Leaf files use tool-owned
 staging paths under `items/`; publication remaps them to the output-goal deliverable root
 using each item's `publish_relative_path`. Set-level files declared in the output goal
-are synthesized deterministically during assembly.
+are rendered by agents in the final set-level batch (same staging contract as other artifacts).
 
-Use `needs_rerender` only for leaf content fixable by rerunning render batches.
+Use `needs_rerender` for leaf or set-level content fixable by rerunning the affected
+render batches (including `render-batch-set-level`).
 Use `blocked` for unfixable tool/goal mismatches (missing goal declaration, unpublishable scope).
 
 ## Plan digest

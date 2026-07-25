@@ -118,6 +118,15 @@ def _build_batch_context_markdown(
         if plan_item is not None:
             lines.append(_format_item_context(plan, plan_item))
             lines.append("")
+        else:
+            lines.extend(
+                [
+                    f"### {manifest_item.title}",
+                    f"- **Artifact role:** `{manifest_item.artifact_role}`",
+                    f"- **Artifact key:** `{manifest_item.artifact_key}`",
+                    "",
+                ]
+            )
 
     lines.extend(
         [

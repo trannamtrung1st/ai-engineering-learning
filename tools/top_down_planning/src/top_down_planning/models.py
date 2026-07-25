@@ -142,6 +142,7 @@ class RenderManifestItem(BaseModel):
     relative_path: str | None = None
     publish_relative_path: str | None = None
     section_order: int | None = None
+    artifact_role: Literal["leaf", "set_level"] = "leaf"
 
 
 class RenderManifest(BaseModel):
@@ -152,7 +153,6 @@ class RenderManifest(BaseModel):
     output_mode: OutputMode = OutputMode.SINGLE_DOCUMENT
     final_relative_path: str | None = None
     deliverable_root: str | None = None
-    declared_set_level_files: list[str] = Field(default_factory=list)
     items: list[RenderManifestItem] = Field(default_factory=list)
 
 

@@ -409,13 +409,17 @@ Deliverables are produced by a **staged render pipeline** after decomposition co
 lifecycle from planning:
 
 1. Parse required artifact paths from the output goal's `## Output artifacts` section.
-2. Build a deterministic render manifest from actionable leaf items in `plan.yaml`.
-3. Run concurrent render batches; each batch agent records artifacts via
+2. Build a deterministic render manifest from actionable leaf items plus set-level
+   artifacts declared in the output goal.
+3. Run concurrent leaf render batches; each batch agent records artifacts via
    `planning-render-tool` into staged batch transactions (not directly into final paths).
-4. Assemble staged artifacts deterministically under `.planning-output/render/assembled/`,
-   including synthesized set-level files declared by the output goal.
-5. Optionally run whole-output semantic review (`rendered_output_review`).
-6. Publish assembled output to declared workspace paths and record ownership in a ledger.
+4. Run the final set-level render batch (`render-batch-set-level`) for deliverable
+   envelope files such as `manifest.yaml`, `INDEX.md`, and auxiliary paths declared
+   outside the deliverable root.
+5. Assemble staged artifacts under `.planning-output/render/assembled/` without
+   rewriting agent content.
+6. Optionally run whole-output semantic review (`rendered_output_review`).
+7. Publish assembled output to declared workspace paths and record ownership in a ledger.
 
 The render manifest defines authoritative scope (which plan items, artifact keys, staging
 paths, set order, and publish paths). The output goal defines authoritative deliverable
