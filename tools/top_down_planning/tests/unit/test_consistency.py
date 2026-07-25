@@ -8,6 +8,7 @@ from top_down_planning.models import (
     PlanItem,
 )
 from top_down_planning.scheduler import initialize_root_plan
+from tests.helpers import default_generation, make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 from top_down_planning.validator import validate_response
@@ -27,7 +28,7 @@ def test_apply_blocked_and_out_of_scope() -> None:
     plan = _plan()
     blocked = apply_response(
         plan,
-        AgentResponse(
+        make_agent_response(
             operations=[
                 MarkBlockedOperation(
                     node_id="item-001",
@@ -46,7 +47,7 @@ def test_apply_blocked_and_out_of_scope() -> None:
     plan = _plan()
     out_of_scope = apply_response(
         plan,
-        AgentResponse(
+        make_agent_response(
             operations=[
                 MarkOutOfScopeOperation(
                     node_id="item-001",
@@ -62,7 +63,7 @@ def test_apply_blocked_and_out_of_scope() -> None:
 
 def test_validate_rejects_cycles_before_apply() -> None:
     plan = _plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             ExpandOperation(
                 node_id="item-001",
@@ -95,7 +96,7 @@ def test_validate_rejects_cycles_before_apply() -> None:
 def test_invalid_response_does_not_mutate_plan() -> None:
     plan = _plan()
     original_count = len(plan.plan)
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             ExpandOperation(
                 node_id="item-001",

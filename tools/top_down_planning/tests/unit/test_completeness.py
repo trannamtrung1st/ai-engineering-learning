@@ -9,6 +9,7 @@ from top_down_planning.models import (
     PlanningLimits,
 )
 from top_down_planning.scheduler import select_batch
+from tests.helpers import default_generation, make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 
@@ -26,7 +27,7 @@ def test_complete_when_no_expandable_items() -> None:
     plan = _plan()
     plan = apply_response(
         plan,
-        AgentResponse(
+        make_agent_response(
             operations=[
                 MarkActionableOperation(
                     node_id="item-001",
@@ -56,7 +57,7 @@ def test_multi_level_bfs_expansion() -> None:
     plan = _plan()
     plan = apply_response(
         plan,
-        AgentResponse(
+        make_agent_response(
             operations=[
                 ExpandOperation(
                     node_id="item-001",
@@ -68,11 +69,11 @@ def test_multi_level_bfs_expansion() -> None:
             ]
         ),
     )
-    batch = select_batch(plan, PlanningLimits(batch_size=10))
+    batch = select_batch(plan, default_generation())
     assert {item.depth for item in batch} == {1}
     plan = apply_response(
         plan,
-        AgentResponse(
+        make_agent_response(
             operations=[
                 MarkActionableOperation(
                     node_id=item.id,

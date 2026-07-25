@@ -13,6 +13,7 @@ from top_down_planning.prompts import (
     should_embed_content,
 )
 from top_down_planning.scheduler import initialize_root_plan
+from tests.helpers import planning_prompt_kwargs
 from tests.plan_factory import make_root_plan
 
 
@@ -115,6 +116,11 @@ def test_prompt_embeds_small_input_document(
         plan=plan,
         selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        **planning_prompt_kwargs(
+            plan=plan,
+            selected_items=[root],
+            output_dir=tmp_path / "planning-output",
+        ),
     )
 
     assert "The complete primary input Markdown document" in prompt
@@ -150,6 +156,11 @@ def test_prompt_references_large_input_file_by_path(tmp_path: Path) -> None:
         plan=plan,
         selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        **planning_prompt_kwargs(
+            plan=plan,
+            selected_items=[root],
+            output_dir=tmp_path / "planning-output",
+        ),
     )
 
     assert "Read the complete primary input Markdown file" in prompt
@@ -183,6 +194,11 @@ def test_prompt_embeds_short_output_goal_file(tmp_path: Path, example_input: Pat
         plan=plan,
         selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        **planning_prompt_kwargs(
+            plan=plan,
+            selected_items=[root],
+            output_dir=tmp_path / "planning-output",
+        ),
     )
 
     assert "with phases" in prompt
@@ -213,6 +229,11 @@ def test_prompt_references_large_output_goal_file(tmp_path: Path, example_input:
         plan=plan,
         selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        **planning_prompt_kwargs(
+            plan=plan,
+            selected_items=[root],
+            output_dir=tmp_path / "planning-output",
+        ),
     )
 
     assert "Read the output goal specification" in prompt
@@ -306,6 +327,11 @@ def test_prompt_includes_stop_hint_when_provided(
         selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
         stop_hint=stop_hint,
+        **planning_prompt_kwargs(
+            plan=plan,
+            selected_items=[root],
+            output_dir=tmp_path / "planning-output",
+        ),
     )
 
     assert "Expansion stop guidance" in prompt
@@ -336,6 +362,11 @@ def test_planning_prompt_uses_transaction_cli(
         plan=plan,
         selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        **planning_prompt_kwargs(
+            plan=plan,
+            selected_items=[root],
+            output_dir=tmp_path / "planning-output",
+        ),
     )
 
     assert "Planning transaction CLI" in prompt
@@ -366,6 +397,11 @@ def test_prompt_omits_stop_hint_section_when_not_provided(
         plan=plan,
         selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        **planning_prompt_kwargs(
+            plan=plan,
+            selected_items=[root],
+            output_dir=tmp_path / "planning-output",
+        ),
     )
 
     assert "Expansion stop guidance" not in prompt

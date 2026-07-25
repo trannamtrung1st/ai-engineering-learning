@@ -11,6 +11,7 @@ from top_down_planning.input_loader import load_markdown_input, load_output_goal
 from top_down_planning.models import DecompositionStatus, FinalStatus, PlanningLimits
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import new_run_state, save_plan
+from tests.helpers import default_generation
 from tests.plan_factory import make_root_plan
 
 
@@ -23,7 +24,7 @@ async def test_render_retry_writes_per_attempt_audit_files(
     loaded = load_markdown_input(example_input)
     loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
     output_dir = tmp_path / "planning-output"
-    limits = PlanningLimits(max_retries=2, batch_size=1, concurrent_batches=1)
+    limits = PlanningLimits(max_retries=2)
     plan = make_root_plan(
         input_file=str(example_input),
         output_goal=loaded_goal.text,
@@ -40,6 +41,7 @@ async def test_render_retry_writes_per_attempt_audit_files(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
+        generation=default_generation(),
     )
 
     config = RunConfig(

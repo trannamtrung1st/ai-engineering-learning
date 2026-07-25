@@ -37,7 +37,7 @@ def test_load_run_config_file_resolves_paths_relative_to_config(tmp_path: Path) 
     assert options.workspace == config_dir.resolve()
 
 
-def test_merge_run_options_uses_nested_limits(tmp_path: Path) -> None:
+def test_merge_run_options_uses_generation_block(tmp_path: Path) -> None:
     config_path = tmp_path / "planning.yaml"
     config_path.write_text(
         "\n".join(
@@ -47,9 +47,10 @@ def test_merge_run_options_uses_nested_limits(tmp_path: Path) -> None:
                 "output_goal: Produce a plan",
                 "limits:",
                 "  max_iterations: 12",
+                "  session_timeout_seconds: 900",
+                "generation:",
                 "  batch_size: 5",
                 "  concurrent_batches: 2",
-                "  session_timeout_seconds: 900",
             ]
         ),
         encoding="utf-8",
@@ -58,8 +59,8 @@ def test_merge_run_options_uses_nested_limits(tmp_path: Path) -> None:
     options = merge_run_options(config_path=config_path)
 
     assert options.max_iterations == 12
-    assert options.batch_size == 5
-    assert options.concurrent_batches == 2
+    assert options.generation.batch_size == 5
+    assert options.generation.concurrent_batches == 2
     assert options.max_depth == 6
     assert options.session_timeout_seconds == 900
 
@@ -86,7 +87,6 @@ def test_options_to_planning_limits_includes_advanced_fields(tmp_path: Path) -> 
     assert limits.max_children_per_expansion == 8
     assert limits.parse_error_threshold == 10
     assert limits.session_timeout_seconds == 600
-    assert limits.concurrent_batches == 3
 
 
 def test_merge_run_options_loads_review_config(tmp_path: Path) -> None:
@@ -156,6 +156,25 @@ def test_merge_run_options_rejects_both_goal_sources_in_config(tmp_path: Path) -
     )
 
     with pytest.raises(PlanningToolError):
+        merge_run_options(config_path=config_path)
+
+
+def test_merge_run_options_rejects_limits_batch_settings(tmp_path: Path) -> None:
+    config_path = tmp_path / "planning.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "input: ./idea.md",
+                "output: ./out",
+                "output_goal: Produce a plan",
+                "limits:",
+                "  batch_size: 5",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PlanningToolError, match="generation.batch_size"):
         merge_run_options(config_path=config_path)
 
 

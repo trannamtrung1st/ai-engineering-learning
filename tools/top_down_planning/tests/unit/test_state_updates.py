@@ -7,6 +7,7 @@ from top_down_planning.models import (
     PlanItem,
 )
 from top_down_planning.scheduler import initialize_root_plan
+from tests.helpers import default_generation, make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response, detect_dependency_cycles
 
@@ -22,7 +23,7 @@ def _plan():
 
 def test_apply_expand_assigns_ids_and_dependencies() -> None:
     plan = _plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             ExpandOperation(
                 node_id="item-001",
@@ -50,7 +51,7 @@ def test_apply_expand_assigns_ids_and_dependencies() -> None:
 
 def test_apply_actionable() -> None:
     plan = _plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             MarkActionableOperation(
                 node_id="item-001",

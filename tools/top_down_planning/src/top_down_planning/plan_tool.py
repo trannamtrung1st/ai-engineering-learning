@@ -22,6 +22,7 @@ from top_down_planning.prompts import _format_item_context
 ENV_TXN_FILE = "PLANNING_TOOL_TXN_FILE"
 ENV_SELECTED_IDS = "PLANNING_TOOL_SELECTED_IDS"
 ENV_PLAN_FILE = "PLANNING_TOOL_PLAN_FILE"
+ENV_PLAN_DIGEST = "PLANNING_TOOL_PLAN_DIGEST"
 PLAN_TOOL_COMMAND_ENV = "PLANNING_TOOL_COMMAND"
 
 _OPERATION_ADAPTER = TypeAdapter(PlanningOperation)
@@ -62,6 +63,7 @@ def build_session_env(
     transaction_path: Path,
     selected_ids: list[str],
     plan_file: Path,
+    plan_digest: str,
     plan_tool_command: str | None = None,
 ) -> dict[str, str]:
     """Environment variables scoped to one planning batch session."""
@@ -70,6 +72,7 @@ def build_session_env(
         ENV_TXN_FILE: str(transaction_path.resolve()),
         ENV_SELECTED_IDS: ",".join(selected_ids),
         ENV_PLAN_FILE: str(plan_file.resolve()),
+        ENV_PLAN_DIGEST: plan_digest,
         PLAN_TOOL_COMMAND_ENV: command,
     }
 
@@ -164,6 +167,24 @@ def _load_plan_state() -> PlanState:
         raise PlanToolError(f"Failed to load plan from {plan_path}: {exc}") from exc
 
 
+def _expected_plan_digest() -> str:
+    value = os.environ.get(ENV_PLAN_DIGEST, "").strip()
+    if not value:
+        raise PlanToolError(f"Missing required environment variable: {ENV_PLAN_DIGEST}")
+    return value
+
+
+def _validate_plan_digest(draft: dict[str, Any]) -> None:
+    expected = _expected_plan_digest()
+    recorded = draft.get("plan_digest")
+    if isinstance(recorded, str) and recorded and recorded != expected:
+        raise PlanToolError(
+            f"Transaction plan_digest mismatch: expected {expected}, got {recorded}"
+        )
+    draft["plan_digest"] = expected
+    draft["selected_items"] = sorted(_selected_ids())
+
+
 def _draft_status(txn_file: Path) -> dict[str, Any]:
     draft = _load_draft(txn_file)
     operations = draft.get("operations") or []
@@ -182,6 +203,7 @@ def _draft_status(txn_file: Path) -> dict[str, Any]:
         "covered_node_ids": sorted(covered),
         "missing_node_ids": sorted(selected - covered),
         "assessment": assessment,
+        "plan_digest": draft.get("plan_digest"),
     }
 
 
@@ -235,6 +257,7 @@ def record_operation(
         raise PlanToolError(f"Invalid planning operation: {exc}") from exc
 
     draft = _load_draft(txn_file)
+    _validate_plan_digest(draft)
     operations = draft.setdefault("operations", [])
     if not isinstance(operations, list):
         raise PlanToolError("Draft operations must be a list")
@@ -283,6 +306,7 @@ def finalize() -> None:
     """Validate the draft and atomically write the finalized transaction file."""
     txn_file = _txn_file()
     draft = _load_draft(txn_file)
+    _validate_plan_digest(draft)
     try:
         response = AgentResponse.model_validate(draft)
     except PydanticValidationError as exc:
@@ -298,6 +322,13 @@ def finalize() -> None:
         raise PlanToolError(
             "Cannot finalize: missing operations for selected nodes: "
             + ", ".join(sorted(missing))
+        )
+
+    expected = _expected_plan_digest()
+    if response.plan_digest != expected:
+        raise PlanToolError(
+            f"Cannot finalize: plan_digest mismatch (expected {expected}, "
+            f"got {response.plan_digest})"
         )
 
     txn_file.parent.mkdir(parents=True, exist_ok=True)

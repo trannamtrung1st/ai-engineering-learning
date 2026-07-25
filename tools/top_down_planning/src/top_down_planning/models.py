@@ -61,11 +61,29 @@ class PlanningLimits(BaseModel):
     max_depth: int = 6
     max_items: int = 200
     max_children_per_expansion: int = 12
-    batch_size: int = 3
-    concurrent_batches: int = 3
     max_retries: int = 3
     session_timeout_seconds: int = 600
     parse_error_threshold: int = 20
+
+
+class BatchStrategy(str, Enum):
+    SINGLE = "single"
+    COHERENT = "coherent"
+    THROUGHPUT = "throughput"
+
+
+class WholePlanContextMode(str, Enum):
+    EMBEDDED = "embedded"
+    REFERENCED = "referenced"
+    HYBRID = "hybrid"
+
+
+class GenerationConfig(BaseModel):
+    batch_strategy: BatchStrategy = BatchStrategy.COHERENT
+    batch_size: int = 3
+    concurrent_batches: int = 3
+    max_context_characters: int = 30000
+    whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID
 
 
 class ReviewConfig(BaseModel):
@@ -202,6 +220,8 @@ PlanningOperation = Annotated[
 class AgentResponse(BaseModel):
     assessment: Assessment = Field(default_factory=Assessment)
     operations: list[PlanningOperation] = Field(default_factory=list)
+    plan_digest: str
+    selected_items: list[str] = Field(default_factory=list)
 
 
 class RenderArtifact(BaseModel):
@@ -245,6 +265,7 @@ class RunState(BaseModel):
     iteration: int = 0
     retry_count: int = 0
     limits: PlanningLimits = Field(default_factory=PlanningLimits)
+    generation: GenerationConfig = Field(default_factory=GenerationConfig)
     input_digest: str = ""
     output_goal_digest: str = ""
     stop_hint_digest: str | None = None

@@ -17,6 +17,7 @@ import yaml
 from top_down_planning.errors import PersistenceError, ResumeError
 from top_down_planning.models import (
     FinalStatus,
+    GenerationConfig,
     PlanState,
     PlanningLimits,
     ReviewState,
@@ -32,6 +33,7 @@ PLAN_FILENAME = "plan.yaml"
 RUN_STATE_FILENAME = "run-state.json"
 REVIEW_STATE_FILENAME = "review-state.json"
 ITERATIONS_DIR = "iterations"
+CONTEXT_DIR = "context"
 REVIEWS_DIR = "reviews"
 STATE_DIRNAME = ".planning-output"
 LEGACY_STATE_DIRNAME = ".top-down-planning"
@@ -88,6 +90,24 @@ def iteration_prefix(output_dir: Path, iteration: int) -> str:
 def iteration_transaction_path(output_dir: Path, iteration: int) -> Path:
     prefix = Path(iteration_prefix(output_dir, iteration))
     return prefix.with_name(prefix.name + "-transaction.json")
+
+
+def context_dir(output_dir: Path) -> Path:
+    return state_dir(output_dir) / CONTEXT_DIR
+
+
+def plan_overview_artifact_path(output_dir: Path, plan_digest: str) -> Path:
+    return context_dir(output_dir) / f"plan-overview-{plan_digest}.md"
+
+
+def iteration_context_path(output_dir: Path, iteration: int) -> Path:
+    prefix = Path(iteration_prefix(output_dir, iteration))
+    return prefix.with_name(prefix.name + "-context.md")
+
+
+def iteration_request_path(output_dir: Path, iteration: int) -> Path:
+    prefix = Path(iteration_prefix(output_dir, iteration))
+    return prefix.with_name(prefix.name + "-request.json")
 
 
 def reviews_dir(output_dir: Path) -> Path:
@@ -168,20 +188,9 @@ def load_run_state(output_dir: Path) -> RunState | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        data = _normalize_legacy_run_state(data)
         return RunState.model_validate(data)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         raise PersistenceError(f"Failed to load run state from {path}: {exc}") from exc
-
-
-def _normalize_legacy_run_state(data: dict[str, Any]) -> dict[str, Any]:
-    limits = data.get("limits")
-    if isinstance(limits, dict) and "concurrent_batches" not in limits:
-        limits = dict(limits)
-        limits["concurrent_batches"] = 1
-        data = dict(data)
-        data["limits"] = limits
-    return data
 
 
 def save_run_state(output_dir: Path, state: RunState) -> None:
@@ -216,6 +225,7 @@ def new_run_state(
     input_digest: str,
     output_goal_digest: str,
     limits: PlanningLimits,
+    generation: GenerationConfig,
     stop_hint_digest: str | None = None,
 ) -> RunState:
     return RunState(
@@ -225,6 +235,7 @@ def new_run_state(
         output_goal_digest=output_goal_digest,
         stop_hint_digest=stop_hint_digest,
         limits=limits,
+        generation=generation,
         active_status=RunActiveStatus.RUNNING,
     )
 
@@ -236,6 +247,7 @@ def ensure_resume_compatible(
     output_goal_digest: str,
     stop_hint_digest: str | None = None,
     limits: PlanningLimits,
+    generation: GenerationConfig,
     resume: bool,
 ) -> tuple[PlanState | None, RunState | None]:
     existing_plan = load_plan(output_dir)
@@ -278,7 +290,7 @@ def ensure_resume_compatible(
             raise ResumeError(
                 f"Incompatible plan schema version: {existing_plan.schema_version}"
             )
-        _assert_limits_compatible(existing_run.limits, limits)
+        _assert_run_config_compatible(existing_run.limits, existing_run.generation, limits, generation)
         return existing_plan, existing_run
 
     if resume:
@@ -288,18 +300,30 @@ def ensure_resume_compatible(
     return None, None
 
 
-def _assert_limits_compatible(stored: PlanningLimits, requested: PlanningLimits) -> None:
+def _assert_run_config_compatible(
+    stored_limits: PlanningLimits,
+    stored_generation: GenerationConfig,
+    requested_limits: PlanningLimits,
+    requested_generation: GenerationConfig,
+) -> None:
     mismatches: list[str] = []
     for field in PlanningLimits.model_fields:
-        stored_value = getattr(stored, field)
-        requested_value = getattr(requested, field)
+        stored_value = getattr(stored_limits, field)
+        requested_value = getattr(requested_limits, field)
         if stored_value != requested_value:
             mismatches.append(
-                f"{field}: stored={stored_value!r}, requested={requested_value!r}"
+                f"limits.{field}: stored={stored_value!r}, requested={requested_value!r}"
+            )
+    for field in GenerationConfig.model_fields:
+        stored_value = getattr(stored_generation, field)
+        requested_value = getattr(requested_generation, field)
+        if stored_value != requested_value:
+            mismatches.append(
+                f"generation.{field}: stored={stored_value!r}, requested={requested_value!r}"
             )
     if mismatches:
         raise ResumeError(
-            "Resume limits mismatch with stored run-state:\n"
+            "Resume config mismatch with stored run-state:\n"
             + "\n".join(f"  - {line}" for line in mismatches)
         )
 

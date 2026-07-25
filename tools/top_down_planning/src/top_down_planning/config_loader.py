@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from top_down_planning.agent_context import AgentContextConfig
 from top_down_planning.errors import PlanningToolError
-from top_down_planning.models import PlanningLimits, ReviewConfig
+from top_down_planning.models import GenerationConfig, PlanningLimits, ReviewConfig
 
 
 class RunConfigFile(BaseModel):
@@ -29,8 +29,6 @@ class RunConfigFile(BaseModel):
     max_iterations: int | None = Field(default=None, ge=1)
     max_depth: int | None = Field(default=None, ge=1)
     max_items: int | None = Field(default=None, ge=1)
-    batch_size: int | None = Field(default=None, ge=1)
-    concurrent_batches: int | None = Field(default=None, ge=1)
     max_retries: int | None = Field(default=None, ge=1)
     max_children_per_expansion: int | None = Field(default=None, ge=1)
     session_timeout_seconds: int | None = Field(default=None, ge=1)
@@ -45,6 +43,7 @@ class RunConfigFile(BaseModel):
     embed_threshold: int | None = Field(default=None, ge=0)
     agent_context: dict[str, Any] | None = None
     limits: PlanningLimits | None = None
+    generation: GenerationConfig | None = None
     review: ReviewConfig | None = None
 
     @model_validator(mode="after")
@@ -68,8 +67,6 @@ class ResolvedRunOptions:
     max_iterations: int
     max_depth: int
     max_items: int
-    batch_size: int
-    concurrent_batches: int
     max_retries: int
     max_children_per_expansion: int
     session_timeout_seconds: int
@@ -84,6 +81,7 @@ class ResolvedRunOptions:
     embed_threshold: int | None
     agent_context: AgentContextConfig | None = None
     review: ReviewConfig = field(default_factory=ReviewConfig)
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
 
 
 def load_run_config_file(path: Path) -> RunConfigFile:
@@ -135,6 +133,7 @@ def merge_run_options(
     file_cfg = load_run_config_file(config_path) if config_path is not None else None
     config_dir = config_path.resolve().parent if config_path is not None else Path.cwd()
     defaults = PlanningLimits()
+    generation_defaults = GenerationConfig()
 
     resolved_workspace = _pick_path(
         cli_value=workspace,
@@ -182,8 +181,15 @@ def merge_run_options(
         raise PlanningToolError("Use either stop_hint or stop_hint_file, not both")
 
     file_limits = file_cfg.limits if file_cfg else None
+    file_generation = file_cfg.generation if file_cfg else None
     agent_context = _parse_agent_context(file_cfg.agent_context if file_cfg else None)
     review = file_cfg.review if file_cfg and file_cfg.review is not None else ReviewConfig()
+    generation = _resolve_generation_config(
+        file_generation=file_generation,
+        cli_batch_size=batch_size,
+        cli_concurrent_batches=concurrent_batches,
+        defaults=generation_defaults,
+    )
 
     return ResolvedRunOptions(
         input_path=resolved_input,
@@ -210,18 +216,6 @@ def merge_run_options(
             file_cfg.max_items if file_cfg else None,
             file_limits.max_items if file_limits else None,
             defaults.max_items,
-        ),
-        batch_size=_pick_int(
-            batch_size,
-            file_cfg.batch_size if file_cfg else None,
-            file_limits.batch_size if file_limits else None,
-            defaults.batch_size,
-        ),
-        concurrent_batches=_pick_int(
-            concurrent_batches,
-            file_cfg.concurrent_batches if file_cfg else None,
-            file_limits.concurrent_batches if file_limits else None,
-            defaults.concurrent_batches,
         ),
         max_retries=_pick_int(
             max_retries,
@@ -260,6 +254,7 @@ def merge_run_options(
         ),
         agent_context=agent_context,
         review=review,
+        generation=generation,
     )
 
 
@@ -268,13 +263,39 @@ def options_to_planning_limits(options: ResolvedRunOptions) -> PlanningLimits:
         max_iterations=options.max_iterations,
         max_depth=options.max_depth,
         max_items=options.max_items,
-        batch_size=options.batch_size,
-        concurrent_batches=options.concurrent_batches,
         max_retries=options.max_retries,
         max_children_per_expansion=options.max_children_per_expansion,
         session_timeout_seconds=options.session_timeout_seconds,
         parse_error_threshold=options.parse_error_threshold,
     )
+
+
+def options_to_generation_config(options: ResolvedRunOptions) -> GenerationConfig:
+    return options.generation
+
+
+def _resolve_generation_config(
+    *,
+    file_generation: GenerationConfig | None,
+    cli_batch_size: int | None,
+    cli_concurrent_batches: int | None,
+    defaults: GenerationConfig,
+) -> GenerationConfig:
+    """Resolve generation settings: CLI → generation.* → defaults."""
+    base = file_generation.model_copy() if file_generation is not None else GenerationConfig()
+    base.batch_size = _pick_int(
+        cli_batch_size,
+        file_generation.batch_size if file_generation else None,
+        None,
+        defaults.batch_size,
+    )
+    base.concurrent_batches = _pick_int(
+        cli_concurrent_batches,
+        file_generation.concurrent_batches if file_generation else None,
+        None,
+        defaults.concurrent_batches,
+    )
+    return base
 
 
 def _parse_agent_context(raw: dict[str, Any] | None) -> AgentContextConfig | None:
@@ -291,6 +312,12 @@ def _normalize_config_mapping(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(raw)
     limits = normalized.pop("limits", None)
     if isinstance(limits, dict):
+        for key in ("batch_size", "concurrent_batches"):
+            if key in limits:
+                raise PlanningToolError(
+                    f"limits.{key} is no longer supported; "
+                    f"use generation.{key} instead"
+                )
         for key, value in limits.items():
             if key not in normalized or normalized[key] is None:
                 normalized[key] = value

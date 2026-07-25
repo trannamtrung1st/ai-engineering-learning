@@ -1,8 +1,8 @@
 """Load structured planning operations from agent artifacts.
 
 Decomposition sessions record operations through ``planning-plan-tool`` into
-``*-transaction.json`` files. The legacy ``parse_agent_response`` helper remains
-for fenced/raw JSON extraction in tests and migration tooling only.
+``*-transaction.json`` files. ``parse_agent_response`` extracts fenced/raw JSON
+for tests and tooling.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def extract_json_objects(text: str) -> list[dict[str, Any]]:
 
 
 def parse_agent_response(text: str) -> AgentResponse:
-    """Legacy helper: extract planning JSON embedded in assistant text."""
+    """Extract planning JSON embedded in assistant text."""
     candidates = extract_json_objects(text)
     if not candidates:
         raise ResponseParseError("No JSON planning response found in session output")
@@ -98,5 +98,5 @@ def parse_agent_response(text: str) -> AgentResponse:
 
 
 def load_planning_response(path: Path) -> AgentResponse:
-    """Load a planning response from a transaction or legacy response audit file."""
+    """Load a planning response from a finalized transaction file."""
     return load_transaction(path)

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from top_down_planning.agent_context import ResolvedAgentContext
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
-from top_down_planning.models import PlanItem, PlanState
+from top_down_planning.models import PlanItem, PlanState, WholePlanContextMode
 from top_down_planning.render_brief import actionable_leaf_items, build_render_brief
 
 
@@ -142,21 +142,6 @@ def _siblings(plan: PlanState, item: PlanItem) -> list[PlanItem]:
     ]
 
 
-def _branch_summary(plan: PlanState, exclude_ids: set[str]) -> str:
-    lines: list[str] = []
-    for item in sorted(plan.plan, key=lambda i: i.order):
-        if item.id in exclude_ids:
-            continue
-        if item.decomposition_status.value == "needs_expansion":
-            continue
-        lines.append(
-            f"- [{item.id}] {item.title} ({item.decomposition_status.value})"
-        )
-    if not lines:
-        return "No other established branches yet."
-    return "\n".join(lines[:40])
-
-
 def _format_item_context(plan: PlanState, item: PlanItem) -> str:
     parts = [
         f"### Selected item `{item.id}`",
@@ -198,14 +183,19 @@ def format_plan_tool_section(*, plan_tool_command: str = "planning-plan-tool") -
     """Describe the session transaction CLI the agent must invoke."""
     return f"""Use the planning transaction CLI — do **not** return JSON in chat and do **not**
 edit `.planning-output/plan.yaml` directly. Session scope is already configured in the
-environment (`PLANNING_TOOL_TXN_FILE`, `PLANNING_TOOL_SELECTED_IDS`, `PLANNING_TOOL_PLAN_FILE`).
+environment (`PLANNING_TOOL_TXN_FILE`, `PLANNING_TOOL_SELECTED_IDS`, `PLANNING_TOOL_PLAN_FILE`,
+`PLANNING_TOOL_PLAN_DIGEST`).
+
+Your **writable scope** is limited to the assigned generation items listed below.
+The whole-plan context is read-only reference material.
 
 Workflow:
-1. Optionally run `{plan_tool_command} show-context` for selected-node details.
-2. Optionally run `{plan_tool_command} status` to inspect the current draft.
-3. For **each** selected item, run `{plan_tool_command} record-operation --json '<operation>'`.
-4. Run `{plan_tool_command} set-assessment [--plan-complete|--no-plan-complete] --summary "..."`.
-5. Run `{plan_tool_command} finalize` to commit the session transaction.
+1. Read the complete plan overview (embedded below or at the referenced path).
+2. Optionally run `{plan_tool_command} show-context` for selected-node details.
+3. Optionally run `{plan_tool_command} status` to inspect the current draft.
+4. For **each assigned item**, run `{plan_tool_command} record-operation --json '<operation>'`.
+5. Run `{plan_tool_command} set-assessment [--plan-complete|--no-plan-complete] --summary "..."`.
+6. Run `{plan_tool_command} finalize` to commit the session transaction.
 
 Operation JSON schema (one object per `record-operation` call):
 
@@ -248,18 +238,10 @@ def build_planning_prompt(
     validation_feedback: list[str] | None = None,
     plan_tool_command: str = "planning-plan-tool",
     agent_context: ResolvedAgentContext | None = None,
+    plan_digest: str,
+    batch_context_markdown: str,
+    context_mode: WholePlanContextMode,
 ) -> str:
-    selected_ids = {item.id for item in selected_items}
-    contexts = [_format_item_context(plan, item) for item in selected_items]
-
-    feedback_block = ""
-    if validation_feedback:
-        feedback_block = (
-            "## Validation feedback from previous attempt\n"
-            + "\n".join(f"- {error}" for error in validation_feedback)
-            + "\n\nFix every issue and finalize a valid transaction.\n\n"
-        )
-
     stop_hint_block = ""
     if stop_hint is not None:
         stop_hint_block = (
@@ -269,9 +251,23 @@ def build_planning_prompt(
             f"{format_stop_hint_section(stop_hint=stop_hint, workspace=workspace, embed_threshold=embed_threshold)}\n\n"
         )
 
+    generation_context_block = (
+        f"## Generation context ({context_mode.value})\n\n"
+        f"Wave plan digest: `{plan_digest}`\n\n"
+        f"{batch_context_markdown}\n\n"
+    )
+
+    feedback_block = ""
+    if validation_feedback:
+        feedback_block = (
+            "## Validation feedback from previous attempt\n"
+            + "\n".join(f"- {error}" for error in validation_feedback)
+            + "\n\nFix every issue and finalize a valid transaction.\n\n"
+        )
+
     return f"""# Top-down planning session
 
-You are a planning agent. Analyze the selected planning items and record structured
+You are a planning agent. Analyze the assigned planning items and record structured
 operations through the planning transaction CLI. Do not rewrite the full plan state.
 Do not execute implementation work.
 
@@ -288,7 +284,8 @@ Do not execute implementation work.
   required limit in `reason`.
 
 ## Rules
-- Choose exactly one operation per selected item.
+- Choose exactly one operation per **assigned** item only.
+- Do not record operations for unassigned nodes.
 - Use `expand` when the item still contains multiple meaningful planning concerns.
 - Use `mark_actionable` when the item is detailed enough for the output goal.
 - Use `mark_blocked` only when required information is missing and cannot be inferred safely.
@@ -306,13 +303,7 @@ Do not execute implementation work.
 
 {format_input_document_section(loaded_input=loaded_input, workspace=workspace, embed_threshold=embed_threshold)}
 
-## Other established branches
-{_branch_summary(plan, selected_ids)}
-
-## Selected items
-{chr(10).join(contexts)}
-
-## Planning transaction CLI
+{generation_context_block}## Planning transaction CLI
 {format_plan_tool_section(plan_tool_command=plan_tool_command)}
 """
 

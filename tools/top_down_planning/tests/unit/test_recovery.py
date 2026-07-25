@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.models import (
-    AgentResponse,
     ChildDraft,
     ExpandOperation,
     PlanningLimits,
@@ -23,7 +22,7 @@ from top_down_planning.recovery import (
     recover_plan_from_iterations,
     restore_canonical_plan,
 )
-from top_down_planning.scheduler import initialize_root_plan
+from tests.helpers import default_generation, make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 
@@ -41,6 +40,7 @@ def test_detect_desynced_plan_and_run_state() -> None:
         input_digest="a",
         output_goal_digest="b",
         limits=PlanningLimits(),
+        generation=default_generation(),
     )
     run.iteration = 4
     assert is_plan_run_state_desynced(plan, run)
@@ -55,7 +55,7 @@ def test_recover_plan_from_iteration_audit(tmp_path: Path) -> None:
     )
     save_plan(tmp_path, plan)
 
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             ExpandOperation(
                 node_id="item-001",
@@ -78,7 +78,7 @@ def test_recover_plan_from_iteration_audit(tmp_path: Path) -> None:
     assert len(recovered.plan) == 3
 
 
-def test_recover_plan_from_transaction_audit(tmp_path: Path) -> None:
+def test_recover_skips_failed_validation_audit(tmp_path: Path) -> None:
     plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
@@ -87,27 +87,56 @@ def test_recover_plan_from_transaction_audit(tmp_path: Path) -> None:
     )
     save_plan(tmp_path, plan)
 
-    response = AgentResponse(
+    good = make_agent_response(
         operations=[
             ExpandOperation(
                 node_id="item-001",
-                children=[
-                    ChildDraft(title="Area A", objective="Do A"),
-                    ChildDraft(title="Area B", objective="Do B"),
-                ],
+                children=[ChildDraft(title="Area A", objective="Do A")],
+            )
+        ]
+    )
+    bad = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-001",
+                children=[ChildDraft(title="Area B", objective="Do B")],
             )
         ]
     )
     audit_dir = tmp_path / ".planning-output" / "iterations"
     audit_dir.mkdir(parents=True)
-    (audit_dir / "001-transaction.json").write_text(
-        json.dumps(response.model_dump(mode="json")),
+    (audit_dir / "001-response.json").write_text(
+        json.dumps(good.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+    (audit_dir / "001-validation.json").write_text(
+        json.dumps({"errors": []}),
+        encoding="utf-8",
+    )
+    (audit_dir / "002-response.json").write_text(
+        json.dumps(bad.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+    (audit_dir / "002-validation.json").write_text(
+        json.dumps({"errors": ["cross-batch duplicate title"]}),
         encoding="utf-8",
     )
 
     recovered = recover_plan_from_iterations(tmp_path, plan)
     assert recovered is not None
-    assert len(recovered.plan) == 3
+    assert len(recovered.plan) == 2
+
+
+def test_backup_uses_iteration_suffix(tmp_path: Path) -> None:
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    save_plan(tmp_path, plan)
+    backup = backup_canonical_plan(tmp_path, suffix="002")
+    assert backup.name == "plan.yaml.bak.002"
 
 
 def test_restore_canonical_plan_after_agent_reset(tmp_path: Path) -> None:
@@ -119,7 +148,7 @@ def test_restore_canonical_plan_after_agent_reset(tmp_path: Path) -> None:
     )
     plan = apply_response(
         plan,
-        AgentResponse(
+        make_agent_response(
             operations=[
                 ExpandOperation(
                     node_id="item-001",
@@ -159,7 +188,7 @@ async def test_resume_recovers_reset_plan_from_audit(
     output_dir = tmp_path / "planning-output"
     loaded = load_markdown_input(example_input)
     loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    limits = PlanningLimits(max_iterations=5, batch_size=2, concurrent_batches=1)
+    limits = PlanningLimits(max_iterations=5)
 
     plan = make_root_plan(
         input_file=str(loaded.path),
@@ -167,7 +196,7 @@ async def test_resume_recovers_reset_plan_from_audit(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
     )
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             ExpandOperation(
                 node_id="item-001",
@@ -185,6 +214,7 @@ async def test_resume_recovers_reset_plan_from_audit(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
+        generation=default_generation(),
     )
     run_state.iteration = 1
     run_state.active_status = RunActiveStatus.PAUSED

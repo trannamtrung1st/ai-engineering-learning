@@ -8,6 +8,7 @@ import pytest
 from top_down_planning.models import MarkActionableOperation
 from top_down_planning.persistence import save_plan
 from top_down_planning.plan_tool import (
+    ENV_PLAN_DIGEST,
     ENV_PLAN_FILE,
     ENV_SELECTED_IDS,
     ENV_TXN_FILE,
@@ -40,6 +41,7 @@ def plan_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv(ENV_TXN_FILE, str(txn_file))
     monkeypatch.setenv(ENV_SELECTED_IDS, "item-001")
     monkeypatch.setenv(ENV_PLAN_FILE, str(output_dir / ".planning-output" / "plan.yaml"))
+    monkeypatch.setenv(ENV_PLAN_DIGEST, "expected-digest")
     reset_transaction(txn_file)
     return plan, txn_file
 

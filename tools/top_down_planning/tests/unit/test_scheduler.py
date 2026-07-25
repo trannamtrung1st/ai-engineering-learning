@@ -1,10 +1,11 @@
-from top_down_planning.models import DecompositionStatus, PlanningLimits, ReadinessStatus
+from top_down_planning.models import BatchStrategy, DecompositionStatus, GenerationConfig, PlanItem
 from top_down_planning.scheduler import (
     are_independent,
     select_batch,
     select_concurrent_batches,
     wave_batch_budget,
 )
+from tests.helpers import default_generation
 from tests.plan_factory import make_root_plan
 
 
@@ -21,7 +22,6 @@ def test_initialize_root_plan() -> None:
     assert root.parent_id is None
     assert root.depth == 0
     assert root.decomposition_status == DecompositionStatus.NEEDS_EXPANSION
-    assert root.readiness_status == ReadinessStatus.PENDING
 
 
 def test_shallow_first_ordering_in_batch() -> None:
@@ -31,8 +31,6 @@ def test_shallow_first_ordering_in_batch() -> None:
         input_digest="a",
         output_goal_digest="b",
     )
-    from top_down_planning.models import PlanItem
-
     plan.plan.extend(
         [
             PlanItem(
@@ -53,7 +51,7 @@ def test_shallow_first_ordering_in_batch() -> None:
             ),
         ]
     )
-    batch = select_batch(plan, PlanningLimits(batch_size=10))
+    batch = select_batch(plan, default_generation(batch_size=10))
     assert [item.id for item in batch] == ["item-001", "item-002", "item-003"]
 
 
@@ -64,8 +62,6 @@ def test_batch_size_respected() -> None:
         input_digest="a",
         output_goal_digest="b",
     )
-    from top_down_planning.models import PlanItem
-
     plan.plan.extend(
         [
             PlanItem(
@@ -86,7 +82,7 @@ def test_batch_size_respected() -> None:
             ),
         ]
     )
-    batch = select_batch(plan, PlanningLimits(batch_size=2))
+    batch = select_batch(plan, default_generation(batch_size=2))
     assert len(batch) == 2
     assert batch[0].order <= batch[1].order
 
@@ -98,8 +94,6 @@ def test_select_concurrent_batches_respects_limits() -> None:
         input_digest="a",
         output_goal_digest="b",
     )
-    from top_down_planning.models import PlanItem
-
     for index in range(2, 8):
         plan.plan.append(
             PlanItem(
@@ -112,8 +106,8 @@ def test_select_concurrent_batches_respects_limits() -> None:
             )
         )
 
-    limits = PlanningLimits(batch_size=2, concurrent_batches=3)
-    batches = select_concurrent_batches(plan, limits, max_batches=3)
+    generation = default_generation(batch_size=2)
+    batches = select_concurrent_batches(plan, generation, max_batches=3)
     assert len(batches) == 3
     assert all(len(batch) == 2 for batch in batches)
     scheduled = [item.id for batch in batches for item in batch]
@@ -127,8 +121,6 @@ def test_select_concurrent_batches_prefers_shallow_items() -> None:
         input_digest="a",
         output_goal_digest="b",
     )
-    from top_down_planning.models import PlanItem
-
     plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
     plan.plan.extend(
         [
@@ -150,11 +142,8 @@ def test_select_concurrent_batches_prefers_shallow_items() -> None:
             ),
         ]
     )
-    batches = select_concurrent_batches(
-        plan,
-        PlanningLimits(batch_size=1, concurrent_batches=2),
-        max_batches=2,
-    )
+    generation = default_generation(batch_size=1)
+    batches = select_concurrent_batches(plan, generation, max_batches=2)
     assert len(batches) == 2
     assert batches[0][0].id == "item-003"
     assert batches[1][0].id == "item-002"
@@ -167,8 +156,6 @@ def test_are_independent_rejects_ancestor_pairs() -> None:
         input_digest="a",
         output_goal_digest="b",
     )
-    from top_down_planning.models import PlanItem
-
     child = PlanItem(
         id="item-002",
         parent_id="item-001",
@@ -184,6 +171,6 @@ def test_are_independent_rejects_ancestor_pairs() -> None:
 
 
 def test_wave_batch_budget_caps_by_remaining_iterations() -> None:
-    limits = PlanningLimits(concurrent_batches=3)
-    assert wave_batch_budget(limits, remaining_iterations=2) == 2
-    assert wave_batch_budget(limits, remaining_iterations=0) == 0
+    generation = default_generation(concurrent_batches=3)
+    assert wave_batch_budget(generation, remaining_iterations=2) == 2
+    assert wave_batch_budget(generation, remaining_iterations=0) == 0

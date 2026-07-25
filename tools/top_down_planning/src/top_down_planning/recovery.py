@@ -52,7 +52,7 @@ def _root_plan_from_source(plan: PlanState) -> PlanState:
 
 
 def list_iteration_response_paths(output_dir: Path) -> list[Path]:
-    """Return iteration audit files, preferring response JSON with transaction fallback."""
+    """Return iteration response audit files in order."""
     it_dir = state_dir(output_dir) / "iterations"
     if not it_dir.is_dir():
         return []
@@ -62,16 +62,29 @@ def list_iteration_response_paths(output_dir: Path) -> list[Path]:
         prefix = path.name.split("-", 1)[0]
         if prefix.isdigit():
             chosen[int(prefix)] = path
-    for path in it_dir.glob("*-transaction.json"):
-        prefix = path.name.split("-", 1)[0]
-        if prefix.isdigit():
-            iteration = int(prefix)
-            chosen.setdefault(iteration, path)
     return [chosen[key] for key in sorted(chosen)]
 
 
+def _validation_path_for_response(response_path: Path) -> Path:
+    stem = response_path.name[: -len("-response.json")]
+    return response_path.with_name(f"{stem}-validation.json")
+
+
+def _response_passed_validation(response_path: Path) -> bool:
+    """Return False when a sibling validation audit records errors."""
+    validation_path = _validation_path_for_response(response_path)
+    if not validation_path.is_file():
+        return True
+    try:
+        payload = json.loads(validation_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    errors = payload.get("errors")
+    return not errors
+
+
 def recover_plan_from_iterations(output_dir: Path, plan: PlanState) -> PlanState | None:
-    """Replay stored iteration responses onto a fresh root plan."""
+    """Replay applied iteration responses onto a fresh root plan."""
     response_paths = list_iteration_response_paths(output_dir)
     if not response_paths:
         return None
@@ -79,12 +92,14 @@ def recover_plan_from_iterations(output_dir: Path, plan: PlanState) -> PlanState
     recovered = _root_plan_from_source(plan)
     applied = 0
     for path in response_paths:
+        if not _response_passed_validation(path):
+            continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             response = AgentResponse.model_validate(payload)
         except (OSError, json.JSONDecodeError, PydanticValidationError, ValueError):
             continue
-        if not response.operations:
+        if not response.operations or not response.plan_digest:
             continue
         recovered = apply_response(recovered, response)
         applied += 1
@@ -94,12 +109,16 @@ def recover_plan_from_iterations(output_dir: Path, plan: PlanState) -> PlanState
     return recovered
 
 
-def backup_canonical_plan(output_dir: Path) -> Path:
+def backup_canonical_plan(output_dir: Path, *, suffix: str | None = None) -> Path:
     """Copy plan.yaml to a backup file before an agent-mode session."""
     source = plan_path(output_dir)
     if not source.is_file():
         raise PersistenceError(f"Cannot back up missing plan file: {source}")
-    backup = state_dir(output_dir) / PLAN_BACKUP_FILENAME
+    if suffix is None:
+        backup_name = PLAN_BACKUP_FILENAME
+    else:
+        backup_name = f"{PLAN_BACKUP_FILENAME}.{suffix}"
+    backup = state_dir(output_dir) / backup_name
     backup.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, backup)
     return backup

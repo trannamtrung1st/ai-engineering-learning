@@ -9,6 +9,7 @@ from top_down_planning.models import (
     PlanningLimits,
 )
 from top_down_planning.scheduler import initialize_root_plan
+from tests.helpers import default_generation, make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.validator import validate_response, validate_wave_responses
 
@@ -24,7 +25,7 @@ def _plan():
 
 def test_validate_expand_success() -> None:
     plan = _plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             ExpandOperation(
                 node_id="item-001",
@@ -40,14 +41,14 @@ def test_validate_expand_success() -> None:
 
 def test_validate_missing_operation() -> None:
     plan = _plan()
-    response = AgentResponse(operations=[])
+    response = make_agent_response(operations=[])
     errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
     assert any("at least one operation" in error for error in errors)
 
 
 def test_validate_duplicate_sibling_title() -> None:
     plan = _plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             ExpandOperation(
                 node_id="item-001",
@@ -64,7 +65,7 @@ def test_validate_duplicate_sibling_title() -> None:
 
 def test_validate_actionable_requires_outputs() -> None:
     plan = _plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[MarkActionableOperation(node_id="item-001")]
     )
     errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
@@ -73,7 +74,7 @@ def test_validate_actionable_requires_outputs() -> None:
 
 def test_validate_blocked_requires_fields() -> None:
     plan = _plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[MarkBlockedOperation(node_id="item-001", reason="blocked")]
     )
     errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
@@ -83,7 +84,7 @@ def test_validate_blocked_requires_fields() -> None:
 def test_validate_max_children_limit() -> None:
     plan = _plan()
     children = [ChildDraft(title=f"C{i}", objective=f"obj {i}") for i in range(3)]
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[ExpandOperation(node_id="item-001", children=children)]
     )
     errors = validate_response(
@@ -97,7 +98,7 @@ def test_validate_max_children_limit() -> None:
 
 def test_validate_cumulative_max_items_within_single_response() -> None:
     plan = _plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             ExpandOperation(
                 node_id="item-001",
@@ -128,21 +129,23 @@ def test_validate_wave_responses_checks_combined_item_limit() -> None:
             order=2,
         )
     )
-    first = AgentResponse(
+    first = make_agent_response(
+        plan_digest="wave-digest",
         operations=[
             ExpandOperation(
                 node_id="item-001",
                 children=[ChildDraft(title="A", objective="a")],
             )
-        ]
+        ],
     )
-    second = AgentResponse(
+    second = make_agent_response(
+        plan_digest="wave-digest",
         operations=[
             ExpandOperation(
                 node_id="item-002",
                 children=[ChildDraft(title="B", objective="b")],
             )
-        ]
+        ],
     )
     errors = validate_wave_responses(
         plan,
@@ -151,5 +154,6 @@ def test_validate_wave_responses_checks_combined_item_limit() -> None:
             (["item-002"], second),
         ],
         limits=PlanningLimits(max_items=2),
+        plan_digest="wave-digest",
     )
     assert any("max items" in error for error in errors)

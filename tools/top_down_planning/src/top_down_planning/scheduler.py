@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
-from top_down_planning.models import DecompositionStatus, PlanItem, PlanState, PlanningLimits, SourceMetadata
+from pathlib import Path
+
+from top_down_planning.digest import compute_plan_digest
+from top_down_planning.generation_context import (
+    build_plan_overview,
+    estimate_context_size,
+    select_relevant_node_ids,
+)
+from top_down_planning.models import (
+    BatchStrategy,
+    DecompositionStatus,
+    GenerationConfig,
+    PlanItem,
+    PlanState,
+    SourceMetadata,
+)
 
 
 def expandable_items(plan: PlanState) -> list[PlanItem]:
@@ -34,49 +49,171 @@ def _ordered_expandable_items(plan: PlanState) -> list[PlanItem]:
     return sorted(expandable_items(plan), key=lambda item: (item.depth, item.order))
 
 
+def _select_wave_candidates(
+    plan: PlanState,
+    *,
+    generation: GenerationConfig,
+    max_batches: int,
+) -> list[PlanItem]:
+    """Pick expandable items for one wave with no ancestor/descendant pairs."""
+    candidates = _ordered_expandable_items(plan)
+    if not candidates:
+        return []
+
+    if generation.batch_strategy == BatchStrategy.SINGLE:
+        capacity = max_batches
+    else:
+        capacity = max_batches * generation.batch_size
+
+    selected: list[PlanItem] = []
+    for item in candidates:
+        if len(selected) >= capacity:
+            break
+        if any(not are_independent(plan, item, other) for other in selected):
+            continue
+        selected.append(item)
+    return selected
+
+
+def _coherence_key(plan: PlanState, item: PlanItem) -> tuple[int, str, int]:
+    parent_key = item.parent_id or ""
+    return (item.depth, parent_key, item.order)
+
+
+_GLOBAL_CONSISTENCY_OVERHEAD = 900
+
+
+def _estimate_batch_context_size(
+    plan: PlanState,
+    batch: list[PlanItem],
+    *,
+    output_dir: Path | None = None,
+) -> int:
+    selected_ids = {item.id for item in batch}
+    relevant_ids = select_relevant_node_ids(
+        plan,
+        selected_ids,
+        output_dir=output_dir,
+    )
+    overview = ""
+    if output_dir is not None:
+        plan_digest = compute_plan_digest(plan)
+        overview = build_plan_overview(plan, plan_digest, output_dir=output_dir)
+    return (
+        estimate_context_size(
+            selected_items=batch,
+            relevant_ids=relevant_ids,
+            plan=plan,
+            overview=overview,
+        )
+        + _GLOBAL_CONSISTENCY_OVERHEAD
+    )
+
+
+def _pack_into_batches(
+    plan: PlanState,
+    candidates: list[PlanItem],
+    *,
+    generation: GenerationConfig,
+    max_batches: int,
+    output_dir: Path | None = None,
+) -> list[list[PlanItem]]:
+    if not candidates:
+        return []
+
+    if generation.batch_strategy == BatchStrategy.SINGLE:
+        return [[item] for item in candidates[:max_batches]]
+
+    remaining = list(candidates)
+    batches: list[list[PlanItem]] = []
+
+    while remaining and len(batches) < max_batches:
+        seed = remaining.pop(0)
+        batch = [seed]
+
+        if generation.batch_strategy == BatchStrategy.THROUGHPUT:
+            while len(batch) < generation.batch_size and remaining:
+                next_item = remaining[0]
+                if all(are_independent(plan, next_item, other) for other in batch):
+                    batch.append(remaining.pop(0))
+                else:
+                    break
+            batches.append(batch)
+            continue
+
+        index = 0
+        while index < len(remaining) and len(batch) < generation.batch_size:
+            candidate = remaining[index]
+            if not all(are_independent(plan, candidate, other) for other in batch):
+                index += 1
+                continue
+
+            same_parent = candidate.parent_id == seed.parent_id
+            nearby_depth = abs(candidate.depth - seed.depth) <= 1
+            if not same_parent and not nearby_depth and len(batch) >= 1:
+                index += 1
+                continue
+
+            trial = batch + [candidate]
+            if (
+                _estimate_batch_context_size(plan, trial, output_dir=output_dir)
+                > generation.max_context_characters
+            ):
+                index += 1
+                continue
+
+            batch.append(remaining.pop(index))
+            index = 0
+
+        batches.append(batch)
+
+    return [batch for batch in batches if batch]
+
+
 def select_concurrent_batches(
     plan: PlanState,
-    limits: PlanningLimits,
+    generation: GenerationConfig,
     *,
     max_batches: int,
+    output_dir: Path | None = None,
 ) -> list[list[PlanItem]]:
     """Return up to ``max_batches`` disjoint batches from independent expandable items."""
     if max_batches <= 0:
         return []
 
-    candidates = _ordered_expandable_items(plan)
-    if not candidates:
+    wave_candidates = _select_wave_candidates(
+        plan,
+        generation=generation,
+        max_batches=max_batches,
+    )
+    if not wave_candidates:
         return []
 
-    max_items = max_batches * limits.batch_size
-    candidates = candidates[:max_items]
+    if generation.batch_strategy == BatchStrategy.COHERENT:
+        wave_candidates = sorted(
+            wave_candidates,
+            key=lambda item: _coherence_key(plan, item),
+        )
 
-    batches: list[list[PlanItem]] = []
-    for item in candidates:
-        placed = False
-        for batch in batches:
-            if len(batch) >= limits.batch_size:
-                continue
-            if all(are_independent(plan, item, other) for other in batch):
-                batch.append(item)
-                placed = True
-                break
-        if not placed and len(batches) < max_batches:
-            batches.append([item])
-
-    return [batch for batch in batches if batch]
+    return _pack_into_batches(
+        plan,
+        wave_candidates,
+        generation=generation,
+        max_batches=max_batches,
+        output_dir=output_dir,
+    )
 
 
-def select_batch(plan: PlanState, limits: PlanningLimits) -> list[PlanItem]:
+def select_batch(plan: PlanState, generation: GenerationConfig) -> list[PlanItem]:
     """Return the first concurrent batch for single-batch scheduling."""
-    batches = select_concurrent_batches(plan, limits, max_batches=1)
+    batches = select_concurrent_batches(plan, generation, max_batches=1)
     return batches[0] if batches else []
 
 
-def wave_batch_budget(limits: PlanningLimits, *, remaining_iterations: int) -> int:
+def wave_batch_budget(generation: GenerationConfig, *, remaining_iterations: int) -> int:
     if remaining_iterations <= 0:
         return 0
-    return min(limits.concurrent_batches, remaining_iterations)
+    return min(generation.concurrent_batches, remaining_iterations)
 
 
 def next_item_id(plan: PlanState) -> str:

@@ -98,10 +98,16 @@ def validate_wave_responses(
     batches: list[tuple[list[str], AgentResponse]],
     *,
     limits: PlanningLimits,
+    plan_digest: str,
 ) -> list[str]:
     """Validate independent concurrent batch responses against one plan snapshot."""
     all_operations: list[PlanningOperation] = []
     for selected_ids, response in batches:
+        if response.plan_digest != plan_digest:
+            return [
+                f"Transaction plan_digest mismatch: expected {plan_digest}, "
+                f"got {response.plan_digest}"
+            ]
         errors = validate_response(
             plan,
             response,
@@ -122,7 +128,29 @@ def validate_wave_responses(
             updated = apply_response(updated, response)
     except ValueError as exc:
         return [str(exc)]
+
+    errors = _validate_cross_batch_duplicates(updated)
+    if errors:
+        return errors
+
     return structural_errors(updated)
+
+
+def _validate_cross_batch_duplicates(plan: PlanState) -> list[str]:
+    """Detect duplicate sibling titles introduced across concurrent batches."""
+    errors: list[str] = []
+    for parent_id in {item.parent_id for item in plan.plan}:
+        counts: dict[str, int] = {}
+        for child in plan.children_of(parent_id):
+            norm = _normalize(child.title)
+            counts[norm] = counts.get(norm, 0) + 1
+        for norm, count in counts.items():
+            if count > 1:
+                parent_label = parent_id or "root"
+                errors.append(
+                    f"Duplicate sibling title under {parent_label}: {norm!r}"
+                )
+    return errors
 
 
 def _validate_cumulative_item_limit(

@@ -1,0 +1,49 @@
+"""Shared helpers for top_down_planning tests."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from top_down_planning.digest import compute_plan_digest
+from top_down_planning.generation_context import prepare_batch_context
+from top_down_planning.models import (
+    AgentResponse,
+    GenerationConfig,
+    PlanItem,
+    PlanState,
+    WholePlanContextMode,
+)
+
+DEFAULT_PLAN_DIGEST = "a" * 64
+
+
+def default_generation(**overrides) -> GenerationConfig:
+    return GenerationConfig(**overrides)
+
+
+def make_agent_response(**kwargs) -> AgentResponse:
+    kwargs.setdefault("plan_digest", DEFAULT_PLAN_DIGEST)
+    return AgentResponse(**kwargs)
+
+
+def planning_prompt_kwargs(
+    *,
+    plan: PlanState,
+    selected_items: list[PlanItem],
+    output_dir: Path,
+    whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID,
+) -> dict[str, object]:
+    digest = compute_plan_digest(plan)
+    prepared = prepare_batch_context(
+        plan=plan,
+        selected_items=selected_items,
+        plan_digest=digest,
+        output_dir=output_dir,
+        whole_plan_context=whole_plan_context,
+        max_context_characters=30000,
+    )
+    return {
+        "plan_digest": digest,
+        "batch_context_markdown": prepared.batch_context_markdown,
+        "context_mode": prepared.context_mode,
+    }

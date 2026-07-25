@@ -160,13 +160,58 @@ Supported decomposition statuses:
 ### Concurrent batch selection
 
 Each planning wave selects expandable items across independent branches, preferring
-shallower items first (tie-broken by insertion order). Up to `--concurrent-batches`
+shallower items first (tie-broken by insertion order). Up to `generation.concurrent_batches`
 agent sessions run in parallel per wave (default `3`), and each batch is capped by
-`--batch-size`. Each launched batch counts as one iteration toward `--max-iterations`.
+`generation.batch_size`. Each launched batch counts as one iteration toward
+`limits.max_iterations`.
 
 When a wave completes, all batch responses are validated against the same plan
 snapshot and merged atomically. If any batch in a wave fails after retries, the
 entire wave is discarded and nothing from that wave is applied.
+
+### Generation batch context
+
+Each generation batch runs in a **focused fresh Cursor session** with:
+
+- **Assigned generation scope (writable)** — only the selected item IDs; exactly one
+  operation per assigned item via `planning-plan-tool`.
+- **Global plan context (read-only)** — whole-plan overview plus relevant ancestors,
+  siblings, dependencies, and branch summaries.
+- **Batch-limited transaction authority** — `PLANNING_TOOL_SELECTED_IDS` and
+  `PLANNING_TOOL_PLAN_DIGEST` scope finalize; operations for unassigned nodes are rejected.
+
+Context artifacts (under `.planning-output/`):
+
+```text
+context/plan-overview-<digest>.md     # shared whole-plan reference for the wave snapshot
+iterations/{NNN}-context.md           # per-batch generation context
+iterations/{NNN}-request.json         # audit metadata (plan_digest, context_mode, …)
+```
+
+Configure batching under `generation:` in the run config:
+
+```yaml
+generation:
+  batch_strategy: coherent   # single | coherent | throughput
+  batch_size: 3
+  concurrent_batches: 3
+  max_context_characters: 30000
+  whole_plan_context: hybrid # embedded | referenced | hybrid
+```
+
+Precedence: **CLI flag → `generation.*` → built-in default**.
+
+- **`single`** — one selected item per session.
+- **`coherent`** (default) — group independent items with shared planning context when
+  size allows; may select fewer than `batch_size`.
+- **`throughput`** — capacity-oriented packing within wave-level constraints.
+
+An ancestor and descendant are never selected in the same wave (including across
+concurrent batches). All sessions in a wave share the same immutable `plan_digest`.
+
+Stream events: `generation.batch.context_prepared`, `generation.batch.started`,
+`generation.batch.completed`, `generation.wave.validated`, `generation.wave.applied`
+(plus existing `iteration.*` and `wave.*` events).
 
 ### Agent operation schema
 
@@ -316,10 +361,13 @@ otherwise the tool reuses stored review/confirmation results only when their pla
 matches the current canonical plan, then proceeds to the next unfinished stage
 (review, confirmation, or render).
 
-Resume rejects changed input, changed output goal, or mismatched limits. Resuming an
-already-complete, confirmed run skips render when prior deliverables still exist on disk.
+Resume rejects changed input, changed output goal, or mismatched `limits` /
+`generation` settings. Resuming an already-complete, confirmed run skips render when
+prior deliverables still exist on disk.
 
-On resume, the tool detects when `plan.yaml` was reset but `run-state.json` still shows prior progress. It attempts to rebuild the plan by replaying stored `iterations/*-response.json` audit files (falling back to `*-transaction.json` when needed) before continuing.
+On resume, the tool detects when `plan.yaml` was reset but `run-state.json` still shows
+prior progress. It attempts to rebuild the plan by replaying stored
+`iterations/*-response.json` audit files before continuing.
 
 During decomposition, render, and review/confirmation sessions, `plan.yaml` is backed
 up and restored automatically if an agent modifies canonical state unexpectedly.

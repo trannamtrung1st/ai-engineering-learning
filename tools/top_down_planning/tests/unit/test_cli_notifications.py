@@ -56,8 +56,6 @@ def test_execute_run_notifies_on_success(
         max_iterations=10,
         max_depth=4,
         max_items=50,
-        batch_size=2,
-        concurrent_batches=2,
         max_retries=2,
         max_children_per_expansion=8,
         session_timeout_seconds=600,

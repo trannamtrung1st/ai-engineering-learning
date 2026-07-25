@@ -13,6 +13,7 @@ from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal
 from top_down_planning.prompts import build_final_render_prompt, build_planning_prompt
 from top_down_planning.scheduler import initialize_root_plan
 from top_down_planning.models import SourceMetadata
+from tests.helpers import planning_prompt_kwargs
 
 
 def test_bundled_planning_example_agent_context() -> None:
@@ -42,14 +43,20 @@ def test_bundled_planning_example_agent_context() -> None:
         )
     )
 
+    root = plan.plan[0]
     planning_prompt = build_planning_prompt(
         loaded_input=loaded,
         workspace=examples_root,
         output_goal=goal,
         plan=plan,
-        selected_items=[],
+        selected_items=[root],
         embed_threshold=4000,
         agent_context=planning,
+        **planning_prompt_kwargs(
+            plan=plan,
+            selected_items=[root],
+            output_dir=examples_root / "planning-output",
+        ),
     )
     render_prompt = build_final_render_prompt(
         loaded_input=loaded,

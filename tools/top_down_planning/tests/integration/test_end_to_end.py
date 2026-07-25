@@ -15,6 +15,7 @@ from top_down_planning.models import (
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import load_plan, load_run_state, new_run_state, save_plan, save_run_state
 from top_down_planning.scheduler import initialize_root_plan
+from tests.helpers import default_generation, make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 
@@ -32,7 +33,7 @@ async def test_end_to_end_with_fake_agent(
         output_goal=loaded_goal,
         output_dir=output_dir,
         workspace_root=tmp_path,
-        limits=PlanningLimits(max_iterations=5, batch_size=2, concurrent_batches=1),
+        limits=PlanningLimits(max_iterations=5),
         agent_bin=fake_agent_bin,
         skip_probe=True,
     )
@@ -65,7 +66,7 @@ async def test_resume_after_partial_run(
     output_dir = tmp_path / "planning-output"
     loaded = load_markdown_input(example_input)
     loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    limits = PlanningLimits(max_iterations=5, batch_size=2, concurrent_batches=1)
+    limits = PlanningLimits(max_iterations=5)
 
     plan = make_root_plan(
         input_file=str(loaded.path),
@@ -75,7 +76,7 @@ async def test_resume_after_partial_run(
     )
     plan = apply_response(
         plan,
-        AgentResponse(
+        make_agent_response(
             operations=[
                 ExpandOperation(
                     node_id="item-001",
@@ -93,6 +94,7 @@ async def test_resume_after_partial_run(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
+        generation=default_generation(),
     )
     run_state.iteration = 1
     run_state.active_status = RunActiveStatus.PAUSED
@@ -132,8 +134,6 @@ async def test_end_to_end_with_concurrent_batches(
         workspace_root=tmp_path,
         limits=PlanningLimits(
             max_iterations=5,
-            batch_size=1,
-            concurrent_batches=2,
         ),
         agent_bin=fake_agent_bin,
         skip_probe=True,

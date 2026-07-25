@@ -37,15 +37,18 @@ from top_down_planning.model_config import resolve_embed_threshold, resolve_mode
 from top_down_planning.models import (
     AgentResponse,
     FinalStatus,
+    GenerationConfig,
     PlanItem,
     PlanningLimits,
     PlanningReport,
     ReviewConfig,
     RunActiveStatus,
     RunState,
+    WholePlanContextMode,
 )
 from top_down_planning.persistence import (
     ensure_resume_compatible,
+    iteration_context_path,
     iteration_prefix,
     iteration_transaction_path,
     iterations_dir,
@@ -79,7 +82,8 @@ from top_down_planning.artifact_writer import (
     snapshot_deliverable_files,
     write_render_artifacts,
 )
-from top_down_planning.fallback_artifact import write_fallback_artifact
+from top_down_planning.digest import compute_plan_digest
+from top_down_planning.generation_context import ensure_plan_overview_artifact, prepare_batch_context
 from top_down_planning.prompts import build_final_render_prompt, build_planning_prompt
 from top_down_planning.render_brief import build_render_brief, validate_render_coverage
 from top_down_planning.scheduler import (
@@ -99,6 +103,7 @@ class RunConfig:
     output_dir: Path
     workspace_root: Path
     limits: PlanningLimits
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
     resume: bool = False
     stream_json: bool = False
     no_color: bool = False
@@ -125,6 +130,7 @@ class _BatchSpec:
 class _BatchSessionResult:
     spec: _BatchSpec
     result: SessionResult
+    context_mode: WholePlanContextMode | None = None
 
 
 class Orchestrator:
@@ -198,6 +204,7 @@ class Orchestrator:
             output_goal_digest=goal_digest,
             stop_hint_digest=stop_hint_digest,
             limits=self.config.limits,
+            generation=self.config.generation,
             resume=self.config.resume,
         )
 
@@ -211,6 +218,13 @@ class Orchestrator:
                     f"(pids={alive}). Stop them manually, then retry."
                 )
             if is_plan_run_state_desynced(plan, run_state):
+                if not self.config.audit_iterations:
+                    raise ResumeError(
+                        "plan.yaml appears reset but run-state shows prior progress "
+                        f"(iteration={run_state.iteration}). "
+                        "Recovery requires iteration audit files; restore plan.yaml "
+                        "manually or re-run without disabling audit."
+                    )
                 recovered = recover_plan_from_iterations(output_dir, plan)
                 if recovered is None or is_plan_run_state_desynced(recovered, run_state):
                     raise ResumeError(
@@ -243,6 +257,7 @@ class Orchestrator:
                 output_goal_digest=goal_digest,
                 stop_hint_digest=stop_hint_digest,
                 limits=self.config.limits,
+                generation=self.config.generation,
             )
             save_plan(output_dir, plan)
             save_run_state(output_dir, run_state)
@@ -250,7 +265,8 @@ class Orchestrator:
         self.stream.emit(
             "planning.started",
             input=str(loaded.path),
-            concurrent_batches=self.config.limits.concurrent_batches,
+            concurrent_batches=self.config.generation.concurrent_batches,
+            batch_strategy=self.config.generation.batch_strategy.value,
         )
 
         try:
@@ -361,13 +377,14 @@ class Orchestrator:
 
             remaining_iterations = limits.max_iterations - run_state.iteration
             wave_size = wave_batch_budget(
-                limits,
+                self.config.generation,
                 remaining_iterations=remaining_iterations,
             )
             batch_groups = select_concurrent_batches(
                 plan,
-                limits,
+                self.config.generation,
                 max_batches=wave_size,
+                output_dir=output_dir,
             )
             if not batch_groups:
                 break
@@ -444,15 +461,37 @@ class Orchestrator:
     ):
         limits = self.config.limits
         plan_snapshot = copy.deepcopy(plan)
+        plan_digest = compute_plan_digest(plan_snapshot)
         wave_size = len(specs)
         iteration_numbers = [spec.iteration for spec in specs]
+
+        overview_path = ensure_plan_overview_artifact(
+            output_dir,
+            plan_snapshot,
+            plan_digest,
+        )
+        self.stream.emit(
+            "generation.batch.context_prepared",
+            plan_digest=plan_digest,
+            plan_overview=str(overview_path),
+            wave_size=wave_size,
+        )
 
         self.stream.emit(
             "wave.started",
             wave_size=wave_size,
             iterations=iteration_numbers,
+            plan_digest=plan_digest,
         )
         for spec in specs:
+            self.stream.emit(
+                "generation.batch.started",
+                iteration=spec.iteration,
+                batch_index=spec.batch_index,
+                batch_count=wave_size,
+                selected_items=spec.selected_ids,
+                plan_digest=plan_digest,
+            )
             self.stream.emit(
                 "iteration.started",
                 iteration=spec.iteration,
@@ -483,6 +522,7 @@ class Orchestrator:
                     specs=specs,
                     attempt=attempt,
                     validation_feedback=validation_feedback,
+                    plan_digest=plan_digest,
                 )
             except UserInterrupted:
                 run_state.agent_pids = []
@@ -562,9 +602,16 @@ class Orchestrator:
                 plan_snapshot,
                 wave_pairs,
                 limits=limits,
+                plan_digest=plan_digest,
             )
             if errors:
                 validation_feedback = errors
+                self.stream.emit(
+                    "generation.wave.validated",
+                    success=False,
+                    plan_digest=plan_digest,
+                    errors=errors,
+                )
                 for spec, response in parsed_batches:
                     self.stream.emit(
                         "validation.failed",
@@ -588,6 +635,12 @@ class Orchestrator:
                     attempt=attempt + 1,
                 )
                 continue
+
+            self.stream.emit(
+                "generation.wave.validated",
+                success=True,
+                plan_digest=plan_digest,
+            )
 
             for spec, response in parsed_batches:
                 plan = apply_response(plan, response)
@@ -613,6 +666,14 @@ class Orchestrator:
                 attempt=attempt,
             )
             for spec in specs:
+                context_mode = next(
+                    (
+                        session.context_mode
+                        for session in session_results
+                        if session.spec.iteration == spec.iteration
+                    ),
+                    None,
+                )
                 record_history(
                     output_dir,
                     run_state,
@@ -624,6 +685,15 @@ class Orchestrator:
                     attempt=attempt,
                 )
                 self.stream.emit(
+                    "generation.batch.completed",
+                    iteration=spec.iteration,
+                    batch_index=spec.batch_index,
+                    batch_count=wave_size,
+                    selected_items=spec.selected_ids,
+                    plan_digest=plan_digest,
+                    context_mode=context_mode.value if context_mode else None,
+                )
+                self.stream.emit(
                     "iteration.completed",
                     iteration=spec.iteration,
                     batch_index=spec.batch_index,
@@ -631,6 +701,12 @@ class Orchestrator:
                     selected_items=spec.selected_ids,
                 )
 
+            self.stream.emit(
+                "generation.wave.applied",
+                plan_digest=plan_digest,
+                wave_size=wave_size,
+                iterations=iteration_numbers,
+            )
             self.stream.emit(
                 "wave.completed",
                 wave_size=wave_size,
@@ -656,6 +732,7 @@ class Orchestrator:
         specs: list[_BatchSpec],
         attempt: int,
         validation_feedback: list[str] | None,
+        plan_digest: str,
     ) -> list[_BatchSessionResult]:
         await self.client.ensure_ready()
         batch_count = len(specs)
@@ -670,6 +747,7 @@ class Orchestrator:
                     batch_count=batch_count,
                     attempt=attempt,
                     validation_feedback=validation_feedback,
+                    plan_digest=plan_digest,
                 )
             )
             for spec in specs
@@ -692,9 +770,25 @@ class Orchestrator:
         batch_count: int,
         attempt: int,
         validation_feedback: list[str] | None,
+        plan_digest: str,
     ) -> _BatchSessionResult:
         limits = self.config.limits
+        generation = self.config.generation
         plan_tool_command = resolve_plan_tool_command()
+
+        prepared = prepare_batch_context(
+            plan=plan,
+            selected_items=spec.items,
+            plan_digest=plan_digest,
+            output_dir=output_dir,
+            whole_plan_context=generation.whole_plan_context,
+            max_context_characters=generation.max_context_characters,
+        )
+
+        context_path = iteration_context_path(output_dir, spec.iteration)
+        context_path.parent.mkdir(parents=True, exist_ok=True)
+        context_path.write_text(prepared.batch_context_markdown, encoding="utf-8")
+
         prompt = build_planning_prompt(
             loaded_input=loaded,
             workspace=self.config.workspace_root,
@@ -707,6 +801,9 @@ class Orchestrator:
             validation_feedback=validation_feedback,
             plan_tool_command=plan_tool_command,
             agent_context=self._resolved_agent_context(phase="planning"),
+            plan_digest=plan_digest,
+            batch_context_markdown=prepared.batch_context_markdown,
+            context_mode=prepared.context_mode,
         )
         prefix = Path(iteration_prefix(output_dir, spec.iteration))
         prompt_path = prefix.with_name(prefix.name + "-request-prompt.md")
@@ -719,26 +816,40 @@ class Orchestrator:
         prompt_path.write_text(prompt, encoding="utf-8")
         reset_transaction(transaction_path)
         if self.config.audit_iterations:
+            request_payload: dict[str, object] = {
+                "iteration": spec.iteration,
+                "batch_index": spec.batch_index,
+                "batch_count": batch_count,
+                "attempt": attempt,
+                "selected_items": spec.selected_ids,
+                "transaction_path": str(transaction_path),
+                "plan_digest": plan_digest,
+                "batch_context_artifact": context_path.name,
+                "context_mode": prepared.context_mode.value,
+            }
+            if prepared.plan_overview_relative:
+                request_payload["plan_overview_artifact"] = (
+                    f"context/{Path(prepared.plan_overview_relative).name}"
+                    if "plan-overview" in prepared.plan_overview_relative
+                    else prepared.plan_overview_relative
+                )
             write_json(
                 prefix.with_name(prefix.name + "-request.json"),
-                {
-                    "iteration": spec.iteration,
-                    "batch_index": spec.batch_index,
-                    "batch_count": batch_count,
-                    "attempt": attempt,
-                    "selected_items": spec.selected_ids,
-                    "transaction_path": str(transaction_path),
-                },
+                request_payload,
             )
 
         session_env = build_session_env(
             transaction_path=transaction_path,
             selected_ids=spec.selected_ids,
             plan_file=canonical_plan_file,
+            plan_digest=plan_digest,
             plan_tool_command=plan_tool_command,
         )
         min_plan_items = len(plan.plan)
-        plan_backup = backup_canonical_plan(output_dir)
+        plan_backup = backup_canonical_plan(
+            output_dir,
+            suffix=f"{spec.iteration:03d}",
+        )
 
         def on_started(pid: int) -> None:
             self._add_agent_pid(output_dir, run_state, pid)
@@ -769,7 +880,11 @@ class Orchestrator:
                 self.renderer.warning(
                     "Restored plan.yaml after planning session modified canonical state"
                 )
-        return _BatchSessionResult(spec=spec, result=result)
+        return _BatchSessionResult(
+            spec=spec,
+            result=result,
+            context_mode=prepared.context_mode,
+        )
 
     def _emit_operation_events(self, response: AgentResponse) -> None:
         for operation in response.operations:

@@ -24,7 +24,7 @@ async def test_resume_reuses_whole_plan_review_and_runs_confirmation(
 ) -> None:
     output_dir = tmp_path / "planning-output"
     loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    limits = PlanningLimits(max_iterations=5, batch_size=2, concurrent_batches=1)
+    limits = PlanningLimits(max_iterations=5)
     config = RunConfig(
         input_path=example_input,
         output_goal=loaded_goal,

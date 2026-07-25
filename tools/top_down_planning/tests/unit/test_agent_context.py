@@ -17,6 +17,7 @@ from top_down_planning.config_loader import load_run_config_file, merge_run_opti
 from top_down_planning.errors import PlanningToolError
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal
 from top_down_planning.prompts import build_final_render_prompt, build_planning_prompt
+from tests.helpers import planning_prompt_kwargs
 from tests.plan_factory import make_root_plan
 
 
@@ -81,14 +82,20 @@ def test_planning_and_render_prompts_include_phase_context() -> None:
         ),
     )
 
+    root = plan.plan[0]
     planning_prompt = build_planning_prompt(
         loaded_input=loaded_input,
         workspace=Path("."),
         output_goal=output_goal,
         plan=plan,
-        selected_items=[],
+        selected_items=[root],
         embed_threshold=4000,
         agent_context=planning_ctx,
+        **planning_prompt_kwargs(
+            plan=plan,
+            selected_items=[root],
+            output_dir=Path("out"),
+        ),
     )
     render_prompt = build_final_render_prompt(
         loaded_input=loaded_input,

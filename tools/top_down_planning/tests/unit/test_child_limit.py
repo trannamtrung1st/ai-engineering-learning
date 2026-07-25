@@ -15,6 +15,7 @@ from top_down_planning.models import (
 from top_down_planning.state_updates import apply_response
 from top_down_planning.models import AgentResponse
 from top_down_planning.validator import validate_response
+from tests.helpers import default_generation, make_agent_response
 
 
 def _root_plan() -> PlanState:
@@ -38,7 +39,7 @@ def _root_plan() -> PlanState:
 
 def test_structured_mark_blocked_for_child_limit() -> None:
     plan = _root_plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             MarkBlockedOperation(
                 node_id="item-001",
@@ -68,7 +69,7 @@ def test_structured_mark_blocked_for_child_limit() -> None:
 
 def test_required_min_children_must_exceed_limit() -> None:
     plan = _root_plan()
-    response = AgentResponse(
+    response = make_agent_response(
         operations=[
             MarkBlockedOperation(
                 node_id="item-001",
