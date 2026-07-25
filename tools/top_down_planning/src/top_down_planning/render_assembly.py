@@ -12,6 +12,8 @@ from top_down_planning.digest import digest_text
 from top_down_planning.models import OutputMode, RenderBatchTransaction, RenderManifest
 from top_down_planning.persistence import render_assembled_dir, render_batch_transaction_path
 from top_down_planning.render_batcher import unique_batch_ids
+from top_down_planning.render_content_validation import validate_transaction_content
+from top_down_planning.render_set_level import synthesize_set_level_files
 from top_down_planning.render_tool import load_render_transaction
 
 
@@ -35,6 +37,8 @@ def load_valid_batch_transactions(
 def assemble_render_output(
     manifest: RenderManifest,
     transactions: dict[str, RenderBatchTransaction],
+    *,
+    plan_summary: str = "",
 ) -> AssembledOutput:
     errors = validate_assembly(manifest, transactions)
     if errors:
@@ -42,7 +46,9 @@ def assemble_render_output(
 
     files: dict[str, str] = {}
     if manifest.output_mode == OutputMode.SINGLE_DOCUMENT:
-        final_path = manifest.final_relative_path or "implementation-plan.md"
+        final_path = manifest.final_relative_path
+        if not final_path:
+            raise ValueError("missing final_relative_path for single-document output")
         sections: list[tuple[int, str]] = []
         for item in sorted(manifest.items, key=lambda entry: entry.order):
             batch_txn = transactions[item.assigned_batch_id]
@@ -53,6 +59,7 @@ def assemble_render_output(
         content = _assemble_single_document(sections)
         files[final_path] = content
     else:
+        leaf_contents: dict[str, str] = {}
         for item in manifest.items:
             batch_txn = transactions[item.assigned_batch_id]
             artifact = next(
@@ -62,9 +69,17 @@ def assemble_render_output(
             if rel_path is None:
                 raise ValueError(f"missing relative_path for {item.plan_item_id}")
             files[rel_path] = artifact.content
+            leaf_contents[rel_path] = artifact.content
 
-        index_content = _build_folder_index(manifest)
-        files["index.yaml"] = index_content
+        internal_index = _build_folder_index(manifest)
+        files[".internal/index.yaml"] = internal_index
+
+        synthesized = synthesize_set_level_files(
+            manifest,
+            leaf_contents=leaf_contents,
+            plan_summary=plan_summary,
+        )
+        files.update(synthesized)
 
     digest = compute_assembled_digest(files)
     return AssembledOutput(files=files, digest=digest)
@@ -96,8 +111,11 @@ def validate_assembly(
     paths: set[str] = set()
 
     manifest_ids = {item.plan_item_id for item in manifest.items}
+    all_artifacts = []
+
     for batch_id, txn in transactions.items():
         for artifact in txn.artifacts:
+            all_artifacts.append(artifact)
             if artifact.plan_item_id not in manifest_ids:
                 errors.append(f"unknown rendered item {artifact.plan_item_id!r}")
             if artifact.plan_item_id in rendered_ids:
@@ -124,6 +142,15 @@ def validate_assembly(
             if dep not in manifest_ids and dep not in rendered_ids:
                 errors.append(f"unresolved dependency {dep!r} for {item.plan_item_id}")
 
+    if manifest.output_mode == OutputMode.MULTI_FILE:
+        errors.extend(
+            validate_transaction_content(
+                all_artifacts,
+                list(manifest.items),
+                output_mode=manifest.output_mode,
+            )
+        )
+
     return errors
 
 
@@ -143,12 +170,14 @@ def _assemble_single_document(sections: list[tuple[int, str]]) -> str:
 
 def _build_folder_index(manifest: RenderManifest) -> str:
     entries = []
-    for item in sorted(manifest.items, key=lambda entry: entry.order):
+    for item in sorted(manifest.items, key=lambda entry: entry.set_order):
         entries.append(
             {
                 "plan_item_id": item.plan_item_id,
                 "artifact_key": item.artifact_key,
-                "relative_path": item.relative_path,
+                "staging_path": item.relative_path,
+                "publish_path": item.publish_relative_path,
+                "set_order": item.set_order,
                 "title": item.title,
                 "dependencies": list(item.dependencies),
             }

@@ -9,6 +9,7 @@ from top_down_planning.models import (
     RenderManifestItem,
 )
 from top_down_planning.paths import validate_relative_path
+from top_down_planning.render_content_validation import validate_transaction_content
 
 
 def validate_batch_transaction(
@@ -87,6 +88,14 @@ def validate_batch_transaction(
 
         if not artifact.content.strip():
             errors.append(f"empty content for {artifact.plan_item_id}")
+
+    errors.extend(
+        validate_transaction_content(
+            transaction.artifacts,
+            assigned_items,
+            output_mode=manifest.output_mode,
+        )
+    )
 
     for item in assigned_items:
         if item.plan_item_id not in seen_items:

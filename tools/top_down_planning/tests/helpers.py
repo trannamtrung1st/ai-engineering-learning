@@ -6,6 +6,7 @@ from pathlib import Path
 
 from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import prepare_batch_context
+from top_down_planning.input_loader import LoadedOutputGoal, load_output_goal
 from top_down_planning.models import (
     AgentResponse,
     GenerationConfig,
@@ -15,6 +16,18 @@ from top_down_planning.models import (
 )
 
 DEFAULT_PLAN_DIGEST = "a" * 64
+
+STANDARD_RENDER_OUTPUT_GOAL = """Produce an actionable implementation plan.
+
+## Output artifacts
+
+- `implementation-plan.md`
+"""
+
+
+def render_output_goal(text: str | None = None) -> LoadedOutputGoal:
+    """Output goal with a required ## Output artifacts section for render tests."""
+    return load_output_goal(inline=text or STANDARD_RENDER_OUTPUT_GOAL)
 
 
 def default_generation(**overrides) -> GenerationConfig:

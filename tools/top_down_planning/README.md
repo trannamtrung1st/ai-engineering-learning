@@ -97,23 +97,24 @@ top-down-planning \
 
 The tool separates **user-facing deliverables** from **internal resumable state**.
 
-`--output` stores resumable planning state under `.planning-output/`. Deliverables may
-be written anywhere in the workspace according to the output goal — they are not
-required to live under `--output`.
+`--output` stores resumable planning state under `.planning-output/`. Published
+deliverables are written to workspace paths declared under the output goal's
+`## Output artifacts` section. They are not stored under `--output`.
 
-Example layout when deliverables stay under `--output`:
+Example layout:
 
 ```text
-planning-output/
-├── implementation-plan.md          # example goal-driven deliverable
-└── .planning-output/
-    ├── plan.yaml
-    ├── run-state.json
-    ├── review-state.json
-    └── iterations/
-        ├── 001-request-prompt.md
-        ├── 001-transaction.json
-        ├── 001-response.json
+workspace/
+├── implementation-plan.md          # single-document deliverable from output goal
+├── plans/my-feature/todos/         # multi-file deliverable root from output goal
+│   ├── INDEX.md
+│   ├── manifest.yaml
+│   └── 01-first-item.yaml
+└── planning-output/
+    └── .planning-output/
+        ├── plan.yaml
+        ├── run-state.json
+        ├── review-state.json
         └── render/
             ├── render-state.json
             ├── manifest.yaml
@@ -125,9 +126,17 @@ planning-output/
 
 Goal-driven deliverables are written only when planning finishes with status `complete`
 and review status `confirmed` (when review is enabled). Rendering is a separate lifecycle
-from planning: after confirmation, the tool builds a deterministic render manifest,
-runs concurrent staged render batches, assembles output, optionally runs whole-output
-semantic review, and publishes atomically.
+from planning: after confirmation, the tool builds a deterministic render manifest from
+the output goal's artifact declarations, runs concurrent staged render batches, assembles
+output, optionally runs whole-output semantic review, and publishes atomically to the
+declared workspace paths.
+
+Every output goal must include a `## Output artifacts` section with at least one path.
+Multi-file goals must declare a deliverable root (directory path or shared parent such as
+`INDEX.md`). Leaf items are staged under tool-owned paths such as `items/011-slug.yaml`
+during render batches, validated for set-order content schema, synthesized with declared
+set-level files (`INDEX.md`, `manifest.yaml`, …), and published to goal paths such as
+`10-slug.yaml` under the deliverable root.
 
 ### Render-only mode
 

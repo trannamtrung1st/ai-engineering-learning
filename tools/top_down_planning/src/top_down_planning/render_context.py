@@ -129,7 +129,10 @@ def _build_batch_context_markdown(
         if manifest_item.relative_path:
             lines.append(
                 f"- `{manifest_item.plan_item_id}` → "
-                f"`{manifest_item.artifact_key}` → `{manifest_item.relative_path}`"
+                f"`{manifest_item.artifact_key}` → "
+                f"staging `{manifest_item.relative_path}` → "
+                f"set_order `{manifest_item.set_order:02d}` → "
+                f"publish `{manifest_item.publish_relative_path}`"
             )
         else:
             lines.append(

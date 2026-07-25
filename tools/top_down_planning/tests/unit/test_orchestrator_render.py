@@ -10,7 +10,7 @@ from top_down_planning.models import DecompositionStatus, FinalStatus, PlanningL
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import new_run_state, save_plan
 from top_down_planning.render_flow import render_from_confirmed_plan
-from tests.helpers import default_generation
+from tests.helpers import default_generation, render_output_goal
 from tests.plan_factory import make_root_plan
 
 
@@ -21,7 +21,7 @@ async def test_render_batch_retry_records_audit_files(
     fake_agent_bin: str,
 ) -> None:
     loaded = load_markdown_input(example_input)
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     output_dir = tmp_path / "planning-output"
     limits = PlanningLimits(max_retries=2)
     plan = make_root_plan(

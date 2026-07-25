@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.input_loader import load_output_goal
+from tests.helpers import render_output_goal
 from top_down_planning.models import (
     BlockedConstraintCode,
     FinalStatus,
@@ -28,7 +28,7 @@ async def test_review_artifacts_written_with_fake_agent(
     fake_agent_bin: str,
 ) -> None:
     output_dir = tmp_path / "planning-output"
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     config = RunConfig(
         input_path=example_input,
         output_goal=loaded_goal,
@@ -56,7 +56,7 @@ async def test_review_disabled_skips_review_artifacts_but_renders(
     fake_agent_bin: str,
 ) -> None:
     output_dir = tmp_path / "planning-output-no-review"
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     config = RunConfig(
         input_path=example_input,
         output_goal=loaded_goal,
@@ -81,7 +81,7 @@ async def test_child_limit_blocked_does_not_render(
     fake_agent_bin: str,
 ) -> None:
     output_dir = tmp_path / "planning-output-blocked"
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     blocked_response = json.dumps(
         {
             "assessment": {"plan_complete": False, "summary": "Blocked"},
@@ -138,7 +138,7 @@ async def test_needs_revision_with_zero_budget_blocks_without_render(
     import os
 
     output_dir = tmp_path / "planning-output-revision-budget"
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     needs_revision = json.dumps(
         {
             "stage": "whole_plan_review",
@@ -187,7 +187,7 @@ async def test_amend_revision_cycle_completes_and_renders(
     import os
 
     output_dir = tmp_path / "planning-output-amend-revision"
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     review_sequence = json.dumps(
         [
             {

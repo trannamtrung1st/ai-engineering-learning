@@ -377,8 +377,9 @@ Suggested layout:
 
 ```text
 planning-output/
-├── implementation-plan.md          # example deliverable (path chosen by output goal)
-└── .planning-output/
+├── implementation-plan.md          # workspace deliverable from output goal
+└── planning-output/
+    └── .planning-output/
     ├── plan.yaml
     ├── run-state.json
     ├── review-state.json
@@ -399,30 +400,32 @@ Each render batch writes staged transactions under `.planning-output/render/batc
 When audit is enabled, batch sessions also write numbered audit sets under
 `iterations/` (request prompt, agent log, and transaction snapshots).
 
-`--output` holds internal resumable state under `.planning-output/`. Deliverables are
-published atomically to the workspace according to the output goal after assembly and
-optional whole-output review.
+`--output` holds internal resumable state under `.planning-output/`. Published
+deliverables are written to workspace paths declared under the output goal's
+`## Output artifacts` section after assembly and optional whole-output review.
 
 Deliverables are produced by a **staged render pipeline** after decomposition completes
 (and after review/confirmation when review is enabled). Rendering is a separate
 lifecycle from planning:
 
-1. Build a deterministic render manifest from actionable leaf items in `plan.yaml`.
-2. Run concurrent render batches; each batch agent records artifacts via
+1. Parse required artifact paths from the output goal's `## Output artifacts` section.
+2. Build a deterministic render manifest from actionable leaf items in `plan.yaml`.
+3. Run concurrent render batches; each batch agent records artifacts via
    `planning-render-tool` into staged batch transactions (not directly into final paths).
-3. Assemble staged artifacts deterministically under `.planning-output/render/assembled/`.
-4. Optionally run whole-output semantic review (`rendered_output_review`).
-5. Publish assembled output atomically and record ownership in a ledger.
+4. Assemble staged artifacts deterministically under `.planning-output/render/assembled/`,
+   including synthesized set-level files declared by the output goal.
+5. Optionally run whole-output semantic review (`rendered_output_review`).
+6. Publish assembled output to declared workspace paths and record ownership in a ledger.
 
-The render manifest defines authoritative scope (which plan items, artifact keys, paths,
-and section order). The output goal defines authoritative format. Review prompts still
-embed a human-readable render brief derived from `plan.yaml` for semantic checks; the
-batched render pipeline uses manifest items and per-batch context files instead of a
-single monolithic render session.
+The render manifest defines authoritative scope (which plan items, artifact keys, staging
+paths, set order, and publish paths). The output goal defines authoritative deliverable
+locations and format. Review prompts still embed a human-readable render brief derived
+from `plan.yaml` for semantic checks; the batched render pipeline uses manifest items
+and per-batch context files instead of a single monolithic render session.
 
-The output goal may define an **Output artifacts** section with suggested filenames
-and formats. Paths mentioned only as examples inside the output goal must not be
-treated as copy sources; deliverables must be generated fresh from the confirmed plan.
+The output goal **must** define an **Output artifacts** section with at least one path.
+Multi-file goals must declare a deliverable root. Paths are publication targets, not
+copy sources; deliverables must be generated fresh from the confirmed plan.
 
 Render agents must not copy or restore pre-existing files from git history or from paths
 cited in the output goal. They must not modify canonical state under `.planning-output/`.
@@ -553,7 +556,7 @@ Suggested events:
 {"type":"iteration.retrying","iteration":2,"attempt":2}
 {"type":"planning.completed","status":"complete","items":18,"actionable_items":11,"artifacts":["./planning-output/implementation-plan.md"]}
 {"type":"render.started"}
-{"type":"render.completed","artifacts":["./planning-output/implementation-plan.md"]}
+{"type":"render.completed","artifacts":["./implementation-plan.md"]}
 ```
 
 Requirements:

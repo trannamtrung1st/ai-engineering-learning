@@ -406,16 +406,21 @@ Workflow:
 Artifact JSON schema (one object per `record-artifact` call):
 ```json
 {{
-  "plan_item_id": "item-045",
-  "artifact_key": "todo-item-045",
-  "relative_path": "items/045-slug.yaml",
-  "section_order": 45,
+  "plan_item_id": "item-011",
+  "artifact_key": "todo-item-011",
+  "relative_path": "items/011-branch-local-remediation.yaml",
   "content": "..."
 }}
 ```
 
 Use `relative_path` for multi-file output goals and `section_order` for single-document goals.
 Do not invent artifact keys, paths, or plan item IDs.
+
+For multi-file YAML content:
+- Staging metadata (`plan_item_id`, `relative_path`) uses **plan item order** (e.g. `011`).
+- The YAML `order` field inside `content` must use **set order** from batch context
+  (zero-padded, e.g. `"10"` when set_order is 10).
+- Staging paths and content `order` are different fields; do not copy plan numbers into `order`.
 """
 
 
@@ -496,6 +501,14 @@ def build_render_output_review_prompt(
     return f"""# Rendered output review session
 
 Compare the confirmed plan, render manifest, assembled output, and output goal.
+
+The assembled output directory is **pre-publication staging**. Leaf files use tool-owned
+staging paths under `items/`; publication remaps them to the output-goal deliverable root
+using each item's `publish_relative_path`. Set-level files declared in the output goal
+are synthesized deterministically during assembly.
+
+Use `needs_rerender` only for leaf content fixable by rerunning render batches.
+Use `blocked` for unfixable tool/goal mismatches (missing goal declaration, unpublishable scope).
 
 ## Plan digest
 `{plan_digest}`

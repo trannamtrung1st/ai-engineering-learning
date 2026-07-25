@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.input_loader import load_markdown_input, load_output_goal
+from top_down_planning.input_loader import load_markdown_input
 from top_down_planning.models import (
     AgentResponse,
     ChildDraft,
@@ -19,7 +19,7 @@ from top_down_planning.models import (
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import load_plan, load_run_state, new_run_state, save_plan, save_run_state
 from top_down_planning.scheduler import initialize_root_plan
-from tests.helpers import default_generation, make_agent_response
+from tests.helpers import default_generation, make_agent_response, render_output_goal
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 
@@ -31,7 +31,7 @@ async def test_end_to_end_with_fake_agent(
     fake_agent_bin: str,
 ) -> None:
     output_dir = tmp_path / "planning-output"
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     config = RunConfig(
         input_path=example_input,
         output_goal=loaded_goal,
@@ -49,7 +49,7 @@ async def test_end_to_end_with_fake_agent(
     assert (output_dir / ".planning-output" / "run-state.json").is_file()
     assert (output_dir / ".planning-output" / "render" / "manifest.yaml").is_file()
     assert not (output_dir / "plan.md").exists()
-    artifact_path = output_dir / "implementation-plan.md"
+    artifact_path = tmp_path / "implementation-plan.md"
     assert artifact_path.is_file()
     plan = load_plan(output_dir)
     assert plan is not None
@@ -67,7 +67,7 @@ async def test_resume_after_partial_run(
 ) -> None:
     output_dir = tmp_path / "planning-output"
     loaded = load_markdown_input(example_input)
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     limits = PlanningLimits(max_iterations=5)
 
     plan = make_root_plan(
@@ -129,7 +129,7 @@ async def test_resume_after_limit_reached_with_increased_max_iterations(
 ) -> None:
     output_dir = tmp_path / "planning-output-limit-resume"
     loaded = load_markdown_input(example_input)
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     stored_limits = PlanningLimits(max_iterations=2)
 
     plan = make_root_plan(
@@ -207,7 +207,7 @@ async def test_resume_after_child_limit_blocked_with_increased_max_children(
 
     output_dir = tmp_path / "planning-output-child-limit-resume"
     loaded = load_markdown_input(example_input)
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     blocked_response = json.dumps(
         {
             "assessment": {"plan_complete": False, "summary": "Blocked"},
@@ -283,7 +283,7 @@ async def test_resume_does_not_reset_review_blocked_without_child_limit_change(
 
     output_dir = tmp_path / "planning-output-review-blocked-resume"
     loaded = load_markdown_input(example_input)
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     needs_revision = json.dumps(
         {
             "stage": "whole_plan_review",
@@ -348,7 +348,7 @@ async def test_end_to_end_with_concurrent_batches(
     fake_agent_bin: str,
 ) -> None:
     output_dir = tmp_path / "planning-output-concurrent"
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     config = RunConfig(
         input_path=example_input,
         output_goal=loaded_goal,

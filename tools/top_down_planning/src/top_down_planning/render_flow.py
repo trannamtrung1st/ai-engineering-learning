@@ -144,9 +144,14 @@ async def render_from_confirmed_plan(
     save_render_state(deps.output_dir, render_state)
     deps.stream.emit("render.assembly.started")
 
+    plan_summary = plan.result.summary or ""
     transactions = load_valid_batch_transactions(deps.output_dir, manifest)
     try:
-        assembled = assemble_render_output(manifest, transactions)
+        assembled = assemble_render_output(
+            manifest,
+            transactions,
+            plan_summary=plan_summary,
+        )
     except ValueError as exc:
         deps.stream.emit("render.validation_failed", errors=[str(exc)])
         raise PlanningToolError(f"Render assembly failed: {exc}") from exc
@@ -170,7 +175,11 @@ async def render_from_confirmed_plan(
             force_rerender=force_rerender,
         )
         transactions = load_valid_batch_transactions(deps.output_dir, manifest)
-        assembled = assemble_render_output(manifest, transactions)
+        assembled = assemble_render_output(
+            manifest,
+            transactions,
+            plan_summary=plan.result.summary or "",
+        )
         write_assembled_output(deps.output_dir, assembled)
     else:
         render_state.output_review_status = RenderOutputReviewStatus.SKIPPED
@@ -185,6 +194,7 @@ async def render_from_confirmed_plan(
         output_dir=deps.output_dir,
         workspace=deps.workspace_root,
         assembled=assembled,
+        manifest=manifest,
         previous_ledger=previous_ledger,
     )
 
@@ -520,9 +530,14 @@ async def _run_output_review_cycle(
     force_rerender: bool,
 ) -> None:
     max_cycles = deps.render.max_rerender_cycles
+    plan_summary = plan.result.summary or ""
     for cycle in range(max_cycles + 1):
         transactions = load_valid_batch_transactions(deps.output_dir, manifest)
-        assembled = assemble_render_output(manifest, transactions)
+        assembled = assemble_render_output(
+            manifest,
+            transactions,
+            plan_summary=plan_summary,
+        )
         write_assembled_output(deps.output_dir, assembled)
 
         deps.stream.emit("render.review.started", cycle=cycle)

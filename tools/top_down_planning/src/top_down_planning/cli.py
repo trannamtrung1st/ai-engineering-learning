@@ -165,7 +165,7 @@ def _execute_run(
     goal_override = output_goal is not None or output_goal_file is not None
     if options.render_only and not goal_override:
         from top_down_planning.persistence import load_plan, load_run_state
-        from top_down_planning.fallback_artifact import resolve_output_goal_text
+        from top_down_planning.output_goal_artifacts import resolve_output_goal_text
 
         plan = load_plan(options.output_dir)
         run_state = load_run_state(options.output_dir)

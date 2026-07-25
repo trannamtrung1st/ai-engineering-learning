@@ -1,4 +1,4 @@
-"""Atomic publication of assembled render output."""
+"""Atomic publication of assembled render output to workspace paths from the output goal."""
 
 from __future__ import annotations
 
@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from top_down_planning.digest import digest_text
-from top_down_planning.models import OwnedArtifactsLedger
+from top_down_planning.errors import PlanningToolError
+from top_down_planning.models import OwnedArtifactsLedger, OutputMode, RenderManifest
+from top_down_planning.paths import resolve_within_workspace
 from top_down_planning.persistence import (
     publication_manifest_path,
     save_owned_artifacts,
@@ -28,45 +30,61 @@ def publish_assembled_output(
     output_dir: Path,
     workspace: Path,
     assembled: AssembledOutput,
+    manifest: RenderManifest,
     previous_ledger: OwnedArtifactsLedger | None,
 ) -> PublicationResult:
-    deliverable_dir = output_dir.resolve()
-    deliverable_dir.mkdir(parents=True, exist_ok=True)
+    workspace = workspace.resolve()
+    output_dir = output_dir.resolve()
 
-    new_relative_paths = sorted(assembled.files.keys())
+    staging_to_publish = _build_publish_map(assembled, manifest)
+    if not staging_to_publish:
+        raise PlanningToolError("No assembled artifacts matched publish paths from the output goal.")
+
+    workspace_relative = dict(staging_to_publish)
+    destinations = {
+        staging_key: resolve_within_workspace(workspace, publish_path)
+        for staging_key, publish_path in staging_to_publish.items()
+    }
+
     publication_digest = digest_text(
-        "\n".join(f"{path}:{assembled.files[path]}" for path in new_relative_paths)
+        "\n".join(
+            f"{workspace_relative[staging_key]}:{assembled.files[staging_key]}"
+            for staging_key in sorted(workspace_relative)
+        )
     )
 
-    staged_root = deliverable_dir / ".publication-staging"
+    staged_root = output_dir / ".publication-staging"
     if staged_root.exists():
         _remove_tree(staged_root)
     staged_root.mkdir(parents=True, exist_ok=True)
 
     try:
-        for relative, content in assembled.files.items():
-            target = staged_root / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content.rstrip() + "\n", encoding="utf-8")
+        for staging_key, publish_path in staging_to_publish.items():
+            staged_file = staged_root / publish_path
+            staged_file.parent.mkdir(parents=True, exist_ok=True)
+            staged_file.write_text(
+                assembled.files[staging_key].rstrip() + "\n",
+                encoding="utf-8",
+            )
 
         previous_owned = set(previous_ledger.artifacts if previous_ledger else [])
-        new_owned = set(new_relative_paths)
+        new_owned = sorted(workspace_relative.values())
 
-        for relative in new_relative_paths:
-            source = staged_root / relative
-            destination = deliverable_dir / relative
+        for staging_key in sorted(destinations):
+            source = staged_root / workspace_relative[staging_key]
+            destination = destinations[staging_key]
             destination.parent.mkdir(parents=True, exist_ok=True)
             _atomic_replace(source, destination)
 
-        obsolete = previous_owned - new_owned
+        obsolete = previous_owned - set(new_owned)
         for relative in sorted(obsolete):
-            path = deliverable_dir / relative
+            path = workspace / relative
             if path.is_file():
                 path.unlink()
 
         ledger = OwnedArtifactsLedger(
-            output_dir=str(deliverable_dir),
-            artifacts=new_relative_paths,
+            output_dir=str(output_dir),
+            artifacts=new_owned,
             publication_digest=publication_digest,
         )
         save_owned_artifacts(output_dir, ledger)
@@ -74,24 +92,52 @@ def publish_assembled_output(
             publication_manifest_path(output_dir),
             {
                 "publication_digest": publication_digest,
-                "artifacts": new_relative_paths,
+                "artifacts": new_owned,
+                "deliverable_root": manifest.deliverable_root,
             },
         )
     finally:
         _remove_tree(staged_root)
 
-    workspace_relative = [
-        _workspace_relative(deliverable_dir / rel, workspace)
-        for rel in new_relative_paths
-    ]
     return PublicationResult(
-        artifacts=workspace_relative,
+        artifacts=new_owned,
         publication_digest=publication_digest,
     )
 
 
-def _workspace_relative(path: Path, workspace: Path) -> str:
-    return path.resolve().relative_to(workspace.resolve()).as_posix()
+def _build_publish_map(
+    assembled: AssembledOutput,
+    manifest: RenderManifest,
+) -> dict[str, str]:
+    """Map assembled staging keys to workspace-relative publish paths."""
+    publish_map: dict[str, str] = {}
+
+    if manifest.output_mode == OutputMode.SINGLE_DOCUMENT:
+        publish_path = manifest.final_relative_path
+        if publish_path and publish_path in assembled.files:
+            publish_map[publish_path] = publish_path
+        return publish_map
+
+    root = (manifest.deliverable_root or "").rstrip("/")
+    if not root:
+        raise PlanningToolError(
+            "Multi-file render manifest is missing deliverable_root from the output goal."
+        )
+
+    for item in manifest.items:
+        staging_path = item.relative_path
+        publish_name = item.publish_relative_path
+        if not staging_path or not publish_name:
+            continue
+        if staging_path not in assembled.files:
+            continue
+        publish_map[staging_path] = f"{root}/{publish_name}".replace("//", "/")
+
+    for filename in manifest.declared_set_level_files:
+        if filename in assembled.files:
+            publish_map[filename] = f"{root}/{filename}".replace("//", "/")
+
+    return publish_map
 
 
 def _atomic_replace(source: Path, destination: Path) -> None:

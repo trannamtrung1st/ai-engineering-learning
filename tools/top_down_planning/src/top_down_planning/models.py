@@ -134,11 +134,13 @@ class RenderManifestItem(BaseModel):
     plan_item_id: str
     top_level_branch_id: str
     order: int
+    set_order: int = 1
     title: str
     dependencies: list[str] = Field(default_factory=list)
     assigned_batch_id: str
     artifact_key: str
     relative_path: str | None = None
+    publish_relative_path: str | None = None
     section_order: int | None = None
 
 
@@ -149,6 +151,8 @@ class RenderManifest(BaseModel):
     render_config_digest: str
     output_mode: OutputMode = OutputMode.SINGLE_DOCUMENT
     final_relative_path: str | None = None
+    deliverable_root: str | None = None
+    declared_set_level_files: list[str] = Field(default_factory=list)
     items: list[RenderManifestItem] = Field(default_factory=list)
 
 

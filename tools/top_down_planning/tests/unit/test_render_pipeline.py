@@ -29,12 +29,12 @@ from top_down_planning.persistence import (
 )
 from top_down_planning.render_manifest import build_render_manifest, compute_manifest_digest
 from top_down_planning.render_preconditions import validate_render_only_preconditions
-from tests.helpers import default_generation
+from tests.helpers import default_generation, render_output_goal
 from tests.plan_factory import make_root_plan
 
 
 def test_manifest_includes_actionable_leaves_once(tmp_path: Path, example_input: Path) -> None:
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     plan = make_root_plan(
         output_goal=loaded_goal.text,
         output_goal_digest=loaded_goal.digest,
@@ -53,7 +53,14 @@ def test_manifest_includes_actionable_leaves_once(tmp_path: Path, example_input:
 
 
 def test_coherent_batching_groups_by_branch(tmp_path: Path, example_input: Path) -> None:
-    loaded_goal = load_output_goal(inline="Produce TODO folder")
+    multi_file_goal = """Produce TODO folder.
+
+## Output artifacts
+
+- `plans/demo/todos/INDEX.md`
+- `plans/demo/todos/manifest.yaml`
+"""
+    loaded_goal = load_output_goal(inline=multi_file_goal)
     plan = make_root_plan(output_goal=loaded_goal.text, output_goal_digest=loaded_goal.digest)
     plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
     for index, item_id in enumerate(("item-002", "item-003"), start=2):
@@ -74,7 +81,7 @@ def test_coherent_batching_groups_by_branch(tmp_path: Path, example_input: Path)
         plan,
         plan_digest=plan_digest,
         output_goal_digest=loaded_goal.digest,
-        output_goal_text="Write files under items/",
+        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(batch_strategy=RenderBatchStrategy.COHERENT, batch_size=5),
     )
     batch_ids = [item.assigned_batch_id for item in manifest.items]
@@ -112,7 +119,7 @@ async def test_render_only_does_not_modify_plan_yaml(
     example_input: Path,
     fake_agent_bin: str,
 ) -> None:
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     plan = make_root_plan(
         input_file=str(example_input),
         output_goal=loaded_goal.text,
@@ -180,7 +187,7 @@ async def test_render_only_does_not_modify_plan_yaml(
 
 
 def test_manifest_digest_is_deterministic(tmp_path: Path) -> None:
-    loaded_goal = load_output_goal(inline="goal")
+    loaded_goal = render_output_goal()
     plan = make_root_plan(output_goal=loaded_goal.text, output_goal_digest=loaded_goal.digest)
     plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
     plan_digest = compute_plan_digest(plan)

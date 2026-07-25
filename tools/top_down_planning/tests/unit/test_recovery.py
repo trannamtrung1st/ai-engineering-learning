@@ -183,11 +183,12 @@ async def test_resume_recovers_reset_plan_from_audit(
     example_input: Path,
     fake_agent_bin: str,
 ) -> None:
-    from top_down_planning.input_loader import load_markdown_input, load_output_goal
+    from top_down_planning.input_loader import load_markdown_input
+    from tests.helpers import render_output_goal
 
     output_dir = tmp_path / "planning-output"
     loaded = load_markdown_input(example_input)
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     limits = PlanningLimits(max_iterations=5)
 
     plan = make_root_plan(

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.input_loader import load_output_goal
+from tests.helpers import render_output_goal
 from top_down_planning.models import FinalStatus, PlanningLimits, ReviewConfig, ReviewStatus
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import (
@@ -23,7 +23,7 @@ async def test_resume_reuses_whole_plan_review_and_runs_confirmation(
     fake_agent_bin: str,
 ) -> None:
     output_dir = tmp_path / "planning-output"
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     limits = PlanningLimits(max_iterations=5)
     config = RunConfig(
         input_path=example_input,
@@ -47,7 +47,7 @@ async def test_resume_reuses_whole_plan_review_and_runs_confirmation(
     from top_down_planning.persistence import save_run_state
 
     save_run_state(output_dir, run_state)
-    artifact = output_dir / "implementation-plan.md"
+    artifact = tmp_path / "implementation-plan.md"
     if artifact.is_file():
         artifact.unlink()
 

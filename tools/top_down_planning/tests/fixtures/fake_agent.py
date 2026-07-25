@@ -257,24 +257,48 @@ def _run_render_tool(*args: str) -> None:
 def _assigned_artifacts(prompt: str) -> list[dict]:
     artifacts: list[dict] = []
     for match in re.finditer(
-        r"- `(item-[^`]+)` → `(todo-item-[^`]+)` → (?:`([^`]+)`|section (\d+))",
+        r"- `(item-[^`]+)` → `(todo-item-[^`]+)` → "
+        r"staging `([^`]+)` → set_order `(\d+)` → publish `([^`]+)`",
         prompt,
     ):
         item_id = match.group(1)
         key = match.group(2)
-        rel_path = match.group(3)
-        section_order = match.group(4)
+        staging_path = match.group(3)
+        set_order = match.group(4)
+        publish_path = match.group(5)
+        content = (
+            f"id: {publish_path.replace('.yaml', '')}\n"
+            f"title: Rendered {item_id}\n"
+            f"order: '{set_order}'\n"
+        )
+        artifacts.append(
+            {
+                "plan_item_id": item_id,
+                "artifact_key": key,
+                "relative_path": staging_path,
+                "content": content,
+            }
+        )
+
+    if artifacts:
+        return artifacts
+
+    for match in re.finditer(
+        r"- `(item-[^`]+)` → `(todo-item-[^`]+)` → section (\d+)",
+        prompt,
+    ):
+        item_id = match.group(1)
+        key = match.group(2)
+        section_order = int(match.group(3))
         content = f"## {item_id}\n\nRendered content for {item_id}.\n"
-        payload: dict = {
-            "plan_item_id": item_id,
-            "artifact_key": key,
-            "content": content,
-        }
-        if rel_path:
-            payload["relative_path"] = rel_path
-        if section_order:
-            payload["section_order"] = int(section_order)
-        artifacts.append(payload)
+        artifacts.append(
+            {
+                "plan_item_id": item_id,
+                "artifact_key": key,
+                "section_order": section_order,
+                "content": content,
+            }
+        )
     return artifacts
 
 

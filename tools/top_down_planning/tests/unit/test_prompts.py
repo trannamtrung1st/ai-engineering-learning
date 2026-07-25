@@ -13,7 +13,7 @@ from top_down_planning.prompts import (
     should_embed_content,
 )
 from top_down_planning.scheduler import initialize_root_plan
-from tests.helpers import planning_prompt_kwargs
+from tests.helpers import planning_prompt_kwargs, render_output_goal
 from tests.plan_factory import make_root_plan
 
 
@@ -99,7 +99,7 @@ def test_prompt_embeds_small_input_document(
     tmp_path: Path,
 ) -> None:
     loaded_input = load_markdown_input(example_input)
-    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    output_goal = render_output_goal()
     plan = make_root_plan(
         input_file=str(example_input),
         output_goal=output_goal.text,
@@ -139,7 +139,7 @@ def test_prompt_references_large_input_file_by_path(tmp_path: Path) -> None:
     input_file = tmp_path / "large-input.md"
     input_file.write_text("# Large\n\n" + ("x" * 5000), encoding="utf-8")
     loaded_input = load_markdown_input(input_file)
-    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    output_goal = render_output_goal()
     plan = make_root_plan(
         input_file=str(input_file),
         output_goal=output_goal.text,
@@ -306,7 +306,7 @@ def test_prompt_includes_stop_hint_when_provided(
     tmp_path: Path,
 ) -> None:
     loaded_input = load_markdown_input(example_input)
-    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    output_goal = render_output_goal()
     stop_hint = load_stop_hint(
         inline="Stop expanding once each major area has actionable leaf tasks."
     )
@@ -345,7 +345,7 @@ def test_planning_prompt_uses_transaction_cli(
     tmp_path: Path,
 ) -> None:
     loaded_input = load_markdown_input(example_input)
-    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    output_goal = render_output_goal()
     plan = make_root_plan(
         input_file=str(example_input),
         output_goal=output_goal.text,
@@ -380,7 +380,7 @@ def test_prompt_omits_stop_hint_section_when_not_provided(
     tmp_path: Path,
 ) -> None:
     loaded_input = load_markdown_input(example_input)
-    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    output_goal = render_output_goal()
     plan = make_root_plan(
         input_file=str(example_input),
         output_goal=output_goal.text,
@@ -411,7 +411,7 @@ def test_render_batch_prompt_references_digests_and_tool(
     tmp_path: Path,
     example_input: Path,
 ) -> None:
-    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    output_goal = render_output_goal()
 
     prompt = build_render_batch_prompt(
         batch_id="batch-001",
@@ -434,7 +434,7 @@ def test_render_batch_prompt_references_digests_and_tool(
 def test_render_batch_prompt_includes_validation_feedback(
     tmp_path: Path,
 ) -> None:
-    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    output_goal = render_output_goal()
 
     prompt = build_render_batch_prompt(
         batch_id="batch-002",

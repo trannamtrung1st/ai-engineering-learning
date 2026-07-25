@@ -9,7 +9,7 @@ from top_down_planning.input_loader import load_markdown_input, load_output_goal
 from top_down_planning.models import GenerationConfig, PlanningLimits
 from top_down_planning.orchestrator import Orchestrator, RunConfig, _BatchSessionResult, _BatchSpec
 from top_down_planning.persistence import new_run_state
-from tests.helpers import default_generation
+from tests.helpers import default_generation, render_output_goal
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ async def test_run_batch_sessions_launches_all_tasks_in_parallel(
     fake_agent_bin,
 ) -> None:
     loaded = load_markdown_input(example_input)
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     limits = PlanningLimits(max_iterations=10, max_retries=1)
     generation = default_generation(batch_size=1, concurrent_batches=3)
     config = RunConfig(
@@ -90,7 +90,7 @@ async def test_failed_wave_does_not_mutate_plan(
     from tests.plan_factory import make_root_plan
 
     loaded = load_markdown_input(example_input)
-    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    loaded_goal = render_output_goal()
     output_dir = tmp_path / "planning-output"
     limits = PlanningLimits(max_iterations=10, max_retries=1)
     generation = default_generation(batch_size=1, concurrent_batches=2)
