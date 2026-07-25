@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from top_down_planning.errors import PlanningToolError
@@ -23,14 +23,6 @@ _FALSE_POSITIVE_TOKENS = frozenset(
         "needs_revision",
     }
 )
-_SET_LEVEL_BASENAMES = frozenset(
-    {
-        "INDEX.md",
-        "manifest.yaml",
-        "planning-summary.md",
-        "index.yaml",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -39,9 +31,7 @@ class OutputGoalArtifacts:
 
     paths: list[str]
     deliverable_root: str | None
-    declared_set_level_files: list[str]
-    item_paths: list[str]
-    auxiliary_artifacts: list[str] = field(default_factory=list)
+    final_paths: list[str]
 
 
 def resolve_output_goal_text(plan: PlanState) -> str:
@@ -63,16 +53,16 @@ def parse_output_goal_artifacts(output_goal: str) -> OutputGoalArtifacts:
             "## Output artifacts."
         )
     deliverable_root = _resolve_deliverable_root(paths)
-    declared_set_level = _declared_set_level_files(paths, deliverable_root)
-    item_paths = _item_paths(paths, deliverable_root)
-    auxiliary = _auxiliary_artifact_paths(paths, deliverable_root)
+    final_paths = _final_paths(paths)
     return OutputGoalArtifacts(
         paths=paths,
         deliverable_root=deliverable_root,
-        declared_set_level_files=declared_set_level,
-        item_paths=item_paths,
-        auxiliary_artifacts=auxiliary,
+        final_paths=final_paths,
     )
+
+
+def _final_paths(paths: list[str]) -> list[str]:
+    return sorted({path for path in paths if not path.endswith("/")})
 
 
 def _validated_path(path: str) -> str:
@@ -180,77 +170,3 @@ def _resolve_deliverable_root(paths: list[str]) -> str | None:
     if len(parents) == 1:
         return next(iter(parents))
     return None
-
-
-def _declared_set_level_files(
-    paths: list[str],
-    deliverable_root: str | None,
-) -> list[str]:
-    declared: list[str] = []
-    root = deliverable_root or ""
-    for path in paths:
-        if path.endswith("/"):
-            continue
-        relative = _path_relative_to_root(path, root)
-        if relative is None:
-            continue
-        if "/" not in relative and PurePosixPath(relative).name in _SET_LEVEL_BASENAMES:
-            declared.append(relative)
-    return sorted(set(declared))
-
-
-def _item_paths(paths: list[str], deliverable_root: str | None) -> list[str]:
-    items: list[str] = []
-    root = deliverable_root or ""
-    for path in paths:
-        if path.endswith("/"):
-            continue
-        relative = _path_relative_to_root(path, root)
-        if relative is None:
-            continue
-        name = PurePosixPath(relative).name
-        if name in _SET_LEVEL_BASENAMES:
-            continue
-        if relative.startswith("items/") or re.match(r"^\d{2}-.+\.(yaml|yml)$", name):
-            items.append(relative)
-    return sorted(set(items))
-
-
-def _path_relative_to_root(path: str, deliverable_root: str | None) -> str | None:
-    normalized = path.replace("\\", "/")
-    if not deliverable_root:
-        return normalized
-    root = deliverable_root.rstrip("/") + "/"
-    if normalized.startswith(root):
-        return normalized[len(root) :]
-    if normalized.startswith("./"):
-        normalized = normalized[2:]
-    if root.startswith("./"):
-        root = root[2:]
-    if normalized.startswith(root):
-        return normalized[len(root) :]
-    if "/" not in normalized:
-        return normalized
-    if normalized.startswith(root.rstrip("/")):
-        remainder = normalized[len(root.rstrip("/")) :].lstrip("/")
-        return remainder or None
-    return None
-
-
-def _auxiliary_artifact_paths(
-    paths: list[str],
-    deliverable_root: str | None,
-) -> list[str]:
-    if not deliverable_root:
-        return sorted({path for path in paths if "/" in path.replace("\\", "/")})
-    root = deliverable_root.rstrip("/") + "/"
-    auxiliary: list[str] = []
-    for path in paths:
-        if path.endswith("/"):
-            continue
-        normalized = path.replace("\\", "/")
-        if "/" not in normalized:
-            continue
-        if not normalized.startswith(root):
-            auxiliary.append(normalized)
-    return sorted(set(auxiliary))

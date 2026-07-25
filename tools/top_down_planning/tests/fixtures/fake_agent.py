@@ -256,21 +256,15 @@ def _run_render_tool(*args: str) -> None:
 
 def _assigned_artifacts(prompt: str) -> list[dict]:
     artifacts: list[dict] = []
+
     for match in re.finditer(
-        r"- `(item-[^`]+)` → `(todo-item-[^`]+)` → "
-        r"staging `([^`]+)` → set_order `(\d+)` → publish `([^`]+)`",
+        r"- `(final-[^`]+)` → `(final-[^`]+)` → staging `([^`]+)` → publish `([^`]+)`",
         prompt,
     ):
         item_id = match.group(1)
         key = match.group(2)
         staging_path = match.group(3)
-        set_order = match.group(4)
-        publish_path = match.group(5)
-        content = (
-            f"id: {publish_path.replace('.yaml', '')}\n"
-            f"title: Rendered {item_id}\n"
-            f"order: '{set_order}'\n"
-        )
+        content = _final_artifact_content(staging_path)
         artifacts.append(
             {
                 "plan_item_id": item_id,
@@ -280,26 +274,31 @@ def _assigned_artifacts(prompt: str) -> list[dict]:
             }
         )
 
-    if artifacts:
-        return artifacts
-
     for match in re.finditer(
-        r"- `(item-[^`]+)` → `(todo-item-[^`]+)` → section (\d+)",
+        r"- `(item-[^`]+)` → `(artifact-[^`]+)` → staging `([^`]+)`",
         prompt,
     ):
         item_id = match.group(1)
         key = match.group(2)
-        section_order = int(match.group(3))
-        content = f"## {item_id}\n\nRendered content for {item_id}.\n"
+        staging_path = match.group(3)
         artifacts.append(
             {
                 "plan_item_id": item_id,
                 "artifact_key": key,
-                "section_order": section_order,
-                "content": content,
+                "relative_path": staging_path,
+                "content": f"Notes and partials for {item_id}.\n",
             }
         )
+
     return artifacts
+
+
+def _final_artifact_content(relative_path: str) -> str:
+    if relative_path.endswith(".md"):
+        return f"# Deliverable\n\nRendered content for `{relative_path}`.\n"
+    if relative_path.endswith((".yaml", ".yml")):
+        return f"id: rendered\ntitle: {relative_path}\n"
+    return f"Rendered content for {relative_path}.\n"
 
 
 def _write_render_batch_transaction(prompt: str) -> None:
@@ -311,9 +310,9 @@ def _write_render_batch_transaction(prompt: str) -> None:
             artifacts.append(
                 {
                     "plan_item_id": item_id,
-                    "artifact_key": f"todo-item-{index:03d}",
-                    "section_order": index,
-                    "content": f"## {title}\n\nRendered content for {title}.\n",
+                    "artifact_key": f"artifact-{index:03d}",
+                    "relative_path": f"intermediates/render-batch-001/{item_id}.md",
+                    "content": f"Notes for {title}.\n",
                 }
             )
     for artifact in artifacts:

@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from top_down_planning.models import (
-    OutputMode,
     RenderBatchTransaction,
     RenderManifest,
     RenderManifestItem,
 )
 from top_down_planning.paths import validate_relative_path
-from top_down_planning.render_content_validation import validate_transaction_content
 
 
 def validate_batch_transaction(
@@ -55,6 +53,15 @@ def validate_batch_transaction(
             )
         seen_items.add(artifact.plan_item_id)
 
+        if manifest_item.relative_path is None:
+            errors.append(
+                f"missing relative_path in manifest for {artifact.plan_item_id}"
+            )
+        elif artifact.relative_path != manifest_item.relative_path:
+            errors.append(
+                f"relative_path mismatch for {artifact.plan_item_id}"
+            )
+
         if artifact.artifact_key != manifest_item.artifact_key:
             errors.append(
                 f"artifact_key mismatch for {artifact.plan_item_id}: "
@@ -64,38 +71,20 @@ def validate_batch_transaction(
             errors.append(f"duplicate artifact_key {artifact.artifact_key!r}")
         seen_keys.add(artifact.artifact_key)
 
-        if manifest.output_mode == OutputMode.MULTI_FILE:
-            if artifact.relative_path != manifest_item.relative_path:
-                errors.append(
-                    f"relative_path mismatch for {artifact.plan_item_id}"
+        if artifact.relative_path:
+            try:
+                normalized = validate_relative_path(
+                    artifact.relative_path, label="relative_path"
                 )
-            if artifact.relative_path:
-                try:
-                    normalized = validate_relative_path(
-                        artifact.relative_path, label="relative_path"
-                    )
-                except ValueError as exc:
-                    errors.append(str(exc))
-                else:
-                    if normalized in seen_paths:
-                        errors.append(f"duplicate relative_path {normalized!r}")
-                    seen_paths.add(normalized)
-        else:
-            if artifact.section_order != manifest_item.section_order:
-                errors.append(
-                    f"section_order mismatch for {artifact.plan_item_id}"
-                )
+            except ValueError as exc:
+                errors.append(str(exc))
+            else:
+                if normalized in seen_paths:
+                    errors.append(f"duplicate relative_path {normalized!r}")
+                seen_paths.add(normalized)
 
         if not artifact.content.strip():
             errors.append(f"empty content for {artifact.plan_item_id}")
-
-    errors.extend(
-        validate_transaction_content(
-            transaction.artifacts,
-            assigned_items,
-            output_mode=manifest.output_mode,
-        )
-    )
 
     for item in assigned_items:
         if item.plan_item_id not in seen_items:

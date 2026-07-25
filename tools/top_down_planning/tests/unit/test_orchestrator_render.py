@@ -58,6 +58,9 @@ async def test_render_batch_retry_records_audit_files(
     attempt_state = {"n": 0}
 
     def flaky_validate(*args, **kwargs):
+        batch_id = kwargs.get("expected_batch_id")
+        if batch_id != "render-batch-001":
+            return []
         attempt_state["n"] += 1
         if attempt_state["n"] == 1:
             return ["simulated missing item"]

@@ -63,7 +63,7 @@ def test_bundled_planning_example_agent_context() -> None:
         plan_digest="d" * 64,
         output_goal_digest=goal.digest,
         render_config_digest="c" * 64,
-        batch_context_markdown="## Assigned items\n- `item-001` → `todo-item-001` → section 1\n",
+        batch_context_markdown="## Assigned items\n- `item-001` → `artifact-001` → staging `intermediates/render-batch-001/item-001.md`\n",
         output_goal=goal,
         workspace=examples_root,
         embed_threshold=4000,

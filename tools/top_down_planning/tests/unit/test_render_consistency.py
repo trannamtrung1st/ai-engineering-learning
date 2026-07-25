@@ -76,7 +76,7 @@ def test_render_batch_prompt_references_assigned_items(
     batch_context = "\n".join(
         [
             "## Assigned items",
-            "- `item-002` → `todo-item-002` → section 2",
+            "- `item-002` → `artifact-002` → staging `intermediates/render-batch-001/item-002.md`",
             "",
             "### item-002: Unique checkpoint title",
             "- Objective: Complete the checkpoint",

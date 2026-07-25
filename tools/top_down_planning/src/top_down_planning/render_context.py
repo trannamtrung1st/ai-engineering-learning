@@ -6,16 +6,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from top_down_planning.digest import compute_plan_digest
-from top_down_planning.generation_context import build_plan_overview, ensure_plan_overview_artifact
+from top_down_planning.generation_context import ensure_plan_overview_artifact
 from top_down_planning.input_loader import LoadedOutputGoal
 from top_down_planning.models import (
-    PlanItem,
     PlanState,
     RenderManifest,
     RenderManifestItem,
     WholePlanContextMode,
 )
-from top_down_planning.persistence import render_context_dir
+from top_down_planning.persistence import render_batch_transaction_path, render_context_dir
 from top_down_planning.prompts import (
     _format_item_context,
     format_embedded_markdown,
@@ -23,7 +22,7 @@ from top_down_planning.prompts import (
     format_output_goal_section,
     should_embed_content,
 )
-from top_down_planning.render_manifest import save_render_manifest
+from top_down_planning.render_manifest import FINAL_BATCH_ID, save_render_manifest
 
 
 @dataclass(frozen=True)
@@ -78,6 +77,7 @@ def prepare_render_batch_context(
         output_goal=output_goal,
         output_goal_path=output_goal_path,
         workspace=workspace,
+        output_dir=output_dir,
         embed_threshold=embed_threshold,
         whole_plan_context=whole_plan_context,
         batch_id=batch_id,
@@ -103,6 +103,7 @@ def _build_batch_context_markdown(
     output_goal: LoadedOutputGoal,
     output_goal_path: Path | None,
     workspace: Path,
+    output_dir: Path,
     embed_threshold: int,
     whole_plan_context: WholePlanContextMode,
     batch_id: str,
@@ -135,19 +136,22 @@ def _build_batch_context_markdown(
         ]
     )
     for manifest_item in assigned_items:
-        if manifest_item.relative_path:
+        if manifest_item.artifact_role == "final":
             lines.append(
                 f"- `{manifest_item.plan_item_id}` → "
                 f"`{manifest_item.artifact_key}` → "
                 f"staging `{manifest_item.relative_path}` → "
-                f"set_order `{manifest_item.set_order:02d}` → "
                 f"publish `{manifest_item.publish_relative_path}`"
             )
         else:
             lines.append(
                 f"- `{manifest_item.plan_item_id}` → "
-                f"`{manifest_item.artifact_key}` → section {manifest_item.section_order}"
+                f"`{manifest_item.artifact_key}` → "
+                f"staging `{manifest_item.relative_path}`"
             )
+
+    if batch_id == FINAL_BATCH_ID:
+        lines.extend(_format_intermediate_inputs_section(manifest, output_dir, workspace))
 
     if whole_plan_context in {WholePlanContextMode.REFERENCED, WholePlanContextMode.HYBRID}:
         lines.extend(["", "## Whole plan overview (read-only)", ""])
@@ -181,3 +185,42 @@ def _build_batch_context_markdown(
     )
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _format_intermediate_inputs_section(
+    manifest: RenderManifest,
+    output_dir: Path,
+    workspace: Path,
+) -> list[str]:
+    intermediate_items = sorted(
+        (item for item in manifest.items if item.artifact_role == "intermediate"),
+        key=lambda entry: entry.set_order,
+    )
+    lines = ["", "## Intermediate inputs", ""]
+    if not intermediate_items:
+        lines.append("_No intermediate artifacts were produced._")
+        return lines
+
+    lines.append(
+        "Use these staged intermediate artifacts as synthesis inputs. "
+        "Read the finalized batch transactions below; do not guess content."
+    )
+    lines.extend(["", "### Intermediate artifact paths", ""])
+    for item in intermediate_items:
+        lines.append(f"- `{item.plan_item_id}` → `{item.relative_path}`")
+
+    lines.extend(["", "### Intermediate batch transactions (read-only)", ""])
+    seen_batches: list[str] = []
+    for item in intermediate_items:
+        if item.assigned_batch_id in seen_batches:
+            continue
+        seen_batches.append(item.assigned_batch_id)
+        txn_path = render_batch_transaction_path(output_dir, item.assigned_batch_id)
+        if txn_path.is_file():
+            lines.append(format_input_file_reference(txn_path, workspace))
+        else:
+            lines.append(
+                f"- Missing transaction for `{item.assigned_batch_id}` "
+                f"(expected {txn_path})"
+            )
+    return lines

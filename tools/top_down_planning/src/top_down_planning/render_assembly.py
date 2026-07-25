@@ -9,10 +9,9 @@ from pathlib import Path
 import yaml
 
 from top_down_planning.digest import digest_text
-from top_down_planning.models import OutputMode, RenderBatchTransaction, RenderManifest
+from top_down_planning.models import RenderBatchTransaction, RenderManifest
 from top_down_planning.persistence import render_assembled_dir, render_batch_transaction_path
 from top_down_planning.render_batcher import unique_batch_ids
-from top_down_planning.render_content_validation import validate_transaction_content
 from top_down_planning.render_tool import load_render_transaction
 
 
@@ -42,33 +41,17 @@ def assemble_render_output(
         raise ValueError("; ".join(errors))
 
     files: dict[str, str] = {}
-    if manifest.output_mode == OutputMode.SINGLE_DOCUMENT:
-        final_path = manifest.final_relative_path
-        if not final_path:
-            raise ValueError("missing final_relative_path for single-document output")
-        sections: list[tuple[int, str]] = []
-        for item in sorted(manifest.items, key=lambda entry: entry.order):
-            batch_txn = transactions[item.assigned_batch_id]
-            artifact = next(
-                art for art in batch_txn.artifacts if art.plan_item_id == item.plan_item_id
-            )
-            sections.append((item.order, artifact.content))
-        content = _assemble_single_document(sections)
-        files[final_path] = content
-    else:
-        for item in manifest.items:
-            batch_txn = transactions[item.assigned_batch_id]
-            artifact = next(
-                art for art in batch_txn.artifacts if art.plan_item_id == item.plan_item_id
-            )
-            rel_path = item.relative_path
-            if rel_path is None:
-                raise ValueError(f"missing relative_path for {item.plan_item_id}")
-            files[rel_path] = artifact.content
+    for item in manifest.items:
+        batch_txn = transactions[item.assigned_batch_id]
+        artifact = next(
+            art for art in batch_txn.artifacts if art.plan_item_id == item.plan_item_id
+        )
+        rel_path = item.relative_path
+        if rel_path is None:
+            raise ValueError(f"missing relative_path for {item.plan_item_id}")
+        files[rel_path] = artifact.content
 
-        internal_index = _build_folder_index(manifest)
-        files[".internal/index.yaml"] = internal_index
-
+    files[".internal/index.yaml"] = _build_folder_index(manifest)
     digest = compute_assembled_digest(files)
     return AssembledOutput(files=files, digest=digest)
 
@@ -99,11 +82,9 @@ def validate_assembly(
     paths: set[str] = set()
 
     manifest_ids = {item.plan_item_id for item in manifest.items}
-    all_artifacts = []
 
     for batch_id, txn in transactions.items():
         for artifact in txn.artifacts:
-            all_artifacts.append(artifact)
             if artifact.plan_item_id not in manifest_ids:
                 errors.append(f"unknown rendered item {artifact.plan_item_id!r}")
             if artifact.plan_item_id in rendered_ids:
@@ -130,15 +111,6 @@ def validate_assembly(
             if dep not in manifest_ids and dep not in rendered_ids:
                 errors.append(f"unresolved dependency {dep!r} for {item.plan_item_id}")
 
-    if manifest.output_mode == OutputMode.MULTI_FILE:
-        errors.extend(
-            validate_transaction_content(
-                all_artifacts,
-                list(manifest.items),
-                output_mode=manifest.output_mode,
-            )
-        )
-
     return errors
 
 
@@ -146,14 +118,6 @@ def compute_assembled_digest(files: dict[str, str]) -> str:
     payload = {key: files[key] for key in sorted(files.keys())}
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return digest_text(canonical)
-
-
-def _assemble_single_document(sections: list[tuple[int, str]]) -> str:
-    lines = ["# Assembled deliverable", ""]
-    for _, content in sorted(sections, key=lambda entry: entry[0]):
-        lines.append(content.rstrip())
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
 
 
 def _build_folder_index(manifest: RenderManifest) -> str:

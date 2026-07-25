@@ -418,7 +418,7 @@ def test_render_batch_prompt_references_digests_and_tool(
         plan_digest="d" * 64,
         output_goal_digest=output_goal.digest,
         render_config_digest="c" * 64,
-        batch_context_markdown="## Assigned items\n- `item-001` → `todo-item-001` → section 1\n",
+        batch_context_markdown="## Assigned items\n- `item-001` → `artifact-001` → staging `intermediates/render-batch-001/item-001.md`\n",
         output_goal=output_goal,
         workspace=tmp_path,
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
@@ -428,7 +428,27 @@ def test_render_batch_prompt_references_digests_and_tool(
     assert "d" * 64 in prompt
     assert "Produce an actionable implementation plan" in prompt
     assert "planning-render-tool" in prompt
-    assert "Do not write to the final deliverable directory" in prompt
+    assert "Do not write deliverables directly to workspace paths outside the render transaction CLI" in prompt
+
+
+def test_final_render_batch_prompt_references_synthesis_instructions(
+    tmp_path: Path,
+) -> None:
+    output_goal = render_output_goal()
+    prompt = build_render_batch_prompt(
+        batch_id="render-batch-final",
+        plan_digest="d" * 64,
+        output_goal_digest=output_goal.digest,
+        render_config_digest="c" * 64,
+        batch_context_markdown="## Assigned items\n",
+        output_goal=output_goal,
+        workspace=tmp_path,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        is_final_batch=True,
+    )
+    assert "Synthesize final deliverables" in prompt
+    assert "Record artifacts at the declared staging paths" in prompt
+    assert "Do not write deliverables directly to workspace paths" not in prompt
 
 
 def test_render_batch_prompt_includes_validation_feedback(

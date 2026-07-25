@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path, PurePosixPath
 
 from top_down_planning.digest import compute_render_config_digest, digest_text
 from top_down_planning.errors import PlanningToolError
@@ -22,8 +23,9 @@ from top_down_planning.output_goal_artifacts import (
 from top_down_planning.render_brief import actionable_leaf_items
 from top_down_planning.render_batcher import assign_render_batches
 
-SET_LEVEL_BATCH_ID = "render-batch-set-level"
-SET_LEVEL_ORDER_BASE = 9000
+FINAL_BATCH_ID = "render-batch-final"
+FINAL_ORDER_BASE = 9000
+INTERMEDIATE_PREFIX = "intermediates"
 
 
 def slugify_title(title: str) -> str:
@@ -32,16 +34,16 @@ def slugify_title(title: str) -> str:
     return slug[:60] or "item"
 
 
-def detect_output_mode(artifacts: OutputGoalArtifacts) -> tuple[OutputMode, str]:
+def detect_output_mode(artifacts: OutputGoalArtifacts) -> OutputMode:
     declared = artifacts.paths
     if len(declared) == 1 and not declared[0].endswith("/"):
-        return OutputMode.SINGLE_DOCUMENT, declared[0]
+        return OutputMode.SINGLE_DOCUMENT
     if not artifacts.deliverable_root:
         raise PlanningToolError(
             "Multi-file output goals must declare a deliverable root via a directory "
             "path or shared parent such as INDEX.md."
         )
-    return OutputMode.MULTI_FILE, artifacts.deliverable_root
+    return OutputMode.MULTI_FILE
 
 
 def _top_level_branch_id(plan: PlanState, item: PlanItem) -> str:
@@ -65,76 +67,41 @@ def _resolve_slug(title: str, used: set[str]) -> str:
     return candidate
 
 
-def _artifact_key(plan_item_id: str) -> str:
+def _intermediate_artifact_key(plan_item_id: str) -> str:
     suffix = plan_item_id.removeprefix("item-")
-    return f"todo-item-{suffix}"
+    return f"artifact-{suffix}"
 
 
-def _relative_path_for_item(
+def _intermediate_relative_path(batch_id: str, plan_item_id: str) -> str:
+    return f"{INTERMEDIATE_PREFIX}/{batch_id}/{plan_item_id}.md"
+
+
+def _build_final_manifest_items(
+    final_paths: list[str],
     *,
-    order: int,
-    slug: str,
-    output_mode: OutputMode,
-) -> str | None:
-    if output_mode == OutputMode.SINGLE_DOCUMENT:
-        return None
-    return f"items/{order:03d}-{slug}.yaml"
-
-
-def _publish_relative_path_for_item(
-    *,
-    set_order: int,
-    slug: str,
-    output_mode: OutputMode,
-) -> str | None:
-    if output_mode == OutputMode.SINGLE_DOCUMENT:
-        return None
-    return f"{set_order:02d}-{slug}.yaml"
-
-
-def _build_set_level_manifest_items(
-    *,
-    declared_set_level_files: list[str],
-    auxiliary_artifacts: list[str],
-    leaf_count: int,
+    intermediate_count: int,
 ) -> list[RenderManifestItem]:
     items: list[RenderManifestItem] = []
-    order = SET_LEVEL_ORDER_BASE
+    used_slugs: set[str] = set()
+    order = FINAL_ORDER_BASE
 
-    for filename in declared_set_level_files:
+    for index, path in enumerate(final_paths):
         order += 1
+        basename = PurePosixPath(path).name
+        slug = _resolve_slug(basename, used_slugs)
         items.append(
             RenderManifestItem(
-                plan_item_id=f"set-level-{filename}",
-                top_level_branch_id="set-level",
+                plan_item_id=f"final-{slug}",
+                top_level_branch_id="final",
                 order=order,
-                set_order=leaf_count + len(items) + 1,
-                title=f"Set-level file: {filename}",
+                set_order=intermediate_count + index + 1,
+                title=f"Final deliverable: {path}",
                 dependencies=[],
-                assigned_batch_id=SET_LEVEL_BATCH_ID,
-                artifact_key=f"set-level-{filename}",
-                relative_path=filename,
-                publish_relative_path=filename,
-                artifact_role="set_level",
-            )
-        )
-
-    for path in auxiliary_artifacts:
-        order += 1
-        slug = slugify_title(path.replace("/", "-"))
-        items.append(
-            RenderManifestItem(
-                plan_item_id=f"set-level-{slug}",
-                top_level_branch_id="set-level",
-                order=order,
-                set_order=leaf_count + len(items) + 1,
-                title=f"Auxiliary deliverable: {path}",
-                dependencies=[],
-                assigned_batch_id=SET_LEVEL_BATCH_ID,
-                artifact_key=f"set-level-{slug}",
+                assigned_batch_id=FINAL_BATCH_ID,
+                artifact_key=f"final-{slug}",
                 relative_path=path,
                 publish_relative_path=path,
-                artifact_role="set_level",
+                artifact_role="final",
             )
         )
 
@@ -151,13 +118,16 @@ def build_render_manifest(
 ) -> RenderManifest:
     leaves = actionable_leaf_items(plan)
     goal_artifacts = parse_output_goal_artifacts(output_goal_text)
-    output_mode, final_path = detect_output_mode(goal_artifacts)
+    if not goal_artifacts.final_paths:
+        raise PlanningToolError(
+            "Output goal must declare at least one file path under ## Output artifacts. "
+            "Directory-only declarations are not sufficient for render."
+        )
+    output_mode = detect_output_mode(goal_artifacts)
     render_config_digest = compute_render_config_digest(render_config)
-    used_slugs: set[str] = set()
     manifest_items: list[RenderManifestItem] = []
 
     for set_order, item in enumerate(leaves, start=1):
-        slug = _resolve_slug(item.title, used_slugs)
         manifest_items.append(
             RenderManifestItem(
                 plan_item_id=item.id,
@@ -167,70 +137,66 @@ def build_render_manifest(
                 title=item.title,
                 dependencies=list(item.dependencies),
                 assigned_batch_id="",  # filled by batcher
-                artifact_key=_artifact_key(item.id),
-                relative_path=_relative_path_for_item(
-                    order=item.order,
-                    slug=slug,
-                    output_mode=output_mode,
-                ),
-                publish_relative_path=_publish_relative_path_for_item(
-                    set_order=set_order,
-                    slug=slug,
-                    output_mode=output_mode,
-                ),
-                section_order=item.order if output_mode == OutputMode.SINGLE_DOCUMENT else None,
+                artifact_key=_intermediate_artifact_key(item.id),
+                artifact_role="intermediate",
             )
         )
 
-    batch_assignments = assign_render_batches(
-        plan,
-        manifest_items,
-        render_config=render_config,
+    if manifest_items:
+        batch_assignments = assign_render_batches(
+            plan,
+            manifest_items,
+            render_config=render_config,
+        )
+        for entry, batch_id in zip(manifest_items, batch_assignments, strict=True):
+            entry.assigned_batch_id = batch_id
+            entry.relative_path = _intermediate_relative_path(batch_id, entry.plan_item_id)
+
+    manifest_items.extend(
+        _build_final_manifest_items(
+            goal_artifacts.final_paths,
+            intermediate_count=len(manifest_items),
+        )
     )
-    for entry, batch_id in zip(manifest_items, batch_assignments, strict=True):
-        entry.assigned_batch_id = batch_id
-
-    if output_mode == OutputMode.MULTI_FILE:
-        manifest_items.extend(
-            _build_set_level_manifest_items(
-                declared_set_level_files=goal_artifacts.declared_set_level_files,
-                auxiliary_artifacts=goal_artifacts.auxiliary_artifacts,
-                leaf_count=len(manifest_items),
-            )
-        )
 
     return RenderManifest(
         plan_digest=plan_digest,
         output_goal_digest=output_goal_digest,
         render_config_digest=render_config_digest,
         output_mode=output_mode,
-        final_relative_path=final_path,
         deliverable_root=goal_artifacts.deliverable_root,
         items=manifest_items,
     )
 
 
 def manifest_matches_output_goal(manifest: RenderManifest, output_goal_text: str) -> bool:
-    """Return False when a persisted manifest omits required set-level artifacts."""
-    if manifest.output_mode != OutputMode.MULTI_FILE:
-        return True
+    """Return False when a persisted manifest omits required final artifacts."""
     goal_artifacts = parse_output_goal_artifacts(output_goal_text)
-    expected = set(goal_artifacts.declared_set_level_files) | set(
-        goal_artifacts.auxiliary_artifacts
-    )
-    actual = {
-        item.relative_path
-        for item in manifest.items
-        if item.artifact_role == "set_level" and item.relative_path
-    }
-    if expected != actual:
+    expected_final = set(goal_artifacts.final_paths)
+    final_items = [item for item in manifest.items if item.artifact_role == "final"]
+    actual_final = {item.relative_path for item in final_items if item.relative_path}
+    if expected_final != actual_final:
         return False
-    if expected and not any(
-        item.assigned_batch_id == SET_LEVEL_BATCH_ID
-        for item in manifest.items
-        if item.artifact_role == "set_level"
+    if expected_final and not all(
+        item.assigned_batch_id == FINAL_BATCH_ID for item in final_items
     ):
         return False
+
+    for item in manifest.items:
+        if item.artifact_role not in {"intermediate", "final"}:
+            return False
+        if item.artifact_role == "intermediate":
+            if not item.relative_path or not item.relative_path.startswith(
+                f"{INTERMEDIATE_PREFIX}/"
+            ):
+                return False
+            if not item.artifact_key.startswith("artifact-"):
+                return False
+        if item.artifact_role == "final":
+            if not item.artifact_key.startswith("final-"):
+                return False
+            if item.assigned_batch_id != FINAL_BATCH_ID:
+                return False
     return True
 
 

@@ -393,6 +393,8 @@ planning-output/
             ├── context/
             ├── batches/
             ├── assembled/
+            │   ├── intermediates/{batch_id}/{plan_item_id}.md
+            │   └── … declared final paths …
             └── reviews/
 ```
 
@@ -409,23 +411,24 @@ Deliverables are produced by a **staged render pipeline** after decomposition co
 lifecycle from planning:
 
 1. Parse required artifact paths from the output goal's `## Output artifacts` section.
-2. Build a deterministic render manifest from actionable leaf items plus set-level
-   artifacts declared in the output goal.
-3. Run concurrent leaf render batches; each batch agent records artifacts via
-   `planning-render-tool` into staged batch transactions (not directly into final paths).
-4. Run the final set-level render batch (`render-batch-set-level`) for deliverable
-   envelope files such as `manifest.yaml`, `INDEX.md`, and auxiliary paths declared
-   outside the deliverable root.
+2. Build a deterministic render manifest from actionable leaf items (intermediate batches)
+   plus final artifacts declared in the output goal.
+3. Run concurrent intermediate render batches; each batch agent records freeform notes or
+   partials via `planning-render-tool` into staged batch transactions (not directly into
+   final paths).
+4. Run the final synthesis batch (`render-batch-final`) to write declared deliverable
+   paths from the output goal, using intermediate artifacts as input context.
 5. Assemble staged artifacts under `.planning-output/render/assembled/` without
    rewriting agent content.
 6. Optionally run whole-output semantic review (`rendered_output_review`).
-7. Publish assembled output to declared workspace paths and record ownership in a ledger.
+7. Publish **final** assembled artifacts to declared workspace paths and record ownership
+   in a ledger.
 
 The render manifest defines authoritative scope (which plan items, artifact keys, staging
-paths, set order, and publish paths). The output goal defines authoritative deliverable
-locations and format. Review prompts still embed a human-readable render brief derived
-from `plan.yaml` for semantic checks; the batched render pipeline uses manifest items
-and per-batch context files instead of a single monolithic render session.
+paths, and publish paths). The output goal defines authoritative deliverable locations and
+format. Review prompts still embed a human-readable render brief derived from `plan.yaml`
+for semantic checks; the batched render pipeline uses manifest items and per-batch context
+files instead of a single monolithic render session.
 
 The output goal **must** define an **Output artifacts** section with at least one path.
 Multi-file goals must declare a deliverable root. Paths are publication targets, not
@@ -493,7 +496,7 @@ restore `plan.yaml` if the render agent modifies canonical state.
 
 ## Final plan views
 
-The rendered result should include two logical views when applicable.
+Output-goal text may ask the final synthesis batch to include logical views such as:
 
 ### Hierarchical view
 
@@ -511,7 +514,8 @@ Shows only actionable leaf items in a sensible order.
 
 For implementation-oriented output goals, this should be dependency-safe where possible.
 
-Do not assume every output goal requires an execution-task list. The renderer may adapt its terminology and presentation based on the requested output.
+The tool does not assemble these views deterministically. The final batch agent decides
+structure and format from the output goal and intermediate artifacts.
 
 ## CLI
 

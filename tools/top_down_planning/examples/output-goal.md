@@ -13,7 +13,7 @@ Each actionable leaf item should include:
 
 ## Final views
 
-Render:
+The final synthesis batch should produce, when applicable:
 
 1. a hierarchical planning view
 2. a dependency-safe actionable task list

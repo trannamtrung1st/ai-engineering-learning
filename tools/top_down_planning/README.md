@@ -121,24 +121,24 @@ workspace/
             ├── context/
             ├── batches/
             ├── assembled/
+            │   ├── intermediates/{batch_id}/{plan_item_id}.md  # staged, never published
+            │   └── … declared final paths …
             └── reviews/
 ```
 
 Goal-driven deliverables are written only when planning finishes with status `complete`
 and review status `confirmed` (when review is enabled). Rendering is a separate lifecycle
 from planning: after confirmation, the tool builds a deterministic render manifest from
-the output goal's artifact declarations and actionable leaves, runs concurrent leaf
-render batches, runs a final set-level render batch for envelope files, assembles agent
+the output goal's artifact declarations and actionable leaves, runs concurrent intermediate
+render batches, runs a final synthesis batch for declared deliverables, assembles staged
 output, optionally runs whole-output semantic review, and publishes atomically to the
 declared workspace paths.
 
 Every output goal must include a `## Output artifacts` section with at least one path.
 Multi-file goals must declare a deliverable root (directory path or shared parent such as
-`INDEX.md`). Leaf items are staged under tool-owned paths such as `items/011-slug.yaml`
-during leaf render batches and validated for set-order YAML schema. Set-level deliverables
-(`manifest.yaml`, `INDEX.md`, auxiliary paths) are rendered in the final
-`render-batch-set-level` batch, then published to goal paths such as `10-slug.yaml`
-under the deliverable root.
+`INDEX.md`). Intermediate batches write freeform notes under `intermediates/{batch_id}/`.
+The final synthesis batch (`render-batch-final`) writes exactly the paths declared in the
+output goal; only those final artifacts are published.
 
 ### Render-only mode
 
@@ -511,4 +511,4 @@ Integration tests use a deterministic fake agent fixture; live Cursor tests are 
 
 ## Design note: expanded internal nodes
 
-When an item is expanded, it becomes a non-leaf container marked `actionable` so it is no longer selected for expansion. Only **leaf** actionable items should appear in the final actionable list inside the rendered deliverable.
+When an item is expanded, it becomes a non-leaf container marked `actionable` so it is no longer selected for expansion. Only **leaf** actionable items drive intermediate render batches; the final synthesis batch turns those notes plus the output goal into declared deliverables.

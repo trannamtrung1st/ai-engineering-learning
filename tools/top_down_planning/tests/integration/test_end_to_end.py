@@ -55,7 +55,7 @@ async def test_end_to_end_with_fake_agent(
     assert plan is not None
     assert len(plan.plan) >= 3
     artifact = artifact_path.read_text(encoding="utf-8")
-    assert "# Assembled deliverable" in artifact
+    assert "# Deliverable" in artifact
     assert "Rendered content for" in artifact
 
 

@@ -18,8 +18,7 @@ Write one Markdown deliverable:
     parsed = parse_output_goal_artifacts(goal)
     assert parsed.paths == ["implementation-plan.md"]
     assert parsed.deliverable_root is None
-    assert parsed.declared_set_level_files == []
-    assert parsed.item_paths == []
+    assert parsed.final_paths == ["implementation-plan.md"]
 
 
 def test_parse_multi_file_goal_with_fenced_paths() -> None:
@@ -39,9 +38,9 @@ Evidence: run `./scripts/test-critical` on HEAD when complete.
 """
     parsed = parse_output_goal_artifacts(goal)
     assert parsed.deliverable_root == "plans/demo/todos/"
-    assert "INDEX.md" in parsed.declared_set_level_files
-    assert "manifest.yaml" in parsed.declared_set_level_files
-    assert "01-first-item.yaml" in parsed.item_paths
+    assert "plans/demo/todos/INDEX.md" in parsed.final_paths
+    assert "plans/demo/todos/manifest.yaml" in parsed.final_paths
+    assert "plans/demo/todos/01-first-item.yaml" in parsed.final_paths
     assert "./scripts/test-critical" not in parsed.paths
     assert "HEAD" not in parsed.paths
 
@@ -57,7 +56,11 @@ def test_parse_goal_uses_index_parent_as_root() -> None:
 """
     parsed = parse_output_goal_artifacts(goal)
     assert parsed.deliverable_root == "plans/14-sm-evolution-p5/todos/"
-    assert parsed.declared_set_level_files == ["INDEX.md", "manifest.yaml"]
+    assert set(parsed.final_paths) == {
+        "plans/14-sm-evolution-p5/todos/INDEX.md",
+        "plans/14-sm-evolution-p5/todos/manifest.yaml",
+        "plans/14-sm-evolution-p5/todos/13-docs-packaging-and-exit.yaml",
+    }
 
 
 def test_parse_requires_output_artifacts_section() -> None:

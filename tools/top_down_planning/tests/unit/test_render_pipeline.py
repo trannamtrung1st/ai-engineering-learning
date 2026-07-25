@@ -48,8 +48,10 @@ def test_manifest_includes_actionable_leaves_once(tmp_path: Path, example_input:
         output_goal_text=loaded_goal.text,
         render_config=RenderConfig(),
     )
-    assert len(manifest.items) == 1
-    assert manifest.items[0].artifact_key == "todo-item-001"
+    assert len(manifest.items) == 2
+    intermediate = next(item for item in manifest.items if item.artifact_role == "intermediate")
+    assert intermediate.artifact_key == "artifact-001"
+    assert intermediate.relative_path.startswith("intermediates/")
 
 
 def test_coherent_batching_groups_by_branch(tmp_path: Path, example_input: Path) -> None:
@@ -84,12 +86,12 @@ def test_coherent_batching_groups_by_branch(tmp_path: Path, example_input: Path)
         output_goal_text=loaded_goal.text,
         render_config=RenderConfig(batch_strategy=RenderBatchStrategy.COHERENT, batch_size=5),
     )
-    leaf_batch_ids = [
+    intermediate_batch_ids = [
         item.assigned_batch_id
         for item in manifest.items
-        if item.artifact_role == "leaf"
+        if item.artifact_role == "intermediate"
     ]
-    assert len(set(leaf_batch_ids)) == 1
+    assert len(set(intermediate_batch_ids)) == 1
 
 
 def test_render_only_rejects_incomplete_plan(tmp_path: Path, example_input: Path) -> None:

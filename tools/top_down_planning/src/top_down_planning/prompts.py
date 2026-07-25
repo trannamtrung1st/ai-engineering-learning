@@ -407,20 +407,15 @@ Artifact JSON schema (one object per `record-artifact` call):
 ```json
 {{
   "plan_item_id": "item-011",
-  "artifact_key": "todo-item-011",
-  "relative_path": "items/011-branch-local-remediation.yaml",
+  "artifact_key": "artifact-011",
+  "relative_path": "intermediates/render-batch-001/item-011.md",
   "content": "..."
 }}
 ```
 
-Use `relative_path` for multi-file output goals and `section_order` for single-document goals.
-Do not invent artifact keys, paths, or plan item IDs.
-
-For multi-file YAML content:
-- Staging metadata (`plan_item_id`, `relative_path`) uses **plan item order** (e.g. `011`).
-- The YAML `order` field inside `content` must use **set order** from batch context
-  (zero-padded, e.g. `"10"` when set_order is 10).
-- Staging paths and content `order` are different fields; do not copy plan numbers into `order`.
+Every artifact uses `relative_path` from the batch context. Do not invent artifact keys,
+paths, or plan item IDs. Intermediates may be freeform notes or partial drafts; final-batch
+artifacts must match declared output-goal paths exactly.
 """
 
 
@@ -437,7 +432,7 @@ def build_render_batch_prompt(
     validation_feedback: list[str] | None = None,
     agent_context: ResolvedAgentContext | None = None,
     render_tool_command: str = "planning-render-tool",
-    is_set_level_batch: bool = False,
+    is_final_batch: bool = False,
 ) -> str:
     feedback_block = ""
     if validation_feedback:
@@ -447,11 +442,11 @@ def build_render_batch_prompt(
             + "\n\nFix every issue before finalizing the batch transaction.\n\n"
         )
     batch_kind = (
-        "Produce staged set-level deliverables (manifest, index, summaries, etc.) "
-        "for the assigned artifact keys. Use the output goal as the format guide; "
-        "leaf item files are already rendered in earlier batches."
-        if is_set_level_batch
-        else "Produce staged render artifacts for the assigned plan items only."
+        "Synthesize final deliverables for the assigned output-goal paths. Read intermediate "
+        "artifacts from earlier batches and the output goal as your format guide."
+        if is_final_batch
+        else "Capture useful notes, partial drafts, or checklists for the assigned plan items. "
+        "Content is freeform; focus on coverage and clarity for later synthesis."
     )
     return f"""# Render batch session: {batch_id}
 
@@ -478,7 +473,7 @@ def build_render_batch_prompt(
 - Render only the assigned plan items exactly once.
 - Use the tool-owned artifact keys and paths from the batch context.
 - Do not modify canonical planning files.
-- Do not write to the final deliverable directory.
+{"- Synthesize deliverables from intermediate inputs and the output goal.\n- Record artifacts at the declared staging paths via the render transaction CLI.\n" if is_final_batch else "- Do not write deliverables directly to workspace paths outside the render transaction CLI.\n"}
 - Finalize the batch transaction before ending the session.
 """
 
@@ -510,13 +505,12 @@ def build_render_output_review_prompt(
 
 Compare the confirmed plan, render manifest, assembled output, and output goal.
 
-The assembled output directory is **pre-publication staging**. Leaf files use tool-owned
-staging paths under `items/`; publication remaps them to the output-goal deliverable root
-using each item's `publish_relative_path`. Set-level files declared in the output goal
-are rendered by agents in the final set-level batch (same staging contract as other artifacts).
+The assembled output directory is **pre-publication staging**. Intermediate artifacts live
+under `intermediates/` and are inputs to final synthesis; only final-batch artifacts at
+declared output-goal paths are published.
 
-Use `needs_rerender` for leaf or set-level content fixable by rerunning the affected
-render batches (including `render-batch-set-level`).
+Use `needs_rerender` for intermediate or final content fixable by rerunning the affected
+render batches (including `render-batch-final` when only deliverables need revision).
 Use `blocked` for unfixable tool/goal mismatches (missing goal declaration, unpublishable scope).
 
 ## Plan digest

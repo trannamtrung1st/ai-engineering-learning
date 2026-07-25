@@ -7,6 +7,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from top_down_planning.console_renderer import ConsoleRenderer
 from top_down_planning.cursor_client import CursorClient
 from top_down_planning.digest import compute_plan_digest, compute_render_config_digest, digest_file
@@ -45,7 +47,7 @@ from top_down_planning.render_assembly import (
 from top_down_planning.render_batcher import items_for_batch, unique_batch_ids
 from top_down_planning.render_context import prepare_render_batch_context
 from top_down_planning.render_manifest import (
-    SET_LEVEL_BATCH_ID,
+    FINAL_BATCH_ID,
     build_render_manifest,
     compute_manifest_digest,
     load_render_manifest,
@@ -253,9 +255,13 @@ def _ensure_manifest(
         and render_state.output_goal_digest == deps.output_goal.digest
         and render_state.render_config_digest == compute_render_config_digest(render_config)
     ):
-        manifest = load_render_manifest(path)
-        if manifest_matches_output_goal(manifest, deps.output_goal.text):
-            return manifest, render_state.render_manifest_digest, True
+        try:
+            manifest = load_render_manifest(path)
+        except ValidationError:
+            manifest = None
+        else:
+            if manifest_matches_output_goal(manifest, deps.output_goal.text):
+                return manifest, render_state.render_manifest_digest, True
 
     manifest = build_render_manifest(
         plan,
@@ -312,10 +318,10 @@ async def _run_render_batches(
     if not pending:
         return
 
-    leaf_batch_ids = [batch_id for batch_id in pending if batch_id != SET_LEVEL_BATCH_ID]
-    set_level_batch_id = (
-        SET_LEVEL_BATCH_ID if SET_LEVEL_BATCH_ID in pending else None
-    )
+    intermediate_batch_ids = [
+        batch_id for batch_id in pending if batch_id != FINAL_BATCH_ID
+    ]
+    final_batch_id = FINAL_BATCH_ID if FINAL_BATCH_ID in pending else None
 
     semaphore = asyncio.Semaphore(max(1, deps.render.concurrent_batches))
 
@@ -330,10 +336,10 @@ async def _run_render_batches(
                 run_state=run_state,
             )
 
-    if leaf_batch_ids:
-        await asyncio.gather(*(run_one(batch_id) for batch_id in leaf_batch_ids))
-    if set_level_batch_id:
-        await run_one(set_level_batch_id)
+    if intermediate_batch_ids:
+        await asyncio.gather(*(run_one(batch_id) for batch_id in intermediate_batch_ids))
+    if final_batch_id:
+        await run_one(final_batch_id)
 
 
 async def _run_single_batch(
@@ -398,7 +404,7 @@ async def _run_single_batch(
             validation_feedback=validation_feedback,
             agent_context=deps.resolve_render_context(),
             render_tool_command=resolve_render_tool_command(),
-            is_set_level_batch=batch_id == SET_LEVEL_BATCH_ID,
+            is_final_batch=batch_id == FINAL_BATCH_ID,
         )
         prompt_path = batch_dir / f"request-{attempt:03d}-prompt.md"
         prompt_path.write_text(prompt, encoding="utf-8")
@@ -590,7 +596,7 @@ async def _run_output_review_cycle(
             )
 
         deps.stream.emit("render.review.needs_rerender", affected_batches=result.affected_batch_ids)
-        affected = set(result.affected_batch_ids)
+        affected = _expand_rerender_batch_ids(set(result.affected_batch_ids), manifest)
         if not affected:
             for finding in result.findings:
                 for item_id in finding.plan_item_ids:
@@ -617,6 +623,22 @@ async def _run_output_review_cycle(
         )
 
     raise PlanningToolError("Rendered output review did not reach an approved decision.")
+
+
+def _expand_rerender_batch_ids(
+    affected: set[str],
+    manifest: RenderManifest,
+) -> set[str]:
+    """Re-synthesize finals whenever an intermediate batch is invalidated."""
+    expanded = set(affected)
+    intermediate_batch_ids = {
+        item.assigned_batch_id
+        for item in manifest.items
+        if item.artifact_role == "intermediate"
+    }
+    if expanded.intersection(intermediate_batch_ids):
+        expanded.add(FINAL_BATCH_ID)
+    return expanded
 
 
 def _persist_render_result(

@@ -102,7 +102,7 @@ def test_planning_and_render_prompts_include_phase_context() -> None:
         plan_digest="d" * 64,
         output_goal_digest=output_goal.digest,
         render_config_digest="c" * 64,
-        batch_context_markdown="## Assigned items\n- `item-001` → `todo-item-001` → section 1\n",
+        batch_context_markdown="## Assigned items\n- `item-001` → `artifact-001` → staging `intermediates/render-batch-001/item-001.md`\n",
         output_goal=output_goal,
         workspace=Path("."),
         embed_threshold=4000,

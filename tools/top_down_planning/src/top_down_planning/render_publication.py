@@ -9,7 +9,7 @@ from pathlib import Path
 
 from top_down_planning.digest import digest_text
 from top_down_planning.errors import PlanningToolError
-from top_down_planning.models import OwnedArtifactsLedger, OutputMode, RenderManifest
+from top_down_planning.models import OwnedArtifactsLedger, RenderManifest
 from top_down_planning.paths import resolve_within_workspace
 from top_down_planning.persistence import (
     publication_manifest_path,
@@ -112,33 +112,14 @@ def _build_publish_map(
     """Map assembled staging keys to workspace-relative publish paths."""
     publish_map: dict[str, str] = {}
 
-    if manifest.output_mode == OutputMode.SINGLE_DOCUMENT:
-        publish_path = manifest.final_relative_path
-        if publish_path and publish_path in assembled.files:
-            publish_map[publish_path] = publish_path
-        return publish_map
-
-    root = (manifest.deliverable_root or "").rstrip("/")
-    if not root:
-        raise PlanningToolError(
-            "Multi-file render manifest is missing deliverable_root from the output goal."
-        )
-
     for item in manifest.items:
+        if item.artifact_role != "final":
+            continue
         staging_path = item.relative_path
-        publish_name = item.publish_relative_path
-        if not staging_path or not publish_name:
+        publish_path = item.publish_relative_path or staging_path
+        if not staging_path or staging_path not in assembled.files:
             continue
-        if staging_path not in assembled.files:
-            continue
-        if (
-            item.artifact_role == "set_level"
-            and "/" in publish_name
-            and not publish_name.startswith(f"{root}/")
-        ):
-            publish_map[staging_path] = publish_name
-            continue
-        publish_map[staging_path] = f"{root}/{publish_name}".replace("//", "/")
+        publish_map[staging_path] = publish_path
 
     return publish_map
 
