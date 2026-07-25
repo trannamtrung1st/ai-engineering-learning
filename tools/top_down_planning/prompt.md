@@ -381,46 +381,55 @@ planning-output/
 └── .planning-output/
     ├── plan.yaml
     ├── run-state.json
+    ├── review-state.json
     └── iterations/
         ├── 001-request.json
         ├── 001-transaction.json
         ├── 001-response.json
-        ├── render-brief.md
-        └── render-001-response.json
+        └── render/
+            ├── render-state.json
+            ├── manifest.yaml
+            ├── context/
+            ├── batches/
+            ├── assembled/
+            └── reviews/
 ```
 
-Each render attempt (including retries) also writes a numbered audit set under
-`iterations/`: `render-{NNN}-request-prompt.md`, `render-{NNN}-response.json`, and
-`render-{NNN}-agent.{ndjson,log}` when audit is enabled.
+Each render batch writes staged transactions under `.planning-output/render/batches/`.
+When audit is enabled, batch sessions also write numbered audit sets under
+`iterations/` (request prompt, agent log, and transaction snapshots).
 
-`--output` holds internal resumable state under `.planning-output/`. Deliverables may
-be written anywhere in the workspace according to the output goal.
+`--output` holds internal resumable state under `.planning-output/`. Deliverables are
+published atomically to the workspace according to the output goal after assembly and
+optional whole-output review.
 
-Deliverables are produced by a final render phase after decomposition completes.
-The render agent runs in write mode, transforms the completed breakdown into
-deliverables, and writes one or more files under the deliverable directory (typically
-`--output`, excluding `.planning-output/`). Format and schema come from the output
-goal; scope and item coverage come from the breakdown.
+Deliverables are produced by a **staged render pipeline** after decomposition completes
+(and after review/confirmation when review is enabled). Rendering is a separate
+lifecycle from planning:
 
-Before render, the tool writes `render-brief.md` from `plan.yaml`. That brief lists
-every actionable leaf unit with objectives, dependencies, expected outputs, and
-acceptance criteria. The render prompt treats the breakdown as the authoritative
-scope contract and the output goal as the authoritative format contract.
+1. Build a deterministic render manifest from actionable leaf items in `plan.yaml`.
+2. Run concurrent render batches; each batch agent records artifacts via
+   `planning-render-tool` into staged batch transactions (not directly into final paths).
+3. Assemble staged artifacts deterministically under `.planning-output/render/assembled/`.
+4. Optionally run whole-output semantic review (`rendered_output_review`).
+5. Publish assembled output atomically and record ownership in a ledger.
 
-The tool discovers newly written or updated files anywhere in the workspace (excluding
-`.planning-output/` and common VCS/dependency directories). After discovery, it
-validates that every breakdown title appears in the deliverables. Missing coverage
-triggers a render retry with validation feedback. If the render session fails or
-coverage remains incomplete after retries, a deterministic fallback artifact is
-generated internally.
+The render manifest defines authoritative scope (which plan items, artifact keys, paths,
+and section order). The output goal defines authoritative format. Review prompts still
+embed a human-readable render brief derived from `plan.yaml` for semantic checks; the
+batched render pipeline uses manifest items and per-batch context files instead of a
+single monolithic render session.
 
 The output goal may define an **Output artifacts** section with suggested filenames
 and formats. Paths mentioned only as examples inside the output goal must not be
-treated as copy sources; deliverables must be generated fresh from the breakdown.
+treated as copy sources; deliverables must be generated fresh from the confirmed plan.
 
-The render agent must not copy or restore pre-existing files from git history or
-from paths cited in the output goal. It must not modify canonical state under
-`.planning-output/`. The tool backs up and restores `plan.yaml` if render corrupts it.
+Render agents must not copy or restore pre-existing files from git history or from paths
+cited in the output goal. They must not modify canonical state under `.planning-output/`.
+The tool backs up and restores `plan.yaml` if a session corrupts it.
+
+Render failures (batch validation exhaustion, assembly errors, blocked output review)
+surface as explicit errors; there is no deterministic fallback deliverable.
 
 ### `plan.yaml`
 

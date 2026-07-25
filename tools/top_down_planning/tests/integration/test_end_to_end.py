@@ -43,9 +43,7 @@ async def test_end_to_end_with_fake_agent(
     assert len(report.artifacts) == 1
     assert (output_dir / ".planning-output" / "plan.yaml").is_file()
     assert (output_dir / ".planning-output" / "run-state.json").is_file()
-    assert (
-        output_dir / ".planning-output" / "iterations" / "render-brief.md"
-    ).is_file()
+    assert (output_dir / ".planning-output" / "render" / "manifest.yaml").is_file()
     assert not (output_dir / "plan.md").exists()
     artifact_path = output_dir / "implementation-plan.md"
     assert artifact_path.is_file()
@@ -53,8 +51,8 @@ async def test_end_to_end_with_fake_agent(
     assert plan is not None
     assert len(plan.plan) >= 3
     artifact = artifact_path.read_text(encoding="utf-8")
-    assert "Rendered according to the output goal" in artifact
-    assert "## Actionable items" in artifact
+    assert "# Assembled deliverable" in artifact
+    assert "Rendered content for" in artifact
 
 
 @pytest.mark.asyncio

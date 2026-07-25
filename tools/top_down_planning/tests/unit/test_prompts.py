@@ -3,8 +3,8 @@ from pathlib import Path
 from top_down_planning.input_loader import load_markdown_input, load_output_goal, load_stop_hint
 from top_down_planning.models import DEFAULT_INLINE_EMBED_THRESHOLD
 from top_down_planning.prompts import (
-    build_final_render_prompt,
     build_planning_prompt,
+    build_render_batch_prompt,
     format_embedded_markdown,
     format_input_document_section,
     format_input_file_reference,
@@ -407,70 +407,46 @@ def test_prompt_omits_stop_hint_section_when_not_provided(
     assert "Expansion stop guidance" not in prompt
 
 
-def test_final_render_prompt_references_plan_and_output_goal(
+def test_render_batch_prompt_references_digests_and_tool(
     tmp_path: Path,
     example_input: Path,
 ) -> None:
-    loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    plan = make_root_plan(
-        input_file=str(example_input),
-        output_goal=output_goal.text,
-        input_digest="a",
-        output_goal_digest="b",
-    )
-    plan_file = tmp_path / ".planning-output" / "plan.yaml"
-    plan_file.parent.mkdir(parents=True)
 
-    prompt = build_final_render_prompt(
-        loaded_input=loaded_input,
-        plan_file=plan_file,
-        output_dir=tmp_path / "planning-output",
-        workspace=tmp_path,
+    prompt = build_render_batch_prompt(
+        batch_id="batch-001",
+        plan_digest="d" * 64,
+        output_goal_digest=output_goal.digest,
+        render_config_digest="c" * 64,
+        batch_context_markdown="## Assigned items\n- `item-001` → `todo-item-001` → section 1\n",
         output_goal=output_goal,
-        plan=plan,
+        workspace=tmp_path,
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
     )
 
-    assert "Final planning render" in prompt
-    assert str(plan_file.resolve()) in prompt
+    assert "Render batch session: batch-001" in prompt
+    assert "d" * 64 in prompt
     assert "Produce an actionable implementation plan" in prompt
-    assert prompt.count("```markdown") >= 3
-    assert "Deliverable directory" in prompt
-    assert "Breakdown to render" in prompt
-    assert "authoritative scope" in prompt
-    assert "Do **not** copy, restore, or reuse pre-existing files" in prompt
-    assert "copy each\n  breakdown unit title **verbatim**" in prompt
-    assert ".planning-output" in prompt
-    assert '"artifacts"' not in prompt
-    assert "Required response format" not in prompt
+    assert "planning-render-tool" in prompt
+    assert "Do not write to the final deliverable directory" in prompt
 
 
-def test_final_render_prompt_includes_validation_feedback(
+def test_render_batch_prompt_includes_validation_feedback(
     tmp_path: Path,
-    example_input: Path,
 ) -> None:
-    loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    plan = make_root_plan(
-        input_file=str(example_input),
-        output_goal=output_goal.text,
-        input_digest="a",
-        output_goal_digest="b",
-    )
-    plan_file = tmp_path / ".planning-output" / "plan.yaml"
-    plan_file.parent.mkdir(parents=True)
 
-    prompt = build_final_render_prompt(
-        loaded_input=loaded_input,
-        plan_file=plan_file,
-        output_dir=tmp_path / "planning-output",
-        workspace=tmp_path,
+    prompt = build_render_batch_prompt(
+        batch_id="batch-002",
+        plan_digest="d" * 64,
+        output_goal_digest=output_goal.digest,
+        render_config_digest="c" * 64,
+        batch_context_markdown="## Assigned items\n",
         output_goal=output_goal,
-        plan=plan,
+        workspace=tmp_path,
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
-        validation_feedback=["Deliverables do not cover breakdown item item-002"],
+        validation_feedback=["Missing artifact for item-002"],
     )
 
-    assert "Render validation feedback from previous attempt" in prompt
+    assert "Validation feedback from previous attempt" in prompt
     assert "item-002" in prompt

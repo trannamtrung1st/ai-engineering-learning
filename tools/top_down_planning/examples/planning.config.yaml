@@ -58,6 +58,18 @@ review:
   max_revision_cycles: 1
   max_retries: 3
 
+# --- Render batching (post-confirmation) --------------------------------------
+# Separate from planning `generation.*`. Controls staged concurrent rendering.
+
+render:
+  batch_strategy: coherent   # single | branch | coherent | throughput
+  batch_size: 5
+  concurrent_batches: 3
+  max_retries: 3
+  whole_plan_context: hybrid # embedded | referenced | hybrid
+  final_review: true
+  max_rerender_cycles: 2
+
 # --- Agent / Cursor (optional) ------------------------------------------------
 
 # model: auto # default: auto; env: PLANNING_TOOL_MODEL

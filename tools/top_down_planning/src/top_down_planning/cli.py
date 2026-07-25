@@ -11,9 +11,9 @@ import typer
 from rich.console import Console
 
 from top_down_planning import __version__
-from top_down_planning.config_loader import merge_run_options, options_to_generation_config, options_to_planning_limits
+from top_down_planning.config_loader import merge_run_options, options_to_generation_config, options_to_planning_limits, options_to_render_config
 from top_down_planning.errors import PlanningToolError, ResumeError, UserInterrupted, ValidationError
-from top_down_planning.input_loader import load_output_goal, load_stop_hint
+from top_down_planning.input_loader import LoadedOutputGoal, load_output_goal, load_stop_hint
 from top_down_planning.model_config import resolve_model
 from top_down_planning.models import DEFAULT_CURSOR_MODEL, DEFAULT_INLINE_EMBED_THRESHOLD
 from top_down_planning.notifications import (
@@ -110,6 +110,10 @@ def _execute_run(
     embed_threshold: Optional[int],
     notify: bool = False,
     no_notify: bool = False,
+    render_only: bool = False,
+    force_rerender: bool = False,
+    render_batch_size: int | None = None,
+    render_concurrent_batches: int | None = None,
 ) -> None:
     cli_notify = _cli_notify_override(notify=notify, no_notify=no_notify)
     try:
@@ -136,6 +140,10 @@ def _execute_run(
             agent_bin=agent_bin,
             skip_probe=skip_probe,
             embed_threshold=embed_threshold,
+            render_only=render_only,
+            force_rerender=force_rerender,
+            render_batch_size=render_batch_size,
+            render_concurrent_batches=render_concurrent_batches,
         )
     except PlanningToolError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -152,16 +160,42 @@ def _execute_run(
     }
     limits = options_to_planning_limits(options)
     generation = options_to_generation_config(options)
-    config = RunConfig(
-        input_path=options.input_path,
-        output_goal=_resolve_run_goal(
+    render = options_to_render_config(options)
+
+    goal_override = output_goal is not None or output_goal_file is not None
+    if options.render_only and not goal_override:
+        from top_down_planning.persistence import load_plan, load_run_state
+        from top_down_planning.fallback_artifact import resolve_output_goal_text
+
+        plan = load_plan(options.output_dir)
+        run_state = load_run_state(options.output_dir)
+        if plan is None or run_state is None:
+            raise typer.BadParameter(
+                "Render-only requires existing planning output under --output"
+            )
+        goal_text = resolve_output_goal_text(plan)
+        loaded_goal = LoadedOutputGoal(
+            text=goal_text,
+            digest=run_state.output_goal_digest,
+            path=Path(plan.source.output_goal_file) if plan.source.output_goal_file else None,
+        )
+    else:
+        loaded_goal = _resolve_run_goal(
             output_goal=options.output_goal,
             output_goal_file=options.output_goal_file,
-        ),
+        )
+
+    config = RunConfig(
+        input_path=options.input_path if not options.render_only else options.input_path,
+        output_goal=loaded_goal,
         output_dir=options.output_dir,
         workspace_root=options.workspace.resolve(),
         limits=limits,
         generation=generation,
+        render=render,
+        render_only=options.render_only,
+        force_rerender=options.force_rerender,
+        goal_overridden=goal_override,
         resume=options.resume,
         stream_json=options.stream_json,
         no_color=options.no_color,
@@ -188,11 +222,7 @@ def _execute_run(
         notify_error(enabled=notify_enabled, message=str(exc))
         raise typer.Exit(1) from exc
 
-    notify_planning_report(
-        report,
-        enabled=notify_enabled,
-        render_fallback=report.render_fallback,
-    )
+    notify_planning_report(report, enabled=notify_enabled)
 
     if not options.stream_json:
         console = Console(stderr=True)
@@ -310,15 +340,38 @@ def main_callback(
         "--no-notify",
         help="Disable desktop notifications",
     ),
+    render_only: bool = typer.Option(
+        False,
+        "--render-only",
+        help="Render from existing confirmed planning output without rerunning planning",
+    ),
+    force_rerender: bool = typer.Option(
+        False,
+        "--force-rerender",
+        help="Discard prior render batches and regenerate all rendered output",
+    ),
+    render_batch_size: Optional[int] = typer.Option(
+        None,
+        "--render-batch-size",
+        help="Maximum actionable leaves per render batch",
+    ),
+    render_concurrent_batches: Optional[int] = typer.Option(
+        None,
+        "--render-concurrent-batches",
+        help="Maximum concurrent render batch sessions",
+    ),
 ) -> None:
     """Top-down planning via Cursor Agent CLI."""
     if ctx.invoked_subcommand is not None:
         return
-    if config_path is None and (input_path is None or output_dir is None):
-        raise typer.BadParameter(
-            "Planning requires --input and --output, or --config with those fields "
-            "(plus an output goal)."
-        )
+    if config_path is None and not render_only:
+        if input_path is None or output_dir is None:
+            raise typer.BadParameter(
+                "Planning requires --input and --output, or --config with those fields "
+                "(plus an output goal)."
+            )
+    elif config_path is None and render_only and output_dir is None:
+        raise typer.BadParameter("Render-only requires --output (or config output).")
     _execute_run(
         config_path=config_path,
         input_path=input_path,
@@ -343,6 +396,10 @@ def main_callback(
         embed_threshold=embed_threshold,
         notify=notify,
         no_notify=no_notify,
+        render_only=render_only,
+        force_rerender=force_rerender,
+        render_batch_size=render_batch_size,
+        render_concurrent_batches=render_concurrent_batches,
     )
 
 
@@ -438,6 +495,20 @@ def run_cmd(
         "--no-notify",
         help="Disable desktop notifications",
     ),
+    render_only: bool = typer.Option(
+        False,
+        "--render-only",
+        help="Render from existing confirmed planning output without rerunning planning",
+    ),
+    force_rerender: bool = typer.Option(
+        False,
+        "--force-rerender",
+        help="Discard prior render batches and regenerate all rendered output",
+    ),
+    render_batch_size: Optional[int] = typer.Option(None, "--render-batch-size"),
+    render_concurrent_batches: Optional[int] = typer.Option(
+        None, "--render-concurrent-batches"
+    ),
 ) -> None:
     """Run or resume top-down planning."""
     _execute_run(
@@ -464,6 +535,10 @@ def run_cmd(
         embed_threshold=embed_threshold,
         notify=notify,
         no_notify=no_notify,
+        render_only=render_only,
+        force_rerender=force_rerender,
+        render_batch_size=render_batch_size,
+        render_concurrent_batches=render_concurrent_batches,
     )
 
 

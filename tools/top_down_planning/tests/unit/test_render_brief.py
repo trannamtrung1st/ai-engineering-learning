@@ -5,8 +5,8 @@ import pytest
 from top_down_planning.models import DecompositionStatus, PlanItem
 from top_down_planning.render_brief import (
     actionable_leaf_items,
+    blocked_leaf_items,
     build_render_brief,
-    validate_render_coverage,
 )
 from tests.plan_factory import make_root_plan
 
@@ -81,37 +81,3 @@ def test_build_render_brief_lists_every_actionable_leaf() -> None:
     assert "### 2. Area B" in brief
     assert "Output A" in brief
     assert "Done B" in brief
-
-
-def test_validate_render_coverage_requires_every_leaf_title(tmp_path: Path) -> None:
-    plan = _plan_with_leaves()
-    covered = tmp_path / "plan.md"
-    covered.write_text("# Plan\n\nArea A\nArea B\n", encoding="utf-8")
-
-    assert validate_render_coverage(plan, [covered]) == []
-
-    partial = tmp_path / "partial.md"
-    partial.write_text("# Plan\n\nArea A\n", encoding="utf-8")
-    errors = validate_render_coverage(plan, [partial])
-
-    assert len(errors) == 1
-    assert "Area B" in errors[0]
-
-
-def test_validate_render_coverage_requires_at_least_one_file() -> None:
-    plan = _plan_with_leaves()
-    assert validate_render_coverage(plan, []) == ["No deliverable files were written."]
-
-
-def test_validate_render_coverage_ignores_punctuation_drift(tmp_path: Path) -> None:
-    plan = _plan_with_leaves()
-    plan.plan[1].title = "SR2-A baseline inventory and sequencing"
-    plan.plan[2].title = "SR2-B plan models manifest IO and lock helper"
-    punctuated = tmp_path / "todos.yaml"
-    punctuated.write_text(
-        "title: SR2-A baseline inventory and sequencing\n"
-        "title: SR2-B plan models, manifest IO, and lock helper\n",
-        encoding="utf-8",
-    )
-
-    assert validate_render_coverage(plan, [punctuated]) == []

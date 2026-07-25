@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from top_down_planning.agent_context import AgentContextConfig
 from top_down_planning.errors import PlanningToolError
-from top_down_planning.models import GenerationConfig, PlanningLimits, ReviewConfig
+from top_down_planning.models import GenerationConfig, PlanningLimits, RenderConfig, ReviewConfig
 
 
 class RunConfigFile(BaseModel):
@@ -44,7 +44,10 @@ class RunConfigFile(BaseModel):
     agent_context: dict[str, Any] | None = None
     limits: PlanningLimits | None = None
     generation: GenerationConfig | None = None
+    render: RenderConfig | None = None
     review: ReviewConfig | None = None
+    render_only: bool | None = None
+    force_rerender: bool | None = None
 
     @model_validator(mode="after")
     def _validate_goal_sources(self) -> RunConfigFile:
@@ -82,6 +85,9 @@ class ResolvedRunOptions:
     agent_context: AgentContextConfig | None = None
     review: ReviewConfig = field(default_factory=ReviewConfig)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
+    render: RenderConfig = field(default_factory=RenderConfig)
+    render_only: bool = False
+    force_rerender: bool = False
 
 
 def load_run_config_file(path: Path) -> RunConfigFile:
@@ -117,11 +123,15 @@ def merge_run_options(
     max_items: int | None = None,
     batch_size: int | None = None,
     concurrent_batches: int | None = None,
+    render_batch_size: int | None = None,
+    render_concurrent_batches: int | None = None,
     max_retries: int | None = None,
     max_children_per_expansion: int | None = None,
     session_timeout_seconds: int | None = None,
     parse_error_threshold: int | None = None,
     resume: bool = False,
+    render_only: bool = False,
+    force_rerender: bool = False,
     stream_json: bool = False,
     no_color: bool = False,
     notify: bool | None = None,
@@ -166,11 +176,25 @@ def merge_run_options(
         base_dir=path_base,
     )
 
-    if resolved_input is None:
+    if resolved_input is None and not _pick_bool(
+        render_only, file_cfg.render_only if file_cfg else None, default=False
+    ):
         raise PlanningToolError("Missing required option: input (CLI --input or config input)")
     if resolved_output is None:
         raise PlanningToolError("Missing required option: output (CLI --output or config output)")
-    if resolved_goal is None and resolved_goal_file is None:
+
+    resolved_render_only = _pick_bool(
+        render_only, file_cfg.render_only if file_cfg else None, default=False
+    )
+    if resolved_render_only:
+        if resolved_goal is None and resolved_goal_file is None:
+            resolved_goal = _pick_optional_str(None, file_cfg.output_goal if file_cfg else None)
+            resolved_goal_file = _pick_path(
+                cli_value=None,
+                file_value=file_cfg.output_goal_file if file_cfg else None,
+                base_dir=path_base,
+            )
+    elif resolved_goal is None and resolved_goal_file is None:
         raise PlanningToolError(
             "Provide an output goal via --output-goal, --output-goal-file, "
             "or config output_goal / output_goal_file"
@@ -182,6 +206,7 @@ def merge_run_options(
 
     file_limits = file_cfg.limits if file_cfg else None
     file_generation = file_cfg.generation if file_cfg else None
+    file_render = file_cfg.render if file_cfg else None
     agent_context = _parse_agent_context(file_cfg.agent_context if file_cfg else None)
     review = file_cfg.review if file_cfg and file_cfg.review is not None else ReviewConfig()
     generation = _resolve_generation_config(
@@ -190,9 +215,15 @@ def merge_run_options(
         cli_concurrent_batches=concurrent_batches,
         defaults=generation_defaults,
     )
+    render = _resolve_render_config(
+        file_render=file_render,
+        cli_batch_size=render_batch_size,
+        cli_concurrent_batches=render_concurrent_batches,
+        defaults=RenderConfig(),
+    )
 
     return ResolvedRunOptions(
-        input_path=resolved_input,
+        input_path=resolved_input or Path("."),
         output_dir=resolved_output,
         output_goal=resolved_goal,
         output_goal_file=resolved_goal_file,
@@ -255,6 +286,11 @@ def merge_run_options(
         agent_context=agent_context,
         review=review,
         generation=generation,
+        render=render,
+        render_only=resolved_render_only,
+        force_rerender=_pick_bool(
+            force_rerender, file_cfg.force_rerender if file_cfg else None, default=False
+        ),
     )
 
 
@@ -272,6 +308,33 @@ def options_to_planning_limits(options: ResolvedRunOptions) -> PlanningLimits:
 
 def options_to_generation_config(options: ResolvedRunOptions) -> GenerationConfig:
     return options.generation
+
+
+def options_to_render_config(options: ResolvedRunOptions) -> RenderConfig:
+    return options.render
+
+
+def _resolve_render_config(
+    *,
+    file_render: RenderConfig | None,
+    cli_batch_size: int | None,
+    cli_concurrent_batches: int | None,
+    defaults: RenderConfig,
+) -> RenderConfig:
+    base = file_render.model_copy() if file_render is not None else RenderConfig()
+    base.batch_size = _pick_int(
+        cli_batch_size,
+        file_render.batch_size if file_render else None,
+        None,
+        defaults.batch_size,
+    )
+    base.concurrent_batches = _pick_int(
+        cli_concurrent_batches,
+        file_render.concurrent_batches if file_render else None,
+        None,
+        defaults.concurrent_batches,
+    )
+    return base
 
 
 def _resolve_generation_config(

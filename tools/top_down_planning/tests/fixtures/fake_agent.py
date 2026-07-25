@@ -26,6 +26,7 @@ if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 from top_down_planning.plan_tool import plan_tool_argv, resolve_plan_tool_command
+from top_down_planning.render_tool import render_tool_argv, resolve_render_tool_command
 
 
 def emit(event: dict) -> None:
@@ -149,23 +150,6 @@ def _write_planning_transaction(response: dict) -> None:
     _run_plan_tool("finalize")
 
 
-def _deliverable_dir_from_prompt(prompt: str) -> Path | None:
-    match = re.search(
-        r"## Deliverable directory[\s\S]*?Absolute: `([^`]+)`",
-        prompt,
-    )
-    if match:
-        return Path(match.group(1))
-    return _workspace_from_prompt(prompt)
-
-
-def _workspace_from_prompt(prompt: str) -> Path | None:
-    match = re.search(r"## Workspace[\s\S]*?Absolute: `([^`]+)`", prompt)
-    if not match:
-        return None
-    return Path(match.group(1))
-
-
 def _breakdown_titles(prompt: str) -> list[str]:
     titles = re.findall(r"^### \d+\. (.+)$", prompt, re.MULTILINE)
     if titles:
@@ -174,38 +158,6 @@ def _breakdown_titles(prompt: str) -> list[str]:
         "Define CLI interface",
         "Implement CSV parser",
     ]
-
-
-def _default_render_content(titles: list[str]) -> str:
-    lines = [
-        "# Actionable Implementation Plan",
-        "",
-        "Rendered according to the output goal after decomposition completed.",
-        "",
-        "## Actionable items",
-        "",
-    ]
-    for index, title in enumerate(titles, start=1):
-        lines.extend(
-            [
-                f"{index}. **{title}**",
-                f"   - Objective: Deliverable for {title}",
-                f"   - Expected outputs: Output for {title}",
-                f"   - Acceptance criteria: Done when {title} is complete",
-                "",
-            ]
-        )
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def _write_default_render_artifact(prompt: str) -> None:
-    target_dir = _deliverable_dir_from_prompt(prompt)
-    if target_dir is None:
-        return
-    target_dir.mkdir(parents=True, exist_ok=True)
-    titles = _breakdown_titles(prompt)
-    target = target_dir / "implementation-plan.md"
-    target.write_text(_default_render_content(titles), encoding="utf-8")
 
 
 def _write_review_result(stage: str, prompt: str) -> None:
@@ -263,6 +215,86 @@ def _run_review_tool(*args: str) -> None:
     subprocess.run(argv, env=_plan_tool_env(), check=True)
 
 
+def _run_render_tool(*args: str) -> None:
+    command = resolve_render_tool_command()
+    subprocess.run(
+        render_tool_argv(command, *args),
+        env=_plan_tool_env(),
+        check=True,
+    )
+
+
+def _assigned_artifacts(prompt: str) -> list[dict]:
+    artifacts: list[dict] = []
+    for match in re.finditer(
+        r"- `(item-[^`]+)` → `(todo-item-[^`]+)` → (?:`([^`]+)`|section (\d+))",
+        prompt,
+    ):
+        item_id = match.group(1)
+        key = match.group(2)
+        rel_path = match.group(3)
+        section_order = match.group(4)
+        content = f"## {item_id}\n\nRendered content for {item_id}.\n"
+        payload: dict = {
+            "plan_item_id": item_id,
+            "artifact_key": key,
+            "content": content,
+        }
+        if rel_path:
+            payload["relative_path"] = rel_path
+        if section_order:
+            payload["section_order"] = int(section_order)
+        artifacts.append(payload)
+    return artifacts
+
+
+def _write_render_batch_transaction(prompt: str) -> None:
+    artifacts = _assigned_artifacts(prompt)
+    if not artifacts:
+        titles = _breakdown_titles(prompt)
+        for index, title in enumerate(titles, start=1):
+            item_id = f"item-{index:03d}"
+            artifacts.append(
+                {
+                    "plan_item_id": item_id,
+                    "artifact_key": f"todo-item-{index:03d}",
+                    "section_order": index,
+                    "content": f"## {title}\n\nRendered content for {title}.\n",
+                }
+            )
+    for artifact in artifacts:
+        _run_render_tool(
+            "record-artifact",
+            "--json",
+            json.dumps(artifact, separators=(",", ":")),
+        )
+    _run_render_tool("finalize")
+
+
+def _write_render_output_review(prompt: str) -> None:
+    digest_match = re.search(r"## Plan digest\n`([a-f0-9]+)`", prompt)
+    goal_match = re.search(r"## Output-goal digest\n`([a-f0-9]+)`", prompt)
+    manifest_match = re.search(r"## Render manifest digest\n`([a-f0-9]+)`", prompt)
+    assembled_match = re.search(r"## Assembled output digest\n`([a-f0-9]+)`", prompt)
+    payload = {
+        "stage": "rendered_output_review",
+        "plan_digest": digest_match.group(1) if digest_match else "0" * 64,
+        "output_goal_digest": goal_match.group(1) if goal_match else "0" * 64,
+        "render_manifest_digest": manifest_match.group(1) if manifest_match else "0" * 64,
+        "assembled_output_digest": assembled_match.group(1) if assembled_match else "0" * 64,
+        "decision": "approve",
+        "summary": "Rendered output approved by fake reviewer.",
+        "findings": [],
+        "affected_batch_ids": [],
+    }
+    _run_review_tool(
+        "set-result",
+        "--json",
+        json.dumps(payload, separators=(",", ":")),
+    )
+    _run_review_tool("finalize")
+
+
 def main() -> int:
     argv = sys.argv[1:]
     if "--help" in argv or "-h" in argv:
@@ -272,17 +304,31 @@ def main() -> int:
     mode = os.environ.get("FAKE_AGENT_MODE", "planning")
     prompt = _prompt_text()
 
-    if "Final planning render" in prompt:
+    if "Render batch session" in prompt:
         emit(
             {
                 "type": "system",
                 "subtype": "init",
-                "session_id": "fake-planning-session",
+                "session_id": "fake-render-batch-session",
                 "model": "fake-model",
             }
         )
-        _write_default_render_artifact(prompt)
-        assistant("Wrote deliverables to the workspace.")
+        _write_render_batch_transaction(prompt)
+        assistant("Finalized render batch transaction.")
+        emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
+        return 0
+
+    if "Rendered output review session" in prompt:
+        emit(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "fake-render-review-session",
+                "model": "fake-model",
+            }
+        )
+        _write_render_output_review(prompt)
+        assistant("Finalized rendered output review.")
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
         return 0
 

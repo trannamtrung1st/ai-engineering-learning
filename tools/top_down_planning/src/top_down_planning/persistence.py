@@ -18,8 +18,11 @@ from top_down_planning.errors import PersistenceError, ResumeError
 from top_down_planning.models import (
     FinalStatus,
     GenerationConfig,
+    OwnedArtifactsLedger,
     PlanState,
     PlanningLimits,
+    RenderConfig,
+    RenderState,
     ReviewState,
     ReviewStatus,
     RunActiveStatus,
@@ -37,6 +40,11 @@ CONTEXT_DIR = "context"
 REVIEWS_DIR = "reviews"
 STATE_DIRNAME = ".planning-output"
 LEGACY_STATE_DIRNAME = ".top-down-planning"
+RENDER_DIRNAME = "render"
+RENDER_STATE_FILENAME = "render-state.json"
+RENDER_MANIFEST_FILENAME = "manifest.yaml"
+OWNED_ARTIFACTS_FILENAME = "owned-artifacts.json"
+PUBLICATION_MANIFEST_FILENAME = "publication-manifest.yaml"
 
 
 def state_dir(output_dir: Path) -> Path:
@@ -157,9 +165,91 @@ def update_review_status(plan: PlanState, review_status: ReviewStatus) -> None:
     plan.result.review_status = review_status
 
 
-def render_attempt_prefix(output_dir: Path, attempt: int) -> str:
-    """Return the audit stem for one final-render attempt (``render-001``, etc.)."""
-    return str(iterations_dir(output_dir) / f"render-{attempt:03d}")
+def render_dir(output_dir: Path) -> Path:
+    return state_dir(output_dir) / RENDER_DIRNAME
+
+
+def render_state_path(output_dir: Path) -> Path:
+    return render_dir(output_dir) / RENDER_STATE_FILENAME
+
+
+def render_manifest_path(output_dir: Path) -> Path:
+    return render_dir(output_dir) / RENDER_MANIFEST_FILENAME
+
+
+def render_context_dir(output_dir: Path) -> Path:
+    return render_dir(output_dir) / "context"
+
+
+def render_batches_dir(output_dir: Path) -> Path:
+    return render_dir(output_dir) / "batches"
+
+
+def render_assembled_dir(output_dir: Path) -> Path:
+    return render_dir(output_dir) / "assembled"
+
+
+def render_reviews_dir(output_dir: Path) -> Path:
+    return render_dir(output_dir) / "reviews"
+
+
+def owned_artifacts_path(output_dir: Path) -> Path:
+    return render_dir(output_dir) / OWNED_ARTIFACTS_FILENAME
+
+
+def publication_manifest_path(output_dir: Path) -> Path:
+    return render_dir(output_dir) / PUBLICATION_MANIFEST_FILENAME
+
+
+def render_batch_dir(output_dir: Path, batch_id: str) -> Path:
+    return render_batches_dir(output_dir) / batch_id
+
+
+def render_batch_transaction_path(output_dir: Path, batch_id: str) -> Path:
+    return render_batch_dir(output_dir, batch_id) / "transaction.yaml"
+
+
+def rendered_output_review_result_path(output_dir: Path) -> Path:
+    return render_reviews_dir(output_dir) / "output-review-result.json"
+
+
+def load_render_state(output_dir: Path) -> RenderState | None:
+    path = render_state_path(output_dir)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return RenderState.model_validate(data)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        raise PersistenceError(f"Failed to load render state from {path}: {exc}") from exc
+
+
+def save_render_state(output_dir: Path, state: RenderState) -> None:
+    directory = render_dir(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / RENDER_STATE_FILENAME
+    state.updated_at = datetime.now(timezone.utc)
+    _atomic_write_json(target, state.model_dump(mode="json"))
+
+
+def new_render_state() -> RenderState:
+    return RenderState()
+
+
+def load_owned_artifacts(output_dir: Path) -> OwnedArtifactsLedger | None:
+    path = owned_artifacts_path(output_dir)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return OwnedArtifactsLedger.model_validate(data)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        raise PersistenceError(f"Failed to load owned artifacts from {path}: {exc}") from exc
+
+
+def save_owned_artifacts(output_dir: Path, ledger: OwnedArtifactsLedger) -> None:
+    target = owned_artifacts_path(output_dir)
+    _atomic_write_json(target, ledger.model_dump(mode="json"))
 
 
 def load_plan(output_dir: Path) -> PlanState | None:
@@ -226,6 +316,7 @@ def new_run_state(
     output_goal_digest: str,
     limits: PlanningLimits,
     generation: GenerationConfig,
+    render: RenderConfig | None = None,
     stop_hint_digest: str | None = None,
 ) -> RunState:
     return RunState(
@@ -236,6 +327,7 @@ def new_run_state(
         stop_hint_digest=stop_hint_digest,
         limits=limits,
         generation=generation,
+        render=render or RenderConfig(),
         active_status=RunActiveStatus.RUNNING,
     )
 

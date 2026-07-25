@@ -85,20 +85,6 @@ def test_notify_planning_report_complete(mock_send: MagicMock) -> None:
 
 
 @patch("top_down_planning.notifications.send_notification")
-def test_notify_planning_report_fallback(mock_send: MagicMock) -> None:
-    report = PlanningReport(
-        status=FinalStatus.COMPLETE,
-        items=2,
-        actionable_items=2,
-        artifacts=["planning-output/.planning-output/fallback.md"],
-        render_fallback=True,
-    )
-    notify_planning_report(report, enabled=True, render_fallback=True)
-    mock_send.assert_called_once()
-    assert mock_send.call_args.args[0] == "Planning complete (fallback artifact)"
-
-
-@patch("top_down_planning.notifications.send_notification")
 def test_notify_interrupted_and_error(mock_send: MagicMock) -> None:
     notify_interrupted(enabled=True)
     notify_error(enabled=True, message="Planning failed")

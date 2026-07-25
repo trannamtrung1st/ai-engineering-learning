@@ -8,7 +8,6 @@ from pathlib import Path
 from top_down_planning.agent_context import ResolvedAgentContext
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
 from top_down_planning.models import PlanItem, PlanState, WholePlanContextMode
-from top_down_planning.render_brief import actionable_leaf_items, build_render_brief
 
 
 def should_embed_content(text: str, *, embed_threshold: int) -> bool:
@@ -308,149 +307,143 @@ Do not execute implementation work.
 """
 
 
-def _format_render_brief_section(
-    *,
-    plan: PlanState,
-    render_brief_file: Path | None,
-    workspace: Path,
-    embed_threshold: int,
-) -> str:
-    brief = build_render_brief(plan)
-    leaf_count = len(actionable_leaf_items(plan))
-    header = (
-        f"The decomposition produced **{leaf_count} actionable deliverable unit(s)**. "
-        "Every unit below must appear in the final output. Use the output goal only "
-        "to decide file format, schema, and naming — not to add, remove, merge, or "
-        "re-scope items."
-    )
-    if render_brief_file is not None and not should_embed_content(
-        brief, embed_threshold=embed_threshold
-    ):
-        return (
-            f"{header}\n\n"
-            "Read the full render brief before writing deliverables:\n\n"
-            f"{format_input_file_reference(render_brief_file, workspace)}\n\n"
-            "Open and read that file in full. It is derived from the canonical "
-            "planning breakdown and defines the required scope."
-        )
-    return f"{header}\n\n{format_embedded_markdown(brief)}"
+def format_render_tool_section(*, render_tool_command: str = "planning-render-tool") -> str:
+    return f"""Use the render transaction CLI — do **not** write deliverables directly to the
+final output destination and do **not** modify `.planning-output/plan.yaml`.
+
+Workflow:
+1. Read assigned batch context and the whole-plan references.
+2. For each assigned plan item, run `{render_tool_command} record-artifact --json '<artifact>'`.
+3. Run `{render_tool_command} finalize` to commit the batch transaction.
+
+Artifact JSON schema (one object per `record-artifact` call):
+```json
+{{
+  "plan_item_id": "item-045",
+  "artifact_key": "todo-item-045",
+  "relative_path": "items/045-slug.yaml",
+  "section_order": 45,
+  "content": "..."
+}}
+```
+
+Use `relative_path` for multi-file output goals and `section_order` for single-document goals.
+Do not invent artifact keys, paths, or plan item IDs.
+"""
 
 
-def build_final_render_prompt(
+def build_render_batch_prompt(
     *,
-    loaded_input: LoadedInput,
-    plan_file: Path,
-    output_dir: Path,
-    workspace: Path,
+    batch_id: str,
+    plan_digest: str,
+    output_goal_digest: str,
+    render_config_digest: str,
+    batch_context_markdown: str,
     output_goal: LoadedOutputGoal,
-    plan: PlanState,
+    workspace: Path,
     embed_threshold: int,
-    render_brief_file: Path | None = None,
     validation_feedback: list[str] | None = None,
     agent_context: ResolvedAgentContext | None = None,
+    render_tool_command: str = "planning-render-tool",
 ) -> str:
-    """Build the prompt for the post-decomposition render phase."""
-    input_section = format_input_document_section(
-        loaded_input=loaded_input,
-        workspace=workspace,
-        embed_threshold=embed_threshold,
-    )
-    brief_section = _format_render_brief_section(
-        plan=plan,
-        render_brief_file=render_brief_file,
-        workspace=workspace,
-        embed_threshold=embed_threshold,
-    )
     feedback_block = ""
     if validation_feedback:
         feedback_block = (
-            "## Render validation feedback from previous attempt\n"
+            "## Validation feedback from previous attempt\n"
             + "\n".join(f"- {error}" for error in validation_feedback)
-            + "\n\nFix every issue. Regenerate deliverables from the breakdown; "
-            "do not copy prior files.\n\n"
+            + "\n\nFix every issue before finalizing the batch transaction.\n\n"
         )
-    deliverable_dir = output_dir.resolve()
-    try:
-        deliverable_display = str(
-            deliverable_dir.relative_to(workspace.resolve())
-        ).replace("\\", "/")
-    except ValueError:
-        deliverable_display = str(deliverable_dir)
-    return f"""# Final planning render
+    return f"""# Render batch session: {batch_id}
 
-Decomposition is complete. Produce the **final user-facing deliverable file(s)**.
+Produce staged render artifacts for the assigned plan items only.
 
-You are a planning renderer, not an executor. Transform the completed breakdown into
-deliverables that satisfy the output goal. Do not execute implementation work.
+## Plan digest
+`{plan_digest}`
 
-## Roles of each input
+## Output-goal digest
+`{output_goal_digest}`
 
-1. **Breakdown (authoritative scope)** — which items exist, their order, dependencies,
-   expected outputs, acceptance criteria, blocked items, and open questions.
-2. **Output goal (authoritative format)** — deliverable schema, filenames, terminology,
-   validation rules, and presentation requirements.
-3. **Primary input (background context only)** — source intent and domain detail for
-   filling in format-specific fields. It must not override or replace breakdown items.
+## Render-config digest
+`{render_config_digest}`
 
 {feedback_block}{_format_agent_context_section(agent_context)}## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-Use the output goal to decide:
-- deliverable format(s) and filename(s);
-- structure, terminology, and required sections;
-- how to map each breakdown unit into the requested schema.
+## Batch context
+{batch_context_markdown}
 
-If the output goal mentions an example path (for example `plans/.../todos/`), treat
-that as a format reference only. Write new deliverables under the deliverable
-directory below unless the output goal defines an **Output artifacts** section with
-exact paths.
-
-## Deliverable directory
-Write all deliverables here:
-
-{format_input_file_reference(deliverable_dir, workspace)}
-
-Prefer `{deliverable_display}/` over paths cited only as examples inside the output goal.
-
-Internal planning state lives under `{output_dir / ".planning-output"}`. Do not write
-deliverables there or modify files under `.planning-output/`.
-
-## Breakdown to render
-{brief_section}
-
-## Source documents
-
-Primary input (background context only):
-
-{input_section}
-
-Canonical planning state (full breakdown source):
-
-{format_input_file_reference(plan_file, workspace)}
-
-Open and read `plan.yaml` when you need fields not shown in the render brief.
-
-## Planning result metadata
-- Status: {plan.result.status.value}
-- Summary: {plan.result.summary or "No summary provided."}
-- Actionable deliverable units: {len(actionable_leaf_items(plan))}
+{format_render_tool_section(render_tool_command=render_tool_command)}
 
 ## Instructions
-- Treat the breakdown as the scope contract: cover **every actionable deliverable unit**
-  exactly once in the final output.
-- Do **not** copy, restore, or reuse pre-existing files from git history or from paths
-  mentioned in the output goal. Generate fresh deliverables from the breakdown.
-- Do **not** add, remove, merge, or re-scope items beyond what the breakdown defines.
-- When the output goal implies one file per checkpoint/item, create one deliverable per
-  actionable leaf unit in breakdown order.
-- Preserve each unit's objective, dependencies, expected outputs, acceptance criteria,
-  blocked reasons, and open questions.
-- When the output goal uses per-item title fields (for example YAML `title:`), copy each
-  breakdown unit title **verbatim** from the render brief. Do not rephrase, add commas,
-  em-dashes, or other punctuation for readability.
-- Do not return structured JSON or a chat-only summary instead of writing files.
-- Do not modify, delete, or recreate any file under `.planning-output/`, especially
-  `plan.yaml`.
-- Do not include orchestration internals such as item IDs unless the output goal
-  requires them.
+- Render only the assigned plan items exactly once.
+- Use the tool-owned artifact keys and paths from the batch context.
+- Do not modify canonical planning files.
+- Do not write to the final deliverable directory.
+- Finalize the batch transaction before ending the session.
+"""
+
+
+def build_render_output_review_prompt(
+    *,
+    output_dir: Path,
+    workspace: Path,
+    output_goal: LoadedOutputGoal,
+    plan_digest: str,
+    manifest_digest: str,
+    assembled_digest: str,
+    output_goal_digest: str,
+    embed_threshold: int,
+    agent_context: ResolvedAgentContext | None = None,
+    review_tool_command: str = "planning-review-tool",
+) -> str:
+    from top_down_planning.persistence import (
+        plan_path,
+        render_assembled_dir,
+        render_manifest_path,
+    )
+
+    plan_file = plan_path(output_dir)
+    manifest_file = render_manifest_path(output_dir)
+    assembled_dir = render_assembled_dir(output_dir)
+
+    return f"""# Rendered output review session
+
+Compare the confirmed plan, render manifest, assembled output, and output goal.
+
+## Plan digest
+`{plan_digest}`
+
+## Output-goal digest
+`{output_goal_digest}`
+
+## Render manifest digest
+`{manifest_digest}`
+
+## Assembled output digest
+`{assembled_digest}`
+
+{_format_agent_context_section(agent_context)}## Output goal
+{format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
+
+## References
+- Confirmed plan: {format_input_file_reference(plan_file, workspace)}
+- Render manifest: {format_input_file_reference(manifest_file, workspace)}
+- Assembled output directory: {format_input_file_reference(assembled_dir, workspace)}
+
+Use `{review_tool_command} set-result --json '<result>'` then `{review_tool_command} finalize`.
+
+Result JSON schema:
+```json
+{{
+  "stage": "rendered_output_review",
+  "plan_digest": "{plan_digest}",
+  "output_goal_digest": "{output_goal_digest}",
+  "render_manifest_digest": "{manifest_digest}",
+  "assembled_output_digest": "{assembled_digest}",
+  "decision": "approve | needs_rerender | blocked",
+  "summary": "...",
+  "findings": [],
+  "affected_batch_ids": []
+}}
+```
 """

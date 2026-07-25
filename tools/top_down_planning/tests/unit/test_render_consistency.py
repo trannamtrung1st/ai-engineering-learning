@@ -1,11 +1,9 @@
 from pathlib import Path
 
 from top_down_planning.completeness import leaf_actionable_count
-from top_down_planning.input_loader import load_markdown_input, load_output_goal
-from top_down_planning.models import DEFAULT_INLINE_EMBED_THRESHOLD, DecompositionStatus, PlanItem
-from top_down_planning.prompts import build_final_render_prompt
 from top_down_planning.render_brief import actionable_leaf_items, build_render_brief
 from tests.plan_factory import make_root_plan
+from top_down_planning.models import DecompositionStatus, PlanItem
 
 
 def test_render_brief_matches_actionable_leaf_count() -> None:
@@ -46,10 +44,14 @@ def test_render_brief_matches_actionable_leaf_count() -> None:
     assert "### 2. Checkpoint B" in brief
 
 
-def test_render_prompt_inlines_breakdown_from_plan(
+def test_render_batch_prompt_references_assigned_items(
     tmp_path: Path,
     example_input: Path,
 ) -> None:
+    from top_down_planning.input_loader import load_markdown_input, load_output_goal
+    from top_down_planning.models import DEFAULT_INLINE_EMBED_THRESHOLD
+    from top_down_planning.prompts import build_render_batch_prompt
+
     loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
     plan = make_root_plan(
@@ -71,26 +73,29 @@ def test_render_prompt_inlines_breakdown_from_plan(
             acceptance_criteria=["Validation passes"],
         )
     )
-    output_dir = tmp_path / "planning-output"
-    render_brief_path = output_dir / ".planning-output" / "iterations" / "render-brief.md"
-    render_brief_path.parent.mkdir(parents=True, exist_ok=True)
-    render_brief_path.write_text(build_render_brief(plan), encoding="utf-8")
-
-    prompt = build_final_render_prompt(
-        loaded_input=loaded_input,
-        plan_file=output_dir / ".planning-output" / "plan.yaml",
-        output_dir=output_dir,
-        workspace=tmp_path,
-        output_goal=output_goal,
-        plan=plan,
-        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
-        render_brief_file=render_brief_path,
+    batch_context = "\n".join(
+        [
+            "## Assigned items",
+            "- `item-002` → `todo-item-002` → section 2",
+            "",
+            "### item-002: Unique checkpoint title",
+            "- Objective: Complete the checkpoint",
+        ]
     )
 
-    assert "Breakdown to render" in prompt
+    prompt = build_render_batch_prompt(
+        batch_id="batch-001",
+        plan_digest="d" * 64,
+        output_goal_digest=output_goal.digest,
+        render_config_digest="c" * 64,
+        batch_context_markdown=batch_context,
+        output_goal=output_goal,
+        workspace=tmp_path,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+
+    assert "Render batch session: batch-001" in prompt
     assert "Unique checkpoint title" in prompt
     assert "Complete the checkpoint" in prompt
-    assert "Deliverable artifact" in prompt
-    assert "Actionable deliverable units: 1" in prompt
-    assert "```markdown" in prompt
-    assert render_brief_path.read_text(encoding="utf-8") == build_render_brief(plan)
+    assert "planning-render-tool" in prompt
+    assert "Produce an actionable implementation plan" in prompt

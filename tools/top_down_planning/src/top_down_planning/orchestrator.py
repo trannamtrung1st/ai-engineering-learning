@@ -41,6 +41,8 @@ from top_down_planning.models import (
     PlanItem,
     PlanningLimits,
     PlanningReport,
+    RenderConfig,
+    RenderStage,
     ReviewConfig,
     RunActiveStatus,
     RunState,
@@ -54,7 +56,8 @@ from top_down_planning.persistence import (
     iteration_prefix,
     iteration_transaction_path,
     iterations_dir,
-    render_attempt_prefix,
+    load_plan,
+    load_render_state,
     load_run_state,
     mark_last_success,
     new_run_state,
@@ -79,15 +82,11 @@ from top_down_planning.recovery import (
     restore_canonical_plan,
 )
 from top_down_planning.review_flow import ReviewFlowDeps, run_post_decomposition_flow
-from top_down_planning.artifact_writer import (
-    discover_written_artifacts,
-    snapshot_deliverable_files,
-    write_render_artifacts,
-)
+from top_down_planning.render_flow import RenderFlowDeps, existing_published_artifacts, render_from_confirmed_plan
+from top_down_planning.render_preconditions import validate_render_only_preconditions
 from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import ensure_plan_overview_artifact, prepare_batch_context
-from top_down_planning.prompts import build_final_render_prompt, build_planning_prompt
-from top_down_planning.render_brief import build_render_brief, validate_render_coverage
+from top_down_planning.prompts import build_planning_prompt
 from top_down_planning.scheduler import (
     initialize_root_plan,
     select_concurrent_batches,
@@ -106,6 +105,10 @@ class RunConfig:
     workspace_root: Path
     limits: PlanningLimits
     generation: GenerationConfig = field(default_factory=GenerationConfig)
+    render: RenderConfig = field(default_factory=RenderConfig)
+    render_only: bool = False
+    force_rerender: bool = False
+    goal_overridden: bool = False
     resume: bool = False
     stream_json: bool = False
     no_color: bool = False
@@ -142,7 +145,6 @@ class Orchestrator:
         self.stream = StreamEmitter(enabled=config.stream_json)
         self._client: CursorClient | None = None
         self._artifacts: list[str] = []
-        self._render_fallback = False
         self._embed_threshold = resolve_embed_threshold(config.embed_threshold)
         self._agent_pid_lock = threading.Lock()
         self._validate_config_agent_context()
@@ -151,7 +153,12 @@ class Orchestrator:
         if self.config.agent_context is None:
             return
         workspace = self.config.workspace_root.resolve()
-        for phase in ("planning", "rendering", "review"):
+        phases = (
+            ("rendering", "review")
+            if self.config.render_only
+            else ("planning", "rendering", "review")
+        )
+        for phase in phases:
             resolved = resolve_phase_agent_context(
                 phase,  # type: ignore[arg-type]
                 self.config.agent_context,
@@ -192,13 +199,18 @@ class Orchestrator:
         return self._client
 
     async def run(self) -> PlanningReport:
+        output_dir = self.config.output_dir.resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.config.render_only:
+            return await self._run_render_only(output_dir)
+
         loaded = load_markdown_input(self.config.input_path)
+
         loaded_goal = self.config.output_goal
         loaded_stop_hint = self.config.stop_hint
         goal_digest = loaded_goal.digest
         stop_hint_digest = loaded_stop_hint.digest if loaded_stop_hint else None
-        output_dir = self.config.output_dir.resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
 
         existing_plan, existing_run = ensure_resume_compatible(
             output_dir,
@@ -325,7 +337,6 @@ class Orchestrator:
             output_dir=str(output_dir),
             artifacts=self._artifacts,
             summary=plan.result.summary,
-            render_fallback=self._render_fallback,
         )
         self.stream.emit(
             "planning.completed",
@@ -358,19 +369,22 @@ class Orchestrator:
         )
 
         if should_render:
-            existing = _existing_generated_artifacts(
-                self.config.workspace_root, run_state
+            existing = existing_published_artifacts(
+                self.config.workspace_root,
+                run_state,
+                load_render_state(output_dir),
             )
-            if existing:
+            if existing and not self.config.force_rerender:
                 self._artifacts = existing
                 self.stream.emit("render.skipped", artifacts=existing)
             else:
-                self._artifacts = await self._run_final_render(
-                    loaded=loaded,
+                render_result = await render_from_confirmed_plan(
+                    self._render_flow_deps(loaded=loaded, output_dir=output_dir),
                     plan=plan,
-                    output_dir=output_dir,
                     run_state=run_state,
+                    force_rerender=self.config.force_rerender,
                 )
+                self._artifacts = render_result.artifacts
         return plan, run_state
 
     async def _decomposition_loop(
@@ -471,6 +485,72 @@ class Orchestrator:
             resolve_review_context=lambda: self._resolved_agent_context(phase="review"),
             resolve_review_model=lambda: self._resolve_session_model(phase="review"),
             run_planning_loop=_resume_decomposition_only,
+        )
+
+    def _render_flow_deps(
+        self,
+        *,
+        loaded: LoadedInput | None,
+        output_dir: Path,
+    ) -> RenderFlowDeps:
+        return RenderFlowDeps(
+            workspace_root=self.config.workspace_root,
+            output_dir=output_dir,
+            loaded=loaded,
+            output_goal=self.config.output_goal,
+            embed_threshold=self._embed_threshold,
+            render=self.config.render,
+            client=self.client,
+            renderer=self.renderer,
+            stream=self.stream,
+            audit=self.config.audit_iterations,
+            resolve_render_context=lambda: self._resolved_agent_context(phase="rendering"),
+            resolve_render_model=lambda: self._resolve_session_model(phase="rendering"),
+            resolve_review_context=lambda: self._resolved_agent_context(phase="review"),
+            resolve_review_model=lambda: self._resolve_session_model(phase="review"),
+            session_timeout_seconds=self.config.limits.session_timeout_seconds,
+        )
+
+    async def _run_render_only(self, output_dir: Path) -> PlanningReport:
+        self.stream.emit("render.only.started", output=str(output_dir))
+        plan, _plan_digest = validate_render_only_preconditions(
+            output_dir,
+            output_goal=self.config.output_goal,
+            goal_overridden=self.config.goal_overridden,
+        )
+        run_state = load_run_state(output_dir)
+        if run_state is None:
+            raise PlanningToolError("Render-only requires existing run-state.json")
+
+        loaded: LoadedInput | None = None
+        if self.config.input_path.is_file():
+            loaded = load_markdown_input(self.config.input_path)
+        elif plan.source.input_file:
+            candidate = Path(plan.source.input_file)
+            if candidate.is_file():
+                loaded = load_markdown_input(candidate)
+
+        render_result = await render_from_confirmed_plan(
+            self._render_flow_deps(loaded=loaded, output_dir=output_dir),
+            plan=plan,
+            run_state=run_state,
+            force_rerender=self.config.force_rerender,
+            render_only=True,
+        )
+        self._artifacts = render_result.artifacts
+
+        counts = count_by_status(plan)
+        return PlanningReport(
+            status=plan.result.status,
+            review_status=plan.result.review_status,
+            items=len(plan.plan),
+            actionable_items=leaf_actionable_count(plan),
+            blocked_items=counts["blocked"],
+            out_of_scope_items=counts["out_of_scope"],
+            iterations=run_state.iteration,
+            output_dir=str(output_dir),
+            artifacts=self._artifacts,
+            summary=plan.result.summary,
         )
 
     async def _run_planning_wave(
@@ -933,222 +1013,12 @@ class Orchestrator:
                     item_id=operation.node_id,
                 )
 
-    async def _run_final_render(
-        self,
-        *,
-        loaded: LoadedInput,
-        plan,
-        output_dir: Path,
-        run_state: RunState,
-    ) -> list[str]:
-        workspace = self.config.workspace_root.resolve()
-        canonical_plan_file = plan_path(output_dir)
-        limits = run_state.limits
-        audit_dir = iterations_dir(output_dir)
-
-        self.stream.emit("render.started")
-        self.renderer.rule("RENDER deliverables according to output goal")
-
-        render_brief_path = audit_dir / "render-brief.md"
-        render_brief_path.parent.mkdir(parents=True, exist_ok=True)
-        render_brief_path.write_text(build_render_brief(plan), encoding="utf-8")
-
-        validation_feedback: list[str] | None = None
-        for attempt in range(1, limits.max_retries + 1):
-            before_snapshot = snapshot_deliverable_files(
-                workspace, output_dir=output_dir
-            )
-            prompt = build_final_render_prompt(
-                loaded_input=loaded,
-                plan_file=canonical_plan_file,
-                output_dir=output_dir,
-                workspace=workspace,
-                output_goal=self.config.output_goal,
-                plan=plan,
-                embed_threshold=self._embed_threshold,
-                render_brief_file=render_brief_path,
-                validation_feedback=validation_feedback,
-                agent_context=self._resolved_agent_context(phase="rendering"),
-            )
-
-            attempt_prefix = Path(render_attempt_prefix(output_dir, attempt))
-            prompt_path = attempt_prefix.with_name(
-                attempt_prefix.name + "-request-prompt.md"
-            )
-            response_path = attempt_prefix.with_name(
-                attempt_prefix.name + "-response.json"
-            )
-            events_path = attempt_prefix.with_name(
-                attempt_prefix.name + "-agent.ndjson"
-            )
-            log_path = attempt_prefix.with_name(attempt_prefix.name + "-agent.log")
-            prompt_path.parent.mkdir(parents=True, exist_ok=True)
-            prompt_path.write_text(prompt, encoding="utf-8")
-            plan_backup = backup_canonical_plan(output_dir)
-            min_plan_items = len(plan.plan)
-
-            try:
-                await self.client.run_session(
-                    workspace=workspace,
-                    prompt=prompt,
-                    prompt_path=prompt_path,
-                    timeout_seconds=limits.session_timeout_seconds,
-                    events_path=events_path if self.config.audit_iterations else None,
-                    log_path=log_path if self.config.audit_iterations else None,
-                    renderer=ConsoleRenderer.with_file_logging(
-                        self.renderer,
-                        log_path,
-                    )
-                    if self.config.audit_iterations
-                    else self.renderer,
-                    on_agent_started=lambda pid: self._add_agent_pid(
-                        output_dir, run_state, pid
-                    ),
-                    session_mode="agent",
-                    model=self._resolve_session_model(phase="rendering"),
-                )
-            except UserInterrupted:
-                run_state.agent_pids = []
-                save_run_state(output_dir, run_state)
-                raise
-            except CursorEnvironmentError:
-                raise
-            except CursorSessionError as exc:
-                run_state.last_error = str(exc)
-                save_run_state(output_dir, run_state)
-                if attempt >= limits.max_retries:
-                    self.renderer.warning(
-                        "Final render failed; writing deterministic fallback artifact."
-                    )
-                    fallback = write_fallback_artifact(output_dir, plan)
-                    paths = _persist_render_result(workspace, run_state, [fallback])
-                    save_run_state(output_dir, run_state)
-                    self._render_fallback = True
-                    self.stream.emit("render.fallback", reason=str(exc))
-                    return paths
-                self.stream.emit(
-                    "render.retrying",
-                    attempt=attempt + 1,
-                    reason=str(exc),
-                )
-                continue
-            finally:
-                if restore_canonical_plan(
-                    output_dir, plan_backup, min_items=min_plan_items
-                ):
-                    self.renderer.warning(
-                        "Restored plan.yaml after render modified canonical state"
-                    )
-
-            run_state.agent_pids = []
-
-            written = discover_written_artifacts(
-                workspace, output_dir=output_dir, before=before_snapshot
-            )
-            coverage_errors = validate_render_coverage(plan, written)
-            if coverage_errors:
-                validation_feedback = coverage_errors
-                self.stream.emit(
-                    "render.validation_failed",
-                    attempt=attempt,
-                    errors=coverage_errors,
-                )
-                if self.config.audit_iterations:
-                    write_json(
-                        response_path,
-                        {
-                            "artifacts": [
-                                _workspace_relative(path, workspace)
-                                for path in written
-                            ],
-                            "coverage_errors": coverage_errors,
-                        },
-                    )
-                if attempt >= limits.max_retries:
-                    self.renderer.warning(
-                        "Render deliverables did not cover the breakdown; "
-                        "writing deterministic fallback artifact."
-                    )
-                    fallback = write_fallback_artifact(output_dir, plan)
-                    paths = _persist_render_result(workspace, run_state, [fallback])
-                    save_run_state(output_dir, run_state)
-                    self._render_fallback = True
-                    self.stream.emit(
-                        "render.fallback",
-                        reason="; ".join(coverage_errors),
-                    )
-                    return paths
-                self.stream.emit(
-                    "render.retrying",
-                    attempt=attempt + 1,
-                    reason="; ".join(coverage_errors),
-                )
-                continue
-
-            if self.config.audit_iterations:
-                write_json(
-                    response_path,
-                    {
-                        "artifacts": [
-                            _workspace_relative(path, workspace) for path in written
-                        ],
-                    },
-                )
-
-            artifact_paths = _persist_render_result(workspace, run_state, written)
-            record_history(
-                output_dir,
-                run_state,
-                event="render_applied",
-                attempt=attempt,
-                artifacts=artifact_paths,
-            )
-            save_run_state(output_dir, run_state)
-            self.stream.emit("render.completed", artifacts=artifact_paths)
-            return artifact_paths
-
-        fallback = write_fallback_artifact(output_dir, plan)
-        paths = _persist_render_result(workspace, run_state, [fallback])
-        save_run_state(output_dir, run_state)
-        self._render_fallback = True
-        self.stream.emit("render.fallback", reason="exhausted retries")
-        return paths
-
     def _add_agent_pid(self, output_dir: Path, run_state: RunState, pid: int) -> None:
         with self._agent_pid_lock:
             if pid not in run_state.agent_pids:
                 run_state.agent_pids.append(pid)
             run_state.agent_pid = None
             save_run_state(output_dir, run_state)
-
-
-def _workspace_relative(path: Path, workspace: Path) -> str:
-    return path.resolve().relative_to(workspace.resolve()).as_posix()
-
-
-def _persist_render_result(
-    workspace: Path,
-    run_state: RunState,
-    written: list[Path],
-) -> list[str]:
-    relative = [_workspace_relative(path, workspace) for path in written]
-    run_state.generated_artifacts = relative
-    return [str(workspace / name) for name in relative]
-
-
-def _existing_generated_artifacts(
-    workspace: Path,
-    run_state: RunState,
-) -> list[str] | None:
-    if not run_state.generated_artifacts:
-        return None
-    absolute: list[str] = []
-    for relative in run_state.generated_artifacts:
-        path = workspace / relative
-        if not path.is_file():
-            return None
-        absolute.append(str(path))
-    return absolute
 
 
 def _any_agent_alive(pids: list[int]) -> bool:

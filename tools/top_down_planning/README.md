@@ -79,7 +79,7 @@ Terminal outcomes (`complete`, incomplete, paused, failed) can emit native deskt
 - **Env:** `PLANNING_TOOL_NOTIFY=true|false`
 - **Config:** `notify: true|false`
 
-When render falls back to a deterministic artifact, the final notification indicates fallback mode. Wave/iteration progress is not notified. `--stream-json` stdout remains machine-readable only.
+Wave/iteration progress is not notified. `--stream-json` stdout remains machine-readable only.
 
 ### Model selection
 
@@ -114,31 +114,64 @@ planning-output/
         ├── 001-request-prompt.md
         ├── 001-transaction.json
         ├── 001-response.json
-        ├── render-brief.md
-        ├── render-001-response.json
-        └── reviews/
-            ├── whole-plan-request-prompt.md
-            ├── whole-plan-result.json
-            ├── final-confirmation-request-prompt.md
-            └── final-confirmation-result.json
+        └── render/
+            ├── render-state.json
+            ├── manifest.yaml
+            ├── context/
+            ├── batches/
+            ├── assembled/
+            └── reviews/
 ```
 
 Goal-driven deliverables are written only when planning finishes with status `complete`
-and review status `confirmed` (when review is enabled). The render phase transforms
-the completed breakdown into deliverables that satisfy the output goal. Incomplete,
-blocked, or failed runs keep internal state under `.planning-output/` but do not write
-new deliverables.
+and review status `confirmed` (when review is enabled). Rendering is a separate lifecycle
+from planning: after confirmation, the tool builds a deterministic render manifest,
+runs concurrent staged render batches, assembles output, optionally runs whole-output
+semantic review, and publishes atomically.
 
-Before render, the tool writes `render-brief.md` from `plan.yaml`. That brief lists
-every actionable leaf unit and is the authoritative scope contract for deliverables.
-The output goal defines format and schema; the breakdown defines which items must
-appear. After render, the tool validates that every breakdown title appears in the
-written deliverables and retries with feedback when coverage is incomplete.
+### Render-only mode
 
-Render audit artifacts under `.planning-output/iterations/` include
-`render-brief.md`, per-attempt files such as `render-001-request-prompt.md`,
-`render-001-response.json`, and `render-001-agent.{ndjson,log}` (one numbered set
-per render attempt/ retry), plus agent logs when audit is enabled.
+Render an existing confirmed plan without rerunning decomposition or review:
+
+```bash
+top-down-planning \
+  --render-only \
+  --output ./planning-output
+```
+
+Rerender with a revised output goal:
+
+```bash
+top-down-planning \
+  --render-only \
+  --output ./planning-output \
+  --output-goal-file updated-output-goal.md
+```
+
+Force all render batches to regenerate:
+
+```bash
+top-down-planning \
+  --render-only \
+  --output ./planning-output \
+  --force-rerender
+```
+
+Configure batched rendering separately from planning batching:
+
+```yaml
+render:
+  batch_strategy: coherent   # single | branch | coherent | throughput
+  batch_size: 5
+  concurrent_batches: 3
+  max_retries: 3
+  whole_plan_context: hybrid
+  final_review: true
+  max_rerender_cycles: 2
+```
+
+Incomplete, blocked, or failed planning runs keep internal state under `.planning-output/`
+but do not write new deliverables.
 
 ## v1 contracts
 
@@ -367,8 +400,8 @@ settings. Safety limits (`max_iterations`, `max_items`, `max_retries`,
 for example, raise `max_iterations` after hitting
 `incomplete_limit_reached`. Structural limits (`max_depth`,
 `max_children_per_expansion`) must still match the stored run. Resuming an
-already-complete, confirmed run skips render when prior deliverables still exist
-on disk.
+already-complete, confirmed run skips render when render state is `complete` and prior
+deliverables still exist on disk (use `--force-rerender` to regenerate).
 
 On resume, the tool detects when `plan.yaml` was reset but `run-state.json` still shows
 prior progress. It attempts to rebuild the plan by replaying stored
@@ -423,12 +456,16 @@ When `--stream-json` is enabled, planning-phase events include:
 
 Render-phase events include:
 
+- `render.only.started` (render-only mode)
 - `render.started`
+- `render.manifest.created` / `render.manifest.reused`
+- `render.batch.started` / `render.batch.completed` / `render.batch.failed` / `render.batch.retrying`
+- `render.validation_failed` (batch transaction or assembly validation)
+- `render.assembly.started` / `render.assembly.completed`
+- `render.review.started` / `render.review.completed` / `render.review.needs_rerender`
+- `render.publication.started` / `render.publication.completed`
 - `render.completed` (with `artifacts`)
-- `render.skipped` (when resuming with existing deliverables)
-- `render.validation_failed` (when deliverables omit breakdown items)
-- `render.fallback` (deterministic fallback artifact)
-- `render.retrying`
+- `render.skipped` (when resuming with completed render state and existing deliverables)
 
 Review-phase events include:
 

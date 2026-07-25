@@ -101,7 +101,6 @@ def notify_planning_report(
     report: PlanningReport,
     *,
     enabled: bool,
-    render_fallback: bool = False,
 ) -> None:
     if not should_notify(enabled=enabled):
         return
@@ -111,14 +110,6 @@ def notify_planning_report(
         artifact_hint = ""
         if report.artifacts:
             artifact_hint = f" Deliverable: {report.artifacts[0]}"
-        if render_fallback:
-            send_notification(
-                "Planning complete (fallback artifact)",
-                f"{report.items} items, {report.actionable_items} actionable."
-                f"{artifact_hint}",
-                enabled=enabled,
-            )
-            return
         send_notification(
             "Planning complete",
             f"{report.items} items, {report.actionable_items} actionable."

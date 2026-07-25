@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from top_down_planning.models import PlanState
+from top_down_planning.models import PlanState, RenderConfig
 
 
 def digest_text(text: str) -> str:
@@ -57,5 +57,11 @@ def compute_plan_digest(plan: PlanState) -> str:
             for item in sorted(plan.plan, key=lambda entry: (entry.order, entry.id))
         ],
     }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return digest_text(canonical)
+
+
+def compute_render_config_digest(render_config: RenderConfig) -> str:
+    payload = render_config.model_dump(mode="json")
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return digest_text(canonical)

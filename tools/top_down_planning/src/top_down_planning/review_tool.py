@@ -14,17 +14,22 @@ import typer
 from pydantic import TypeAdapter, ValidationError as PydanticValidationError
 
 from top_down_planning.errors import PlanningToolError
-from top_down_planning.models import FinalConfirmationResult, WholePlanReviewResult
+from top_down_planning.models import (
+    FinalConfirmationResult,
+    RenderedOutputReviewResult,
+    WholePlanReviewResult,
+)
 from top_down_planning.persistence import write_json
 
 ENV_RESULT_FILE = "PLANNING_REVIEW_RESULT_FILE"
 ENV_STAGE = "PLANNING_REVIEW_STAGE"
 REVIEW_TOOL_COMMAND_ENV = "PLANNING_REVIEW_TOOL_COMMAND"
 
-StageName = Literal["whole_plan_review", "final_confirmation"]
+StageName = Literal["whole_plan_review", "final_confirmation", "rendered_output_review"]
 _RESULT_ADAPTERS: dict[StageName, TypeAdapter[Any]] = {
     "whole_plan_review": TypeAdapter(WholePlanReviewResult),
     "final_confirmation": TypeAdapter(FinalConfirmationResult),
+    "rendered_output_review": TypeAdapter(RenderedOutputReviewResult),
 }
 
 app = typer.Typer(
@@ -86,7 +91,7 @@ def _stage() -> StageName:
     if raw not in _RESULT_ADAPTERS:
         raise ReviewToolError(
             f"Invalid {ENV_STAGE}: {raw!r} "
-            "(expected whole_plan_review or final_confirmation)"
+            "(expected whole_plan_review, final_confirmation, or rendered_output_review)"
         )
     return raw  # type: ignore[return-value]
 
@@ -126,7 +131,11 @@ def reset_review_result(result_path: Path) -> None:
         result_path.unlink()
 
 
-def load_review_result(path: Path, *, stage: StageName) -> WholePlanReviewResult | FinalConfirmationResult:
+def load_review_result(
+    path: Path,
+    *,
+    stage: StageName,
+) -> WholePlanReviewResult | FinalConfirmationResult | RenderedOutputReviewResult:
     if not path.is_file():
         raise ReviewToolError(f"Review result file not found: {path}")
     try:

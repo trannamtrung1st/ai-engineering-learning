@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
-
 from top_down_planning.models import DecompositionStatus, PlanItem, PlanState
 
 
@@ -39,15 +36,6 @@ def _dependency_labels(plan: PlanState, item: PlanItem) -> list[str]:
         dep_item = plan.item_by_id(dep)
         labels.append(dep_item.title if dep_item else dep)
     return labels
-
-
-_PUNCTUATION_TO_SPACE = re.compile(r"[,;:.!?–—\-/\\()\"'`]+")
-
-
-def _normalize_for_match(text: str) -> str:
-    """Normalize titles for coverage checks; ignores case and punctuation drift."""
-    deduped = _PUNCTUATION_TO_SPACE.sub(" ", text.strip().lower())
-    return re.sub(r"\s+", " ", deduped).strip()
 
 
 def build_render_brief(plan: PlanState) -> str:
@@ -121,39 +109,3 @@ def _render_hierarchy(
         child_prefix = f"{number}."
         lines.extend(_render_hierarchy(plan, parent_id=item.id, prefix=child_prefix))
     return lines
-
-
-def validate_render_coverage(
-    plan: PlanState,
-    artifact_paths: list[Path],
-) -> list[str]:
-    """Return human-readable errors when deliverables omit breakdown items."""
-    errors: list[str] = []
-    if not artifact_paths:
-        return ["No deliverable files were written."]
-
-    combined_parts: list[str] = []
-    for path in artifact_paths:
-        if not path.is_file():
-            errors.append(f"Deliverable file is missing: {path}")
-            continue
-        try:
-            combined_parts.append(path.read_text(encoding="utf-8"))
-        except OSError as exc:
-            errors.append(f"Cannot read deliverable {path}: {exc}")
-
-    if errors:
-        return errors
-
-    combined_normalized = _normalize_for_match("\n".join(combined_parts))
-    leaves = actionable_leaf_items(plan)
-    for item in leaves:
-        title_normalized = _normalize_for_match(item.title)
-        if title_normalized and title_normalized not in combined_normalized:
-            errors.append(
-                "Deliverables do not cover breakdown item "
-                f"{item.id} ({item.title!r}). "
-                "Each actionable leaf in the render brief must appear in the output."
-            )
-
-    return errors

@@ -78,6 +78,142 @@ class WholePlanContextMode(str, Enum):
     HYBRID = "hybrid"
 
 
+class RenderBatchStrategy(str, Enum):
+    SINGLE = "single"
+    BRANCH = "branch"
+    COHERENT = "coherent"
+    THROUGHPUT = "throughput"
+
+
+class RenderConfig(BaseModel):
+    batch_strategy: RenderBatchStrategy = RenderBatchStrategy.COHERENT
+    batch_size: int = 5
+    concurrent_batches: int = 3
+    max_retries: int = 3
+    whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID
+    final_review: bool = True
+    max_rerender_cycles: int = 2
+
+
+class RenderStage(str, Enum):
+    MANIFEST = "manifest"
+    BATCHES = "batches"
+    ASSEMBLY = "assembly"
+    REVIEW = "review"
+    PUBLICATION = "publication"
+    COMPLETE = "complete"
+
+
+class RenderBatchStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    VALID = "valid"
+    FAILED = "failed"
+
+
+class RenderOutputReviewStatus(str, Enum):
+    PENDING = "pending"
+    SKIPPED = "skipped"
+    APPROVED = "approved"
+    NEEDS_RERENDER = "needs_rerender"
+    BLOCKED = "blocked"
+
+
+class PublicationStatus(str, Enum):
+    PENDING = "pending"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class OutputMode(str, Enum):
+    SINGLE_DOCUMENT = "single_document"
+    MULTI_FILE = "multi_file"
+
+
+class RenderManifestItem(BaseModel):
+    plan_item_id: str
+    top_level_branch_id: str
+    order: int
+    title: str
+    dependencies: list[str] = Field(default_factory=list)
+    assigned_batch_id: str
+    artifact_key: str
+    relative_path: str | None = None
+    section_order: int | None = None
+
+
+class RenderManifest(BaseModel):
+    schema_version: int = SCHEMA_VERSION
+    plan_digest: str
+    output_goal_digest: str
+    render_config_digest: str
+    output_mode: OutputMode = OutputMode.SINGLE_DOCUMENT
+    final_relative_path: str | None = None
+    items: list[RenderManifestItem] = Field(default_factory=list)
+
+
+class RenderBatchArtifact(BaseModel):
+    plan_item_id: str
+    artifact_key: str
+    relative_path: str | None = None
+    section_order: int | None = None
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def _non_empty_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("content must not be empty")
+        return value
+
+
+class RenderBatchTransaction(BaseModel):
+    schema_version: int = SCHEMA_VERSION
+    batch_id: str
+    plan_digest: str
+    output_goal_digest: str
+    render_config_digest: str
+    artifacts: list[RenderBatchArtifact]
+
+    @field_validator("artifacts")
+    @classmethod
+    def _non_empty_artifacts(
+        cls, value: list[RenderBatchArtifact]
+    ) -> list[RenderBatchArtifact]:
+        if not value:
+            raise ValueError("artifacts must contain at least one item")
+        return value
+
+
+class RenderBatchStateEntry(BaseModel):
+    status: RenderBatchStatus = RenderBatchStatus.PENDING
+    attempts: int = 0
+    transaction_digest: str | None = None
+    assigned_item_ids: list[str] = Field(default_factory=list)
+
+
+class RenderState(BaseModel):
+    schema_version: int = SCHEMA_VERSION
+    stage: RenderStage = RenderStage.MANIFEST
+    plan_digest: str = ""
+    output_goal_digest: str = ""
+    render_config_digest: str = ""
+    render_manifest_digest: str = ""
+    batches: dict[str, RenderBatchStateEntry] = Field(default_factory=dict)
+    assembled_output_digest: str | None = None
+    output_review_status: RenderOutputReviewStatus = RenderOutputReviewStatus.PENDING
+    publication_status: PublicationStatus = PublicationStatus.PENDING
+    rerender_cycle: int = 0
+    updated_at: datetime | None = None
+
+
+class OwnedArtifactsLedger(BaseModel):
+    schema_version: int = SCHEMA_VERSION
+    output_dir: str
+    artifacts: list[str] = Field(default_factory=list)
+    publication_digest: str | None = None
+
+
 class GenerationConfig(BaseModel):
     batch_strategy: BatchStrategy = BatchStrategy.COHERENT
     batch_size: int = 3
@@ -224,41 +360,6 @@ class AgentResponse(BaseModel):
     selected_items: list[str] = Field(default_factory=list)
 
 
-class RenderArtifact(BaseModel):
-    """Internal fallback artifact payload written by the deterministic renderer."""
-
-    relative_path: str
-    content: str
-
-    @field_validator("relative_path")
-    @classmethod
-    def _non_empty_path(cls, value: str) -> str:
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("relative_path must not be empty")
-        return stripped
-
-    @field_validator("content")
-    @classmethod
-    def _non_empty_content(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("content must not be empty")
-        return value
-
-
-class RenderResponse(BaseModel):
-    """Internal fallback artifact batch used by the deterministic renderer."""
-
-    artifacts: list[RenderArtifact]
-
-    @field_validator("artifacts")
-    @classmethod
-    def _non_empty_artifacts(cls, value: list[RenderArtifact]) -> list[RenderArtifact]:
-        if not value:
-            raise ValueError("artifacts must contain at least one item")
-        return value
-
-
 class RunState(BaseModel):
     schema_version: int = SCHEMA_VERSION
     active_status: RunActiveStatus = RunActiveStatus.IDLE
@@ -266,6 +367,7 @@ class RunState(BaseModel):
     retry_count: int = 0
     limits: PlanningLimits = Field(default_factory=PlanningLimits)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
+    render: RenderConfig = Field(default_factory=RenderConfig)
     input_digest: str = ""
     output_goal_digest: str = ""
     stop_hint_digest: str | None = None
@@ -294,6 +396,44 @@ class ReviewFindingSeverity(str, Enum):
     BLOCKING = "blocking"
     MAJOR = "major"
     MINOR = "minor"
+
+
+class RenderOutputFindingCategory(str, Enum):
+    COVERAGE = "coverage"
+    DEPENDENCY = "dependency"
+    SCHEMA = "schema"
+    CONSISTENCY = "consistency"
+    CHECKLIST = "checklist"
+    ACCEPTANCE = "acceptance"
+    DUPLICATION = "duplication"
+    OTHER = "other"
+
+
+class RenderOutputReviewFinding(BaseModel):
+    severity: ReviewFindingSeverity
+    category: RenderOutputFindingCategory
+    plan_item_ids: list[str] = Field(default_factory=list)
+    artifact_keys: list[str] = Field(default_factory=list)
+    description: str
+    recommended_change: str = ""
+
+
+class RenderOutputReviewDecision(str, Enum):
+    APPROVE = "approve"
+    NEEDS_RERENDER = "needs_rerender"
+    BLOCKED = "blocked"
+
+
+class RenderedOutputReviewResult(BaseModel):
+    stage: Literal["rendered_output_review"] = "rendered_output_review"
+    plan_digest: str
+    output_goal_digest: str
+    render_manifest_digest: str
+    assembled_output_digest: str
+    decision: RenderOutputReviewDecision
+    summary: str
+    findings: list[RenderOutputReviewFinding] = Field(default_factory=list)
+    affected_batch_ids: list[str] = Field(default_factory=list)
 
 
 class ReviewFindingCategory(str, Enum):
@@ -374,4 +514,3 @@ class PlanningReport(BaseModel):
     output_dir: str = ""
     artifacts: list[str] = Field(default_factory=list)
     summary: str | None = None
-    render_fallback: bool = False

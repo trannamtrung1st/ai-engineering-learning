@@ -89,5 +89,4 @@ def test_execute_run_notifies_on_success(
     mock_notify_report.assert_called_once_with(
         report,
         enabled=True,
-        render_fallback=False,
     )

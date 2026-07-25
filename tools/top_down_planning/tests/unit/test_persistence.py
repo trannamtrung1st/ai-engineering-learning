@@ -7,7 +7,6 @@ from top_down_planning.errors import ResumeError
 from top_down_planning.models import GenerationConfig, PlanningLimits, RunState
 from top_down_planning.persistence import (
     ensure_resume_compatible,
-    render_attempt_prefix,
     resolve_resume_limits,
     save_run_state,
 )
@@ -56,11 +55,6 @@ def test_resume_rejects_generation_mismatch(tmp_path: Path) -> None:
             generation=GenerationConfig(concurrent_batches=3),
             resume=True,
         )
-
-
-def test_render_attempt_prefix(tmp_path: Path) -> None:
-    prefix = render_attempt_prefix(tmp_path, 2)
-    assert prefix.endswith("/.planning-output/iterations/render-002")
 
 
 def test_resume_allows_increased_max_iterations(tmp_path: Path) -> None:
