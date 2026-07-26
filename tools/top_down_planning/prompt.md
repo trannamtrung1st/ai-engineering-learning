@@ -377,7 +377,7 @@ Suggested layout:
 
 ```text
 planning-output/
-├── implementation-plan.md          # workspace deliverable from output goal
+├── implementation-plan.md          # example deliverable the final agent may publish
 └── planning-output/
     └── .planning-output/
     ├── plan.yaml
@@ -394,7 +394,7 @@ planning-output/
             ├── batches/
             ├── assembled/
             │   ├── intermediates/{batch_id}/{plan_item_id}.md
-            │   └── … declared final paths …
+            │   └── … agent-declared final paths …
             └── reviews/
 ```
 
@@ -403,36 +403,34 @@ When audit is enabled, batch sessions also write numbered audit sets under
 `iterations/` (request prompt, agent log, and transaction snapshots).
 
 `--output` holds internal resumable state under `.planning-output/`. Published
-deliverables are written to workspace paths declared under the output goal's
-`## Output artifacts` section after assembly and optional whole-output review.
+deliverables are written to workspace paths chosen by the final render agent from the
+output goal after assembly and optional whole-output review.
 
 Deliverables are produced by a **staged render pipeline** after decomposition completes
 (and after review/confirmation when review is enabled). Rendering is a separate
 lifecycle from planning:
 
-1. Parse required artifact paths from the output goal's `## Output artifacts` section.
-2. Build a deterministic render manifest from actionable leaf items (intermediate batches)
-   plus final artifacts declared in the output goal.
-3. Run concurrent intermediate render batches; each batch agent records freeform notes or
+1. Build a deterministic render manifest from actionable leaf items (intermediate batches).
+2. Run concurrent intermediate render batches; each batch agent records freeform notes or
    partials via `planning-render-tool` into staged batch transactions (not directly into
    final paths).
-4. Run the final synthesis batch (`render-batch-final`) to write declared deliverable
-   paths from the output goal, using intermediate artifacts as input context.
-5. Assemble staged artifacts under `.planning-output/render/assembled/` without
+3. Run the final synthesis batch (`render-batch-final`) where the agent reads the output
+   goal and intermediate artifacts, then records 0..N final deliverables with chosen
+   staging and publish paths.
+4. Assemble staged artifacts under `.planning-output/render/assembled/` without
    rewriting agent content.
-6. Optionally run whole-output semantic review (`rendered_output_review`).
-7. Publish **final** assembled artifacts to declared workspace paths and record ownership
-   in a ledger.
+5. Optionally run whole-output semantic review (`rendered_output_review`).
+6. Publish final artifacts that include a publish target and record ownership in a ledger.
 
-The render manifest defines authoritative scope (which plan items, artifact keys, staging
-paths, and publish paths). The output goal defines authoritative deliverable locations and
-format. Review prompts still embed a human-readable render brief derived from `plan.yaml`
-for semantic checks; the batched render pipeline uses manifest items and per-batch context
-files instead of a single monolithic render session.
+The render manifest defines authoritative intermediate scope (plan items, artifact keys,
+staging paths). Final publish paths are agent-declared in the final batch transaction.
+The output goal defines format and intent; an optional `## Output artifacts` section is
+sample layout only. Review prompts still embed a human-readable render brief derived from
+`plan.yaml` for semantic checks.
 
-The output goal **must** define an **Output artifacts** section with at least one path.
-Multi-file goals must declare a deliverable root. Paths are publication targets, not
-copy sources; deliverables must be generated fresh from the confirmed plan.
+Paths are publication targets, not copy sources; deliverables must be generated fresh from
+the confirmed plan. Zero workspace publication is valid when the output goal does not
+require files.
 
 Render agents must not copy or restore pre-existing files from git history or from paths
 cited in the output goal. They must not modify canonical state under `.planning-output/`.
@@ -462,7 +460,8 @@ file. Resume compatibility still uses SHA-256 digests of the resolved file conte
 
 ### Goal-driven deliverables
 
-Readable final output files rendered according to the output goal while preserving:
+The final render agent produces readable workspace files when the output goal calls for
+them. Typical content preserves:
 
 * hierarchy;
 * item ordering;
@@ -546,7 +545,8 @@ Suggested options:
 ```
 
 `--output-goal` may be a short inline prompt. `--output-goal-file` may supply a longer
-Markdown or text specification, including an **Output artifacts** section.
+Markdown or text specification. An optional `## Output artifacts` section is sample
+layout only.
 
 ## Streaming
 

@@ -11,7 +11,7 @@ import yaml
 from top_down_planning.digest import digest_text
 from top_down_planning.models import RenderBatchTransaction, RenderManifest
 from top_down_planning.persistence import render_assembled_dir, render_batch_transaction_path
-from top_down_planning.render_batcher import unique_batch_ids
+from top_down_planning.render_manifest import scheduled_batch_ids
 from top_down_planning.render_tool import load_render_transaction
 
 
@@ -26,7 +26,7 @@ def load_valid_batch_transactions(
     manifest: RenderManifest,
 ) -> dict[str, RenderBatchTransaction]:
     transactions: dict[str, RenderBatchTransaction] = {}
-    for batch_id in unique_batch_ids(manifest.items):
+    for batch_id in scheduled_batch_ids(manifest):
         path = render_batch_transaction_path(output_dir, batch_id)
         transactions[batch_id] = load_render_transaction(path)
     return transactions

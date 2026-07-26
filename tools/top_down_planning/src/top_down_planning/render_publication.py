@@ -1,4 +1,4 @@
-"""Atomic publication of assembled render output to workspace paths from the output goal."""
+"""Atomic publication of assembled render output to workspace paths declared by the final render agent."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from top_down_planning.digest import digest_text
-from top_down_planning.errors import PlanningToolError
 from top_down_planning.models import OwnedArtifactsLedger, RenderManifest
 from top_down_planning.paths import resolve_within_workspace
 from top_down_planning.persistence import (
@@ -37,14 +36,7 @@ def publish_assembled_output(
     output_dir = output_dir.resolve()
 
     staging_to_publish = _build_publish_map(assembled, manifest)
-    if not staging_to_publish:
-        raise PlanningToolError("No assembled artifacts matched publish paths from the output goal.")
-
     workspace_relative = dict(staging_to_publish)
-    destinations = {
-        staging_key: resolve_within_workspace(workspace, publish_path)
-        for staging_key, publish_path in staging_to_publish.items()
-    }
 
     publication_digest = digest_text(
         "\n".join(
@@ -52,6 +44,40 @@ def publish_assembled_output(
             for staging_key in sorted(workspace_relative)
         )
     )
+
+    previous_owned = set(previous_ledger.artifacts if previous_ledger else [])
+    new_owned = sorted(workspace_relative.values())
+
+    if not staging_to_publish:
+        obsolete = previous_owned - set(new_owned)
+        for relative in sorted(obsolete):
+            path = workspace / relative
+            if path.is_file():
+                path.unlink()
+
+        ledger = OwnedArtifactsLedger(
+            output_dir=str(output_dir),
+            artifacts=new_owned,
+            publication_digest=publication_digest,
+        )
+        save_owned_artifacts(output_dir, ledger)
+        write_json(
+            publication_manifest_path(output_dir),
+            {
+                "publication_digest": publication_digest,
+                "artifacts": new_owned,
+                "deliverable_root": manifest.deliverable_root,
+            },
+        )
+        return PublicationResult(
+            artifacts=new_owned,
+            publication_digest=publication_digest,
+        )
+
+    destinations = {
+        staging_key: resolve_within_workspace(workspace, publish_path)
+        for staging_key, publish_path in staging_to_publish.items()
+    }
 
     staged_root = output_dir / ".publication-staging"
     if staged_root.exists():
@@ -66,9 +92,6 @@ def publish_assembled_output(
                 assembled.files[staging_key].rstrip() + "\n",
                 encoding="utf-8",
             )
-
-        previous_owned = set(previous_ledger.artifacts if previous_ledger else [])
-        new_owned = sorted(workspace_relative.values())
 
         for staging_key in sorted(destinations):
             source = staged_root / workspace_relative[staging_key]
@@ -116,8 +139,8 @@ def _build_publish_map(
         if item.artifact_role != "final":
             continue
         staging_path = item.relative_path
-        publish_path = item.publish_relative_path or staging_path
-        if not staging_path or staging_path not in assembled.files:
+        publish_path = item.publish_relative_path
+        if not staging_path or publish_path is None or staging_path not in assembled.files:
             continue
         publish_map[staging_path] = publish_path
 

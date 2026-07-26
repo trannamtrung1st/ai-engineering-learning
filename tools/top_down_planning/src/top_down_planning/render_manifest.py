@@ -7,21 +7,20 @@ import re
 from pathlib import Path, PurePosixPath
 
 from top_down_planning.digest import compute_render_config_digest, digest_text
-from top_down_planning.errors import PlanningToolError
 from top_down_planning.models import (
     OutputMode,
     PlanItem,
     PlanState,
+    RenderBatchStateEntry,
+    RenderBatchStatus,
+    RenderBatchTransaction,
     RenderConfig,
     RenderManifest,
     RenderManifestItem,
-)
-from top_down_planning.output_goal_artifacts import (
-    OutputGoalArtifacts,
-    parse_output_goal_artifacts,
+    RenderState,
 )
 from top_down_planning.render_brief import actionable_leaf_items
-from top_down_planning.render_batcher import assign_render_batches
+from top_down_planning.render_batcher import assign_render_batches, unique_batch_ids
 
 FINAL_BATCH_ID = "render-batch-final"
 FINAL_ORDER_BASE = 9000
@@ -34,18 +33,6 @@ def slugify_title(title: str) -> str:
     return slug[:60] or "item"
 
 
-def detect_output_mode(artifacts: OutputGoalArtifacts) -> OutputMode:
-    declared = artifacts.paths
-    if len(declared) == 1 and not declared[0].endswith("/"):
-        return OutputMode.SINGLE_DOCUMENT
-    if not artifacts.deliverable_root:
-        raise PlanningToolError(
-            "Multi-file output goals must declare a deliverable root via a directory "
-            "path or shared parent such as INDEX.md."
-        )
-    return OutputMode.MULTI_FILE
-
-
 def _top_level_branch_id(plan: PlanState, item: PlanItem) -> str:
     current = item
     while current.parent_id is not None:
@@ -54,17 +41,6 @@ def _top_level_branch_id(plan: PlanState, item: PlanItem) -> str:
             break
         current = parent
     return current.id
-
-
-def _resolve_slug(title: str, used: set[str]) -> str:
-    base = slugify_title(title)
-    candidate = base
-    suffix = 2
-    while candidate in used:
-        candidate = f"{base}-{suffix}"
-        suffix += 1
-    used.add(candidate)
-    return candidate
 
 
 def _intermediate_artifact_key(plan_item_id: str) -> str:
@@ -76,36 +52,12 @@ def _intermediate_relative_path(batch_id: str, plan_item_id: str) -> str:
     return f"{INTERMEDIATE_PREFIX}/{batch_id}/{plan_item_id}.md"
 
 
-def _build_final_manifest_items(
-    final_paths: list[str],
-    *,
-    intermediate_count: int,
-) -> list[RenderManifestItem]:
-    items: list[RenderManifestItem] = []
-    used_slugs: set[str] = set()
-    order = FINAL_ORDER_BASE
-
-    for index, path in enumerate(final_paths):
-        order += 1
-        basename = PurePosixPath(path).name
-        slug = _resolve_slug(basename, used_slugs)
-        items.append(
-            RenderManifestItem(
-                plan_item_id=f"final-{slug}",
-                top_level_branch_id="final",
-                order=order,
-                set_order=intermediate_count + index + 1,
-                title=f"Final deliverable: {path}",
-                dependencies=[],
-                assigned_batch_id=FINAL_BATCH_ID,
-                artifact_key=f"final-{slug}",
-                relative_path=path,
-                publish_relative_path=path,
-                artifact_role="final",
-            )
-        )
-
-    return items
+def scheduled_batch_ids(manifest: RenderManifest) -> list[str]:
+    """Return intermediate batch ids plus the always-scheduled final batch."""
+    batch_ids = unique_batch_ids(manifest.items)
+    if FINAL_BATCH_ID not in batch_ids:
+        batch_ids.append(FINAL_BATCH_ID)
+    return batch_ids
 
 
 def build_render_manifest(
@@ -113,17 +65,9 @@ def build_render_manifest(
     *,
     plan_digest: str,
     output_goal_digest: str,
-    output_goal_text: str,
     render_config: RenderConfig,
 ) -> RenderManifest:
     leaves = actionable_leaf_items(plan)
-    goal_artifacts = parse_output_goal_artifacts(output_goal_text)
-    if not goal_artifacts.final_paths:
-        raise PlanningToolError(
-            "Output goal must declare at least one file path under ## Output artifacts. "
-            "Directory-only declarations are not sufficient for render."
-        )
-    output_mode = detect_output_mode(goal_artifacts)
     render_config_digest = compute_render_config_digest(render_config)
     manifest_items: list[RenderManifestItem] = []
 
@@ -152,36 +96,104 @@ def build_render_manifest(
             entry.assigned_batch_id = batch_id
             entry.relative_path = _intermediate_relative_path(batch_id, entry.plan_item_id)
 
-    manifest_items.extend(
-        _build_final_manifest_items(
-            goal_artifacts.final_paths,
-            intermediate_count=len(manifest_items),
-        )
-    )
-
     return RenderManifest(
         plan_digest=plan_digest,
         output_goal_digest=output_goal_digest,
         render_config_digest=render_config_digest,
-        output_mode=output_mode,
-        deliverable_root=goal_artifacts.deliverable_root,
+        output_mode=OutputMode.SINGLE_DOCUMENT,
+        deliverable_root=None,
         items=manifest_items,
     )
 
 
-def manifest_matches_output_goal(manifest: RenderManifest, output_goal_text: str) -> bool:
-    """Return False when a persisted manifest omits required final artifacts."""
-    goal_artifacts = parse_output_goal_artifacts(output_goal_text)
-    expected_final = set(goal_artifacts.final_paths)
-    final_items = [item for item in manifest.items if item.artifact_role == "final"]
-    actual_final = {item.relative_path for item in final_items if item.relative_path}
-    if expected_final != actual_final:
-        return False
-    if expected_final and not all(
-        item.assigned_batch_id == FINAL_BATCH_ID for item in final_items
-    ):
-        return False
+def _resolve_publish_path(artifact) -> str | None:
+    if "publish_relative_path" in artifact.model_fields_set:
+        return artifact.publish_relative_path
+    return artifact.relative_path
 
+
+def _infer_output_metadata(final_paths: list[str]) -> tuple[OutputMode, str | None]:
+    if not final_paths:
+        return OutputMode.SINGLE_DOCUMENT, None
+    if len(final_paths) == 1:
+        return OutputMode.SINGLE_DOCUMENT, None
+
+    parents: set[str] = set()
+    for path in final_paths:
+        parent = str(PurePosixPath(path).parent)
+        if parent and parent != ".":
+            parents.add(parent.rstrip("/") + "/")
+
+    deliverable_root: str | None
+    if len(parents) == 1:
+        deliverable_root = next(iter(parents))
+    else:
+        deliverable_root = None
+    return OutputMode.MULTI_FILE, deliverable_root
+
+
+def apply_final_transaction_to_manifest(
+    manifest: RenderManifest,
+    transaction: RenderBatchTransaction,
+) -> RenderManifest:
+    """Append agent-declared final items from the final batch transaction."""
+    intermediate_items = [
+        item for item in manifest.items if item.artifact_role == "intermediate"
+    ]
+    intermediate_count = len(intermediate_items)
+    final_items: list[RenderManifestItem] = []
+    publish_paths: list[str] = []
+
+    for index, artifact in enumerate(transaction.artifacts, start=1):
+        staging_path = artifact.relative_path
+        if not staging_path:
+            continue
+        publish_path = _resolve_publish_path(artifact)
+        if publish_path is not None:
+            publish_paths.append(publish_path)
+
+        final_items.append(
+            RenderManifestItem(
+                plan_item_id=artifact.plan_item_id,
+                top_level_branch_id="final",
+                order=FINAL_ORDER_BASE + index,
+                set_order=intermediate_count + index,
+                title=f"Final deliverable: {staging_path}",
+                dependencies=[],
+                assigned_batch_id=FINAL_BATCH_ID,
+                artifact_key=artifact.artifact_key,
+                relative_path=staging_path,
+                publish_relative_path=publish_path,
+                artifact_role="final",
+            )
+        )
+
+    output_mode, deliverable_root = _infer_output_metadata(publish_paths)
+    return manifest.model_copy(
+        update={
+            "items": intermediate_items + final_items,
+            "output_mode": output_mode,
+            "deliverable_root": deliverable_root,
+        }
+    )
+
+
+def manifest_finals_are_committed(
+    manifest: RenderManifest,
+    render_state: RenderState | None,
+) -> bool:
+    """Return False when finals exist without a validated final batch transaction."""
+    final_items = [item for item in manifest.items if item.artifact_role == "final"]
+    if not final_items:
+        return True
+    if render_state is None:
+        return False
+    entry: RenderBatchStateEntry | None = render_state.batches.get(FINAL_BATCH_ID)
+    return entry is not None and entry.status == RenderBatchStatus.VALID
+
+
+def manifest_is_valid(manifest: RenderManifest) -> bool:
+    """Return False when a persisted manifest has invalid render structure."""
     for item in manifest.items:
         if item.artifact_role not in {"intermediate", "final"}:
             return False
@@ -192,10 +204,14 @@ def manifest_matches_output_goal(manifest: RenderManifest, output_goal_text: str
                 return False
             if not item.artifact_key.startswith("artifact-"):
                 return False
+            if not item.assigned_batch_id or item.assigned_batch_id == FINAL_BATCH_ID:
+                return False
         if item.artifact_role == "final":
-            if not item.artifact_key.startswith("final-"):
+            if not item.artifact_key:
                 return False
             if item.assigned_batch_id != FINAL_BATCH_ID:
+                return False
+            if not item.relative_path:
                 return False
     return True
 

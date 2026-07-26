@@ -45,10 +45,9 @@ def test_manifest_includes_actionable_leaves_once(tmp_path: Path, example_input:
         plan,
         plan_digest=plan_digest,
         output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(),
     )
-    assert len(manifest.items) == 2
+    assert len(manifest.items) == 1
     intermediate = next(item for item in manifest.items if item.artifact_role == "intermediate")
     assert intermediate.artifact_key == "artifact-001"
     assert intermediate.relative_path.startswith("intermediates/")
@@ -83,7 +82,6 @@ def test_coherent_batching_groups_by_branch(tmp_path: Path, example_input: Path)
         plan,
         plan_digest=plan_digest,
         output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(batch_strategy=RenderBatchStrategy.COHERENT, batch_size=5),
     )
     intermediate_batch_ids = [
@@ -201,14 +199,12 @@ def test_manifest_digest_is_deterministic(tmp_path: Path) -> None:
         plan,
         plan_digest=plan_digest,
         output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(),
     )
     second = build_render_manifest(
         plan,
         plan_digest=plan_digest,
         output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(),
     )
     assert compute_manifest_digest(first) == compute_manifest_digest(second)

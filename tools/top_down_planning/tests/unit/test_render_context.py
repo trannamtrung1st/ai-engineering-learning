@@ -22,13 +22,11 @@ def test_final_batch_context_lists_intermediate_inputs(tmp_path: Path) -> None:
         plan,
         plan_digest=compute_plan_digest(plan),
         output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(),
     )
     intermediate = next(
         item for item in manifest.items if item.artifact_role == "intermediate"
     )
-    final_items = [item for item in manifest.items if item.artifact_role == "final"]
     txn_path = render_batch_transaction_path(tmp_path, intermediate.assigned_batch_id)
     txn_path.parent.mkdir(parents=True, exist_ok=True)
     txn_path.write_text(
@@ -51,11 +49,10 @@ def test_final_batch_context_lists_intermediate_inputs(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-
     prepared = prepare_render_batch_context(
         plan=plan,
         manifest=manifest,
-        assigned_items=final_items,
+        assigned_items=[],
         output_dir=tmp_path,
         workspace=tmp_path,
         output_goal=loaded_goal,
@@ -65,6 +62,7 @@ def test_final_batch_context_lists_intermediate_inputs(tmp_path: Path) -> None:
         manifest_digest="d" * 64,
     )
 
+    assert "## Final deliverable synthesis" in prepared.batch_context_markdown
     assert "## Intermediate inputs" in prepared.batch_context_markdown
     assert intermediate.relative_path in prepared.batch_context_markdown
     assert "Intermediate batch transactions" in prepared.batch_context_markdown

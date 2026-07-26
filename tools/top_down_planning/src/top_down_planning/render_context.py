@@ -111,39 +111,49 @@ def _build_batch_context_markdown(
     lines = [
         f"# Render batch context: {batch_id}",
         "",
-        "## Assigned items",
-        "",
     ]
-    for manifest_item in assigned_items:
-        plan_item = plan.item_by_id(manifest_item.plan_item_id)
-        if plan_item is not None:
-            lines.append(_format_item_context(plan, plan_item))
-            lines.append("")
-        else:
-            lines.extend(
-                [
-                    f"### {manifest_item.title}",
-                    f"- **Artifact role:** `{manifest_item.artifact_role}`",
-                    f"- **Artifact key:** `{manifest_item.artifact_key}`",
-                    "",
-                ]
-            )
 
-    lines.extend(
-        [
-            "## Artifact assignments",
-            "",
-        ]
-    )
-    for manifest_item in assigned_items:
-        if manifest_item.artifact_role == "final":
-            lines.append(
-                f"- `{manifest_item.plan_item_id}` → "
-                f"`{manifest_item.artifact_key}` → "
-                f"staging `{manifest_item.relative_path}` → "
-                f"publish `{manifest_item.publish_relative_path}`"
-            )
-        else:
+    if batch_id == FINAL_BATCH_ID:
+        lines.extend(
+            [
+                "## Final deliverable synthesis",
+                "",
+                "Decide the deliverable layout from the output goal and intermediate "
+                "artifacts. Record 0..N final artifacts via the render transaction CLI. "
+                "An optional `## Output artifacts` section in the goal is illustrative "
+                "only — not an exhaustive path manifest.",
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "## Assigned items",
+                "",
+            ]
+        )
+        for manifest_item in assigned_items:
+            plan_item = plan.item_by_id(manifest_item.plan_item_id)
+            if plan_item is not None:
+                lines.append(_format_item_context(plan, plan_item))
+                lines.append("")
+            else:
+                lines.extend(
+                    [
+                        f"### {manifest_item.title}",
+                        f"- **Artifact role:** `{manifest_item.artifact_role}`",
+                        f"- **Artifact key:** `{manifest_item.artifact_key}`",
+                        "",
+                    ]
+                )
+
+        lines.extend(
+            [
+                "## Artifact assignments",
+                "",
+            ]
+        )
+        for manifest_item in assigned_items:
             lines.append(
                 f"- `{manifest_item.plan_item_id}` → "
                 f"`{manifest_item.artifact_key}` → "

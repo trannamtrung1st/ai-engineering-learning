@@ -258,23 +258,6 @@ def _assigned_artifacts(prompt: str) -> list[dict]:
     artifacts: list[dict] = []
 
     for match in re.finditer(
-        r"- `(final-[^`]+)` → `(final-[^`]+)` → staging `([^`]+)` → publish `([^`]+)`",
-        prompt,
-    ):
-        item_id = match.group(1)
-        key = match.group(2)
-        staging_path = match.group(3)
-        content = _final_artifact_content(staging_path)
-        artifacts.append(
-            {
-                "plan_item_id": item_id,
-                "artifact_key": key,
-                "relative_path": staging_path,
-                "content": content,
-            }
-        )
-
-    for match in re.finditer(
         r"- `(item-[^`]+)` → `(artifact-[^`]+)` → staging `([^`]+)`",
         prompt,
     ):
@@ -293,6 +276,48 @@ def _assigned_artifacts(prompt: str) -> list[dict]:
     return artifacts
 
 
+def _final_artifacts_from_goal(prompt: str) -> list[dict]:
+    artifacts: list[dict] = []
+    seen_paths: set[str] = set()
+
+    for match in re.finditer(r"`([^`]+\.(?:md|markdown|yaml|yml|json|txt))`", prompt):
+        path = match.group(1).strip()
+        if (
+            path.startswith("./scripts/")
+            or path.startswith("/")
+            or path.startswith("intermediates/")
+            or path.startswith(".planning-output")
+            or ".planning-output/" in path
+            or path in seen_paths
+        ):
+            continue
+        seen_paths.add(path)
+        slug = re.sub(r"[^a-z0-9]+", "", path.lower())[:40] or "item"
+        artifacts.append(
+            {
+                "plan_item_id": f"final-{slug}",
+                "artifact_key": f"final-{slug}",
+                "relative_path": path,
+                "publish_relative_path": path,
+                "content": _final_artifact_content(path),
+            }
+        )
+
+    if not artifacts and "implementation plan" in prompt.lower():
+        path = "implementation-plan.md"
+        artifacts.append(
+            {
+                "plan_item_id": "final-implementation-planmd",
+                "artifact_key": "final-implementation-planmd",
+                "relative_path": path,
+                "publish_relative_path": path,
+                "content": _final_artifact_content(path),
+            }
+        )
+
+    return artifacts
+
+
 def _final_artifact_content(relative_path: str) -> str:
     if relative_path.endswith(".md"):
         return f"# Deliverable\n\nRendered content for `{relative_path}`.\n"
@@ -302,19 +327,22 @@ def _final_artifact_content(relative_path: str) -> str:
 
 
 def _write_render_batch_transaction(prompt: str) -> None:
-    artifacts = _assigned_artifacts(prompt)
-    if not artifacts:
-        titles = _breakdown_titles(prompt)
-        for index, title in enumerate(titles, start=1):
-            item_id = f"item-{index:03d}"
-            artifacts.append(
-                {
-                    "plan_item_id": item_id,
-                    "artifact_key": f"artifact-{index:03d}",
-                    "relative_path": f"intermediates/render-batch-001/{item_id}.md",
-                    "content": f"Notes for {title}.\n",
-                }
-            )
+    if "Final deliverable synthesis" in prompt or "render-batch-final" in prompt:
+        artifacts = _final_artifacts_from_goal(prompt)
+    else:
+        artifacts = _assigned_artifacts(prompt)
+        if not artifacts:
+            titles = _breakdown_titles(prompt)
+            for index, title in enumerate(titles, start=1):
+                item_id = f"item-{index:03d}"
+                artifacts.append(
+                    {
+                        "plan_item_id": item_id,
+                        "artifact_key": f"artifact-{index:03d}",
+                        "relative_path": f"intermediates/render-batch-001/{item_id}.md",
+                        "content": f"Notes for {title}.\n",
+                    }
+                )
     for artifact in artifacts:
         _run_render_tool(
             "record-artifact",

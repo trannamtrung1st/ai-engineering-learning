@@ -1,45 +1,23 @@
 from top_down_planning.digest import compute_plan_digest
 from top_down_planning.input_loader import load_output_goal
-from top_down_planning.models import DecompositionStatus, OutputMode, RenderConfig
+from top_down_planning.models import (
+    DecompositionStatus,
+    OutputMode,
+    RenderBatchArtifact,
+    RenderBatchTransaction,
+    RenderConfig,
+)
 from top_down_planning.render_assembly import assemble_render_output
-from top_down_planning.render_manifest import FINAL_BATCH_ID, build_render_manifest
+from top_down_planning.render_manifest import (
+    FINAL_BATCH_ID,
+    apply_final_transaction_to_manifest,
+    build_render_manifest,
+)
 from top_down_planning.render_publication import publish_assembled_output
 from tests.plan_factory import make_root_plan
 
 
-def _multi_file_goal() -> str:
-    return """# Goal
-
-## Output artifacts
-
-- `plans/demo/todos/INDEX.md`
-- `plans/demo/todos/manifest.yaml`
-- `plans/demo/todos/planning-summary.md`
-"""
-
-
-def _multi_file_goal_with_auxiliary() -> str:
-    return """# Goal
-
-Produce `tools/implement_todos` output.
-
-## Output artifacts
-
-```text
-plans/demo/todos/
-  manifest.yaml
-  INDEX.md
-```
-
-```text
-temp/tools/planning-summary.md
-```
-"""
-
-
 def _intermediate_transaction(plan_digest, loaded_goal, manifest, item):
-    from top_down_planning.models import RenderBatchArtifact, RenderBatchTransaction
-
     return RenderBatchTransaction(
         batch_id=item.assigned_batch_id,
         plan_digest=plan_digest,
@@ -56,36 +34,31 @@ def _intermediate_transaction(plan_digest, loaded_goal, manifest, item):
     )
 
 
-def _final_transaction(plan_digest, loaded_goal, manifest, final_items):
-    from top_down_planning.models import RenderBatchArtifact, RenderBatchTransaction
-
+def _agent_final_transaction(plan_digest, loaded_goal, manifest, artifacts):
     return RenderBatchTransaction(
         batch_id=FINAL_BATCH_ID,
         plan_digest=plan_digest,
         output_goal_digest=loaded_goal.digest,
         render_config_digest=manifest.render_config_digest,
-        artifacts=[
-            RenderBatchArtifact(
-                plan_item_id=item.plan_item_id,
-                artifact_key=item.artifact_key,
-                relative_path=item.relative_path,
-                content=_final_content(item.relative_path or ""),
-            )
-            for item in final_items
-        ],
+        artifacts=artifacts,
     )
 
 
-def _final_content(relative_path: str) -> str:
-    if relative_path.endswith("manifest.yaml"):
-        return "kind: implementation_todo_set\nid: demo-feature\ntitle: Demo\n"
-    if relative_path.endswith("INDEX.md"):
-        return "# Demo index\n"
-    return "# Planning summary\n"
+def _manifest_with_agent_finals(base_manifest, plan_digest, loaded_goal, artifacts):
+    transaction = _agent_final_transaction(plan_digest, loaded_goal, base_manifest, artifacts)
+    return apply_final_transaction_to_manifest(base_manifest, transaction)
 
 
-def test_manifest_assigns_intermediate_and_final_batches() -> None:
-    loaded_goal = load_output_goal(inline=_multi_file_goal())
+def test_manifest_schedules_intermediates_and_final_batch() -> None:
+    loaded_goal = load_output_goal(
+        inline="""Produce TODO folder.
+
+## Output artifacts
+
+- `plans/demo/todos/INDEX.md`
+- `plans/demo/todos/manifest.yaml`
+"""
+    )
     plan = make_root_plan(
         output_goal=loaded_goal.text,
         output_goal_digest=loaded_goal.digest,
@@ -103,55 +76,63 @@ def test_manifest_assigns_intermediate_and_final_batches() -> None:
             }
         )
     )
-    plan_digest = compute_plan_digest(plan)
     manifest = build_render_manifest(
         plan,
-        plan_digest=plan_digest,
+        plan_digest=compute_plan_digest(plan),
         output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(),
     )
-    assert manifest.output_mode == OutputMode.MULTI_FILE
-    assert manifest.deliverable_root == "plans/demo/todos/"
     intermediate_items = [
         item for item in manifest.items if item.artifact_role == "intermediate"
     ]
-    final_items = [item for item in manifest.items if item.artifact_role == "final"]
     assert len(intermediate_items) == 1
     assert intermediate_items[0].relative_path.startswith("intermediates/")
-    assert intermediate_items[0].artifact_key == "artifact-002"
-    assert {item.relative_path for item in final_items} == {
-        "plans/demo/todos/INDEX.md",
-        "plans/demo/todos/manifest.yaml",
-        "plans/demo/todos/planning-summary.md",
-    }
-    assert all(item.assigned_batch_id == FINAL_BATCH_ID for item in final_items)
+    assert not any(item.artifact_role == "final" for item in manifest.items)
 
 
-def test_assembly_includes_intermediates_and_finals() -> None:
-    loaded_goal = load_output_goal(inline=_multi_file_goal())
+def test_assembly_includes_intermediates_and_agent_declared_finals() -> None:
+    loaded_goal = load_output_goal(inline="Produce TODO output")
     plan = make_root_plan(
         output_goal=loaded_goal.text,
         output_goal_digest=loaded_goal.digest,
     )
     plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
     plan_digest = compute_plan_digest(plan)
-    manifest = build_render_manifest(
+    base_manifest = build_render_manifest(
         plan,
         plan_digest=plan_digest,
         output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(),
     )
     intermediate = next(
-        item for item in manifest.items if item.artifact_role == "intermediate"
+        item for item in base_manifest.items if item.artifact_role == "intermediate"
     )
-    final_items = [item for item in manifest.items if item.artifact_role == "final"]
+    final_artifacts = [
+        RenderBatchArtifact(
+            plan_item_id="final-manifestyaml",
+            artifact_key="final-manifestyaml",
+            relative_path="plans/demo/todos/manifest.yaml",
+            publish_relative_path="plans/demo/todos/manifest.yaml",
+            content="kind: implementation_todo_set\nid: demo-feature\ntitle: Demo\n",
+        ),
+        RenderBatchArtifact(
+            plan_item_id="final-indexmd",
+            artifact_key="final-indexmd",
+            relative_path="plans/demo/todos/INDEX.md",
+            publish_relative_path="plans/demo/todos/INDEX.md",
+            content="# Demo index\n",
+        ),
+    ]
+    manifest = _manifest_with_agent_finals(
+        base_manifest, plan_digest, loaded_goal, final_artifacts
+    )
     transactions = {
         intermediate.assigned_batch_id: _intermediate_transaction(
             plan_digest, loaded_goal, manifest, intermediate
         ),
-        FINAL_BATCH_ID: _final_transaction(plan_digest, loaded_goal, manifest, final_items),
+        FINAL_BATCH_ID: _agent_final_transaction(
+            plan_digest, loaded_goal, manifest, final_artifacts
+        ),
     }
     assembled = assemble_render_output(manifest, transactions)
     assert assembled.files["plans/demo/todos/manifest.yaml"].startswith(
@@ -161,64 +142,47 @@ def test_assembly_includes_intermediates_and_finals() -> None:
     assert intermediate.relative_path in assembled.files
 
 
-def test_auxiliary_paths_become_final_manifest_items() -> None:
-    loaded_goal = load_output_goal(inline=_multi_file_goal_with_auxiliary())
-    from top_down_planning.output_goal_artifacts import parse_output_goal_artifacts
-
-    artifacts = parse_output_goal_artifacts(loaded_goal.text)
-    assert "temp/tools/planning-summary.md" in artifacts.final_paths
-
-    plan = make_root_plan(
-        output_goal=loaded_goal.text,
-        output_goal_digest=loaded_goal.digest,
-    )
-    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
-    manifest = build_render_manifest(
-        plan,
-        plan_digest=compute_plan_digest(plan),
-        output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
-        render_config=RenderConfig(),
-    )
-    auxiliary_items = [
-        item
-        for item in manifest.items
-        if item.relative_path == "temp/tools/planning-summary.md"
-    ]
-    assert len(auxiliary_items) == 1
-    assert auxiliary_items[0].assigned_batch_id == FINAL_BATCH_ID
-    assert auxiliary_items[0].artifact_role == "final"
-
-
 def test_publication_writes_only_final_artifacts(tmp_path) -> None:
     workspace = tmp_path
     output_dir = workspace / "planning-output"
     output_dir.mkdir()
-    loaded_goal = load_output_goal(inline=_multi_file_goal())
+    loaded_goal = load_output_goal(inline="Produce TODO output")
     plan = make_root_plan(
         output_goal=loaded_goal.text,
         output_goal_digest=loaded_goal.digest,
     )
     plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
     plan_digest = compute_plan_digest(plan)
-    manifest = build_render_manifest(
+    base_manifest = build_render_manifest(
         plan,
         plan_digest=plan_digest,
         output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(),
     )
     intermediate = next(
-        item for item in manifest.items if item.artifact_role == "intermediate"
+        item for item in base_manifest.items if item.artifact_role == "intermediate"
     )
-    final_items = [item for item in manifest.items if item.artifact_role == "final"]
+    final_artifacts = [
+        RenderBatchArtifact(
+            plan_item_id="final-indexmd",
+            artifact_key="final-indexmd",
+            relative_path="plans/demo/todos/INDEX.md",
+            publish_relative_path="plans/demo/todos/INDEX.md",
+            content="# Demo index\n",
+        )
+    ]
+    manifest = _manifest_with_agent_finals(
+        base_manifest, plan_digest, loaded_goal, final_artifacts
+    )
     assembled = assemble_render_output(
         manifest,
         {
             intermediate.assigned_batch_id: _intermediate_transaction(
                 plan_digest, loaded_goal, manifest, intermediate
             ),
-            FINAL_BATCH_ID: _final_transaction(plan_digest, loaded_goal, manifest, final_items),
+            FINAL_BATCH_ID: _agent_final_transaction(
+                plan_digest, loaded_goal, manifest, final_artifacts
+            ),
         },
     )
     result = publish_assembled_output(
@@ -234,11 +198,11 @@ def test_publication_writes_only_final_artifacts(tmp_path) -> None:
     assert intermediate.relative_path not in result.artifacts
 
 
-def test_publication_writes_auxiliary_artifacts(tmp_path) -> None:
+def test_publication_allows_empty_publish(tmp_path) -> None:
     workspace = tmp_path
     output_dir = workspace / "planning-output"
     output_dir.mkdir()
-    loaded_goal = load_output_goal(inline=_multi_file_goal_with_auxiliary())
+    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
     plan = make_root_plan(
         output_goal=loaded_goal.text,
         output_goal_digest=loaded_goal.digest,
@@ -249,22 +213,24 @@ def test_publication_writes_auxiliary_artifacts(tmp_path) -> None:
         plan,
         plan_digest=plan_digest,
         output_goal_digest=loaded_goal.digest,
-        output_goal_text=loaded_goal.text,
         render_config=RenderConfig(),
     )
     intermediate = next(
         item for item in manifest.items if item.artifact_role == "intermediate"
     )
-    final_items = [item for item in manifest.items if item.artifact_role == "final"]
-    assembled = assemble_render_output(
-        manifest,
-        {
-            intermediate.assigned_batch_id: _intermediate_transaction(
-                plan_digest, loaded_goal, manifest, intermediate
-            ),
-            FINAL_BATCH_ID: _final_transaction(plan_digest, loaded_goal, manifest, final_items),
-        },
-    )
+    transactions = {
+        intermediate.assigned_batch_id: _intermediate_transaction(
+            plan_digest, loaded_goal, manifest, intermediate
+        ),
+        FINAL_BATCH_ID: RenderBatchTransaction(
+            batch_id=FINAL_BATCH_ID,
+            plan_digest=plan_digest,
+            output_goal_digest=loaded_goal.digest,
+            render_config_digest=manifest.render_config_digest,
+            artifacts=[],
+        ),
+    }
+    assembled = assemble_render_output(manifest, transactions)
     result = publish_assembled_output(
         output_dir=output_dir,
         workspace=workspace,
@@ -272,6 +238,47 @@ def test_publication_writes_auxiliary_artifacts(tmp_path) -> None:
         manifest=manifest,
         previous_ledger=None,
     )
-    published_summary = workspace / "temp/tools/planning-summary.md"
-    assert published_summary.is_file()
-    assert "temp/tools/planning-summary.md" in result.artifacts
+    assert result.artifacts == []
+
+
+def test_apply_final_transaction_sets_multi_file_metadata() -> None:
+    loaded_goal = load_output_goal(inline="goal")
+    plan = make_root_plan(
+        output_goal=loaded_goal.text,
+        output_goal_digest=loaded_goal.digest,
+    )
+    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan_digest = compute_plan_digest(plan)
+    manifest = build_render_manifest(
+        plan,
+        plan_digest=plan_digest,
+        output_goal_digest=loaded_goal.digest,
+        render_config=RenderConfig(),
+    )
+    updated = apply_final_transaction_to_manifest(
+        manifest,
+        RenderBatchTransaction(
+            batch_id=FINAL_BATCH_ID,
+            plan_digest=plan_digest,
+            output_goal_digest=loaded_goal.digest,
+            render_config_digest=manifest.render_config_digest,
+            artifacts=[
+                RenderBatchArtifact(
+                    plan_item_id="final-indexmd",
+                    artifact_key="final-indexmd",
+                    relative_path="plans/demo/todos/INDEX.md",
+                    publish_relative_path="plans/demo/todos/INDEX.md",
+                    content="# index\n",
+                ),
+                RenderBatchArtifact(
+                    plan_item_id="final-summarymd",
+                    artifact_key="final-summarymd",
+                    relative_path="temp/tools/planning-summary.md",
+                    publish_relative_path="temp/tools/planning-summary.md",
+                    content="# summary\n",
+                ),
+            ],
+        ),
+    )
+    assert updated.output_mode == OutputMode.MULTI_FILE
+    assert updated.deliverable_root is None

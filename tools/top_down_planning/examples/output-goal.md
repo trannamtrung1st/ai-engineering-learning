@@ -2,6 +2,9 @@
 
 Produce an actionable implementation plan.
 
+The output goal may be a one-line prompt or a longer specification. The final render
+agent decides whether workspace files are required and which paths to use.
+
 ## Actionability criteria
 
 Each actionable leaf item should include:
@@ -18,8 +21,8 @@ The final synthesis batch should produce, when applicable:
 1. a hierarchical planning view
 2. a dependency-safe actionable task list
 
-## Output artifacts
+## Output artifacts (optional sample)
 
-Write one Markdown deliverable:
+Illustrative layout only — not an exhaustive publish manifest:
 
 - `implementation-plan.md`

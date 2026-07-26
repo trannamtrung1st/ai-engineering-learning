@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from top_down_planning.models import (
+    RenderBatchArtifact,
     RenderBatchTransaction,
     RenderManifest,
     RenderManifestItem,
 )
 from top_down_planning.paths import validate_relative_path
+from top_down_planning.render_manifest import FINAL_BATCH_ID
+
+_FORBIDDEN_PATH_PREFIXES = (".planning-output/", ".planning-output")
 
 
 def validate_batch_transaction(
@@ -15,6 +19,30 @@ def validate_batch_transaction(
     *,
     manifest: RenderManifest,
     assigned_items: list[RenderManifestItem],
+    expected_batch_id: str,
+    expected_plan_digest: str,
+    expected_output_goal_digest: str,
+    expected_render_config_digest: str,
+) -> list[str]:
+    errors = _validate_transaction_metadata(
+        transaction,
+        expected_batch_id=expected_batch_id,
+        expected_plan_digest=expected_plan_digest,
+        expected_output_goal_digest=expected_output_goal_digest,
+        expected_render_config_digest=expected_render_config_digest,
+    )
+    if errors:
+        return errors
+
+    if expected_batch_id == FINAL_BATCH_ID:
+        return validate_final_batch_transaction(transaction)
+
+    return _validate_intermediate_batch_transaction(transaction, assigned_items=assigned_items)
+
+
+def _validate_transaction_metadata(
+    transaction: RenderBatchTransaction,
+    *,
     expected_batch_id: str,
     expected_plan_digest: str,
     expected_output_goal_digest: str,
@@ -32,6 +60,70 @@ def validate_batch_transaction(
         errors.append("output_goal_digest mismatch")
     if transaction.render_config_digest != expected_render_config_digest:
         errors.append("render_config_digest mismatch")
+    return errors
+
+
+def validate_final_batch_transaction(transaction: RenderBatchTransaction) -> list[str]:
+    errors: list[str] = []
+    seen_items: set[str] = set()
+    seen_keys: set[str] = set()
+    seen_paths: set[str] = set()
+
+    for artifact in transaction.artifacts:
+        errors.extend(_validate_final_artifact(artifact, seen_items, seen_keys, seen_paths))
+
+    return errors
+
+
+def _validate_final_artifact(
+    artifact: RenderBatchArtifact,
+    seen_items: set[str],
+    seen_keys: set[str],
+    seen_paths: set[str],
+) -> list[str]:
+    errors: list[str] = []
+
+    if artifact.plan_item_id in seen_items:
+        errors.append(f"plan item {artifact.plan_item_id!r} rendered more than once")
+    seen_items.add(artifact.plan_item_id)
+
+    if artifact.artifact_key in seen_keys:
+        errors.append(f"duplicate artifact_key {artifact.artifact_key!r}")
+    seen_keys.add(artifact.artifact_key)
+
+    if not artifact.relative_path:
+        errors.append(f"missing relative_path for {artifact.plan_item_id!r}")
+    else:
+        errors.extend(_validate_safe_path(artifact.relative_path, label="relative_path"))
+        normalized = _normalize_path(artifact.relative_path)
+        if normalized is not None:
+            if normalized in seen_paths:
+                errors.append(f"duplicate relative_path {normalized!r}")
+            seen_paths.add(normalized)
+
+    if "publish_relative_path" in artifact.model_fields_set and artifact.publish_relative_path:
+        errors.extend(
+            _validate_safe_path(
+                artifact.publish_relative_path,
+                label="publish_relative_path",
+            )
+        )
+
+    if not artifact.content.strip():
+        errors.append(f"empty content for {artifact.plan_item_id!r}")
+
+    return errors
+
+
+def _validate_intermediate_batch_transaction(
+    transaction: RenderBatchTransaction,
+    *,
+    assigned_items: list[RenderManifestItem],
+) -> list[str]:
+    errors: list[str] = []
+
+    if not transaction.artifacts:
+        errors.append("intermediate batch must record at least one artifact")
 
     assigned_by_id = {item.plan_item_id: item for item in assigned_items}
     assigned_keys = {item.artifact_key for item in assigned_items}
@@ -72,13 +164,8 @@ def validate_batch_transaction(
         seen_keys.add(artifact.artifact_key)
 
         if artifact.relative_path:
-            try:
-                normalized = validate_relative_path(
-                    artifact.relative_path, label="relative_path"
-                )
-            except ValueError as exc:
-                errors.append(str(exc))
-            else:
+            normalized = _normalize_path(artifact.relative_path)
+            if normalized is not None:
                 if normalized in seen_paths:
                     errors.append(f"duplicate relative_path {normalized!r}")
                 seen_paths.add(normalized)
@@ -98,4 +185,26 @@ def validate_batch_transaction(
         if extra:
             errors.append(f"unexpected artifact keys: {sorted(extra)}")
 
+    return errors
+
+
+def _normalize_path(path: str) -> str | None:
+    try:
+        return validate_relative_path(path, label="relative_path")
+    except ValueError:
+        return None
+
+
+def _validate_safe_path(path: str, *, label: str) -> list[str]:
+    errors: list[str] = []
+    try:
+        normalized = validate_relative_path(path, label=label)
+    except ValueError as exc:
+        return [str(exc)]
+
+    lowered = normalized.lower()
+    for prefix in _FORBIDDEN_PATH_PREFIXES:
+        if lowered == prefix.rstrip("/") or lowered.startswith(prefix):
+            errors.append(f"{label} must not write into .planning-output: {path!r}")
+            break
     return errors

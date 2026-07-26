@@ -7,6 +7,7 @@ from pathlib import Path
 
 from top_down_planning.digest import digest_file, digest_text
 from top_down_planning.errors import PlanningToolError
+from top_down_planning.models import PlanState
 
 _GOAL_SUFFIXES = {".md", ".markdown", ".txt"}
 
@@ -112,6 +113,15 @@ def load_stop_hint(
             raise PlanningToolError("--stop-hint must not be empty")
         return LoadedStopHint(text=text, digest=digest_text(text))
     return None
+
+
+def resolve_output_goal_text(plan: PlanState) -> str:
+    """Load the full output goal text from file when plan.yaml stores a reference."""
+    if plan.source.output_goal_file:
+        path = Path(plan.source.output_goal_file)
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+    return plan.source.output_goal
 
 
 def digest_output_goal(output_goal: str) -> str:

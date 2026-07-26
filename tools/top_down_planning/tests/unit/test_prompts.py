@@ -447,8 +447,8 @@ def test_final_render_batch_prompt_references_synthesis_instructions(
         is_final_batch=True,
     )
     assert "Synthesize final deliverables" in prompt
-    assert "Record artifacts at the declared staging paths" in prompt
-    assert "Do not write deliverables directly to workspace paths" not in prompt
+    assert "record 0..N final artifacts" in prompt
+    assert "sample layout only" in prompt
 
 
 def test_render_batch_prompt_includes_validation_feedback(

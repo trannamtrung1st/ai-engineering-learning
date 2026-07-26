@@ -44,14 +44,17 @@ from top_down_planning.render_assembly import (
     load_valid_batch_transactions,
     write_assembled_output,
 )
-from top_down_planning.render_batcher import items_for_batch, unique_batch_ids
+from top_down_planning.render_batcher import items_for_batch
 from top_down_planning.render_context import prepare_render_batch_context
 from top_down_planning.render_manifest import (
     FINAL_BATCH_ID,
+    apply_final_transaction_to_manifest,
     build_render_manifest,
     compute_manifest_digest,
     load_render_manifest,
-    manifest_matches_output_goal,
+    manifest_finals_are_committed,
+    manifest_is_valid,
+    scheduled_batch_ids,
     save_render_manifest as write_manifest_file,
 )
 from top_down_planning.render_publication import publish_assembled_output
@@ -143,6 +146,12 @@ async def render_from_confirmed_plan(
         run_state=run_state,
         force_rerender=force_rerender,
     )
+
+    manifest_path = render_manifest_path(deps.output_dir)
+    manifest = load_render_manifest(manifest_path)
+    manifest_digest = compute_manifest_digest(manifest)
+    render_state.render_manifest_digest = manifest_digest
+    save_render_state(deps.output_dir, render_state)
 
     render_state.stage = RenderStage.ASSEMBLY
     save_render_state(deps.output_dir, render_state)
@@ -260,14 +269,15 @@ def _ensure_manifest(
         except ValidationError:
             manifest = None
         else:
-            if manifest_matches_output_goal(manifest, deps.output_goal.text):
+            if manifest_is_valid(manifest) and manifest_finals_are_committed(
+                manifest, render_state
+            ):
                 return manifest, render_state.render_manifest_digest, True
 
     manifest = build_render_manifest(
         plan,
         plan_digest=plan_digest,
         output_goal_digest=deps.output_goal.digest,
-        output_goal_text=deps.output_goal.text,
         render_config=render_config,
     )
     manifest_digest = compute_manifest_digest(manifest)
@@ -283,7 +293,7 @@ def _sync_batch_state(
 ) -> None:
     existing = dict(render_state.batches)
     render_state.batches = {}
-    for batch_id in unique_batch_ids(manifest.items):
+    for batch_id in scheduled_batch_ids(manifest):
         assigned = [item.plan_item_id for item in items_for_batch(manifest.items, batch_id)]
         prior = existing.get(batch_id)
         if (
@@ -308,7 +318,7 @@ async def _run_render_batches(
     run_state: RunState,
     force_rerender: bool,
 ) -> None:
-    all_batch_ids = unique_batch_ids(manifest.items)
+    all_batch_ids = scheduled_batch_ids(manifest)
     pending = [
         batch_id
         for batch_id in all_batch_ids
@@ -510,6 +520,15 @@ async def _run_single_batch(
             txn_path.unlink(missing_ok=True)
             continue
 
+        if batch_id == FINAL_BATCH_ID:
+            manifest = apply_final_transaction_to_manifest(manifest, transaction)
+            manifest_digest = compute_manifest_digest(manifest)
+            write_manifest_file(render_manifest_path(deps.output_dir), manifest)
+            render_state.render_manifest_digest = manifest_digest
+            batch_entry.assigned_item_ids = [
+                item.plan_item_id for item in manifest.items if item.artifact_role == "final"
+            ]
+
         batch_entry.status = RenderBatchStatus.VALID
         batch_entry.transaction_digest = digest_file(txn_path)
         save_render_state(deps.output_dir, render_state)
@@ -621,6 +640,10 @@ async def _run_output_review_cycle(
             run_state=run_state,
             force_rerender=False,
         )
+        manifest = load_render_manifest(render_manifest_path(deps.output_dir))
+        manifest_digest = compute_manifest_digest(manifest)
+        render_state.render_manifest_digest = manifest_digest
+        save_render_state(deps.output_dir, render_state)
 
     raise PlanningToolError("Rendered output review did not reach an approved decision.")
 

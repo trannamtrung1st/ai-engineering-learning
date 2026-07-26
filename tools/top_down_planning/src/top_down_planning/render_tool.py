@@ -17,6 +17,7 @@ from pydantic import TypeAdapter, ValidationError as PydanticValidationError
 from top_down_planning.errors import PlanningToolError
 from top_down_planning.models import RenderBatchArtifact, RenderBatchTransaction
 from top_down_planning.persistence import write_json
+from top_down_planning.render_manifest import FINAL_BATCH_ID
 
 ENV_TXN_FILE = "PLANNING_RENDER_TXN_FILE"
 ENV_BATCH_ID = "PLANNING_RENDER_BATCH_ID"
@@ -147,16 +148,20 @@ def record_artifact(
 @app.command("finalize")
 def finalize() -> None:
     txn_file = _txn_file()
+    batch_id = _require_env(ENV_BATCH_ID)
     draft = _load_draft(txn_file)
+    artifacts = [
+        RenderBatchArtifact.model_validate(entry)
+        for entry in draft.get("artifacts", [])
+    ]
+    if not artifacts and batch_id != FINAL_BATCH_ID:
+        raise RenderToolError("Intermediate batch must record at least one artifact")
     transaction = RenderBatchTransaction(
-        batch_id=_require_env(ENV_BATCH_ID),
+        batch_id=batch_id,
         plan_digest=_require_env(ENV_PLAN_DIGEST),
         output_goal_digest=_require_env(ENV_OUTPUT_GOAL_DIGEST),
         render_config_digest=_require_env(ENV_RENDER_CONFIG_DIGEST),
-        artifacts=[
-            RenderBatchArtifact.model_validate(entry)
-            for entry in draft.get("artifacts", [])
-        ],
+        artifacts=artifacts,
     )
     txn_file.parent.mkdir(parents=True, exist_ok=True)
     txn_file.write_text(

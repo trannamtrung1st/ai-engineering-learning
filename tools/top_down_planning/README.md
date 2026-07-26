@@ -98,15 +98,15 @@ top-down-planning \
 The tool separates **user-facing deliverables** from **internal resumable state**.
 
 `--output` stores resumable planning state under `.planning-output/`. Published
-deliverables are written to workspace paths declared under the output goal's
-`## Output artifacts` section. They are not stored under `--output`.
+deliverables are written to workspace paths chosen by the final render agent from the
+output goal. They are not stored under `--output`.
 
 Example layout:
 
 ```text
 workspace/
-├── implementation-plan.md          # single-document deliverable from output goal
-├── plans/my-feature/todos/         # multi-file deliverable root from output goal
+├── implementation-plan.md          # example deliverable the final agent may publish
+├── plans/my-feature/todos/         # example multi-file deliverable tree
 │   ├── INDEX.md
 │   ├── manifest.yaml
 │   └── 01-first-item.yaml
@@ -122,23 +122,23 @@ workspace/
             ├── batches/
             ├── assembled/
             │   ├── intermediates/{batch_id}/{plan_item_id}.md  # staged, never published
-            │   └── … declared final paths …
+            │   └── … agent-declared final paths …
             └── reviews/
 ```
 
 Goal-driven deliverables are written only when planning finishes with status `complete`
 and review status `confirmed` (when review is enabled). Rendering is a separate lifecycle
-from planning: after confirmation, the tool builds a deterministic render manifest from
-the output goal's artifact declarations and actionable leaves, runs concurrent intermediate
-render batches, runs a final synthesis batch for declared deliverables, assembles staged
-output, optionally runs whole-output semantic review, and publishes atomically to the
-declared workspace paths.
+from planning: after confirmation, the tool builds a deterministic render manifest for
+intermediate work from actionable leaves, runs concurrent intermediate render batches,
+runs a final synthesis batch where the agent declares 0..N deliverable paths from the
+output goal, assembles staged output, optionally runs whole-output semantic review, and
+publishes atomically to the chosen workspace paths.
 
-Every output goal must include a `## Output artifacts` section with at least one path.
-Multi-file goals must declare a deliverable root (directory path or shared parent such as
-`INDEX.md`). Intermediate batches write freeform notes under `intermediates/{batch_id}/`.
-The final synthesis batch (`render-batch-final`) writes exactly the paths declared in the
-output goal; only those final artifacts are published.
+The output goal may be a one-line prompt or a longer specification. An optional
+`## Output artifacts` section is illustrative sample layout only. Intermediate batches
+write freeform notes under `intermediates/{batch_id}/`. The final synthesis batch
+(`render-batch-final`) records agent-declared staging and publish paths; zero workspace
+files is valid when the goal does not require them.
 
 ### Render-only mode
 
@@ -447,8 +447,8 @@ top-down-planning --config ./examples/planning.config.yaml
 ```
 
 Uses [`examples/idea.md`](examples/idea.md) with an implementation-oriented output goal.
-After review and confirmation, the render phase writes deliverables such as
-`implementation-plan.md`.
+After review and confirmation, the final render batch may publish deliverables such as
+`implementation-plan.md` when the output goal calls for them.
 
 **Generic non-software planning** — use a non-implementation goal; optionally disable
 review for a lightweight run:
@@ -512,4 +512,4 @@ Integration tests use a deterministic fake agent fixture; live Cursor tests are 
 
 ## Design note: expanded internal nodes
 
-When an item is expanded, it becomes a non-leaf container marked `actionable` so it is no longer selected for expansion. Only **leaf** actionable items drive intermediate render batches; the final synthesis batch turns those notes plus the output goal into declared deliverables.
+When an item is expanded, it becomes a non-leaf container marked `actionable` so it is no longer selected for expansion. Only **leaf** actionable items drive intermediate render batches; the final synthesis batch turns those notes plus the output goal into agent-chosen deliverables.

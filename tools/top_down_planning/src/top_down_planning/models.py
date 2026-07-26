@@ -158,6 +158,7 @@ class RenderBatchArtifact(BaseModel):
     plan_item_id: str
     artifact_key: str
     relative_path: str | None = None
+    publish_relative_path: str | None = None
     content: str
 
     @field_validator("content")
@@ -174,16 +175,7 @@ class RenderBatchTransaction(BaseModel):
     plan_digest: str
     output_goal_digest: str
     render_config_digest: str
-    artifacts: list[RenderBatchArtifact]
-
-    @field_validator("artifacts")
-    @classmethod
-    def _non_empty_artifacts(
-        cls, value: list[RenderBatchArtifact]
-    ) -> list[RenderBatchArtifact]:
-        if not value:
-            raise ValueError("artifacts must contain at least one item")
-        return value
+    artifacts: list[RenderBatchArtifact] = Field(default_factory=list)
 
 
 class RenderBatchStateEntry(BaseModel):

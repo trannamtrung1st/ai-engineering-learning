@@ -17,16 +17,11 @@ from top_down_planning.models import (
 
 DEFAULT_PLAN_DIGEST = "a" * 64
 
-STANDARD_RENDER_OUTPUT_GOAL = """Produce an actionable implementation plan.
-
-## Output artifacts
-
-- `implementation-plan.md`
-"""
+STANDARD_RENDER_OUTPUT_GOAL = "Produce an actionable implementation plan."
 
 
 def render_output_goal(text: str | None = None) -> LoadedOutputGoal:
-    """Output goal with a required ## Output artifacts section for render tests."""
+    """Default output goal for render tests."""
     return load_output_goal(inline=text or STANDARD_RENDER_OUTPUT_GOAL)
 
 
