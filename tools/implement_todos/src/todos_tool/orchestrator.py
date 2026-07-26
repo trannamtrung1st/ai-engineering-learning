@@ -63,6 +63,7 @@ from todos_tool.persistence import (
     write_json,
 )
 from todos_tool.agent_context import (
+    PhaseName,
     resolve_phase_agent_context,
     resolve_phase_model,
     validate_agent_context_paths,
@@ -196,7 +197,7 @@ class Orchestrator:
             return None
         return "\n".join(self.workspace.manifest.out_of_scope)
 
-    def _prompt_kwargs(self, item: TodoItem, *, phase: str) -> dict[str, Any]:
+    def _prompt_kwargs(self, item: TodoItem, *, phase: PhaseName) -> dict[str, Any]:
         manifest = self.workspace.manifest if self.workspace else None
         agent_context = self._resolve_agent_context(item, phase=phase)
         progress_section: str | None = None
@@ -221,10 +222,10 @@ class Orchestrator:
             "progress_section": progress_section,
         }
 
-    def _resolve_agent_context(self, item: TodoItem, *, phase: str):
+    def _resolve_agent_context(self, item: TodoItem, *, phase: PhaseName):
         manifest = self.workspace.manifest if self.workspace else None
         resolved = resolve_phase_agent_context(
-            phase,  # type: ignore[arg-type]
+            phase,
             self.config.agent_context,
             manifest.agent_context if manifest else None,
             item.agent_context,
@@ -255,10 +256,10 @@ class Orchestrator:
             workspace_loaded=self.workspace is not None,
         )
 
-    def _resolve_session_model(self, item: TodoItem, *, phase: str) -> str | None:
+    def _resolve_session_model(self, item: TodoItem, *, phase: PhaseName) -> str | None:
         manifest = self.workspace.manifest if self.workspace else None
         return resolve_phase_model(
-            phase,  # type: ignore[arg-type]
+            phase,
             self._base_session_model(),
             self.config.agent_context,
             manifest.agent_context if manifest else None,

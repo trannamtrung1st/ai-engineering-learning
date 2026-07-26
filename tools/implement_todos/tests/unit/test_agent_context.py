@@ -118,6 +118,13 @@ def test_prompts_omit_agent_context_when_unconfigured() -> None:
     assert "Agent context" not in work
 
 
+def test_agent_context_rejects_foreign_phases() -> None:
+    with pytest.raises(ValueError, match="Unknown agent_context fields"):
+        AgentContextConfig.from_dict({"planning": {"skills": ["skill.md"]}})
+    with pytest.raises(ValueError, match="Unknown agent_context fields"):
+        AgentContextConfig.from_dict({"rendering": {"rules": ["rule.mdc"]}})
+
+
 def test_validate_agent_context_paths_missing_file(git_project: Path) -> None:
     resolved = resolve_phase_agent_context(
         "implement",

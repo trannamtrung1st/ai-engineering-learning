@@ -234,7 +234,7 @@ Effective skills and rules for each phase merge additively (deduplicated by path
 
 Optional `model` entries use the same layer order; the most specific configured model wins. When no phase model is configured, the run uses the normal model precedence: CLI `--model` → `TODOS_TOOL_MODEL` → manifest `settings.model` → package default.
 
-Configured paths must exist as files under the workspace. Work prompts receive the implement set; review prompts receive the review set. When `agent_context` is omitted everywhere, no agent-context section is added to prompts.
+Configured paths must exist as files under the workspace. Work prompts receive the implement set; review prompts receive the review set. Supported phase keys are `default`, `implement`, and `review`; unknown keys fail at config load. When `agent_context` is omitted everywhere, no agent-context section is added to prompts.
 
 ### Item file
 

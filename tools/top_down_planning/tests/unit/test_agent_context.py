@@ -115,6 +115,38 @@ def test_planning_and_render_prompts_include_phase_context() -> None:
     assert "skills/plan.md" not in render_prompt
 
 
+def test_agent_context_rejects_implement_phase() -> None:
+    with pytest.raises(ValueError, match="Unknown agent_context fields"):
+        AgentContextConfig.from_dict({"implement": {"skills": ["skill.md"]}})
+
+
+def test_config_loader_rejects_implement_agent_context(tmp_path: Path) -> None:
+    config_path = tmp_path / "planning.config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "input: idea.md",
+                "output: out",
+                "output_goal: Plan",
+                "agent_context:",
+                "  implement:",
+                "    skills: [skill.md]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "idea.md").write_text("# idea\n", encoding="utf-8")
+
+    with pytest.raises(PlanningToolError, match="Unknown agent_context fields"):
+        merge_run_options(
+            config_path=config_path,
+            input_path=tmp_path / "idea.md",
+            output_dir=tmp_path / "out",
+            output_goal="Plan",
+            workspace=tmp_path,
+        )
+
+
 def test_validate_agent_context_paths_missing_file(tmp_path: Path) -> None:
     resolved = resolve_phase_agent_context(
         "planning",

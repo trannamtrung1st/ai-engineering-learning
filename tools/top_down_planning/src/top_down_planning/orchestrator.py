@@ -11,6 +11,7 @@ from pathlib import Path
 
 from top_down_planning.agent_context import (
     AgentContextConfig,
+    PhaseName,
     resolve_phase_agent_context,
     resolve_phase_model,
     validate_agent_context_paths,
@@ -169,7 +170,7 @@ class Orchestrator:
         )
         for phase in phases:
             resolved = resolve_phase_agent_context(
-                phase,  # type: ignore[arg-type]
+                phase,
                 self.config.agent_context,
             )
             if resolved.skills or resolved.rules:
@@ -179,18 +180,18 @@ class Orchestrator:
                     label=f"{phase} agent_context",
                 )
 
-    def _resolved_agent_context(self, *, phase: str):
+    def _resolved_agent_context(self, *, phase: PhaseName):
         resolved = resolve_phase_agent_context(
-            phase,  # type: ignore[arg-type]
+            phase,
             self.config.agent_context,
         )
         if not resolved.skills and not resolved.rules:
             return None
         return resolved
 
-    def _resolve_session_model(self, *, phase: str) -> str | None:
+    def _resolve_session_model(self, *, phase: PhaseName) -> str | None:
         return resolve_phase_model(
-            phase,  # type: ignore[arg-type]
+            phase,
             resolve_model(self.config.model),
             self.config.agent_context,
         )

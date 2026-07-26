@@ -9,7 +9,7 @@ from typing import Any, Literal
 from todos_tool.errors import ValidationError
 from todos_tool.paths import resolve_within_repo, validate_relative_path
 
-PhaseName = Literal["implement", "review", "planning", "rendering"]
+PhaseName = Literal["implement", "review"]
 
 
 @dataclass(frozen=True)
@@ -54,8 +54,6 @@ class AgentContextConfig:
     default: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
     implement: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
     review: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
-    planning: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
-    rendering: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
 
     @classmethod
     def empty(cls) -> AgentContextConfig:
@@ -75,13 +73,11 @@ class AgentContextConfig:
             default=PhaseAgentContext.from_dict(data.get("default")),
             implement=PhaseAgentContext.from_dict(data.get("implement")),
             review=PhaseAgentContext.from_dict(data.get("review")),
-            planning=PhaseAgentContext.from_dict(data.get("planning")),
-            rendering=PhaseAgentContext.from_dict(data.get("rendering")),
         )
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {}
-        for name in ("default", "implement", "review", "planning", "rendering"):
+        for name in ("default", "implement", "review"):
             phase = getattr(self, name)
             phase_dict = phase.to_dict()
             if phase_dict:
@@ -89,7 +85,7 @@ class AgentContextConfig:
         return payload
 
     def is_empty(self) -> bool:
-        for name in ("default", "implement", "review", "planning", "rendering"):
+        for name in ("default", "implement", "review"):
             phase: PhaseAgentContext = getattr(self, name)
             if phase.skills or phase.rules or phase.model is not None:
                 return False

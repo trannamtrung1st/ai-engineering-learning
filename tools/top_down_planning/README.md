@@ -323,7 +323,8 @@ agent_context:
 
 Planning sessions receive `default` + `planning` references. Render sessions receive
 `default` + `rendering` references. Whole-plan review and final confirmation receive
-`default` + `review` references.
+`default` + `review` references. Supported phase keys are `default`, `planning`,
+`rendering`, and `review`; unknown keys fail at config load.
 
 See [`examples/planning.config.yaml`](examples/planning.config.yaml).
 

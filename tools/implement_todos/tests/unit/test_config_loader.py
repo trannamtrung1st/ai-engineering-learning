@@ -142,6 +142,24 @@ def test_build_run_config_loads_agent_context(tmp_path: Path) -> None:
     assert config.agent_context.implement.skills == (skill.name,)
 
 
+def test_build_run_config_rejects_foreign_agent_context_phases(tmp_path: Path) -> None:
+    config_path = tmp_path / "run.config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "workspace: .",
+                "agent_context:",
+                "  planning:",
+                "    skills: [skill.md]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TodosToolError, match="Unknown agent_context fields"):
+        build_run_config(config_path=config_path, workspace=tmp_path)
+
+
 def test_build_run_config_rejects_unknown_keys(tmp_path: Path) -> None:
     config_path = tmp_path / "run.config.yaml"
     config_path.write_text("unknown: true\n", encoding="utf-8")

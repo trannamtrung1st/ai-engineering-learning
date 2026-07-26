@@ -9,7 +9,7 @@ from typing import Any, Literal
 from top_down_planning.errors import PlanningToolError
 from top_down_planning.paths import resolve_within_workspace, validate_relative_path
 
-PhaseName = Literal["implement", "review", "planning", "rendering"]
+PhaseName = Literal["review", "planning", "rendering"]
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,6 @@ class PhaseAgentContext:
 @dataclass(frozen=True)
 class AgentContextConfig:
     default: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
-    implement: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
     review: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
     planning: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
     rendering: PhaseAgentContext = field(default_factory=PhaseAgentContext.empty)
@@ -73,7 +72,6 @@ class AgentContextConfig:
             raise ValueError(f"Unknown agent_context fields: {sorted(unknown)}")
         return cls(
             default=PhaseAgentContext.from_dict(data.get("default")),
-            implement=PhaseAgentContext.from_dict(data.get("implement")),
             review=PhaseAgentContext.from_dict(data.get("review")),
             planning=PhaseAgentContext.from_dict(data.get("planning")),
             rendering=PhaseAgentContext.from_dict(data.get("rendering")),
@@ -81,7 +79,7 @@ class AgentContextConfig:
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {}
-        for name in ("default", "implement", "review", "planning", "rendering"):
+        for name in ("default", "review", "planning", "rendering"):
             phase = getattr(self, name)
             phase_dict = phase.to_dict()
             if phase_dict:
@@ -89,7 +87,7 @@ class AgentContextConfig:
         return payload
 
     def is_empty(self) -> bool:
-        for name in ("default", "implement", "review", "planning", "rendering"):
+        for name in ("default", "review", "planning", "rendering"):
             phase: PhaseAgentContext = getattr(self, name)
             if phase.skills or phase.rules or phase.model is not None:
                 return False
