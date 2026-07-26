@@ -298,7 +298,6 @@ def _final_artifacts_from_goal(prompt: str) -> list[dict]:
                 "plan_item_id": f"final-{slug}",
                 "artifact_key": f"final-{slug}",
                 "relative_path": path,
-                "publish_relative_path": path,
                 "content": _final_artifact_content(path),
             }
         )
@@ -310,7 +309,6 @@ def _final_artifacts_from_goal(prompt: str) -> list[dict]:
                 "plan_item_id": "final-implementation-planmd",
                 "artifact_key": "final-implementation-planmd",
                 "relative_path": path,
-                "publish_relative_path": path,
                 "content": _final_artifact_content(path),
             }
         )
@@ -329,6 +327,10 @@ def _final_artifact_content(relative_path: str) -> str:
 def _write_render_batch_transaction(prompt: str) -> None:
     if "Final deliverable synthesis" in prompt or "render-batch-final" in prompt:
         artifacts = _final_artifacts_from_goal(prompt)
+        for artifact in artifacts:
+            destination = Path(artifact["relative_path"])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(artifact["content"], encoding="utf-8")
     else:
         artifacts = _assigned_artifacts(prompt)
         if not artifacts:
@@ -356,13 +358,13 @@ def _write_render_output_review(prompt: str) -> None:
     digest_match = re.search(r"## Plan digest\n`([a-f0-9]+)`", prompt)
     goal_match = re.search(r"## Output-goal digest\n`([a-f0-9]+)`", prompt)
     manifest_match = re.search(r"## Render manifest digest\n`([a-f0-9]+)`", prompt)
-    assembled_match = re.search(r"## Assembled output digest\n`([a-f0-9]+)`", prompt)
+    deliverable_match = re.search(r"## Deliverable output digest\n`([a-f0-9]+)`", prompt)
     payload = {
         "stage": "rendered_output_review",
         "plan_digest": digest_match.group(1) if digest_match else "0" * 64,
         "output_goal_digest": goal_match.group(1) if goal_match else "0" * 64,
         "render_manifest_digest": manifest_match.group(1) if manifest_match else "0" * 64,
-        "assembled_output_digest": assembled_match.group(1) if assembled_match else "0" * 64,
+        "deliverable_output_digest": deliverable_match.group(1) if deliverable_match else "0" * 64,
         "decision": "approve",
         "summary": "Rendered output approved by fake reviewer.",
         "findings": [],

@@ -1,4 +1,4 @@
-"""Whole-output semantic review after assembly."""
+"""Whole-output semantic review after final deliverables are written."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from top_down_planning.models import (
 )
 from top_down_planning.persistence import rendered_output_review_result_path, write_json
 from top_down_planning.prompts import build_render_output_review_prompt
-from top_down_planning.render_assembly import AssembledOutput
+from top_down_planning.render_deliverables import DeliverableOutput
 from top_down_planning.review_tool import (
     ReviewToolError,
     build_review_session_env,
@@ -65,7 +65,7 @@ async def run_render_output_review(
     plan_digest: str,
     manifest: RenderManifest,
     manifest_digest: str,
-    assembled: AssembledOutput,
+    deliverable: DeliverableOutput,
     max_retries: int,
 ) -> RenderedOutputReviewResult | None:
     result_path = rendered_output_review_result_path(deps.output_dir)
@@ -77,7 +77,8 @@ async def run_render_output_review(
         output_goal=deps.output_goal,
         plan_digest=plan_digest,
         manifest_digest=manifest_digest,
-        assembled_digest=assembled.digest,
+        deliverable_digest=deliverable.digest,
+        deliverable_paths=sorted(deliverable.files.keys()),
         output_goal_digest=manifest.output_goal_digest,
         embed_threshold=deps.embed_threshold,
         agent_context=deps.resolve_review_context(),
@@ -139,7 +140,7 @@ async def run_render_output_review(
             return None
         if result.render_manifest_digest != manifest_digest:
             return None
-        if result.assembled_output_digest != assembled.digest:
+        if result.deliverable_output_digest != deliverable.digest:
             return None
 
         validation_errors = validate_render_output_review(result)

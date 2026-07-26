@@ -97,15 +97,15 @@ top-down-planning \
 
 The tool separates **user-facing deliverables** from **internal resumable state**.
 
-`--output` stores resumable planning state under `.planning-output/`. Published
-deliverables are written to workspace paths chosen by the final render agent from the
-output goal. They are not stored under `--output`.
+`--output` stores resumable planning state under `.planning-output/`. Final
+deliverables are written directly to workspace paths chosen by the final render agent from
+the output goal. They are not stored under `--output`.
 
 Example layout:
 
 ```text
 workspace/
-├── implementation-plan.md          # example deliverable the final agent may publish
+├── implementation-plan.md          # example final deliverable
 ├── plans/my-feature/todos/         # example multi-file deliverable tree
 │   ├── INDEX.md
 │   ├── manifest.yaml
@@ -121,8 +121,7 @@ workspace/
             ├── context/
             ├── batches/
             ├── assembled/
-            │   ├── intermediates/{batch_id}/{plan_item_id}.md  # staged, never published
-            │   └── … agent-declared final paths …
+            │   └── intermediates/{batch_id}/{plan_item_id}.md  # internal only
             └── reviews/
 ```
 
@@ -130,15 +129,16 @@ Goal-driven deliverables are written only when planning finishes with status `co
 and review status `confirmed` (when review is enabled). Rendering is a separate lifecycle
 from planning: after confirmation, the tool builds a deterministic render manifest for
 intermediate work from actionable leaves, runs concurrent intermediate render batches,
-runs a final synthesis batch where the agent declares 0..N deliverable paths from the
-output goal, assembles staged output, optionally runs whole-output semantic review, and
-publishes atomically to the chosen workspace paths.
+runs a final synthesis batch where the agent writes 0..N deliverables directly to workspace
+paths from the output goal, assembles intermediate staging for synthesis inputs, optionally
+runs whole-output semantic review against the workspace deliverables, and records ownership
+in a ledger (removing obsolete files from prior runs).
 
 The output goal may be a one-line prompt or a longer specification. An optional
 `## Output artifacts` section is illustrative sample layout only. Intermediate batches
 write freeform notes under `intermediates/{batch_id}/`. The final synthesis batch
-(`render-batch-final`) records agent-declared staging and publish paths; zero workspace
-files is valid when the goal does not require them.
+(`render-batch-final`) declares workspace destination paths in its transaction; zero
+deliverables is valid when the goal does not require files.
 
 ### Render-only mode
 
@@ -447,7 +447,7 @@ top-down-planning --config ./examples/planning.config.yaml
 ```
 
 Uses [`examples/idea.md`](examples/idea.md) with an implementation-oriented output goal.
-After review and confirmation, the final render batch may publish deliverables such as
+After review and confirmation, the final render batch writes deliverables such as
 `implementation-plan.md` when the output goal calls for them.
 
 **Generic non-software planning** — use a non-implementation goal; optionally disable
@@ -491,7 +491,7 @@ Render-phase events include:
 - `render.validation_failed` (batch transaction or assembly validation)
 - `render.assembly.started` / `render.assembly.completed`
 - `render.review.started` / `render.review.completed` / `render.review.needs_rerender`
-- `render.publication.started` / `render.publication.completed`
+- `render.finalization.started` / `render.finalization.completed`
 - `render.completed` (with `artifacts`)
 - `render.skipped` (when resuming with completed render state and existing deliverables)
 

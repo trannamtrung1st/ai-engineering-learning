@@ -9,6 +9,8 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pydantic import ValidationError as PydanticValidationError
+
 from top_down_planning.agent_context import (
     AgentContextConfig,
     PhaseName,
@@ -68,6 +70,7 @@ from top_down_planning.persistence import (
     new_run_state,
     plan_path,
     record_history,
+    render_manifest_path,
     save_plan,
     save_run_state,
     update_final_status,
@@ -88,7 +91,8 @@ from top_down_planning.recovery import (
     restore_canonical_plan,
 )
 from top_down_planning.review_flow import ReviewFlowDeps, run_post_decomposition_flow
-from top_down_planning.render_flow import RenderFlowDeps, existing_published_artifacts, render_from_confirmed_plan
+from top_down_planning.render_flow import RenderFlowDeps, existing_deliverable_artifacts, render_from_confirmed_plan
+from top_down_planning.render_manifest import load_render_manifest
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import ensure_plan_overview_artifact, prepare_batch_context
@@ -401,10 +405,19 @@ class Orchestrator:
         )
 
         if should_render:
-            existing = existing_published_artifacts(
+            render_state = load_render_state(output_dir)
+            manifest = None
+            manifest_path = render_manifest_path(output_dir)
+            if manifest_path.is_file():
+                try:
+                    manifest = load_render_manifest(manifest_path)
+                except PydanticValidationError:
+                    manifest = None
+            existing = existing_deliverable_artifacts(
                 self.config.workspace_root,
                 run_state,
-                load_render_state(output_dir),
+                render_state,
+                manifest=manifest,
             )
             if existing and not self.config.force_rerender:
                 self._artifacts = existing

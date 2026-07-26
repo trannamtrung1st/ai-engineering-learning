@@ -119,9 +119,10 @@ def _build_batch_context_markdown(
                 "## Final deliverable synthesis",
                 "",
                 "Decide the deliverable layout from the output goal and intermediate "
-                "artifacts. Record 0..N final artifacts via the render transaction CLI. "
-                "An optional `## Output artifacts` section in the goal is illustrative "
-                "only — not an exhaustive path manifest.",
+                "artifacts. Write 0..N files directly to their workspace destination paths, "
+                "then record each deliverable via the render transaction CLI. An optional "
+                "`## Output artifacts` section in the goal is illustrative only — not an "
+                "exhaustive path manifest.",
                 "",
             ]
         )

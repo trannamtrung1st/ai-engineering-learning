@@ -15,8 +15,8 @@ from top_down_planning.digest import compute_plan_digest, compute_render_config_
 from top_down_planning.errors import CursorEnvironmentError, CursorSessionError, PlanningToolError, UserInterrupted
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal
 from top_down_planning.models import (
+    DeliverableStatus,
     PlanState,
-    PublicationStatus,
     RenderBatchStateEntry,
     RenderBatchStatus,
     RenderConfig,
@@ -52,12 +52,16 @@ from top_down_planning.render_manifest import (
     build_render_manifest,
     compute_manifest_digest,
     load_render_manifest,
-    manifest_finals_are_committed,
     manifest_is_valid,
     scheduled_batch_ids,
     save_render_manifest as write_manifest_file,
+    strip_final_items_from_manifest,
 )
-from top_down_planning.render_publication import publish_assembled_output
+from top_down_planning.render_deliverables import (
+    collect_deliverable_output,
+    finalize_deliverables,
+    materialize_final_deliverables,
+)
 from top_down_planning.render_review import (
     RenderReviewDeps,
     review_status_from_decision,
@@ -101,7 +105,7 @@ async def render_from_confirmed_plan(
     render_only: bool = False,
 ) -> RenderFlowResult:
     deps.stream.emit("render.started")
-    deps.renderer.rule("RENDER deliverables in staged batches")
+    deps.renderer.rule("RENDER deliverables in staged batches and workspace destinations")
 
     plan_digest = compute_plan_digest(plan)
     render_config = deps.render
@@ -136,6 +140,14 @@ async def render_from_confirmed_plan(
     render_state.render_manifest_digest = manifest_digest
     render_state.stage = RenderStage.BATCHES
     _sync_batch_state(render_state, manifest, force=force_rerender)
+    manifest = _invalidate_missing_deliverables(
+        deps,
+        manifest=manifest,
+        render_state=render_state,
+        force_rerender=force_rerender,
+    )
+    manifest_digest = compute_manifest_digest(manifest)
+    render_state.render_manifest_digest = manifest_digest
     save_render_state(deps.output_dir, render_state)
 
     await _run_render_batches(
@@ -169,6 +181,14 @@ async def render_from_confirmed_plan(
     save_render_state(deps.output_dir, render_state)
     deps.stream.emit("render.assembly.completed", digest=assembled.digest)
 
+    try:
+        deliverable = collect_deliverable_output(deps.workspace_root, manifest)
+    except ValueError as exc:
+        deps.stream.emit("render.validation_failed", errors=[str(exc)])
+        raise PlanningToolError(f"Deliverable collection failed: {exc}") from exc
+    render_state.deliverable_output_digest = deliverable.digest
+    save_render_state(deps.output_dir, render_state)
+
     if render_config.final_review:
         render_state.stage = RenderStage.REVIEW
         save_render_state(deps.output_dir, render_state)
@@ -182,31 +202,30 @@ async def render_from_confirmed_plan(
             run_state=run_state,
             force_rerender=force_rerender,
         )
-        transactions = load_valid_batch_transactions(deps.output_dir, manifest)
-        assembled = assemble_render_output(manifest, transactions)
-        write_assembled_output(deps.output_dir, assembled)
+        deliverable = collect_deliverable_output(deps.workspace_root, manifest)
+        render_state.deliverable_output_digest = deliverable.digest
+        save_render_state(deps.output_dir, render_state)
     else:
         render_state.output_review_status = RenderOutputReviewStatus.SKIPPED
         save_render_state(deps.output_dir, render_state)
 
-    deps.stream.emit("render.publication.started")
-    render_state.stage = RenderStage.PUBLICATION
+    deps.stream.emit("render.finalization.started")
+    render_state.stage = RenderStage.FINALIZATION
     save_render_state(deps.output_dir, render_state)
 
     previous_ledger = load_owned_artifacts(deps.output_dir)
-    publication = publish_assembled_output(
+    finalization = finalize_deliverables(
         output_dir=deps.output_dir,
         workspace=deps.workspace_root,
-        assembled=assembled,
         manifest=manifest,
         previous_ledger=previous_ledger,
     )
 
-    render_state.publication_status = PublicationStatus.COMPLETE
+    render_state.deliverable_status = DeliverableStatus.COMPLETE
     render_state.stage = RenderStage.COMPLETE
     save_render_state(deps.output_dir, render_state)
 
-    paths = _persist_render_result(deps, run_state, publication.artifacts)
+    paths = _persist_render_result(deps, run_state, finalization.artifacts)
     record_history(
         deps.output_dir,
         run_state,
@@ -216,9 +235,35 @@ async def render_from_confirmed_plan(
     )
     save_run_state(deps.output_dir, run_state)
 
-    deps.stream.emit("render.publication.completed", artifacts=paths)
+    deps.stream.emit("render.finalization.completed", artifacts=paths)
     deps.stream.emit("render.completed", artifacts=paths)
     return RenderFlowResult(artifacts=paths)
+
+
+def _invalidate_missing_deliverables(
+    deps: RenderFlowDeps,
+    *,
+    manifest: RenderManifest,
+    render_state: RenderState,
+    force_rerender: bool,
+) -> RenderManifest:
+    if force_rerender:
+        return manifest
+    if not any(item.artifact_role == "final" for item in manifest.items):
+        return manifest
+    try:
+        collect_deliverable_output(deps.workspace_root, manifest)
+        return manifest
+    except ValueError:
+        batch_entry = render_state.batches.get(FINAL_BATCH_ID)
+        if batch_entry is None:
+            return manifest
+        batch_entry.status = RenderBatchStatus.PENDING
+        batch_entry.transaction_digest = None
+        render_batch_transaction_path(deps.output_dir, FINAL_BATCH_ID).unlink(missing_ok=True)
+        stripped = strip_final_items_from_manifest(manifest)
+        write_manifest_file(render_manifest_path(deps.output_dir), stripped)
+        return stripped
 
 
 def _should_invalidate_render_state(
@@ -269,9 +314,7 @@ def _ensure_manifest(
         except ValidationError:
             manifest = None
         else:
-            if manifest_is_valid(manifest) and manifest_finals_are_committed(
-                manifest, render_state
-            ):
+            if manifest_is_valid(manifest):
                 return manifest, render_state.render_manifest_digest, True
 
     manifest = build_render_manifest(
@@ -492,6 +535,7 @@ async def _run_single_batch(
             expected_plan_digest=plan_digest,
             expected_output_goal_digest=manifest.output_goal_digest,
             expected_render_config_digest=manifest.render_config_digest,
+            workspace=deps.workspace_root if batch_id == FINAL_BATCH_ID else None,
         )
         if validation_feedback:
             deps.stream.emit(
@@ -521,6 +565,31 @@ async def _run_single_batch(
             continue
 
         if batch_id == FINAL_BATCH_ID:
+            try:
+                materialize_final_deliverables(deps.workspace_root, transaction)
+            except ValueError as exc:
+                validation_feedback = [str(exc)]
+                deps.stream.emit(
+                    "render.validation_failed",
+                    batch_id=batch_id,
+                    attempt=attempt,
+                    errors=validation_feedback,
+                )
+                if attempt >= deps.render.max_retries:
+                    batch_entry.status = RenderBatchStatus.FAILED
+                    save_render_state(deps.output_dir, render_state)
+                    raise CursorSessionError(
+                        f"Render batch {batch_id} failed materialization: {exc}"
+                    ) from exc
+                deps.stream.emit(
+                    "render.batch.retrying",
+                    batch_id=batch_id,
+                    attempt=attempt + 1,
+                    reason=str(exc),
+                )
+                txn_path.unlink(missing_ok=True)
+                continue
+
             manifest = apply_final_transaction_to_manifest(manifest, transaction)
             manifest_digest = compute_manifest_digest(manifest)
             write_manifest_file(render_manifest_path(deps.output_dir), manifest)
@@ -564,6 +633,13 @@ async def _run_output_review_cycle(
         assembled = assemble_render_output(manifest, transactions)
         write_assembled_output(deps.output_dir, assembled)
 
+        try:
+            deliverable = collect_deliverable_output(deps.workspace_root, manifest)
+        except ValueError as exc:
+            raise PlanningToolError(f"Deliverable collection failed: {exc}") from exc
+        render_state.deliverable_output_digest = deliverable.digest
+        save_render_state(deps.output_dir, render_state)
+
         deps.stream.emit("render.review.started", cycle=cycle)
         review_deps = RenderReviewDeps(
             workspace_root=deps.workspace_root,
@@ -581,7 +657,7 @@ async def _run_output_review_cycle(
             plan_digest=plan_digest,
             manifest=manifest,
             manifest_digest=manifest_digest,
-            assembled=assembled,
+            deliverable=deliverable,
             max_retries=deps.render.max_retries,
         )
         if result is None:
@@ -629,6 +705,12 @@ async def _run_output_review_cycle(
                 render_state.batches[batch_id].transaction_digest = None
                 txn_path = render_batch_transaction_path(deps.output_dir, batch_id)
                 txn_path.unlink(missing_ok=True)
+
+        if FINAL_BATCH_ID in affected:
+            manifest = strip_final_items_from_manifest(manifest)
+            write_manifest_file(render_manifest_path(deps.output_dir), manifest)
+            manifest_digest = compute_manifest_digest(manifest)
+            render_state.render_manifest_digest = manifest_digest
 
         render_state.rerender_cycle = cycle + 1
         save_render_state(deps.output_dir, render_state)
@@ -681,10 +763,12 @@ def _persist_render_result(
     return [str(workspace / name) for name in relative]
 
 
-def existing_published_artifacts(
+def existing_deliverable_artifacts(
     workspace: Path,
     run_state: RunState,
     render_state: RenderState | None,
+    *,
+    manifest: RenderManifest | None = None,
 ) -> list[str] | None:
     if render_state is not None and render_state.stage == RenderStage.COMPLETE:
         if not run_state.generated_artifacts:
@@ -695,5 +779,12 @@ def existing_published_artifacts(
             if not path.is_file():
                 return None
             absolute.append(str(path))
+        if manifest is not None and render_state.deliverable_output_digest:
+            try:
+                current = collect_deliverable_output(workspace, manifest)
+            except ValueError:
+                return None
+            if current.digest != render_state.deliverable_output_digest:
+                return None
         return absolute
     return None

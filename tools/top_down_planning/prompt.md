@@ -377,7 +377,7 @@ Suggested layout:
 
 ```text
 planning-output/
-├── implementation-plan.md          # example deliverable the final agent may publish
+├── implementation-plan.md          # example final deliverable
 └── planning-output/
     └── .planning-output/
     ├── plan.yaml
@@ -393,8 +393,7 @@ planning-output/
             ├── context/
             ├── batches/
             ├── assembled/
-            │   ├── intermediates/{batch_id}/{plan_item_id}.md
-            │   └── … agent-declared final paths …
+            │   └── intermediates/{batch_id}/{plan_item_id}.md
             └── reviews/
 ```
 
@@ -402,9 +401,9 @@ Each render batch writes staged transactions under `.planning-output/render/batc
 When audit is enabled, batch sessions also write numbered audit sets under
 `iterations/` (request prompt, agent log, and transaction snapshots).
 
-`--output` holds internal resumable state under `.planning-output/`. Published
-deliverables are written to workspace paths chosen by the final render agent from the
-output goal after assembly and optional whole-output review.
+`--output` holds internal resumable state under `.planning-output/`. Final deliverables
+are written directly to workspace paths chosen by the final render agent from the output
+goal.
 
 Deliverables are produced by a **staged render pipeline** after decomposition completes
 (and after review/confirmation when review is enabled). Rendering is a separate
@@ -412,25 +411,25 @@ lifecycle from planning:
 
 1. Build a deterministic render manifest from actionable leaf items (intermediate batches).
 2. Run concurrent intermediate render batches; each batch agent records freeform notes or
-   partials via `planning-render-tool` into staged batch transactions (not directly into
-   final paths).
+   partials via `planning-render-tool` into staged batch transactions under
+   `intermediates/{batch_id}/`.
 3. Run the final synthesis batch (`render-batch-final`) where the agent reads the output
-   goal and intermediate artifacts, then records 0..N final deliverables with chosen
-   staging and publish paths.
-4. Assemble staged artifacts under `.planning-output/render/assembled/` without
-   rewriting agent content.
-5. Optionally run whole-output semantic review (`rendered_output_review`).
-6. Publish final artifacts that include a publish target and record ownership in a ledger.
+   goal and intermediate artifacts, writes 0..N deliverables directly to workspace paths,
+   and records those paths in the final batch transaction.
+4. Assemble intermediate artifacts under `.planning-output/render/assembled/` for
+   synthesis context only.
+5. Optionally run whole-output semantic review (`rendered_output_review`) against the
+   workspace deliverables.
+6. Finalize deliverable ownership in a ledger and remove obsolete files from prior runs.
 
 The render manifest defines authoritative intermediate scope (plan items, artifact keys,
-staging paths). Final publish paths are agent-declared in the final batch transaction.
-The output goal defines format and intent; an optional `## Output artifacts` section is
-sample layout only. Review prompts still embed a human-readable render brief derived from
-`plan.yaml` for semantic checks.
+intermediate staging paths) plus agent-declared final workspace paths from the final batch
+transaction. The output goal defines format and intent; an optional `## Output artifacts`
+section is sample layout only. Review prompts still embed a human-readable render brief
+derived from `plan.yaml` for semantic checks.
 
-Paths are publication targets, not copy sources; deliverables must be generated fresh from
-the confirmed plan. Zero workspace publication is valid when the output goal does not
-require files.
+Deliverables must be generated fresh from the confirmed plan. Zero workspace deliverables
+is valid when the output goal does not require files.
 
 Render agents must not copy or restore pre-existing files from git history or from paths
 cited in the output goal. They must not modify canonical state under `.planning-output/`.

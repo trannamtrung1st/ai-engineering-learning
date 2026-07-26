@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from top_down_planning.models import (
     RenderBatchArtifact,
     RenderBatchTransaction,
     RenderManifest,
     RenderManifestItem,
 )
-from top_down_planning.paths import validate_relative_path
-from top_down_planning.render_manifest import FINAL_BATCH_ID
+from top_down_planning.paths import resolve_within_workspace, validate_relative_path
+from top_down_planning.render_manifest import FINAL_BATCH_ID, INTERMEDIATE_PREFIX
 
 _FORBIDDEN_PATH_PREFIXES = (".planning-output/", ".planning-output")
 
@@ -23,6 +25,7 @@ def validate_batch_transaction(
     expected_plan_digest: str,
     expected_output_goal_digest: str,
     expected_render_config_digest: str,
+    workspace: Path | None = None,
 ) -> list[str]:
     errors = _validate_transaction_metadata(
         transaction,
@@ -35,7 +38,7 @@ def validate_batch_transaction(
         return errors
 
     if expected_batch_id == FINAL_BATCH_ID:
-        return validate_final_batch_transaction(transaction)
+        return validate_final_batch_transaction(transaction, workspace=workspace)
 
     return _validate_intermediate_batch_transaction(transaction, assigned_items=assigned_items)
 
@@ -63,14 +66,26 @@ def _validate_transaction_metadata(
     return errors
 
 
-def validate_final_batch_transaction(transaction: RenderBatchTransaction) -> list[str]:
+def validate_final_batch_transaction(
+    transaction: RenderBatchTransaction,
+    *,
+    workspace: Path | None = None,
+) -> list[str]:
     errors: list[str] = []
     seen_items: set[str] = set()
     seen_keys: set[str] = set()
     seen_paths: set[str] = set()
 
     for artifact in transaction.artifacts:
-        errors.extend(_validate_final_artifact(artifact, seen_items, seen_keys, seen_paths))
+        errors.extend(
+            _validate_final_artifact(
+                artifact,
+                seen_items,
+                seen_keys,
+                seen_paths,
+                workspace=workspace,
+            )
+        )
 
     return errors
 
@@ -80,6 +95,8 @@ def _validate_final_artifact(
     seen_items: set[str],
     seen_keys: set[str],
     seen_paths: set[str],
+    *,
+    workspace: Path | None = None,
 ) -> list[str]:
     errors: list[str] = []
 
@@ -97,20 +114,32 @@ def _validate_final_artifact(
         errors.extend(_validate_safe_path(artifact.relative_path, label="relative_path"))
         normalized = _normalize_path(artifact.relative_path)
         if normalized is not None:
+            if normalized.startswith(f"{INTERMEDIATE_PREFIX}/"):
+                errors.append(
+                    f"relative_path must be a workspace destination, not intermediate staging: "
+                    f"{artifact.relative_path!r}"
+                )
             if normalized in seen_paths:
                 errors.append(f"duplicate relative_path {normalized!r}")
             seen_paths.add(normalized)
 
-    if "publish_relative_path" in artifact.model_fields_set and artifact.publish_relative_path:
-        errors.extend(
-            _validate_safe_path(
-                artifact.publish_relative_path,
-                label="publish_relative_path",
-            )
-        )
+    has_content = bool(artifact.content.strip())
+    has_file = False
+    if workspace is not None and artifact.relative_path:
+        try:
+            destination = resolve_within_workspace(workspace, artifact.relative_path)
+            has_file = destination.is_file()
+        except ValueError as exc:
+            errors.append(str(exc))
 
-    if not artifact.content.strip():
-        errors.append(f"empty content for {artifact.plan_item_id!r}")
+    if not has_content and not has_file:
+        if workspace is not None:
+            errors.append(
+                f"deliverable missing at {artifact.relative_path!r}: write the file to the "
+                "workspace or include content in the transaction"
+            )
+        else:
+            errors.append(f"empty content for {artifact.plan_item_id!r}")
 
     return errors
 

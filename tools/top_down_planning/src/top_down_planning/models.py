@@ -100,7 +100,7 @@ class RenderStage(str, Enum):
     BATCHES = "batches"
     ASSEMBLY = "assembly"
     REVIEW = "review"
-    PUBLICATION = "publication"
+    FINALIZATION = "finalization"
     COMPLETE = "complete"
 
 
@@ -119,7 +119,7 @@ class RenderOutputReviewStatus(str, Enum):
     BLOCKED = "blocked"
 
 
-class PublicationStatus(str, Enum):
+class DeliverableStatus(str, Enum):
     PENDING = "pending"
     COMPLETE = "complete"
     FAILED = "failed"
@@ -140,7 +140,6 @@ class RenderManifestItem(BaseModel):
     assigned_batch_id: str
     artifact_key: str
     relative_path: str | None = None
-    publish_relative_path: str | None = None
     artifact_role: Literal["intermediate", "final"] = "intermediate"
 
 
@@ -158,14 +157,11 @@ class RenderBatchArtifact(BaseModel):
     plan_item_id: str
     artifact_key: str
     relative_path: str | None = None
-    publish_relative_path: str | None = None
     content: str
 
     @field_validator("content")
     @classmethod
-    def _non_empty_content(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("content must not be empty")
+    def _allow_empty_content(cls, value: str) -> str:
         return value
 
 
@@ -194,8 +190,9 @@ class RenderState(BaseModel):
     render_manifest_digest: str = ""
     batches: dict[str, RenderBatchStateEntry] = Field(default_factory=dict)
     assembled_output_digest: str | None = None
+    deliverable_output_digest: str | None = None
     output_review_status: RenderOutputReviewStatus = RenderOutputReviewStatus.PENDING
-    publication_status: PublicationStatus = PublicationStatus.PENDING
+    deliverable_status: DeliverableStatus = DeliverableStatus.PENDING
     rerender_cycle: int = 0
     updated_at: datetime | None = None
 
@@ -204,7 +201,7 @@ class OwnedArtifactsLedger(BaseModel):
     schema_version: int = SCHEMA_VERSION
     output_dir: str
     artifacts: list[str] = Field(default_factory=list)
-    publication_digest: str | None = None
+    deliverable_digest: str | None = None
 
 
 class GenerationConfig(BaseModel):
@@ -436,7 +433,7 @@ class RenderedOutputReviewResult(BaseModel):
     plan_digest: str
     output_goal_digest: str
     render_manifest_digest: str
-    assembled_output_digest: str
+    deliverable_output_digest: str
     decision: RenderOutputReviewDecision
     summary: str
     findings: list[RenderOutputReviewFinding] = Field(default_factory=list)

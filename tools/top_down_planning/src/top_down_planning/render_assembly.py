@@ -11,7 +11,7 @@ import yaml
 from top_down_planning.digest import digest_text
 from top_down_planning.models import RenderBatchTransaction, RenderManifest
 from top_down_planning.persistence import render_assembled_dir, render_batch_transaction_path
-from top_down_planning.render_manifest import scheduled_batch_ids
+from top_down_planning.render_manifest import FINAL_BATCH_ID, scheduled_batch_ids
 from top_down_planning.render_tool import load_render_transaction
 
 
@@ -36,12 +36,15 @@ def assemble_render_output(
     manifest: RenderManifest,
     transactions: dict[str, RenderBatchTransaction],
 ) -> AssembledOutput:
+    """Assemble intermediate batch artifacts into internal staging."""
     errors = validate_assembly(manifest, transactions)
     if errors:
         raise ValueError("; ".join(errors))
 
     files: dict[str, str] = {}
     for item in manifest.items:
+        if item.artifact_role != "intermediate":
+            continue
         batch_txn = transactions[item.assigned_batch_id]
         artifact = next(
             art for art in batch_txn.artifacts if art.plan_item_id == item.plan_item_id
@@ -81,9 +84,15 @@ def validate_assembly(
     artifact_keys: set[str] = set()
     paths: set[str] = set()
 
-    manifest_ids = {item.plan_item_id for item in manifest.items}
+    manifest_ids = {
+        item.plan_item_id
+        for item in manifest.items
+        if item.artifact_role == "intermediate"
+    }
 
     for batch_id, txn in transactions.items():
+        if batch_id == FINAL_BATCH_ID:
+            continue
         for artifact in txn.artifacts:
             if artifact.plan_item_id not in manifest_ids:
                 errors.append(f"unknown rendered item {artifact.plan_item_id!r}")
@@ -105,6 +114,8 @@ def validate_assembly(
         errors.append(f"missing rendered artifacts: {sorted(missing)}")
 
     for item in manifest.items:
+        if item.artifact_role != "intermediate":
+            continue
         if item.plan_item_id not in rendered_ids:
             continue
         for dep in item.dependencies:
@@ -128,8 +139,7 @@ def _build_folder_index(manifest: RenderManifest) -> str:
                 "plan_item_id": item.plan_item_id,
                 "artifact_key": item.artifact_key,
                 "artifact_role": item.artifact_role,
-                "staging_path": item.relative_path,
-                "publish_path": item.publish_relative_path,
+                "path": item.relative_path,
                 "set_order": item.set_order,
                 "title": item.title,
                 "dependencies": list(item.dependencies),

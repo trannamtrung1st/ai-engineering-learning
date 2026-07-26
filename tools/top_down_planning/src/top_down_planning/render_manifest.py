@@ -106,11 +106,6 @@ def build_render_manifest(
     )
 
 
-def _resolve_publish_path(artifact) -> str | None:
-    if "publish_relative_path" in artifact.model_fields_set:
-        return artifact.publish_relative_path
-    return artifact.relative_path
-
 
 def _infer_output_metadata(final_paths: list[str]) -> tuple[OutputMode, str | None]:
     if not final_paths:
@@ -142,15 +137,13 @@ def apply_final_transaction_to_manifest(
     ]
     intermediate_count = len(intermediate_items)
     final_items: list[RenderManifestItem] = []
-    publish_paths: list[str] = []
+    deliverable_paths: list[str] = []
 
     for index, artifact in enumerate(transaction.artifacts, start=1):
-        staging_path = artifact.relative_path
-        if not staging_path:
+        destination_path = artifact.relative_path
+        if not destination_path:
             continue
-        publish_path = _resolve_publish_path(artifact)
-        if publish_path is not None:
-            publish_paths.append(publish_path)
+        deliverable_paths.append(destination_path)
 
         final_items.append(
             RenderManifestItem(
@@ -158,22 +151,35 @@ def apply_final_transaction_to_manifest(
                 top_level_branch_id="final",
                 order=FINAL_ORDER_BASE + index,
                 set_order=intermediate_count + index,
-                title=f"Final deliverable: {staging_path}",
+                title=f"Final deliverable: {destination_path}",
                 dependencies=[],
                 assigned_batch_id=FINAL_BATCH_ID,
                 artifact_key=artifact.artifact_key,
-                relative_path=staging_path,
-                publish_relative_path=publish_path,
+                relative_path=destination_path,
                 artifact_role="final",
             )
         )
 
-    output_mode, deliverable_root = _infer_output_metadata(publish_paths)
+    output_mode, deliverable_root = _infer_output_metadata(deliverable_paths)
     return manifest.model_copy(
         update={
             "items": intermediate_items + final_items,
             "output_mode": output_mode,
             "deliverable_root": deliverable_root,
+        }
+    )
+
+
+def strip_final_items_from_manifest(manifest: RenderManifest) -> RenderManifest:
+    """Remove agent-declared finals until the final batch transaction is recommitted."""
+    intermediate_items = [
+        item for item in manifest.items if item.artifact_role == "intermediate"
+    ]
+    return manifest.model_copy(
+        update={
+            "items": intermediate_items,
+            "output_mode": OutputMode.SINGLE_DOCUMENT,
+            "deliverable_root": None,
         }
     )
 
@@ -212,6 +218,8 @@ def manifest_is_valid(manifest: RenderManifest) -> bool:
             if item.assigned_batch_id != FINAL_BATCH_ID:
                 return False
             if not item.relative_path:
+                return False
+            if item.relative_path.startswith(f"{INTERMEDIATE_PREFIX}/"):
                 return False
     return True
 

@@ -44,7 +44,7 @@ RENDER_DIRNAME = "render"
 RENDER_STATE_FILENAME = "render-state.json"
 RENDER_MANIFEST_FILENAME = "manifest.yaml"
 OWNED_ARTIFACTS_FILENAME = "owned-artifacts.json"
-PUBLICATION_MANIFEST_FILENAME = "publication-manifest.yaml"
+DELIVERABLE_MANIFEST_FILENAME = "deliverable-manifest.yaml"
 
 
 def state_dir(output_dir: Path) -> Path:
@@ -197,8 +197,8 @@ def owned_artifacts_path(output_dir: Path) -> Path:
     return render_dir(output_dir) / OWNED_ARTIFACTS_FILENAME
 
 
-def publication_manifest_path(output_dir: Path) -> Path:
-    return render_dir(output_dir) / PUBLICATION_MANIFEST_FILENAME
+def deliverable_manifest_path(output_dir: Path) -> Path:
+    return render_dir(output_dir) / DELIVERABLE_MANIFEST_FILENAME
 
 
 def render_batch_dir(output_dir: Path, batch_id: str) -> Path:

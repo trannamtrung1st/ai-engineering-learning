@@ -23,6 +23,6 @@ The final synthesis batch should produce, when applicable:
 
 ## Output artifacts (optional sample)
 
-Illustrative layout only — not an exhaustive publish manifest:
+Illustrative layout only — not an exhaustive deliverable manifest:
 
 - `implementation-plan.md`

@@ -63,14 +63,12 @@ def test_apply_final_transaction_adds_agent_declared_items() -> None:
                 plan_item_id="final-indexmd",
                 artifact_key="final-indexmd",
                 relative_path="plans/demo/todos/INDEX.md",
-                publish_relative_path="plans/demo/todos/INDEX.md",
                 content="# Demo index\n",
             ),
             RenderBatchArtifact(
                 plan_item_id="final-manifestyaml",
                 artifact_key="final-manifestyaml",
                 relative_path="plans/demo/todos/manifest.yaml",
-                publish_relative_path="plans/demo/todos/manifest.yaml",
                 content="kind: implementation_todo_set\n",
             ),
         ],
@@ -135,7 +133,6 @@ def test_manifest_finals_require_committed_final_batch() -> None:
                     plan_item_id="final-planmd",
                     artifact_key="final-planmd",
                     relative_path="plan.md",
-                    publish_relative_path="plan.md",
                     content="# plan\n",
                 )
             ],
