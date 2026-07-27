@@ -16,18 +16,12 @@ import yaml
 
 from top_down_planning.errors import PersistenceError, ResumeError
 from top_down_planning.models import (
-    CommitJournalEntry,
-    CoordinatorState,
     FinalStatus,
     GenerationConfig,
-    OwnershipLedger,
-    PhaseCompletionRecord,
     PlanState,
     PlanningLimits,
+    RenderBatchSchedule,
     RenderConfig,
-    RenderDecisionRecord,
-    RenderManifest,
-    RenderNodeTransaction,
     RenderState,
     ReviewState,
     ReviewStatus,
@@ -48,11 +42,7 @@ STATE_DIRNAME = ".planning-output"
 LEGACY_STATE_DIRNAME = ".top-down-planning"
 RENDER_DIRNAME = "render"
 RENDER_STATE_FILENAME = "render-state.json"
-RENDER_MANIFEST_FILENAME = "manifest.yaml"
-OWNERSHIP_LEDGER_FILENAME = "ownership-ledger.yaml"
-COORDINATOR_STATE_FILENAME = "coordinator-state.json"
-COMMIT_JOURNAL_FILENAME = "commit-journal.ndjson"
-DELIVERABLE_MANIFEST_FILENAME = "deliverable-manifest.yaml"
+RENDER_SCHEDULE_FILENAME = "batch-schedule.yaml"
 
 
 def state_dir(output_dir: Path) -> Path:
@@ -181,218 +171,40 @@ def render_state_path(output_dir: Path) -> Path:
     return render_dir(output_dir) / RENDER_STATE_FILENAME
 
 
-def render_manifest_path(output_dir: Path) -> Path:
-    return render_dir(output_dir) / RENDER_MANIFEST_FILENAME
+def render_schedule_path(output_dir: Path) -> Path:
+    return render_dir(output_dir) / RENDER_SCHEDULE_FILENAME
 
 
-def render_context_dir(output_dir: Path) -> Path:
-    return render_dir(output_dir) / "context"
+def render_batches_dir(output_dir: Path) -> Path:
+    return render_dir(output_dir) / "batches"
+
+
+def batch_review_result_path(output_dir: Path, batch_index: int) -> Path:
+    return render_batches_dir(output_dir) / f"{batch_index:03d}" / "review-result.json"
+
+
+def load_render_schedule_from_output(output_dir: Path) -> RenderBatchSchedule | None:
+    from top_down_planning.render_schedule import load_render_schedule
+
+    path = render_schedule_path(output_dir)
+    if not path.is_file():
+        return None
+    try:
+        return load_render_schedule(path)
+    except (OSError, yaml.YAMLError, ValueError) as exc:
+        raise PersistenceError(f"Failed to load render schedule from {path}: {exc}") from exc
+
+
+def save_render_schedule_to_output(output_dir: Path, schedule: RenderBatchSchedule) -> None:
+    from top_down_planning.render_schedule import save_render_schedule
+
+    directory = render_dir(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    save_render_schedule(render_schedule_path(output_dir), schedule)
 
 
 def render_reviews_dir(output_dir: Path) -> Path:
     return render_dir(output_dir) / "reviews"
-
-
-def deliverable_manifest_path(output_dir: Path) -> Path:
-    return render_dir(output_dir) / DELIVERABLE_MANIFEST_FILENAME
-
-
-def load_render_manifest_from_output(output_dir: Path) -> RenderManifest | None:
-    from top_down_planning.render_manifest import load_render_manifest
-
-    path = render_manifest_path(output_dir)
-    if not path.is_file():
-        return None
-    try:
-        return load_render_manifest(path)
-    except (OSError, yaml.YAMLError, ValueError) as exc:
-        raise PersistenceError(f"Failed to load render manifest from {path}: {exc}") from exc
-
-
-def save_render_manifest_to_output(output_dir: Path, manifest: RenderManifest) -> None:
-    from top_down_planning.render_manifest import save_render_manifest
-
-    directory = render_dir(output_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    save_render_manifest(render_manifest_path(output_dir), manifest)
-
-
-def ownership_ledger_path(output_dir: Path) -> Path:
-    return render_dir(output_dir) / OWNERSHIP_LEDGER_FILENAME
-
-
-def coordinator_state_path(output_dir: Path) -> Path:
-    return render_dir(output_dir) / COORDINATOR_STATE_FILENAME
-
-
-def commit_journal_path(output_dir: Path) -> Path:
-    return render_dir(output_dir) / COMMIT_JOURNAL_FILENAME
-
-
-def render_decisions_dir(output_dir: Path) -> Path:
-    return render_dir(output_dir) / "decisions"
-
-
-def render_decision_path(
-    output_dir: Path,
-    node_id: str,
-    phase: str,
-    revision: int,
-) -> Path:
-    return render_decisions_dir(output_dir) / node_id / phase / f"{revision:04d}.yaml"
-
-
-def render_transactions_dir(output_dir: Path) -> Path:
-    return render_dir(output_dir) / "transactions"
-
-
-def render_transaction_dir(output_dir: Path, transaction_id: str) -> Path:
-    return render_transactions_dir(output_dir) / transaction_id
-
-
-def render_transaction_staging_dir(output_dir: Path, transaction_id: str) -> Path:
-    return render_transaction_dir(output_dir, transaction_id) / "staging"
-
-
-def render_staged_artifacts_dir(output_dir: Path) -> Path:
-    return render_dir(output_dir) / "staged-artifacts"
-
-
-def render_phases_dir(output_dir: Path) -> Path:
-    return render_dir(output_dir) / "phases"
-
-
-def render_phase_dir(output_dir: Path, phase_id: str) -> Path:
-    return render_phases_dir(output_dir) / phase_id
-
-
-def render_phase_completion_path(
-    output_dir: Path,
-    phase_id: str,
-    revision: int,
-) -> Path:
-    return render_phase_dir(output_dir, phase_id) / f"completion-{revision:04d}.yaml"
-
-
-def load_ownership_ledger(output_dir: Path) -> OwnershipLedger | None:
-    path = ownership_ledger_path(output_dir)
-    if not path.is_file():
-        return None
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return OwnershipLedger.model_validate(data)
-    except (OSError, yaml.YAMLError, ValueError) as exc:
-        raise PersistenceError(f"Failed to load ownership ledger from {path}: {exc}") from exc
-
-
-def save_ownership_ledger(output_dir: Path, ledger: OwnershipLedger) -> None:
-    target = ownership_ledger_path(output_dir)
-    _atomic_write_yaml(target, ledger.model_dump(mode="json"))
-
-
-def load_coordinator_state(output_dir: Path) -> CoordinatorState | None:
-    path = coordinator_state_path(output_dir)
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return CoordinatorState.model_validate(data)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
-        raise PersistenceError(f"Failed to load coordinator state from {path}: {exc}") from exc
-
-
-def save_coordinator_state(output_dir: Path, state: CoordinatorState) -> None:
-    target = coordinator_state_path(output_dir)
-    _atomic_write_json(target, state.model_dump(mode="json"))
-
-
-def save_render_decision(output_dir: Path, decision: RenderDecisionRecord) -> Path:
-    path = render_decision_path(
-        output_dir,
-        decision.node_id,
-        decision.phase.value,
-        decision.revision,
-    )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write_yaml(path, decision.model_dump(mode="json"))
-    return path
-
-
-def load_render_decision(path: Path) -> RenderDecisionRecord:
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return RenderDecisionRecord.model_validate(data)
-    except (OSError, yaml.YAMLError, ValueError) as exc:
-        raise PersistenceError(f"Failed to load render decision from {path}: {exc}") from exc
-
-
-def save_phase_completion(output_dir: Path, record: PhaseCompletionRecord) -> Path:
-    path = render_phase_completion_path(output_dir, record.phase_id, record.revision)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write_yaml(path, record.model_dump(mode="json"))
-    return path
-
-
-def load_phase_completion(path: Path) -> PhaseCompletionRecord:
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return PhaseCompletionRecord.model_validate(data)
-    except (OSError, yaml.YAMLError, ValueError) as exc:
-        raise PersistenceError(f"Failed to load phase completion from {path}: {exc}") from exc
-
-
-def save_render_node_transaction(output_dir: Path, transaction: RenderNodeTransaction) -> Path:
-    path = render_transaction_dir(output_dir, transaction.transaction_id) / "transaction.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write_yaml(path, transaction.model_dump(mode="json"))
-    return path
-
-
-def load_render_node_transaction(path: Path) -> RenderNodeTransaction:
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return RenderNodeTransaction.model_validate(data)
-    except (OSError, yaml.YAMLError, ValueError) as exc:
-        raise PersistenceError(f"Failed to load render node transaction from {path}: {exc}") from exc
-
-
-def append_commit_journal_entry(output_dir: Path, entry: CommitJournalEntry) -> None:
-    append_ndjson(commit_journal_path(output_dir), entry.model_dump(mode="json"))
-
-
-def rewrite_commit_journal(output_dir: Path, entries: list[CommitJournalEntry]) -> None:
-    path = commit_journal_path(output_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not entries:
-        path.unlink(missing_ok=True)
-        return
-    lines = [json.dumps(entry.model_dump(mode="json"), sort_keys=True) for entry in entries]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def delete_render_decision(
-    output_dir: Path,
-    node_id: str,
-    phase: str,
-    revision: int,
-) -> None:
-    path = render_decision_path(output_dir, node_id, phase, revision)
-    path.unlink(missing_ok=True)
-
-
-def load_commit_journal(output_dir: Path) -> list[CommitJournalEntry]:
-    path = commit_journal_path(output_dir)
-    if not path.is_file():
-        return []
-    entries: list[CommitJournalEntry] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            entries.append(CommitJournalEntry.model_validate(json.loads(line)))
-        except (json.JSONDecodeError, ValueError):
-            continue
-    return entries
 
 
 def rendered_output_review_result_path(output_dir: Path) -> Path:

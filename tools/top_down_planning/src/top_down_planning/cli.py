@@ -112,7 +112,7 @@ def _execute_run(
     no_notify: bool = False,
     render_only: bool = False,
     force_rerender: bool = False,
-    render_concurrent_batches: int | None = None,
+    render_batch_size: int | None = None,
 ) -> None:
     cli_notify = _cli_notify_override(notify=notify, no_notify=no_notify)
     try:
@@ -141,7 +141,7 @@ def _execute_run(
             embed_threshold=embed_threshold,
             render_only=render_only,
             force_rerender=force_rerender,
-            render_concurrent_batches=render_concurrent_batches,
+            render_batch_size=render_batch_size,
         )
     except PlanningToolError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -348,10 +348,10 @@ def main_callback(
         "--force-rerender",
         help="Discard prior render state and regenerate all rendered output",
     ),
-    render_concurrent_batches: Optional[int] = typer.Option(
+    render_batch_size: Optional[int] = typer.Option(
         None,
-        "--render-concurrent-batches",
-        help="Maximum concurrent render node sessions per generation group",
+        "--render-batch-size",
+        help="Maximum plan items per render batch",
     ),
 ) -> None:
     """Top-down planning via Cursor Agent CLI."""
@@ -391,7 +391,7 @@ def main_callback(
         no_notify=no_notify,
         render_only=render_only,
         force_rerender=force_rerender,
-        render_concurrent_batches=render_concurrent_batches,
+        render_batch_size=render_batch_size,
     )
 
 
@@ -497,8 +497,8 @@ def run_cmd(
         "--force-rerender",
         help="Discard prior render state and regenerate all rendered output",
     ),
-    render_concurrent_batches: Optional[int] = typer.Option(
-        None, "--render-concurrent-batches"
+    render_batch_size: Optional[int] = typer.Option(
+        None, "--render-batch-size"
     ),
 ) -> None:
     """Run or resume top-down planning."""
@@ -528,7 +528,7 @@ def run_cmd(
         no_notify=no_notify,
         render_only=render_only,
         force_rerender=force_rerender,
-        render_concurrent_batches=render_concurrent_batches,
+        render_batch_size=render_batch_size,
     )
 
 

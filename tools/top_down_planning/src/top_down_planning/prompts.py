@@ -394,58 +394,32 @@ items, and do not execute implementation work.
 """
 
 
-def format_render_node_tool_section(
-    *,
-    render_tool_command: str = "planning-render-tool",
-) -> str:
-    return f"""Use the render transaction CLI — do **not** write deliverables directly
-to workspace destinations.
+def _render_author_instructions() -> str:
+    return """Write deliverables directly to workspace destination paths.
 
-Workflow:
-1. Run `{render_tool_command} begin --node-id <id> --context-digest <digest>`.
-2. For `produce`, declare artifacts with `{render_tool_command} declare-artifact --json '<intent>'`
-   and stage content with `{render_tool_command} stage-artifact --artifact-key <key> --content-file <path>`.
-3. Record exactly one decision with `{render_tool_command} record-decision --decision produce|skip|defer`.
-4. Run `{render_tool_command} submit` to hand the candidate to the coordinator.
-
-Artifact intent JSON schema:
-```json
-{{
-  "artifact_key": "feature-guest-checkout",
-  "path": "backlog/features/guest-checkout.md",
-  "location": "final",
-  "operation": "create",
-  "owner_kind": "node",
-  "owner_id": "item-012"
-}}
-```
+- Read the current workspace deliverables listed in context before editing.
+- Integrate your contribution into the existing output without discarding valid prior work.
+- You may use temporary files internally, but final content must live at workspace paths.
+- Do not modify files under `.planning-output/`.
 """
 
 
-def build_render_node_prompt(
+def build_render_scaffold_prompt(
     *,
-    node_id: str,
     plan_digest: str,
     output_goal_digest: str,
     render_config_digest: str,
-    node_context_markdown: str,
+    context_markdown: str,
     output_goal: LoadedOutputGoal,
     workspace: Path,
     embed_threshold: int,
     validation_feedback: list[str] | None = None,
     agent_context: ResolvedAgentContext | None = None,
-    render_tool_command: str = "planning-render-tool",
 ) -> str:
-    feedback_block = ""
-    if validation_feedback:
-        feedback_block = (
-            "## Validation feedback from previous attempt\n"
-            + "\n".join(f"- {error}" for error in validation_feedback)
-            + "\n\nFix every issue before submitting the node transaction.\n\n"
-        )
-    return f"""# Render node session: {node_id}
+    feedback_block = _format_validation_feedback(validation_feedback)
+    return f"""# Render scaffold session
 
-Decide whether this plan node should produce, skip, or defer artifacts.
+Establish destination paths, overall structure, and formatting conventions for the deliverables.
 
 ## Plan digest
 `{plan_digest}`
@@ -459,59 +433,34 @@ Decide whether this plan node should produce, skip, or defer artifacts.
 {feedback_block}{_format_agent_context_section(agent_context)}## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-## Node context
-{node_context_markdown}
+## Context
+{context_markdown}
 
-{format_render_node_tool_section(render_tool_command=render_tool_command)}
-
+{_render_author_instructions()}
 ## Instructions
-- Record exactly one `produce`, `skip`, or `defer` decision with a reason when skipping or deferring.
-- Stage candidate content only in the assigned private staging directory.
-- Submit the node transaction before ending the session.
+- Create the initial scaffold files at workspace paths implied by the output goal.
+- Leave clear section placeholders for later batch authors to fill in.
 - Do not modify canonical planning files.
 """
 
 
-def build_render_output_review_prompt(
+def build_render_batch_author_prompt(
     *,
-    output_dir: Path,
-    workspace: Path,
-    output_goal: LoadedOutputGoal,
+    batch_index: int,
     plan_digest: str,
-    manifest_digest: str,
-    deliverable_digest: str,
-    deliverable_paths: list[str],
     output_goal_digest: str,
+    render_config_digest: str,
+    context_markdown: str,
+    output_goal: LoadedOutputGoal,
+    workspace: Path,
     embed_threshold: int,
+    validation_feedback: list[str] | None = None,
     agent_context: ResolvedAgentContext | None = None,
-    review_tool_command: str = "planning-review-tool",
 ) -> str:
-    from top_down_planning.persistence import (
-        plan_path,
-        render_manifest_path,
-        render_staged_artifacts_dir,
-        render_transactions_dir,
-    )
+    feedback_block = _format_validation_feedback(validation_feedback)
+    return f"""# Render batch author session: batch {batch_index}
 
-    plan_file = plan_path(output_dir)
-    manifest_file = render_manifest_path(output_dir)
-    transactions_dir = render_transactions_dir(output_dir)
-    staged_dir = render_staged_artifacts_dir(output_dir)
-    destination_lines = "\n".join(
-        f"- {format_input_file_reference(workspace / relative_path, workspace)}"
-        for relative_path in deliverable_paths
-    ) or "- _No workspace deliverables were declared._"
-
-    return f"""# Rendered output review session
-
-Compare the confirmed plan, render manifest, workspace deliverables, and output goal.
-
-Final deliverables live at their **workspace destination paths**. Private staging under
-`.planning-output/render/transactions/` and `.planning-output/render/staged-artifacts/`
-is not authoritative — review published workspace files only.
-
-Use `needs_rerender` when affected render nodes can be rerun to fix deliverables.
-Use `blocked` for unfixable tool/goal mismatches that rerender alone cannot correct.
+Integrate the assigned plan items into the cumulative workspace deliverables.
 
 ## Plan digest
 `{plan_digest}`
@@ -519,8 +468,149 @@ Use `blocked` for unfixable tool/goal mismatches that rerender alone cannot corr
 ## Output-goal digest
 `{output_goal_digest}`
 
-## Render manifest digest
-`{manifest_digest}`
+## Render-config digest
+`{render_config_digest}`
+
+{feedback_block}{_format_agent_context_section(agent_context)}## Output goal
+{format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
+
+## Context
+{context_markdown}
+
+{_render_author_instructions()}
+## Instructions
+- Cover every assigned plan item in the current workspace deliverables.
+- Preserve valid content from earlier batches and the scaffold.
+- Do not modify canonical planning files.
+"""
+
+
+def build_render_batch_revision_prompt(
+    *,
+    batch_index: int,
+    plan_digest: str,
+    output_goal_digest: str,
+    render_config_digest: str,
+    context_markdown: str,
+    output_goal: LoadedOutputGoal,
+    workspace: Path,
+    embed_threshold: int,
+    findings_summary: str,
+    validation_feedback: list[str] | None = None,
+    agent_context: ResolvedAgentContext | None = None,
+) -> str:
+    feedback_block = _format_validation_feedback(validation_feedback)
+    return f"""# Render batch revision session: batch {batch_index}
+
+Revise the cumulative workspace deliverables to address batch review findings.
+
+## Plan digest
+`{plan_digest}`
+
+## Output-goal digest
+`{output_goal_digest}`
+
+## Render-config digest
+`{render_config_digest}`
+
+{feedback_block}{_format_agent_context_section(agent_context)}## Output goal
+{format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
+
+## Review findings
+{findings_summary or "_No findings provided._"}
+
+## Context
+{context_markdown}
+
+{_render_author_instructions()}
+## Instructions
+- Address every review finding for this batch.
+- Edit workspace deliverables directly; do not modify canonical planning files.
+"""
+
+
+def build_render_final_revision_prompt(
+    *,
+    plan_digest: str,
+    output_goal_digest: str,
+    render_config_digest: str,
+    context_markdown: str,
+    output_goal: LoadedOutputGoal,
+    workspace: Path,
+    embed_threshold: int,
+    findings_summary: str,
+    validation_feedback: list[str] | None = None,
+    agent_context: ResolvedAgentContext | None = None,
+) -> str:
+    feedback_block = _format_validation_feedback(validation_feedback)
+    return f"""# Render final revision session
+
+Revise the complete workspace deliverables to address final output review findings.
+
+## Plan digest
+`{plan_digest}`
+
+## Output-goal digest
+`{output_goal_digest}`
+
+## Render-config digest
+`{render_config_digest}`
+
+{feedback_block}{_format_agent_context_section(agent_context)}## Output goal
+{format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
+
+## Review findings
+{findings_summary or "_No findings provided._"}
+
+## Context
+{context_markdown}
+
+{_render_author_instructions()}
+## Instructions
+- Address every final review finding.
+- Edit workspace deliverables directly; do not modify canonical planning files.
+"""
+
+
+def build_render_batch_review_prompt(
+    *,
+    output_dir: Path,
+    workspace: Path,
+    output_goal: LoadedOutputGoal,
+    plan_digest: str,
+    schedule_digest: str,
+    batch_index: int,
+    batch_item_ids: list[str],
+    deliverable_digest: str,
+    deliverable_paths: list[str],
+    output_goal_digest: str,
+    embed_threshold: int,
+    agent_context: ResolvedAgentContext | None = None,
+    review_tool_command: str = "planning-review-tool",
+) -> str:
+    from top_down_planning.persistence import plan_path, render_schedule_path
+
+    plan_file = plan_path(output_dir)
+    schedule_file = render_schedule_path(output_dir)
+    destination_lines = "\n".join(
+        f"- {format_input_file_reference(workspace / relative_path, workspace)}"
+        for relative_path in deliverable_paths
+    ) or "- _No workspace deliverables were created yet._"
+
+    return f"""# Render batch review session: batch {batch_index}
+
+Review the cumulative workspace deliverables after batch {batch_index} authoring.
+
+Assigned plan items: {", ".join(batch_item_ids)}
+
+## Plan digest
+`{plan_digest}`
+
+## Output-goal digest
+`{output_goal_digest}`
+
+## Render schedule digest
+`{schedule_digest}`
 
 ## Deliverable output digest
 `{deliverable_digest}`
@@ -530,9 +620,90 @@ Use `blocked` for unfixable tool/goal mismatches that rerender alone cannot corr
 
 ## References
 - Confirmed plan: {format_input_file_reference(plan_file, workspace)}
-- Render manifest: {format_input_file_reference(manifest_file, workspace)}
-- Node transactions: {format_input_file_reference(transactions_dir, workspace)}
-- Staged artifacts: {format_input_file_reference(staged_dir, workspace)}
+- Render schedule: {format_input_file_reference(schedule_file, workspace)}
+
+## Workspace deliverables
+{destination_lines}
+
+Use `{review_tool_command} set-result --json '<result>'` then `{review_tool_command} finalize`.
+
+Result JSON schema:
+```json
+{{
+  "stage": "render_batch_review",
+  "batch_index": {batch_index},
+  "plan_digest": "{plan_digest}",
+  "output_goal_digest": "{output_goal_digest}",
+  "schedule_digest": "{schedule_digest}",
+  "deliverable_output_digest": "{deliverable_digest}",
+  "decision": "approve | needs_revision | blocked",
+  "summary": "...",
+  "findings": []
+}}
+```
+"""
+
+
+def _format_validation_feedback(validation_feedback: list[str] | None) -> str:
+    if not validation_feedback:
+        return ""
+    return (
+        "## Validation feedback from previous attempt\n"
+        + "\n".join(f"- {error}" for error in validation_feedback)
+        + "\n\nFix every issue before ending the session.\n\n"
+    )
+
+
+def build_render_output_review_prompt(
+    *,
+    output_dir: Path,
+    workspace: Path,
+    output_goal: LoadedOutputGoal,
+    plan_digest: str,
+    schedule_digest: str,
+    deliverable_digest: str,
+    deliverable_paths: list[str],
+    output_goal_digest: str,
+    embed_threshold: int,
+    agent_context: ResolvedAgentContext | None = None,
+    review_tool_command: str = "planning-review-tool",
+) -> str:
+    from top_down_planning.persistence import plan_path, render_schedule_path
+
+    plan_file = plan_path(output_dir)
+    schedule_file = render_schedule_path(output_dir)
+    destination_lines = "\n".join(
+        f"- {format_input_file_reference(workspace / relative_path, workspace)}"
+        for relative_path in deliverable_paths
+    ) or "- _No workspace deliverables were declared._"
+
+    return f"""# Rendered output review session
+
+Compare the confirmed plan, render schedule, workspace deliverables, and output goal.
+
+Final deliverables live at their **workspace destination paths**.
+
+Use `needs_revision` when targeted revision can fix deliverables.
+Use `blocked` for unfixable tool/goal mismatches.
+
+## Plan digest
+`{plan_digest}`
+
+## Output-goal digest
+`{output_goal_digest}`
+
+## Render schedule digest
+`{schedule_digest}`
+
+## Deliverable output digest
+`{deliverable_digest}`
+
+{_format_agent_context_section(agent_context)}## Output goal
+{format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
+
+## References
+- Confirmed plan: {format_input_file_reference(plan_file, workspace)}
+- Render schedule: {format_input_file_reference(schedule_file, workspace)}
 
 ## Workspace deliverables
 {destination_lines}
@@ -545,12 +716,13 @@ Result JSON schema:
   "stage": "rendered_output_review",
   "plan_digest": "{plan_digest}",
   "output_goal_digest": "{output_goal_digest}",
-  "render_manifest_digest": "{manifest_digest}",
+  "schedule_digest": "{schedule_digest}",
   "deliverable_output_digest": "{deliverable_digest}",
-  "decision": "approve | needs_rerender | blocked",
+  "decision": "approve | needs_revision | blocked",
   "summary": "...",
   "findings": [],
-  "affected_node_ids": []
+  "affected_batch_indices": [],
+  "affected_artifact_paths": []
 }}
 ```
 """

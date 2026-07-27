@@ -4,7 +4,8 @@ from top_down_planning.input_loader import load_markdown_input, load_output_goal
 from top_down_planning.models import DEFAULT_INLINE_EMBED_THRESHOLD
 from top_down_planning.prompts import (
     build_planning_prompt,
-    build_render_node_prompt,
+    build_render_batch_author_prompt,
+    build_render_scaffold_prompt,
     format_embedded_markdown,
     format_input_document_section,
     format_input_file_reference,
@@ -407,46 +408,42 @@ def test_prompt_omits_stop_hint_section_when_not_provided(
     assert "Expansion stop guidance" not in prompt
 
 
-def test_render_node_prompt_references_digests_and_tool(
+def test_render_scaffold_prompt_references_digests(
     tmp_path: Path,
-    example_input: Path,
 ) -> None:
     output_goal = render_output_goal()
 
-    prompt = build_render_node_prompt(
-        node_id="item-001",
+    prompt = build_render_scaffold_prompt(
         plan_digest="d" * 64,
         output_goal_digest=output_goal.digest,
         render_config_digest="c" * 64,
-        node_context_markdown="## Current node\n- Title: Root\n",
+        context_markdown="## Context\n",
         output_goal=output_goal,
         workspace=tmp_path,
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
     )
 
-    assert "Render node session: item-001" in prompt
+    assert "Render scaffold session" in prompt
     assert "d" * 64 in prompt
     assert "Produce an actionable implementation plan" in prompt
-    assert "planning-render-tool" in prompt
-    assert "record-decision" in prompt
+    assert "workspace destination paths" in prompt
 
 
-def test_render_node_prompt_includes_validation_feedback(
+def test_render_batch_author_prompt_includes_batch_index(
     tmp_path: Path,
 ) -> None:
     output_goal = render_output_goal()
 
-    prompt = build_render_node_prompt(
-        node_id="item-002",
+    prompt = build_render_batch_author_prompt(
+        batch_index=0,
         plan_digest="d" * 64,
         output_goal_digest=output_goal.digest,
         render_config_digest="c" * 64,
-        node_context_markdown="## Current node\n",
+        context_markdown="## Context\n",
         output_goal=output_goal,
         workspace=tmp_path,
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
-        validation_feedback=["Missing artifact for item-002"],
     )
 
-    assert "Validation feedback from previous attempt" in prompt
-    assert "item-002" in prompt
+    assert "Render batch author session: batch 0" in prompt
+    assert "Produce an actionable implementation plan" in prompt

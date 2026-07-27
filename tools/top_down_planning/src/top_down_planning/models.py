@@ -78,48 +78,42 @@ class WholePlanContextMode(str, Enum):
     HYBRID = "hybrid"
 
 
-class RenderScope(str, Enum):
-    ALL_NODES = "all_nodes"
-    ACTIONABLE_NODES = "actionable_nodes"
-
-
-class FinalSynthesisMode(str, Enum):
-    OPTIONAL = "optional"
-    REQUIRED = "required"
-
-
-class RollupConfig(BaseModel):
-    enabled: bool = False
-
-
 class RenderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    dry_run: bool = False
-    concurrent_batches: int = 3
+    batch_size: int = 3
+    batch_strategy: BatchStrategy = BatchStrategy.COHERENT
     max_retries: int = 3
     whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID
+    max_context_characters: int = 30000
     final_review: bool = True
-    max_rerender_cycles: int = 2
-    scope: RenderScope = RenderScope.ALL_NODES
-    allow_final_publication: bool = True
-    allow_staged_artifacts: bool = True
-    final_synthesis: FinalSynthesisMode = FinalSynthesisMode.OPTIONAL
-    rollup: RollupConfig = Field(default_factory=RollupConfig)
+    max_batch_revision_cycles: int = 1
+    max_final_revision_cycles: int = 2
+    scaffold: bool = True
 
 
 class RenderStage(str, Enum):
-    MANIFEST = "manifest"
-    WAVES = "waves"
-    REVIEW = "review"
+    SCAFFOLD = "scaffold"
+    BATCHES = "batches"
+    FINAL_REVIEW = "final_review"
     COMPLETE = "complete"
+
+
+class RenderBatchStatus(str, Enum):
+    PENDING = "pending"
+    AUTHORING = "authoring"
+    REVIEWING = "reviewing"
+    REVISING = "revising"
+    APPROVED = "approved"
+    FAILED = "failed"
+    BLOCKED = "blocked"
 
 
 class RenderOutputReviewStatus(str, Enum):
     PENDING = "pending"
     SKIPPED = "skipped"
     APPROVED = "approved"
-    NEEDS_RERENDER = "needs_rerender"
+    NEEDS_REVISION = "needs_revision"
     BLOCKED = "blocked"
 
 
@@ -129,266 +123,40 @@ class DeliverableStatus(str, Enum):
     FAILED = "failed"
 
 
-class RenderDecisionKind(str, Enum):
-    PRODUCE = "produce"
-    SKIP = "skip"
-    DEFER = "defer"
-
-
-class RenderNodePhase(str, Enum):
-    RENDER = "render"
-    ROLLUP = "rollup"
-
-
-class DeferredToKind(str, Enum):
-    NODE = "node"
-    PHASE = "phase"
-
-
-class DeferredTo(BaseModel):
-    kind: DeferredToKind
-    id: str
-    phase: RenderNodePhase | None = None
-
-
-class ArtifactLocation(str, Enum):
-    FINAL = "final"
-    STAGED = "staged"
-
-
-class ArtifactOperation(str, Enum):
-    CREATE = "create"
-    UPDATE = "update"
-    DELETE = "delete"
-
-
-class OwnerKind(str, Enum):
-    NODE = "node"
-    PHASE = "phase"
-
-
-class ArtifactIntent(BaseModel):
-    artifact_key: str
-    path: str
-    location: ArtifactLocation
-    operation: ArtifactOperation
-    owner_kind: OwnerKind
-    owner_id: str
-    content_digest: str | None = None
-    prior_content_digest: str | None = None
-
-
-class OwnershipChange(BaseModel):
-    path: str
-    prior_owner_kind: OwnerKind
-    prior_owner_id: str
-    new_owner_kind: OwnerKind
-    new_owner_id: str
-
-
-class RenderDecisionRecord(BaseModel):
-    schema_version: int = SCHEMA_VERSION
-    run_id: str
-    decision_id: str
-    node_id: str
-    phase: RenderNodePhase = RenderNodePhase.RENDER
-    revision: int = 1
-    supersedes: str | None = None
-    plan_digest: str
-    decision: RenderDecisionKind
-    reason: str = ""
-    deferred_to: DeferredTo | None = None
-    resolves: list[str] = Field(default_factory=list)
-    context_digest: str = ""
-    read_set_digest: str = ""
-    commit_sequence: int | None = None
-    artifacts: list[ArtifactIntent] = Field(default_factory=list)
-    ownership_changes: list[OwnershipChange] = Field(default_factory=list)
-    committed_at: str | None = None
-
-
-class PhaseType(str, Enum):
-    SYNTHESIS = "synthesis"
-    ROLLUP = "rollup"
-
-
-class PhaseStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMMITTED = "committed"
-    INVALIDATED = "invalidated"
-    FAILED = "failed"
-
-
-class PhaseCompletionRecord(BaseModel):
-    schema_version: int = SCHEMA_VERSION
-    run_id: str
-    phase_id: str
-    phase_type: PhaseType
-    status: PhaseStatus = PhaseStatus.PENDING
-    revision: int = 1
-    supersedes: str | None = None
-    resolves: list[str] = Field(default_factory=list)
-    transaction_ids: list[str] = Field(default_factory=list)
-    commit_sequence: int | None = None
-    committed_at: str | None = None
-
-
-class NodeRenderRevisionStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    SUBMITTED = "submitted"
-    COMMITTED = "committed"
-    INVALIDATED = "invalidated"
-    FAILED = "failed"
-    DEPENDENCY_FAILED = "dependency_failed"
-
-
-class NodeRenderRevision(BaseModel):
-    status: NodeRenderRevisionStatus = NodeRenderRevisionStatus.PENDING
-    state_id: str | None = None
-    decision: RenderDecisionKind | None = None
-    decision_id: str | None = None
-    decision_digest: str | None = None
-    attempts: int = 0
-    artifacts: list[str] = Field(default_factory=list)
-
-
-class NodeRenderPhaseState(BaseModel):
-    current_revision: int = 1
-    revisions: dict[int, NodeRenderRevision] = Field(default_factory=dict)
-
-
-class RenderManifestItemStatus(str, Enum):
-    PENDING = "pending"
-    COMMITTED = "committed"
-    SKIPPED = "skipped"
-    DEFERRED = "deferred"
-    FAILED = "failed"
-    DEPENDENCY_FAILED = "dependency_failed"
-
-
-class RenderManifestItem(BaseModel):
-    plan_item_id: str
-    parent_id: str | None = None
-    depth: int = 0
-    order: int = 1
-    wave: int = 0
-    generation_group: int = 0
-    assigned_wave_id: str = ""
-    phase: RenderNodePhase = RenderNodePhase.RENDER
-    revision: int = 1
-    decision_path: str | None = None
-    status: RenderManifestItemStatus = RenderManifestItemStatus.PENDING
-    title: str = ""
+class RenderBatchItem(BaseModel):
+    batch_index: int
+    item_ids: list[str]
     dependencies: list[str] = Field(default_factory=list)
-    top_level_branch_id: str = ""
+    status: RenderBatchStatus = RenderBatchStatus.PENDING
+    revision_cycle: int = 0
+    title: str = ""
 
 
-class RenderManifest(BaseModel):
+class RenderBatchSchedule(BaseModel):
     schema_version: int = SCHEMA_VERSION
     run_id: str
     plan_digest: str
     output_goal_digest: str
     render_config_digest: str
-    items: list[RenderManifestItem] = Field(default_factory=list)
+    batches: list[RenderBatchItem] = Field(default_factory=list)
 
 
 class RenderState(BaseModel):
     schema_version: int = SCHEMA_VERSION
-    stage: RenderStage = RenderStage.MANIFEST
+    stage: RenderStage = RenderStage.SCAFFOLD
     run_id: str = ""
     plan_digest: str = ""
     output_goal_digest: str = ""
     render_config_digest: str = ""
-    render_manifest_digest: str = ""
-    commit_sequence: int = 0
-    nodes: dict[str, dict[str, NodeRenderPhaseState]] = Field(default_factory=dict)
+    schedule_digest: str = ""
+    current_batch_index: int = 0
+    artifact_paths: list[str] = Field(default_factory=list)
     deliverable_output_digest: str | None = None
     output_review_status: RenderOutputReviewStatus = RenderOutputReviewStatus.PENDING
     deliverable_status: DeliverableStatus = DeliverableStatus.PENDING
-    rerender_cycle: int = 0
+    final_revision_cycle: int = 0
+    scaffold_complete: bool = False
     updated_at: datetime | None = None
-
-
-class OwnershipLedgerEntryState(str, Enum):
-    ACTIVE = "active"
-    DELETED = "deleted"
-
-
-class OwnershipLedgerEntry(BaseModel):
-    location: ArtifactLocation
-    state: OwnershipLedgerEntryState = OwnershipLedgerEntryState.ACTIVE
-    owner_kind: OwnerKind
-    owner_id: str
-    artifact_key: str
-    content_digest: str | None = None
-    prior_content_digest: str | None = None
-    last_transaction_id: str | None = None
-    commit_sequence: int | None = None
-    deleting_decision_id: str | None = None
-
-
-class OwnershipLedger(BaseModel):
-    schema_version: int = SCHEMA_VERSION
-    artifacts: dict[str, OwnershipLedgerEntry] = Field(default_factory=dict)
-
-
-class CoordinatorState(BaseModel):
-    schema_version: int = SCHEMA_VERSION
-    workspace_generation: int = 0
-    active_run_id: str | None = None
-    frozen_for_review: bool = False
-
-
-class CommitJournalEntryStatus(str, Enum):
-    PREPARED = "prepared"
-    PUBLISHING = "publishing"
-    COMMITTED = "committed"
-    ABORTED = "aborted"
-
-
-class CommitJournalEntry(BaseModel):
-    transaction_id: str
-    manifest_slot: int
-    node_id: str | None = None
-    phase_id: str | None = None
-    status: CommitJournalEntryStatus = CommitJournalEntryStatus.PREPARED
-    workspace_generation: int = 0
-    decision_id: str | None = None
-    published_paths: list[str] = Field(default_factory=list)
-    payload_digest: str = ""
-
-
-class RenderContextSnapshot(BaseModel):
-    context_digest: str
-    read_set_digest: str
-    plan_digest: str
-    node_id: str
-    phase: RenderNodePhase = RenderNodePhase.RENDER
-    ancestor_decision_ids: list[str] = Field(default_factory=list)
-    dependency_decision_ids: list[str] = Field(default_factory=list)
-    owned_artifact_paths: list[str] = Field(default_factory=list)
-
-
-class RenderNodeTransaction(BaseModel):
-    schema_version: int = SCHEMA_VERSION
-    transaction_id: str
-    node_id: str
-    phase: RenderNodePhase = RenderNodePhase.RENDER
-    revision: int = 1
-    context_digest: str
-    read_set_digest: str
-    plan_digest: str
-    output_goal_digest: str
-    render_config_digest: str
-    decision: RenderDecisionKind | None = None
-    reason: str = ""
-    deferred_to: DeferredTo | None = None
-    resolves: list[str] = Field(default_factory=list)
-    artifacts: list[ArtifactIntent] = Field(default_factory=list)
-    ownership_changes: list[OwnershipChange] = Field(default_factory=list)
-    staged_files: dict[str, str] = Field(default_factory=dict)
 
 
 class GenerationConfig(BaseModel):
@@ -604,14 +372,41 @@ class RenderOutputReviewFinding(BaseModel):
     severity: ReviewFindingSeverity
     category: RenderOutputFindingCategory
     plan_item_ids: list[str] = Field(default_factory=list)
-    artifact_keys: list[str] = Field(default_factory=list)
+    artifact_paths: list[str] = Field(default_factory=list)
     description: str
     recommended_change: str = ""
 
 
+class RenderBatchReviewDecision(str, Enum):
+    APPROVE = "approve"
+    NEEDS_REVISION = "needs_revision"
+    BLOCKED = "blocked"
+
+
+class RenderBatchReviewFinding(BaseModel):
+    severity: ReviewFindingSeverity
+    category: RenderOutputFindingCategory
+    plan_item_ids: list[str] = Field(default_factory=list)
+    artifact_paths: list[str] = Field(default_factory=list)
+    description: str
+    recommended_change: str = ""
+
+
+class RenderBatchReviewResult(BaseModel):
+    stage: Literal["render_batch_review"] = "render_batch_review"
+    batch_index: int
+    plan_digest: str
+    output_goal_digest: str
+    schedule_digest: str
+    deliverable_output_digest: str
+    decision: RenderBatchReviewDecision
+    summary: str
+    findings: list[RenderBatchReviewFinding] = Field(default_factory=list)
+
+
 class RenderOutputReviewDecision(str, Enum):
     APPROVE = "approve"
-    NEEDS_RERENDER = "needs_rerender"
+    NEEDS_REVISION = "needs_revision"
     BLOCKED = "blocked"
 
 
@@ -619,12 +414,13 @@ class RenderedOutputReviewResult(BaseModel):
     stage: Literal["rendered_output_review"] = "rendered_output_review"
     plan_digest: str
     output_goal_digest: str
-    render_manifest_digest: str
+    schedule_digest: str
     deliverable_output_digest: str
     decision: RenderOutputReviewDecision
     summary: str
     findings: list[RenderOutputReviewFinding] = Field(default_factory=list)
-    affected_node_ids: list[str] = Field(default_factory=list)
+    affected_batch_indices: list[int] = Field(default_factory=list)
+    affected_artifact_paths: list[str] = Field(default_factory=list)
 
 
 class ReviewFindingCategory(str, Enum):

@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic fake Cursor agent for planning integration tests.
-
-Controlled by environment:
-
-- FAKE_AGENT_MODE: planning|timeout|malformed|crash|split
-- FAKE_AGENT_PLANNING_JSON: full planning response override
-- FAKE_AGENT_EXPAND_ROOT=true expands item-001 once, then marks leaves actionable
-- PLANNING_TOOL_TXN_FILE / PLANNING_TOOL_SELECTED_IDS / PLANNING_TOOL_PLAN_FILE:
-  session scope for the planning transaction CLI
-"""
+"""Deterministic fake Cursor agent for planning integration tests."""
 
 from __future__ import annotations
 
@@ -26,13 +17,6 @@ if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 from top_down_planning.plan_tool import plan_tool_argv, resolve_plan_tool_command
-from top_down_planning.render_tool import (
-    ENV_CONTEXT_DIGEST,
-    ENV_NODE_ID,
-    ENV_STAGING_DIR,
-    render_tool_argv,
-    resolve_render_tool_command,
-)
 
 
 def emit(event: dict) -> None:
@@ -55,6 +39,10 @@ def _prompt_text() -> str:
     if prompt_file and Path(prompt_file).is_file():
         return Path(prompt_file).read_text(encoding="utf-8")
     return sys.argv[-1] if len(sys.argv) > 1 else ""
+
+
+def _workspace_root() -> Path:
+    return Path(os.environ.get("PLANNING_TOOL_WORKSPACE", os.getcwd())).resolve()
 
 
 def _selected_ids(prompt: str) -> list[str]:
@@ -178,16 +166,6 @@ def _write_planning_transaction(response: dict) -> None:
     _run_plan_tool("finalize")
 
 
-def _breakdown_titles(prompt: str) -> list[str]:
-    titles = re.findall(r"^### \d+\. (.+)$", prompt, re.MULTILINE)
-    if titles:
-        return titles
-    return [
-        "Define CLI interface",
-        "Implement CSV parser",
-    ]
-
-
 def _write_review_result(stage: str, prompt: str) -> None:
     result_file = os.environ.get("PLANNING_REVIEW_RESULT_FILE")
     if not result_file:
@@ -251,95 +229,86 @@ def _run_review_tool(*args: str) -> None:
     subprocess.run(argv, env=_plan_tool_env(), check=True)
 
 
-def _run_render_tool(*args: str) -> None:
-    command = resolve_render_tool_command()
-    subprocess.run(
-        render_tool_argv(command, *args),
-        env=_plan_tool_env(),
-        check=True,
+def _artifact_path() -> str:
+    return os.environ.get("FAKE_AGENT_RENDER_ARTIFACT", "implementation-plan.md")
+
+
+def _write_artifact(workspace: Path, relative_path: str, content: str) -> None:
+    destination = workspace / relative_path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(content, encoding="utf-8")
+
+
+def _write_scaffold_output(prompt: str) -> None:
+    workspace = _workspace_root()
+    path = _artifact_path()
+    titles = re.findall(r"^### \d+\. (.+)$", prompt, re.MULTILINE)
+    sections = "\n".join(f"## {title}\n\n_TBD_\n" for title in titles) or "## Overview\n\n_TBD_\n"
+    _write_artifact(
+        workspace,
+        path,
+        f"# Deliverable\n\nScaffold for cumulative render output.\n\n{sections}",
     )
 
 
-def _default_produce_node_id() -> str:
-    return os.environ.get("FAKE_AGENT_RENDER_PRODUCE_NODE", "item-002")
+def _write_batch_output(prompt: str) -> None:
+    workspace = _workspace_root()
+    path = _artifact_path()
+    destination = workspace / path
+    existing = destination.read_text(encoding="utf-8") if destination.is_file() else "# Deliverable\n\n"
+    batch_match = re.search(r"Render batch (?:author|revision) session: batch (\d+)", prompt)
+    batch_index = batch_match.group(1) if batch_match else "0"
+    titles = re.findall(r"^### Selected item `([^`]+)`", prompt, re.MULTILINE)
+    if not titles:
+        titles = re.findall(r"^### \d+\. (.+)$", prompt, re.MULTILINE)
+    additions = "\n".join(
+        f"## Batch {batch_index}: {title}\n\nRendered content for batch {batch_index}.\n"
+        for title in titles
+    ) or f"## Batch {batch_index}\n\nRendered batch content.\n"
+    _write_artifact(workspace, path, existing.rstrip() + "\n\n" + additions)
 
 
-def _write_render_node_transaction(prompt: str) -> None:
-    match = re.search(r"# Render node session: (\S+)", prompt)
-    node_id = os.environ.get(ENV_NODE_ID) or (match.group(1) if match else "item-001")
-    context_digest = os.environ.get(ENV_CONTEXT_DIGEST, "ctx")
-    staging_dir = Path(os.environ[ENV_STAGING_DIR])
-    staging_dir.mkdir(parents=True, exist_ok=True)
-
-    _run_render_tool(
-        "begin",
-        "--node-id",
-        node_id,
-        "--context-digest",
-        context_digest,
+def _write_render_batch_review(prompt: str) -> None:
+    digest_match = re.search(r"## Plan digest\n`([a-f0-9]+)`", prompt)
+    goal_match = re.search(r"## Output-goal digest\n`([a-f0-9]+)`", prompt)
+    schedule_match = re.search(r"## Render schedule digest\n`([a-f0-9]+)`", prompt)
+    deliverable_match = re.search(r"## Deliverable output digest\n`([a-f0-9]+)`", prompt)
+    batch_match = re.search(r"Render batch review session: batch (\d+)", prompt)
+    payload = {
+        "stage": "render_batch_review",
+        "batch_index": int(batch_match.group(1)) if batch_match else 0,
+        "plan_digest": digest_match.group(1) if digest_match else "0" * 64,
+        "output_goal_digest": goal_match.group(1) if goal_match else "0" * 64,
+        "schedule_digest": schedule_match.group(1) if schedule_match else "0" * 64,
+        "deliverable_output_digest": deliverable_match.group(1) if deliverable_match else "0" * 64,
+        "decision": "approve",
+        "summary": "Batch approved by fake reviewer.",
+        "findings": [],
+    }
+    _run_review_tool(
+        "set-result",
+        "--json",
+        json.dumps(payload, separators=(",", ":")),
     )
-
-    produce_node = _default_produce_node_id()
-    if node_id == produce_node and "implementation plan" in prompt.lower():
-        path = "implementation-plan.md"
-        artifact_key = f"artifact-{node_id}"
-        content_file = staging_dir / "deliverable.md"
-        content_file.write_text(_final_artifact_content(path), encoding="utf-8")
-        intent = {
-            "artifact_key": artifact_key,
-            "path": path,
-            "location": "final",
-            "operation": "create",
-            "owner_kind": "node",
-            "owner_id": node_id,
-        }
-        _run_render_tool(
-            "declare-artifact",
-            "--json",
-            json.dumps(intent, separators=(",", ":")),
-        )
-        _run_render_tool(
-            "stage-artifact",
-            "--artifact-key",
-            artifact_key,
-            "--content-file",
-            str(content_file),
-        )
-        _run_render_tool("record-decision", "--decision", "produce")
-    else:
-        _run_render_tool(
-            "record-decision",
-            "--decision",
-            "skip",
-            "--reason",
-            "Covered by primary deliverable node",
-        )
-    _run_render_tool("submit")
-
-
-def _final_artifact_content(relative_path: str) -> str:
-    if relative_path.endswith(".md"):
-        return f"# Deliverable\n\nRendered content for `{relative_path}`.\n"
-    if relative_path.endswith((".yaml", ".yml")):
-        return f"id: rendered\ntitle: {relative_path}\n"
-    return f"Rendered content for {relative_path}.\n"
+    _run_review_tool("finalize")
 
 
 def _write_render_output_review(prompt: str) -> None:
     digest_match = re.search(r"## Plan digest\n`([a-f0-9]+)`", prompt)
     goal_match = re.search(r"## Output-goal digest\n`([a-f0-9]+)`", prompt)
-    manifest_match = re.search(r"## Render manifest digest\n`([a-f0-9]+)`", prompt)
+    schedule_match = re.search(r"## Render schedule digest\n`([a-f0-9]+)`", prompt)
     deliverable_match = re.search(r"## Deliverable output digest\n`([a-f0-9]+)`", prompt)
     payload = {
         "stage": "rendered_output_review",
         "plan_digest": digest_match.group(1) if digest_match else "0" * 64,
         "output_goal_digest": goal_match.group(1) if goal_match else "0" * 64,
-        "render_manifest_digest": manifest_match.group(1) if manifest_match else "0" * 64,
+        "schedule_digest": schedule_match.group(1) if schedule_match else "0" * 64,
         "deliverable_output_digest": deliverable_match.group(1) if deliverable_match else "0" * 64,
         "decision": "approve",
         "summary": "Rendered output approved by fake reviewer.",
         "findings": [],
-        "affected_node_ids": [],
+        "affected_batch_indices": [],
+        "affected_artifact_paths": [],
     }
     _run_review_tool(
         "set-result",
@@ -358,17 +327,59 @@ def main() -> int:
     mode = os.environ.get("FAKE_AGENT_MODE", "planning")
     prompt = _prompt_text()
 
-    if "Render node session" in prompt:
+    if "Render scaffold session" in prompt:
         emit(
             {
                 "type": "system",
                 "subtype": "init",
-                "session_id": "fake-render-node-session",
+                "session_id": "fake-render-scaffold-session",
                 "model": "fake-model",
             }
         )
-        _write_render_node_transaction(prompt)
-        assistant("Submitted render node transaction.")
+        _write_scaffold_output(prompt)
+        assistant("Created render scaffold.")
+        emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
+        return 0
+
+    if "Render batch author session" in prompt or "Render batch revision session" in prompt:
+        emit(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "fake-render-batch-session",
+                "model": "fake-model",
+            }
+        )
+        _write_batch_output(prompt)
+        assistant("Updated cumulative render deliverables.")
+        emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
+        return 0
+
+    if "Render final revision session" in prompt:
+        emit(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "fake-render-final-revision-session",
+                "model": "fake-model",
+            }
+        )
+        _write_batch_output(prompt)
+        assistant("Applied final render revisions.")
+        emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
+        return 0
+
+    if "Render batch review session" in prompt:
+        emit(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "fake-render-batch-review-session",
+                "model": "fake-model",
+            }
+        )
+        _write_render_batch_review(prompt)
+        assistant("Finalized render batch review.")
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
         return 0
 

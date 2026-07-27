@@ -123,7 +123,7 @@ def merge_run_options(
     max_items: int | None = None,
     batch_size: int | None = None,
     concurrent_batches: int | None = None,
-    render_concurrent_batches: int | None = None,
+    render_batch_size: int | None = None,
     max_retries: int | None = None,
     max_children_per_expansion: int | None = None,
     session_timeout_seconds: int | None = None,
@@ -216,7 +216,7 @@ def merge_run_options(
     )
     render = _resolve_render_config(
         file_render=file_render,
-        cli_concurrent_batches=render_concurrent_batches,
+        cli_batch_size=render_batch_size,
         defaults=RenderConfig(),
     )
 
@@ -315,15 +315,15 @@ def options_to_render_config(options: ResolvedRunOptions) -> RenderConfig:
 def _resolve_render_config(
     *,
     file_render: RenderConfig | None,
-    cli_concurrent_batches: int | None,
+    cli_batch_size: int | None,
     defaults: RenderConfig,
 ) -> RenderConfig:
     base = file_render.model_copy() if file_render is not None else RenderConfig()
-    base.concurrent_batches = _pick_int(
-        cli_concurrent_batches,
-        file_render.concurrent_batches if file_render else None,
+    base.batch_size = _pick_int(
+        cli_batch_size,
+        file_render.batch_size if file_render else None,
         None,
-        defaults.concurrent_batches,
+        defaults.batch_size,
     )
     return base
 

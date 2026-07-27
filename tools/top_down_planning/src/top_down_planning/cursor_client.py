@@ -2,8 +2,8 @@
 
 Adapted from tools/implement_todos/src/todos_tool/cursor_client.py.
 Planning decomposition sessions use agent mode so agents can invoke the bundled
-planning transaction CLI; the final render session also uses agent mode so
-deliverables can be written directly to disk.
+planning transaction CLI; render sessions also use agent mode to write deliverables
+directly to workspace destination paths.
 """
 
 from __future__ import annotations

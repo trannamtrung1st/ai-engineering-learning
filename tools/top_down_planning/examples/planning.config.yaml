@@ -59,19 +59,17 @@ review:
   max_retries: 3
 
 # --- Render (post-confirmation) ------------------------------------------------
-# Separate from planning `generation.*`. Controls per-node progressive rendering.
+# Sequential cumulative authoring: scaffold → coherent batches → final review.
 
 render:
-  concurrent_batches: 3
+  batch_size: 3
+  batch_strategy: coherent
   max_retries: 3
   whole_plan_context: hybrid # embedded | referenced | hybrid
   final_review: true
-  max_rerender_cycles: 2
-  dry_run: false
-  scope: all_nodes
-  final_synthesis: optional  # required | optional
-  rollup:
-    enabled: false
+  max_batch_revision_cycles: 1
+  max_final_revision_cycles: 2
+  scaffold: true
 
 # --- Agent / Cursor (optional) ------------------------------------------------
 

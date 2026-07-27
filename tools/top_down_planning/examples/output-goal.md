@@ -2,8 +2,9 @@
 
 Produce an actionable implementation plan.
 
-The output goal may be a one-line prompt or a longer specification. The final render
-agent decides whether workspace files are required and which paths to use.
+The output goal may be a one-line prompt or a longer specification. Render author
+agents write deliverables directly to workspace destination paths established during
+scaffold and extended by each batch.
 
 ## Actionability criteria
 
@@ -16,7 +17,7 @@ Each actionable leaf item should include:
 
 ## Final views
 
-When the output goal calls for consolidated views, render agents may produce:
+When the output goal calls for consolidated views, render author agents integrate:
 
 1. a hierarchical planning view
 2. a dependency-safe actionable task list

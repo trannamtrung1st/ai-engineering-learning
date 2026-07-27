@@ -15,13 +15,13 @@ from tests.plan_factory import make_root_plan
 
 
 @pytest.mark.asyncio
-async def test_render_node_retry_records_audit_files(
+async def test_render_author_retry_records_audit_files(
     tmp_path: Path,
     example_input: Path,
     fake_agent_bin: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FAKE_AGENT_RENDER_PRODUCE_NODE", "item-001")
+    monkeypatch.chdir(tmp_path)
     loaded = load_markdown_input(example_input)
     loaded_goal = render_output_goal()
     output_dir = tmp_path / "planning-output"
@@ -43,7 +43,7 @@ async def test_render_node_retry_records_audit_files(
         output_goal_digest=loaded_goal.digest,
         limits=limits,
         generation=default_generation(),
-        render=RenderConfig(max_retries=2, final_review=False),
+        render=RenderConfig(max_retries=2, final_review=False, scaffold=False),
     )
 
     config = RunConfig(
@@ -52,36 +52,32 @@ async def test_render_node_retry_records_audit_files(
         output_dir=output_dir,
         workspace_root=tmp_path,
         limits=limits,
-        render=RenderConfig(max_retries=2, final_review=False),
+        render=RenderConfig(max_retries=2, final_review=False, scaffold=False),
         agent_bin=fake_agent_bin,
         skip_probe=True,
     )
     orch = Orchestrator(config)
     attempt_state = {"n": 0}
+    real_run = orch.client.run_session
 
-    def flaky_validate(*args, **kwargs):
+    async def flaky_session(*args, **kwargs):
         attempt_state["n"] += 1
         if attempt_state["n"] == 1:
-            return ["simulated validation failure"]
-        return []
+            from top_down_planning.errors import CursorSessionError
 
-    with patch(
-        "top_down_planning.render_flow.validate_node_render_transaction",
-        side_effect=flaky_validate,
-    ):
+            raise CursorSessionError("simulated session failure")
+        return await real_run(*args, **kwargs)
+
+    with patch.object(orch.client, "run_session", side_effect=flaky_session):
         await render_from_confirmed_plan(
             orch._render_flow_deps(loaded=loaded, output_dir=output_dir),
             plan=plan,
             run_state=run_state,
         )
 
-    node_dir = (
-        output_dir
-        / ".planning-output"
-        / "render"
-        / "transactions"
-        / "txn-item-001-render"
-    )
-    assert (node_dir / "request-001-prompt.md").is_file()
-    assert (node_dir / "request-002-prompt.md").is_file()
-    assert attempt_state["n"] == 2
+    batch_dir = output_dir / ".planning-output" / "render" / "batches" / "000"
+    assert (batch_dir / "batch-000-request-001-prompt.md").is_file()
+    assert (batch_dir / "batch-000-request-002-prompt.md").is_file()
+    retry_prompt = (batch_dir / "batch-000-request-002-prompt.md").read_text(encoding="utf-8")
+    assert "simulated session failure" in retry_prompt
+    assert attempt_state["n"] >= 2

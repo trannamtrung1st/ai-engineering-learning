@@ -1,6 +1,6 @@
 # Top-Down Planning Tool
 
-Generic CLI that progressively decomposes one Markdown input into a structured plan using Cursor Agent CLI in agent mode for decomposition (and agent mode for final render).
+Generic CLI that progressively decomposes one Markdown input into a structured plan using Cursor Agent CLI in agent mode for decomposition and sequential cumulative render authoring.
 
 This package mirrors the reusable infrastructure patterns from [`../implement_todos/`](../implement_todos/) while keeping planning-specific state and operations separate.
 
@@ -98,8 +98,8 @@ top-down-planning \
 The tool separates **user-facing deliverables** from **internal resumable state**.
 
 `--output` stores resumable planning state under `.planning-output/`. Final
-deliverables are written directly to workspace paths chosen by the final render agent from
-the output goal. They are not stored under `--output`.
+deliverables are written directly to workspace paths established by scaffold and batch
+author agents from the output goal. They are not stored under `--output`.
 
 Example layout:
 
@@ -117,24 +117,27 @@ workspace/
         ├── review-state.json
         └── render/
             ├── render-state.json
-            ├── manifest.yaml
-            ├── context/
-            ├── decisions/
-            ├── transactions/
+            ├── batch-schedule.yaml
+            ├── scaffold/
+            ├── batches/
             └── reviews/
 ```
 
 Goal-driven deliverables are written only when planning finishes with status `complete`
 and review status `confirmed` (when review is enabled). Rendering is a separate lifecycle
-from planning: after confirmation, the tool builds a deterministic per-node render manifest,
-schedules breadth-first waves with generation groups, runs concurrent node sessions, and
-commits each node's produce/skip/defer decision through a single-writer coordinator that
-publishes workspace artifacts and records ownership in a ledger.
+from planning: after confirmation, the tool runs a **sequential cumulative render pipeline**:
+
+1. **Scaffold** — one agent establishes destination paths, structure, and conventions.
+2. **Coherent batches** — actionable leaf items are grouped into deterministic batches;
+   one author agent at a time integrates each batch into the cumulative workspace output.
+3. **Batch review** — after each batch, an independent reviewer may request bounded revision.
+4. **Final review** — whole-output review with bounded targeted revision.
+
+Agents write deliverables directly to workspace destination paths. The orchestrator
+discovers artifacts by diffing workspace file hashes before and after each session.
 
 The output goal may be a one-line prompt or a longer specification. An optional
-`## Output artifacts` section is illustrative sample layout only. Each node decides whether
-to produce, skip, or defer; producing nodes stage content privately and declare final
-workspace paths through the render transaction CLI.
+`## Output artifacts` section is illustrative sample layout only.
 
 ### Render-only mode
 
@@ -155,7 +158,7 @@ top-down-planning \
   --output-goal-file updated-output-goal.md
 ```
 
-Force rerender of all nodes:
+Force rerender from scratch:
 
 ```bash
 top-down-planning \
@@ -164,17 +167,18 @@ top-down-planning \
   --force-rerender
 ```
 
-Configure per-node rendering separately from planning batching:
+Configure sequential render batching separately from planning batching:
 
 ```yaml
 render:
-  dry_run: false
-  concurrent_batches: 3
+  batch_size: 3
+  batch_strategy: coherent
   max_retries: 3
   whole_plan_context: hybrid
   final_review: true
-  max_rerender_cycles: 2
-  scope: all_nodes
+  max_batch_revision_cycles: 1
+  max_final_revision_cycles: 2
+  scaffold: true
 ```
 
 Incomplete, blocked, or failed planning runs keep internal state under `.planning-output/`
@@ -416,7 +420,7 @@ otherwise the tool reuses stored review/confirmation results only when their pla
 matches the current canonical plan, then proceeds to the next unfinished stage
 (review, confirmation, or render).
 
-Resume rejects changed input, changed output goal, or mismatched `generation`
+Resume rejects changed input, changed output goal, or mismatched `generation` or `render`
 settings. Safety limits (`max_iterations`, `max_items`, `max_retries`,
 `session_timeout_seconds`, `parse_error_threshold`) may be updated on resume —
 for example, raise `max_iterations` after hitting
@@ -443,7 +447,7 @@ top-down-planning --config ./examples/planning.config.yaml
 ```
 
 Uses [`examples/idea.md`](examples/idea.md) with an implementation-oriented output goal.
-After review and confirmation, producing render nodes write deliverables such as
+After review and confirmation, sequential render batches write deliverables such as
 `implementation-plan.md` when the output goal calls for them.
 
 **Generic non-software planning** — use a non-implementation goal; optionally disable
@@ -481,11 +485,12 @@ When `--stream-json` is enabled, planning-phase events include:
 Render-phase events include:
 
 - `render.only.started` (render-only mode)
-- `render.rollup.started` (when `rollup.enabled`)
-- `render.synthesis.skipped` (when `final_synthesis` is optional and skipped)
-- `render.synthesis.verified` (when `final_synthesis` is required and deliverables exist)
-- `render.rerender.started` / `render.rerender.completed` (targeted output-review rerender)
-- `render.review.started` / `render.review.completed`
+- `render.scaffold.started` / `render.scaffold.completed`
+- `render.batch.started` / `render.batch.completed`
+- `render.batch.review.started` / `render.batch.review.completed`
+- `render.batch.revision.started` / `render.batch.revision.completed`
+- `render.final_review.started` / `render.final_review.completed`
+- `render.final_revision.started` / `render.final_revision.completed`
 - `render.completed` (with `artifacts`)
 - `render.skipped` (when resuming with completed render state and existing deliverables)
 
@@ -504,13 +509,9 @@ python -m build
 
 Integration tests use a deterministic fake agent fixture; live Cursor tests are optional and marked `@pytest.mark.live`.
 
-## Design note: expanded internal nodes
+## Design note: render scope
 
-When an item is expanded, it becomes a non-leaf container marked `actionable` so it is
-no longer selected for expansion. With `render.scope: all_nodes` (default), every
-eligible node — including expanded containers — receives a render session (`produce`,
-`skip`, or `defer`). Use `scope: actionable_nodes` to limit scheduling to actionable
-nodes only (still includes non-leaf actionable parents).
-
-Plan items may declare dependencies on parent workstreams or sibling leaves. The render
-manifest normalizes dependency edges for wave scheduling and dependency-failure barriers.
+Rendering schedules **actionable leaf items** into coherent batches. Expanded
+parent/container items provide context in prompts but do not receive separate render
+sessions. Each batch author integrates its assigned leaves into the cumulative workspace
+deliverables established by the scaffold and prior batches.

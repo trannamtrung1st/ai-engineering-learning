@@ -1,4 +1,4 @@
-"""Unit tests for progressive render scheduling."""
+"""Unit tests for sequential render batch scheduling."""
 
 from __future__ import annotations
 
@@ -7,18 +7,12 @@ from top_down_planning.models import (
     PlanItem,
     PlanState,
     RenderConfig,
-    RenderScope,
     SourceMetadata,
 )
-from top_down_planning.render_scheduler import (
-    build_progressive_schedule,
-    build_rollup_schedule,
-    groups_in_wave,
-    unique_waves,
-)
+from top_down_planning.render_scheduler import build_render_batch_schedule, validate_batch_independence
 
 
-def _plan_with_hierarchy() -> PlanState:
+def _plan_with_leaves() -> PlanState:
     return PlanState(
         source=SourceMetadata(
             input_file="idea.md",
@@ -38,8 +32,8 @@ def _plan_with_hierarchy() -> PlanState:
             PlanItem(
                 id="item-002",
                 parent_id="item-001",
-                title="Child",
-                objective="Child objective",
+                title="Child A",
+                objective="Child A objective",
                 depth=1,
                 order=1,
                 decomposition_status=DecompositionStatus.ACTIONABLE,
@@ -47,61 +41,28 @@ def _plan_with_hierarchy() -> PlanState:
             PlanItem(
                 id="item-003",
                 parent_id="item-001",
-                title="Blocked child",
-                objective="Blocked",
+                title="Child B",
+                objective="Child B objective",
                 depth=1,
                 order=2,
-                decomposition_status=DecompositionStatus.BLOCKED,
-                blocked_reason="waiting",
+                decomposition_status=DecompositionStatus.ACTIONABLE,
             ),
         ],
     )
 
 
-def test_nodes_scheduled_in_increasing_depth():
-    plan = _plan_with_hierarchy()
-    items, errors = build_progressive_schedule(plan, render_config=RenderConfig())
+def test_build_render_batch_schedule_uses_actionable_leaves_only() -> None:
+    plan = _plan_with_leaves()
+    batches, errors = build_render_batch_schedule(plan, render_config=RenderConfig())
     assert errors == []
-    assert [item.depth for item in items] == sorted(item.depth for item in items)
+    scheduled_ids = {item_id for batch in batches for item_id in batch.item_ids}
+    assert scheduled_ids == {"item-002", "item-003"}
 
 
-def test_child_wave_after_parent_wave():
-    plan = _plan_with_hierarchy()
-    items, _ = build_progressive_schedule(plan, render_config=RenderConfig())
-    parent = next(item for item in items if item.plan_item_id == "item-001")
-    child = next(item for item in items if item.plan_item_id == "item-002")
-    assert child.wave > parent.wave
-
-
-def test_invalid_dependency_rejected():
-    plan = _plan_with_hierarchy()
-    items, errors = build_progressive_schedule(
-        plan,
-        render_config=RenderConfig(),
-        render_dependencies={"item-001": ["item-002"]},
-    )
-    assert items == []
-    assert any("shallower" in error for error in errors)
-
-
-def test_blocked_node_included_in_schedule():
-    plan = _plan_with_hierarchy()
-    items, _ = build_progressive_schedule(plan, render_config=RenderConfig())
-    ids = {item.plan_item_id for item in items}
-    assert "item-003" in ids
-
-
-def test_rollup_reverse_depth_order():
-    plan = _plan_with_hierarchy()
-    items, _ = build_rollup_schedule(plan, render_config=RenderConfig())
-    child = next(item for item in items if item.plan_item_id == "item-002")
-    parent = next(item for item in items if item.plan_item_id == "item-001")
-    assert child.wave < parent.wave
-
-
-def test_unique_waves_and_groups():
-    plan = _plan_with_hierarchy()
-    items, _ = build_progressive_schedule(plan, render_config=RenderConfig())
-    waves = unique_waves(items)
-    assert waves == [0, 1]
-    assert groups_in_wave(items, 0) == [0]
+def test_batches_do_not_mix_ancestors_and_descendants() -> None:
+    plan = _plan_with_leaves()
+    batches, _ = build_render_batch_schedule(plan, render_config=RenderConfig(batch_size=3))
+    for batch in batches:
+        items = [plan.item_by_id(item_id) for item_id in batch.item_ids]
+        items = [item for item in items if item is not None]
+        assert validate_batch_independence(plan, items) == []

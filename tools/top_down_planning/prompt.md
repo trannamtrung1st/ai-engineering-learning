@@ -389,46 +389,36 @@ planning-output/
         ├── 001-response.json
         └── render/
             ├── render-state.json
-            ├── manifest.yaml
-            ├── context/
-            ├── decisions/
-            ├── transactions/
-            ├── staged-artifacts/
+            ├── batch-schedule.yaml
+            ├── scaffold/
+            ├── batches/
             └── reviews/
 ```
 
-Each render node writes a transaction under `.planning-output/render/transactions/`.
-When audit is enabled, node sessions also write numbered audit sets under the transaction
-directory (request prompt, agent log, and transaction snapshots).
-
 `--output` holds internal resumable state under `.planning-output/`. Final deliverables
-are written to workspace paths declared by producing nodes through the render transaction CLI.
+are written directly to workspace destination paths by render author agents.
 
-Deliverables are produced by a **per-node render pipeline** after decomposition completes
-(and after review/confirmation when review is enabled). Rendering is a separate
+Deliverables are produced by a **sequential cumulative render pipeline** after decomposition
+completes (and after review/confirmation when review is enabled). Rendering is a separate
 lifecycle from planning:
 
-1. Build a deterministic per-node render manifest with breadth-first waves and generation groups.
-2. Run concurrent node sessions; each agent records exactly one `produce`, `skip`, or `defer`
-   decision via `planning-render-tool`, staging candidate content privately before submit.
-3. Commit decisions through a single-writer coordinator that publishes final workspace artifacts
-   and records ownership in a ledger.
-4. Optionally run whole-output semantic review (`rendered_output_review`) against the
-   workspace deliverables.
+1. Run a scaffold session that establishes destination paths, structure, and conventions.
+2. Build a deterministic coherent batch schedule over actionable leaf items.
+3. For each batch sequentially: author session → batch review → optional bounded revision.
+4. Run whole-output semantic review (`rendered_output_review`) with optional bounded final revision.
 
-The render manifest defines authoritative node order, wave grouping, and dependency edges.
-The output goal defines format and intent; an optional `## Output artifacts` section is
-sample layout only. Review prompts still embed a human-readable render brief derived from
-`plan.yaml` for semantic checks.
+The batch schedule defines authoritative batch order and assigned item IDs. The output goal
+defines format and intent; an optional `## Output artifacts` section is sample layout only.
+Review prompts embed a human-readable render brief derived from `plan.yaml`.
 
 Deliverables must be generated fresh from the confirmed plan. Zero workspace deliverables
-is valid when the output goal does not require files.
+is invalid once rendering starts unless the author sessions fail validation.
 
 Render agents must not copy or restore pre-existing files from git history or from paths
 cited in the output goal. They must not modify canonical state under `.planning-output/`.
 The tool backs up and restores `plan.yaml` if a session corrupts it.
 
-Render failures (node validation exhaustion, coordinator commit errors, blocked output review)
+Render failures (author validation exhaustion, blocked batch review, blocked final review)
 surface as explicit errors; there is no deterministic fallback deliverable.
 
 ### `plan.yaml`
@@ -452,7 +442,7 @@ file. Resume compatibility still uses SHA-256 digests of the resolved file conte
 
 ### Goal-driven deliverables
 
-The final render agent produces readable workspace files when the output goal calls for
+Render author agents produce readable workspace files when the output goal calls for
 them. Typical content preserves:
 
 * hierarchy;
@@ -555,9 +545,13 @@ Suggested events:
 {"type":"validation.failed","iteration":2,"errors":["Duplicate child title"]}
 {"type":"iteration.retrying","iteration":2,"attempt":2}
 {"type":"planning.completed","status":"complete","items":18,"actionable_items":11,"artifacts":["./planning-output/implementation-plan.md"]}
-{"type":"render.only.started","output":"./planning-output"}
-{"type":"render.review.started","cycle":0}
-{"type":"render.review.completed","status":"approved","cycle":0}
+{"type":"render.scaffold.completed","artifacts":["implementation-plan.md"]}
+{"type":"render.batch.started","batch_index":0,"item_ids":["item-002","item-003"]}
+{"type":"render.batch.completed","batch_index":0,"artifacts":["implementation-plan.md"]}
+{"type":"render.batch.review.started","batch_index":0,"cycle":0}
+{"type":"render.batch.review.completed","batch_index":0,"decision":"approve","cycle":0}
+{"type":"render.final_review.started","cycle":0}
+{"type":"render.final_review.completed","decision":"approve","cycle":0}
 {"type":"render.completed","artifacts":["./implementation-plan.md"]}
 ```
 

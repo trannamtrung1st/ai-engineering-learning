@@ -1,163 +1,207 @@
-"""Per-node render context preparation."""
+"""Cumulative context for sequential render batch sessions."""
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from top_down_planning.generation_context import ensure_plan_overview_artifact
+from top_down_planning.digest import digest_text
+from top_down_planning.errors import PlanningToolError
+from top_down_planning.generation_context import build_plan_overview
 from top_down_planning.input_loader import LoadedOutputGoal
-from top_down_planning.models import (
-    PlanItem,
-    PlanState,
-    RenderContextSnapshot,
-    RenderNodePhase,
-    WholePlanContextMode,
-)
-from top_down_planning.persistence import render_context_dir, render_transaction_staging_dir
-from top_down_planning.prompts import (
-    _ancestors,
-    format_input_file_reference,
-    format_output_goal_section,
-)
+from top_down_planning.models import PlanItem, PlanState, RenderBatchItem, WholePlanContextMode
+from top_down_planning.prompts import _format_item_context, format_input_file_reference
+from top_down_planning.render_brief import build_render_brief
 
 
 @dataclass(frozen=True)
-class PreparedRenderNodeContext:
-    node_context_markdown: str
-    context_snapshot: RenderContextSnapshot
-    context_path: Path
-    staging_dir: Path
-    overview_path: Path | None = None
+class PreparedRenderContext:
+    context_digest: str
+    context_markdown: str
+    batch_dir: Path
 
 
-def prepare_render_node_context(
+def prepare_scaffold_context(
     *,
     plan: PlanState,
-    node_id: str,
     output_dir: Path,
     workspace: Path,
     output_goal: LoadedOutputGoal,
+    plan_digest: str,
     whole_plan_context: WholePlanContextMode,
     embed_threshold: int,
-    plan_digest: str,
-    ancestor_decision_ids: list[str] | None = None,
-    owned_artifact_paths: list[str] | None = None,
-) -> PreparedRenderNodeContext:
-    from top_down_planning.digest import digest_text
-
-    plan_item = plan.item_by_id(node_id)
-    if plan_item is None:
-        raise ValueError(f"unknown node id: {node_id}")
-
-    context_root = render_context_dir(output_dir)
-    context_root.mkdir(parents=True, exist_ok=True)
-    overview_path = ensure_plan_overview_artifact(output_dir, plan, plan_digest)
-
-    transaction_id = f"txn-{node_id}-render"
-    staging_dir = render_transaction_staging_dir(output_dir, transaction_id)
-    staging_dir.mkdir(parents=True, exist_ok=True)
-
-    ancestor_ids = ancestor_decision_ids or []
-    owned_paths = owned_artifact_paths or []
-    snapshot_payload = {
-        "plan_digest": plan_digest,
-        "node_id": node_id,
-        "phase": RenderNodePhase.RENDER.value,
-        "ancestor_decision_ids": sorted(ancestor_ids),
-        "owned_artifact_paths": sorted(owned_paths),
-    }
-    context_digest = digest_text(
-        json.dumps(snapshot_payload, sort_keys=True, separators=(",", ":"))
-    )
-    snapshot = RenderContextSnapshot(
-        context_digest=context_digest,
-        read_set_digest=context_digest,
-        plan_digest=plan_digest,
-        node_id=node_id,
-        ancestor_decision_ids=sorted(ancestor_ids),
-        owned_artifact_paths=owned_paths,
-    )
-
-    context_path = context_root / f"{node_id}-context.md"
-    markdown = _build_node_context_markdown(
+) -> PreparedRenderContext:
+    batch_dir = output_dir / ".planning-output" / "render" / "scaffold"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    markdown = _build_context_markdown(
+        heading="Scaffold context",
         plan=plan,
-        plan_item=plan_item,
-        snapshot=snapshot,
-        overview_path=overview_path,
-        output_goal=output_goal,
+        assigned_items=[],
+        output_dir=output_dir,
         workspace=workspace,
-        embed_threshold=embed_threshold,
+        output_goal=output_goal,
+        plan_digest=plan_digest,
         whole_plan_context=whole_plan_context,
-        staging_dir=staging_dir,
-        owned_artifact_paths=owned_paths,
+        embed_threshold=embed_threshold,
+        artifact_paths=[],
+        include_full_brief=True,
     )
-    context_path.write_text(markdown, encoding="utf-8")
-
-    return PreparedRenderNodeContext(
-        node_context_markdown=markdown,
-        context_snapshot=snapshot,
-        context_path=context_path,
-        staging_dir=staging_dir,
-        overview_path=overview_path,
+    return PreparedRenderContext(
+        context_digest=digest_text(markdown),
+        context_markdown=markdown,
+        batch_dir=batch_dir,
     )
 
 
-def _build_node_context_markdown(
+def prepare_batch_context(
     *,
     plan: PlanState,
-    plan_item: PlanItem,
-    snapshot: RenderContextSnapshot,
-    overview_path: Path | None,
-    output_goal: LoadedOutputGoal,
+    batch: RenderBatchItem,
+    output_dir: Path,
     workspace: Path,
-    embed_threshold: int,
+    output_goal: LoadedOutputGoal,
+    plan_digest: str,
     whole_plan_context: WholePlanContextMode,
-    staging_dir: Path,
-    owned_artifact_paths: list[str],
-) -> str:
-    lines = [
-        f"# Render node context: {plan_item.id}",
-        "",
-        f"- Context digest: `{snapshot.context_digest}`",
-        f"- Private staging: `{staging_dir}`",
-        "",
-        "## Current node",
-        "",
-        f"- Title: {plan_item.title}",
-        f"- Objective: {plan_item.objective}",
-        f"- Depth: {plan_item.depth}",
-        f"- Status: {plan_item.decomposition_status.value}",
-        "",
+    embed_threshold: int,
+    artifact_paths: list[str],
+    revision: bool = False,
+) -> PreparedRenderContext:
+    batch_dir = output_dir / ".planning-output" / "render" / "batches" / f"{batch.batch_index:03d}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    assigned = [plan.item_by_id(item_id) for item_id in batch.item_ids]
+    missing_ids = [
+        item_id for item_id, item in zip(batch.item_ids, assigned, strict=True) if item is None
     ]
-    ancestors = _ancestors(plan, plan_item)
-    if ancestors:
-        lines.extend(["## Ancestors", ""])
-        for ancestor in ancestors:
-            lines.append(f"- [{ancestor.id}] {ancestor.title}")
-        lines.append("")
-
-    if owned_artifact_paths:
-        lines.extend(["## Owned artifacts", ""])
-        for path in owned_artifact_paths:
-            lines.append(f"- `{path}`")
-        lines.append("")
-
-    if whole_plan_context in {WholePlanContextMode.REFERENCED, WholePlanContextMode.HYBRID}:
-        if overview_path is not None:
-            lines.extend(["## Whole plan overview (read-only)", ""])
-            lines.append(format_input_file_reference(overview_path, workspace))
-
-    lines.extend(
-        [
-            "## Output goal",
-            "",
-            format_output_goal_section(
-                output_goal=output_goal,
-                workspace=workspace,
-                embed_threshold=embed_threshold,
-            ),
-        ]
+    if missing_ids:
+        raise PlanningToolError(
+            f"Batch {batch.batch_index} references unknown plan items: "
+            + ", ".join(missing_ids)
+        )
+    assigned_items = [item for item in assigned if item is not None]
+    heading = "Render batch revision context" if revision else "Render batch author context"
+    markdown = _build_context_markdown(
+        heading=heading,
+        plan=plan,
+        assigned_items=assigned_items,
+        output_dir=output_dir,
+        workspace=workspace,
+        output_goal=output_goal,
+        plan_digest=plan_digest,
+        whole_plan_context=whole_plan_context,
+        embed_threshold=embed_threshold,
+        artifact_paths=artifact_paths,
+        batch=batch,
     )
+    return PreparedRenderContext(
+        context_digest=digest_text(markdown),
+        context_markdown=markdown,
+        batch_dir=batch_dir,
+    )
+
+
+def prepare_final_revision_context(
+    *,
+    plan: PlanState,
+    output_dir: Path,
+    workspace: Path,
+    output_goal: LoadedOutputGoal,
+    plan_digest: str,
+    whole_plan_context: WholePlanContextMode,
+    embed_threshold: int,
+    artifact_paths: list[str],
+    affected_batch_indices: list[int],
+    findings_summary: str,
+) -> PreparedRenderContext:
+    batch_dir = output_dir / ".planning-output" / "render" / "final-revision"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    markdown = _build_context_markdown(
+        heading="Final render revision context",
+        plan=plan,
+        assigned_items=[],
+        output_dir=output_dir,
+        workspace=workspace,
+        output_goal=output_goal,
+        plan_digest=plan_digest,
+        whole_plan_context=whole_plan_context,
+        embed_threshold=embed_threshold,
+        artifact_paths=artifact_paths,
+        include_full_brief=True,
+        extra_sections=[
+            "## Revision scope",
+            f"- Affected batches: {', '.join(str(index) for index in affected_batch_indices) or 'unspecified (see findings)'}",
+            "",
+            "## Review findings",
+            findings_summary or "_No findings summary provided._",
+            "",
+        ],
+    )
+    return PreparedRenderContext(
+        context_digest=digest_text(markdown),
+        context_markdown=markdown,
+        batch_dir=batch_dir,
+    )
+
+
+def _build_context_markdown(
+    *,
+    heading: str,
+    plan: PlanState,
+    assigned_items: list[PlanItem],
+    output_dir: Path,
+    workspace: Path,
+    output_goal: LoadedOutputGoal,
+    plan_digest: str,
+    whole_plan_context: WholePlanContextMode,
+    embed_threshold: int,
+    artifact_paths: list[str],
+    batch: RenderBatchItem | None = None,
+    include_full_brief: bool = False,
+    extra_sections: list[str] | None = None,
+) -> str:
+    lines = [f"# {heading}", "", f"Plan digest: `{plan_digest}`", ""]
+    if batch is not None:
+        lines.extend(
+            [
+                f"Batch index: {batch.batch_index}",
+                f"Batch title: {batch.title}",
+                "",
+            ]
+        )
+    if assigned_items:
+        lines.extend(["## Assigned plan items", ""])
+        for item in assigned_items:
+            lines.append(_format_item_context(plan, item))
+            lines.append("")
+    if include_full_brief or not assigned_items:
+        lines.append(build_render_brief(plan))
+    if whole_plan_context == WholePlanContextMode.EMBEDDED:
+        lines.extend(
+            [
+                "",
+                "## Whole-plan overview",
+                build_plan_overview(plan, plan_digest, output_dir=output_dir),
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "## Whole-plan overview reference",
+                format_input_file_reference(
+                    output_dir / ".planning-output" / "context" / f"plan-overview-{plan_digest}.md",
+                    workspace,
+                ),
+                "",
+            ]
+        )
+    if artifact_paths:
+        lines.extend(["## Current workspace deliverables", ""])
+        for relative in sorted(artifact_paths):
+            lines.append(
+                f"- {format_input_file_reference(workspace / relative, workspace)}"
+            )
+        lines.append("")
+    if extra_sections:
+        lines.extend(extra_sections)
     return "\n".join(lines).rstrip() + "\n"

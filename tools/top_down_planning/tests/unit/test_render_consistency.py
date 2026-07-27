@@ -44,36 +44,35 @@ def test_render_brief_matches_actionable_leaf_count() -> None:
     assert "### 2. Checkpoint B" in brief
 
 
-def test_render_node_prompt_references_node_context(
+def test_render_batch_author_prompt_references_context(
     tmp_path: Path,
-    example_input: Path,
 ) -> None:
     from top_down_planning.input_loader import load_output_goal
     from top_down_planning.models import DEFAULT_INLINE_EMBED_THRESHOLD
-    from top_down_planning.prompts import build_render_node_prompt
+    from top_down_planning.prompts import build_render_batch_author_prompt
 
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    node_context = "\n".join(
+    context = "\n".join(
         [
-            "## Current node",
+            "## Assigned plan items",
+            "### Selected item `item-002`",
             "- Title: Unique checkpoint title",
             "- Objective: Complete the checkpoint",
         ]
     )
 
-    prompt = build_render_node_prompt(
-        node_id="item-002",
+    prompt = build_render_batch_author_prompt(
+        batch_index=0,
         plan_digest="d" * 64,
         output_goal_digest=output_goal.digest,
         render_config_digest="c" * 64,
-        node_context_markdown=node_context,
+        context_markdown=context,
         output_goal=output_goal,
         workspace=tmp_path,
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
     )
 
-    assert "Render node session: item-002" in prompt
+    assert "Render batch author session: batch 0" in prompt
     assert "Unique checkpoint title" in prompt
     assert "Complete the checkpoint" in prompt
-    assert "planning-render-tool" in prompt
     assert "Produce an actionable implementation plan" in prompt

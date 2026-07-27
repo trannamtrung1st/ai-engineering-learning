@@ -1,4 +1,4 @@
-"""Tests for per-node render manifest and render-only mode."""
+"""Tests for sequential render pipeline and render-only mode."""
 
 from __future__ import annotations
 
@@ -21,18 +21,19 @@ from top_down_planning.persistence import (
     final_confirmation_result_path,
     load_plan,
     new_run_state,
+    render_schedule_path,
     save_plan,
     save_run_state,
     whole_plan_review_result_path,
     write_json,
 )
-from top_down_planning.render_manifest import build_render_manifest, compute_manifest_digest
+from top_down_planning.render_schedule import build_render_schedule, compute_schedule_digest
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from tests.helpers import default_generation, render_output_goal
 from tests.plan_factory import make_root_plan
 
 
-def test_manifest_includes_actionable_nodes_once(tmp_path: Path, example_input: Path) -> None:
+def test_schedule_includes_actionable_leaves_once(tmp_path: Path, example_input: Path) -> None:
     loaded_goal = render_output_goal()
     plan = make_root_plan(
         output_goal=loaded_goal.text,
@@ -40,7 +41,7 @@ def test_manifest_includes_actionable_nodes_once(tmp_path: Path, example_input: 
     )
     plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
     plan_digest = compute_plan_digest(plan)
-    manifest, errors = build_render_manifest(
+    schedule, errors = build_render_schedule(
         plan,
         run_id="run-test",
         plan_digest=plan_digest,
@@ -48,38 +49,8 @@ def test_manifest_includes_actionable_nodes_once(tmp_path: Path, example_input: 
         render_config=RenderConfig(),
     )
     assert errors == []
-    assert len(manifest.items) == 1
-    assert manifest.items[0].plan_item_id == "item-001"
-
-
-def test_manifest_assigns_wave_ids_for_siblings(tmp_path: Path, example_input: Path) -> None:
-    loaded_goal = load_output_goal(inline="Produce TODO folder.")
-    plan = make_root_plan(output_goal=loaded_goal.text, output_goal_digest=loaded_goal.digest)
-    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
-    for index, item_id in enumerate(("item-002", "item-003"), start=2):
-        plan.plan.append(
-            plan.plan[0].model_copy(
-                update={
-                    "id": item_id,
-                    "parent_id": "item-001",
-                    "title": f"Leaf {index}",
-                    "depth": 1,
-                    "order": index,
-                    "decomposition_status": DecompositionStatus.ACTIONABLE,
-                }
-            )
-        )
-    plan_digest = compute_plan_digest(plan)
-    manifest, errors = build_render_manifest(
-        plan,
-        run_id="run-test",
-        plan_digest=plan_digest,
-        output_goal_digest=loaded_goal.digest,
-        render_config=RenderConfig(),
-    )
-    assert errors == []
-    assert len(manifest.items) == 3
-    assert all(item.assigned_wave_id for item in manifest.items)
+    assert len(schedule.batches) == 1
+    assert schedule.batches[0].item_ids == ["item-001"]
 
 
 def test_render_only_rejects_incomplete_plan(tmp_path: Path, example_input: Path) -> None:
@@ -112,7 +83,7 @@ async def test_render_only_with_confirmed_plan(
     fake_agent_bin: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FAKE_AGENT_RENDER_PRODUCE_NODE", "item-001")
+    monkeypatch.chdir(tmp_path)
     output_dir = tmp_path / "planning-output"
     loaded_goal = render_output_goal()
     plan = make_root_plan(
@@ -166,11 +137,13 @@ async def test_render_only_with_confirmed_plan(
     )
     report = await Orchestrator(config).run()
     assert report.status == FinalStatus.COMPLETE
-    manifest, _ = build_render_manifest(
+    assert (tmp_path / "implementation-plan.md").is_file()
+    assert render_schedule_path(output_dir).is_file()
+    schedule, _ = build_render_schedule(
         load_plan(output_dir),
         run_id="run-test",
         plan_digest=compute_plan_digest(load_plan(output_dir)),
         output_goal_digest=loaded_goal.digest,
         render_config=RenderConfig(),
     )
-    assert compute_manifest_digest(manifest)
+    assert compute_schedule_digest(schedule)

@@ -9,8 +9,6 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pydantic import ValidationError as PydanticValidationError
-
 from top_down_planning.agent_context import (
     AgentContextConfig,
     PhaseName,
@@ -70,7 +68,6 @@ from top_down_planning.persistence import (
     new_run_state,
     plan_path,
     record_history,
-    render_manifest_path,
     save_plan,
     save_run_state,
     update_final_status,
@@ -92,7 +89,6 @@ from top_down_planning.recovery import (
 )
 from top_down_planning.review_flow import ReviewFlowDeps, run_post_decomposition_flow
 from top_down_planning.render_flow import RenderFlowDeps, existing_deliverable_artifacts, render_from_confirmed_plan
-from top_down_planning.render_manifest import load_render_manifest
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import ensure_plan_overview_artifact, prepare_batch_context
@@ -408,13 +404,6 @@ class Orchestrator:
 
         if should_render:
             render_state = load_render_state(output_dir)
-            manifest = None
-            manifest_path = render_manifest_path(output_dir)
-            if manifest_path.is_file():
-                try:
-                    manifest = load_render_manifest(manifest_path)
-                except PydanticValidationError:
-                    manifest = None
             existing = existing_deliverable_artifacts(
                 self.config.workspace_root,
                 run_state,
@@ -659,6 +648,30 @@ class Orchestrator:
         run_state = load_run_state(output_dir)
         if run_state is None:
             raise PlanningToolError("Render-only requires existing run-state.json")
+
+        render_state = load_render_state(output_dir)
+        existing = existing_deliverable_artifacts(
+            self.config.workspace_root,
+            run_state,
+            render_state,
+            output_dir=output_dir,
+        )
+        if existing and not self.config.force_rerender:
+            self._artifacts = existing
+            self.stream.emit("render.skipped", artifacts=existing)
+            plan_counts = count_by_status(plan)
+            return PlanningReport(
+                status=plan.result.status,
+                review_status=plan.result.review_status,
+                items=len(plan.plan),
+                actionable_items=leaf_actionable_count(plan),
+                blocked_items=plan_counts["blocked"],
+                out_of_scope_items=plan_counts["out_of_scope"],
+                iterations=run_state.iteration,
+                output_dir=str(output_dir),
+                artifacts=self._artifacts,
+                summary=plan.result.summary,
+            )
 
         loaded: LoadedInput | None = None
         if self.config.input_path.is_file():

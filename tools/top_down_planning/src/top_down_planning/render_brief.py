@@ -6,44 +6,11 @@ from top_down_planning.models import (
     DecompositionStatus,
     PlanItem,
     PlanState,
-    RenderDecisionKind,
 )
 
 
 def _is_leaf(plan: PlanState, item_id: str) -> bool:
     return not any(child.parent_id == item_id for child in plan.plan)
-
-
-def is_render_eligible(item: PlanItem) -> bool:
-    """Return True when a plan node may receive a render decision."""
-    return item.decomposition_status in {
-        DecompositionStatus.ACTIONABLE,
-        DecompositionStatus.BLOCKED,
-        DecompositionStatus.OUT_OF_SCOPE,
-    }
-
-
-def eligible_render_nodes(plan: PlanState) -> list[PlanItem]:
-    """Return all structurally valid render-eligible nodes in deterministic order."""
-    nodes = [item for item in plan.plan if is_render_eligible(item)]
-    return sorted(nodes, key=lambda item: (item.depth, item.order, item.id))
-
-
-def deterministic_skip_decision(item: PlanItem) -> RenderDecisionKind | None:
-    """Return a deterministic skip decision for blocked/out-of-scope nodes."""
-    if item.decomposition_status == DecompositionStatus.BLOCKED:
-        return RenderDecisionKind.SKIP
-    if item.decomposition_status == DecompositionStatus.OUT_OF_SCOPE:
-        return RenderDecisionKind.SKIP
-    return None
-
-
-def deterministic_skip_reason(item: PlanItem) -> str:
-    if item.decomposition_status == DecompositionStatus.BLOCKED:
-        return item.blocked_reason or "Node is blocked."
-    if item.decomposition_status == DecompositionStatus.OUT_OF_SCOPE:
-        return item.out_of_scope_reason or "Node is out of scope."
-    return ""
 
 
 def actionable_leaf_items(plan: PlanState) -> list[PlanItem]:
@@ -75,10 +42,9 @@ def _dependency_labels(plan: PlanState, item: PlanItem) -> list[str]:
     return labels
 
 
-def build_render_brief(plan: PlanState, *, include_all_nodes: bool = False) -> str:
+def build_render_brief(plan: PlanState) -> str:
     """Build a markdown brief that defines the authoritative render scope."""
     leaves = actionable_leaf_items(plan)
-    all_nodes = eligible_render_nodes(plan) if include_all_nodes else leaves
     blocked = blocked_leaf_items(plan)
     lines: list[str] = [
         "# Render brief",
@@ -87,30 +53,9 @@ def build_render_brief(plan: PlanState, *, include_all_nodes: bool = False) -> s
         "deliverables. The output goal defines format and schema; this brief "
         "defines which items must appear and what must be preserved.",
         "",
+        f"## Actionable deliverable units ({len(leaves)})",
+        "",
     ]
-
-    if include_all_nodes:
-        lines.extend(
-            [
-                f"## Eligible render nodes ({len(all_nodes)})",
-                "",
-            ]
-        )
-        if not all_nodes:
-            lines.append("_No eligible render nodes._")
-        else:
-            for index, item in enumerate(all_nodes, start=1):
-                skip = deterministic_skip_decision(item)
-                suffix = f" [{skip.value}]" if skip else ""
-                lines.append(f"{index}. **{item.title}** ({item.decomposition_status.value}){suffix}")
-        lines.append("")
-
-    lines.extend(
-        [
-            f"## Actionable deliverable units ({len(leaves)})",
-            "",
-        ]
-    )
 
     if not leaves:
         lines.append("_No actionable leaf items._")
