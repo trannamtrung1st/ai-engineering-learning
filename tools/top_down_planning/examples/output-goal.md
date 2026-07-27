@@ -16,7 +16,7 @@ Each actionable leaf item should include:
 
 ## Final views
 
-The final synthesis batch should produce, when applicable:
+When the output goal calls for consolidated views, render agents may produce:
 
 1. a hierarchical planning view
 2. a dependency-safe actionable task list

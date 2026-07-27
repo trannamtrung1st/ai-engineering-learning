@@ -178,6 +178,25 @@ def test_merge_run_options_rejects_limits_batch_settings(tmp_path: Path) -> None
         merge_run_options(config_path=config_path)
 
 
+def test_merge_run_options_rejects_unknown_render_keys(tmp_path: Path) -> None:
+    config_path = tmp_path / "planning.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "input: ./idea.md",
+                "output: ./out",
+                "output_goal: Produce a plan",
+                "render:",
+                "  traversal: breadth_first",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PlanningToolError, match="render"):
+        merge_run_options(config_path=config_path)
+
+
 def test_merge_run_options_resolves_content_paths_relative_to_workspace(
     tmp_path: Path,
 ) -> None:

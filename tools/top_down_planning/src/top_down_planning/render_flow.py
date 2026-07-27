@@ -786,7 +786,9 @@ def _reset_render_publication_state(output_dir: Path) -> None:
         coordinator_state_path,
         ownership_ledger_path,
         render_decisions_dir,
+        render_dir,
         render_staged_artifacts_dir,
+        render_transactions_dir,
     )
 
     commit_journal_path(output_dir).unlink(missing_ok=True)
@@ -798,6 +800,13 @@ def _reset_render_publication_state(output_dir: Path) -> None:
     decisions = render_decisions_dir(output_dir)
     if decisions.is_dir():
         shutil.rmtree(decisions)
+    transactions = render_transactions_dir(output_dir)
+    if transactions.is_dir():
+        shutil.rmtree(transactions)
+    for legacy_subdir in ("batches", "assembled"):
+        path = render_dir(output_dir) / legacy_subdir
+        if path.is_dir():
+            shutil.rmtree(path)
 
 
 def _ancestor_decision_ids(output_dir: Path, plan: PlanState, node_id: str) -> list[str]:

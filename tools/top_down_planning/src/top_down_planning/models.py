@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 SCHEMA_VERSION = 1
@@ -78,10 +78,6 @@ class WholePlanContextMode(str, Enum):
     HYBRID = "hybrid"
 
 
-class RenderTraversal(str, Enum):
-    BREADTH_FIRST = "breadth_first"
-
-
 class RenderScope(str, Enum):
     ALL_NODES = "all_nodes"
     ACTIONABLE_NODES = "actionable_nodes"
@@ -97,13 +93,14 @@ class RollupConfig(BaseModel):
 
 
 class RenderConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     dry_run: bool = False
     concurrent_batches: int = 3
     max_retries: int = 3
     whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID
     final_review: bool = True
     max_rerender_cycles: int = 2
-    traversal: RenderTraversal = RenderTraversal.BREADTH_FIRST
     scope: RenderScope = RenderScope.ALL_NODES
     allow_final_publication: bool = True
     allow_staged_artifacts: bool = True
@@ -115,7 +112,6 @@ class RenderStage(str, Enum):
     MANIFEST = "manifest"
     WAVES = "waves"
     REVIEW = "review"
-    FINALIZATION = "finalization"
     COMPLETE = "complete"
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from top_down_planning.digest import compute_render_config_digest, digest_text
 from top_down_planning.models import PlanState, RenderConfig, RenderManifest
-from top_down_planning.render_batcher import assign_wave_ids
+from top_down_planning.render_waves import assign_wave_ids
 from top_down_planning.render_scheduler import build_progressive_schedule
 
 
@@ -26,7 +26,7 @@ def build_render_manifest(
         render_dependencies=render_dependencies,
     )
     if not errors and items:
-        wave_ids = assign_wave_ids(plan, items, render_config=render_config)
+        wave_ids = assign_wave_ids(items)
         for item, wave_id in zip(items, wave_ids, strict=True):
             item.assigned_wave_id = wave_id
 

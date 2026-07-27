@@ -189,28 +189,12 @@ def render_context_dir(output_dir: Path) -> Path:
     return render_dir(output_dir) / "context"
 
 
-def render_batches_dir(output_dir: Path) -> Path:
-    return render_dir(output_dir) / "batches"
-
-
-def render_assembled_dir(output_dir: Path) -> Path:
-    return render_dir(output_dir) / "assembled"
-
-
 def render_reviews_dir(output_dir: Path) -> Path:
     return render_dir(output_dir) / "reviews"
 
 
 def deliverable_manifest_path(output_dir: Path) -> Path:
     return render_dir(output_dir) / DELIVERABLE_MANIFEST_FILENAME
-
-
-def render_batch_dir(output_dir: Path, batch_id: str) -> Path:
-    return render_batches_dir(output_dir) / batch_id
-
-
-def render_batch_transaction_path(output_dir: Path, batch_id: str) -> Path:
-    return render_batch_dir(output_dir, batch_id) / "transaction.yaml"
 
 
 def load_render_manifest_from_output(output_dir: Path) -> RenderManifest | None:

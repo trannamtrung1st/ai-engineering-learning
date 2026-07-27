@@ -68,7 +68,6 @@ render:
   final_review: true
   max_rerender_cycles: 2
   dry_run: false
-  traversal: breadth_first
   scope: all_nodes
   final_synthesis: optional  # required | optional
   rollup:

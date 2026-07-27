@@ -487,7 +487,7 @@ restore `plan.yaml` if the render agent modifies canonical state.
 
 ## Final plan views
 
-Output-goal text may ask the final synthesis batch to include logical views such as:
+Output-goal text may ask render agents to include logical views such as:
 
 ### Hierarchical view
 
@@ -505,7 +505,7 @@ Shows only actionable leaf items in a sensible order.
 
 For implementation-oriented output goals, this should be dependency-safe where possible.
 
-The tool does not assemble these views deterministically. The final batch agent decides
+The tool does not assemble these views deterministically. Render agents decide
 structure and format from the output goal and intermediate artifacts.
 
 ## CLI
@@ -555,7 +555,9 @@ Suggested events:
 {"type":"validation.failed","iteration":2,"errors":["Duplicate child title"]}
 {"type":"iteration.retrying","iteration":2,"attempt":2}
 {"type":"planning.completed","status":"complete","items":18,"actionable_items":11,"artifacts":["./planning-output/implementation-plan.md"]}
-{"type":"render.started"}
+{"type":"render.only.started","output":"./planning-output"}
+{"type":"render.review.started","cycle":0}
+{"type":"render.review.completed","status":"approved","cycle":0}
 {"type":"render.completed","artifacts":["./implementation-plan.md"]}
 ```
 
