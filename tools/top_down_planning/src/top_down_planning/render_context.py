@@ -1,192 +1,156 @@
-"""Render batch context preparation."""
+"""Per-node render context preparation."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import ensure_plan_overview_artifact
 from top_down_planning.input_loader import LoadedOutputGoal
 from top_down_planning.models import (
     PlanItem,
     PlanState,
-    RenderManifest,
-    RenderManifestItem,
+    RenderContextSnapshot,
+    RenderNodePhase,
     WholePlanContextMode,
 )
-from top_down_planning.persistence import render_batch_transaction_path, render_context_dir
+from top_down_planning.persistence import render_context_dir, render_transaction_staging_dir
 from top_down_planning.prompts import (
     _ancestors,
-    _siblings,
-    format_embedded_markdown,
     format_input_file_reference,
     format_output_goal_section,
-    should_embed_content,
 )
-from top_down_planning.render_manifest import FINAL_BATCH_ID, save_render_manifest
 
 
 @dataclass(frozen=True)
-class PreparedRenderBatchContext:
-    batch_context_markdown: str
-    context_mode: WholePlanContextMode
-    manifest_path: Path
-    overview_path: Path | None
-    output_goal_path: Path | None
+class PreparedRenderNodeContext:
+    node_context_markdown: str
+    context_snapshot: RenderContextSnapshot
+    context_path: Path
+    staging_dir: Path
+    overview_path: Path | None = None
 
 
-def prepare_render_batch_context(
+def prepare_render_node_context(
     *,
     plan: PlanState,
-    manifest: RenderManifest,
-    assigned_items: list[RenderManifestItem],
+    node_id: str,
     output_dir: Path,
     workspace: Path,
     output_goal: LoadedOutputGoal,
     whole_plan_context: WholePlanContextMode,
     embed_threshold: int,
-    batch_id: str,
-    manifest_digest: str,
-) -> PreparedRenderBatchContext:
+    plan_digest: str,
+    ancestor_decision_ids: list[str] | None = None,
+    owned_artifact_paths: list[str] | None = None,
+) -> PreparedRenderNodeContext:
+    from top_down_planning.digest import digest_text
+
+    plan_item = plan.item_by_id(node_id)
+    if plan_item is None:
+        raise ValueError(f"unknown node id: {node_id}")
+
     context_root = render_context_dir(output_dir)
     context_root.mkdir(parents=True, exist_ok=True)
+    overview_path = ensure_plan_overview_artifact(output_dir, plan, plan_digest)
 
-    plan_digest = compute_plan_digest(plan)
-    overview_path = ensure_plan_overview_artifact(
-        output_dir,
-        plan,
-        plan_digest,
+    transaction_id = f"txn-{node_id}-render"
+    staging_dir = render_transaction_staging_dir(output_dir, transaction_id)
+    staging_dir.mkdir(parents=True, exist_ok=True)
+
+    ancestor_ids = ancestor_decision_ids or []
+    owned_paths = owned_artifact_paths or []
+    snapshot_payload = {
+        "plan_digest": plan_digest,
+        "node_id": node_id,
+        "phase": RenderNodePhase.RENDER.value,
+        "ancestor_decision_ids": sorted(ancestor_ids),
+        "owned_artifact_paths": sorted(owned_paths),
+    }
+    context_digest = digest_text(
+        json.dumps(snapshot_payload, sort_keys=True, separators=(",", ":"))
+    )
+    snapshot = RenderContextSnapshot(
+        context_digest=context_digest,
+        read_set_digest=context_digest,
+        plan_digest=plan_digest,
+        node_id=node_id,
+        ancestor_decision_ids=sorted(ancestor_ids),
+        owned_artifact_paths=owned_paths,
     )
 
-    manifest_path = context_root / f"render-manifest-{manifest_digest}.yaml"
-    save_render_manifest(manifest_path, manifest)
-
-    output_goal_path: Path | None = None
-    if output_goal.path is not None:
-        output_goal_path = output_goal.path
-    elif not should_embed_content(output_goal.text, embed_threshold=embed_threshold):
-        output_goal_path = context_root / f"output-goal-{manifest.output_goal_digest}.md"
-        output_goal_path.write_text(output_goal.text.strip() + "\n", encoding="utf-8")
-
-    batch_context_path = context_root / f"{batch_id}-context.md"
-    batch_markdown = _build_batch_context_markdown(
+    context_path = context_root / f"{node_id}-context.md"
+    markdown = _build_node_context_markdown(
         plan=plan,
-        assigned_items=assigned_items,
-        manifest=manifest,
-        manifest_path=manifest_path,
+        plan_item=plan_item,
+        snapshot=snapshot,
         overview_path=overview_path,
         output_goal=output_goal,
-        output_goal_path=output_goal_path,
         workspace=workspace,
-        output_dir=output_dir,
         embed_threshold=embed_threshold,
         whole_plan_context=whole_plan_context,
-        batch_id=batch_id,
+        staging_dir=staging_dir,
+        owned_artifact_paths=owned_paths,
     )
-    batch_context_path.write_text(batch_markdown, encoding="utf-8")
+    context_path.write_text(markdown, encoding="utf-8")
 
-    return PreparedRenderBatchContext(
-        batch_context_markdown=batch_markdown,
-        context_mode=whole_plan_context,
-        manifest_path=manifest_path,
+    return PreparedRenderNodeContext(
+        node_context_markdown=markdown,
+        context_snapshot=snapshot,
+        context_path=context_path,
+        staging_dir=staging_dir,
         overview_path=overview_path,
-        output_goal_path=output_goal_path,
     )
 
 
-def _build_batch_context_markdown(
+def _build_node_context_markdown(
     *,
     plan: PlanState,
-    assigned_items: list[RenderManifestItem],
-    manifest: RenderManifest,
-    manifest_path: Path,
+    plan_item: PlanItem,
+    snapshot: RenderContextSnapshot,
     overview_path: Path | None,
     output_goal: LoadedOutputGoal,
-    output_goal_path: Path | None,
     workspace: Path,
-    output_dir: Path,
     embed_threshold: int,
     whole_plan_context: WholePlanContextMode,
-    batch_id: str,
+    staging_dir: Path,
+    owned_artifact_paths: list[str],
 ) -> str:
     lines = [
-        f"# Render batch context: {batch_id}",
+        f"# Render node context: {plan_item.id}",
+        "",
+        f"- Context digest: `{snapshot.context_digest}`",
+        f"- Private staging: `{staging_dir}`",
+        "",
+        "## Current node",
+        "",
+        f"- Title: {plan_item.title}",
+        f"- Objective: {plan_item.objective}",
+        f"- Depth: {plan_item.depth}",
+        f"- Status: {plan_item.decomposition_status.value}",
         "",
     ]
+    ancestors = _ancestors(plan, plan_item)
+    if ancestors:
+        lines.extend(["## Ancestors", ""])
+        for ancestor in ancestors:
+            lines.append(f"- [{ancestor.id}] {ancestor.title}")
+        lines.append("")
 
-    if batch_id == FINAL_BATCH_ID:
-        lines.extend(
-            [
-                "## Final deliverable synthesis",
-                "",
-                "Decide the deliverable layout from the output goal and intermediate "
-                "artifacts. Write 0..N files directly to their workspace destination paths, "
-                "then record each deliverable via the render transaction CLI. An optional "
-                "`## Output artifacts` section in the goal is illustrative only — not an "
-                "exhaustive path manifest.",
-                "",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "## Assigned items",
-                "",
-            ]
-        )
-        for manifest_item in assigned_items:
-            plan_item = plan.item_by_id(manifest_item.plan_item_id)
-            if plan_item is not None:
-                lines.append(_format_render_item_context(plan, plan_item, manifest_item))
-                lines.append("")
-            else:
-                lines.extend(
-                    [
-                        f"### {manifest_item.title}",
-                        f"- **Artifact role:** `{manifest_item.artifact_role}`",
-                        f"- **Artifact key:** `{manifest_item.artifact_key}`",
-                        "",
-                    ]
-                )
-
-        lines.extend(
-            [
-                "## Artifact assignments",
-                "",
-            ]
-        )
-        for manifest_item in assigned_items:
-            lines.append(
-                f"- `{manifest_item.plan_item_id}` → "
-                f"`{manifest_item.artifact_key}` → "
-                f"staging `{manifest_item.relative_path}`"
-            )
-
-    if batch_id == FINAL_BATCH_ID:
-        lines.extend(_format_intermediate_inputs_section(manifest, output_dir, workspace))
+    if owned_artifact_paths:
+        lines.extend(["## Owned artifacts", ""])
+        for path in owned_artifact_paths:
+            lines.append(f"- `{path}`")
+        lines.append("")
 
     if whole_plan_context in {WholePlanContextMode.REFERENCED, WholePlanContextMode.HYBRID}:
-        lines.extend(["", "## Whole plan overview (read-only)", ""])
         if overview_path is not None:
+            lines.extend(["## Whole plan overview (read-only)", ""])
             lines.append(format_input_file_reference(overview_path, workspace))
-        lines.extend(["", "## Render manifest (read-only)", ""])
-        lines.append(format_input_file_reference(manifest_path, workspace))
-
-    if whole_plan_context in {WholePlanContextMode.EMBEDDED, WholePlanContextMode.HYBRID}:
-        if overview_path is not None and overview_path.is_file():
-            lines.extend(
-                [
-                    "",
-                    "## Embedded plan overview",
-                    "",
-                    format_embedded_markdown(overview_path.read_text(encoding="utf-8")),
-                ]
-            )
 
     lines.extend(
         [
-            "",
             "## Output goal",
             "",
             format_output_goal_section(
@@ -196,93 +160,4 @@ def _build_batch_context_markdown(
             ),
         ]
     )
-
     return "\n".join(lines).rstrip() + "\n"
-
-
-def _format_render_item_context(
-    plan: PlanState,
-    plan_item: PlanItem,
-    manifest_item: RenderManifestItem,
-) -> str:
-    """Format assigned render scope using manifest-resolved leaf dependencies."""
-    parts = [
-        f"### Selected item `{plan_item.id}`",
-        f"- Title: {plan_item.title}",
-        f"- Objective: {plan_item.objective}",
-        f"- Depth: {plan_item.depth}",
-        f"- Status: {plan_item.decomposition_status.value}",
-    ]
-    if manifest_item.dependencies:
-        labels: list[str] = []
-        for dep_id in manifest_item.dependencies:
-            dep_item = plan.item_by_id(dep_id)
-            if dep_item is not None:
-                labels.append(f"`{dep_id}` ({dep_item.title})")
-            else:
-                labels.append(f"`{dep_id}`")
-        parts.append(f"- Render dependencies: {', '.join(labels)}")
-    if plan_item.expected_outputs:
-        parts.append("- Expected outputs:")
-        parts.extend(f"  - {value}" for value in plan_item.expected_outputs)
-    if plan_item.acceptance_criteria:
-        parts.append("- Acceptance criteria:")
-        parts.extend(f"  - {value}" for value in plan_item.acceptance_criteria)
-    if plan_item.open_questions:
-        parts.append("- Open questions:")
-        parts.extend(f"  - {value}" for value in plan_item.open_questions)
-
-    ancestors = _ancestors(plan, plan_item)
-    if ancestors:
-        parts.append("- Ancestors:")
-        for ancestor in ancestors:
-            parts.append(f"  - [{ancestor.id}] {ancestor.title}")
-
-    siblings = _siblings(plan, plan_item)
-    if siblings:
-        parts.append("- Direct siblings:")
-        for sibling in siblings:
-            parts.append(
-                f"  - [{sibling.id}] {sibling.title} "
-                f"({sibling.decomposition_status.value})"
-            )
-    return "\n".join(parts)
-
-
-def _format_intermediate_inputs_section(
-    manifest: RenderManifest,
-    output_dir: Path,
-    workspace: Path,
-) -> list[str]:
-    intermediate_items = sorted(
-        (item for item in manifest.items if item.artifact_role == "intermediate"),
-        key=lambda entry: entry.set_order,
-    )
-    lines = ["", "## Intermediate inputs", ""]
-    if not intermediate_items:
-        lines.append("_No intermediate artifacts were produced._")
-        return lines
-
-    lines.append(
-        "Use these staged intermediate artifacts as synthesis inputs. "
-        "Read the finalized batch transactions below; do not guess content."
-    )
-    lines.extend(["", "### Intermediate artifact paths", ""])
-    for item in intermediate_items:
-        lines.append(f"- `{item.plan_item_id}` → `{item.relative_path}`")
-
-    lines.extend(["", "### Intermediate batch transactions (read-only)", ""])
-    seen_batches: list[str] = []
-    for item in intermediate_items:
-        if item.assigned_batch_id in seen_batches:
-            continue
-        seen_batches.append(item.assigned_batch_id)
-        txn_path = render_batch_transaction_path(output_dir, item.assigned_batch_id)
-        if txn_path.is_file():
-            lines.append(format_input_file_reference(txn_path, workspace))
-        else:
-            lines.append(
-                f"- Missing transaction for `{item.assigned_batch_id}` "
-                f"(expected {txn_path})"
-            )
-    return lines

@@ -119,27 +119,22 @@ workspace/
             ├── render-state.json
             ├── manifest.yaml
             ├── context/
-            ├── batches/
-            ├── assembled/
-            │   └── intermediates/{batch_id}/{plan_item_id}.md  # internal only
+            ├── decisions/
+            ├── transactions/
             └── reviews/
 ```
 
 Goal-driven deliverables are written only when planning finishes with status `complete`
 and review status `confirmed` (when review is enabled). Rendering is a separate lifecycle
-from planning: after confirmation, the tool builds a deterministic render manifest for
-intermediate work from actionable leaves (expanding parent workstream dependencies to leaf
-ids), runs concurrent intermediate render batches,
-runs a final synthesis batch where the agent writes 0..N deliverables directly to workspace
-paths from the output goal, assembles intermediate staging for synthesis inputs, optionally
-runs whole-output semantic review against the workspace deliverables, and records ownership
-in a ledger (removing obsolete files from prior runs).
+from planning: after confirmation, the tool builds a deterministic per-node render manifest,
+schedules breadth-first waves with generation groups, runs concurrent node sessions, and
+commits each node's produce/skip/defer decision through a single-writer coordinator that
+publishes workspace artifacts and records ownership in a ledger.
 
 The output goal may be a one-line prompt or a longer specification. An optional
-`## Output artifacts` section is illustrative sample layout only. Intermediate batches
-write freeform notes under `intermediates/{batch_id}/`. The final synthesis batch
-(`render-batch-final`) declares workspace destination paths in its transaction; zero
-deliverables is valid when the goal does not require files.
+`## Output artifacts` section is illustrative sample layout only. Each node decides whether
+to produce, skip, or defer; producing nodes stage content privately and declare final
+workspace paths through the render transaction CLI.
 
 ### Render-only mode
 
@@ -160,7 +155,7 @@ top-down-planning \
   --output-goal-file updated-output-goal.md
 ```
 
-Force all render batches to regenerate:
+Force rerender of all nodes:
 
 ```bash
 top-down-planning \
@@ -169,17 +164,17 @@ top-down-planning \
   --force-rerender
 ```
 
-Configure batched rendering separately from planning batching:
+Configure per-node rendering separately from planning batching:
 
 ```yaml
 render:
-  batch_strategy: coherent   # single | branch | coherent | throughput
-  batch_size: 5
+  dry_run: false
   concurrent_batches: 3
   max_retries: 3
   whole_plan_context: hybrid
   final_review: true
   max_rerender_cycles: 2
+  scope: all_nodes
 ```
 
 Incomplete, blocked, or failed planning runs keep internal state under `.planning-output/`

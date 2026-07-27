@@ -1,26 +1,34 @@
-"""Shared render pipeline for normal runs and render-only mode."""
+"""Per-node progressive render pipeline."""
 
 from __future__ import annotations
 
 import asyncio
 import shutil
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import ValidationError
-
 from top_down_planning.console_renderer import ConsoleRenderer
 from top_down_planning.cursor_client import CursorClient
-from top_down_planning.digest import compute_plan_digest, compute_render_config_digest, digest_file
-from top_down_planning.errors import CursorEnvironmentError, CursorSessionError, PlanningToolError, UserInterrupted
+from top_down_planning.digest import compute_plan_digest, compute_render_config_digest
+from top_down_planning.completeness import structural_errors
+from top_down_planning.errors import CursorSessionError, PlanningToolError, UserInterrupted
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal
 from top_down_planning.models import (
+    DecompositionStatus,
     DeliverableStatus,
+    FinalSynthesisMode,
+    NodeRenderPhaseState,
+    NodeRenderRevision,
+    NodeRenderRevisionStatus,
     PlanState,
-    RenderBatchStateEntry,
-    RenderBatchStatus,
     RenderConfig,
+    RenderDecisionKind,
     RenderManifest,
+    RenderManifestItem,
+    RenderManifestItemStatus,
+    RenderNodePhase,
+    RenderNodeTransaction,
     RenderOutputReviewDecision,
     RenderOutputReviewStatus,
     RenderStage,
@@ -28,47 +36,35 @@ from top_down_planning.models import (
     RunState,
 )
 from top_down_planning.persistence import (
-    load_owned_artifacts,
+    load_ownership_ledger,
+    load_render_manifest_from_output,
     load_render_state,
-    record_history,
-    render_batch_dir,
-    render_batch_transaction_path,
-    render_manifest_path,
+    render_decisions_dir,
+    render_phases_dir,
+    save_render_manifest_to_output,
     save_render_state,
-    save_run_state,
 )
-from top_down_planning.prompts import build_render_batch_prompt
-from top_down_planning.render_assembly import (
-    AssembledOutput,
-    assemble_render_output,
-    load_valid_batch_transactions,
-    write_assembled_output,
-)
-from top_down_planning.render_batcher import items_for_batch
-from top_down_planning.render_context import prepare_render_batch_context
-from top_down_planning.render_manifest import (
-    FINAL_BATCH_ID,
-    apply_final_transaction_to_manifest,
-    build_render_manifest,
-    compute_manifest_digest,
-    load_render_manifest,
-    manifest_is_valid,
-    scheduled_batch_ids,
-    save_render_manifest as write_manifest_file,
-    strip_final_items_from_manifest,
-)
-from top_down_planning.render_deliverables import (
-    collect_deliverable_output,
-    finalize_deliverables,
-    materialize_final_deliverables,
+from top_down_planning.prompts import build_render_node_prompt
+from top_down_planning.render_brief import deterministic_skip_decision, deterministic_skip_reason
+from top_down_planning.render_context import prepare_render_node_context
+from top_down_planning.render_coordinator import RenderCoordinator
+from top_down_planning.render_decisions import all_deferred_resolved, decision_id_for
+from top_down_planning.render_deliverables import collect_deliverable_output_from_ledger
+from top_down_planning.render_manifest import build_render_manifest, compute_manifest_digest
+from top_down_planning.render_ownership import final_paths, owned_paths_for_node
+from top_down_planning.render_scheduler import build_rollup_schedule, groups_in_wave, unique_waves
+from top_down_planning.render_tool import (
+    build_render_session_env,
+    load_render_node_transaction,
+    resolve_render_tool_command,
 )
 from top_down_planning.render_review import (
     RenderReviewDeps,
+    progressive_decision_coverage_errors,
     review_status_from_decision,
     run_render_output_review,
 )
-from top_down_planning.render_tool import build_render_session_env, resolve_render_tool_command
-from top_down_planning.render_transaction import validate_batch_transaction
+from top_down_planning.render_transaction import validate_node_render_transaction
 from top_down_planning.stream_events import StreamEmitter
 
 
@@ -96,6 +92,14 @@ class RenderFlowResult:
     artifacts: list[str]
 
 
+@dataclass
+class _NodeCandidate:
+    item: object
+    manifest_slot: int
+    transaction: RenderNodeTransaction
+    plan_digest: str
+
+
 async def render_from_confirmed_plan(
     deps: RenderFlowDeps,
     *,
@@ -104,170 +108,532 @@ async def render_from_confirmed_plan(
     force_rerender: bool = False,
     render_only: bool = False,
 ) -> RenderFlowResult:
-    deps.stream.emit("render.started")
-    deps.renderer.rule("RENDER deliverables in staged batches and workspace destinations")
+    del render_only
 
-    plan_digest = compute_plan_digest(plan)
     render_config = deps.render
+    plan_digest = compute_plan_digest(plan)
     render_config_digest = compute_render_config_digest(render_config)
+    dry_run = render_config.dry_run
+
+    needs_expansion = [
+        item.id
+        for item in plan.plan
+        if item.decomposition_status == DecompositionStatus.NEEDS_EXPANSION
+    ]
+    if needs_expansion:
+        raise PlanningToolError(
+            "Render cannot proceed: plan items remain in needs_expansion: "
+            + ", ".join(needs_expansion)
+        )
+    struct_errors = structural_errors(plan)
+    if struct_errors:
+        raise PlanningToolError(
+            "Render cannot proceed: invalid structural plan state: "
+            + "; ".join(struct_errors)
+        )
 
     render_state = load_render_state(deps.output_dir) or RenderState()
-    if _should_invalidate_render_state(
+    reset_publication = _should_reset_publication_state(
         render_state,
         plan_digest=plan_digest,
         output_goal_digest=deps.output_goal.digest,
         render_config_digest=render_config_digest,
         force_rerender=force_rerender,
+    )
+
+    existing_manifest = load_render_manifest_from_output(deps.output_dir)
+    if (
+        not reset_publication
+        and existing_manifest is not None
+        and render_state.stage == RenderStage.WAVES
     ):
-        _clear_render_staging(deps.output_dir)
-        render_state = RenderState()
+        manifest = existing_manifest
+        run_id = manifest.run_id
+    else:
+        if reset_publication:
+            _reset_render_publication_state(deps.output_dir)
+        run_id = f"render-run-{uuid.uuid4().hex[:8]}"
+        manifest, schedule_errors = build_render_manifest(
+            plan,
+            run_id=run_id,
+            plan_digest=plan_digest,
+            output_goal_digest=deps.output_goal.digest,
+            render_config=render_config,
+        )
+        if schedule_errors:
+            raise PlanningToolError(
+                "Render scheduling failed: " + "; ".join(schedule_errors)
+            )
 
-    manifest, manifest_digest, reused = _ensure_manifest(
-        deps,
-        plan=plan,
-        plan_digest=plan_digest,
-        render_config=render_config,
-        render_state=render_state,
-    )
-    deps.stream.emit(
-        "render.manifest.reused" if reused else "render.manifest.created",
-        digest=manifest_digest,
-    )
-
+    render_state.run_id = run_id
     render_state.plan_digest = plan_digest
     render_state.output_goal_digest = deps.output_goal.digest
     render_state.render_config_digest = render_config_digest
-    render_state.render_manifest_digest = manifest_digest
-    render_state.stage = RenderStage.BATCHES
-    _sync_batch_state(render_state, manifest, force=force_rerender)
-    manifest = _invalidate_missing_deliverables(
-        deps,
-        manifest=manifest,
-        render_state=render_state,
-        force_rerender=force_rerender,
-    )
+    render_state.stage = RenderStage.MANIFEST
     manifest_digest = compute_manifest_digest(manifest)
     render_state.render_manifest_digest = manifest_digest
     save_render_state(deps.output_dir, render_state)
+    save_render_manifest_to_output(deps.output_dir, manifest)
 
-    await _run_render_batches(
-        deps,
-        plan=plan,
-        manifest=manifest,
-        render_state=render_state,
-        run_state=run_state,
-        force_rerender=force_rerender,
-    )
-
-    manifest_path = render_manifest_path(deps.output_dir)
-    manifest = load_render_manifest(manifest_path)
-    manifest_digest = compute_manifest_digest(manifest)
-    render_state.render_manifest_digest = manifest_digest
-    save_render_state(deps.output_dir, render_state)
-
-    render_state.stage = RenderStage.ASSEMBLY
-    save_render_state(deps.output_dir, render_state)
-    deps.stream.emit("render.assembly.started")
-
-    transactions = load_valid_batch_transactions(deps.output_dir, manifest)
-    try:
-        assembled = assemble_render_output(manifest, transactions)
-    except ValueError as exc:
-        deps.stream.emit("render.validation_failed", errors=[str(exc)])
-        raise PlanningToolError(f"Render assembly failed: {exc}") from exc
-
-    write_assembled_output(deps.output_dir, assembled)
-    render_state.assembled_output_digest = assembled.digest
-    save_render_state(deps.output_dir, render_state)
-    deps.stream.emit("render.assembly.completed", digest=assembled.digest)
-
-    try:
-        deliverable = collect_deliverable_output(deps.workspace_root, manifest)
-    except ValueError as exc:
-        deps.stream.emit("render.validation_failed", errors=[str(exc)])
-        raise PlanningToolError(f"Deliverable collection failed: {exc}") from exc
-    render_state.deliverable_output_digest = deliverable.digest
-    save_render_state(deps.output_dir, render_state)
-
-    if render_config.final_review:
-        render_state.stage = RenderStage.REVIEW
-        save_render_state(deps.output_dir, render_state)
-        await _run_output_review_cycle(
-            deps,
-            plan=plan,
-            plan_digest=plan_digest,
-            manifest=manifest,
-            manifest_digest=manifest_digest,
-            render_state=render_state,
-            run_state=run_state,
-            force_rerender=force_rerender,
-        )
-        deliverable = collect_deliverable_output(deps.workspace_root, manifest)
-        render_state.deliverable_output_digest = deliverable.digest
-        save_render_state(deps.output_dir, render_state)
-    else:
-        render_state.output_review_status = RenderOutputReviewStatus.SKIPPED
-        save_render_state(deps.output_dir, render_state)
-
-    deps.stream.emit("render.finalization.started")
-    render_state.stage = RenderStage.FINALIZATION
-    save_render_state(deps.output_dir, render_state)
-
-    previous_ledger = load_owned_artifacts(deps.output_dir)
-    finalization = finalize_deliverables(
+    coordinator = RenderCoordinator(
         output_dir=deps.output_dir,
         workspace=deps.workspace_root,
-        manifest=manifest,
-        previous_ledger=previous_ledger,
+        run_id=run_id,
+        dry_run=dry_run,
+        allow_final_publication=render_config.allow_final_publication,
+        allow_staged_artifacts=render_config.allow_staged_artifacts,
     )
 
-    render_state.deliverable_status = DeliverableStatus.COMPLETE
-    render_state.stage = RenderStage.COMPLETE
+    render_state.stage = RenderStage.WAVES
     save_render_state(deps.output_dir, render_state)
 
-    paths = _persist_render_result(deps, run_state, finalization.artifacts)
-    record_history(
-        deps.output_dir,
-        run_state,
-        event="render_applied",
-        artifacts=paths,
-        manifest_digest=manifest_digest,
-    )
-    save_run_state(deps.output_dir, run_state)
+    failed_nodes: set[str] = set()
+    with coordinator.acquire():
+        await _run_render_waves(
+            deps,
+            plan=plan,
+            manifest=manifest,
+            coordinator=coordinator,
+            run_state=run_state,
+            render_state=render_state,
+            dry_run=dry_run,
+            failed_nodes=failed_nodes,
+        )
 
-    deps.stream.emit("render.finalization.completed", artifacts=paths)
+        if render_config.rollup.enabled:
+            rollup_items, rollup_errors = build_rollup_schedule(
+                plan, render_config=render_config
+            )
+            if rollup_errors:
+                raise PlanningToolError(
+                    "Rollup scheduling failed: " + "; ".join(rollup_errors)
+                )
+            if rollup_items:
+                deps.stream.emit("render.rollup.started", items=len(rollup_items))
+                rollup_manifest = manifest.model_copy(deep=True)
+                rollup_manifest.items = rollup_items
+                await _run_render_waves(
+                    deps,
+                    plan=plan,
+                    manifest=rollup_manifest,
+                    coordinator=coordinator,
+                    run_state=run_state,
+                    render_state=render_state,
+                    dry_run=dry_run,
+                    failed_nodes=failed_nodes,
+                )
+
+        if render_config.final_synthesis == FinalSynthesisMode.OPTIONAL:
+            deps.stream.emit("render.synthesis.skipped")
+        elif render_config.final_synthesis == FinalSynthesisMode.REQUIRED:
+            raise PlanningToolError(
+                "final_synthesis required is not implemented; use optional or enable rollup"
+            )
+
+    coverage_errors = progressive_decision_coverage_errors(
+        deps.output_dir,
+        expected_node_ids={item.plan_item_id for item in manifest.items},
+    )
+    if coverage_errors and not dry_run:
+        raise PlanningToolError(
+            "Render decision coverage incomplete: " + "; ".join(coverage_errors)
+        )
+
+    unresolved = _unresolved_deferred(coordinator)
+    if unresolved and not dry_run:
+        raise PlanningToolError(
+            "Unresolved deferred decisions: " + ", ".join(unresolved)
+        )
+
+    if failed_nodes and not dry_run:
+        raise PlanningToolError(
+            "Render failed for nodes: " + ", ".join(sorted(failed_nodes))
+        )
+
+    if dry_run:
+        render_state.stage = RenderStage.COMPLETE
+        render_state.deliverable_status = DeliverableStatus.COMPLETE
+        render_state.output_review_status = RenderOutputReviewStatus.SKIPPED
+        save_render_state(deps.output_dir, render_state)
+        deps.stream.emit("render.completed", artifacts=[], dry_run=True)
+        return RenderFlowResult(artifacts=[])
+
+    artifacts = final_paths(coordinator._ledger)
+    deliverable = None
+    if artifacts:
+        deliverable = collect_deliverable_output_from_ledger(
+            deps.workspace_root,
+            coordinator._ledger,
+        )
+        render_state.deliverable_output_digest = deliverable.digest
+
+    render_state.stage = RenderStage.REVIEW
+    save_render_state(deps.output_dir, render_state)
+
+    if render_config.final_review and deliverable is not None:
+        deps.stream.emit("render.review.started")
+        coordinator.freeze_for_review()
+        try:
+            review_result = await run_render_output_review(
+                RenderReviewDeps(
+                    workspace_root=deps.workspace_root,
+                    output_dir=deps.output_dir,
+                    output_goal=deps.output_goal,
+                    embed_threshold=deps.embed_threshold,
+                    client=deps.client,
+                    renderer=deps.renderer,
+                    audit=deps.audit,
+                    resolve_review_context=deps.resolve_review_context,
+                    resolve_review_model=deps.resolve_review_model,
+                ),
+                plan_digest=plan_digest,
+                manifest=manifest,
+                manifest_digest=manifest_digest,
+                deliverable=deliverable,
+                max_retries=deps.render.max_retries,
+            )
+        finally:
+            coordinator.unfreeze_after_review()
+
+        if review_result is None:
+            render_state.output_review_status = RenderOutputReviewStatus.BLOCKED
+            save_render_state(deps.output_dir, render_state)
+            raise PlanningToolError(
+                "Rendered output review blocked: reviewer did not finalize a result."
+            )
+
+        render_state.output_review_status = review_status_from_decision(
+            review_result.decision
+        )
+        deps.stream.emit(
+            "render.review.completed",
+            decision=review_result.decision.value,
+            summary=review_result.summary,
+        )
+        if review_result.decision == RenderOutputReviewDecision.BLOCKED:
+            save_render_state(deps.output_dir, render_state)
+            raise PlanningToolError(
+                f"Rendered output review blocked: {review_result.summary or 'no summary'}"
+            )
+        if review_result.decision == RenderOutputReviewDecision.NEEDS_RERENDER:
+            save_render_state(deps.output_dir, render_state)
+            raise PlanningToolError(
+                "Rendered output review requested rerender; targeted rerender is not implemented"
+            )
+    else:
+        render_state.output_review_status = RenderOutputReviewStatus.SKIPPED
+
+    render_state.stage = RenderStage.COMPLETE
+    render_state.deliverable_status = DeliverableStatus.COMPLETE
+    save_render_state(deps.output_dir, render_state)
+    paths = _persist_render_result(deps, run_state, artifacts)
     deps.stream.emit("render.completed", artifacts=paths)
     return RenderFlowResult(artifacts=paths)
 
 
-def _invalidate_missing_deliverables(
+async def _run_render_waves(
     deps: RenderFlowDeps,
     *,
+    plan: PlanState,
     manifest: RenderManifest,
+    coordinator: RenderCoordinator,
+    run_state: RunState,
     render_state: RenderState,
-    force_rerender: bool,
-) -> RenderManifest:
-    if force_rerender:
-        return manifest
-    if not any(item.artifact_role == "final" for item in manifest.items):
-        return manifest
-    try:
-        collect_deliverable_output(deps.workspace_root, manifest)
-        return manifest
-    except ValueError:
-        batch_entry = render_state.batches.get(FINAL_BATCH_ID)
-        if batch_entry is None:
-            return manifest
-        batch_entry.status = RenderBatchStatus.PENDING
-        batch_entry.transaction_digest = None
-        render_batch_transaction_path(deps.output_dir, FINAL_BATCH_ID).unlink(missing_ok=True)
-        stripped = strip_final_items_from_manifest(manifest)
-        write_manifest_file(render_manifest_path(deps.output_dir), stripped)
-        return stripped
+    dry_run: bool,
+    failed_nodes: set[str],
+) -> None:
+    del dry_run
+    manifest_slot = coordinator._commit_sequence
+
+    for wave in unique_waves(manifest.items):
+        for group in groups_in_wave(manifest.items, wave):
+            group_items = [
+                item
+                for item in manifest.items
+                if item.wave == wave and item.generation_group == group
+            ]
+            manifest_slot = await _run_generation_group(
+                deps,
+                plan=plan,
+                manifest=manifest,
+                group_items=group_items,
+                coordinator=coordinator,
+                manifest_slot_start=manifest_slot,
+                run_state=run_state,
+                render_state=render_state,
+                failed_nodes=failed_nodes,
+            )
+            save_render_manifest_to_output(deps.output_dir, manifest)
 
 
-def _should_invalidate_render_state(
+async def _run_generation_group(
+    deps: RenderFlowDeps,
+    *,
+    plan: PlanState,
+    manifest: RenderManifest,
+    group_items: list[RenderManifestItem],
+    coordinator: RenderCoordinator,
+    manifest_slot_start: int,
+    run_state: RunState,
     render_state: RenderState,
+    failed_nodes: set[str],
+) -> int:
+    semaphore = asyncio.Semaphore(max(1, deps.render.concurrent_batches))
+    candidates: dict[int, _NodeCandidate | None] = {}
+
+    async def generate(item: RenderManifestItem, slot: int) -> None:
+        async with semaphore:
+            if _is_dependency_blocked(plan, item, failed_nodes):
+                candidates[slot] = None
+                return
+            try:
+                candidates[slot] = await _generate_node_candidate(
+                    deps,
+                    plan=plan,
+                    manifest=manifest,
+                    item=item,
+                    coordinator=coordinator,
+                    manifest_slot=slot,
+                    run_state=run_state,
+                )
+            except CursorSessionError:
+                failed_nodes.add(item.plan_item_id)
+                candidates[slot] = None
+
+    await asyncio.gather(
+        *(
+            generate(item, manifest_slot_start + offset)
+            for offset, item in enumerate(group_items)
+        )
+    )
+
+    slot = manifest_slot_start
+    for offset, item in enumerate(group_items):
+        current_slot = manifest_slot_start + offset
+        candidate = candidates.get(current_slot)
+        if candidate is None:
+            if _is_dependency_blocked(plan, item, failed_nodes):
+                item.status = RenderManifestItemStatus.DEPENDENCY_FAILED
+                _record_node_failure(
+                    render_state,
+                    item,
+                    status=NodeRenderRevisionStatus.DEPENDENCY_FAILED,
+                )
+            else:
+                item.status = RenderManifestItemStatus.FAILED
+                failed_nodes.add(item.plan_item_id)
+                _record_node_failure(
+                    render_state,
+                    item,
+                    status=NodeRenderRevisionStatus.FAILED,
+                )
+            barrier = coordinator.commit_failure_barrier(
+                manifest_slot=current_slot,
+                node_id=item.plan_item_id,
+                reason="terminal node failure",
+            )
+            if not barrier.committed:
+                raise PlanningToolError(
+                    f"Failed to advance failure barrier for {item.plan_item_id}: "
+                    f"{barrier.errors}"
+                )
+            slot = current_slot + 1
+            continue
+
+        result = await coordinator.commit_candidate_async(
+            candidate.transaction,
+            manifest_slot=current_slot,
+            plan_digest=candidate.plan_digest,
+        )
+        if not result.committed:
+            item.status = RenderManifestItemStatus.FAILED
+            failed_nodes.add(item.plan_item_id)
+            _record_node_failure(
+                render_state,
+                item,
+                status=NodeRenderRevisionStatus.FAILED,
+            )
+            barrier = coordinator.commit_failure_barrier(
+                manifest_slot=current_slot,
+                node_id=item.plan_item_id,
+                reason="; ".join(result.errors),
+            )
+            if not barrier.committed:
+                raise PlanningToolError(
+                    f"Failed to advance failure barrier for {item.plan_item_id}: "
+                    f"{barrier.errors}"
+                )
+            slot = current_slot + 1
+            continue
+
+        transaction = candidate.transaction
+        if transaction.decision == RenderDecisionKind.PRODUCE:
+            item.status = RenderManifestItemStatus.COMMITTED
+        elif transaction.decision == RenderDecisionKind.DEFER:
+            item.status = RenderManifestItemStatus.DEFERRED
+        else:
+            item.status = RenderManifestItemStatus.SKIPPED
+        _record_node_commit(
+            render_state,
+            item,
+            transaction=transaction,
+            decision_id=result.decision_id,
+        )
+        slot = current_slot + 1
+
+    save_render_state(deps.output_dir, render_state)
+    return slot
+
+
+async def _generate_node_candidate(
+    deps: RenderFlowDeps,
+    *,
+    plan: PlanState,
+    manifest: RenderManifest,
+    item: RenderManifestItem,
+    coordinator: RenderCoordinator,
+    manifest_slot: int,
+    run_state: RunState,
+) -> _NodeCandidate:
+    plan_digest = manifest.plan_digest
+    phase = item.phase
+    plan_item = plan.item_by_id(item.plan_item_id)
+    skip_kind = deterministic_skip_decision(plan_item) if plan_item else None
+    if skip_kind is not None:
+        transaction = RenderNodeTransaction(
+            transaction_id=f"txn-{item.plan_item_id}-{phase.value}",
+            node_id=item.plan_item_id,
+            phase=phase,
+            revision=item.revision,
+            context_digest="deterministic",
+            read_set_digest="deterministic",
+            plan_digest=plan_digest,
+            output_goal_digest=manifest.output_goal_digest,
+            render_config_digest=manifest.render_config_digest,
+            decision=RenderDecisionKind.SKIP,
+            reason=deterministic_skip_reason(plan_item),
+        )
+        return _NodeCandidate(
+            item=item,
+            manifest_slot=manifest_slot,
+            transaction=transaction,
+            plan_digest=plan_digest,
+        )
+
+    ancestor_decision_ids = _ancestor_decision_ids(
+        coordinator.output_dir,
+        plan,
+        item.plan_item_id,
+    )
+    owned = owned_paths_for_node(coordinator._ledger, item.plan_item_id)
+    prepared = prepare_render_node_context(
+        plan=plan,
+        node_id=item.plan_item_id,
+        output_dir=deps.output_dir,
+        workspace=deps.workspace_root,
+        output_goal=deps.output_goal,
+        whole_plan_context=deps.render.whole_plan_context,
+        embed_threshold=deps.embed_threshold,
+        plan_digest=plan_digest,
+        ancestor_decision_ids=ancestor_decision_ids,
+        owned_artifact_paths=owned,
+    )
+
+    txn_path = prepared.staging_dir.parent / "transaction.yaml"
+    session_env = build_render_session_env(
+        transaction_path=txn_path,
+        node_id=item.plan_item_id,
+        context_digest=prepared.context_snapshot.context_digest,
+        plan_digest=plan_digest,
+        output_goal_digest=manifest.output_goal_digest,
+        render_config_digest=manifest.render_config_digest,
+        staging_dir=prepared.staging_dir,
+    )
+
+    prompt = build_render_node_prompt(
+        node_id=item.plan_item_id,
+        plan_digest=plan_digest,
+        output_goal_digest=manifest.output_goal_digest,
+        render_config_digest=manifest.render_config_digest,
+        node_context_markdown=prepared.node_context_markdown,
+        output_goal=deps.output_goal,
+        workspace=deps.workspace_root,
+        embed_threshold=deps.embed_threshold,
+        agent_context=deps.resolve_render_context(),
+        render_tool_command=resolve_render_tool_command(),
+    )
+
+    node_dir = prepared.staging_dir.parent
+    node_dir.mkdir(parents=True, exist_ok=True)
+    validation_feedback: list[str] | None = None
+
+    for attempt in range(1, deps.render.max_retries + 1):
+        prompt_path = node_dir / f"request-{attempt:03d}-prompt.md"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        if txn_path.is_file():
+            txn_path.unlink()
+
+        try:
+            await deps.client.run_session(
+                workspace=deps.workspace_root,
+                prompt=prompt,
+                prompt_path=prompt_path,
+                timeout_seconds=deps.session_timeout_seconds,
+                events_path=node_dir / f"agent-{attempt:03d}.ndjson" if deps.audit else None,
+                log_path=node_dir / f"agent-{attempt:03d}.log" if deps.audit else None,
+                renderer=deps.renderer,
+                session_mode="agent",
+                model=deps.resolve_render_model(),
+                extra_env=session_env,
+            )
+        except UserInterrupted:
+            run_state.agent_pids = []
+            raise
+        except CursorSessionError as exc:
+            if attempt >= deps.render.max_retries:
+                raise
+            validation_feedback = [str(exc)]
+            continue
+
+        if not txn_path.is_file():
+            validation_feedback = ["node transaction was not submitted"]
+            if attempt >= deps.render.max_retries:
+                raise CursorSessionError(
+                    f"Render node {item.plan_item_id} did not submit a transaction"
+                )
+            continue
+
+        transaction = load_render_node_transaction(txn_path)
+        errors = validate_node_render_transaction(
+            transaction,
+            expected_node_id=item.plan_item_id,
+            expected_plan_digest=plan_digest,
+            expected_output_goal_digest=manifest.output_goal_digest,
+            expected_render_config_digest=manifest.render_config_digest,
+            expected_context_digest=prepared.context_snapshot.context_digest,
+        )
+        if errors:
+            validation_feedback = errors
+            if attempt >= deps.render.max_retries:
+                raise CursorSessionError(
+                    f"Render node {item.plan_item_id} failed validation: {'; '.join(errors)}"
+                )
+            continue
+
+        return _NodeCandidate(
+            item=item,
+            manifest_slot=manifest_slot,
+            transaction=transaction,
+            plan_digest=plan_digest,
+        )
+
+    raise CursorSessionError(
+        f"Render node {item.plan_item_id} failed after {deps.render.max_retries} attempts"
+    )
+
+
+def _should_reset_publication_state(
+    render_state: RenderState | None,
     *,
     plan_digest: str,
     output_goal_digest: str,
@@ -276,474 +642,142 @@ def _should_invalidate_render_state(
 ) -> bool:
     if force_rerender:
         return True
-    if not render_state.plan_digest:
-        return False
-    return (
+    if render_state is None:
+        return True
+    if (
         render_state.plan_digest != plan_digest
         or render_state.output_goal_digest != output_goal_digest
         or render_state.render_config_digest != render_config_digest
-    )
-
-
-def _clear_render_staging(output_dir: Path) -> None:
-    from top_down_planning.persistence import render_dir
-
-    root = render_dir(output_dir)
-    if root.exists():
-        shutil.rmtree(root)
-
-
-def _ensure_manifest(
-    deps: RenderFlowDeps,
-    *,
-    plan: PlanState,
-    plan_digest: str,
-    render_config: RenderConfig,
-    render_state: RenderState,
-) -> tuple[RenderManifest, str, bool]:
-    path = render_manifest_path(deps.output_dir)
-    if (
-        path.is_file()
-        and render_state.render_manifest_digest
-        and render_state.plan_digest == plan_digest
-        and render_state.output_goal_digest == deps.output_goal.digest
-        and render_state.render_config_digest == compute_render_config_digest(render_config)
     ):
-        try:
-            manifest = load_render_manifest(path)
-        except ValidationError:
-            manifest = None
-        else:
-            if manifest_is_valid(manifest):
-                return manifest, render_state.render_manifest_digest, True
-
-    manifest = build_render_manifest(
-        plan,
-        plan_digest=plan_digest,
-        output_goal_digest=deps.output_goal.digest,
-        render_config=render_config,
-    )
-    manifest_digest = compute_manifest_digest(manifest)
-    write_manifest_file(path, manifest)
-    return manifest, manifest_digest, False
+        return True
+    if render_state.stage == RenderStage.WAVES:
+        return False
+    return True
 
 
-def _sync_batch_state(
-    render_state: RenderState,
-    manifest: RenderManifest,
-    *,
-    force: bool,
-) -> None:
-    existing = dict(render_state.batches)
-    render_state.batches = {}
-    for batch_id in scheduled_batch_ids(manifest):
-        assigned = [item.plan_item_id for item in items_for_batch(manifest.items, batch_id)]
-        prior = existing.get(batch_id)
-        if (
-            not force
-            and prior is not None
-            and prior.status == RenderBatchStatus.VALID
-            and prior.transaction_digest
-        ):
-            render_state.batches[batch_id] = prior
-        else:
-            render_state.batches[batch_id] = RenderBatchStateEntry(
-                assigned_item_ids=assigned,
-            )
-
-
-async def _run_render_batches(
-    deps: RenderFlowDeps,
-    *,
+def _is_dependency_blocked(
     plan: PlanState,
-    manifest: RenderManifest,
+    item: RenderManifestItem,
+    failed_nodes: set[str],
+) -> bool:
+    current_id: str | None = item.plan_item_id
+    while current_id:
+        plan_item = plan.item_by_id(current_id)
+        if plan_item is None:
+            break
+        parent_id = plan_item.parent_id
+        if parent_id and parent_id in failed_nodes:
+            return True
+        current_id = parent_id
+    return any(dep in failed_nodes for dep in item.dependencies)
+
+
+def _record_node_commit(
     render_state: RenderState,
-    run_state: RunState,
-    force_rerender: bool,
-) -> None:
-    all_batch_ids = scheduled_batch_ids(manifest)
-    pending = [
-        batch_id
-        for batch_id in all_batch_ids
-        if force_rerender
-        or render_state.batches[batch_id].status != RenderBatchStatus.VALID
-    ]
-    if not pending:
-        return
-
-    intermediate_batch_ids = [
-        batch_id for batch_id in pending if batch_id != FINAL_BATCH_ID
-    ]
-    final_batch_id = FINAL_BATCH_ID if FINAL_BATCH_ID in pending else None
-
-    semaphore = asyncio.Semaphore(max(1, deps.render.concurrent_batches))
-
-    async def run_one(batch_id: str) -> None:
-        async with semaphore:
-            await _run_single_batch(
-                deps,
-                plan=plan,
-                manifest=manifest,
-                batch_id=batch_id,
-                render_state=render_state,
-                run_state=run_state,
-            )
-
-    if intermediate_batch_ids:
-        await asyncio.gather(*(run_one(batch_id) for batch_id in intermediate_batch_ids))
-    if final_batch_id:
-        await run_one(final_batch_id)
-
-
-async def _run_single_batch(
-    deps: RenderFlowDeps,
+    item: RenderManifestItem,
     *,
-    plan: PlanState,
-    manifest: RenderManifest,
-    batch_id: str,
-    render_state: RenderState,
-    run_state: RunState,
+    transaction: RenderNodeTransaction,
+    decision_id: str | None,
 ) -> None:
-    assigned_items = items_for_batch(manifest.items, batch_id)
-    plan_digest = manifest.plan_digest
-    manifest_digest = render_state.render_manifest_digest
-    batch_entry = render_state.batches[batch_id]
-    batch_entry.status = RenderBatchStatus.RUNNING
-    save_render_state(deps.output_dir, render_state)
-
-    prepared = prepare_render_batch_context(
-        plan=plan,
-        manifest=manifest,
-        assigned_items=assigned_items,
-        output_dir=deps.output_dir,
-        workspace=deps.workspace_root,
-        output_goal=deps.output_goal,
-        whole_plan_context=deps.render.whole_plan_context,
-        embed_threshold=deps.embed_threshold,
-        batch_id=batch_id,
-        manifest_digest=manifest_digest,
+    phase_key = item.phase.value
+    node_phases = render_state.nodes.setdefault(item.plan_item_id, {})
+    phase_state = node_phases.get(phase_key)
+    if not isinstance(phase_state, NodeRenderPhaseState):
+        phase_state = NodeRenderPhaseState()
+        node_phases[phase_key] = phase_state
+    revision = phase_state.revisions.setdefault(
+        item.revision,
+        NodeRenderRevision(),
     )
-    deps.stream.emit(
-        "render.batch.context_prepared",
-        batch_id=batch_id,
-        plan_item_ids=[item.plan_item_id for item in assigned_items],
-    )
-
-    txn_path = render_batch_transaction_path(deps.output_dir, batch_id)
-    batch_dir = render_batch_dir(deps.output_dir, batch_id)
-    batch_dir.mkdir(parents=True, exist_ok=True)
-    if txn_path.is_file():
-        txn_path.unlink()
-
-    validation_feedback: list[str] | None = None
-    for attempt in range(1, deps.render.max_retries + 1):
-        batch_entry.attempts = attempt
-        deps.stream.emit(
-            "render.batch.started",
-            batch_id=batch_id,
-            attempt=attempt,
-            plan_item_ids=[item.plan_item_id for item in assigned_items],
-        )
-
-        prompt = build_render_batch_prompt(
-            batch_id=batch_id,
-            plan_digest=plan_digest,
-            output_goal_digest=manifest.output_goal_digest,
-            render_config_digest=manifest.render_config_digest,
-            batch_context_markdown=prepared.batch_context_markdown,
-            output_goal=deps.output_goal,
-            workspace=deps.workspace_root,
-            embed_threshold=deps.embed_threshold,
-            validation_feedback=validation_feedback,
-            agent_context=deps.resolve_render_context(),
-            render_tool_command=resolve_render_tool_command(),
-            is_final_batch=batch_id == FINAL_BATCH_ID,
-        )
-        prompt_path = batch_dir / f"request-{attempt:03d}-prompt.md"
-        prompt_path.write_text(prompt, encoding="utf-8")
-
-        session_env = build_render_session_env(
-            transaction_path=txn_path,
-            batch_id=batch_id,
-            plan_digest=plan_digest,
-            output_goal_digest=manifest.output_goal_digest,
-            render_config_digest=manifest.render_config_digest,
-        )
-
-        try:
-            await deps.client.run_session(
-                workspace=deps.workspace_root,
-                prompt=prompt,
-                prompt_path=prompt_path,
-                timeout_seconds=deps.session_timeout_seconds,
-                events_path=batch_dir / f"agent-{attempt:03d}.ndjson" if deps.audit else None,
-                log_path=batch_dir / f"agent-{attempt:03d}.log" if deps.audit else None,
-                renderer=deps.renderer,
-                session_mode="agent",
-                model=deps.resolve_render_model(),
-                extra_env=session_env,
-            )
-        except UserInterrupted:
-            run_state.agent_pids = []
-            save_run_state(deps.output_dir, run_state)
-            raise
-        except CursorEnvironmentError:
-            raise
-        except CursorSessionError as exc:
-            batch_entry.status = RenderBatchStatus.FAILED
-            save_render_state(deps.output_dir, render_state)
-            if attempt >= deps.render.max_retries:
-                deps.stream.emit("render.batch.failed", batch_id=batch_id, reason=str(exc))
-                raise
-            deps.stream.emit(
-                "render.batch.retrying",
-                batch_id=batch_id,
-                attempt=attempt + 1,
-                reason=str(exc),
-            )
-            continue
-
-        if not txn_path.is_file():
-            validation_feedback = ["Batch transaction was not finalized"]
-            deps.stream.emit(
-                "render.validation_failed",
-                batch_id=batch_id,
-                attempt=attempt,
-                errors=validation_feedback,
-            )
-            if attempt >= deps.render.max_retries:
-                batch_entry.status = RenderBatchStatus.FAILED
-                save_render_state(deps.output_dir, render_state)
-                deps.stream.emit("render.batch.failed", batch_id=batch_id, reason="missing transaction")
-                raise CursorSessionError(f"Render batch {batch_id} did not finalize a transaction")
-            deps.stream.emit(
-                "render.batch.retrying",
-                batch_id=batch_id,
-                attempt=attempt + 1,
-                reason="missing transaction",
-            )
-            continue
-
-        from top_down_planning.render_tool import load_render_transaction
-
-        transaction = load_render_transaction(txn_path)
-        validation_feedback = validate_batch_transaction(
-            transaction,
-            manifest=manifest,
-            assigned_items=assigned_items,
-            expected_batch_id=batch_id,
-            expected_plan_digest=plan_digest,
-            expected_output_goal_digest=manifest.output_goal_digest,
-            expected_render_config_digest=manifest.render_config_digest,
-            workspace=deps.workspace_root if batch_id == FINAL_BATCH_ID else None,
-        )
-        if validation_feedback:
-            deps.stream.emit(
-                "render.validation_failed",
-                batch_id=batch_id,
-                attempt=attempt,
-                errors=validation_feedback,
-            )
-            if attempt >= deps.render.max_retries:
-                batch_entry.status = RenderBatchStatus.FAILED
-                save_render_state(deps.output_dir, render_state)
-                deps.stream.emit(
-                    "render.batch.failed",
-                    batch_id=batch_id,
-                    reason="; ".join(validation_feedback),
-                )
-                raise CursorSessionError(
-                    f"Render batch {batch_id} failed validation: {'; '.join(validation_feedback)}"
-                )
-            deps.stream.emit(
-                "render.batch.retrying",
-                batch_id=batch_id,
-                attempt=attempt + 1,
-                reason="; ".join(validation_feedback),
-            )
-            txn_path.unlink(missing_ok=True)
-            continue
-
-        if batch_id == FINAL_BATCH_ID:
-            try:
-                materialize_final_deliverables(deps.workspace_root, transaction)
-            except ValueError as exc:
-                validation_feedback = [str(exc)]
-                deps.stream.emit(
-                    "render.validation_failed",
-                    batch_id=batch_id,
-                    attempt=attempt,
-                    errors=validation_feedback,
-                )
-                if attempt >= deps.render.max_retries:
-                    batch_entry.status = RenderBatchStatus.FAILED
-                    save_render_state(deps.output_dir, render_state)
-                    raise CursorSessionError(
-                        f"Render batch {batch_id} failed materialization: {exc}"
-                    ) from exc
-                deps.stream.emit(
-                    "render.batch.retrying",
-                    batch_id=batch_id,
-                    attempt=attempt + 1,
-                    reason=str(exc),
-                )
-                txn_path.unlink(missing_ok=True)
-                continue
-
-            manifest = apply_final_transaction_to_manifest(manifest, transaction)
-            manifest_digest = compute_manifest_digest(manifest)
-            write_manifest_file(render_manifest_path(deps.output_dir), manifest)
-            render_state.render_manifest_digest = manifest_digest
-            batch_entry.assigned_item_ids = [
-                item.plan_item_id for item in manifest.items if item.artifact_role == "final"
-            ]
-
-        batch_entry.status = RenderBatchStatus.VALID
-        batch_entry.transaction_digest = digest_file(txn_path)
-        save_render_state(deps.output_dir, render_state)
-        deps.stream.emit(
-            "render.batch.completed",
-            batch_id=batch_id,
-            attempt=attempt,
-            plan_item_ids=[item.plan_item_id for item in assigned_items],
-        )
-        return
-
-    batch_entry.status = RenderBatchStatus.FAILED
-    save_render_state(deps.output_dir, render_state)
-    raise CursorSessionError(
-        f"Render batch {batch_id} failed after {deps.render.max_retries} attempts"
-    )
+    revision.status = NodeRenderRevisionStatus.COMMITTED
+    revision.decision = transaction.decision
+    revision.decision_id = decision_id
+    revision.artifacts = [artifact.path for artifact in transaction.artifacts]
 
 
-async def _run_output_review_cycle(
-    deps: RenderFlowDeps,
+def _record_node_failure(
+    render_state: RenderState,
+    item: RenderManifestItem,
     *,
-    plan: PlanState,
-    plan_digest: str,
-    manifest: RenderManifest,
-    manifest_digest: str,
-    render_state: RenderState,
-    run_state: RunState,
-    force_rerender: bool,
+    status: NodeRenderRevisionStatus,
 ) -> None:
-    max_cycles = deps.render.max_rerender_cycles
-    for cycle in range(max_cycles + 1):
-        transactions = load_valid_batch_transactions(deps.output_dir, manifest)
-        assembled = assemble_render_output(manifest, transactions)
-        write_assembled_output(deps.output_dir, assembled)
-
-        try:
-            deliverable = collect_deliverable_output(deps.workspace_root, manifest)
-        except ValueError as exc:
-            raise PlanningToolError(f"Deliverable collection failed: {exc}") from exc
-        render_state.deliverable_output_digest = deliverable.digest
-        save_render_state(deps.output_dir, render_state)
-
-        deps.stream.emit("render.review.started", cycle=cycle)
-        review_deps = RenderReviewDeps(
-            workspace_root=deps.workspace_root,
-            output_dir=deps.output_dir,
-            output_goal=deps.output_goal,
-            embed_threshold=deps.embed_threshold,
-            client=deps.client,
-            renderer=deps.renderer,
-            audit=deps.audit,
-            resolve_review_context=deps.resolve_review_context,
-            resolve_review_model=deps.resolve_review_model,
-        )
-        result = await run_render_output_review(
-            review_deps,
-            plan_digest=plan_digest,
-            manifest=manifest,
-            manifest_digest=manifest_digest,
-            deliverable=deliverable,
-            max_retries=deps.render.max_retries,
-        )
-        if result is None:
-            render_state.output_review_status = RenderOutputReviewStatus.BLOCKED
-            save_render_state(deps.output_dir, render_state)
-            deps.stream.emit("render.review.completed", decision="blocked")
-            raise PlanningToolError(
-                "Rendered output review blocked: reviewer did not finalize a result."
-            )
-
-        render_state.output_review_status = review_status_from_decision(result.decision)
-        save_render_state(deps.output_dir, render_state)
-        deps.stream.emit(
-            "render.review.completed",
-            decision=result.decision.value,
-            summary=result.summary,
-        )
-
-        if result.decision == RenderOutputReviewDecision.APPROVE:
-            return
-
-        if result.decision == RenderOutputReviewDecision.BLOCKED:
-            raise PlanningToolError(
-                f"Rendered output review blocked: {result.summary or 'no summary provided.'}"
-            )
-
-        if cycle >= max_cycles:
-            raise PlanningToolError(
-                "Rendered output review exceeded max rerender cycles "
-                f"({max_cycles})."
-            )
-
-        deps.stream.emit("render.review.needs_rerender", affected_batches=result.affected_batch_ids)
-        affected = _expand_rerender_batch_ids(set(result.affected_batch_ids), manifest)
-        if not affected:
-            for finding in result.findings:
-                for item_id in finding.plan_item_ids:
-                    for item in manifest.items:
-                        if item.plan_item_id == item_id:
-                            affected.add(item.assigned_batch_id)
-
-        for batch_id in affected:
-            if batch_id in render_state.batches:
-                render_state.batches[batch_id].status = RenderBatchStatus.PENDING
-                render_state.batches[batch_id].transaction_digest = None
-                txn_path = render_batch_transaction_path(deps.output_dir, batch_id)
-                txn_path.unlink(missing_ok=True)
-
-        if FINAL_BATCH_ID in affected:
-            manifest = strip_final_items_from_manifest(manifest)
-            write_manifest_file(render_manifest_path(deps.output_dir), manifest)
-            manifest_digest = compute_manifest_digest(manifest)
-            render_state.render_manifest_digest = manifest_digest
-
-        render_state.rerender_cycle = cycle + 1
-        save_render_state(deps.output_dir, render_state)
-        await _run_render_batches(
-            deps,
-            plan=plan,
-            manifest=manifest,
-            render_state=render_state,
-            run_state=run_state,
-            force_rerender=False,
-        )
-        manifest = load_render_manifest(render_manifest_path(deps.output_dir))
-        manifest_digest = compute_manifest_digest(manifest)
-        render_state.render_manifest_digest = manifest_digest
-        save_render_state(deps.output_dir, render_state)
-
-    raise PlanningToolError("Rendered output review did not reach an approved decision.")
+    phase_key = item.phase.value
+    node_phases = render_state.nodes.setdefault(item.plan_item_id, {})
+    phase_state = node_phases.get(phase_key)
+    if not isinstance(phase_state, NodeRenderPhaseState):
+        phase_state = NodeRenderPhaseState()
+        node_phases[phase_key] = phase_state
+    revision = phase_state.revisions.setdefault(item.revision, NodeRenderRevision())
+    revision.status = status
 
 
-def _expand_rerender_batch_ids(
-    affected: set[str],
-    manifest: RenderManifest,
-) -> set[str]:
-    """Re-synthesize finals whenever an intermediate batch is invalidated."""
-    expanded = set(affected)
-    intermediate_batch_ids = {
-        item.assigned_batch_id
-        for item in manifest.items
-        if item.artifact_role == "intermediate"
-    }
-    if expanded.intersection(intermediate_batch_ids):
-        expanded.add(FINAL_BATCH_ID)
-    return expanded
+def _reset_render_publication_state(output_dir: Path) -> None:
+    from top_down_planning.persistence import (
+        commit_journal_path,
+        coordinator_state_path,
+        ownership_ledger_path,
+        render_decisions_dir,
+        render_staged_artifacts_dir,
+    )
+
+    commit_journal_path(output_dir).unlink(missing_ok=True)
+    coordinator_state_path(output_dir).unlink(missing_ok=True)
+    ownership_ledger_path(output_dir).unlink(missing_ok=True)
+    staged = render_staged_artifacts_dir(output_dir)
+    if staged.is_dir():
+        shutil.rmtree(staged)
+    decisions = render_decisions_dir(output_dir)
+    if decisions.is_dir():
+        shutil.rmtree(decisions)
+
+
+def _ancestor_decision_ids(output_dir: Path, plan: PlanState, node_id: str) -> list[str]:
+    from top_down_planning.persistence import load_render_decision
+
+    item = plan.item_by_id(node_id)
+    if item is None:
+        return []
+    ancestor_ids: list[str] = []
+    current = item
+    while current.parent_id:
+        ancestor_ids.append(current.parent_id)
+        parent = plan.item_by_id(current.parent_id)
+        if parent is None:
+            break
+        current = parent
+    decisions_dir = render_decisions_dir(output_dir)
+    if not decisions_dir.is_dir():
+        return []
+    resolved: list[str] = []
+    for ancestor_id in ancestor_ids:
+        for phase in (RenderNodePhase.RENDER,):
+            path = decisions_dir / ancestor_id / phase.value / "0001.yaml"
+            if path.is_file():
+                decision = load_render_decision(path)
+                resolved.append(decision.decision_id)
+            else:
+                resolved.append(decision_id_for(ancestor_id, phase, 1))
+    return resolved
+
+
+def _unresolved_deferred(coordinator: RenderCoordinator) -> list[str]:
+    from top_down_planning.persistence import load_phase_completion, load_render_decision
+
+    decisions_dir = render_decisions_dir(coordinator.output_dir)
+    if not decisions_dir.is_dir():
+        return []
+
+    decisions = []
+    for path in decisions_dir.rglob("*.yaml"):
+        decisions.append(load_render_decision(path))
+
+    phase_completions = []
+    phases_dir = render_phases_dir(coordinator.output_dir)
+    if phases_dir.is_dir():
+        for completion_path in phases_dir.rglob("completion-*.yaml"):
+            phase_completions.append(load_phase_completion(completion_path))
+
+    return all_deferred_resolved(decisions, phase_completions=phase_completions)
 
 
 def _persist_render_result(
@@ -768,23 +802,26 @@ def existing_deliverable_artifacts(
     run_state: RunState,
     render_state: RenderState | None,
     *,
-    manifest: RenderManifest | None = None,
+    output_dir: Path | None = None,
 ) -> list[str] | None:
-    if render_state is not None and render_state.stage == RenderStage.COMPLETE:
-        if not run_state.generated_artifacts:
+    if render_state is None or render_state.stage != RenderStage.COMPLETE:
+        return None
+    if not run_state.generated_artifacts:
+        return None
+    absolute: list[str] = []
+    for relative in run_state.generated_artifacts:
+        path = workspace / relative
+        if not path.is_file():
             return None
-        absolute: list[str] = []
-        for relative in run_state.generated_artifacts:
-            path = workspace / relative
-            if not path.is_file():
-                return None
-            absolute.append(str(path))
-        if manifest is not None and render_state.deliverable_output_digest:
-            try:
-                current = collect_deliverable_output(workspace, manifest)
-            except ValueError:
-                return None
-            if current.digest != render_state.deliverable_output_digest:
-                return None
-        return absolute
-    return None
+        absolute.append(str(path))
+    if output_dir is not None and render_state.deliverable_output_digest:
+        ledger = load_ownership_ledger(output_dir)
+        if ledger is None:
+            return None
+        try:
+            current = collect_deliverable_output_from_ledger(workspace, ledger)
+        except ValueError:
+            return None
+        if current.digest != render_state.deliverable_output_digest:
+            return None
+    return absolute

@@ -16,7 +16,7 @@ from top_down_planning.agent_context import (
 from top_down_planning.config_loader import load_run_config_file, merge_run_options
 from top_down_planning.errors import PlanningToolError
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal
-from top_down_planning.prompts import build_render_batch_prompt, build_planning_prompt
+from top_down_planning.prompts import build_render_node_prompt, build_planning_prompt
 from tests.helpers import planning_prompt_kwargs
 from tests.plan_factory import make_root_plan
 
@@ -97,12 +97,12 @@ def test_planning_and_render_prompts_include_phase_context() -> None:
             output_dir=Path("out"),
         ),
     )
-    render_prompt = build_render_batch_prompt(
-        batch_id="batch-001",
+    render_prompt = build_render_node_prompt(
+        node_id="item-001",
         plan_digest="d" * 64,
         output_goal_digest=output_goal.digest,
         render_config_digest="c" * 64,
-        batch_context_markdown="## Assigned items\n- `item-001` → `artifact-001` → staging `intermediates/render-batch-001/item-001.md`\n",
+        node_context_markdown="## Current node\n- Title: Root\n",
         output_goal=output_goal,
         workspace=Path("."),
         embed_threshold=4000,

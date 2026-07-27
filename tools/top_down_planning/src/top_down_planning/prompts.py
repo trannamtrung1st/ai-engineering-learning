@@ -394,94 +394,58 @@ items, and do not execute implementation work.
 """
 
 
-def format_render_tool_section(
+def format_render_node_tool_section(
     *,
     render_tool_command: str = "planning-render-tool",
-    is_final_batch: bool = False,
 ) -> str:
-    if is_final_batch:
-        return f"""Write final deliverables **directly to workspace destination paths** chosen from
-the output goal. Use the render transaction CLI to declare what you wrote — do **not** modify
-`.planning-output/plan.yaml`.
+    return f"""Use the render transaction CLI — do **not** write deliverables directly
+to workspace destinations.
 
 Workflow:
-1. Read the output goal, intermediate inputs, and whole-plan references.
-2. Decide whether workspace deliverables are required. Write 0..N files to their final
-   workspace paths.
-3. Record each deliverable with `{render_tool_command} record-artifact --json '<artifact>'`.
-4. Run `{render_tool_command} finalize` to commit the batch transaction.
+1. Run `{render_tool_command} begin --node-id <id> --context-digest <digest>`.
+2. Record exactly one decision with `{render_tool_command} record-decision --decision produce|skip|defer`.
+3. For `produce`, declare artifacts with `{render_tool_command} declare-artifact --json '<intent>'`
+   and stage content with `{render_tool_command} stage-artifact --artifact-key <key> --content-file <path>`.
+4. Run `{render_tool_command} submit` to hand the candidate to the coordinator.
 
-Final artifact JSON schema (one object per `record-artifact` call):
+Artifact intent JSON schema:
 ```json
 {{
-  "plan_item_id": "final-indexmd",
-  "artifact_key": "final-indexmd",
-  "relative_path": "plans/demo/todos/INDEX.md",
-  "content": "..."
+  "artifact_key": "feature-guest-checkout",
+  "path": "backlog/features/guest-checkout.md",
+  "location": "final",
+  "operation": "create",
+  "owner_kind": "node",
+  "owner_id": "item-012"
 }}
 ```
-
-`relative_path` is the workspace destination path. Either write the file directly in the
-workspace or include `content` in the transaction (the tool will materialize it).
-Finalize with zero artifacts when the output goal does not require workspace files.
-Do not write deliverables under `.planning-output/` or `intermediates/`.
-"""
-
-    return f"""Use the render transaction CLI — do **not** write deliverables directly to the
-final output destination and do **not** modify `.planning-output/plan.yaml`.
-
-Workflow:
-1. Read assigned batch context and the whole-plan references.
-2. For each assigned plan item, run `{render_tool_command} record-artifact --json '<artifact>'`.
-3. Run `{render_tool_command} finalize` to commit the batch transaction.
-
-Artifact JSON schema (one object per `record-artifact` call):
-```json
-{{
-  "plan_item_id": "item-011",
-  "artifact_key": "artifact-011",
-  "relative_path": "intermediates/render-batch-001/item-011.md",
-  "content": "..."
-}}
-```
-
-Every artifact uses `relative_path` from the batch context. Do not invent artifact keys,
-paths, or plan item IDs. Intermediates may be freeform notes or partial drafts.
 """
 
 
-def build_render_batch_prompt(
+def build_render_node_prompt(
     *,
-    batch_id: str,
+    node_id: str,
     plan_digest: str,
     output_goal_digest: str,
     render_config_digest: str,
-    batch_context_markdown: str,
+    node_context_markdown: str,
     output_goal: LoadedOutputGoal,
     workspace: Path,
     embed_threshold: int,
     validation_feedback: list[str] | None = None,
     agent_context: ResolvedAgentContext | None = None,
     render_tool_command: str = "planning-render-tool",
-    is_final_batch: bool = False,
 ) -> str:
     feedback_block = ""
     if validation_feedback:
         feedback_block = (
             "## Validation feedback from previous attempt\n"
             + "\n".join(f"- {error}" for error in validation_feedback)
-            + "\n\nFix every issue before finalizing the batch transaction.\n\n"
+            + "\n\nFix every issue before submitting the node transaction.\n\n"
         )
-    batch_kind = (
-        "Synthesize final deliverables from the output goal and intermediate artifacts. "
-        "You decide whether workspace files are required and which paths to use."
-        if is_final_batch
-        else "Capture useful notes, partial drafts, or checklists for the assigned plan items. "
-        "Content is freeform; focus on coverage and clarity for later synthesis."
-    )
-    return f"""# Render batch session: {batch_id}
+    return f"""# Render node session: {node_id}
 
-{batch_kind}
+Decide whether this plan node should produce, skip, or defer artifacts.
 
 ## Plan digest
 `{plan_digest}`
@@ -495,15 +459,16 @@ def build_render_batch_prompt(
 {feedback_block}{_format_agent_context_section(agent_context)}## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-## Batch context
-{batch_context_markdown}
+## Node context
+{node_context_markdown}
 
-{format_render_tool_section(render_tool_command=render_tool_command, is_final_batch=is_final_batch)}
+{format_render_node_tool_section(render_tool_command=render_tool_command)}
 
 ## Instructions
-{"- Read the output goal and intermediate inputs, write deliverables to their final workspace paths, then record 0..N artifacts via the render transaction CLI.\n- Optional `## Output artifacts` sections are sample layout only.\n" if is_final_batch else "- Render only the assigned plan items exactly once.\n- Use the tool-owned artifact keys and paths from the batch context.\n- Do not write deliverables directly to workspace paths outside the render transaction CLI.\n"}
+- Record exactly one `produce`, `skip`, or `defer` decision with a reason when skipping or deferring.
+- Stage candidate content only in the assigned private staging directory.
+- Submit the node transaction before ending the session.
 - Do not modify canonical planning files.
-- Finalize the batch transaction before ending the session.
 """
 
 
@@ -543,9 +508,8 @@ output goal.
 Final deliverables live at their **workspace destination paths**. Intermediate artifacts under
 `.planning-output/render/assembled/intermediates/` are synthesis inputs only.
 
-Use `needs_rerender` for intermediate or final content fixable by rerunning the affected
-render batches (including `render-batch-final` when only deliverables need revision).
-Use `blocked` for unfixable tool/goal mismatches that cannot be corrected by rerender alone.
+Use `needs_rerender` for node output that can be fixed by rerunning the affected render
+nodes. Use `blocked` for unfixable tool/goal mismatches that cannot be corrected by rerender alone.
 
 ## Plan digest
 `{plan_digest}`
@@ -583,7 +547,7 @@ Result JSON schema:
   "decision": "approve | needs_rerender | blocked",
   "summary": "...",
   "findings": [],
-  "affected_batch_ids": []
+  "affected_node_ids": []
 }}
 ```
 """

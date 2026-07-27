@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from top_down_planning.input_loader import load_markdown_input, load_output_goal
+from top_down_planning.input_loader import load_markdown_input
 from top_down_planning.models import DecompositionStatus, FinalStatus, PlanningLimits, RenderConfig
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import new_run_state, save_plan
@@ -15,11 +15,13 @@ from tests.plan_factory import make_root_plan
 
 
 @pytest.mark.asyncio
-async def test_render_batch_retry_records_audit_files(
+async def test_render_node_retry_records_audit_files(
     tmp_path: Path,
     example_input: Path,
     fake_agent_bin: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("FAKE_AGENT_RENDER_PRODUCE_NODE", "item-001")
     loaded = load_markdown_input(example_input)
     loaded_goal = render_output_goal()
     output_dir = tmp_path / "planning-output"
@@ -58,16 +60,13 @@ async def test_render_batch_retry_records_audit_files(
     attempt_state = {"n": 0}
 
     def flaky_validate(*args, **kwargs):
-        batch_id = kwargs.get("expected_batch_id")
-        if batch_id != "render-batch-001":
-            return []
         attempt_state["n"] += 1
         if attempt_state["n"] == 1:
-            return ["simulated missing item"]
+            return ["simulated validation failure"]
         return []
 
     with patch(
-        "top_down_planning.render_flow.validate_batch_transaction",
+        "top_down_planning.render_flow.validate_node_render_transaction",
         side_effect=flaky_validate,
     ):
         await render_from_confirmed_plan(
@@ -76,7 +75,13 @@ async def test_render_batch_retry_records_audit_files(
             run_state=run_state,
         )
 
-    batch_dir = output_dir / ".planning-output" / "render" / "batches" / "render-batch-001"
-    assert (batch_dir / "request-001-prompt.md").is_file()
-    assert (batch_dir / "request-002-prompt.md").is_file()
+    node_dir = (
+        output_dir
+        / ".planning-output"
+        / "render"
+        / "transactions"
+        / "txn-item-001-render"
+    )
+    assert (node_dir / "request-001-prompt.md").is_file()
+    assert (node_dir / "request-002-prompt.md").is_file()
     assert attempt_state["n"] == 2

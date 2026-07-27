@@ -16,7 +16,12 @@ from top_down_planning.models import (
     RenderedOutputReviewResult,
     ReviewFindingSeverity,
 )
-from top_down_planning.persistence import rendered_output_review_result_path, write_json
+from top_down_planning.persistence import (
+    rendered_output_review_result_path,
+    render_decisions_dir,
+    load_render_decision,
+    write_json,
+)
 from top_down_planning.prompts import build_render_output_review_prompt
 from top_down_planning.render_deliverables import DeliverableOutput
 from top_down_planning.review_tool import (
@@ -51,9 +56,9 @@ def validate_render_output_review(result: RenderedOutputReviewResult) -> list[st
     if result.decision == RenderOutputReviewDecision.APPROVE and blocking_or_major:
         errors.append("approve decision cannot contain blocking or major findings")
     if result.decision == RenderOutputReviewDecision.NEEDS_RERENDER and not (
-        result.affected_batch_ids or result.findings
+        result.affected_node_ids or result.findings
     ):
-        errors.append("needs_rerender must identify affected artifacts or batches")
+        errors.append("needs_rerender must identify affected nodes or findings")
     if result.decision == RenderOutputReviewDecision.BLOCKED and not result.summary.strip():
         errors.append("blocked decision must include a summary")
     return errors
@@ -163,3 +168,23 @@ def review_status_from_decision(
     if decision == RenderOutputReviewDecision.NEEDS_RERENDER:
         return RenderOutputReviewStatus.NEEDS_RERENDER
     return RenderOutputReviewStatus.BLOCKED
+
+
+def progressive_decision_coverage_errors(
+    output_dir: Path,
+    *,
+    expected_node_ids: set[str],
+) -> list[str]:
+    """Return errors when eligible nodes lack a committed decision record."""
+    decisions_dir = render_decisions_dir(output_dir)
+    if not decisions_dir.is_dir():
+        return [f"missing decisions directory for nodes: {sorted(expected_node_ids)}"]
+    committed_nodes: set[str] = set()
+    for path in decisions_dir.rglob("*.yaml"):
+        decision = load_render_decision(path)
+        if decision.committed_at or decision.commit_sequence is not None:
+            committed_nodes.add(decision.node_id)
+    missing = expected_node_ids - committed_nodes
+    if missing:
+        return [f"missing committed decisions for nodes: {sorted(missing)}"]
+    return []

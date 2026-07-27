@@ -26,7 +26,13 @@ if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 from top_down_planning.plan_tool import plan_tool_argv, resolve_plan_tool_command
-from top_down_planning.render_tool import render_tool_argv, resolve_render_tool_command
+from top_down_planning.render_tool import (
+    ENV_CONTEXT_DIGEST,
+    ENV_NODE_ID,
+    ENV_STAGING_DIR,
+    render_tool_argv,
+    resolve_render_tool_command,
+)
 
 
 def emit(event: dict) -> None:
@@ -254,66 +260,61 @@ def _run_render_tool(*args: str) -> None:
     )
 
 
-def _assigned_artifacts(prompt: str) -> list[dict]:
-    artifacts: list[dict] = []
-
-    for match in re.finditer(
-        r"- `(item-[^`]+)` → `(artifact-[^`]+)` → staging `([^`]+)`",
-        prompt,
-    ):
-        item_id = match.group(1)
-        key = match.group(2)
-        staging_path = match.group(3)
-        artifacts.append(
-            {
-                "plan_item_id": item_id,
-                "artifact_key": key,
-                "relative_path": staging_path,
-                "content": f"Notes and partials for {item_id}.\n",
-            }
-        )
-
-    return artifacts
+def _default_produce_node_id() -> str:
+    return os.environ.get("FAKE_AGENT_RENDER_PRODUCE_NODE", "item-002")
 
 
-def _final_artifacts_from_goal(prompt: str) -> list[dict]:
-    artifacts: list[dict] = []
-    seen_paths: set[str] = set()
+def _write_render_node_transaction(prompt: str) -> None:
+    match = re.search(r"# Render node session: (\S+)", prompt)
+    node_id = os.environ.get(ENV_NODE_ID) or (match.group(1) if match else "item-001")
+    context_digest = os.environ.get(ENV_CONTEXT_DIGEST, "ctx")
+    staging_dir = Path(os.environ[ENV_STAGING_DIR])
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
-    for match in re.finditer(r"`([^`]+\.(?:md|markdown|yaml|yml|json|txt))`", prompt):
-        path = match.group(1).strip()
-        if (
-            path.startswith("./scripts/")
-            or path.startswith("/")
-            or path.startswith("intermediates/")
-            or path.startswith(".planning-output")
-            or ".planning-output/" in path
-            or path in seen_paths
-        ):
-            continue
-        seen_paths.add(path)
-        slug = re.sub(r"[^a-z0-9]+", "", path.lower())[:40] or "item"
-        artifacts.append(
-            {
-                "plan_item_id": f"final-{slug}",
-                "artifact_key": f"final-{slug}",
-                "relative_path": path,
-                "content": _final_artifact_content(path),
-            }
-        )
+    _run_render_tool(
+        "begin",
+        "--node-id",
+        node_id,
+        "--context-digest",
+        context_digest,
+    )
 
-    if not artifacts and "implementation plan" in prompt.lower():
+    produce_node = _default_produce_node_id()
+    if node_id == produce_node and "implementation plan" in prompt.lower():
         path = "implementation-plan.md"
-        artifacts.append(
-            {
-                "plan_item_id": "final-implementation-planmd",
-                "artifact_key": "final-implementation-planmd",
-                "relative_path": path,
-                "content": _final_artifact_content(path),
-            }
+        artifact_key = f"artifact-{node_id}"
+        content_file = staging_dir / "deliverable.md"
+        content_file.write_text(_final_artifact_content(path), encoding="utf-8")
+        intent = {
+            "artifact_key": artifact_key,
+            "path": path,
+            "location": "final",
+            "operation": "create",
+            "owner_kind": "node",
+            "owner_id": node_id,
+        }
+        _run_render_tool(
+            "declare-artifact",
+            "--json",
+            json.dumps(intent, separators=(",", ":")),
         )
-
-    return artifacts
+        _run_render_tool(
+            "stage-artifact",
+            "--artifact-key",
+            artifact_key,
+            "--content-file",
+            str(content_file),
+        )
+        _run_render_tool("record-decision", "--decision", "produce")
+    else:
+        _run_render_tool(
+            "record-decision",
+            "--decision",
+            "skip",
+            "--reason",
+            "Covered by primary deliverable node",
+        )
+    _run_render_tool("submit")
 
 
 def _final_artifact_content(relative_path: str) -> str:
@@ -322,36 +323,6 @@ def _final_artifact_content(relative_path: str) -> str:
     if relative_path.endswith((".yaml", ".yml")):
         return f"id: rendered\ntitle: {relative_path}\n"
     return f"Rendered content for {relative_path}.\n"
-
-
-def _write_render_batch_transaction(prompt: str) -> None:
-    if "Final deliverable synthesis" in prompt or "render-batch-final" in prompt:
-        artifacts = _final_artifacts_from_goal(prompt)
-        for artifact in artifacts:
-            destination = Path(artifact["relative_path"])
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(artifact["content"], encoding="utf-8")
-    else:
-        artifacts = _assigned_artifacts(prompt)
-        if not artifacts:
-            titles = _breakdown_titles(prompt)
-            for index, title in enumerate(titles, start=1):
-                item_id = f"item-{index:03d}"
-                artifacts.append(
-                    {
-                        "plan_item_id": item_id,
-                        "artifact_key": f"artifact-{index:03d}",
-                        "relative_path": f"intermediates/render-batch-001/{item_id}.md",
-                        "content": f"Notes for {title}.\n",
-                    }
-                )
-    for artifact in artifacts:
-        _run_render_tool(
-            "record-artifact",
-            "--json",
-            json.dumps(artifact, separators=(",", ":")),
-        )
-    _run_render_tool("finalize")
 
 
 def _write_render_output_review(prompt: str) -> None:
@@ -368,7 +339,7 @@ def _write_render_output_review(prompt: str) -> None:
         "decision": "approve",
         "summary": "Rendered output approved by fake reviewer.",
         "findings": [],
-        "affected_batch_ids": [],
+        "affected_node_ids": [],
     }
     _run_review_tool(
         "set-result",
@@ -387,17 +358,17 @@ def main() -> int:
     mode = os.environ.get("FAKE_AGENT_MODE", "planning")
     prompt = _prompt_text()
 
-    if "Render batch session" in prompt:
+    if "Render node session" in prompt:
         emit(
             {
                 "type": "system",
                 "subtype": "init",
-                "session_id": "fake-render-batch-session",
+                "session_id": "fake-render-node-session",
                 "model": "fake-model",
             }
         )
-        _write_render_batch_transaction(prompt)
-        assistant("Finalized render batch transaction.")
+        _write_render_node_transaction(prompt)
+        assistant("Submitted render node transaction.")
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
         return 0
 

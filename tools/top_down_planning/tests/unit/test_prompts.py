@@ -4,7 +4,7 @@ from top_down_planning.input_loader import load_markdown_input, load_output_goal
 from top_down_planning.models import DEFAULT_INLINE_EMBED_THRESHOLD
 from top_down_planning.prompts import (
     build_planning_prompt,
-    build_render_batch_prompt,
+    build_render_node_prompt,
     format_embedded_markdown,
     format_input_document_section,
     format_input_file_reference,
@@ -407,62 +407,41 @@ def test_prompt_omits_stop_hint_section_when_not_provided(
     assert "Expansion stop guidance" not in prompt
 
 
-def test_render_batch_prompt_references_digests_and_tool(
+def test_render_node_prompt_references_digests_and_tool(
     tmp_path: Path,
     example_input: Path,
 ) -> None:
     output_goal = render_output_goal()
 
-    prompt = build_render_batch_prompt(
-        batch_id="batch-001",
+    prompt = build_render_node_prompt(
+        node_id="item-001",
         plan_digest="d" * 64,
         output_goal_digest=output_goal.digest,
         render_config_digest="c" * 64,
-        batch_context_markdown="## Assigned items\n- `item-001` → `artifact-001` → staging `intermediates/render-batch-001/item-001.md`\n",
+        node_context_markdown="## Current node\n- Title: Root\n",
         output_goal=output_goal,
         workspace=tmp_path,
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
     )
 
-    assert "Render batch session: batch-001" in prompt
+    assert "Render node session: item-001" in prompt
     assert "d" * 64 in prompt
     assert "Produce an actionable implementation plan" in prompt
     assert "planning-render-tool" in prompt
-    assert "Do not write deliverables directly to workspace paths outside the render transaction CLI" in prompt
+    assert "record-decision" in prompt
 
 
-def test_final_render_batch_prompt_references_synthesis_instructions(
-    tmp_path: Path,
-) -> None:
-    output_goal = render_output_goal()
-    prompt = build_render_batch_prompt(
-        batch_id="render-batch-final",
-        plan_digest="d" * 64,
-        output_goal_digest=output_goal.digest,
-        render_config_digest="c" * 64,
-        batch_context_markdown="## Assigned items\n",
-        output_goal=output_goal,
-        workspace=tmp_path,
-        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
-        is_final_batch=True,
-    )
-    assert "Synthesize final deliverables" in prompt
-    assert "record 0..N artifacts" in prompt
-    assert "sample layout only" in prompt
-    assert "workspace destination paths" in prompt
-
-
-def test_render_batch_prompt_includes_validation_feedback(
+def test_render_node_prompt_includes_validation_feedback(
     tmp_path: Path,
 ) -> None:
     output_goal = render_output_goal()
 
-    prompt = build_render_batch_prompt(
-        batch_id="batch-002",
+    prompt = build_render_node_prompt(
+        node_id="item-002",
         plan_digest="d" * 64,
         output_goal_digest=output_goal.digest,
         render_config_digest="c" * 64,
-        batch_context_markdown="## Assigned items\n",
+        node_context_markdown="## Current node\n",
         output_goal=output_goal,
         workspace=tmp_path,
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,

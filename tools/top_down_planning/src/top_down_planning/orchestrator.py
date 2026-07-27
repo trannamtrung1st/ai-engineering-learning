@@ -417,7 +417,7 @@ class Orchestrator:
                 self.config.workspace_root,
                 run_state,
                 render_state,
-                manifest=manifest,
+                output_dir=output_dir,
             )
             if existing and not self.config.force_rerender:
                 self._artifacts = existing
