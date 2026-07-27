@@ -348,17 +348,17 @@ def main_callback(
     force_rerender: bool = typer.Option(
         False,
         "--force-rerender",
-        help="Discard prior render batches and regenerate all rendered output",
+        help="Discard prior render state and regenerate all rendered output",
     ),
     render_batch_size: Optional[int] = typer.Option(
         None,
         "--render-batch-size",
-        help="Maximum actionable leaves per render batch",
+        help="(Unused) Legacy flag; render uses per-node sessions",
     ),
     render_concurrent_batches: Optional[int] = typer.Option(
         None,
         "--render-concurrent-batches",
-        help="Maximum concurrent render batch sessions",
+        help="Maximum concurrent render node sessions per generation group",
     ),
 ) -> None:
     """Top-down planning via Cursor Agent CLI."""

@@ -173,7 +173,7 @@ render:
   max_retries: 3
   whole_plan_context: hybrid
   final_review: true
-  max_rerender_cycles: 2
+  max_rerender_cycles: 2  # reserved; targeted rerender loop not implemented yet
   scope: all_nodes
 ```
 
@@ -443,7 +443,7 @@ top-down-planning --config ./examples/planning.config.yaml
 ```
 
 Uses [`examples/idea.md`](examples/idea.md) with an implementation-oriented output goal.
-After review and confirmation, the final render batch writes deliverables such as
+After review and confirmation, producing render nodes write deliverables such as
 `implementation-plan.md` when the output goal calls for them.
 
 **Generic non-software planning** — use a non-implementation goal; optionally disable
@@ -481,13 +481,9 @@ When `--stream-json` is enabled, planning-phase events include:
 Render-phase events include:
 
 - `render.only.started` (render-only mode)
-- `render.started`
-- `render.manifest.created` / `render.manifest.reused`
-- `render.batch.started` / `render.batch.completed` / `render.batch.failed` / `render.batch.retrying`
-- `render.validation_failed` (batch transaction or assembly validation)
-- `render.assembly.started` / `render.assembly.completed`
-- `render.review.started` / `render.review.completed` / `render.review.needs_rerender`
-- `render.finalization.started` / `render.finalization.completed`
+- `render.rollup.started` (when `rollup.enabled`)
+- `render.synthesis.skipped` (when `final_synthesis` is optional and skipped)
+- `render.review.started` / `render.review.completed`
 - `render.completed` (with `artifacts`)
 - `render.skipped` (when resuming with completed render state and existing deliverables)
 
@@ -508,6 +504,11 @@ Integration tests use a deterministic fake agent fixture; live Cursor tests are 
 
 ## Design note: expanded internal nodes
 
-When an item is expanded, it becomes a non-leaf container marked `actionable` so it is no longer selected for expansion. Only **leaf** actionable items drive intermediate render batches; the final synthesis batch turns those notes plus the output goal into agent-chosen deliverables.
+When an item is expanded, it becomes a non-leaf container marked `actionable` so it is
+no longer selected for expansion. With `render.scope: all_nodes` (default), every
+eligible node — including expanded containers — receives a render session (`produce`,
+`skip`, or `defer`). Use `scope: actionable_nodes` to limit scheduling to actionable
+nodes only (still includes non-leaf actionable parents).
 
-Plan items may declare dependencies on parent workstreams or sibling leaves. The render manifest normalizes every dependency to actionable leaf ids (expanding parent references to their leaf descendants). Assembly validates that graph against rendered intermediates only.
+Plan items may declare dependencies on parent workstreams or sibling leaves. The render
+manifest normalizes dependency edges for wave scheduling and dependency-failure barriers.

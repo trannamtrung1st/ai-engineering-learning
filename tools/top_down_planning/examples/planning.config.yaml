@@ -66,7 +66,7 @@ render:
   max_retries: 3
   whole_plan_context: hybrid # embedded | referenced | hybrid
   final_review: true
-  max_rerender_cycles: 2
+  max_rerender_cycles: 2  # reserved; targeted rerender loop not implemented yet
   dry_run: false
   traversal: breadth_first
   scope: all_nodes

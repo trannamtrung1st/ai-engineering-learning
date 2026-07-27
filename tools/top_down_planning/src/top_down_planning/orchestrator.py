@@ -233,6 +233,7 @@ class Orchestrator:
             stop_hint_digest=stop_hint_digest,
             limits=self.config.limits,
             generation=self.config.generation,
+            render=self.config.render,
             resume=self.config.resume,
         )
 
@@ -329,6 +330,7 @@ class Orchestrator:
                 stop_hint_digest=stop_hint_digest,
                 limits=self.config.limits,
                 generation=self.config.generation,
+                render=self.config.render,
             )
             save_plan(output_dir, plan)
             save_run_state(output_dir, run_state)

@@ -403,9 +403,9 @@ to workspace destinations.
 
 Workflow:
 1. Run `{render_tool_command} begin --node-id <id> --context-digest <digest>`.
-2. Record exactly one decision with `{render_tool_command} record-decision --decision produce|skip|defer`.
-3. For `produce`, declare artifacts with `{render_tool_command} declare-artifact --json '<intent>'`
+2. For `produce`, declare artifacts with `{render_tool_command} declare-artifact --json '<intent>'`
    and stage content with `{render_tool_command} stage-artifact --artifact-key <key> --content-file <path>`.
+3. Record exactly one decision with `{render_tool_command} record-decision --decision produce|skip|defer`.
 4. Run `{render_tool_command} submit` to hand the candidate to the coordinator.
 
 Artifact intent JSON schema:
@@ -488,13 +488,15 @@ def build_render_output_review_prompt(
 ) -> str:
     from top_down_planning.persistence import (
         plan_path,
-        render_assembled_dir,
         render_manifest_path,
+        render_staged_artifacts_dir,
+        render_transactions_dir,
     )
 
     plan_file = plan_path(output_dir)
     manifest_file = render_manifest_path(output_dir)
-    assembled_dir = render_assembled_dir(output_dir)
+    transactions_dir = render_transactions_dir(output_dir)
+    staged_dir = render_staged_artifacts_dir(output_dir)
     destination_lines = "\n".join(
         f"- {format_input_file_reference(workspace / relative_path, workspace)}"
         for relative_path in deliverable_paths
@@ -502,14 +504,14 @@ def build_render_output_review_prompt(
 
     return f"""# Rendered output review session
 
-Compare the confirmed plan, render manifest, workspace deliverables, intermediate staging, and
-output goal.
+Compare the confirmed plan, render manifest, workspace deliverables, and output goal.
 
-Final deliverables live at their **workspace destination paths**. Intermediate artifacts under
-`.planning-output/render/assembled/intermediates/` are synthesis inputs only.
+Final deliverables live at their **workspace destination paths**. Private staging under
+`.planning-output/render/transactions/` and `.planning-output/render/staged-artifacts/`
+is not authoritative — review published workspace files only.
 
-Use `needs_rerender` for node output that can be fixed by rerunning the affected render
-nodes. Use `blocked` for unfixable tool/goal mismatches that cannot be corrected by rerender alone.
+Use `needs_rerender` when affected render nodes can be rerun to fix deliverables.
+Use `blocked` for unfixable tool/goal mismatches that rerender alone cannot correct.
 
 ## Plan digest
 `{plan_digest}`
@@ -529,7 +531,8 @@ nodes. Use `blocked` for unfixable tool/goal mismatches that cannot be corrected
 ## References
 - Confirmed plan: {format_input_file_reference(plan_file, workspace)}
 - Render manifest: {format_input_file_reference(manifest_file, workspace)}
-- Intermediate staging directory: {format_input_file_reference(assembled_dir, workspace)}
+- Node transactions: {format_input_file_reference(transactions_dir, workspace)}
+- Staged artifacts: {format_input_file_reference(staged_dir, workspace)}
 
 ## Workspace deliverables
 {destination_lines}

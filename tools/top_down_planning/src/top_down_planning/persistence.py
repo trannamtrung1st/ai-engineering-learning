@@ -506,6 +506,7 @@ def ensure_resume_compatible(
     stop_hint_digest: str | None = None,
     limits: PlanningLimits,
     generation: GenerationConfig,
+    render: RenderConfig,
     resume: bool,
 ) -> tuple[PlanState | None, RunState | None]:
     existing_plan = load_plan(output_dir)
@@ -548,7 +549,14 @@ def ensure_resume_compatible(
             raise ResumeError(
                 f"Incompatible plan schema version: {existing_plan.schema_version}"
             )
-        _assert_run_config_compatible(existing_run.limits, existing_run.generation, limits, generation)
+        _assert_run_config_compatible(
+            existing_run.limits,
+            existing_run.generation,
+            existing_run.render,
+            limits,
+            generation,
+            render,
+        )
         return existing_plan, existing_run
 
     if resume:
@@ -628,8 +636,10 @@ def describe_resume_limit_changes(
 def _assert_run_config_compatible(
     stored_limits: PlanningLimits,
     stored_generation: GenerationConfig,
+    stored_render: RenderConfig,
     requested_limits: PlanningLimits,
     requested_generation: GenerationConfig,
+    requested_render: RenderConfig,
 ) -> None:
     resolve_resume_limits(stored_limits, requested_limits)
     mismatches: list[str] = []
@@ -639,6 +649,13 @@ def _assert_run_config_compatible(
         if stored_value != requested_value:
             mismatches.append(
                 f"generation.{field}: stored={stored_value!r}, requested={requested_value!r}"
+            )
+    for field in RenderConfig.model_fields:
+        stored_value = getattr(stored_render, field)
+        requested_value = getattr(requested_render, field)
+        if stored_value != requested_value:
+            mismatches.append(
+                f"render.{field}: stored={stored_value!r}, requested={requested_value!r}"
             )
     if mismatches:
         raise ResumeError(

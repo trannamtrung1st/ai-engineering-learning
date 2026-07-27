@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.errors import ResumeError
-from top_down_planning.models import GenerationConfig, PlanningLimits, RunState
+from top_down_planning.models import GenerationConfig, PlanningLimits, RenderConfig, RunState
 from top_down_planning.persistence import (
     ensure_resume_compatible,
     resolve_resume_limits,
@@ -53,6 +53,7 @@ def test_resume_rejects_generation_mismatch(tmp_path: Path) -> None:
             output_goal_digest="goal-digest",
             limits=PlanningLimits(),
             generation=GenerationConfig(concurrent_batches=3),
+            render=RenderConfig(),
             resume=True,
         )
 
@@ -98,6 +99,7 @@ def test_resume_allows_increased_max_iterations(tmp_path: Path) -> None:
         output_goal_digest="goal-digest",
         limits=PlanningLimits(max_iterations=80),
         generation=default_generation(),
+        render=RenderConfig(),
         resume=True,
     )
     assert plan is not None
@@ -151,6 +153,7 @@ def test_resume_rejects_structural_limit_mismatch(tmp_path: Path) -> None:
             output_goal_digest="goal-digest",
             limits=PlanningLimits(max_depth=8),
             generation=default_generation(),
+            render=RenderConfig(),
             resume=True,
         )
 
@@ -195,6 +198,7 @@ def test_resume_allows_increased_max_children_per_expansion(tmp_path: Path) -> N
         output_goal_digest="goal-digest",
         limits=PlanningLimits(max_children_per_expansion=15),
         generation=default_generation(),
+        render=RenderConfig(),
         resume=True,
     )
     assert plan is not None
@@ -248,5 +252,6 @@ def test_resume_rejects_decreased_max_children_per_expansion(tmp_path: Path) -> 
             output_goal_digest="goal-digest",
             limits=PlanningLimits(max_children_per_expansion=10),
             generation=default_generation(),
+            render=RenderConfig(),
             resume=True,
         )

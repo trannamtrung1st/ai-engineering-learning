@@ -391,9 +391,9 @@ planning-output/
             ├── render-state.json
             ├── manifest.yaml
             ├── context/
-            ├── batches/
-            ├── assembled/
-            │   └── intermediates/{batch_id}/{plan_item_id}.md
+            ├── decisions/
+            ├── transactions/
+            ├── staged-artifacts/
             └── reviews/
 ```
 
@@ -428,7 +428,7 @@ Render agents must not copy or restore pre-existing files from git history or fr
 cited in the output goal. They must not modify canonical state under `.planning-output/`.
 The tool backs up and restores `plan.yaml` if a session corrupts it.
 
-Render failures (batch validation exhaustion, assembly errors, blocked output review)
+Render failures (node validation exhaustion, coordinator commit errors, blocked output review)
 surface as explicit errors; there is no deterministic fallback deliverable.
 
 ### `plan.yaml`
