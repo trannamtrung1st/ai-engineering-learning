@@ -30,6 +30,7 @@ from top_down_planning.persistence import (
     load_coordinator_state,
     load_ownership_ledger,
     render_staged_artifacts_dir,
+    rewrite_commit_journal,
     save_coordinator_state,
     save_ownership_ledger,
     save_render_decision,
@@ -120,6 +121,8 @@ class RenderCoordinator:
         if self._state.frozen_for_review:
             return ["coordinator is frozen for review"]
         errors = validate_node_transaction(transaction)
+        if transaction.read_set_digest != transaction.context_digest:
+            errors.append("read_set_digest must match context_digest")
         errors.extend(_validate_paths(transaction, workspace=self.workspace))
         for artifact in transaction.artifacts:
             errors.extend(validate_ownership_claim(self._ledger, artifact))
@@ -261,18 +264,40 @@ class RenderCoordinator:
 
     def recover_journal(self) -> list[str]:
         recovered: list[str] = []
-        for entry in load_commit_journal(self.output_dir):
-            if entry.status not in {
+        journal = load_commit_journal(self.output_dir)
+        if not journal:
+            self._commit_sequence = 1
+            return recovered
+
+        updated: list[CommitJournalEntry] = []
+        for entry in journal:
+            if entry.status in {
                 CommitJournalEntryStatus.PREPARED,
                 CommitJournalEntryStatus.PUBLISHING,
             }:
-                continue
-            if entry.workspace_generation != self._state.workspace_generation:
-                recovered.append(
-                    f"stale journal entry {entry.transaction_id} rejected by fencing token"
+                updated.append(
+                    entry.model_copy(
+                        update={"status": CommitJournalEntryStatus.ABORTED}
+                    )
                 )
-                continue
-            recovered.append(f"recovered journal entry {entry.transaction_id}")
+                recovered.append(
+                    f"aborted incomplete journal entry {entry.transaction_id}"
+                )
+            else:
+                updated.append(entry)
+
+        if updated != journal:
+            rewrite_commit_journal(self.output_dir, updated)
+            journal = updated
+
+        terminal = {
+            CommitJournalEntryStatus.COMMITTED,
+            CommitJournalEntryStatus.ABORTED,
+        }
+        completed_slots = [
+            entry.manifest_slot for entry in journal if entry.status in terminal
+        ]
+        self._commit_sequence = max(completed_slots, default=0) + 1
         return recovered
 
     def _publish_transaction(

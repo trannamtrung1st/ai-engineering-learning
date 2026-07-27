@@ -112,7 +112,6 @@ def _execute_run(
     no_notify: bool = False,
     render_only: bool = False,
     force_rerender: bool = False,
-    render_batch_size: int | None = None,
     render_concurrent_batches: int | None = None,
 ) -> None:
     cli_notify = _cli_notify_override(notify=notify, no_notify=no_notify)
@@ -142,7 +141,6 @@ def _execute_run(
             embed_threshold=embed_threshold,
             render_only=render_only,
             force_rerender=force_rerender,
-            render_batch_size=render_batch_size,
             render_concurrent_batches=render_concurrent_batches,
         )
     except PlanningToolError as exc:
@@ -350,11 +348,6 @@ def main_callback(
         "--force-rerender",
         help="Discard prior render state and regenerate all rendered output",
     ),
-    render_batch_size: Optional[int] = typer.Option(
-        None,
-        "--render-batch-size",
-        help="(Unused) Legacy flag; render uses per-node sessions",
-    ),
     render_concurrent_batches: Optional[int] = typer.Option(
         None,
         "--render-concurrent-batches",
@@ -398,7 +391,6 @@ def main_callback(
         no_notify=no_notify,
         render_only=render_only,
         force_rerender=force_rerender,
-        render_batch_size=render_batch_size,
         render_concurrent_batches=render_concurrent_batches,
     )
 
@@ -503,9 +495,8 @@ def run_cmd(
     force_rerender: bool = typer.Option(
         False,
         "--force-rerender",
-        help="Discard prior render batches and regenerate all rendered output",
+        help="Discard prior render state and regenerate all rendered output",
     ),
-    render_batch_size: Optional[int] = typer.Option(None, "--render-batch-size"),
     render_concurrent_batches: Optional[int] = typer.Option(
         None, "--render-concurrent-batches"
     ),
@@ -537,7 +528,6 @@ def run_cmd(
         no_notify=no_notify,
         render_only=render_only,
         force_rerender=force_rerender,
-        render_batch_size=render_batch_size,
         render_concurrent_batches=render_concurrent_batches,
     )
 

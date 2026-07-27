@@ -58,6 +58,11 @@ from top_down_planning.render_tool import (
     load_render_node_transaction,
     resolve_render_tool_command,
 )
+from top_down_planning.render_rerender import (
+    manifest_items_for_rerender,
+    prepare_targeted_rerender,
+    resolve_rerender_node_ids,
+)
 from top_down_planning.render_review import (
     RenderReviewDeps,
     progressive_decision_coverage_errors,
@@ -226,9 +231,11 @@ async def render_from_confirmed_plan(
         if render_config.final_synthesis == FinalSynthesisMode.OPTIONAL:
             deps.stream.emit("render.synthesis.skipped")
         elif render_config.final_synthesis == FinalSynthesisMode.REQUIRED:
-            raise PlanningToolError(
-                "final_synthesis required is not implemented; use optional or enable rollup"
-            )
+            if not final_paths(coordinator._ledger):
+                raise PlanningToolError(
+                    "final_synthesis required but no final deliverables were published"
+                )
+            deps.stream.emit("render.synthesis.verified")
 
     coverage_errors = progressive_decision_coverage_errors(
         deps.output_dir,
@@ -258,20 +265,24 @@ async def render_from_confirmed_plan(
         deps.stream.emit("render.completed", artifacts=[], dry_run=True)
         return RenderFlowResult(artifacts=[])
 
-    artifacts = final_paths(coordinator._ledger)
-    deliverable = None
-    if artifacts:
-        deliverable = collect_deliverable_output_from_ledger(
-            deps.workspace_root,
-            coordinator._ledger,
-        )
-        render_state.deliverable_output_digest = deliverable.digest
-
     render_state.stage = RenderStage.REVIEW
     save_render_state(deps.output_dir, render_state)
 
-    if render_config.final_review and deliverable is not None:
-        deps.stream.emit("render.review.started")
+    while True:
+        artifacts = final_paths(coordinator._ledger)
+        deliverable = None
+        if artifacts:
+            deliverable = collect_deliverable_output_from_ledger(
+                deps.workspace_root,
+                coordinator._ledger,
+            )
+            render_state.deliverable_output_digest = deliverable.digest
+
+        if not render_config.final_review or deliverable is None:
+            render_state.output_review_status = RenderOutputReviewStatus.SKIPPED
+            break
+
+        deps.stream.emit("render.review.started", cycle=render_state.rerender_cycle)
         coordinator.freeze_for_review()
         try:
             review_result = await run_render_output_review(
@@ -309,23 +320,78 @@ async def render_from_confirmed_plan(
             "render.review.completed",
             decision=review_result.decision.value,
             summary=review_result.summary,
+            cycle=render_state.rerender_cycle,
         )
         if review_result.decision == RenderOutputReviewDecision.BLOCKED:
             save_render_state(deps.output_dir, render_state)
             raise PlanningToolError(
                 f"Rendered output review blocked: {review_result.summary or 'no summary'}"
             )
-        if review_result.decision == RenderOutputReviewDecision.NEEDS_RERENDER:
+        if review_result.decision == RenderOutputReviewDecision.APPROVE:
+            break
+
+        render_state.rerender_cycle += 1
+        if render_state.rerender_cycle > render_config.max_rerender_cycles:
             save_render_state(deps.output_dir, render_state)
             raise PlanningToolError(
-                "Rendered output review requested rerender; targeted rerender is not implemented"
+                "Rendered output review exceeded max_rerender_cycles "
+                f"({render_config.max_rerender_cycles})"
             )
-    else:
-        render_state.output_review_status = RenderOutputReviewStatus.SKIPPED
+
+        node_ids = resolve_rerender_node_ids(review_result, plan)
+        if not node_ids:
+            save_render_state(deps.output_dir, render_state)
+            raise PlanningToolError(
+                "Rendered output review requested rerender but identified no affected nodes"
+            )
+
+        deps.stream.emit(
+            "render.rerender.started",
+            cycle=render_state.rerender_cycle,
+            node_ids=node_ids,
+        )
+        failed_nodes.clear()
+        render_state.stage = RenderStage.WAVES
+        save_render_state(deps.output_dir, render_state)
+        with coordinator.acquire():
+            target_ids = prepare_targeted_rerender(
+                output_dir=deps.output_dir,
+                workspace=deps.workspace_root,
+                plan=plan,
+                manifest=manifest,
+                render_state=render_state,
+                coordinator=coordinator,
+                node_ids=node_ids,
+            )
+            await _run_render_waves(
+                deps,
+                plan=plan,
+                manifest=manifest,
+                coordinator=coordinator,
+                run_state=run_state,
+                render_state=render_state,
+                dry_run=dry_run,
+                failed_nodes=failed_nodes,
+                only_node_ids=target_ids,
+            )
+        if failed_nodes and not dry_run:
+            raise PlanningToolError(
+                "Targeted rerender failed for nodes: "
+                + ", ".join(sorted(failed_nodes))
+            )
+        manifest_digest = compute_manifest_digest(manifest)
+        render_state.render_manifest_digest = manifest_digest
+        save_render_manifest_to_output(deps.output_dir, manifest)
+        deps.stream.emit(
+            "render.rerender.completed",
+            cycle=render_state.rerender_cycle,
+            node_ids=sorted(target_ids),
+        )
 
     render_state.stage = RenderStage.COMPLETE
     render_state.deliverable_status = DeliverableStatus.COMPLETE
     save_render_state(deps.output_dir, render_state)
+    artifacts = final_paths(coordinator._ledger)
     paths = _persist_render_result(deps, run_state, artifacts)
     deps.stream.emit("render.completed", artifacts=paths)
     return RenderFlowResult(artifacts=paths)
@@ -341,15 +407,17 @@ async def _run_render_waves(
     render_state: RenderState,
     dry_run: bool,
     failed_nodes: set[str],
+    only_node_ids: set[str] | None = None,
 ) -> None:
     del dry_run
     manifest_slot = coordinator._commit_sequence
+    active_items = manifest_items_for_rerender(manifest.items, only_node_ids)
 
-    for wave in unique_waves(manifest.items):
-        for group in groups_in_wave(manifest.items, wave):
+    for wave in unique_waves(active_items):
+        for group in groups_in_wave(active_items, wave):
             group_items = [
                 item
-                for item in manifest.items
+                for item in active_items
                 if item.wave == wave and item.generation_group == group
             ]
             manifest_slot = await _run_generation_group(
@@ -604,6 +672,7 @@ async def _generate_node_candidate(
             continue
 
         transaction = load_render_node_transaction(txn_path)
+        transaction.revision = item.revision
         errors = validate_node_render_transaction(
             transaction,
             expected_node_id=item.plan_item_id,

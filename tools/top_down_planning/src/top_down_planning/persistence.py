@@ -376,6 +376,26 @@ def append_commit_journal_entry(output_dir: Path, entry: CommitJournalEntry) -> 
     append_ndjson(commit_journal_path(output_dir), entry.model_dump(mode="json"))
 
 
+def rewrite_commit_journal(output_dir: Path, entries: list[CommitJournalEntry]) -> None:
+    path = commit_journal_path(output_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not entries:
+        path.unlink(missing_ok=True)
+        return
+    lines = [json.dumps(entry.model_dump(mode="json"), sort_keys=True) for entry in entries]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def delete_render_decision(
+    output_dir: Path,
+    node_id: str,
+    phase: str,
+    revision: int,
+) -> None:
+    path = render_decision_path(output_dir, node_id, phase, revision)
+    path.unlink(missing_ok=True)
+
+
 def load_commit_journal(output_dir: Path) -> list[CommitJournalEntry]:
     path = commit_journal_path(output_dir)
     if not path.is_file():

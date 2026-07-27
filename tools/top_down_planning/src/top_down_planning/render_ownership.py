@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from top_down_planning.digest import digest_text
 from top_down_planning.models import (
     ArtifactIntent,
@@ -131,6 +133,34 @@ def apply_ownership_change(
             "commit_sequence": commit_sequence,
         }
     )
+    return updated
+
+
+def revoke_node_ownership(
+    ledger: OwnershipLedger,
+    workspace: Path,
+    node_ids: list[str],
+) -> OwnershipLedger:
+    """Remove workspace files and ledger entries owned by the given nodes."""
+    from top_down_planning.paths import resolve_within_workspace
+
+    updated = ledger.model_copy(deep=True)
+    target = set(node_ids)
+    for path, entry in list(updated.artifacts.items()):
+        if (
+            entry.state != OwnershipLedgerEntryState.ACTIVE
+            or entry.owner_kind != OwnerKind.NODE
+            or entry.owner_id not in target
+        ):
+            continue
+        if entry.location == ArtifactLocation.FINAL:
+            try:
+                destination = resolve_within_workspace(workspace, path)
+            except ValueError:
+                destination = None
+            if destination is not None and destination.is_file():
+                destination.unlink()
+        del updated.artifacts[path]
     return updated
 
 

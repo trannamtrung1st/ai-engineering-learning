@@ -173,7 +173,7 @@ render:
   max_retries: 3
   whole_plan_context: hybrid
   final_review: true
-  max_rerender_cycles: 2  # reserved; targeted rerender loop not implemented yet
+  max_rerender_cycles: 2
   scope: all_nodes
 ```
 
@@ -483,6 +483,8 @@ Render-phase events include:
 - `render.only.started` (render-only mode)
 - `render.rollup.started` (when `rollup.enabled`)
 - `render.synthesis.skipped` (when `final_synthesis` is optional and skipped)
+- `render.synthesis.verified` (when `final_synthesis` is required and deliverables exist)
+- `render.rerender.started` / `render.rerender.completed` (targeted output-review rerender)
 - `render.review.started` / `render.review.completed`
 - `render.completed` (with `artifacts`)
 - `render.skipped` (when resuming with completed render state and existing deliverables)

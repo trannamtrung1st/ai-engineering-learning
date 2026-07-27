@@ -98,7 +98,6 @@ class RollupConfig(BaseModel):
 
 class RenderConfig(BaseModel):
     dry_run: bool = False
-    batch_size: int = 5
     concurrent_batches: int = 3
     max_retries: int = 3
     whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID

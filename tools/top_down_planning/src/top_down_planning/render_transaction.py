@@ -28,5 +28,7 @@ def validate_node_render_transaction(
         errors.append("render_config_digest mismatch")
     if transaction.context_digest != expected_context_digest:
         errors.append("context_digest mismatch")
+    if transaction.read_set_digest != expected_context_digest:
+        errors.append("read_set_digest mismatch")
     errors.extend(validate_node_transaction(transaction))
     return errors
