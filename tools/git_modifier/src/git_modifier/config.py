@@ -1,4 +1,4 @@
-"""Minimal YAML loader for flat git-modifier config files (no PyYAML required)."""
+"""Minimal YAML loader for flat git_modifier config files (no PyYAML required)."""
 
 from __future__ import annotations
 
