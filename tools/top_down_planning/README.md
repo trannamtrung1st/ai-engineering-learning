@@ -128,7 +128,8 @@ workspace/
 Goal-driven deliverables are written only when planning finishes with status `complete`
 and review status `confirmed` (when review is enabled). Rendering is a separate lifecycle
 from planning: after confirmation, the tool builds a deterministic render manifest for
-intermediate work from actionable leaves, runs concurrent intermediate render batches,
+intermediate work from actionable leaves (expanding parent workstream dependencies to leaf
+ids), runs concurrent intermediate render batches,
 runs a final synthesis batch where the agent writes 0..N deliverables directly to workspace
 paths from the output goal, assembles intermediate staging for synthesis inputs, optionally
 runs whole-output semantic review against the workspace deliverables, and records ownership
@@ -513,3 +514,5 @@ Integration tests use a deterministic fake agent fixture; live Cursor tests are 
 ## Design note: expanded internal nodes
 
 When an item is expanded, it becomes a non-leaf container marked `actionable` so it is no longer selected for expansion. Only **leaf** actionable items drive intermediate render batches; the final synthesis batch turns those notes plus the output goal into agent-chosen deliverables.
+
+Plan items may declare dependencies on parent workstreams or sibling leaves. The render manifest normalizes every dependency to actionable leaf ids (expanding parent references to their leaf descendants). Assembly validates that graph against rendered intermediates only.

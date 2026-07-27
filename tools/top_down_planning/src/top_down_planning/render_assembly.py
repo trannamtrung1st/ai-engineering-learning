@@ -119,7 +119,7 @@ def validate_assembly(
         if item.plan_item_id not in rendered_ids:
             continue
         for dep in item.dependencies:
-            if dep not in manifest_ids and dep not in rendered_ids:
+            if dep not in manifest_ids:
                 errors.append(f"unresolved dependency {dep!r} for {item.plan_item_id}")
 
     return errors

@@ -21,6 +21,7 @@ from top_down_planning.models import (
 )
 from top_down_planning.render_brief import actionable_leaf_items
 from top_down_planning.render_batcher import assign_render_batches, unique_batch_ids
+from top_down_planning.revision import descendant_ids
 
 FINAL_BATCH_ID = "render-batch-final"
 FINAL_ORDER_BASE = 9000
@@ -52,6 +53,35 @@ def _intermediate_relative_path(batch_id: str, plan_item_id: str) -> str:
     return f"{INTERMEDIATE_PREFIX}/{batch_id}/{plan_item_id}.md"
 
 
+def resolve_render_dependencies(
+    plan: PlanState,
+    item: PlanItem,
+    *,
+    actionable_leaves: list[PlanItem],
+    actionable_leaf_ids: set[str],
+) -> list[str]:
+    """Expand plan dependencies to actionable leaf ids for render manifest items."""
+    resolved: list[str] = []
+    seen: set[str] = set()
+
+    for dep in item.dependencies:
+        if dep in actionable_leaf_ids:
+            candidates = [dep]
+        else:
+            descendants = descendant_ids(plan, dep)
+            candidates = [
+                leaf.id for leaf in actionable_leaves if leaf.id in descendants
+            ]
+
+        for candidate in candidates:
+            if candidate == item.id or candidate in seen:
+                continue
+            resolved.append(candidate)
+            seen.add(candidate)
+
+    return resolved
+
+
 def scheduled_batch_ids(manifest: RenderManifest) -> list[str]:
     """Return intermediate batch ids plus the always-scheduled final batch."""
     batch_ids = unique_batch_ids(manifest.items)
@@ -68,6 +98,7 @@ def build_render_manifest(
     render_config: RenderConfig,
 ) -> RenderManifest:
     leaves = actionable_leaf_items(plan)
+    actionable_leaf_ids = {leaf.id for leaf in leaves}
     render_config_digest = compute_render_config_digest(render_config)
     manifest_items: list[RenderManifestItem] = []
 
@@ -79,7 +110,12 @@ def build_render_manifest(
                 order=item.order,
                 set_order=set_order,
                 title=item.title,
-                dependencies=list(item.dependencies),
+                dependencies=resolve_render_dependencies(
+                    plan,
+                    item,
+                    actionable_leaves=leaves,
+                    actionable_leaf_ids=actionable_leaf_ids,
+                ),
                 assigned_batch_id="",  # filled by batcher
                 artifact_key=_intermediate_artifact_key(item.id),
                 artifact_role="intermediate",
@@ -104,7 +140,6 @@ def build_render_manifest(
         deliverable_root=None,
         items=manifest_items,
     )
-
 
 
 def _infer_output_metadata(final_paths: list[str]) -> tuple[OutputMode, str | None]:
@@ -200,6 +235,11 @@ def manifest_finals_are_committed(
 
 def manifest_is_valid(manifest: RenderManifest) -> bool:
     """Return False when a persisted manifest has invalid render structure."""
+    intermediate_items = [
+        item for item in manifest.items if item.artifact_role == "intermediate"
+    ]
+    intermediate_ids = {item.plan_item_id for item in intermediate_items}
+
     for item in manifest.items:
         if item.artifact_role not in {"intermediate", "final"}:
             return False
@@ -212,6 +252,9 @@ def manifest_is_valid(manifest: RenderManifest) -> bool:
                 return False
             if not item.assigned_batch_id or item.assigned_batch_id == FINAL_BATCH_ID:
                 return False
+            for dep in item.dependencies:
+                if dep not in intermediate_ids:
+                    return False
         if item.artifact_role == "final":
             if not item.artifact_key:
                 return False

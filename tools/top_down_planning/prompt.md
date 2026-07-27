@@ -410,6 +410,8 @@ Deliverables are produced by a **staged render pipeline** after decomposition co
 lifecycle from planning:
 
 1. Build a deterministic render manifest from actionable leaf items (intermediate batches).
+   Parent workstream dependencies in `plan.yaml` are expanded to actionable leaf ids in the
+   manifest; assembly validates that leaf-only graph.
 2. Run concurrent intermediate render batches; each batch agent records freeform notes or
    partials via `planning-render-tool` into staged batch transactions under
    `intermediates/{batch_id}/`.
@@ -423,7 +425,7 @@ lifecycle from planning:
 6. Finalize deliverable ownership in a ledger and remove obsolete files from prior runs.
 
 The render manifest defines authoritative intermediate scope (plan items, artifact keys,
-intermediate staging paths) plus agent-declared final workspace paths from the final batch
+intermediate staging paths, leaf-only dependency edges) plus agent-declared final workspace paths from the final batch
 transaction. The output goal defines format and intent; an optional `## Output artifacts`
 section is sample layout only. Review prompts still embed a human-readable render brief
 derived from `plan.yaml` for semantic checks.

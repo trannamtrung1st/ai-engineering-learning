@@ -9,6 +9,7 @@ from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import ensure_plan_overview_artifact
 from top_down_planning.input_loader import LoadedOutputGoal
 from top_down_planning.models import (
+    PlanItem,
     PlanState,
     RenderManifest,
     RenderManifestItem,
@@ -16,7 +17,8 @@ from top_down_planning.models import (
 )
 from top_down_planning.persistence import render_batch_transaction_path, render_context_dir
 from top_down_planning.prompts import (
-    _format_item_context,
+    _ancestors,
+    _siblings,
     format_embedded_markdown,
     format_input_file_reference,
     format_output_goal_section,
@@ -136,7 +138,7 @@ def _build_batch_context_markdown(
         for manifest_item in assigned_items:
             plan_item = plan.item_by_id(manifest_item.plan_item_id)
             if plan_item is not None:
-                lines.append(_format_item_context(plan, plan_item))
+                lines.append(_format_render_item_context(plan, plan_item, manifest_item))
                 lines.append("")
             else:
                 lines.extend(
@@ -196,6 +198,55 @@ def _build_batch_context_markdown(
     )
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _format_render_item_context(
+    plan: PlanState,
+    plan_item: PlanItem,
+    manifest_item: RenderManifestItem,
+) -> str:
+    """Format assigned render scope using manifest-resolved leaf dependencies."""
+    parts = [
+        f"### Selected item `{plan_item.id}`",
+        f"- Title: {plan_item.title}",
+        f"- Objective: {plan_item.objective}",
+        f"- Depth: {plan_item.depth}",
+        f"- Status: {plan_item.decomposition_status.value}",
+    ]
+    if manifest_item.dependencies:
+        labels: list[str] = []
+        for dep_id in manifest_item.dependencies:
+            dep_item = plan.item_by_id(dep_id)
+            if dep_item is not None:
+                labels.append(f"`{dep_id}` ({dep_item.title})")
+            else:
+                labels.append(f"`{dep_id}`")
+        parts.append(f"- Render dependencies: {', '.join(labels)}")
+    if plan_item.expected_outputs:
+        parts.append("- Expected outputs:")
+        parts.extend(f"  - {value}" for value in plan_item.expected_outputs)
+    if plan_item.acceptance_criteria:
+        parts.append("- Acceptance criteria:")
+        parts.extend(f"  - {value}" for value in plan_item.acceptance_criteria)
+    if plan_item.open_questions:
+        parts.append("- Open questions:")
+        parts.extend(f"  - {value}" for value in plan_item.open_questions)
+
+    ancestors = _ancestors(plan, plan_item)
+    if ancestors:
+        parts.append("- Ancestors:")
+        for ancestor in ancestors:
+            parts.append(f"  - [{ancestor.id}] {ancestor.title}")
+
+    siblings = _siblings(plan, plan_item)
+    if siblings:
+        parts.append("- Direct siblings:")
+        for sibling in siblings:
+            parts.append(
+                f"  - [{sibling.id}] {sibling.title} "
+                f"({sibling.decomposition_status.value})"
+            )
+    return "\n".join(parts)
 
 
 def _format_intermediate_inputs_section(
