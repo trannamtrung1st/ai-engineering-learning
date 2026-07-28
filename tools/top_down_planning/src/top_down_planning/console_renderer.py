@@ -1,7 +1,4 @@
-"""Colorized console rendering for normalized Cursor events.
-
-Adapted from tools/implement_todos/src/todos_tool/console_renderer.py.
-"""
+"""Colorized console rendering for normalized Cursor events."""
 
 from __future__ import annotations
 

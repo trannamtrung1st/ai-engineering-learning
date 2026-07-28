@@ -100,7 +100,7 @@ def test_build_source_metadata_stores_file_reference(tmp_path: Path) -> None:
     goal_file = tmp_path / "planning-goal.md"
     goal_file.write_text(
         "Please use the ia-conventions skill.\n"
-        "Based on the proposal, produce the todos list.\n",
+        "Based on the proposal, produce the actionable task list.\n",
         encoding="utf-8",
     )
     loaded_goal = load_output_goal(goal_file=goal_file)

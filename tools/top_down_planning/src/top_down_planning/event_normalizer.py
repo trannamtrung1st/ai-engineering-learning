@@ -1,7 +1,4 @@
-"""Normalize Cursor stream-json events into display categories.
-
-Adapted from tools/implement_todos/src/todos_tool/event_normalizer.py.
-"""
+"""Normalize Cursor stream-json events into display categories."""
 
 from __future__ import annotations
 

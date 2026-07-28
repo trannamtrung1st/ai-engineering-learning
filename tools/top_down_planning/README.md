@@ -2,8 +2,6 @@
 
 Generic CLI that progressively decomposes one Markdown input into a structured plan using Cursor Agent CLI in agent mode for decomposition and sequential cumulative render authoring.
 
-This package mirrors the reusable infrastructure patterns from [`../implement_todos/`](../implement_todos/) while keeping planning-specific state and operations separate.
-
 ## Install
 
 ```bash
@@ -131,10 +129,10 @@ Example layout:
 ```text
 workspace/
 ├── implementation-plan.md          # example final deliverable
-├── plans/my-feature/todos/         # example multi-file deliverable tree
-│   ├── INDEX.md
-│   ├── manifest.yaml
-│   └── 01-first-item.yaml
+├── plans/my-feature/               # example multi-file deliverable tree
+│   ├── overview.md
+│   ├── phase-1.md
+│   └── phase-2.md
 └── planning-output/
     └── .planning-output/
         ├── plan.yaml

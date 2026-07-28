@@ -1,7 +1,4 @@
-"""Atomic persistence for plan.yaml and run-state.json.
-
-Adapted from tools/implement_todos/src/todos_tool/persistence.py.
-"""
+"""Atomic persistence for plan.yaml and run-state.json."""
 
 from __future__ import annotations
 

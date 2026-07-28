@@ -1,6 +1,5 @@
 """Cursor Agent CLI process adapter with streaming and recovery.
 
-Adapted from tools/implement_todos/src/todos_tool/cursor_client.py.
 Planning decomposition sessions use agent mode so agents can invoke the bundled
 planning transaction CLI; render sessions also use agent mode to write deliverables
 directly to workspace destination paths.

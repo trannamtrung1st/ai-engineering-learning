@@ -1,7 +1,4 @@
-"""Domain errors for the top-down planning tool.
-
-Adapted from tools/implement_todos/src/todos_tool/errors.py.
-"""
+"""Domain errors for the top-down planning tool."""
 
 
 class PlanningToolError(Exception):

@@ -1,7 +1,4 @@
-"""Incremental UTF-8 / NDJSON stream parser for Cursor stream-json output.
-
-Adapted from tools/implement_todos/src/todos_tool/stream_parser.py.
-"""
+"""Incremental UTF-8 / NDJSON stream parser for Cursor stream-json output."""
 
 from __future__ import annotations
 
