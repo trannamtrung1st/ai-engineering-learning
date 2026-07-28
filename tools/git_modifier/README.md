@@ -1,4 +1,4 @@
-# git_modifier
+# git-modifier
 
 Local Git helpers for rewriting commit timestamps on the current branch.
 
@@ -17,7 +17,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-After installation: `git_modifier`, or `python -m git_modifier`.
+After installation: `git-modifier`, or `python -m git_modifier`.
 
 ## distribute-commit-dates
 
@@ -38,13 +38,13 @@ Pass it with `--config` (required). CLI flags override config values.
 Preview:
 
 ```bash
-git_modifier --config ./examples/distribute-commit-dates.config.yaml
+git-modifier --config ./examples/distribute-commit-dates.config.yaml
 ```
 
-Apply rewrite (creates `git_modifier-backup/<branch>-before-date-rewrite` first):
+Apply rewrite (creates `git-modifier-backup/<branch>-before-date-rewrite` first):
 
 ```bash
-git_modifier --config ./examples/distribute-commit-dates.config.yaml --apply
+git-modifier --config ./examples/distribute-commit-dates.config.yaml --apply
 ```
 
 Uses `git filter-branch` so merge commits are supported when `include_merges: true`.
@@ -55,7 +55,7 @@ Or set `apply: true` in the config file.
 Reproducible gaps:
 
 ```bash
-git_modifier --config ./examples/distribute-commit-dates.config.yaml --seed 42
+git-modifier --config ./examples/distribute-commit-dates.config.yaml --seed 42
 ```
 
 ### Recovery
@@ -63,7 +63,7 @@ git_modifier --config ./examples/distribute-commit-dates.config.yaml --seed 42
 If `--apply` fails:
 
 ```bash
-git reset --hard git_modifier-backup/<sanitized-branch>-before-date-rewrite
+git reset --hard git-modifier-backup/<sanitized-branch>-before-date-rewrite
 ```
 
 After a successful rewrite, force-push is required if the branch was already

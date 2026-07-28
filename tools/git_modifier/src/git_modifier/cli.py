@@ -319,7 +319,7 @@ def print_plan(
 
 
 def write_env_filter_script(date_map_file: Path) -> Path:
-    script = Path(tempfile.mktemp(prefix="git_modifier-env-filter-", suffix=".sh"))
+    script = Path(tempfile.mktemp(prefix="git-modifier-env-filter-", suffix=".sh"))
     script.write_text(
         f"""#!/bin/sh
 MAP={date_map_file.as_posix()}
@@ -341,7 +341,7 @@ def make_backup_branch_name(current_branch: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9._-]+", "-", current_branch).strip("-")
     if not safe:
         safe = "head"
-    return f"git_modifier-backup/{safe}-before-date-rewrite"
+    return f"git-modifier-backup/{safe}-before-date-rewrite"
 
 
 def create_backup_branch(current_branch: str) -> str:
@@ -357,7 +357,7 @@ def apply_plan(merge_base: str, planned: list[PlannedCommit]) -> None:
     current_branch = run_git("rev-parse", "--abbrev-ref", "HEAD")
     backup_branch = create_backup_branch(current_branch)
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="git_modifier-dates-"))
+    temp_dir = Path(tempfile.mkdtemp(prefix="git-modifier-dates-"))
     date_map_file = temp_dir / "sha-dates.map"
     date_map_file.write_text(
         "\n".join(
