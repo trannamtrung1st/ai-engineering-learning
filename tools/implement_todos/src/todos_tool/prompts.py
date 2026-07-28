@@ -15,6 +15,7 @@ from todos_tool.artifact_paths import extract_artifact_paths
 from todos_tool.project_context import ProjectContext, ResolvedContextFile
 from todos_tool.validation_runner import format_validation_results
 from todos_tool.evidence_runner import format_evidence_results
+from todos_tool import discoverability
 
 LONG_RUNNING_COMMANDS = """
 # Long-running commands
@@ -501,6 +502,10 @@ def format_review_tool_section(*, review_tool_command: str = "todos-review-tool"
 edit repository files. Session scope is already configured in the environment
 (`TODOS_TOOL_REVIEW_SUBMISSION_FILE`, `TODOS_TOOL_ITEM_ID`, `TODOS_TOOL_LOGICAL_ATTEMPT`).
 
+Authoritative contract and example:
+  todos-tool schema show review-decision
+  todos-tool example show review-decision
+
 Workflow:
 1. Run `{review_tool_command} scaffold` — start from the pre-filled template with exact
    `acceptance_criteria[].criterion` strings and authoritative validation/evidence copied in.
@@ -558,31 +563,6 @@ def build_review_prompt(
             else format_evidence_results(authoritative_evidence)
         )
     )
-
-    decision_schema = """
-{
-  "schema_version": 1,
-  "item_id": "%s",
-  "logical_attempt": %d,
-  "decision": "pass" | "fail" | "blocked",
-  "summary": "string",
-  "acceptance_criteria": [
-    {"criterion": "string", "passed": true, "evidence": "string"}
-  ],
-  "validation": [
-    {"command": "string", "passed": true, "exit_code": 0, "summary": "string"}
-  ],
-  "evidence": [
-    {"command": "string", "cwd": ".", "passed": true, "exit_code": 0, "summary": "string"}
-  ],
-  "instruction_compliance": {"passed": true, "violations": []},
-  "issues": [
-    {"severity": "info", "title": "optional note", "detail": "non-blocking on pass"}
-  ],
-  "proposed_commit_message": "agent: feat: concise subject",
-  "recommended_next_action": "mark_done" | "retry" | "block"
-}
-""".strip() % (item.id, logical_attempt)
 
     parts = [
         "# Independent review session (read-only)",
@@ -731,15 +711,15 @@ def build_review_prompt(
             "## Review submission tool",
             format_review_tool_section(review_tool_command=review_tool_command),
             "",
-            "Submit EXACTLY one JSON object matching this schema:",
+            discoverability.format_review_schema_section(
+                review_tool_command=review_tool_command,
+                item_id=item.id,
+                logical_attempt=logical_attempt,
+            ),
             "",
             "Copy each `acceptance_criteria[].criterion` string from "
             f"`{review_tool_command} scaffold` (preferred) or the Acceptance criteria section above. "
             "Do not paraphrase criterion text.",
-            "",
-            "```json",
-            decision_schema,
-            "```",
             "",
             "A pass is valid only when every acceptance criterion passes, mandatory validation passes,",
             "instruction compliance passes, and no unresolved blocking issue exists.",
@@ -759,8 +739,6 @@ def build_repair_prompt(
     yaml_files: list[str],
     project_context: ProjectContext | None = None,
     resolved_context_files: list[ResolvedContextFile] | None = None,
-    authoring_guide_path: str | None = None,
-    schema_module: str = "todos_tool.manifest",
 ) -> str:
     file_lines = _bullet_lines(yaml_files) or "- (none discovered)"
     parts = [
@@ -779,20 +757,10 @@ def build_repair_prompt(
     ]
     parts.extend(_render_project_context(project_context, resolved_context_files))
 
-    if authoring_guide_path:
-        parts.extend(
-            [
-                "",
-                "## Authoring guide",
-                f"Read `{authoring_guide_path}` for schema semantics and completion behavior.",
-            ]
-        )
-
     parts.extend(
         [
             "",
-            "## Machine authority",
-            f"Use `{schema_module}` as the authoritative loader/schema reference.",
+            discoverability.format_repair_discovery_section(),
             "",
             "## Repair contract",
             "- Edit only existing TODO YAML required to fix the diagnostic.",

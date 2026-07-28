@@ -85,11 +85,6 @@ def todo_yaml_content_hash(repo_root: Path, todos_dir_name: str) -> str:
     return digest.hexdigest()
 
 
-def _authoring_guide_path() -> str | None:
-    guide = Path(__file__).resolve().parents[2] / "README.md"
-    return str(guide) if guide.is_file() else None
-
-
 @dataclass
 class RepairAttemptRecord:
     attempt: int
@@ -187,7 +182,6 @@ class YamlRepairCoordinator:
                 ),
                 project_context=self.project_context,
                 resolved_context_files=self.resolved_context_files,
-                authoring_guide_path=_authoring_guide_path(),
             )
             attempt_dir = self.repair_log_dir / f"attempt-{attempt:02d}"
             attempt_dir.mkdir(parents=True, exist_ok=True)

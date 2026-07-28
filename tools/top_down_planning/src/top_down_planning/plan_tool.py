@@ -18,6 +18,7 @@ from top_down_planning.errors import PlanningToolError
 from top_down_planning.models import AgentResponse, PlanState, PlanningOperation
 from top_down_planning.persistence import write_json
 from top_down_planning.prompts import _format_item_context
+from top_down_planning import schema_docs
 
 ENV_TXN_FILE = "PLANNING_TOOL_TXN_FILE"
 ENV_SELECTED_IDS = "PLANNING_TOOL_SELECTED_IDS"
@@ -205,6 +206,80 @@ def _draft_status(txn_file: Path) -> dict[str, Any]:
         "assessment": assessment,
         "plan_digest": draft.get("plan_digest"),
     }
+
+
+@app.command("usage")
+def usage_cmd() -> None:
+    """Show the planning transaction workflow and discovery commands."""
+    typer.echo(schema_docs.format_plan_tool_usage(plan_tool_command=resolve_plan_tool_command()))
+
+
+@app.command("schema")
+def schema_cmd(
+    target: Annotated[
+        str,
+        typer.Option(
+            "--target",
+            help="Schema target: operation or transaction",
+        ),
+    ] = "operation",
+    fmt: Annotated[
+        str,
+        typer.Option("--format", help="Output format: json or yaml"),
+    ] = "json",
+) -> None:
+    """Show authoritative JSON Schema for planning operations."""
+    if target not in {"operation", "transaction"}:
+        raise PlanToolError("target must be 'operation' or 'transaction'")
+    payload = schema_docs.operation_schema(target=target)  # type: ignore[arg-type]
+    if fmt == "yaml":
+        typer.echo(yaml.safe_dump(payload, sort_keys=False), nl=False)
+    else:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True), nl=False)
+
+
+@app.command("example")
+def example_cmd(
+    type_name: Annotated[
+        str,
+        typer.Option("--type", help="Example operation type"),
+    ] = "mark_actionable",
+    fmt: Annotated[
+        str,
+        typer.Option("--format", help="Output format: json or yaml"),
+    ] = "json",
+) -> None:
+    """Show a minimal valid planning operation example."""
+    examples = schema_docs.operation_examples()
+    if type_name not in examples:
+        known = ", ".join(sorted(examples))
+        raise PlanToolError(f"Unknown example type {type_name!r}; known: {known}")
+    payload = examples[type_name]
+    if fmt == "yaml":
+        typer.echo(yaml.safe_dump(payload, sort_keys=False), nl=False)
+    else:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True), nl=False)
+
+
+@app.command("validate")
+def validate_cmd(
+    json_payload: Annotated[
+        str,
+        typer.Option("--json", help="Planning operation JSON object"),
+    ],
+) -> None:
+    """Validate a planning operation without recording it."""
+    try:
+        raw = json.loads(json_payload)
+    except json.JSONDecodeError as exc:
+        raise PlanToolError(f"Invalid operation JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise PlanToolError("Operation JSON must be an object")
+    try:
+        schema_docs.validate_operation(raw)
+    except PydanticValidationError as exc:
+        raise PlanToolError(f"Invalid planning operation: {exc}") from exc
+    typer.echo("Valid planning operation.")
 
 
 @app.command("show-context")

@@ -28,6 +28,7 @@ from todos_tool.persistence import load_state
 from todos_tool.progress import format_status_summary, write_progress
 from todos_tool.workspace_loader import DryRunReport, load_workspace_repairable
 from todos_tool.scheduler import readiness_rows
+from todos_tool import discoverability
 
 
 def _optional_bool_arg(value: str) -> bool:
@@ -43,7 +44,10 @@ def _optional_bool_arg(value: str) -> bool:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="todos-tool",
-        description="Execute a structured todos/ workspace with Cursor Agent CLI.",
+        description=(
+            "Execute a structured todos/ workspace with Cursor Agent CLI. "
+            "Use 'todos-tool usage' and 'todos-tool schema list' for discovery."
+        ),
     )
     parser.add_argument(
         "--version",
@@ -90,6 +94,50 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-notify",
         action="store_true",
         help="Disable desktop notifications",
+    )
+
+    usage = subparsers.add_parser("usage", help="Show quick-start usage and discovery commands")
+    usage.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format (default: text)",
+    )
+
+    schema = subparsers.add_parser("schema", help="Inspect public TODO workspace contracts")
+    schema_sub = schema.add_subparsers(dest="schema_command", required=True)
+    schema_list = schema_sub.add_parser("list", help="List public contracts")
+    schema_list.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format (default: text)",
+    )
+    schema_show = schema_sub.add_parser("show", help="Show one contract by name")
+    schema_show.add_argument("name", help="Contract name (manifest, item, run-config, review-decision)")
+    schema_show.add_argument(
+        "--format",
+        choices=("text", "json", "yaml"),
+        default="json",
+        help="Output format (default: json)",
+    )
+
+    example = subparsers.add_parser("example", help="Show minimal valid contract examples")
+    example_sub = example.add_subparsers(dest="example_command", required=True)
+    example_list = example_sub.add_parser("list", help="List available examples")
+    example_list.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format (default: text)",
+    )
+    example_show = example_sub.add_parser("show", help="Show one example by contract name")
+    example_show.add_argument("name", help="Contract name (manifest, item, run-config, review-decision)")
+    example_show.add_argument(
+        "--format",
+        choices=("text", "json", "yaml"),
+        default="json",
+        help="Output format (default: json)",
     )
 
     return parser
@@ -510,6 +558,35 @@ async def _cmd_commit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_usage(args: argparse.Namespace) -> int:
+    print(discoverability.render_usage(fmt=args.format), end="")
+    return 0
+
+
+def _cmd_schema(args: argparse.Namespace) -> int:
+    try:
+        if args.schema_command == "list":
+            print(discoverability.render_schema_list(fmt=args.format), end="")
+        else:
+            print(discoverability.render_schema_show(args.name, fmt=args.format), end="")
+    except KeyError as exc:
+        _print_error(str(exc))
+        return 2
+    return 0
+
+
+def _cmd_example(args: argparse.Namespace) -> int:
+    try:
+        if args.example_command == "list":
+            print(discoverability.render_example_list(fmt=args.format), end="")
+        else:
+            print(discoverability.render_example_show(args.name, fmt=args.format), end="")
+    except KeyError as exc:
+        _print_error(str(exc))
+        return 2
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -524,16 +601,18 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_cmd_resume(args))
     if args.command == "commit":
         return asyncio.run(_cmd_commit(args))
+    if args.command == "usage":
+        return _cmd_usage(args)
+    if args.command == "schema":
+        return _cmd_schema(args)
+    if args.command == "example":
+        return _cmd_example(args)
     parser.error(f"Unknown command: {args.command}")
     return 2
 
 
 def run() -> None:
     raise SystemExit(main())
-
-
-# Stale console scripts may still import `app` from an older Typer entry point.
-app = run
 
 
 if __name__ == "__main__":

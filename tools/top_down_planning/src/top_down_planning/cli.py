@@ -23,14 +23,23 @@ from top_down_planning.notifications import (
     resolve_notify_enabled,
 )
 from top_down_planning.orchestrator import Orchestrator, RunConfig
+from top_down_planning import schema_docs
 
 app = typer.Typer(
     name="top-down-planning",
-    help="Progressively decompose Markdown input into a structured plan via Cursor Agent CLI.",
+    help=(
+        "Progressively decompose Markdown input into a structured plan via Cursor Agent CLI. "
+        "Use 'top-down-planning usage' and 'top-down-planning schema list' for discovery."
+    ),
     add_completion=False,
     no_args_is_help=True,
     invoke_without_command=True,
 )
+
+schema_app = typer.Typer(help="Inspect public planning contracts", no_args_is_help=True)
+example_app = typer.Typer(help="Show minimal valid contract examples", no_args_is_help=True)
+app.add_typer(schema_app, name="schema")
+app.add_typer(example_app, name="example")
 
 
 def _version_callback(value: bool) -> None:
@@ -393,6 +402,74 @@ def main_callback(
         force_rerender=force_rerender,
         render_batch_size=render_batch_size,
     )
+
+
+@app.command("usage")
+def usage_cmd(
+    fmt: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json",
+    ),
+) -> None:
+    """Show quick-start usage and discovery commands."""
+    typer.echo(schema_docs.render_usage(fmt=fmt), nl=False)
+
+
+@schema_app.command("list")
+def schema_list_cmd(
+    fmt: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json",
+    ),
+) -> None:
+    """List public planning contracts."""
+    typer.echo(schema_docs.render_schema_list(fmt=fmt), nl=False)
+
+
+@schema_app.command("show")
+def schema_show_cmd(
+    name: str = typer.Argument(..., help="Contract name"),
+    fmt: str = typer.Option(
+        "json",
+        "--format",
+        help="Output format: text, json, or yaml",
+    ),
+) -> None:
+    """Show one contract schema by name."""
+    try:
+        typer.echo(schema_docs.render_schema_show(name, fmt=fmt), nl=False)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@example_app.command("list")
+def example_list_cmd(
+    fmt: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json",
+    ),
+) -> None:
+    """List available contract examples."""
+    typer.echo(schema_docs.render_example_list(fmt=fmt), nl=False)
+
+
+@example_app.command("show")
+def example_show_cmd(
+    name: str = typer.Argument(..., help="Contract name"),
+    fmt: str = typer.Option(
+        "json",
+        "--format",
+        help="Output format: text, json, or yaml",
+    ),
+) -> None:
+    """Show one minimal valid example by contract name."""
+    try:
+        typer.echo(schema_docs.render_example_show(name, fmt=fmt), nl=False)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command("run")

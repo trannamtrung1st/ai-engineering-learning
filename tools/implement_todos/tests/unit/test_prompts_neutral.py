@@ -49,6 +49,7 @@ def test_review_prompt_uses_submission_tool() -> None:
     assert "todos-review-tool scaffold" in prompt
     assert "todos-review-tool validate --json" in prompt
     assert "todos-review-tool submit --json" in prompt
+    assert "todos-tool schema show review-decision" in prompt
     assert "do **not** return JSON in chat" in prompt
     assert "Submit your decision only through the review submission CLI" in prompt
     assert "Commit subject guidance" in prompt
@@ -81,6 +82,7 @@ def test_repair_prompt_includes_diagnostic_and_contract() -> None:
         yaml_files=["todos/manifest.yaml"],
     )
     assert "manifest.yaml: invalid field" in prompt
+    assert "todos-tool schema show manifest" in prompt
     assert "Do not change files outside the TODO YAML set" in prompt
 
 

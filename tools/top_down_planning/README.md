@@ -12,6 +12,31 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+## CLI discovery
+
+Inspect usage, contracts, and minimal examples without reading repository docs:
+
+```bash
+top-down-planning usage
+top-down-planning schema list
+top-down-planning schema show operation --format json
+top-down-planning example list
+top-down-planning example show plan --format yaml
+```
+
+Helper CLIs also expose offline discovery:
+
+```bash
+planning-plan-tool usage
+planning-plan-tool schema --target operation
+planning-plan-tool example --type mark_actionable
+planning-plan-tool validate --json '{"type":"mark_actionable","node_id":"item-001"}'
+
+planning-review-tool usage --stage whole_plan_review
+planning-review-tool schema --stage whole_plan_review
+planning-review-tool example --stage whole_plan_review
+```
+
 ## Usage
 
 Using a YAML config file (recommended for repeatable runs):
@@ -185,6 +210,15 @@ Incomplete, blocked, or failed planning runs keep internal state under `.plannin
 but do not write new deliverables.
 
 ## v1 contracts
+
+Authoritative contracts and examples are available from the CLI:
+
+```bash
+top-down-planning schema list
+top-down-planning schema show plan
+top-down-planning schema show operation
+top-down-planning example show transaction
+```
 
 ### Planning state (`plan.yaml`)
 

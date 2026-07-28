@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from top_down_planning import schema_docs
 from top_down_planning.agent_context import ResolvedAgentContext
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
 from top_down_planning.models import PlanItem, PlanState, ReviewFinding, WholePlanContextMode
@@ -178,56 +179,6 @@ def _format_item_context(plan: PlanState, item: PlanItem) -> str:
     return "\n".join(parts)
 
 
-def format_plan_tool_section(*, plan_tool_command: str = "planning-plan-tool") -> str:
-    """Describe the session transaction CLI the agent must invoke."""
-    return f"""Use the planning transaction CLI — do **not** return JSON in chat and do **not**
-edit `.planning-output/plan.yaml` directly. Session scope is already configured in the
-environment (`PLANNING_TOOL_TXN_FILE`, `PLANNING_TOOL_SELECTED_IDS`, `PLANNING_TOOL_PLAN_FILE`,
-`PLANNING_TOOL_PLAN_DIGEST`).
-
-Your **writable scope** is limited to the assigned generation items listed below.
-The whole-plan context is read-only reference material.
-
-Workflow:
-1. Read the complete plan overview (embedded below or at the referenced path).
-2. Optionally run `{plan_tool_command} show-context` for selected-node details.
-3. Optionally run `{plan_tool_command} status` to inspect the current draft.
-4. For **each assigned item**, run `{plan_tool_command} record-operation --json '<operation>'`.
-5. Run `{plan_tool_command} set-assessment [--plan-complete|--no-plan-complete] --summary "..."`.
-6. Run `{plan_tool_command} finalize` to commit the session transaction.
-
-Operation JSON schema (one object per `record-operation` call):
-
-```json
-{{
-  "type": "expand | mark_actionable | mark_blocked | mark_out_of_scope | revise_actionable",
-  "node_id": "one of the selected item ids",
-  "reason": "string",
-  "children": [
-    {{
-      "ref": "optional local reference like child-1",
-      "title": "string",
-      "objective": "string",
-      "dependencies": ["child refs or existing item ids"],
-      "expected_outputs": ["string"],
-      "acceptance_criteria": ["string"]
-    }}
-  ]
-}}
-```
-
-For `revise_actionable`, provide the full updated `expected_outputs` and
-`acceptance_criteria` lists (not partial deltas). Optional `title`, `objective`,
-and `dependencies` replace the existing values when provided.
-
-For `mark_actionable`, include `expected_outputs` and `acceptance_criteria` when required by
-the output goal. For `mark_blocked`, include `missing_information` and `open_question`.
-
-For a child-count constraint conflict, use `mark_blocked` with:
-`constraint_code: "max_children_exceeded"` and `required_min_children` set to the required
-direct-child count (greater than the configured limit)."""
-
-
 def build_planning_prompt(
     *,
     loaded_input: LoadedInput,
@@ -307,7 +258,7 @@ Do not execute implementation work.
 {format_input_document_section(loaded_input=loaded_input, workspace=workspace, embed_threshold=embed_threshold)}
 
 {generation_context_block}## Planning transaction CLI
-{format_plan_tool_section(plan_tool_command=plan_tool_command)}
+{schema_docs.format_plan_tool_usage(plan_tool_command=plan_tool_command)}
 """
 
 
@@ -390,7 +341,7 @@ items, and do not execute implementation work.
 {format_input_document_section(loaded_input=loaded_input, workspace=workspace, embed_threshold=embed_threshold)}
 
 {generation_context_block}## Planning transaction CLI
-{format_plan_tool_section(plan_tool_command=plan_tool_command)}
+{schema_docs.format_plan_tool_usage(plan_tool_command=plan_tool_command)}
 """
 
 
@@ -625,22 +576,11 @@ Assigned plan items: {", ".join(batch_item_ids)}
 ## Workspace deliverables
 {destination_lines}
 
-Use `{review_tool_command} set-result --json '<result>'` then `{review_tool_command} finalize`.
-
-Result JSON schema:
-```json
-{{
-  "stage": "render_batch_review",
-  "batch_index": {batch_index},
-  "plan_digest": "{plan_digest}",
-  "output_goal_digest": "{output_goal_digest}",
-  "schedule_digest": "{schedule_digest}",
-  "deliverable_output_digest": "{deliverable_digest}",
-  "decision": "approve | needs_revision | blocked",
-  "summary": "...",
-  "findings": []
-}}
-```
+{schema_docs.format_review_schema_section(
+    review_tool_command=review_tool_command,
+    stage="render_batch_review",
+    plan_digest=plan_digest,
+)}
 """
 
 
@@ -708,21 +648,9 @@ Use `blocked` for unfixable tool/goal mismatches.
 ## Workspace deliverables
 {destination_lines}
 
-Use `{review_tool_command} set-result --json '<result>'` then `{review_tool_command} finalize`.
-
-Result JSON schema:
-```json
-{{
-  "stage": "rendered_output_review",
-  "plan_digest": "{plan_digest}",
-  "output_goal_digest": "{output_goal_digest}",
-  "schedule_digest": "{schedule_digest}",
-  "deliverable_output_digest": "{deliverable_digest}",
-  "decision": "approve | needs_revision | blocked",
-  "summary": "...",
-  "findings": [],
-  "affected_batch_indices": [],
-  "affected_artifact_paths": []
-}}
-```
+{schema_docs.format_review_schema_section(
+    review_tool_command=review_tool_command,
+    stage="rendered_output_review",
+    plan_digest=plan_digest,
+)}
 """

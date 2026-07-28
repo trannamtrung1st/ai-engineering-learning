@@ -87,3 +87,5 @@ def test_installed_entry_point_help() -> None:
     )
     assert result.returncode == 0
     assert "validate" in result.stdout
+    assert "usage" in result.stdout
+    assert "schema" in result.stdout

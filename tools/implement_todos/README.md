@@ -40,6 +40,18 @@ todos-tool run --workspace /path/to/project --todo TASK-001
 todos-tool resume --workspace /path/to/project
 ```
 
+### CLI discovery
+
+Inspect usage, contracts, and minimal examples without reading repository docs:
+
+```bash
+todos-tool usage
+todos-tool schema list
+todos-tool schema show item --format json
+todos-tool example list
+todos-tool example show manifest --format yaml
+```
+
 Bundled example:
 
 ```bash
@@ -167,6 +179,15 @@ See [`examples/run.config.yaml`](examples/run.config.yaml) for a working example
 Resolution lives in [`model_config.py`](src/todos_tool/model_config.py) and is applied when building the Cursor client in the orchestrator.
 
 ## TODO workspace schema
+
+Authoritative contracts and examples are available from the CLI:
+
+```bash
+todos-tool schema list
+todos-tool schema show manifest
+todos-tool schema show item
+todos-tool example show manifest
+```
 
 ```text
 todos/                       # location is configurable via --todos-dir

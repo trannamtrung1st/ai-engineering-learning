@@ -16,6 +16,7 @@ from top_down_planning.prompts import (
 )
 from top_down_planning.render_brief import build_render_brief
 from top_down_planning.review_tool import resolve_review_tool_command
+from top_down_planning import schema_docs
 
 
 def _dependency_summary(plan: PlanState) -> str:
@@ -110,27 +111,11 @@ Record exactly one structured review result through the review transaction CLI.
 - Verification quality: concrete expected outputs; observable acceptance criteria;
   no contradictory criteria; integration/verification steps present when needed.
 
-## Structured result schema
-Use `{review_tool_command} set-result --json '<json>'` then `{review_tool_command} finalize`.
-
-```json
-{{
-  "stage": "whole_plan_review",
-  "plan_digest": "{plan_digest}",
-  "decision": "approve | needs_revision | blocked",
-  "summary": "...",
-  "findings": [
-    {{
-      "severity": "blocking | major | minor",
-      "category": "coverage | overlap | consistency | dependency | granularity | acceptance | scope | other",
-      "revision_mode": "reopen | amend | annotate",
-      "node_ids": ["item-..."],
-      "description": "...",
-      "recommended_change": "..."
-    }}
-  ]
-}}
-```
+{schema_docs.format_review_schema_section(
+    review_tool_command=review_tool_command,
+    stage="whole_plan_review",
+    plan_digest=plan_digest,
+)}
 
 Revision modes (required on every finding when decision is `needs_revision`):
 - `amend` — actionable item detail is wrong (acceptance criteria, sequencing, evidence,
@@ -213,27 +198,11 @@ Record exactly one structured confirmation result through the review transaction
 - Dependency graph is coherent.
 - Output goal can be rendered without major planning rediscovery.
 
-## Structured result schema
-Use `{review_tool_command} set-result --json '<json>'` then `{review_tool_command} finalize`.
-
-```json
-{{
-  "stage": "final_confirmation",
-  "plan_digest": "{plan_digest}",
-  "decision": "confirmed | needs_revision | blocked",
-  "summary": "...",
-  "findings": [
-    {{
-      "severity": "blocking | major | minor",
-      "category": "coverage | overlap | consistency | dependency | granularity | acceptance | scope | other",
-      "revision_mode": "reopen | amend | annotate",
-      "node_ids": ["item-..."],
-      "description": "...",
-      "recommended_change": "..."
-    }}
-  ]
-}}
-```
+{schema_docs.format_review_schema_section(
+    review_tool_command=review_tool_command,
+    stage="final_confirmation",
+    plan_digest=plan_digest,
+)}
 
 Rules:
 - `confirmed` requires matching digest and no blocking/major findings.

@@ -21,6 +21,7 @@ from top_down_planning.models import (
     WholePlanReviewResult,
 )
 from top_down_planning.persistence import write_json
+from top_down_planning import schema_docs
 
 ENV_RESULT_FILE = "PLANNING_REVIEW_RESULT_FILE"
 ENV_STAGE = "PLANNING_REVIEW_STAGE"
@@ -155,6 +156,119 @@ def load_review_result(
         return _RESULT_ADAPTERS[stage].validate_python(data)
     except (OSError, json.JSONDecodeError, PydanticValidationError) as exc:
         raise ReviewToolError(f"Invalid review result file {path}: {exc}") from exc
+
+
+@app.command("usage")
+def usage_cmd(
+    stage: Annotated[
+        str | None,
+        typer.Option("--stage", help="Review stage for stage-specific guidance"),
+    ] = None,
+) -> None:
+    """Show review transaction workflow and discovery commands."""
+    command = resolve_review_tool_command()
+    lines = [
+        "Use the review transaction CLI to record structured results.",
+        "",
+        "Discovery:",
+        f"  {command} schema --stage <stage>",
+        f"  {command} example --stage <stage>",
+        f"  {command} validate --json '<result>' --stage <stage>",
+        "  top-down-planning schema show review-whole-plan",
+        "  top-down-planning schema show review-final-confirmation",
+        "  top-down-planning schema show review-render-batch",
+        "  top-down-planning schema show review-rendered-output",
+        "",
+        "Workflow:",
+        f"  {command} set-result --json '<result>'",
+        f"  {command} finalize",
+    ]
+    if stage:
+        lines.append("")
+        lines.append(f"Current stage: {stage}")
+    typer.echo("\n".join(lines))
+
+
+@app.command("schema")
+def schema_cmd(
+    stage: Annotated[
+        str | None,
+        typer.Option("--stage", help="Review stage"),
+    ] = None,
+    fmt: Annotated[
+        str,
+        typer.Option("--format", help="Output format: json or yaml"),
+    ] = "json",
+) -> None:
+    """Show authoritative JSON Schema for a review result stage."""
+    resolved = stage or os.environ.get(ENV_STAGE, "").strip() or None
+    if not resolved:
+        raise ReviewToolError("--stage is required when PLANNING_REVIEW_STAGE is unset")
+    try:
+        payload = schema_docs.review_schema(resolved)
+    except KeyError as exc:
+        raise ReviewToolError(str(exc)) from exc
+    if fmt == "yaml":
+        import yaml
+
+        typer.echo(yaml.safe_dump(payload, sort_keys=False), nl=False)
+    else:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True), nl=False)
+
+
+@app.command("example")
+def example_cmd(
+    stage: Annotated[
+        str | None,
+        typer.Option("--stage", help="Review stage"),
+    ] = None,
+    fmt: Annotated[
+        str,
+        typer.Option("--format", help="Output format: json or yaml"),
+    ] = "json",
+) -> None:
+    """Show a minimal valid review result example."""
+    resolved = stage or os.environ.get(ENV_STAGE, "").strip() or None
+    if not resolved:
+        raise ReviewToolError("--stage is required when PLANNING_REVIEW_STAGE is unset")
+    try:
+        payload = schema_docs.review_example(resolved)
+    except KeyError as exc:
+        raise ReviewToolError(str(exc)) from exc
+    if fmt == "yaml":
+        import yaml
+
+        typer.echo(yaml.safe_dump(payload, sort_keys=False), nl=False)
+    else:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True), nl=False)
+
+
+@app.command("validate")
+def validate_cmd(
+    json_payload: Annotated[
+        str,
+        typer.Option("--json", help="Structured review or confirmation result JSON"),
+    ],
+    stage: Annotated[
+        str | None,
+        typer.Option("--stage", help="Review stage"),
+    ] = None,
+) -> None:
+    """Validate a review result without writing session state."""
+    resolved = stage or os.environ.get(ENV_STAGE, "").strip() or None
+    if not resolved:
+        raise ReviewToolError("--stage is required when PLANNING_REVIEW_STAGE is unset")
+    try:
+        raw = json.loads(json_payload)
+    except json.JSONDecodeError as exc:
+        raise ReviewToolError(f"Invalid result JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ReviewToolError("Result JSON must be an object")
+    try:
+        schema_docs.validate_review_result(resolved, raw)
+    except (KeyError, PydanticValidationError) as exc:
+        raise ReviewToolError(f"Invalid structured result: {exc}") from exc
+    typer.echo(f"Valid {resolved} result.")
 
 
 @app.command("status")

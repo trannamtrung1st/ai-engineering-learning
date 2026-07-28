@@ -22,6 +22,9 @@ from top_down_planning.plan_tool import (
     set_assessment,
     status,
 )
+from top_down_planning.schema_docs import operation_examples
+from typer.testing import CliRunner
+from top_down_planning.plan_tool import app as plan_tool_app
 from tests.plan_factory import make_root_plan
 
 
@@ -155,3 +158,22 @@ def test_reset_transaction_clears_draft_and_final(tmp_path: Path, plan_session) 
     reset_transaction(txn_file)
     assert not txn_file.is_file()
     assert not txn_file.with_suffix(txn_file.suffix + ".draft").is_file()
+
+
+def test_plan_tool_discovery_commands_offline() -> None:
+    runner = CliRunner()
+    usage = runner.invoke(plan_tool_app, ["usage"])
+    assert usage.exit_code == 0
+    assert "planning-plan-tool schema" in usage.stdout
+
+    schema = runner.invoke(plan_tool_app, ["schema", "--target", "operation"])
+    assert schema.exit_code == 0
+    assert '"properties"' in schema.stdout
+
+    example_payload = operation_examples()["mark_actionable"]
+    validate = runner.invoke(
+        plan_tool_app,
+        ["validate", "--json", json.dumps(example_payload)],
+    )
+    assert validate.exit_code == 0
+    assert "Valid planning operation." in validate.stdout
