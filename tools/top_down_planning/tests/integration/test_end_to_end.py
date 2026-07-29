@@ -12,6 +12,7 @@ from top_down_planning.models import (
     ExpandOperation,
     FinalStatus,
     PlanningLimits,
+    RenderConfig,
     ReviewConfig,
     ReviewStatus,
     RunActiveStatus,
@@ -47,7 +48,6 @@ async def test_end_to_end_with_fake_agent(
     assert len(report.artifacts) == 1
     assert (output_dir / ".planning-output" / "plan.yaml").is_file()
     assert (output_dir / ".planning-output" / "run-state.json").is_file()
-    assert (output_dir / ".planning-output" / "render" / "batch-schedule.yaml").is_file()
     assert not (output_dir / "plan.md").exists()
     artifact_path = tmp_path / "implementation-plan.md"
     assert artifact_path.is_file()
@@ -202,80 +202,65 @@ async def test_resume_after_limit_reached_with_increased_max_iterations(
 
 
 @pytest.mark.asyncio
-async def test_resume_after_child_limit_blocked_with_increased_max_children(
+async def test_resume_loads_blocked_plan_without_mutating_state(
     tmp_path: Path,
     example_input: Path,
-    fake_agent_bin: str,
 ) -> None:
-    import os
+    from top_down_planning.models import BlockedConstraintCode, ReadinessStatus
+    from top_down_planning.persistence import ensure_resume_compatible, update_final_status
 
-    output_dir = tmp_path / "planning-output-child-limit-resume"
+    output_dir = tmp_path / "planning-output-blocked-resume"
     loaded = load_markdown_input(example_input)
     loaded_goal = render_output_goal()
-    blocked_response = json.dumps(
-        {
-            "operations": [
-                {
-                    "type": "mark_blocked",
-                    "node_id": "item-001",
-                    "title": "Plan the required top-level workstreams",
-                    "objective": "Preserve all explicitly required sibling groups.",
-                    "reason": "Source requires at least 9 direct children under item-001",
-                    "constraint_code": "max_children_exceeded",
-                    "required_min_children": 9,
-                }
-            ],
-        }
-    )
-    stored_limits = PlanningLimits(
-        max_iterations=5,
-        max_children_per_expansion=8,
-    )
-    first_config = RunConfig(
-        input_path=example_input,
-        output_goal=loaded_goal,
-        output_dir=output_dir,
-        workspace_root=tmp_path,
-        limits=stored_limits,
-        agent_bin=fake_agent_bin,
-        skip_probe=True,
-    )
-    os.environ["FAKE_AGENT_PLANNING_JSON"] = blocked_response
-    os.environ["FAKE_AGENT_EXPAND_ROOT"] = "false"
-    try:
-        first_report = await Orchestrator(first_config).run()
-    finally:
-        os.environ.pop("FAKE_AGENT_PLANNING_JSON", None)
-        os.environ.pop("FAKE_AGENT_EXPAND_ROOT", None)
+    limits = PlanningLimits(max_iterations=5)
 
-    assert first_report.status == FinalStatus.INCOMPLETE_BLOCKED
-
-    resume_report = await Orchestrator(
-        RunConfig(
-            input_path=example_input,
-            output_goal=loaded_goal,
-            output_dir=output_dir,
-            workspace_root=tmp_path,
-            limits=PlanningLimits(
-                max_iterations=5,
-                max_children_per_expansion=12,
-            ),
-            resume=True,
-            agent_bin=fake_agent_bin,
-            skip_probe=True,
-        )
-    ).run()
-
-    assert resume_report.status == FinalStatus.COMPLETE
-    run_state = load_run_state(output_dir)
-    assert run_state is not None
-    assert run_state.limits.max_children_per_expansion == 12
-    plan = load_plan(output_dir)
-    assert plan is not None
-    assert plan.result.status == FinalStatus.COMPLETE
+    plan = make_root_plan(
+        input_file=str(loaded.path),
+        output_goal=loaded_goal.text,
+        input_digest=loaded.digest,
+        output_goal_digest=loaded_goal.digest,
+    )
     root = plan.item_by_id("item-001")
     assert root is not None
-    assert root.decomposition_status == DecompositionStatus.EXPANDED
+    root.decomposition_status = DecompositionStatus.BLOCKED
+    root.readiness_status = ReadinessStatus.BLOCKED
+    root.blocked_reason = "Requires more children than can be planned safely"
+    root.blocked_constraint_code = BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
+    root.blocked_required_min_children = 9
+    update_final_status(
+        plan,
+        FinalStatus.INCOMPLETE_BLOCKED,
+        "Planning stopped on a blocked item.",
+    )
+
+    run_state = new_run_state(
+        input_file=str(loaded.path),
+        output_goal=loaded_goal.source_label,
+        input_digest=loaded.digest,
+        output_goal_digest=loaded_goal.digest,
+        limits=limits,
+        generation=default_generation(),
+    )
+    run_state.active_status = RunActiveStatus.COMPLETED
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_plan(output_dir, plan)
+    save_run_state(output_dir, run_state)
+
+    loaded_plan, loaded_run = ensure_resume_compatible(
+        output_dir,
+        input_digest=loaded.digest,
+        output_goal_digest=loaded_goal.digest,
+        limits=limits,
+        generation=default_generation(),
+        render=RenderConfig(),
+        resume=True,
+    )
+    assert loaded_plan is not None
+    assert loaded_run is not None
+    assert loaded_plan.result.status == FinalStatus.INCOMPLETE_BLOCKED
+    reloaded_root = loaded_plan.item_by_id("item-001")
+    assert reloaded_root is not None
+    assert reloaded_root.decomposition_status == DecompositionStatus.BLOCKED
 
 
 @pytest.mark.asyncio
@@ -347,12 +332,12 @@ async def test_resume_does_not_reset_review_blocked_without_child_limit_change(
 
 
 @pytest.mark.asyncio
-async def test_end_to_end_with_concurrent_batches(
+async def test_end_to_end_sequential_iterations(
     tmp_path: Path,
     example_input: Path,
     fake_agent_bin: str,
 ) -> None:
-    output_dir = tmp_path / "planning-output-concurrent"
+    output_dir = tmp_path / "planning-output-sequential"
     loaded_goal = render_output_goal()
     config = RunConfig(
         input_path=example_input,

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from top_down_planning.models import (
+    DEFAULT_CONTEXT_CHARACTERS,
     DecompositionStatus,
     PlanItem,
     PlanState,
@@ -273,15 +274,24 @@ def build_batch_context_markdown(
 ) -> tuple[str, str, str]:
     """Return (assigned scope, patchable scope, relevant read-only context)."""
     selected_ids = {item.id for item in selected_items}
-    assigned_lines = [
-        "## Assigned generation scope (writable)",
-        "",
-        "Produce exactly one operation for each assigned item below.",
-        "",
-    ]
-    for item in selected_items:
-        assigned_lines.append(format_item_context(plan, item))
-        assigned_lines.append("")
+    if selected_items:
+        assigned_lines = [
+            "## Assigned generation scope (writable)",
+            "",
+            "Produce exactly one operation for each assigned item below.",
+            "",
+        ]
+        for item in selected_items:
+            assigned_lines.append(format_item_context(plan, item))
+            assigned_lines.append("")
+    else:
+        assigned_lines = [
+            "## Assigned generation scope (writable)",
+            "",
+            "No batch selected yet. Run `select-batch` to record your chosen scope, then "
+            "use `show-context` for detailed item context before recording operations.",
+            "",
+        ]
 
     patchable_ids: set[str] = set()
     patchable_lines: list[str] = []
@@ -349,7 +359,7 @@ def prepare_batch_context(
     plan_digest: str,
     output_dir: Path,
     whole_plan_context: WholePlanContextMode,
-    max_context_characters: int,
+    max_context_characters: int = DEFAULT_CONTEXT_CHARACTERS,
     include_cross_item_updates: bool = True,
 ) -> PreparedBatchContext:
     """Prepare per-batch context and decide embedding vs reference mode."""
@@ -412,7 +422,7 @@ Do not:
 - duplicate work already owned by another branch;
 - contradict established decisions;
 - create dependencies merely to express preferred execution order;
-- merge or omit explicit source groups to satisfy configured limits;
+- do not merge or omit explicit source groups to satisfy artificial limits;
 - re-plan unrelated branches without using the assigned operation or a patchable
   `update_item` when related detail must change.
 

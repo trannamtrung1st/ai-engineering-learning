@@ -6,7 +6,6 @@ from top_down_planning.completeness import (
     structural_errors,
 )
 from top_down_planning.models import (
-    AgentResponse,
     ChildDraft,
     DecompositionStatus,
     ExpandOperation,
@@ -15,8 +14,8 @@ from top_down_planning.models import (
     PlanItem,
     PlanningLimits,
 )
-from top_down_planning.scheduler import select_batch
-from tests.helpers import default_generation, make_agent_response
+from top_down_planning.scheduler import expandable_items
+from tests.helpers import make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 
@@ -51,9 +50,9 @@ def test_complete_when_no_expandable_items() -> None:
 
 
 def test_limit_reached_by_iterations() -> None:
-    plan = _plan()
     limits = PlanningLimits(max_iterations=1)
-    assert limit_reached(iteration=1, plan=plan, limits=limits)
+    assert limit_reached(iteration=1, limits=limits)
+    assert not limit_reached(iteration=0, limits=limits)
 
 
 def test_incomplete_limit_status() -> None:
@@ -62,7 +61,7 @@ def test_incomplete_limit_status() -> None:
     assert status == FinalStatus.INCOMPLETE_LIMIT_REACHED
 
 
-def test_multi_level_bfs_expansion() -> None:
+def test_multi_level_expansion_completes() -> None:
     plan = _plan()
     plan = apply_response(
         plan,
@@ -80,8 +79,8 @@ def test_multi_level_bfs_expansion() -> None:
             ]
         ),
     )
-    batch = select_batch(plan, default_generation())
-    assert {item.depth for item in batch} == {1}
+    children = expandable_items(plan)
+    assert {item.depth for item in children} == {1}
     plan = apply_response(
         plan,
         make_agent_response(
@@ -91,8 +90,9 @@ def test_multi_level_bfs_expansion() -> None:
                     expected_outputs=["Out"],
                     acceptance_criteria=["Done"],
                 )
-                for item in batch
-            ]
+                for item in children
+            ],
+            selected_items=[item.id for item in children],
         ),
     )
     assert is_plan_complete(plan)
@@ -129,7 +129,8 @@ def test_complete_plan_with_expanded_internal_nodes() -> None:
                         expected_outputs=["Out"],
                         acceptance_criteria=["Done"],
                     )
-                ]
+                ],
+                selected_items=[child.id],
             ),
         )
     counts = count_by_status(plan)

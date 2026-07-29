@@ -12,7 +12,6 @@ from tests.helpers import default_generation, make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 from top_down_planning.validator import validate_response
-from top_down_planning.models import PlanningLimits
 
 
 def _plan():
@@ -94,7 +93,6 @@ def test_validate_rejects_cycles_before_apply() -> None:
         plan,
         response,
         selected_ids=["item-001"],
-        limits=PlanningLimits(),
         output_goal_text="Produce an actionable implementation plan",
     )
     assert any("->" in error for error in errors)
@@ -123,7 +121,6 @@ def test_invalid_response_does_not_mutate_plan() -> None:
         plan,
         response,
         selected_ids=["item-001"],
-        limits=PlanningLimits(),
         output_goal_text="Produce an actionable implementation plan",
     )
     assert errors

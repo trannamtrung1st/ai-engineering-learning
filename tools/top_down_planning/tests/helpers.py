@@ -12,6 +12,7 @@ from top_down_planning.models import (
     GenerationConfig,
     PlanItem,
     PlanState,
+    ProcessedBatchRecord,
     WholePlanContextMode,
 )
 
@@ -37,21 +38,23 @@ def make_agent_response(**kwargs) -> AgentResponse:
 def planning_prompt_kwargs(
     *,
     plan: PlanState,
-    selected_items: list[PlanItem],
+    eligible_items: list[PlanItem],
     output_dir: Path,
     whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID,
+    processed_batches: list[ProcessedBatchRecord] | None = None,
 ) -> dict[str, object]:
     digest = compute_plan_digest(plan)
     prepared = prepare_batch_context(
         plan=plan,
-        selected_items=selected_items,
+        selected_items=[],
         plan_digest=digest,
         output_dir=output_dir,
         whole_plan_context=whole_plan_context,
-        max_context_characters=30000,
     )
     return {
         "plan_digest": digest,
         "batch_context_markdown": prepared.batch_context_markdown,
         "context_mode": prepared.context_mode,
+        "eligible_items": eligible_items,
+        "processed_batches": processed_batches or [],
     }

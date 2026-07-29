@@ -27,10 +27,7 @@ class RunConfigFile(BaseModel):
     stop_hint_file: Path | None = None
     workspace: Path | None = None
     max_iterations: int | None = Field(default=None, ge=1)
-    max_depth: int | None = Field(default=None, ge=1)
-    max_items: int | None = Field(default=None, ge=1)
     max_retries: int | None = Field(default=None, ge=1)
-    max_children_per_expansion: int | None = Field(default=None, ge=1)
     session_timeout_seconds: int | None = Field(default=None, ge=1)
     parse_error_threshold: int | None = Field(default=None, ge=1)
     resume: bool | None = None
@@ -68,10 +65,7 @@ class ResolvedRunOptions:
     stop_hint_file: Path | None
     workspace: Path
     max_iterations: int
-    max_depth: int
-    max_items: int
     max_retries: int
-    max_children_per_expansion: int
     session_timeout_seconds: int
     parse_error_threshold: int
     resume: bool
@@ -119,13 +113,7 @@ def merge_run_options(
     stop_hint_file: Path | None = None,
     workspace: Path | None = None,
     max_iterations: int | None = None,
-    max_depth: int | None = None,
-    max_items: int | None = None,
-    batch_size: int | None = None,
-    concurrent_batches: int | None = None,
-    render_batch_size: int | None = None,
     max_retries: int | None = None,
-    max_children_per_expansion: int | None = None,
     session_timeout_seconds: int | None = None,
     parse_error_threshold: int | None = None,
     resume: bool = False,
@@ -208,17 +196,8 @@ def merge_run_options(
     file_render = file_cfg.render if file_cfg else None
     agent_context = _parse_agent_context(file_cfg.agent_context if file_cfg else None)
     review = file_cfg.review if file_cfg and file_cfg.review is not None else ReviewConfig()
-    generation = _resolve_generation_config(
-        file_generation=file_generation,
-        cli_batch_size=batch_size,
-        cli_concurrent_batches=concurrent_batches,
-        defaults=generation_defaults,
-    )
-    render = _resolve_render_config(
-        file_render=file_render,
-        cli_batch_size=render_batch_size,
-        defaults=RenderConfig(),
-    )
+    generation = file_generation.model_copy() if file_generation is not None else generation_defaults
+    render = file_render.model_copy() if file_render is not None else RenderConfig()
 
     return ResolvedRunOptions(
         input_path=resolved_input or Path("."),
@@ -234,29 +213,11 @@ def merge_run_options(
             file_limits.max_iterations if file_limits else None,
             defaults.max_iterations,
         ),
-        max_depth=_pick_int(
-            max_depth,
-            file_cfg.max_depth if file_cfg else None,
-            file_limits.max_depth if file_limits else None,
-            defaults.max_depth,
-        ),
-        max_items=_pick_int(
-            max_items,
-            file_cfg.max_items if file_cfg else None,
-            file_limits.max_items if file_limits else None,
-            defaults.max_items,
-        ),
         max_retries=_pick_int(
             max_retries,
             file_cfg.max_retries if file_cfg else None,
             file_limits.max_retries if file_limits else None,
             defaults.max_retries,
-        ),
-        max_children_per_expansion=_pick_int(
-            max_children_per_expansion,
-            file_cfg.max_children_per_expansion if file_cfg else None,
-            file_limits.max_children_per_expansion if file_limits else None,
-            defaults.max_children_per_expansion,
         ),
         session_timeout_seconds=_pick_int(
             session_timeout_seconds,
@@ -295,10 +256,7 @@ def merge_run_options(
 def options_to_planning_limits(options: ResolvedRunOptions) -> PlanningLimits:
     return PlanningLimits(
         max_iterations=options.max_iterations,
-        max_depth=options.max_depth,
-        max_items=options.max_items,
         max_retries=options.max_retries,
-        max_children_per_expansion=options.max_children_per_expansion,
         session_timeout_seconds=options.session_timeout_seconds,
         parse_error_threshold=options.parse_error_threshold,
     )
@@ -310,46 +268,6 @@ def options_to_generation_config(options: ResolvedRunOptions) -> GenerationConfi
 
 def options_to_render_config(options: ResolvedRunOptions) -> RenderConfig:
     return options.render
-
-
-def _resolve_render_config(
-    *,
-    file_render: RenderConfig | None,
-    cli_batch_size: int | None,
-    defaults: RenderConfig,
-) -> RenderConfig:
-    base = file_render.model_copy() if file_render is not None else RenderConfig()
-    base.batch_size = _pick_int(
-        cli_batch_size,
-        file_render.batch_size if file_render else None,
-        None,
-        defaults.batch_size,
-    )
-    return base
-
-
-def _resolve_generation_config(
-    *,
-    file_generation: GenerationConfig | None,
-    cli_batch_size: int | None,
-    cli_concurrent_batches: int | None,
-    defaults: GenerationConfig,
-) -> GenerationConfig:
-    """Resolve generation settings: CLI → generation.* → defaults."""
-    base = file_generation.model_copy() if file_generation is not None else GenerationConfig()
-    base.batch_size = _pick_int(
-        cli_batch_size,
-        file_generation.batch_size if file_generation else None,
-        None,
-        defaults.batch_size,
-    )
-    base.concurrent_batches = _pick_int(
-        cli_concurrent_batches,
-        file_generation.concurrent_batches if file_generation else None,
-        None,
-        defaults.concurrent_batches,
-    )
-    return base
 
 
 def _parse_agent_context(raw: dict[str, Any] | None) -> AgentContextConfig | None:
@@ -366,12 +284,6 @@ def _normalize_config_mapping(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(raw)
     limits = normalized.pop("limits", None)
     if isinstance(limits, dict):
-        for key in ("batch_size", "concurrent_batches"):
-            if key in limits:
-                raise PlanningToolError(
-                    f"limits.{key} is no longer supported; "
-                    f"use generation.{key} instead"
-                )
         for key, value in limits.items():
             if key not in normalized or normalized[key] is None:
                 normalized[key] = value

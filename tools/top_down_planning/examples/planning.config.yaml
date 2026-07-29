@@ -3,6 +3,17 @@
 # Run:
 #   top-down-planning --config ./examples/planning.config.yaml
 #
+# Requires top-down-planning 0.1.0+ and cursor-agent on PATH (authenticated).
+#
+# Contract discovery:
+#   top-down-planning usage
+#   planning-plan-tool schema --target transaction
+#   planning-review-tool schema --stage whole_plan_review
+#
+# Planning sessions end each batch with planning-plan-tool finalize (no
+# set-assessment). Structural graph completion precedes whole-plan review and
+# final confirmation.
+#
 # CLI flags override values from this file. Paths are resolved relative to
 # `workspace` (or this file's directory when `workspace` is `.` or omitted),
 # unless absolute.
@@ -31,43 +42,30 @@ stop_hint: |
 
 limits:
   max_iterations: 50
-  max_depth: 6
-  max_items: 200
-  max_retries: 3
-  # max_children_per_expansion: 12 # default: 12 — max child items per expand operation
-  # Explicit source sibling groups must not be merged solely to satisfy this limit.
-  # When required direct-child count exceeds the limit, the agent should mark_blocked
-  # with constraint_code=max_children_exceeded and required_min_children.
+  max_retries: 2
   # session_timeout_seconds: 600 # default: 600 — Cursor agent session timeout
   # parse_error_threshold: 20 # default: 20 — stream parse errors before abort
 
-# --- Generation batching ------------------------------------------------------
-# Precedence: CLI flag → generation.* → built-in default
+# --- Generation context -------------------------------------------------------
 
 generation:
-  batch_strategy: coherent   # single | coherent | throughput
-  batch_size: 3
-  concurrent_batches: 3
-  max_context_characters: 30000
   whole_plan_context: hybrid # embedded | referenced | hybrid
 
 # --- Review gate (optional) ---------------------------------------------------
 
 review:
   enabled: true
-  max_revision_cycles: 1
-  max_retries: 3
+  max_revision_cycles: 2
+  max_retries: 2
 
 # --- Render (post-confirmation) ------------------------------------------------
-# Sequential cumulative authoring: scaffold → coherent batches → final review.
+# Sequential cumulative authoring: scaffold → agent-selected batches → final review.
 
 render:
-  batch_size: 3
-  batch_strategy: coherent
-  max_retries: 3
+  max_retries: 2
   whole_plan_context: hybrid # embedded | referenced | hybrid
   final_review: true
-  max_batch_revision_cycles: 1
+  max_batch_revision_cycles: 2
   max_final_revision_cycles: 2
   scaffold: true
   # Gitignore-style patterns excluded from workspace snapshot diffing and artifact_paths.
@@ -86,10 +84,10 @@ render:
     - "*.pyo"
     - "**/.DS_Store"
 
-# --- Agent / Cursor (optional) ------------------------------------------------
+# --- Cursor agent client ------------------------------------------------------
 
+agent_bin: cursor-agent
 # model: composer-2.5 # default: composer-2.5; env: PLANNING_TOOL_MODEL
-# agent_bin: /usr/local/bin/agent
 # skip_probe: false
 # embed_threshold: 4000 # env: PLANNING_TOOL_EMBED_THRESHOLD
 

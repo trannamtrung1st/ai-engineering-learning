@@ -53,12 +53,11 @@ def test_bundled_planning_example_agent_context() -> None:
         workspace=examples_root,
         output_goal=goal,
         plan=plan,
-        selected_items=[root],
         embed_threshold=4000,
         agent_context=planning,
         **planning_prompt_kwargs(
             plan=plan,
-            selected_items=[root],
+            eligible_items=[root],
             output_dir=examples_root / "planning-output",
         ),
     )

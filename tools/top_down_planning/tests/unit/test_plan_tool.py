@@ -8,10 +8,10 @@ import pytest
 from top_down_planning.models import MarkActionableOperation
 from top_down_planning.persistence import save_plan
 from top_down_planning.plan_tool import (
+    ENV_ELIGIBLE_IDS,
     ENV_PATCHABLE_IDS,
     ENV_PLAN_DIGEST,
     ENV_PLAN_FILE,
-    ENV_SELECTED_IDS,
     ENV_TXN_FILE,
     PlanToolError,
     finalize,
@@ -21,6 +21,7 @@ from top_down_planning.plan_tool import (
     record_update,
     reset_transaction,
     resolve_plan_tool_command,
+    select_batch,
     status,
 )
 from top_down_planning.schema_docs import operation_examples
@@ -43,11 +44,12 @@ def plan_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     txn_file = output_dir / ".planning-output" / "iterations" / "001-transaction.json"
     txn_file.parent.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv(ENV_TXN_FILE, str(txn_file))
-    monkeypatch.setenv(ENV_SELECTED_IDS, "item-001")
+    monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-001")
     monkeypatch.setenv(ENV_PATCHABLE_IDS, "")
     monkeypatch.setenv(ENV_PLAN_FILE, str(output_dir / ".planning-output" / "plan.yaml"))
     monkeypatch.setenv(ENV_PLAN_DIGEST, "expected-digest")
     reset_transaction(txn_file)
+    select_batch(node_id=["item-001"])
     return plan, txn_file
 
 
@@ -77,12 +79,87 @@ def test_finalize_requires_at_least_one_operation(plan_session) -> None:
         finalize()
 
 
-def test_finalize_requires_all_selected_operations(
+def test_record_operation_requires_select_batch(
     plan_session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, txn_file = plan_session
-    monkeypatch.setenv(ENV_SELECTED_IDS, "item-001,item-002")
+    reset_transaction(txn_file)
+    monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-001")
+    with pytest.raises(PlanToolError, match="select-batch"):
+        record_operation(
+            json_payload=json.dumps(
+                {
+                    "type": "mark_actionable",
+                    "node_id": "item-001",
+                    "title": "Plan the requested work",
+                    "objective": "Produce the requested plan.",
+                    "expected_outputs": ["Plan"],
+                    "acceptance_criteria": ["Done"],
+                }
+            )
+        )
+
+
+def test_select_batch_records_scope(plan_session) -> None:
+    _, txn_file = plan_session
+    reset_transaction(txn_file)
+    select_batch(node_id=["item-001"], purpose="Expand root")
+    draft_path = txn_file.with_suffix(txn_file.suffix + ".draft")
+    draft = json.loads(draft_path.read_text(encoding="utf-8"))
+    assert draft["selected_items"] == ["item-001"]
+    assert draft["batch_purpose"] == "Expand root"
+
+
+def test_select_batch_rejects_ineligible_node(
+    plan_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from top_down_planning.models import PlanItem
+    from top_down_planning.persistence import save_plan
+
+    plan, txn_file = plan_session
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id=None,
+            title="Sibling",
+            objective="sibling",
+            depth=0,
+            order=2,
+        )
+    )
+    output_dir = txn_file.parent.parent.parent
+    save_plan(output_dir, plan)
+    reset_transaction(txn_file)
+    monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-001")
+    with pytest.raises(PlanToolError, match="not in the eligible"):
+        select_batch(node_id=["item-002"])
+
+
+def test_finalize_requires_all_selected_operations(
+    plan_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from top_down_planning.models import PlanItem
+    from top_down_planning.persistence import save_plan
+
+    plan, txn_file = plan_session
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id=None,
+            title="Sibling",
+            objective="sibling",
+            depth=0,
+            order=2,
+        )
+    )
+    output_dir = txn_file.parent.parent.parent
+    save_plan(output_dir, plan)
+    reset_transaction(txn_file)
+    monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-001,item-002")
+    select_batch(node_id=["item-001", "item-002"])
     record_operation(
         json_payload=json.dumps(
             {
@@ -207,8 +284,10 @@ def test_record_update_and_finalize(plan_session, monkeypatch: pytest.MonkeyPatc
 
     output_dir = txn_file.parent.parent.parent
     save_plan(output_dir, plan)
-    monkeypatch.setenv(ENV_SELECTED_IDS, "item-002")
+    reset_transaction(txn_file)
+    monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-002")
     monkeypatch.setenv(ENV_PATCHABLE_IDS, "item-001")
+    select_batch(node_id=["item-002"])
     record_operation(
         json_payload=json.dumps(
             {

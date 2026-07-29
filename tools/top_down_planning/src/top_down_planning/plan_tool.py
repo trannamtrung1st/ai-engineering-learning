@@ -15,6 +15,7 @@ import yaml
 from pydantic import TypeAdapter, ValidationError as PydanticValidationError
 
 from top_down_planning.errors import PlanningToolError
+from top_down_planning.generation_context import select_patchable_node_ids
 from top_down_planning.models import (
     AgentResponse,
     PlanState,
@@ -26,7 +27,7 @@ from top_down_planning.item_format import format_item_context
 from top_down_planning import schema_docs
 
 ENV_TXN_FILE = "PLANNING_TOOL_TXN_FILE"
-ENV_SELECTED_IDS = "PLANNING_TOOL_SELECTED_IDS"
+ENV_ELIGIBLE_IDS = "PLANNING_TOOL_ELIGIBLE_IDS"
 ENV_PATCHABLE_IDS = "PLANNING_TOOL_PATCHABLE_IDS"
 ENV_PLAN_FILE = "PLANNING_TOOL_PLAN_FILE"
 ENV_PLAN_DIGEST = "PLANNING_TOOL_PLAN_DIGEST"
@@ -69,8 +70,7 @@ def plan_tool_argv(command: str, *args: str) -> list[str]:
 def build_session_env(
     *,
     transaction_path: Path,
-    selected_ids: list[str],
-    patchable_ids: list[str],
+    eligible_ids: list[str],
     plan_file: Path,
     plan_digest: str,
     plan_tool_command: str | None = None,
@@ -79,8 +79,7 @@ def build_session_env(
     command = resolve_plan_tool_command(explicit=plan_tool_command)
     return {
         ENV_TXN_FILE: str(transaction_path.resolve()),
-        ENV_SELECTED_IDS: ",".join(selected_ids),
-        ENV_PATCHABLE_IDS: ",".join(patchable_ids),
+        ENV_ELIGIBLE_IDS: ",".join(eligible_ids),
         ENV_PLAN_FILE: str(plan_file.resolve()),
         ENV_PLAN_DIGEST: plan_digest,
         PLAN_TOOL_COMMAND_ENV: command,
@@ -94,19 +93,31 @@ def _require_env(name: str) -> str:
     return value
 
 
-def _selected_ids() -> set[str]:
-    raw = _require_env(ENV_SELECTED_IDS)
-    ids = {part.strip() for part in raw.split(",") if part.strip()}
-    if not ids:
-        raise PlanToolError(f"{ENV_SELECTED_IDS} must list at least one node id")
-    return ids
-
-
-def _patchable_ids() -> set[str]:
-    raw = os.environ.get(ENV_PATCHABLE_IDS, "").strip()
+def _eligible_ids() -> set[str]:
+    raw = os.environ.get(ENV_ELIGIBLE_IDS, "").strip()
     if not raw:
         return set()
     return {part.strip() for part in raw.split(",") if part.strip()}
+
+
+def _selected_ids_from_draft(draft: dict[str, Any]) -> set[str]:
+    raw = draft.get("selected_items")
+    if isinstance(raw, list):
+        return {str(item).strip() for item in raw if str(item).strip()}
+    return set()
+
+
+def _require_selected_ids(draft: dict[str, Any]) -> set[str]:
+    selected = _selected_ids_from_draft(draft)
+    if not selected:
+        raise PlanToolError(
+            "No batch selected; run select-batch before recording operations"
+        )
+    return selected
+
+
+def _patchable_ids_for_selected(plan: PlanState, selected: set[str]) -> set[str]:
+    return select_patchable_node_ids(plan, selected)
 
 
 def _plan_file() -> Path:
@@ -125,6 +136,8 @@ def _empty_draft() -> dict[str, Any]:
     return {
         "operations": [],
         "updates": [],
+        "selected_items": [],
+        "batch_purpose": "",
     }
 
 
@@ -140,6 +153,8 @@ def _load_draft(txn_file: Path) -> dict[str, Any]:
         raise PlanToolError("Draft transaction must be a JSON object")
     data.setdefault("operations", [])
     data.setdefault("updates", [])
+    data.setdefault("selected_items", [])
+    data.setdefault("batch_purpose", "")
     return data
 
 
@@ -202,15 +217,15 @@ def _validate_plan_digest(draft: dict[str, Any]) -> None:
             f"Transaction plan_digest mismatch: expected {expected}, got {recorded}"
         )
     draft["plan_digest"] = expected
-    draft["selected_items"] = sorted(_selected_ids())
 
 
 def _draft_status(txn_file: Path) -> dict[str, Any]:
     draft = _load_draft(txn_file)
     operations = draft.get("operations") or []
     updates = draft.get("updates") or []
-    selected = _selected_ids()
-    patchable = _patchable_ids()
+    selected = _selected_ids_from_draft(draft)
+    plan = _load_plan_state()
+    patchable = _patchable_ids_for_selected(plan, selected)
     covered = {
         op.get("node_id")
         for op in operations
@@ -225,7 +240,9 @@ def _draft_status(txn_file: Path) -> dict[str, Any]:
         "transaction_file": str(txn_file),
         "finalized": txn_file.is_file(),
         "selected_ids": sorted(selected),
+        "eligible_ids": sorted(_eligible_ids()),
         "patchable_ids": sorted(patchable),
+        "batch_purpose": draft.get("batch_purpose") or "",
         "recorded_operations": len(operations),
         "recorded_updates": len(updates),
         "covered_node_ids": sorted(covered),
@@ -332,9 +349,15 @@ def validate_update_cmd(
 
 @app.command("show-context")
 def show_context() -> None:
-    """Print context for all selected planning nodes."""
+    """Print context for selected nodes, or all eligible nodes before selection."""
     plan = _load_plan_state()
-    selected = _selected_ids()
+    txn_file = _txn_file()
+    draft = _load_draft(txn_file)
+    selected = _selected_ids_from_draft(draft)
+    if not selected:
+        selected = _eligible_ids()
+    if not selected:
+        raise PlanToolError("No eligible or selected node ids available")
     parts: list[str] = []
     for node_id in sorted(selected):
         item = plan.item_by_id(node_id)
@@ -357,6 +380,52 @@ def _reject_if_finalized(txn_file: Path) -> None:
         )
 
 
+@app.command("select-batch")
+def select_batch(
+    node_id: Annotated[
+        list[str],
+        typer.Option("--node-id", help="Plan item id to include in this batch"),
+    ],
+    purpose: Annotated[
+        str,
+        typer.Option("--purpose", help="Short description of this batch's goal"),
+    ] = "",
+) -> None:
+    """Record the agent-selected batch scope for this iteration."""
+    if not node_id:
+        raise PlanToolError("select-batch requires at least one --node-id")
+    txn_file = _txn_file()
+    _reject_if_finalized(txn_file)
+    plan = _load_plan_state()
+    eligible = _eligible_ids()
+    selected = {value.strip() for value in node_id if value.strip()}
+    if not selected:
+        raise PlanToolError("select-batch requires at least one non-empty --node-id")
+
+    for item_id in selected:
+        item = plan.item_by_id(item_id)
+        if item is None:
+            raise PlanToolError(f"Unknown node id: {item_id}")
+        if eligible and item_id not in eligible:
+            raise PlanToolError(
+                f"Node {item_id} is not in the eligible item inventory for this session"
+            )
+
+    draft = _load_draft(txn_file)
+    _validate_plan_digest(draft)
+    if draft.get("operations") or draft.get("updates"):
+        raise PlanToolError(
+            "Cannot change batch selection after recording operations; run reset first"
+        )
+    draft["selected_items"] = sorted(selected)
+    draft["batch_purpose"] = purpose.strip()
+    _save_draft(txn_file, draft)
+    typer.echo(
+        f"Selected batch: {', '.join(sorted(selected))}"
+        + (f" ({purpose.strip()})" if purpose.strip() else "")
+    )
+
+
 @app.command("record-operation")
 def record_operation(
     json_payload: Annotated[
@@ -367,7 +436,8 @@ def record_operation(
     """Append one planning operation for an allowed selected node."""
     txn_file = _txn_file()
     _reject_if_finalized(txn_file)
-    selected = _selected_ids()
+    draft = _load_draft(txn_file)
+    selected = _require_selected_ids(draft)
     try:
         raw = json.loads(json_payload)
     except json.JSONDecodeError as exc:
@@ -387,7 +457,6 @@ def record_operation(
     except PydanticValidationError as exc:
         raise PlanToolError(f"Invalid planning operation: {exc}") from exc
 
-    draft = _load_draft(txn_file)
     _validate_plan_digest(draft)
     operations = draft.setdefault("operations", [])
     if not isinstance(operations, list):
@@ -413,8 +482,10 @@ def record_update(
     """Record one cross-item update for a patchable related node."""
     txn_file = _txn_file()
     _reject_if_finalized(txn_file)
-    selected = _selected_ids()
-    patchable = _patchable_ids()
+    draft = _load_draft(txn_file)
+    selected = _require_selected_ids(draft)
+    plan = _load_plan_state()
+    patchable = _patchable_ids_for_selected(plan, selected)
     try:
         raw = json.loads(json_payload)
     except json.JSONDecodeError as exc:
@@ -469,6 +540,7 @@ def finalize() -> None:
     txn_file = _txn_file()
     draft = _load_draft(txn_file)
     _validate_plan_digest(draft)
+    draft.setdefault("batch_purpose", "")
     try:
         response = AgentResponse.model_validate(draft)
     except PydanticValidationError as exc:
@@ -477,7 +549,9 @@ def finalize() -> None:
     if not response.operations:
         raise PlanToolError("Cannot finalize: at least one operation is required")
 
-    selected = _selected_ids()
+    selected = set(response.selected_items)
+    if not selected:
+        raise PlanToolError("Cannot finalize: batch selection is missing")
     covered = {operation.node_id for operation in response.operations}
     missing = selected - covered
     if missing:

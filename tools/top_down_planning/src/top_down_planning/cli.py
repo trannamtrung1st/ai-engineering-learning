@@ -104,10 +104,6 @@ def _execute_run(
     stop_hint_file: Path | None,
     output_dir: Path | None,
     max_iterations: int | None,
-    max_depth: int | None,
-    max_items: int | None,
-    batch_size: int | None,
-    concurrent_batches: int | None,
     max_retries: int | None,
     resume: bool,
     stream_json: bool,
@@ -121,7 +117,6 @@ def _execute_run(
     no_notify: bool = False,
     render_only: bool = False,
     force_rerender: bool = False,
-    render_batch_size: int | None = None,
 ) -> None:
     cli_notify = _cli_notify_override(notify=notify, no_notify=no_notify)
     try:
@@ -135,10 +130,6 @@ def _execute_run(
             stop_hint_file=stop_hint_file,
             workspace=workspace,
             max_iterations=max_iterations,
-            max_depth=max_depth,
-            max_items=max_items,
-            batch_size=batch_size,
-            concurrent_batches=concurrent_batches,
             max_retries=max_retries,
             resume=resume,
             stream_json=stream_json,
@@ -150,7 +141,6 @@ def _execute_run(
             embed_threshold=embed_threshold,
             render_only=render_only,
             force_rerender=force_rerender,
-            render_batch_size=render_batch_size,
         )
     except PlanningToolError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -292,10 +282,6 @@ def main_callback(
         help="Output directory for resumable planning state (.planning-output/)",
     ),
     max_iterations: Optional[int] = typer.Option(None, "--max-iterations"),
-    max_depth: Optional[int] = typer.Option(None, "--max-depth"),
-    max_items: Optional[int] = typer.Option(None, "--max-items"),
-    batch_size: Optional[int] = typer.Option(None, "--batch-size"),
-    concurrent_batches: Optional[int] = typer.Option(None, "--concurrent-batches"),
     max_retries: Optional[int] = typer.Option(None, "--max-retries"),
     resume: bool = typer.Option(False, "--resume", help="Resume an existing planning run"),
     stream_json: bool = typer.Option(
@@ -356,11 +342,6 @@ def main_callback(
         "--force-rerender",
         help="Discard prior render state and regenerate all rendered output",
     ),
-    render_batch_size: Optional[int] = typer.Option(
-        None,
-        "--render-batch-size",
-        help="Maximum plan items per render batch",
-    ),
 ) -> None:
     """Top-down planning via Cursor Agent CLI."""
     if ctx.invoked_subcommand is not None:
@@ -382,10 +363,6 @@ def main_callback(
         stop_hint_file=stop_hint_file,
         output_dir=output_dir,
         max_iterations=max_iterations,
-        max_depth=max_depth,
-        max_items=max_items,
-        batch_size=batch_size,
-        concurrent_batches=concurrent_batches,
         max_retries=max_retries,
         resume=resume,
         stream_json=stream_json,
@@ -399,7 +376,6 @@ def main_callback(
         no_notify=no_notify,
         render_only=render_only,
         force_rerender=force_rerender,
-        render_batch_size=render_batch_size,
     )
 
 
@@ -509,10 +485,6 @@ def run_cmd(
         help="Output directory for resumable planning state (.planning-output/)",
     ),
     max_iterations: Optional[int] = typer.Option(None, "--max-iterations"),
-    max_depth: Optional[int] = typer.Option(None, "--max-depth"),
-    max_items: Optional[int] = typer.Option(None, "--max-items"),
-    batch_size: Optional[int] = typer.Option(None, "--batch-size"),
-    concurrent_batches: Optional[int] = typer.Option(None, "--concurrent-batches"),
     max_retries: Optional[int] = typer.Option(None, "--max-retries"),
     resume: bool = typer.Option(False, "--resume", help="Resume an existing planning run"),
     stream_json: bool = typer.Option(
@@ -573,9 +545,6 @@ def run_cmd(
         "--force-rerender",
         help="Discard prior render state and regenerate all rendered output",
     ),
-    render_batch_size: Optional[int] = typer.Option(
-        None, "--render-batch-size"
-    ),
 ) -> None:
     """Run or resume top-down planning."""
     _execute_run(
@@ -587,10 +556,6 @@ def run_cmd(
         stop_hint_file=stop_hint_file,
         output_dir=output_dir,
         max_iterations=max_iterations,
-        max_depth=max_depth,
-        max_items=max_items,
-        batch_size=batch_size,
-        concurrent_batches=concurrent_batches,
         max_retries=max_retries,
         resume=resume,
         stream_json=stream_json,
@@ -604,7 +569,6 @@ def run_cmd(
         no_notify=no_notify,
         render_only=render_only,
         force_rerender=force_rerender,
-        render_batch_size=render_batch_size,
     )
 
 

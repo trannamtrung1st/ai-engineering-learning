@@ -102,7 +102,7 @@ Terminal outcomes (`complete`, incomplete, paused, failed) can emit native deskt
 - **Env:** `PLANNING_TOOL_NOTIFY=true|false`
 - **Config:** `notify: true|false`
 
-Wave/iteration progress is not notified. `--stream-json` stdout remains machine-readable only.
+Iteration progress is not notified. `--stream-json` stdout remains machine-readable only.
 
 ### Model selection
 
@@ -144,7 +144,6 @@ workspace/
         ├── review-state.json
         └── render/
             ├── render-state.json
-            ├── batch-schedule.yaml
             ├── scaffold/
             ├── batches/
             └── reviews/
@@ -155,8 +154,9 @@ and review status `confirmed` (when review is enabled). Rendering is a separate 
 from planning: after confirmation, the tool runs a **sequential cumulative render pipeline**:
 
 1. **Scaffold** — one agent establishes destination paths, structure, and conventions.
-2. **Coherent batches** — actionable leaf items are grouped into deterministic batches;
-   one author agent at a time integrates each batch into the cumulative workspace output.
+2. **Agent-selected batches** — each render session chooses a coherent batch of uncovered
+   actionable leaf items via `planning-render-tool select-batch`; one author agent at a
+   time integrates each batch into the cumulative workspace output.
 3. **Batch review** — after each batch, an independent reviewer may request bounded revision.
 4. **Final review** — whole-output review with bounded targeted revision.
 
@@ -198,12 +198,10 @@ top-down-planning \
   --force-rerender
 ```
 
-Configure sequential render batching separately from planning batching:
+Configure render behavior in the run config:
 
 ```yaml
 render:
-  batch_size: 3
-  batch_strategy: coherent
   max_retries: 3
   whole_plan_context: hybrid
   final_review: true
@@ -247,71 +245,39 @@ Supported decomposition statuses:
 - `blocked`
 - `out_of_scope`
 
-### Concurrent batch selection
+### Sequential agent-selected batches
 
-Each planning wave selects expandable items across independent branches, preferring
-shallower items first (tie-broken by insertion order). Up to `generation.concurrent_batches`
-agent sessions run in parallel per wave (default `3`), and each batch is capped by
-`generation.batch_size`. Each launched batch counts as one iteration toward
-`limits.max_iterations`.
+Each planning iteration runs **one** Cursor agent session. The agent reviews the
+eligible item inventory, processed-batch history, and output goal, then records its
+chosen scope with `planning-plan-tool select-batch` before recording operations and
+finalizing the transaction.
 
-When a wave completes, all batch responses are validated against the same plan
-snapshot and merged atomically. If any batch in a wave fails after retries, the
-entire wave is discarded and nothing from that wave is applied.
-
-Batches whose write scopes overlap (selected items plus their patchable related
-nodes) are not scheduled in the same concurrent wave. Related work therefore lands in
-`plan.yaml` before the next related batch starts.
+Each iteration counts toward `limits.max_iterations` (default `50`). When a session
+completes, the transaction is validated and applied atomically. Failed sessions retry
+up to `limits.max_retries` without mutating the plan.
 
 ### Generation batch context
 
-Each generation batch runs in a **focused fresh Cursor session** with:
+Each generation session runs in a **focused fresh Cursor session** with:
 
-- **Assigned generation scope (writable)** — only the selected item IDs; exactly one
-  operation per assigned item via `planning-plan-tool`.
-- **Patchable related items** — directly related existing nodes (ancestors, siblings,
-  dependencies, reverse dependents) may receive optional `update_item` patches through
-  `planning-plan-tool record-update`.
+- **Eligible item inventory** — expandable or amendable items the agent may choose from.
+- **Processed batch history** — prior iterations for context; agents may revisit batches
+  for refinement when warranted.
+- **Agent-selected scope (writable)** — items recorded via `select-batch`; exactly one
+  operation per selected item via `planning-plan-tool`.
+- **Patchable related items** — directly related existing nodes may receive optional
+  `update_item` patches through `planning-plan-tool record-update`.
 - **Global plan context (read-only)** — whole-plan overview plus broader relevant context.
-- **Batch-limited transaction authority** — `PLANNING_TOOL_SELECTED_IDS`,
-  `PLANNING_TOOL_PATCHABLE_IDS`, and `PLANNING_TOOL_PLAN_DIGEST` scope finalize;
-  operations for unassigned nodes and updates for non-patchable nodes are rejected.
 
-Related batches whose write scopes overlap are serialized across waves so later agents
-read the persisted `plan.yaml` produced by earlier related work.
-
-Context artifacts (under `.planning-output/`):
-
-```text
-context/plan-overview-<digest>.md     # shared whole-plan reference for the wave snapshot
-iterations/{NNN}-context.md           # per-batch generation context
-iterations/{NNN}-request.json         # audit metadata (plan_digest, context_mode, …)
-```
-
-Configure batching under `generation:` in the run config:
+Configure context embedding under `generation:` in the run config:
 
 ```yaml
 generation:
-  batch_strategy: coherent   # single | coherent | throughput
-  batch_size: 3
-  concurrent_batches: 3
-  max_context_characters: 30000
   whole_plan_context: hybrid # embedded | referenced | hybrid
 ```
 
-Precedence: **CLI flag → `generation.*` → built-in default**.
-
-- **`single`** — one selected item per session.
-- **`coherent`** (default) — group independent items with shared planning context when
-  size allows; may select fewer than `batch_size`.
-- **`throughput`** — capacity-oriented packing within wave-level constraints.
-
-An ancestor and descendant are never selected in the same wave (including across
-concurrent batches). All sessions in a wave share the same immutable `plan_digest`.
-
-Stream events: `generation.batch.context_prepared`, `generation.batch.started`,
-`generation.batch.completed`, `generation.wave.validated`, `generation.wave.applied`
-(plus existing `iteration.*` and `wave.*` events).
+Stream events: `generation.batch.context_prepared`, `generation.batch.validated`,
+`generation.batch.completed` (plus `iteration.*` events).
 
 ### Agent operation schema
 
@@ -337,7 +303,7 @@ expanded or marked actionable, blocked, or out of scope. These values replace th
 generic bootstrap wording before the root enters later plan context, review, or rendering.
 
 Each batch session writes `.planning-output/iterations/{NNN}-transaction.json`. The
-orchestrator validates the full wave atomically, assigns IDs/depth/order, and persists
+orchestrator validates the iteration atomically, assigns IDs/depth/order, and persists
 the updated state to `plan.yaml`. On success it also writes matching
 `{NNN}-response.json` audit files used by resume recovery.
 
@@ -413,30 +379,8 @@ items remain, decomposed internal nodes are `expanded`, relevant leaves are `act
 `blocked`, or `out_of_scope`, and the graph is structurally valid (`expanded` nodes have
 children; `actionable` nodes are leaves). Whole-plan review and final confirmation then
 provide goal-aware semantic approval before render. Persisted plans use `schema_version: 2`.
-Safety limits (`--max-iterations`, `--max-depth`, `--max-items`, `max_children_per_expansion`,
-`--batch-size`, `--concurrent-batches`, `--max-retries`) preserve partial output with
-explicit final statuses.
-
-### `max_children_per_expansion` and explicit siblings
-
-`max_children_per_expansion` (default `12`) is a per-`expand` safety limit. It must
-not be used to silently merge or omit explicitly required sibling groups. When the
-source or stop hint requires more direct children than the limit allows, the planning
-agent should `mark_blocked` with:
-
-- `constraint_code: "max_children_exceeded"`
-- `required_min_children` greater than the configured limit
-
-Example blocked summary:
-
-```text
-Source requires at least 9 direct children under item-001, but
-max_children_per_expansion is 8. Increase the limit to at least 9
-or revise the source structure, then resume with `--resume`.
-```
-
-These runs finish as `incomplete_blocked` and do not enter review or render until
-the limit is raised and the run is resumed.
+Safety limits (`--max-iterations`, `--max-retries`, `session_timeout_seconds`,
+`parse_error_threshold`) preserve partial output with explicit final statuses.
 
 ### Whole-plan review and final confirmation
 
@@ -494,13 +438,10 @@ matches the current canonical plan, then proceeds to the next unfinished stage
 (review, confirmation, or render).
 
 Resume rejects changed input, changed output goal, or mismatched `generation` or `render`
-settings. Safety limits (`max_iterations`, `max_items`, `max_retries`,
+settings. Safety limits (`max_iterations`, `max_retries`,
 `session_timeout_seconds`, `parse_error_threshold`) may be updated on resume —
 for example, raise `max_iterations` after hitting
-`incomplete_limit_reached`. `max_children_per_expansion` may only be
-**increased** on resume (for example after `max_children_exceeded` blocked a
-node); eligible blocked nodes are reopened automatically. `max_depth` must still
-match the stored run. Resuming an
+`incomplete_limit_reached`. Resuming an
 already-complete, confirmed run skips render when render state is `complete` and prior
 deliverables still exist on disk (use `--force-rerender` to regenerate).
 
@@ -532,27 +473,13 @@ review:
   enabled: false
 ```
 
-**Explicit child-limit conflict** — when the source requires more direct siblings than
-the configured limit:
-
-```yaml
-limits:
-  max_children_per_expansion: 8
-stop_hint: |
-  Preserve these nine top-level workstreams as distinct direct children.
-```
-
-The agent should `mark_blocked` with `constraint_code: max_children_exceeded` and
-`required_min_children: 9`. The run finishes as `incomplete_blocked`; no review or
-render occurs.
-
 ### Stream events
 
 When `--stream-json` is enabled, planning-phase events include:
 
-- `planning.started` (with `concurrent_batches`)
-- `wave.started` / `wave.completed` / `wave.retrying`
-- `iteration.started` / `iteration.completed` (with `batch_index`, `batch_count`)
+- `planning.started`
+- `iteration.started` / `iteration.completed` (with `eligible_items`, `selected_items`)
+- `generation.batch.context_prepared` / `generation.batch.validated` / `generation.batch.completed`
 - `validation.failed`, `item.expanded`, `item.actionable`, `item.updated`, etc.
 
 Render-phase events include:
@@ -584,7 +511,9 @@ Integration tests use a deterministic fake agent fixture; live Cursor tests are 
 
 ## Design note: render scope
 
-Rendering schedules **actionable leaf items** into coherent batches. **Expanded**
+Rendering covers **actionable leaf items** in agent-selected batches. **Expanded**
 internal nodes provide context in prompts but are not render deliverables and do not
 receive separate render sessions. Each batch author integrates its assigned leaves into
 the cumulative workspace deliverables established by the scaffold and prior batches.
+Processed-batch history in `render-state.json` records completed batches for review
+digests and resume.

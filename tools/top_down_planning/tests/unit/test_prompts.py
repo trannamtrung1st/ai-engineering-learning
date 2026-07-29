@@ -115,11 +115,10 @@ def test_prompt_embeds_small_input_document(
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
-        selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
         **planning_prompt_kwargs(
             plan=plan,
-            selected_items=[root],
+            eligible_items=[root],
             output_dir=tmp_path / "planning-output",
         ),
     )
@@ -156,11 +155,10 @@ def test_prompt_references_large_input_file_by_path(tmp_path: Path) -> None:
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
-        selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
         **planning_prompt_kwargs(
             plan=plan,
-            selected_items=[root],
+            eligible_items=[root],
             output_dir=tmp_path / "planning-output",
         ),
     )
@@ -194,11 +192,10 @@ def test_prompt_embeds_short_output_goal_file(tmp_path: Path, example_input: Pat
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
-        selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
         **planning_prompt_kwargs(
             plan=plan,
-            selected_items=[root],
+            eligible_items=[root],
             output_dir=tmp_path / "planning-output",
         ),
     )
@@ -229,11 +226,10 @@ def test_prompt_references_large_output_goal_file(tmp_path: Path, example_input:
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
-        selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
         **planning_prompt_kwargs(
             plan=plan,
-            selected_items=[root],
+            eligible_items=[root],
             output_dir=tmp_path / "planning-output",
         ),
     )
@@ -326,12 +322,11 @@ def test_prompt_includes_stop_hint_when_provided(
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
-        selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
         stop_hint=stop_hint,
         **planning_prompt_kwargs(
             plan=plan,
-            selected_items=[root],
+            eligible_items=[root],
             output_dir=tmp_path / "planning-output",
         ),
     )
@@ -362,17 +357,16 @@ def test_planning_prompt_uses_transaction_cli(
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
-        selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
         **planning_prompt_kwargs(
             plan=plan,
-            selected_items=[root],
+            eligible_items=[root],
             output_dir=tmp_path / "planning-output",
         ),
     )
 
-    assert "Planning transaction CLI" in prompt
-    assert "record-operation" in prompt
+    assert "Eligible items" in prompt
+    assert "select-batch" in prompt
     assert "Do not write final deliverable files during this session" in prompt
     assert "Required response format" not in prompt
 
@@ -397,11 +391,10 @@ def test_prompt_omits_stop_hint_section_when_not_provided(
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
-        selected_items=[root],
         embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
         **planning_prompt_kwargs(
             plan=plan,
-            selected_items=[root],
+            eligible_items=[root],
             output_dir=tmp_path / "planning-output",
         ),
     )

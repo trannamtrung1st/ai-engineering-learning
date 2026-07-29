@@ -19,6 +19,45 @@ if str(_SRC_ROOT) not in sys.path:
 from top_down_planning.plan_tool import plan_tool_argv, resolve_plan_tool_command
 
 
+def _render_tool_env() -> dict[str, str]:
+    env = _plan_tool_env()
+    return env
+
+
+def _run_render_tool(*args: str) -> None:
+    env = _render_tool_env()
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{_SRC_ROOT}{os.pathsep}{existing}" if existing else str(_SRC_ROOT)
+    )
+    subprocess.run(
+        [sys.executable, "-m", "top_down_planning.render_tool", *args],
+        env=env,
+        check=True,
+    )
+
+
+def _render_eligible_ids(prompt: str) -> list[str]:
+    env_ids = os.environ.get("RENDER_TOOL_ELIGIBLE_IDS", "")
+    if env_ids.strip():
+        return [part.strip() for part in env_ids.split(",") if part.strip()]
+    return re.findall(r"^\| (item-\d+) \|", prompt, re.MULTILINE)
+
+
+def _write_render_batch_selection(prompt: str) -> None:
+    if not os.environ.get("RENDER_TOOL_BATCH_FILE"):
+        return
+    batch_ids = _render_eligible_ids(prompt)
+    if not batch_ids:
+        batch_ids = re.findall(r"^### Selected item `([^`]+)`", prompt, re.MULTILINE)
+    if not batch_ids:
+        batch_ids = ["item-001"]
+    args: list[str] = ["select-batch"]
+    for node_id in batch_ids:
+        args.extend(["--node-id", node_id])
+    _run_render_tool(*args)
+
+
 def emit(event: dict) -> None:
     sys.stdout.write(json.dumps(event) + "\n")
     sys.stdout.flush()
@@ -46,7 +85,7 @@ def _workspace_root() -> Path:
 
 
 def _selected_ids(prompt: str) -> list[str]:
-    env_ids = os.environ.get("PLANNING_TOOL_SELECTED_IDS", "")
+    env_ids = os.environ.get("PLANNING_TOOL_ELIGIBLE_IDS", "")
     if env_ids.strip():
         return [part.strip() for part in env_ids.split(",") if part.strip()]
     return re.findall(r"Selected item `([^`]+)`", prompt)
@@ -139,9 +178,25 @@ def _default_amend_response(selected: list[str]) -> dict:
     return {"operations": operations}
 
 
-def _write_planning_transaction(response: dict) -> None:
+def _eligible_ids(prompt: str) -> list[str]:
+    env_ids = os.environ.get("PLANNING_TOOL_ELIGIBLE_IDS", "")
+    if env_ids.strip():
+        return [part.strip() for part in env_ids.split(",") if part.strip()]
+    table_ids = re.findall(r"^\| (item-\d+) \|", prompt, re.MULTILINE)
+    if table_ids:
+        return table_ids
+    return _selected_ids(prompt)
+
+
+def _write_planning_transaction(response: dict, batch_ids: list[str]) -> None:
     if not os.environ.get("PLANNING_TOOL_TXN_FILE"):
         raise RuntimeError("PLANNING_TOOL_TXN_FILE is required for planning sessions")
+
+    if batch_ids:
+        args: list[str] = ["select-batch"]
+        for node_id in batch_ids:
+            args.extend(["--node-id", node_id])
+        _run_plan_tool(*args)
 
     for operation in response.get("operations") or []:
         _run_plan_tool(
@@ -263,7 +318,7 @@ def _write_batch_output(prompt: str) -> None:
 def _write_render_batch_review(prompt: str) -> None:
     digest_match = re.search(r"## Plan digest\n`([a-f0-9]+)`", prompt)
     goal_match = re.search(r"## Output-goal digest\n`([a-f0-9]+)`", prompt)
-    schedule_match = re.search(r"## Render schedule digest\n`([a-f0-9]+)`", prompt)
+    batches_match = re.search(r"## Processed batches digest\n`([a-f0-9]+)`", prompt)
     deliverable_match = re.search(r"## Deliverable output digest\n`([a-f0-9]+)`", prompt)
     batch_match = re.search(r"Render batch review session: batch (\d+)", prompt)
     payload = {
@@ -271,7 +326,7 @@ def _write_render_batch_review(prompt: str) -> None:
         "batch_index": int(batch_match.group(1)) if batch_match else 0,
         "plan_digest": digest_match.group(1) if digest_match else "0" * 64,
         "output_goal_digest": goal_match.group(1) if goal_match else "0" * 64,
-        "schedule_digest": schedule_match.group(1) if schedule_match else "0" * 64,
+        "processed_batches_digest": batches_match.group(1) if batches_match else "0" * 64,
         "deliverable_output_digest": deliverable_match.group(1) if deliverable_match else "0" * 64,
         "decision": "approve",
         "summary": "Batch approved by fake reviewer.",
@@ -288,13 +343,13 @@ def _write_render_batch_review(prompt: str) -> None:
 def _write_render_output_review(prompt: str) -> None:
     digest_match = re.search(r"## Plan digest\n`([a-f0-9]+)`", prompt)
     goal_match = re.search(r"## Output-goal digest\n`([a-f0-9]+)`", prompt)
-    schedule_match = re.search(r"## Render schedule digest\n`([a-f0-9]+)`", prompt)
+    batches_match = re.search(r"## Processed batches digest\n`([a-f0-9]+)`", prompt)
     deliverable_match = re.search(r"## Deliverable output digest\n`([a-f0-9]+)`", prompt)
     payload = {
         "stage": "rendered_output_review",
         "plan_digest": digest_match.group(1) if digest_match else "0" * 64,
         "output_goal_digest": goal_match.group(1) if goal_match else "0" * 64,
-        "schedule_digest": schedule_match.group(1) if schedule_match else "0" * 64,
+        "processed_batches_digest": batches_match.group(1) if batches_match else "0" * 64,
         "deliverable_output_digest": deliverable_match.group(1) if deliverable_match else "0" * 64,
         "decision": "approve",
         "summary": "Rendered output approved by fake reviewer.",
@@ -342,6 +397,8 @@ def main() -> int:
                 "model": "fake-model",
             }
         )
+        if "Render batch author session" in prompt:
+            _write_render_batch_selection(prompt)
         _write_batch_output(prompt)
         assistant("Updated cumulative render deliverables.")
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
@@ -427,12 +484,12 @@ def main() -> int:
                 "model": "fake-model",
             }
         )
-        _write_planning_transaction(_default_amend_response(selected))
+        _write_planning_transaction(_default_amend_response(selected), selected)
         assistant("Finalized amendment transaction.")
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
         return 0
 
-    selected = _selected_ids(prompt)
+    batch_ids = _eligible_ids(prompt)
 
     emit(
         {
@@ -474,9 +531,9 @@ def main() -> int:
     if override:
         response = json.loads(override)
     else:
-        response = _default_planning_response(selected)
+        response = _default_planning_response(batch_ids)
 
-    _write_planning_transaction(response)
+    _write_planning_transaction(response, batch_ids)
     assistant("Finalized planning transaction.")
     emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
     return 0

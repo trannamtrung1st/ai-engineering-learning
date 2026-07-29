@@ -27,6 +27,7 @@ dev = [
 [project.scripts]
 top-down-planning = "top_down_planning.cli:app"
 planning-plan-tool = "top_down_planning.plan_tool:main"
+planning-render-tool = "top_down_planning.render_tool:main"
 planning-review-tool = "top_down_planning.review_tool:main"
 
 [tool.pytest.ini_options]

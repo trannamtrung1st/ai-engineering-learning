@@ -6,9 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from top_down_planning.completeness import (
-    child_limit_blocked_summary,
     compute_final_status,
-    has_child_limit_blocked_leaves,
     is_plan_complete,
     structural_errors,
 )
@@ -93,18 +91,6 @@ async def run_post_decomposition_flow(
 ) -> tuple[PlanState, RunState, bool]:
     """Return (plan, run_state, should_render)."""
     output_dir = deps.output_dir
-    limits = run_state.limits
-
-    if has_child_limit_blocked_leaves(plan):
-        summary = child_limit_blocked_summary(
-            plan,
-            max_children_per_expansion=limits.max_children_per_expansion,
-        ) or "Planning blocked by child-count constraint conflict."
-        update_final_status(plan, FinalStatus.INCOMPLETE_BLOCKED, summary)
-        update_review_status(plan, ReviewStatus.BLOCKED)
-        save_plan(output_dir, plan)
-        save_run_state(output_dir, run_state)
-        return plan, run_state, False
 
     status = compute_final_status(plan)
     if status != FinalStatus.COMPLETE:
@@ -219,18 +205,6 @@ async def run_post_decomposition_flow(
                     FinalStatus.INCOMPLETE_BLOCKED,
                     "Revision replanning did not reach a structurally complete plan.",
                 )
-                save_plan(output_dir, plan)
-                save_run_state(output_dir, run_state)
-                return plan, run_state, False
-            if has_child_limit_blocked_leaves(plan):
-                summary = child_limit_blocked_summary(
-                    plan,
-                    max_children_per_expansion=limits.max_children_per_expansion,
-                ) or "Planning blocked by child-count constraint conflict."
-                update_review_status(plan, ReviewStatus.BLOCKED)
-                update_final_status(plan, FinalStatus.INCOMPLETE_BLOCKED, summary)
-                review_state.stage = ReviewStage.BLOCKED
-                save_review_state(output_dir, review_state)
                 save_plan(output_dir, plan)
                 save_run_state(output_dir, run_state)
                 return plan, run_state, False

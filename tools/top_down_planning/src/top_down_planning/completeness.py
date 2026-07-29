@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import copy
-
 from top_down_planning.models import (
-    BlockedConstraintCode,
     DecompositionStatus,
     FinalStatus,
     PlanState,
@@ -41,62 +38,6 @@ def count_by_status(plan: PlanState) -> dict[str, int]:
         elif item.decomposition_status == DecompositionStatus.EXPANDED:
             counts["expanded"] += 1
     return counts
-
-
-def has_child_limit_blocked_leaves(plan: PlanState) -> bool:
-    return any(
-        item.decomposition_status == DecompositionStatus.BLOCKED
-        and is_leaf(plan, item.id)
-        and item.blocked_constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
-        for item in plan.plan
-    )
-
-
-def reopen_eligible_child_limit_blocked(
-    plan: PlanState,
-    *,
-    max_children_per_expansion: int,
-) -> tuple[PlanState, list[str]]:
-    """Reopen leaf nodes blocked by max_children_exceeded when the limit now allows it."""
-    updated = copy.deepcopy(plan)
-    reopened: list[str] = []
-    for item in updated.plan:
-        if (
-            item.decomposition_status != DecompositionStatus.BLOCKED
-            or item.blocked_constraint_code != BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
-            or item.blocked_required_min_children is None
-            or item.blocked_required_min_children > max_children_per_expansion
-            or not is_leaf(updated, item.id)
-        ):
-            continue
-        item.decomposition_status = DecompositionStatus.NEEDS_EXPANSION
-        item.readiness_status = ReadinessStatus.PENDING
-        item.blocked_reason = None
-        item.blocked_constraint_code = None
-        item.blocked_required_min_children = None
-        reopened.append(item.id)
-    return updated, reopened
-
-
-def child_limit_blocked_summary(
-    plan: PlanState,
-    *,
-    max_children_per_expansion: int,
-) -> str | None:
-    for item in plan.plan:
-        if (
-            item.decomposition_status == DecompositionStatus.BLOCKED
-            and is_leaf(plan, item.id)
-            and item.blocked_constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
-            and item.blocked_required_min_children is not None
-        ):
-            required = item.blocked_required_min_children
-            return (
-                f"Source requires at least {required} direct children under {item.id}, "
-                f"but max_children_per_expansion is {max_children_per_expansion}. "
-                f"Increase the limit to at least {required} or revise the source structure."
-            )
-    return None
 
 
 def leaf_actionable_count(plan: PlanState) -> int:
@@ -164,11 +105,6 @@ def compute_final_status(
 def limit_reached(
     *,
     iteration: int,
-    plan: PlanState,
     limits: PlanningLimits,
 ) -> bool:
-    if iteration >= limits.max_iterations:
-        return True
-    if len(plan.plan) >= limits.max_items:
-        return True
-    return False
+    return iteration >= limits.max_iterations

@@ -238,7 +238,7 @@ def _example_config() -> dict[str, Any]:
         "input": "examples/idea.md",
         "output": "planning-output",
         "output_goal": "Produce an actionable implementation plan",
-        "generation": {"batch_size": 3, "concurrent_batches": 3},
+        "generation": {"whole_plan_context": "hybrid"},
         "review": {"enabled": True},
     }
 
@@ -266,7 +266,7 @@ def _example_review_render_batch() -> dict[str, Any]:
         batch_index=0,
         plan_digest=_PLAN_DIGEST,
         output_goal_digest=_OUTPUT_GOAL_DIGEST,
-        schedule_digest="d" * 64,
+        processed_batches_digest="d" * 64,
         deliverable_output_digest="e" * 64,
         decision=RenderBatchReviewDecision.APPROVE,
         summary="Batch integrated successfully.",
@@ -279,7 +279,7 @@ def _example_review_rendered_output() -> dict[str, Any]:
     return RenderedOutputReviewResult(
         plan_digest=_PLAN_DIGEST,
         output_goal_digest=_OUTPUT_GOAL_DIGEST,
-        schedule_digest="d" * 64,
+        processed_batches_digest="d" * 64,
         deliverable_output_digest="e" * 64,
         decision=RenderOutputReviewDecision.APPROVE,
         summary="Rendered output is complete.",
@@ -433,14 +433,15 @@ Authoritative schemas and examples:
   {plan_tool_command} validate-update --json '<update_item>'
 
 Workflow:
-1. Read the complete plan overview (embedded below or at the referenced path).
-2. Optionally run `{plan_tool_command} show-context` for selected-node details.
-3. Optionally run `{plan_tool_command} status` to inspect the current draft.
-4. For **each assigned item**, run `{plan_tool_command} record-operation --json '<operation>'`.
-5. Optionally run `{plan_tool_command} record-update --json '<update_item>'` for related items
+1. Read the eligible items, processed-batch history, and complete plan overview.
+2. Choose a coherent batch and run `{plan_tool_command} select-batch --node-id <id> [--purpose "..."]`.
+3. Optionally run `{plan_tool_command} show-context` for selected-node details.
+4. Optionally run `{plan_tool_command} status` to inspect the current draft.
+5. For **each selected item**, run `{plan_tool_command} record-operation --json '<operation>'`.
+6. Optionally run `{plan_tool_command} record-update --json '<update_item>'` for related items
    listed in the patchable scope. Omitted fields preserve the current value; an empty list
    clears a list field.
-6. Run `{plan_tool_command} finalize` to commit the session transaction."""
+7. Run `{plan_tool_command} finalize` to commit the session transaction."""
 
 
 def format_amend_tool_usage(*, plan_tool_command: str = "planning-plan-tool") -> str:
@@ -454,9 +455,10 @@ Authoritative schemas and examples:
   {plan_tool_command} validate --json '<operation>'
 
 Workflow:
-1. Read the assigned item context and review findings below.
-2. For **each assigned item**, run `{plan_tool_command} record-operation --json '<revise_actionable>'`.
-3. Run `{plan_tool_command} finalize` to commit the session transaction.
+1. Review eligible items, processed batches, and review findings below.
+2. Record your batch with `{plan_tool_command} select-batch --node-id <id> [--purpose "..."]`.
+3. For **each selected item**, run `{plan_tool_command} record-operation --json '<revise_actionable>'`.
+4. Run `{plan_tool_command} finalize` to commit the session transaction.
 
 Amend sessions use `revise_actionable` only. Do not use `record-update`."""
 

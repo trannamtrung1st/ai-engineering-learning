@@ -104,7 +104,6 @@ async def test_child_limit_blocked_does_not_render(
         workspace_root=tmp_path,
         limits=PlanningLimits(
             max_iterations=2,
-            max_children_per_expansion=8,
         ),
         agent_bin=fake_agent_bin,
         skip_probe=True,
@@ -112,13 +111,24 @@ async def test_child_limit_blocked_does_not_render(
     )
     import os
 
+    blocked_review = json.dumps(
+        {
+            "stage": "whole_plan_review",
+            "plan_digest": "placeholder",
+            "decision": "blocked",
+            "summary": "Blocked items prevent rendering",
+            "findings": [],
+        }
+    )
     os.environ["FAKE_AGENT_PLANNING_JSON"] = blocked_response
     os.environ["FAKE_AGENT_EXPAND_ROOT"] = "false"
+    os.environ["FAKE_AGENT_REVIEW_JSON"] = blocked_review
     try:
         report = await Orchestrator(config).run()
     finally:
         os.environ.pop("FAKE_AGENT_PLANNING_JSON", None)
         os.environ.pop("FAKE_AGENT_EXPAND_ROOT", None)
+        os.environ.pop("FAKE_AGENT_REVIEW_JSON", None)
 
     assert report.status == FinalStatus.INCOMPLETE_BLOCKED
     assert report.review_status == ReviewStatus.BLOCKED

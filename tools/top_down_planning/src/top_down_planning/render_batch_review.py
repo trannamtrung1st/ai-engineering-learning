@@ -94,7 +94,7 @@ async def run_render_batch_review(
     plan: PlanState,
     batch: RenderBatchItem,
     plan_digest: str,
-    schedule_digest: str,
+    processed_batches_digest: str,
     deliverable: DeliverableOutput,
     max_retries: int,
 ) -> RenderBatchReviewResult | None:
@@ -106,7 +106,7 @@ async def run_render_batch_review(
         workspace=deps.workspace_root,
         output_goal=deps.output_goal,
         plan_digest=plan_digest,
-        schedule_digest=schedule_digest,
+        processed_batches_digest=processed_batches_digest,
         batch_index=batch.batch_index,
         batch_item_ids=batch.item_ids,
         deliverable_digest=deliverable.digest,
@@ -189,10 +189,10 @@ async def run_render_batch_review(
                 f"output_goal_digest mismatch: expected {deps.output_goal.digest}, "
                 f"got {result.output_goal_digest}"
             )
-        if result.schedule_digest != schedule_digest:
+        if result.processed_batches_digest != processed_batches_digest:
             digest_errors.append(
-                f"schedule_digest mismatch: expected {schedule_digest}, "
-                f"got {result.schedule_digest}"
+                f"processed_batches_digest mismatch: expected {processed_batches_digest}, "
+                f"got {result.processed_batches_digest}"
             )
         if result.deliverable_output_digest != deliverable.digest:
             digest_errors.append(

@@ -191,9 +191,9 @@ decomposition_status = needs_expansion
 
 across independent branches, preferring shallower items first.
 
-Batch size and concurrent batch count should be configurable. Each launched batch
-counts as one iteration. Up to the configured concurrency limit, independent batches
-may run in parallel per wave and are merged atomically after validation.
+Each planning iteration runs **one** agent session. The agent chooses a coherent batch
+from the eligible inventory via `planning-plan-tool select-batch` before recording
+operations. Each iteration counts toward `limits.max_iterations`.
 
 ## Agent responsibilities
 
@@ -250,20 +250,21 @@ edit `.planning-output/plan.yaml` directly.
 Each batch session receives scoped environment variables:
 
 * `PLANNING_TOOL_TXN_FILE` — path to `{NNN}-transaction.json`
-* `PLANNING_TOOL_SELECTED_IDS` — comma-separated selected node ids
+* `PLANNING_TOOL_ELIGIBLE_IDS` — comma-separated eligible node ids
 * `PLANNING_TOOL_PATCHABLE_IDS` — comma-separated related node ids eligible for `update_item`
 * `PLANNING_TOOL_PLAN_FILE` — read-only path to canonical `plan.yaml`
 * `PLANNING_TOOL_COMMAND` — resolved shell command for the CLI
 
 Workflow per batch:
 
-1. `planning-plan-tool show-context` (optional)
-2. `planning-plan-tool status` (optional)
-3. `planning-plan-tool record-operation --json '<operation>'` once per selected item
-4. `planning-plan-tool record-update --json '<update_item>'` zero or more times for patchable related items
-5. `planning-plan-tool finalize`
+1. `planning-plan-tool select-batch --node-id <id> [--purpose "..."]`
+2. `planning-plan-tool show-context` (optional)
+3. `planning-plan-tool status` (optional)
+4. `planning-plan-tool record-operation --json '<operation>'` once per selected item
+5. `planning-plan-tool record-update --json '<update_item>'` zero or more times for patchable related items
+6. `planning-plan-tool finalize`
 
-The orchestrator loads the finalized transaction, validates the wave atomically, assigns
+The orchestrator loads the finalized transaction, validates the iteration atomically, assigns
 IDs/depth/order, and persists the updated state to `plan.yaml`. Successful batches also
 write matching `{NNN}-response.json` audit files for resume recovery.
 
@@ -303,7 +304,7 @@ Supported operation types:
 
 `update_item` is recorded through `record-update`, not `record-operation`. Omitted fields
 preserve the current value; an empty list clears a list field. Related batches whose write
-scopes overlap are serialized across waves so later agents consume the persisted plan state.
+scopes overlap are serialized across iterations so later agents consume the persisted plan state.
 
 ## Validation
 
@@ -328,7 +329,7 @@ Validation must ensure:
 * `update_item` patches target only patchable related nodes, not assigned items;
 * cross-item updates require a reason and at least one changed field;
 * omitted patch fields preserve the current value and empty lists clear list fields;
-* concurrent batches do not patch the same node in one wave.
+* only one planning iteration mutates the plan at a time.
 
 Apply each response atomically.
 
@@ -372,12 +373,9 @@ Do not stop only because a maximum depth was reached.
 Use configurable safety limits:
 
 * maximum iterations;
-* maximum depth;
-* maximum total items;
-* maximum children per expansion;
-* maximum batch size;
-* maximum concurrent batches;
-* maximum validation retries.
+* maximum validation retries;
+* session timeout;
+* parse error threshold.
 
 When a limit is reached, preserve the partial plan and return an explicit incomplete result.
 
@@ -408,7 +406,6 @@ planning-output/
         ├── 001-response.json
         └── render/
             ├── render-state.json
-            ├── batch-schedule.yaml
             ├── scaffold/
             ├── batches/
             └── reviews/
@@ -422,12 +419,13 @@ completes (and after review/confirmation when review is enabled). Rendering is a
 lifecycle from planning:
 
 1. Run a scaffold session that establishes destination paths, structure, and conventions.
-2. Build a deterministic coherent batch schedule over actionable leaf items.
-3. For each batch sequentially: author session → batch review → optional bounded revision.
-4. Run whole-output semantic review (`rendered_output_review`) with optional bounded final revision.
+2. For each render iteration: agent selects a batch via `planning-render-tool select-batch`,
+   then author session → batch review → optional bounded revision.
+3. Run whole-output semantic review (`rendered_output_review`) with optional bounded final revision.
 
-The batch schedule defines authoritative batch order and assigned item IDs. The output goal
-defines format and intent; an optional `## Output artifacts` section is sample layout only.
+Processed-batch history in `render-state.json` records completed batches for review
+digests and resume. The output goal defines format and intent; an optional
+`## Output artifacts` section is sample layout only.
 Review prompts embed a human-readable render brief derived from `plan.yaml`.
 
 Deliverables must be generated fresh from the confirmed plan. Zero workspace deliverables
@@ -542,10 +540,6 @@ Suggested options:
 --output-goal-file
 --output
 --max-iterations
---max-depth
---max-items
---batch-size
---concurrent-batches
 --max-retries
 --resume
 --stream-json
@@ -562,17 +556,16 @@ When `--stream-json` is enabled, emit one valid JSON object per line.
 Suggested events:
 
 ```json
-{"type":"planning.started","input":"./idea.md","concurrent_batches":3}
-{"type":"wave.started","wave_size":2,"iterations":[1,2]}
-{"type":"iteration.started","iteration":1,"batch_index":0,"batch_count":2,"selected_items":["item-001"]}
+{"type":"planning.started","input":"./idea.md"}
+{"type":"iteration.started","iteration":1,"eligible_items":["item-001"]}
 {"type":"item.expanded","item_id":"item-001","children_count":4}
 {"type":"item.actionable","item_id":"item-003"}
 {"type":"validation.failed","iteration":2,"errors":["Duplicate child title"]}
 {"type":"iteration.retrying","iteration":2,"attempt":2}
 {"type":"planning.completed","status":"complete","items":18,"actionable_items":11,"artifacts":["./planning-output/implementation-plan.md"]}
 {"type":"render.scaffold.completed","artifacts":["implementation-plan.md"]}
-{"type":"render.batch.started","batch_index":0,"item_ids":["item-002","item-003"]}
-{"type":"render.batch.completed","batch_index":0,"artifacts":["implementation-plan.md"]}
+{"type":"render.batch.started","batch_index":0,"eligible_items":["item-002","item-003"]}
+{"type":"render.batch.completed","batch_index":0,"selected_items":["item-002","item-003"],"artifacts":["implementation-plan.md"]}
 {"type":"render.batch.review.started","batch_index":0,"cycle":0}
 {"type":"render.batch.review.completed","batch_index":0,"decision":"approve","cycle":0}
 {"type":"render.final_review.started","cycle":0}

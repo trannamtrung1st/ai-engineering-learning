@@ -17,7 +17,6 @@ from top_down_planning.models import (
     GenerationConfig,
     PlanState,
     PlanningLimits,
-    RenderBatchSchedule,
     RenderConfig,
     RenderState,
     ReviewState,
@@ -38,7 +37,6 @@ REVIEWS_DIR = "reviews"
 STATE_DIRNAME = ".planning-output"
 RENDER_DIRNAME = "render"
 RENDER_STATE_FILENAME = "render-state.json"
-RENDER_SCHEDULE_FILENAME = "batch-schedule.yaml"
 
 
 def state_dir(output_dir: Path) -> Path:
@@ -139,36 +137,12 @@ def render_state_path(output_dir: Path) -> Path:
     return render_dir(output_dir) / RENDER_STATE_FILENAME
 
 
-def render_schedule_path(output_dir: Path) -> Path:
-    return render_dir(output_dir) / RENDER_SCHEDULE_FILENAME
-
-
 def render_batches_dir(output_dir: Path) -> Path:
     return render_dir(output_dir) / "batches"
 
 
 def batch_review_result_path(output_dir: Path, batch_index: int) -> Path:
     return render_batches_dir(output_dir) / f"{batch_index:03d}" / "review-result.json"
-
-
-def load_render_schedule_from_output(output_dir: Path) -> RenderBatchSchedule | None:
-    from top_down_planning.render_schedule import load_render_schedule
-
-    path = render_schedule_path(output_dir)
-    if not path.is_file():
-        return None
-    try:
-        return load_render_schedule(path)
-    except (OSError, yaml.YAMLError, ValueError) as exc:
-        raise PersistenceError(f"Failed to load render schedule from {path}: {exc}") from exc
-
-
-def save_render_schedule_to_output(output_dir: Path, schedule: RenderBatchSchedule) -> None:
-    from top_down_planning.render_schedule import save_render_schedule
-
-    directory = render_dir(output_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    save_render_schedule(render_schedule_path(output_dir), schedule)
 
 
 def render_reviews_dir(output_dir: Path) -> Path:
@@ -352,21 +326,15 @@ def ensure_resume_compatible(
 _RELAXABLE_LIMIT_FIELDS = frozenset(
     {
         "max_iterations",
-        "max_items",
         "max_retries",
         "session_timeout_seconds",
         "parse_error_threshold",
     }
 )
-# Per-expand safety limits that may increase on resume (e.g. after max_children_exceeded).
-_INCREASE_ONLY_LIMIT_FIELDS = frozenset({"max_children_per_expansion"})
-# Structural limits that must match the stored run for consistent decomposition.
-_STRICT_LIMIT_FIELDS = frozenset({"max_depth"})
 
-assert (
-    _RELAXABLE_LIMIT_FIELDS | _INCREASE_ONLY_LIMIT_FIELDS | _STRICT_LIMIT_FIELDS
-    == frozenset(PlanningLimits.model_fields.keys())
-), "PlanningLimits fields must all be classified for resume compatibility"
+assert _RELAXABLE_LIMIT_FIELDS == frozenset(PlanningLimits.model_fields.keys()), (
+    "PlanningLimits fields must all be classified for resume compatibility"
+)
 
 
 def resolve_resume_limits(
@@ -374,30 +342,8 @@ def resolve_resume_limits(
     requested_limits: PlanningLimits,
 ) -> PlanningLimits:
     """Validate resume limits and return the effective limits to use."""
-    mismatches: list[str] = []
-    for field in _STRICT_LIMIT_FIELDS:
-        stored_value = getattr(stored_limits, field)
-        requested_value = getattr(requested_limits, field)
-        if stored_value != requested_value:
-            mismatches.append(
-                f"limits.{field}: stored={stored_value!r}, requested={requested_value!r}"
-            )
-    for field in _INCREASE_ONLY_LIMIT_FIELDS:
-        stored_value = getattr(stored_limits, field)
-        requested_value = getattr(requested_limits, field)
-        if requested_value < stored_value:
-            mismatches.append(
-                f"limits.{field}: stored={stored_value!r}, requested={requested_value!r} "
-                f"(may only increase on resume)"
-            )
-    if mismatches:
-        raise ResumeError(
-            "Resume config mismatch with stored run-state:\n"
-            + "\n".join(f"  - {line}" for line in mismatches)
-        )
-
     merged = stored_limits.model_copy()
-    for field in _RELAXABLE_LIMIT_FIELDS | _INCREASE_ONLY_LIMIT_FIELDS:
+    for field in _RELAXABLE_LIMIT_FIELDS:
         setattr(merged, field, getattr(requested_limits, field))
     return merged
 
@@ -407,7 +353,7 @@ def describe_resume_limit_changes(
     after: PlanningLimits,
 ) -> str:
     parts: list[str] = []
-    for field in sorted(_RELAXABLE_LIMIT_FIELDS | _INCREASE_ONLY_LIMIT_FIELDS):
+    for field in sorted(_RELAXABLE_LIMIT_FIELDS):
         before_value = getattr(before, field)
         after_value = getattr(after, field)
         if before_value != after_value:
@@ -425,7 +371,7 @@ def _assert_run_config_compatible(
 ) -> None:
     resolve_resume_limits(stored_limits, requested_limits)
     mismatches: list[str] = []
-    for field in GenerationConfig.model_fields:
+    for field in ("whole_plan_context",):
         stored_value = getattr(stored_generation, field)
         requested_value = getattr(requested_generation, field)
         if stored_value != requested_value:

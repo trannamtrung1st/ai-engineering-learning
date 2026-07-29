@@ -28,7 +28,7 @@ def test_render_batch_review_rejects_unknown_plan_item() -> None:
         batch_index=0,
         plan_digest="digest",
         output_goal_digest="goal-digest",
-        schedule_digest="schedule-digest",
+        processed_batches_digest="batches-digest",
         deliverable_output_digest="deliverable-digest",
         decision=RenderBatchReviewDecision.NEEDS_REVISION,
         summary="Missing coverage",
@@ -61,7 +61,7 @@ def test_render_batch_review_rejects_out_of_scope_artifact() -> None:
         batch_index=0,
         plan_digest="digest",
         output_goal_digest="goal-digest",
-        schedule_digest="schedule-digest",
+        processed_batches_digest="batches-digest",
         deliverable_output_digest="deliverable-digest",
         decision=RenderBatchReviewDecision.NEEDS_REVISION,
         summary="Wrong artifact",
@@ -93,7 +93,7 @@ def test_render_output_review_rejects_invalid_batch_index() -> None:
     result = RenderedOutputReviewResult(
         plan_digest="digest",
         output_goal_digest="goal-digest",
-        schedule_digest="schedule-digest",
+        processed_batches_digest="batches-digest",
         deliverable_output_digest="deliverable-digest",
         decision=RenderOutputReviewDecision.NEEDS_REVISION,
         summary="Batch issue",
@@ -104,10 +104,10 @@ def test_render_output_review_rejects_invalid_batch_index() -> None:
     errors = validate_render_output_review(
         result,
         plan=plan,
-        schedule_batch_indices=[0, 1],
+        processed_batch_indices=[0, 1],
         deliverable_paths=["implementation-plan.md"],
     )
-    assert any("not in schedule scope" in error for error in errors)
+    assert any("not in processed batch scope" in error for error in errors)
 
 
 def test_render_output_review_rejects_empty_summary() -> None:
@@ -120,7 +120,7 @@ def test_render_output_review_rejects_empty_summary() -> None:
     result = RenderedOutputReviewResult(
         plan_digest="digest",
         output_goal_digest="goal-digest",
-        schedule_digest="schedule-digest",
+        processed_batches_digest="batches-digest",
         deliverable_output_digest="deliverable-digest",
         decision=RenderOutputReviewDecision.APPROVE,
         summary="",
@@ -129,7 +129,7 @@ def test_render_output_review_rejects_empty_summary() -> None:
     errors = validate_render_output_review(
         result,
         plan=plan,
-        schedule_batch_indices=[0],
+        processed_batch_indices=[0],
         deliverable_paths=["implementation-plan.md"],
     )
     assert any("summary must not be empty" in error for error in errors)

@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.config_loader import merge_run_options
 from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import (
     build_plan_overview,
@@ -12,27 +11,24 @@ from top_down_planning.generation_context import (
     select_relevant_node_ids,
 )
 from top_down_planning.models import (
-    BatchStrategy,
     DecompositionStatus,
-    GenerationConfig,
     MarkActionableOperation,
     PlanItem,
-    PlanningLimits,
     WholePlanContextMode,
 )
 from top_down_planning.plan_tool import (
+    ENV_ELIGIBLE_IDS,
     ENV_PLAN_DIGEST,
     ENV_PLAN_FILE,
-    ENV_SELECTED_IDS,
     ENV_TXN_FILE,
     PlanToolError,
     finalize,
     record_operation,
     reset_transaction,
+    select_batch,
 )
-from top_down_planning.scheduler import select_concurrent_batches
 from top_down_planning.validator import validate_wave_responses
-from tests.helpers import default_generation, make_agent_response
+from tests.helpers import make_agent_response
 from tests.plan_factory import make_root_plan
 
 
@@ -111,7 +107,6 @@ def test_prepare_batch_context_omits_patchable_section_for_amend(tmp_path: Path)
         plan_digest=digest,
         output_dir=output_dir,
         whole_plan_context=WholePlanContextMode.HYBRID,
-        max_context_characters=30000,
         include_cross_item_updates=False,
     )
     assert "Patchable related items" not in prepared.batch_context_markdown
@@ -129,7 +124,6 @@ def test_prepare_batch_context_includes_patchable_section(tmp_path: Path) -> Non
         plan_digest=digest,
         output_dir=output_dir,
         whole_plan_context=WholePlanContextMode.HYBRID,
-        max_context_characters=30000,
     )
     assert "Patchable related items" in prepared.batch_context_markdown
     assert "[item-001]" in prepared.batch_context_markdown
@@ -145,6 +139,20 @@ def test_plan_overview_artifact_is_reused(tmp_path: Path) -> None:
     assert second.read_text(encoding="utf-8") == "custom"
 
 
+def test_prepare_batch_context_without_selection(tmp_path: Path) -> None:
+    plan = _plan_with_branches()
+    digest = compute_plan_digest(plan)
+    output_dir = tmp_path / "planning-output"
+    prepared = prepare_batch_context(
+        plan=plan,
+        selected_items=[],
+        plan_digest=digest,
+        output_dir=output_dir,
+        whole_plan_context=WholePlanContextMode.HYBRID,
+    )
+    assert "No batch selected yet" in prepared.batch_context_markdown
+
+
 def test_prepare_batch_context_hybrid_mode(tmp_path: Path) -> None:
     plan = _plan_with_branches()
     digest = compute_plan_digest(plan)
@@ -157,7 +165,6 @@ def test_prepare_batch_context_hybrid_mode(tmp_path: Path) -> None:
         plan_digest=digest,
         output_dir=output_dir,
         whole_plan_context=WholePlanContextMode.HYBRID,
-        max_context_characters=30000,
     )
     assert prepared.context_mode == WholePlanContextMode.HYBRID
     assert "Assigned generation scope" in prepared.batch_context_markdown
@@ -176,53 +183,10 @@ def test_prepare_batch_context_referenced_mode(tmp_path: Path) -> None:
         plan_digest=digest,
         output_dir=output_dir,
         whole_plan_context=WholePlanContextMode.REFERENCED,
-        max_context_characters=30000,
     )
     assert prepared.context_mode == WholePlanContextMode.REFERENCED
     assert prepared.embedded_overview is None
     assert "plan-overview" in prepared.batch_context_markdown
-
-
-def test_wave_never_selects_ancestor_and_descendant() -> None:
-    plan = _plan_with_branches()
-    generation = GenerationConfig(
-        batch_strategy=BatchStrategy.THROUGHPUT,
-    )
-    batches = select_concurrent_batches(plan, generation, max_batches=3)
-    selected = [item.id for batch in batches for item in batch]
-    if "item-002" in selected:
-        assert "item-004" not in selected
-    if "item-004" in selected:
-        assert "item-002" not in selected
-
-
-def test_single_strategy_one_item_per_batch() -> None:
-    plan = _plan_with_branches()
-    generation = GenerationConfig(
-        batch_strategy=BatchStrategy.SINGLE,
-    )
-    batches = select_concurrent_batches(plan, generation, max_batches=3)
-    assert all(len(batch) == 1 for batch in batches)
-
-
-def test_generation_config_precedence(tmp_path: Path) -> None:
-    config_path = tmp_path / "planning.yaml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "input: ./idea.md",
-                "output: ./out",
-                "output_goal: Produce a plan",
-                "generation:",
-                "  batch_size: 2",
-                "  batch_strategy: single",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    options = merge_run_options(config_path=config_path, batch_size=4)
-    assert options.generation.batch_size == 4
-    assert options.generation.batch_strategy == BatchStrategy.SINGLE
 
 
 def test_finalize_rejects_stale_plan_digest(
@@ -243,10 +207,11 @@ def test_finalize_rejects_stale_plan_digest(
     txn_file = output_dir / ".planning-output" / "iterations" / "001-transaction.json"
     txn_file.parent.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv(ENV_TXN_FILE, str(txn_file))
-    monkeypatch.setenv(ENV_SELECTED_IDS, "item-001")
+    monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-001")
     monkeypatch.setenv(ENV_PLAN_FILE, str(output_dir / ".planning-output" / "plan.yaml"))
     monkeypatch.setenv(ENV_PLAN_DIGEST, "expected-digest")
     reset_transaction(txn_file)
+    select_batch(node_id=["item-001"])
     record_operation(
         json_payload=(
             '{"type":"mark_actionable","node_id":"item-001",'
@@ -284,7 +249,6 @@ def test_validate_wave_rejects_stale_digest() -> None:
     errors = validate_wave_responses(
         plan,
         [(["item-001"], response)],
-        limits=PlanningLimits(),
         plan_digest="current-digest",
         output_goal_text="Produce an actionable implementation plan",
     )

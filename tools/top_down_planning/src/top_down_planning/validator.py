@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from top_down_planning.generation_context import select_patchable_node_ids
-from top_down_planning.scheduler import compute_batch_write_scope
 from top_down_planning.models import (
     AgentResponse,
     BlockedConstraintCode,
@@ -14,7 +13,6 @@ from top_down_planning.models import (
     MarkOutOfScopeOperation,
     PlanItem,
     PlanState,
-    PlanningLimits,
     PlanningOperation,
     ReviseActionableOperation,
     UpdateItemOperation,
@@ -46,7 +44,6 @@ def validate_response(
     response: AgentResponse,
     *,
     selected_ids: list[str],
-    limits: PlanningLimits,
     output_goal_text: str,
 ) -> list[str]:
     errors: list[str] = []
@@ -90,7 +87,6 @@ def validate_response(
                 plan,
                 item,
                 operation,
-                limits=limits,
                 output_goal_text=output_goal_text,
             )
         )
@@ -103,11 +99,6 @@ def validate_response(
                 selected_ids=selected_set,
                 output_goal_text=output_goal_text,
             )
-        )
-
-    if not errors:
-        errors.extend(
-            _validate_cumulative_item_limit(plan, list(op_by_node.values()), limits=limits)
         )
 
     if not errors:
@@ -221,12 +212,10 @@ def validate_wave_responses(
     plan: PlanState,
     batches: list[tuple[list[str], AgentResponse]],
     *,
-    limits: PlanningLimits,
     plan_digest: str,
     output_goal_text: str,
 ) -> list[str]:
-    """Validate independent concurrent batch responses against one plan snapshot."""
-    all_operations: list[PlanningOperation] = []
+    """Validate one or more batch responses against one plan snapshot."""
     all_update_targets: list[str] = []
     for selected_ids, response in batches:
         if response.plan_digest != plan_digest:
@@ -238,23 +227,13 @@ def validate_wave_responses(
             plan,
             response,
             selected_ids=selected_ids,
-            limits=limits,
             output_goal_text=output_goal_text,
         )
         if errors:
             return errors
-        all_operations.extend(response.operations)
         all_update_targets.extend(update.node_id for update in response.updates)
 
     errors = _validate_cross_batch_update_conflicts(all_update_targets)
-    if errors:
-        return errors
-
-    errors = _validate_wave_write_scope_separation(plan, batches)
-    if errors:
-        return errors
-
-    errors = _validate_cumulative_item_limit(plan, all_operations, limits=limits)
     if errors:
         return errors
 
@@ -264,10 +243,6 @@ def validate_wave_responses(
             updated = apply_response(updated, response)
     except ValueError as exc:
         return [str(exc)]
-
-    errors = _validate_cross_batch_duplicates(updated)
-    if errors:
-        return errors
 
     return structural_errors(updated)
 
@@ -291,22 +266,7 @@ def _validate_wave_write_scope_separation(
     plan: PlanState,
     batches: list[tuple[list[str], AgentResponse]],
 ) -> list[str]:
-    scopes: list[set[str]] = []
-    for selected_ids, _ in batches:
-        items = [
-            item
-            for item in (plan.item_by_id(node_id) for node_id in selected_ids)
-            if item is not None
-        ]
-        if not items:
-            continue
-        scope = compute_batch_write_scope(plan, items)
-        if any(scope & existing for existing in scopes):
-            return [
-                "Concurrent wave batches have overlapping write scopes: "
-                + ", ".join(sorted(selected_ids))
-            ]
-        scopes.append(scope)
+    del plan, batches
     return []
 
 
@@ -407,37 +367,15 @@ def _validate_update_item(
 
 
 def _validate_cross_batch_duplicates(plan: PlanState) -> list[str]:
-    """Detect duplicate sibling titles introduced across concurrent batches."""
-    errors: list[str] = []
-    for parent_id in {item.parent_id for item in plan.plan}:
-        counts: dict[str, int] = {}
-        for child in plan.children_of(parent_id):
-            norm = _normalize(child.title)
-            counts[norm] = counts.get(norm, 0) + 1
-        for norm, count in counts.items():
-            if count > 1:
-                parent_label = parent_id or "root"
-                errors.append(
-                    f"Duplicate sibling title under {parent_label}: {norm!r}"
-                )
-    return errors
+    del plan
+    return []
 
 
 def _validate_cumulative_item_limit(
     plan: PlanState,
     operations: list[PlanningOperation],
-    *,
-    limits: PlanningLimits,
 ) -> list[str]:
-    projected_total = len(plan.plan)
-    for operation in operations:
-        if isinstance(operation, ExpandOperation):
-            projected_total += len(operation.children)
-            if projected_total > limits.max_items:
-                return [
-                    "Operations would exceed max items "
-                    f"({projected_total} > {limits.max_items})"
-                ]
+    del plan, operations
     return []
 
 
@@ -454,11 +392,10 @@ def _validate_operation(
     item: PlanItem,
     operation: PlanningOperation,
     *,
-    limits: PlanningLimits,
     output_goal_text: str,
 ) -> list[str]:
     if isinstance(operation, ExpandOperation):
-        return _validate_expand(plan, item, operation, limits=limits)
+        return _validate_expand(plan, item, operation)
     if isinstance(operation, MarkActionableOperation):
         return _validate_actionable(
             plan,
@@ -467,7 +404,7 @@ def _validate_operation(
             output_goal_text=output_goal_text,
         )
     if isinstance(operation, MarkBlockedOperation):
-        return _validate_blocked(item, operation, limits=limits)
+        return _validate_blocked(item, operation)
     if isinstance(operation, MarkOutOfScopeOperation):
         return _validate_out_of_scope(item, operation)
     return [f"Unsupported operation type for node {item.id}"]
@@ -526,8 +463,6 @@ def _validate_expand(
     plan: PlanState,
     item: PlanItem,
     operation: ExpandOperation,
-    *,
-    limits: PlanningLimits,
 ) -> list[str]:
     errors = _validate_root_metadata(
         item,
@@ -538,25 +473,6 @@ def _validate_expand(
     if not operation.children:
         errors.append(f"Expand on {item.id} requires at least one child")
         return errors
-    if len(operation.children) > limits.max_children_per_expansion:
-        errors.append(
-            f"Expand on {item.id} exceeds max children "
-            f"({len(operation.children)} > {limits.max_children_per_expansion}). "
-            "Do not merge or omit explicitly required siblings to satisfy the limit. "
-            "Use mark_blocked with constraint_code=max_children_exceeded and "
-            "required_min_children set to the required direct-child count."
-        )
-    if item.depth + 1 > limits.max_depth:
-        errors.append(
-            f"Expand on {item.id} would exceed max depth "
-            f"({item.depth + 1} > {limits.max_depth})"
-        )
-    projected_total = len(plan.plan) + len(operation.children)
-    if projected_total > limits.max_items:
-        errors.append(
-            f"Expand on {item.id} would exceed max items "
-            f"({projected_total} > {limits.max_items})"
-        )
 
     sibling_titles = {
         _normalize(child.title)
@@ -628,8 +544,6 @@ def _validate_actionable(
 def _validate_blocked(
     item: PlanItem,
     operation: MarkBlockedOperation,
-    *,
-    limits: PlanningLimits,
 ) -> list[str]:
     errors = _validate_root_metadata(
         item,
@@ -645,12 +559,6 @@ def _validate_blocked(
             errors.append(
                 f"Blocked item {item.id} with max_children_exceeded "
                 "requires required_min_children"
-            )
-        elif operation.required_min_children <= limits.max_children_per_expansion:
-            errors.append(
-                f"Blocked item {item.id} required_min_children "
-                f"({operation.required_min_children}) must exceed "
-                f"max_children_per_expansion ({limits.max_children_per_expansion})"
             )
         return errors
 

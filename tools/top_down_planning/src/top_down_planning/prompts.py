@@ -8,8 +8,14 @@ from pathlib import Path
 from top_down_planning import schema_docs
 from top_down_planning.agent_context import ResolvedAgentContext
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
-from top_down_planning.item_format import format_item_context
-from top_down_planning.models import PlanItem, PlanState, ReviewFinding, WholePlanContextMode
+from top_down_planning.item_format import format_item_context, format_item_summary
+from top_down_planning.models import (
+    PlanItem,
+    PlanState,
+    ProcessedBatchRecord,
+    ReviewFinding,
+    WholePlanContextMode,
+)
 
 
 def should_embed_content(text: str, *, embed_threshold: int) -> bool:
@@ -122,15 +128,47 @@ def format_input_document_section(
     )
 
 
+def format_eligible_items_section(items: list[PlanItem]) -> str:
+    if not items:
+        return "No eligible items remain for this session."
+    lines = ["| id | depth | title | status |", "| --- | --- | --- | --- |"]
+    for item in items:
+        lines.append(
+            f"| {item.id} | {item.depth} | {item.title} | "
+            f"{item.decomposition_status.value} |"
+        )
+    return "\n".join(lines)
+
+
+def format_processed_batches_section(records: list[ProcessedBatchRecord]) -> str:
+    if not records:
+        return "No prior batches have been processed in this run."
+    lines: list[str] = []
+    for record in records[-12:]:
+        items = ", ".join(record.selected_items)
+        purpose = f" — {record.purpose}" if record.purpose.strip() else ""
+        lines.append(
+            f"- Iteration {record.iteration}: [{items}]{purpose} "
+            f"(result={record.result})"
+        )
+    if len(records) > 12:
+        lines.insert(0, f"(Showing last 12 of {len(records)} processed batches.)")
+    lines.append(
+        "Processed batches are history for context. You may revisit any batch for "
+        "refinement when the current plan state warrants it."
+    )
+    return "\n".join(lines)
+
+
 def build_planning_prompt(
     *,
     loaded_input: LoadedInput,
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan: PlanState,
-    selected_items: list[PlanItem],
+    eligible_items: list[PlanItem],
+    processed_batches: list[ProcessedBatchRecord],
     embed_threshold: int,
-    max_children_per_expansion: int = 12,
     stop_hint: LoadedStopHint | None = None,
     validation_feedback: list[str] | None = None,
     plan_tool_command: str = "planning-plan-tool",
@@ -149,8 +187,20 @@ def build_planning_prompt(
 
     generation_context_block = (
         f"## Generation context ({context_mode.value})\n\n"
-        f"Wave plan digest: `{plan_digest}`\n\n"
+        f"Plan digest: `{plan_digest}`\n\n"
         f"{batch_context_markdown}\n\n"
+    )
+
+    eligible_block = (
+        "## Eligible items\n"
+        "Choose a coherent batch from these items. Prefer same-parent siblings or "
+        "nearby depth when batching multiple items.\n\n"
+        f"{format_eligible_items_section(eligible_items)}\n\n"
+    )
+
+    history_block = (
+        "## Processed batches\n"
+        f"{format_processed_batches_section(processed_batches)}\n\n"
     )
 
     feedback_block = ""
@@ -170,18 +220,15 @@ Do not execute implementation work.
 ## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-{stop_hint_block}{_format_agent_context_section(agent_context)}## Expansion limits
-- `max_children_per_expansion`: {max_children_per_expansion} (per expand operation).
-- Do not merge, omit, or materially rename explicitly required sibling groups solely to
-  satisfy this limit.
-- When the required direct-child count exceeds the configured limit, do not distort the
-  requested structure. Use `mark_blocked` with `constraint_code: "max_children_exceeded"`
-  and `required_min_children` set to the minimum required count. Explain the minimum
-  required limit in `reason`.
+{stop_hint_block}{_format_agent_context_section(agent_context)}## Workflow
+1. Review the eligible items and processed-batch history.
+2. Choose a coherent batch and record it with `{plan_tool_command} select-batch`.
+3. Record one operation per selected item, then finalize the transaction.
 
 ## Rules
-- Choose exactly one operation per **assigned** item only.
-- Do not record primary operations for unassigned nodes.
+- Choose batch scope based on the output goal, stop guidance, and remaining work.
+- You may revisit items from prior processed batches when refinement is needed.
+- Record exactly one operation per **selected** item only.
 - When your assigned decomposition changes related items, record `update_item` patches
   immediately for items listed in the patchable scope.
 - For cross-item updates, omitted fields preserve the current value and an empty list
@@ -201,7 +248,7 @@ Do not execute implementation work.
   after decomposition completes.
 - Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
 
-{feedback_block}## Input document
+{feedback_block}{eligible_block}{history_block}## Input document
 
 {format_input_document_section(loaded_input=loaded_input, workspace=workspace, embed_threshold=embed_threshold)}
 
@@ -239,7 +286,8 @@ def build_amend_prompt(
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan: PlanState,
-    selected_items: list[PlanItem],
+    eligible_items: list[PlanItem],
+    processed_batches: list[ProcessedBatchRecord],
     review_findings: list[ReviewFinding],
     embed_threshold: int,
     validation_feedback: list[str] | None = None,
@@ -249,7 +297,6 @@ def build_amend_prompt(
     batch_context_markdown: str,
     context_mode: WholePlanContextMode,
 ) -> str:
-    selected_ids = [item.id for item in selected_items]
     feedback_block = ""
     if validation_feedback:
         feedback_block = (
@@ -260,8 +307,17 @@ def build_amend_prompt(
 
     generation_context_block = (
         f"## Generation context ({context_mode.value})\n\n"
-        f"Wave plan digest: `{plan_digest}`\n\n"
+        f"Plan digest: `{plan_digest}`\n\n"
         f"{batch_context_markdown}\n\n"
+    )
+
+    eligible_block = (
+        "## Eligible amend items\n"
+        f"{format_eligible_items_section(eligible_items)}\n\n"
+    )
+    history_block = (
+        "## Processed batches\n"
+        f"{format_processed_batches_section(processed_batches)}\n\n"
     )
 
     return f"""# Plan amendment session
@@ -273,8 +329,13 @@ items, and do not execute implementation work.
 ## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-{_format_agent_context_section(agent_context)}## Rules
-- Record exactly one `revise_actionable` operation per assigned item.
+{_format_agent_context_section(agent_context)}## Workflow
+1. Review eligible items, processed batches, and review findings.
+2. Record your batch with `{plan_tool_command} select-batch`.
+3. Record one `revise_actionable` per selected item, then finalize.
+
+## Rules
+- Record exactly one `revise_actionable` operation per selected item.
 - Provide replacement fields explicitly. Omitted fields preserve the current value;
   an empty list clears a list field.
 - Preserve unaffected detail unless the review finding requires a change.
@@ -282,8 +343,8 @@ items, and do not execute implementation work.
   cross-item `update_item` patches.
 - Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
 
-{feedback_block}## Review findings for assigned items
-{_format_review_findings_for_items(review_findings, selected_ids)}
+{feedback_block}{eligible_block}{history_block}## Review findings
+{_format_review_findings_for_items(review_findings, [item.id for item in eligible_items])}
 
 ## Input document
 
@@ -480,7 +541,7 @@ def build_render_batch_review_prompt(
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan_digest: str,
-    schedule_digest: str,
+    processed_batches_digest: str,
     batch_index: int,
     batch_item_ids: list[str],
     deliverable_digest: str,
@@ -490,10 +551,10 @@ def build_render_batch_review_prompt(
     agent_context: ResolvedAgentContext | None = None,
     review_tool_command: str = "planning-review-tool",
 ) -> str:
-    from top_down_planning.persistence import plan_path, render_schedule_path
+    from top_down_planning.persistence import plan_path, render_state_path
 
     plan_file = plan_path(output_dir)
-    schedule_file = render_schedule_path(output_dir)
+    render_state_file = render_state_path(output_dir)
     destination_lines = "\n".join(
         f"- {format_input_file_reference(workspace / relative_path, workspace)}"
         for relative_path in deliverable_paths
@@ -511,8 +572,8 @@ Assigned plan items: {", ".join(batch_item_ids)}
 ## Output-goal digest
 `{output_goal_digest}`
 
-## Render schedule digest
-`{schedule_digest}`
+## Processed batches digest
+`{processed_batches_digest}`
 
 ## Deliverable output digest
 `{deliverable_digest}`
@@ -522,7 +583,7 @@ Assigned plan items: {", ".join(batch_item_ids)}
 
 ## References
 - Confirmed plan: {format_input_file_reference(plan_file, workspace)}
-- Render schedule: {format_input_file_reference(schedule_file, workspace)}
+- Render state: {format_input_file_reference(render_state_file, workspace)}
 
 ## Workspace deliverables
 {destination_lines}
@@ -557,7 +618,7 @@ def build_render_output_review_prompt(
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan_digest: str,
-    schedule_digest: str,
+    processed_batches_digest: str,
     deliverable_digest: str,
     deliverable_paths: list[str],
     output_goal_digest: str,
@@ -565,10 +626,10 @@ def build_render_output_review_prompt(
     agent_context: ResolvedAgentContext | None = None,
     review_tool_command: str = "planning-review-tool",
 ) -> str:
-    from top_down_planning.persistence import plan_path, render_schedule_path
+    from top_down_planning.persistence import plan_path, render_state_path
 
     plan_file = plan_path(output_dir)
-    schedule_file = render_schedule_path(output_dir)
+    render_state_file = render_state_path(output_dir)
     destination_lines = "\n".join(
         f"- {format_input_file_reference(workspace / relative_path, workspace)}"
         for relative_path in deliverable_paths
@@ -576,7 +637,7 @@ def build_render_output_review_prompt(
 
     return f"""# Rendered output review session
 
-Compare the confirmed plan, render schedule, workspace deliverables, and output goal.
+Compare the confirmed plan, processed render batches, workspace deliverables, and output goal.
 
 Final deliverables live at their **workspace destination paths**.
 
@@ -589,8 +650,8 @@ Use `blocked` for unfixable tool/goal mismatches.
 ## Output-goal digest
 `{output_goal_digest}`
 
-## Render schedule digest
-`{schedule_digest}`
+## Processed batches digest
+`{processed_batches_digest}`
 
 ## Deliverable output digest
 `{deliverable_digest}`
@@ -600,7 +661,7 @@ Use `blocked` for unfixable tool/goal mismatches.
 
 ## References
 - Confirmed plan: {format_input_file_reference(plan_file, workspace)}
-- Render schedule: {format_input_file_reference(schedule_file, workspace)}
+- Render state: {format_input_file_reference(render_state_file, workspace)}
 
 ## Workspace deliverables
 {destination_lines}

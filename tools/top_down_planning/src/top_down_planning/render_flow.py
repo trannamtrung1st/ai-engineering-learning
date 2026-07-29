@@ -18,9 +18,9 @@ from top_down_planning.models import (
     DecompositionStatus,
     DeliverableStatus,
     PlanState,
+    ProcessedBatchRecord,
     RenderBatchItem,
     RenderBatchReviewDecision,
-    RenderBatchSchedule,
     RenderBatchStatus,
     RenderConfig,
     RenderOutputReviewDecision,
@@ -30,10 +30,7 @@ from top_down_planning.models import (
     RunState,
 )
 from top_down_planning.persistence import (
-    load_render_schedule_from_output,
     load_render_state,
-    render_schedule_path,
-    save_render_schedule_to_output,
     save_render_state,
     save_run_state,
 )
@@ -44,6 +41,11 @@ from top_down_planning.prompts import (
     build_render_scaffold_prompt,
 )
 from top_down_planning.render_batch_review import RenderBatchReviewDeps, run_render_batch_review
+from top_down_planning.render_batches import (
+    processed_batch_indices,
+    processed_batches_digest,
+    validate_render_batch_selection,
+)
 from top_down_planning.render_context import (
     prepare_batch_context,
     prepare_final_revision_context,
@@ -59,10 +61,8 @@ from top_down_planning.render_deliverables import (
     is_utf8_text_file,
     snapshot_workspace_files,
 )
-from top_down_planning.render_schedule import (
-    build_render_schedule,
-    compute_schedule_digest,
-)
+from top_down_planning.render_brief import actionable_leaf_items
+from top_down_planning.render_tool import build_session_env as build_render_tool_env, load_batch_manifest
 from top_down_planning.render_review import (
     RenderReviewDeps,
     review_status_from_decision,
@@ -129,46 +129,24 @@ async def render_from_confirmed_plan(
         force_rerender=force_rerender,
     )
 
-    existing_schedule = load_render_schedule_from_output(deps.output_dir)
-    if not reset_state and existing_schedule is not None:
-        _validate_loaded_schedule(
-            existing_schedule,
-            plan_digest=plan_digest,
-            output_goal_digest=deps.output_goal.digest,
-            render_config_digest=render_config_digest,
-        )
-        schedule = existing_schedule
-        run_id = schedule.run_id
-    else:
-        if reset_state:
-            _reset_render_state(deps.output_dir)
-            render_state = RenderState()
+    if reset_state:
+        _reset_render_state(deps.output_dir)
+        render_state = RenderState()
         run_id = f"render-run-{uuid.uuid4().hex[:8]}"
-        schedule, schedule_errors = build_render_schedule(
-            plan,
-            run_id=run_id,
-            plan_digest=plan_digest,
-            output_goal_digest=deps.output_goal.digest,
-            render_config=render_config,
-            output_dir=deps.output_dir,
-        )
-        if schedule_errors:
-            raise PlanningToolError(
-                "Render scheduling failed: " + "; ".join(schedule_errors)
-            )
-        if not schedule.batches:
-            raise PlanningToolError(
-                "Render cannot proceed: no actionable leaf items to schedule."
-            )
+    else:
+        run_id = render_state.run_id or f"render-run-{uuid.uuid4().hex[:8]}"
 
-    schedule_digest = compute_schedule_digest(schedule)
+    if not actionable_leaf_items(plan):
+        raise PlanningToolError(
+            "Render cannot proceed: no actionable leaf items to author."
+        )
+
+    batches_digest = processed_batches_digest(render_state.processed_batches)
     render_state.run_id = run_id
     render_state.plan_digest = plan_digest
     render_state.output_goal_digest = deps.output_goal.digest
     render_state.render_config_digest = render_config_digest
-    render_state.schedule_digest = schedule_digest
     save_render_state(deps.output_dir, render_state)
-    save_render_schedule_to_output(deps.output_dir, schedule)
 
     if not force_rerender and render_state.stage == RenderStage.COMPLETE:
         existing = existing_deliverable_artifacts(
@@ -211,36 +189,60 @@ async def render_from_confirmed_plan(
     render_state.stage = RenderStage.BATCHES
     save_render_state(deps.output_dir, render_state)
 
-    for batch in schedule.batches:
-        if batch.status == RenderBatchStatus.APPROVED:
-            continue
-        if batch.batch_index < render_state.current_batch_index:
-            continue
+    while True:
+        eligible = _uncovered_actionable_leaves(plan, render_state)
+        if not eligible:
+            break
 
+        batch_index = render_state.current_batch_index
+        batch = RenderBatchItem(
+            batch_index=batch_index,
+            item_ids=[],
+            title=f"batch-{batch_index:03d}",
+        )
+        covered_ids = {
+            item_id
+            for record in render_state.processed_batches
+            for item_id in record.selected_items
+        }
+        eligible_ids = {item.id for item in eligible}
         deps.stream.emit(
             "render.batch.started",
             batch_index=batch.batch_index,
-            item_ids=batch.item_ids,
+            eligible_items=batch.item_ids,
         )
         artifact_paths = await _run_batch_pipeline(
             deps,
             plan=plan,
             plan_digest=plan_digest,
-            schedule=schedule,
-            schedule_digest=schedule_digest,
+            processed_batches_digest=batches_digest,
             batch=batch,
+            eligible_items=eligible,
+            eligible_ids=eligible_ids,
+            covered_ids=covered_ids,
+            processed_batches=render_state.processed_batches,
             artifact_paths=artifact_paths,
             run_state=run_state,
             render_state=render_state,
         )
-        batch.status = RenderBatchStatus.APPROVED
-        render_state.current_batch_index = batch.batch_index + 1
+        render_state.processed_batches.append(
+            ProcessedBatchRecord(
+                iteration=batch_index + 1,
+                selected_items=list(batch.item_ids),
+                purpose=batch.purpose,
+                plan_digest_before=plan_digest,
+                plan_digest_after=plan_digest,
+                result="completed",
+            )
+        )
+        render_state.current_batch_index = batch_index + 1
         render_state.artifact_paths = artifact_paths
+        batches_digest = processed_batches_digest(render_state.processed_batches)
         save_render_state(deps.output_dir, render_state)
-        save_render_schedule_to_output(deps.output_dir, schedule)
         deps.stream.emit(
             "render.batch.completed",
             batch_index=batch.batch_index,
+            selected_items=batch.item_ids,
             artifacts=artifact_paths,
         )
 
@@ -286,8 +288,11 @@ async def render_from_confirmed_plan(
                 ),
                 plan=plan,
                 plan_digest=plan_digest,
-                schedule=schedule,
-                schedule_digest=schedule_digest,
+                output_goal_digest=deps.output_goal.digest,
+                processed_batches_digest=batches_digest,
+                processed_batch_indices=processed_batch_indices(
+                    render_state.processed_batches
+                ),
                 deliverable=deliverable,
                 max_retries=render_config.max_retries,
             )
@@ -358,9 +363,12 @@ async def _run_batch_pipeline(
     *,
     plan: PlanState,
     plan_digest: str,
-    schedule: RenderBatchSchedule,
-    schedule_digest: str,
+    processed_batches_digest: str,
     batch: RenderBatchItem,
+    eligible_items: list,
+    eligible_ids: set[str],
+    covered_ids: set[str],
+    processed_batches: list[ProcessedBatchRecord],
     artifact_paths: list[str],
     run_state: RunState,
     render_state: RenderState,
@@ -374,6 +382,10 @@ async def _run_batch_pipeline(
             plan=plan,
             plan_digest=plan_digest,
             batch=batch,
+            eligible_items=eligible_items,
+            eligible_ids=eligible_ids,
+            covered_ids=covered_ids,
+            processed_batches=processed_batches,
             artifact_paths=artifact_paths,
             revision=False,
             run_state=run_state,
@@ -411,7 +423,7 @@ async def _run_batch_pipeline(
             plan=plan,
             batch=batch,
             plan_digest=plan_digest,
-            schedule_digest=schedule_digest,
+            processed_batches_digest=processed_batches_digest,
             deliverable=deliverable,
             max_retries=deps.render.max_retries,
         )
@@ -456,6 +468,10 @@ async def _run_batch_pipeline(
             plan=plan,
             plan_digest=plan_digest,
             batch=batch,
+            eligible_items=eligible_items,
+            eligible_ids=eligible_ids,
+            covered_ids=covered_ids,
+            processed_batches=processed_batches,
             artifact_paths=artifact_paths,
             revision=True,
             run_state=run_state,
@@ -514,59 +530,147 @@ async def _run_batch_author_session(
     plan: PlanState,
     plan_digest: str,
     batch: RenderBatchItem,
+    eligible_items: list | None = None,
+    eligible_ids: set[str] | None = None,
+    covered_ids: set[str] | None = None,
+    processed_batches: list[ProcessedBatchRecord] | None = None,
     artifact_paths: list[str],
     revision: bool,
     run_state: RunState,
     findings_summary: str = "",
 ) -> list[str]:
-    prepared = prepare_batch_context(
-        plan=plan,
-        batch=batch,
-        output_dir=deps.output_dir,
-        workspace=deps.workspace_root,
-        output_goal=deps.output_goal,
-        plan_digest=plan_digest,
-        whole_plan_context=deps.render.whole_plan_context,
-        embed_threshold=deps.embed_threshold,
-        artifact_paths=artifact_paths,
-        revision=revision,
-    )
-    if revision:
-        def build_prompt(validation_feedback: list[str] | None) -> str:
-            return build_render_batch_revision_prompt(
-                batch_index=batch.batch_index,
-                plan_digest=plan_digest,
-                output_goal_digest=deps.output_goal.digest,
-                render_config_digest=compute_render_config_digest(deps.render),
-                context_markdown=prepared.context_markdown,
-                output_goal=deps.output_goal,
-                workspace=deps.workspace_root,
-                embed_threshold=deps.embed_threshold,
-                findings_summary=findings_summary,
-                agent_context=deps.resolve_render_context(),
+    batch_dir = deps.output_dir / ".planning-output" / "render" / "batches" / f"{batch.batch_index:03d}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    batch_manifest = batch_dir / "batch-manifest.json"
+    validation_feedback: list[str] | None = None
+
+    for attempt in range(1, deps.render.max_retries + 1):
+        if not revision and batch_manifest.is_file():
+            batch_manifest.unlink()
+
+        prepared = prepare_batch_context(
+            plan=plan,
+            batch=batch,
+            output_dir=deps.output_dir,
+            workspace=deps.workspace_root,
+            output_goal=deps.output_goal,
+            plan_digest=plan_digest,
+            whole_plan_context=deps.render.whole_plan_context,
+            embed_threshold=deps.embed_threshold,
+            artifact_paths=artifact_paths,
+            revision=revision,
+        )
+        inventory = ""
+        if eligible_items is not None:
+            from top_down_planning.prompts import (
+                format_eligible_items_section,
+                format_processed_batches_section,
+            )
+
+            inventory = (
+                "## Eligible render items\n"
+                f"{format_eligible_items_section(eligible_items)}\n\n"
+                "## Processed render batches\n"
+                f"{format_processed_batches_section(processed_batches or [])}\n\n"
+                "Record your batch with `planning-render-tool select-batch --node-id <id>` "
+                "before authoring deliverables.\n\n"
+            )
+        context_markdown = inventory + prepared.context_markdown
+        if revision:
+            def build_prompt(feedback: list[str] | None) -> str:
+                return build_render_batch_revision_prompt(
+                    batch_index=batch.batch_index,
+                    plan_digest=plan_digest,
+                    output_goal_digest=deps.output_goal.digest,
+                    render_config_digest=compute_render_config_digest(deps.render),
+                    context_markdown=context_markdown,
+                    output_goal=deps.output_goal,
+                    workspace=deps.workspace_root,
+                    embed_threshold=deps.embed_threshold,
+                    findings_summary=findings_summary,
+                    agent_context=deps.resolve_render_context(),
+                    validation_feedback=feedback,
+                )
+        else:
+            def build_prompt(feedback: list[str] | None) -> str:
+                return build_render_batch_author_prompt(
+                    batch_index=batch.batch_index,
+                    plan_digest=plan_digest,
+                    output_goal_digest=deps.output_goal.digest,
+                    render_config_digest=compute_render_config_digest(deps.render),
+                    context_markdown=context_markdown,
+                    output_goal=deps.output_goal,
+                    workspace=deps.workspace_root,
+                    embed_threshold=deps.embed_threshold,
+                    agent_context=deps.resolve_render_context(),
+                    validation_feedback=feedback,
+                )
+
+        render_eligible_ids = (
+            [item.id for item in eligible_items]
+            if eligible_items is not None
+            else list(batch.item_ids)
+        )
+        extra_env = build_render_tool_env(
+            batch_file=batch_manifest,
+            eligible_ids=render_eligible_ids,
+        )
+        try:
+            result_paths = await _run_author_session(
+                deps,
+                build_prompt=build_prompt,
+                session_dir=prepared.batch_dir,
+                artifact_paths=artifact_paths,
+                run_state=run_state,
+                session_label=f"batch-{batch.batch_index:03d}",
+                extra_env=extra_env,
                 validation_feedback=validation_feedback,
             )
-    else:
-        def build_prompt(validation_feedback: list[str] | None) -> str:
-            return build_render_batch_author_prompt(
-                batch_index=batch.batch_index,
-                plan_digest=plan_digest,
-                output_goal_digest=deps.output_goal.digest,
-                render_config_digest=compute_render_config_digest(deps.render),
-                context_markdown=prepared.context_markdown,
-                output_goal=deps.output_goal,
-                workspace=deps.workspace_root,
-                embed_threshold=deps.embed_threshold,
-                agent_context=deps.resolve_render_context(),
-                validation_feedback=validation_feedback,
-            )
-    return await _run_author_session(
-        deps,
-        build_prompt=build_prompt,
-        session_dir=prepared.batch_dir,
-        artifact_paths=artifact_paths,
-        run_state=run_state,
-        session_label=f"batch-{batch.batch_index:03d}",
+        except CursorSessionError:
+            if attempt >= deps.render.max_retries:
+                raise
+            continue
+
+        if revision:
+            return result_paths
+
+        if not batch_manifest.is_file():
+            validation_feedback = [
+                "Missing render batch selection; run planning-render-tool select-batch "
+                "before authoring deliverables."
+            ]
+            if attempt >= deps.render.max_retries:
+                raise PlanningToolError("; ".join(validation_feedback))
+            continue
+
+        manifest = load_batch_manifest(batch_manifest)
+        selected_raw = manifest.get("selected_items")
+        selected_ids = (
+            [str(item_id) for item_id in selected_raw]
+            if isinstance(selected_raw, list)
+            else []
+        )
+        selection_errors = validate_render_batch_selection(
+            plan,
+            selected_ids=selected_ids,
+            eligible_ids=eligible_ids or set(),
+            covered_ids=covered_ids or set(),
+        )
+        if selection_errors:
+            validation_feedback = selection_errors
+            if attempt >= deps.render.max_retries:
+                raise PlanningToolError("; ".join(selection_errors))
+            continue
+
+        batch.item_ids = selected_ids
+        purpose = manifest.get("purpose")
+        if isinstance(purpose, str):
+            batch.purpose = purpose.strip()
+        return result_paths
+
+    raise PlanningToolError(
+        f"Render batch {batch.batch_index} authoring failed after "
+        f"{deps.render.max_retries} attempts"
     )
 
 
@@ -624,13 +728,15 @@ async def _run_author_session(
     artifact_paths: list[str],
     run_state: RunState,
     session_label: str,
+    extra_env: dict[str, str] | None = None,
+    validation_feedback: list[str] | None = None,
 ) -> list[str]:
     matcher = _artifact_ignore_matcher(deps)
     before = snapshot_workspace_files(deps.workspace_root, matcher)
-    validation_feedback: list[str] | None = None
+    feedback = validation_feedback
 
     for attempt in range(1, deps.render.max_retries + 1):
-        prompt = build_prompt(validation_feedback)
+        prompt = build_prompt(feedback)
         prompt_path = session_dir / f"{session_label}-request-{attempt:03d}-prompt.md"
         prompt_path.write_text(prompt, encoding="utf-8")
         try:
@@ -654,6 +760,7 @@ async def _run_author_session(
                 session_mode="agent",
                 model=deps.resolve_render_model(),
                 on_agent_started=on_started,
+                extra_env=extra_env,
             )
         except UserInterrupted:
             run_state.agent_pids = []
@@ -661,13 +768,13 @@ async def _run_author_session(
         except CursorSessionError as exc:
             if attempt >= deps.render.max_retries:
                 raise
-            validation_feedback = [str(exc)]
+            feedback = [str(exc)]
             continue
 
         after = snapshot_workspace_files(deps.workspace_root, matcher)
         changed = diff_workspace_snapshots(before, after)
         if not changed and not artifact_paths:
-            validation_feedback = ["session did not create or update workspace deliverables"]
+            feedback = ["session did not create or update workspace deliverables"]
             if attempt >= deps.render.max_retries:
                 raise CursorSessionError(
                     f"Render session {session_label} produced no workspace deliverables"
@@ -680,7 +787,7 @@ async def _run_author_session(
             matcher,
         )
         if not merged:
-            validation_feedback = [
+            feedback = [
                 "session did not create or update tracked workspace deliverables"
             ]
             if attempt >= deps.render.max_retries:
@@ -735,25 +842,13 @@ def _should_reset_render_state(
     return False
 
 
-def _validate_loaded_schedule(
-    schedule: RenderBatchSchedule,
-    *,
-    plan_digest: str,
-    output_goal_digest: str,
-    render_config_digest: str,
-) -> None:
-    mismatches: list[str] = []
-    if schedule.plan_digest != plan_digest:
-        mismatches.append("plan_digest")
-    if schedule.output_goal_digest != output_goal_digest:
-        mismatches.append("output_goal_digest")
-    if schedule.render_config_digest != render_config_digest:
-        mismatches.append("render_config_digest")
-    if mismatches:
-        raise PlanningToolError(
-            "Stored render schedule does not match current run: "
-            + ", ".join(mismatches)
-        )
+def _uncovered_actionable_leaves(plan: PlanState, render_state: RenderState):
+    covered = {
+        item_id
+        for record in render_state.processed_batches
+        for item_id in record.selected_items
+    }
+    return [item for item in actionable_leaf_items(plan) if item.id not in covered]
 
 
 def _artifact_ignore_matcher(deps: RenderFlowDeps) -> ArtifactIgnoreMatcher:

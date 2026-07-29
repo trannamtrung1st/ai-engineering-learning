@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 SCHEMA_VERSION = 2
 DEFAULT_CURSOR_MODEL = "composer-2.5"
 DEFAULT_INLINE_EMBED_THRESHOLD = 4000
+# Internal adaptive context budget (not user-configurable).
+DEFAULT_CONTEXT_CHARACTERS = 30000
 
 
 class DecompositionStatus(str, Enum):
@@ -59,18 +61,9 @@ class RunActiveStatus(str, Enum):
 
 class PlanningLimits(BaseModel):
     max_iterations: int = 50
-    max_depth: int = 6
-    max_items: int = 200
-    max_children_per_expansion: int = 12
-    max_retries: int = 3
+    max_retries: int = 2
     session_timeout_seconds: int = 600
     parse_error_threshold: int = 20
-
-
-class BatchStrategy(str, Enum):
-    SINGLE = "single"
-    COHERENT = "coherent"
-    THROUGHPUT = "throughput"
 
 
 class WholePlanContextMode(str, Enum):
@@ -82,13 +75,10 @@ class WholePlanContextMode(str, Enum):
 class RenderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    batch_size: int = 3
-    batch_strategy: BatchStrategy = BatchStrategy.COHERENT
-    max_retries: int = 3
+    max_retries: int = 2
     whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID
-    max_context_characters: int = 30000
     final_review: bool = True
-    max_batch_revision_cycles: int = 1
+    max_batch_revision_cycles: int = 2
     max_final_revision_cycles: int = 2
     scaffold: bool = True
     artifact_ignore_patterns: list[str] = Field(default_factory=list)
@@ -125,22 +115,27 @@ class DeliverableStatus(str, Enum):
     FAILED = "failed"
 
 
+class ProcessedBatchRecord(BaseModel):
+    """Durable record of one agent-selected planning or render batch."""
+
+    iteration: int
+    selected_items: list[str] = Field(default_factory=list)
+    purpose: str = ""
+    plan_digest_before: str = ""
+    plan_digest_after: str = ""
+    result: str = "completed"
+
+
 class RenderBatchItem(BaseModel):
+    """Runtime render batch selected by the agent for one authoring session."""
+
     batch_index: int
     item_ids: list[str]
+    purpose: str = ""
     dependencies: list[str] = Field(default_factory=list)
     status: RenderBatchStatus = RenderBatchStatus.PENDING
     revision_cycle: int = 0
     title: str = ""
-
-
-class RenderBatchSchedule(BaseModel):
-    schema_version: int = SCHEMA_VERSION
-    run_id: str
-    plan_digest: str
-    output_goal_digest: str
-    render_config_digest: str
-    batches: list[RenderBatchItem] = Field(default_factory=list)
 
 
 class RenderState(BaseModel):
@@ -150,8 +145,8 @@ class RenderState(BaseModel):
     plan_digest: str = ""
     output_goal_digest: str = ""
     render_config_digest: str = ""
-    schedule_digest: str = ""
     current_batch_index: int = 0
+    processed_batches: list[ProcessedBatchRecord] = Field(default_factory=list)
     artifact_paths: list[str] = Field(default_factory=list)
     deliverable_output_digest: str | None = None
     output_review_status: RenderOutputReviewStatus = RenderOutputReviewStatus.PENDING
@@ -162,17 +157,13 @@ class RenderState(BaseModel):
 
 
 class GenerationConfig(BaseModel):
-    batch_strategy: BatchStrategy = BatchStrategy.COHERENT
-    batch_size: int = 3
-    concurrent_batches: int = 3
-    max_context_characters: int = 30000
     whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID
 
 
 class ReviewConfig(BaseModel):
     enabled: bool = True
-    max_revision_cycles: int = 1
-    max_retries: int = 3
+    max_revision_cycles: int = 2
+    max_retries: int = 2
 
 
 class SourceMetadata(BaseModel):
@@ -405,6 +396,7 @@ class AgentResponse(BaseModel):
     updates: list[UpdateItemOperation] = Field(default_factory=list)
     plan_digest: str
     selected_items: list[str] = Field(default_factory=list)
+    batch_purpose: str = ""
 
 
 class RunState(BaseModel):
@@ -424,6 +416,7 @@ class RunState(BaseModel):
     agent_pids: list[int] = Field(default_factory=list)
     last_error: str | None = None
     history: list[dict[str, Any]] = Field(default_factory=list)
+    processed_batches: list[ProcessedBatchRecord] = Field(default_factory=list)
     generated_artifacts: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
 
@@ -474,7 +467,7 @@ class RenderBatchReviewResult(BaseModel):
     batch_index: int
     plan_digest: str
     output_goal_digest: str
-    schedule_digest: str
+    processed_batches_digest: str
     deliverable_output_digest: str
     decision: RenderBatchReviewDecision
     summary: str
@@ -491,7 +484,7 @@ class RenderedOutputReviewResult(BaseModel):
     stage: Literal["rendered_output_review"] = "rendered_output_review"
     plan_digest: str
     output_goal_digest: str
-    schedule_digest: str
+    processed_batches_digest: str
     deliverable_output_digest: str
     decision: RenderOutputReviewDecision
     summary: str

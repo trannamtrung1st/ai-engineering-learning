@@ -21,37 +21,39 @@ from top_down_planning.persistence import (
     final_confirmation_result_path,
     load_plan,
     new_run_state,
-    render_schedule_path,
     save_plan,
     save_run_state,
     whole_plan_review_result_path,
     write_json,
 )
-from top_down_planning.render_schedule import build_render_schedule, compute_schedule_digest
+from top_down_planning.render_batches import processed_batches_digest
 from top_down_planning.render_flow import _artifact_ignore_matcher, RenderFlowDeps
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from tests.helpers import default_generation, render_output_goal
 from tests.plan_factory import make_root_plan
 
 
-def test_schedule_includes_actionable_leaves_once(tmp_path: Path, example_input: Path) -> None:
+def test_processed_batches_digest_for_actionable_leaves(
+    tmp_path: Path, example_input: Path
+) -> None:
     loaded_goal = render_output_goal()
     plan = make_root_plan(
         output_goal=loaded_goal.text,
         output_goal_digest=loaded_goal.digest,
     )
     plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
-    plan_digest = compute_plan_digest(plan)
-    schedule, errors = build_render_schedule(
-        plan,
-        run_id="run-test",
-        plan_digest=plan_digest,
-        output_goal_digest=loaded_goal.digest,
-        render_config=RenderConfig(),
+    from top_down_planning.models import ProcessedBatchRecord
+
+    digest = processed_batches_digest(
+        [
+            ProcessedBatchRecord(
+                iteration=1,
+                selected_items=["item-001"],
+                purpose="single leaf batch",
+            )
+        ]
     )
-    assert errors == []
-    assert len(schedule.batches) == 1
-    assert schedule.batches[0].item_ids == ["item-001"]
+    assert len(digest) == 64
 
 
 def test_render_only_rejects_incomplete_plan(tmp_path: Path, example_input: Path) -> None:
@@ -139,15 +141,8 @@ async def test_render_only_with_confirmed_plan(
     report = await Orchestrator(config).run()
     assert report.status == FinalStatus.COMPLETE
     assert (tmp_path / "implementation-plan.md").is_file()
-    assert render_schedule_path(output_dir).is_file()
-    schedule, _ = build_render_schedule(
-        load_plan(output_dir),
-        run_id="run-test",
-        plan_digest=compute_plan_digest(load_plan(output_dir)),
-        output_goal_digest=loaded_goal.digest,
-        render_config=RenderConfig(),
-    )
-    assert compute_schedule_digest(schedule)
+    loaded_plan = load_plan(output_dir)
+    assert loaded_plan.plan[0].decomposition_status == DecompositionStatus.ACTIONABLE
 
 
 def test_artifact_ignore_matcher_rejects_output_outside_workspace(

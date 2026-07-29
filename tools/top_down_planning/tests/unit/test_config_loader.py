@@ -49,8 +49,7 @@ def test_merge_run_options_uses_generation_block(tmp_path: Path) -> None:
                 "  max_iterations: 12",
                 "  session_timeout_seconds: 900",
                 "generation:",
-                "  batch_size: 5",
-                "  concurrent_batches: 2",
+                "  whole_plan_context: referenced",
             ]
         ),
         encoding="utf-8",
@@ -59,9 +58,7 @@ def test_merge_run_options_uses_generation_block(tmp_path: Path) -> None:
     options = merge_run_options(config_path=config_path)
 
     assert options.max_iterations == 12
-    assert options.generation.batch_size == 5
-    assert options.generation.concurrent_batches == 2
-    assert options.max_depth == 6
+    assert options.generation.whole_plan_context.value == "referenced"
     assert options.session_timeout_seconds == 900
 
 
@@ -73,7 +70,6 @@ def test_options_to_planning_limits_includes_advanced_fields(tmp_path: Path) -> 
                 "input: ./idea.md",
                 "output: ./out",
                 "output_goal: Produce a plan",
-                "max_children_per_expansion: 8",
                 "parse_error_threshold: 10",
             ]
         ),
@@ -84,7 +80,6 @@ def test_options_to_planning_limits_includes_advanced_fields(tmp_path: Path) -> 
     options = merge_run_options(config_path=config_path)
     limits = options_to_planning_limits(options)
 
-    assert limits.max_children_per_expansion == 8
     assert limits.parse_error_threshold == 10
     assert limits.session_timeout_seconds == 600
 
@@ -174,7 +169,7 @@ def test_merge_run_options_rejects_limits_batch_settings(tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    with pytest.raises(PlanningToolError, match="generation.batch_size"):
+    with pytest.raises(PlanningToolError, match="batch_size"):
         merge_run_options(config_path=config_path)
 
 
@@ -193,7 +188,7 @@ def test_merge_run_options_rejects_unknown_render_keys(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(PlanningToolError, match="render"):
+    with pytest.raises(PlanningToolError, match="traversal"):
         merge_run_options(config_path=config_path)
 
 

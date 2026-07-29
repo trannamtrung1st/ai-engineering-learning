@@ -11,7 +11,6 @@ from top_down_planning.errors import CursorSessionError, UserInterrupted
 from top_down_planning.input_loader import LoadedOutputGoal
 from top_down_planning.models import (
     PlanState,
-    RenderBatchSchedule,
     RenderOutputReviewDecision,
     RenderOutputReviewStatus,
     RenderedOutputReviewResult,
@@ -50,7 +49,7 @@ def validate_render_output_review(
     *,
     plan: PlanState | None = None,
     deliverable_paths: list[str] | None = None,
-    schedule_batch_indices: list[int] | None = None,
+    processed_batch_indices: list[int] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not result.summary.strip():
@@ -74,7 +73,7 @@ def validate_render_output_review(
 
     valid_item_ids = {item.id for item in plan.plan} if plan is not None else None
     allowed_artifacts = set(deliverable_paths or [])
-    allowed_batches = set(schedule_batch_indices or [])
+    allowed_batches = set(processed_batch_indices or [])
 
     for index, finding in enumerate(result.findings, start=1):
         prefix = f"Finding {index}"
@@ -91,7 +90,9 @@ def validate_render_output_review(
 
     for batch_index in result.affected_batch_indices:
         if allowed_batches and batch_index not in allowed_batches:
-            errors.append(f"affected batch index {batch_index} is not in schedule scope")
+            errors.append(
+                f"affected batch index {batch_index} is not in processed batch scope"
+            )
     for artifact_path in result.affected_artifact_paths:
         if allowed_artifacts and artifact_path not in allowed_artifacts:
             errors.append(f"affected artifact path {artifact_path!r} is not in scope")
@@ -104,8 +105,9 @@ async def run_render_output_review(
     *,
     plan: PlanState,
     plan_digest: str,
-    schedule: RenderBatchSchedule,
-    schedule_digest: str,
+    output_goal_digest: str,
+    processed_batches_digest: str,
+    processed_batch_indices: list[int],
     deliverable: DeliverableOutput,
     max_retries: int,
 ) -> RenderedOutputReviewResult | None:
@@ -117,10 +119,10 @@ async def run_render_output_review(
         workspace=deps.workspace_root,
         output_goal=deps.output_goal,
         plan_digest=plan_digest,
-        schedule_digest=schedule_digest,
+        processed_batches_digest=processed_batches_digest,
         deliverable_digest=deliverable.digest,
         deliverable_paths=sorted(deliverable.files.keys()),
-        output_goal_digest=schedule.output_goal_digest,
+        output_goal_digest=output_goal_digest,
         embed_threshold=deps.embed_threshold,
         agent_context=deps.resolve_review_context(),
     )
@@ -181,15 +183,15 @@ async def run_render_output_review(
                 f"plan_digest mismatch: expected {plan_digest}, "
                 f"got {result.plan_digest}"
             )
-        if result.output_goal_digest != schedule.output_goal_digest:
+        if result.output_goal_digest != output_goal_digest:
             digest_errors.append(
-                f"output_goal_digest mismatch: expected {schedule.output_goal_digest}, "
+                f"output_goal_digest mismatch: expected {output_goal_digest}, "
                 f"got {result.output_goal_digest}"
             )
-        if result.schedule_digest != schedule_digest:
+        if result.processed_batches_digest != processed_batches_digest:
             digest_errors.append(
-                f"schedule_digest mismatch: expected {schedule_digest}, "
-                f"got {result.schedule_digest}"
+                f"processed_batches_digest mismatch: expected {processed_batches_digest}, "
+                f"got {result.processed_batches_digest}"
             )
         if result.deliverable_output_digest != deliverable.digest:
             digest_errors.append(
@@ -205,9 +207,7 @@ async def run_render_output_review(
             result,
             plan=plan,
             deliverable_paths=sorted(deliverable.files.keys()),
-            schedule_batch_indices=[
-                batch.batch_index for batch in schedule.batches
-            ],
+            processed_batch_indices=processed_batch_indices,
         )
         if validation_errors:
             if attempt >= max_retries:

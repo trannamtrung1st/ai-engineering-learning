@@ -88,12 +88,11 @@ def test_planning_and_render_prompts_include_phase_context() -> None:
         workspace=Path("."),
         output_goal=output_goal,
         plan=plan,
-        selected_items=[root],
         embed_threshold=4000,
         agent_context=planning_ctx,
         **planning_prompt_kwargs(
             plan=plan,
-            selected_items=[root],
+            eligible_items=[root],
             output_dir=Path("out"),
         ),
     )
