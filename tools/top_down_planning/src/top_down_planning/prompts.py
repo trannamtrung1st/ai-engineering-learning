@@ -391,17 +391,17 @@ After recording plan operations, record a planning-state update with
 
 def build_disposition_prompt(
     *,
-    loaded_input: LoadedInput,
     workspace: Path,
     output_goal: LoadedOutputGoal,
-    plan: PlanState,
     planning_state: PlanningState,
     findings: list[CheckpointFinding],
     checkpoint: ReviewCheckpoint,
     plan_digest: str,
     embed_threshold: int,
+    disposition_context_markdown: str = "",
     plan_tool_command: str = "planning-plan-tool",
     agent_context: ResolvedAgentContext | None = None,
+    validation_feedback: list[str] | None = None,
 ) -> str:
     finding_lines: list[str] = []
     for finding in findings:
@@ -409,7 +409,18 @@ def build_disposition_prompt(
             f"- `{finding.id}` ({finding.severity.value}/{finding.category.value}): "
             f"{finding.observation}"
         )
+        if finding.affected_branches:
+            branches = ", ".join(finding.affected_branches)
+            finding_lines.append(f"  - Affected branches: {branches}")
+        if finding.recommended_disposition:
+            finding_lines.append(
+                f"  - Recommended disposition: {finding.recommended_disposition}"
+            )
     findings_block = "\n".join(finding_lines) or "- No findings supplied."
+    feedback_block = _format_validation_feedback(validation_feedback)
+    context_block = ""
+    if disposition_context_markdown.strip():
+        context_block = f"## Plan context\n\n{disposition_context_markdown.rstrip()}\n\n"
     return f"""# Finding disposition session
 
 You are the primary planner. Classify every reviewer finding and update plan/state for accepted
@@ -418,7 +429,7 @@ items. Do not ignore findings silently.
 ## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-{_format_agent_context_section(agent_context)}## Checkpoint
+{_format_agent_context_section(agent_context)}{feedback_block}## Checkpoint
 `{checkpoint.value}`
 
 ## Plan digest
@@ -426,8 +437,22 @@ items. Do not ignore findings silently.
 
 {format_planning_state_section(planning_state)}
 
-## Reviewer findings
+{context_block}## Reviewer findings
 {findings_block}
+
+## Patch rules for `record-update`
+- Disposition sessions patch existing items only; do not use `select-batch` or
+  `record-operation`.
+- For items with `decomposition_status` other than `actionable`, you may change only:
+  `title`, `objective`, `notes`, `dependencies`, `risks`, and `open_questions`.
+- `expected_outputs` and `acceptance_criteria` may be changed only on `actionable`
+  items. For `needs_expansion` or `expanded` items, capture boundary and routing
+  detail in `title`, `objective`, and `notes` instead; refine outputs and criteria
+  when the branch is marked actionable.
+- Every update requires a non-empty `reason`.
+- Omitted fields preserve the current value; an empty list clears a list field.
+- Use `{plan_tool_command} validate-update --json '<update_item>'` to check an update
+  against the current plan before finalize.
 
 ## Required dispositions
 For every finding, choose one of:
@@ -437,11 +462,12 @@ Record dispositions and any resulting plan/state changes:
 1. Use `{plan_tool_command} record-planning-state-update --json '<update>'` with
    `finding_dispositions` and any plan-impacting state fields.
 2. If plan graph changes are required, use `{plan_tool_command} record-update --json
-   '<update_item>'` for each affected item. Disposition sessions do not use
-   `select-batch` or `record-operation`.
+   '<update_item>'` for each affected item.
 3. Run `{plan_tool_command} finalize`.
 
 Accepted findings must produce concrete plan or state changes with concise rationale.
+
+{schema_docs.format_disposition_tool_usage(plan_tool_command=plan_tool_command)}
 """
 
 

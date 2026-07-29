@@ -12,22 +12,18 @@ from top_down_planning.errors import CursorSessionError, PlanningToolError, User
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
 from top_down_planning.models import (
     CheckpointFinding,
-    FindingDispositionRecord,
     PlanState,
     PlanningState,
     ReviewCheckpoint,
     ReviewConfig,
+    ReviewDecision,
     ReviewerRole,
     RunState,
     SessionStrategy,
     SpecialistReviewResult,
 )
-from top_down_planning.orchestration_validation import orchestration_errors
 from top_down_planning.persistence import reviews_dir, write_json
-from top_down_planning.planning_state import (
-    merge_planning_state_update,
-    unresolved_finding_ids,
-)
+from top_down_planning.planning_state import merge_planning_state_update
 from top_down_planning.recovery import backup_canonical_plan, restore_canonical_plan
 from top_down_planning.review_prompts import build_specialist_review_prompt
 from top_down_planning.review_tool import (
@@ -83,17 +79,19 @@ def specialist_review_result_path(
     return reviews_dir(output_dir) / f"{role.value}-{plan_digest}.json"
 
 
-async def run_checkpoint_reviews(
+def _checkpoint_needs_disposition(results: list[SpecialistReviewResult]) -> bool:
+    return any(result.decision == ReviewDecision.NEEDS_REVISION for result in results)
+
+
+async def _collect_checkpoint_findings(
     deps: CheckpointFlowDeps,
     *,
     plan: PlanState,
-    planning_state: PlanningState,
     run_state: RunState,
     checkpoint: ReviewCheckpoint,
-) -> tuple[PlanState, PlanningState, list[CheckpointFinding]]:
-    if not checkpoint_enabled(deps.strategy, checkpoint):
-        return plan, planning_state, []
+) -> tuple[list[SpecialistReviewResult], list[CheckpointFinding]]:
     findings: list[CheckpointFinding] = []
+    results: list[SpecialistReviewResult] = []
     plan_digest = compute_plan_digest(plan)
     for role in roles_for_checkpoint(checkpoint):
         result = await _ensure_specialist_review(
@@ -106,29 +104,71 @@ async def run_checkpoint_reviews(
         )
         if result is None:
             raise PlanningToolError(f"{role.value} review failed")
+        results.append(result)
         findings.extend(result.findings)
         run_state.orchestration_metrics.reviewer_session_count += 1
         run_state.orchestration_metrics.findings_by_reviewer[role.value] = (
             run_state.orchestration_metrics.findings_by_reviewer.get(role.value, 0)
             + len(result.findings)
         )
-    if not findings:
+    return results, findings
+
+
+async def run_checkpoint_reviews(
+    deps: CheckpointFlowDeps,
+    *,
+    plan: PlanState,
+    planning_state: PlanningState,
+    run_state: RunState,
+    checkpoint: ReviewCheckpoint,
+) -> tuple[PlanState, PlanningState, list[CheckpointFinding]]:
+    if not checkpoint_enabled(deps.strategy, checkpoint):
         return plan, planning_state, []
-    updated_state = planning_state.model_copy(deep=True)
+
     from top_down_planning.models import PlanningStateUpdate
 
-    updated_state = merge_planning_state_update(
-        updated_state,
-        PlanningStateUpdate(review_findings=findings),
-    )
-    plan, updated_state = await deps.run_primary_disposition(
+    planning_state = planning_state.model_copy(deep=True)
+
+    for cycle in range(deps.review.max_post_disposition_cycles):
+        results, findings = await _collect_checkpoint_findings(
+            deps,
+            plan=plan,
+            run_state=run_state,
+            checkpoint=checkpoint,
+        )
+        if not _checkpoint_needs_disposition(results):
+            return plan, planning_state, []
+
+        planning_state = merge_planning_state_update(
+            planning_state,
+            PlanningStateUpdate(review_findings=findings),
+        )
+        plan, planning_state = await deps.run_primary_disposition(
+            plan=plan,
+            planning_state=planning_state,
+            checkpoint=checkpoint,
+            run_state=run_state,
+        )
+        deps.stream.emit(
+            "checkpoint.disposition.completed",
+            checkpoint=checkpoint.value,
+            cycle=cycle + 1,
+            findings=len(findings),
+        )
+
+    results, findings = await _collect_checkpoint_findings(
+        deps,
         plan=plan,
-        planning_state=updated_state,
-        findings=findings,
-        checkpoint=checkpoint,
         run_state=run_state,
+        checkpoint=checkpoint,
     )
-    return plan, updated_state, findings
+    if _checkpoint_needs_disposition(results):
+        planning_state = merge_planning_state_update(
+            planning_state,
+            PlanningStateUpdate(review_findings=findings),
+        )
+        return plan, planning_state, findings
+    return plan, planning_state, []
 
 
 async def _ensure_specialist_review(
@@ -307,19 +347,3 @@ async def _run_specialist_review_session(
         )
         return result
     return None
-
-
-def disposition_complete(planning_state: PlanningState) -> bool:
-    return not unresolved_finding_ids(planning_state)
-
-
-def record_dispositions(
-    planning_state: PlanningState,
-    records: list[FindingDispositionRecord],
-) -> PlanningState:
-    from top_down_planning.models import PlanningStateUpdate
-
-    return merge_planning_state_update(
-        planning_state,
-        PlanningStateUpdate(finding_dispositions=records),
-    )

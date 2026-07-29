@@ -283,7 +283,11 @@ Each primary-planner turn includes:
   `update_item` patches through `planning-plan-tool record-update` (scope is derived from
   the selected batch; no separate env var).
 - **Disposition sessions** — use `session_mode=disposition`; record finding dispositions
-  and optional `update_item` patches without `select-batch` or `record-operation`.
+  and optional `update_item` patches without `select-batch` or `record-operation`. The
+  prompt includes affected-item context, plan-overview reference, patch rules, and
+  validation feedback on retry. After disposition, checkpoint reviewers re-run at the
+  updated plan digest until they approve or `review.max_post_disposition_cycles` is
+  reached (default `2`).
 - **Global plan context (read-only)** — a digest-addressed plan-overview file reference
   plus broader relevant context. Read the overview file before recording operations.
 
@@ -307,9 +311,11 @@ During decomposition, the agent records structured operations through the bundle
 - `update_item` (optional cross-item patch for related existing nodes)
 
 Cross-item `update_item` patches use explicit optional fields: omitted means preserve,
-empty list means clear. They may update `title`, `objective`, `dependencies`,
-`expected_outputs`, `acceptance_criteria`, `notes`, `risks`, and `open_questions` on
-patchable related nodes only.
+empty list means clear. They may update `title`, `objective`, `dependencies`, `notes`,
+`risks`, and `open_questions` on patchable related nodes. `expected_outputs` and
+`acceptance_criteria` may be changed only when the target item is `actionable`; for
+`needs_expansion` or `expanded` items, capture detail in `title`, `objective`, and
+`notes` until the branch is marked actionable.
 
 The first decomposition operation on `item-001` must include an agent-generated `title`
 and `objective` specific to the input and output goal. This applies whether the root is
@@ -415,13 +421,15 @@ deterministic finalization gate before render (enabled by default):
 review:
   enabled: true
   max_retries: 3
+  max_post_disposition_cycles: 2
 ```
 
 Lifecycle:
 
 ```text
 Persistent primary decomposition → checkpoint specialist reviews →
-primary-planner finding disposition → deterministic validation → render
+primary-planner finding disposition → (re-review until approve or cycle cap) →
+deterministic validation → render
 ```
 
 Review sessions are read-only with respect to `plan.yaml`. Agents record structured

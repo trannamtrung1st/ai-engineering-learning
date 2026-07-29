@@ -24,6 +24,7 @@ from top_down_planning.plan_tool import (
     reset_transaction,
     resolve_plan_tool_command,
     select_batch,
+    validate_update_cmd,
     status,
 )
 from top_down_planning.schema_docs import operation_examples
@@ -471,6 +472,47 @@ def test_record_update_rejects_selected_node(plan_session, monkeypatch: pytest.M
                     "node_id": "item-001",
                     "reason": "bad",
                     "notes": ["x"],
+                }
+            )
+        )
+
+
+def test_validate_update_rejects_outputs_on_needs_expansion(
+    plan_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, _txn_file = plan_session
+    from top_down_planning.digest import compute_plan_digest
+
+    monkeypatch.setenv(ENV_PLAN_DIGEST, compute_plan_digest(plan))
+    with pytest.raises(PlanToolError, match="expected_outputs"):
+        validate_update_cmd(
+            json_payload=json.dumps(
+                {
+                    "type": "update_item",
+                    "node_id": "item-001",
+                    "reason": "Narrow scope.",
+                    "expected_outputs": ["Revised output"],
+                }
+            )
+        )
+
+
+def test_record_update_rejects_outputs_on_needs_expansion(
+    plan_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, txn_file = plan_session
+    reset_transaction(txn_file)
+    monkeypatch.setenv(ENV_SESSION_MODE, SESSION_MODE_DISPOSITION)
+    with pytest.raises(PlanToolError, match="expected_outputs"):
+        record_update(
+            json_payload=json.dumps(
+                {
+                    "type": "update_item",
+                    "node_id": "item-001",
+                    "reason": "Narrow scope.",
+                    "expected_outputs": ["Revised output"],
                 }
             )
         )

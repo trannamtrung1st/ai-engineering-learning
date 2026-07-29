@@ -59,6 +59,7 @@ limits:
 review:
   enabled: true
   max_retries: 2
+  max_post_disposition_cycles: 2
 
 # --- Orchestration (persistent primary planner) -------------------------------
 # planning_mode: auto   # simple | lightweight | full | auto

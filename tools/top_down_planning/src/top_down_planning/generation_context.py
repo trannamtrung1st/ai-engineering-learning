@@ -233,6 +233,69 @@ class PreparedBatchContext:
     inline_relevant_context: str
 
 
+@dataclass(frozen=True)
+class PreparedDispositionContext:
+    context_markdown: str
+    plan_overview_relative: str
+
+
+def prepare_disposition_context(
+    *,
+    plan: PlanState,
+    findings: list[CheckpointFinding],
+    plan_digest: str,
+    output_dir: Path,
+) -> PreparedDispositionContext:
+    """Build read-only context for a finding-disposition session."""
+    overview_path = ensure_plan_overview_artifact(output_dir, plan, plan_digest)
+    overview_relative = _relative_output_path(overview_path, output_dir)
+
+    affected_ids: set[str] = set()
+    for finding in findings:
+        affected_ids.update(_checkpoint_finding_node_ids(finding))
+
+    patchable_ids: set[str] = set()
+    for item_id in affected_ids:
+        patchable_ids |= select_patchable_node_ids(plan, {item_id})
+    patchable_only = patchable_ids - affected_ids
+
+    sections: list[str] = []
+    if affected_ids:
+        sections.append("## Affected items")
+        sections.append("")
+        for item_id in sorted(affected_ids):
+            item = plan.item_by_id(item_id)
+            if item is not None:
+                sections.append(format_item_context(plan, item))
+                sections.append("")
+
+    if patchable_only:
+        sections.append("## Related patchable items")
+        sections.append("")
+        for item_id in sorted(patchable_only):
+            item = plan.item_by_id(item_id)
+            if item is not None:
+                sections.append(_format_patchable_item_context(plan, item))
+                sections.append("")
+
+    sections.extend(
+        [
+            "## Complete plan overview (read-only)",
+            "",
+            "Read the complete plan overview before recording updates:",
+            f"`.planning-output/{overview_relative}`",
+            "",
+            "Open that file and use it as the authoritative whole-plan reference for "
+            "this disposition session.",
+        ]
+    )
+
+    return PreparedDispositionContext(
+        context_markdown="\n".join(sections).rstrip() + "\n",
+        plan_overview_relative=overview_relative,
+    )
+
+
 def _relative_output_path(path: Path, output_dir: Path) -> str:
     state_root = output_dir / ".planning-output"
     try:

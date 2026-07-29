@@ -1,8 +1,17 @@
 from pathlib import Path
 
 from top_down_planning.input_loader import load_markdown_input, load_output_goal, load_stop_hint
-from top_down_planning.models import DEFAULT_INLINE_EMBED_THRESHOLD
+from top_down_planning.models import (
+    CheckpointFinding,
+    DEFAULT_INLINE_EMBED_THRESHOLD,
+    ReviewCheckpoint,
+    ReviewFindingCategory,
+    ReviewFindingSeverity,
+    ReviewerRole,
+)
+from top_down_planning.planning_state import new_planning_state
 from top_down_planning.prompts import (
+    build_disposition_prompt,
     build_planning_prompt,
     build_render_batch_author_prompt,
     build_render_scaffold_prompt,
@@ -477,3 +486,41 @@ def test_prompt_includes_expansion_limits_and_depth_budget(
     assert "remaining_depth" in prompt
     assert "notes" in prompt
     assert "| item-001 | 0 | 6 | 12 |" in prompt
+
+
+def test_build_disposition_prompt_includes_checkpoint_feedback_and_patch_rules(
+    tmp_path: Path,
+    example_input: Path,
+) -> None:
+    output_goal = render_output_goal()
+    findings = [
+        CheckpointFinding(
+            id="CB-001",
+            severity=ReviewFindingSeverity.MAJOR,
+            category=ReviewFindingCategory.SCOPE,
+            reviewer_role=ReviewerRole.COVERAGE_BOUNDARY,
+            affected_branches=["item-001"],
+            observation="Branch overlaps siblings.",
+        )
+    ]
+    prompt = build_disposition_prompt(
+        workspace=tmp_path,
+        output_goal=output_goal,
+        planning_state=new_planning_state(),
+        findings=findings,
+        checkpoint=ReviewCheckpoint.INITIAL_STRUCTURE,
+        plan_digest="abc123",
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        disposition_context_markdown="## Affected items\n\n[item-001]",
+        validation_feedback=[
+            "Update on item-001 may change expected_outputs or acceptance_criteria "
+            "only for actionable items",
+        ],
+    )
+
+    assert "`initial_structure`" in prompt
+    assert "Validation feedback from previous attempt" in prompt
+    assert "expected_outputs" in prompt and "actionable" in prompt
+    assert "Affected branches: item-001" in prompt
+    assert "validate-update" in prompt
+    assert "## Affected items" in prompt

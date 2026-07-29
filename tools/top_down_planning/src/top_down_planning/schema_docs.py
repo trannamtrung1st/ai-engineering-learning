@@ -402,7 +402,16 @@ def review_example(stage: str) -> dict[str, Any]:
     return examples[stage]()
 
 
+def _update_patch_field_rules() -> str:
+    return (
+        "On non-`actionable` items, only `title`, `objective`, `notes`, `dependencies`, "
+        "`risks`, and `open_questions` may change; `expected_outputs` and "
+        "`acceptance_criteria` are actionable-only."
+    )
+
+
 def format_plan_tool_usage(*, plan_tool_command: str = "planning-plan-tool") -> str:
+    patch_rules = _update_patch_field_rules()
     return f"""Use the planning transaction CLI — do **not** return JSON in chat and do **not**
 edit `.planning-output/plan.yaml` directly.
 
@@ -414,7 +423,7 @@ Authoritative schemas and examples:
   {plan_tool_command} validate --json '<operation>'
   {plan_tool_command} validate-update --json '<update_item>'
 
-Workflow:
+Batch workflow (`PLANNING_TOOL_SESSION_MODE=batch`):
 1. Read the eligible items, processed-batch history, and complete plan overview.
 2. Choose a coherent batch and run `{plan_tool_command} select-batch --node-id <id> [--purpose "..."]`.
 3. Optionally run `{plan_tool_command} show-context` for selected-node details.
@@ -422,14 +431,30 @@ Workflow:
 5. For **each selected item**, run `{plan_tool_command} record-operation --json '<operation>'`.
 6. Optionally run `{plan_tool_command} record-update --json '<update_item>'` for related items
    listed in the patchable scope (derived from the selected batch). Omitted fields preserve
-   the current value; an empty list clears a list field.
+   the current value; an empty list clears a list field. {patch_rules}
 7. Run `{plan_tool_command} finalize` to commit the session transaction.
 
-Disposition sessions (`PLANNING_TOOL_SESSION_MODE=disposition`):
+Disposition sessions (`PLANNING_TOOL_SESSION_MODE=disposition`) use
+`record-planning-state-update`, `record-update`, and `finalize` only — no `select-batch` or
+`record-operation`. The disposition-session prompt defines the workflow and patch rules."""
+
+
+def format_disposition_tool_usage(*, plan_tool_command: str = "planning-plan-tool") -> str:
+    patch_rules = _update_patch_field_rules()
+    return f"""## Planning transaction CLI
+Use the planning transaction CLI — do **not** return JSON in chat and do **not**
+edit `.planning-output/plan.yaml` directly.
+
+Authoritative schemas and examples:
+  {plan_tool_command} schema --target transaction
+  {plan_tool_command} example --type update_item
+  {plan_tool_command} validate-update --json '<update_item>'
+
+Disposition workflow:
 1. Run `{plan_tool_command} record-planning-state-update --json '<update>'` with
    `finding_dispositions` and any plan-impacting state fields.
-2. Optionally run `{plan_tool_command} record-update --json '<update_item>'` for affected
-   plan items. Do not use `select-batch` or `record-operation`.
+2. Optionally run `{plan_tool_command} record-update --json '<update_item>'` for each
+   affected item. {patch_rules} Use `validate-update` before finalize.
 3. Run `{plan_tool_command} finalize`."""
 
 

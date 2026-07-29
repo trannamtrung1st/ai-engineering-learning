@@ -7,13 +7,18 @@ from top_down_planning.generation_context import (
     build_plan_overview,
     ensure_plan_overview_artifact,
     prepare_batch_context,
+    prepare_disposition_context,
     select_patchable_node_ids,
     select_relevant_node_ids,
 )
 from top_down_planning.models import (
+    CheckpointFinding,
     DecompositionStatus,
     MarkActionableOperation,
     PlanItem,
+    ReviewFindingCategory,
+    ReviewFindingSeverity,
+    ReviewerRole,
 )
 from top_down_planning.plan_tool import (
     ENV_ELIGIBLE_IDS,
@@ -164,6 +169,32 @@ def test_prepare_batch_context_references_plan_overview(tmp_path: Path) -> None:
     assert "Assigned generation scope" in prepared.batch_context_markdown
     assert "plan-overview" in prepared.batch_context_markdown
     assert "Read the complete plan overview" in prepared.batch_context_markdown
+    assert prepared.plan_overview_relative.startswith("context/plan-overview-")
+
+
+def test_prepare_disposition_context_includes_affected_and_overview(tmp_path: Path) -> None:
+    plan = _plan_with_branches()
+    digest = compute_plan_digest(plan)
+    output_dir = tmp_path / "planning-output"
+    findings = [
+        CheckpointFinding(
+            id="CB-001",
+            severity=ReviewFindingSeverity.MAJOR,
+            category=ReviewFindingCategory.SCOPE,
+            reviewer_role=ReviewerRole.COVERAGE_BOUNDARY,
+            affected_branches=["item-004"],
+            observation="Overlap detected.",
+        )
+    ]
+    prepared = prepare_disposition_context(
+        plan=plan,
+        findings=findings,
+        plan_digest=digest,
+        output_dir=output_dir,
+    )
+    assert "Affected items" in prepared.context_markdown
+    assert "item-004" in prepared.context_markdown
+    assert "Read the complete plan overview" in prepared.context_markdown
     assert prepared.plan_overview_relative.startswith("context/plan-overview-")
 
 

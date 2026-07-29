@@ -26,6 +26,7 @@ from top_down_planning.models import (
 from top_down_planning.persistence import write_json
 from top_down_planning.item_format import format_item_context
 from top_down_planning import schema_docs
+from top_down_planning.validator import validate_update_operation
 
 ENV_TXN_FILE = "PLANNING_TOOL_TXN_FILE"
 ENV_ELIGIBLE_IDS = "PLANNING_TOOL_ELIGIBLE_IDS"
@@ -365,8 +366,13 @@ def validate_update_cmd(
         raise PlanToolError("Update JSON must be an object")
     try:
         schema_docs.validate_update(raw)
+        update = _UPDATE_ADAPTER.validate_python(raw)
     except PydanticValidationError as exc:
         raise PlanToolError(f"Invalid cross-item update: {exc}") from exc
+    plan = _load_plan_state()
+    errors = validate_update_operation(plan, update)
+    if errors:
+        raise PlanToolError("; ".join(errors))
     typer.echo("Valid cross-item update.")
 
 
@@ -539,6 +545,10 @@ def record_update(
         update = _UPDATE_ADAPTER.validate_python(raw)
     except PydanticValidationError as exc:
         raise PlanToolError(f"Invalid cross-item update: {exc}") from exc
+
+    errors = validate_update_operation(plan, update)
+    if errors:
+        raise PlanToolError("; ".join(errors))
 
     draft = _load_draft(txn_file)
     _validate_plan_digest(draft)

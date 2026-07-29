@@ -148,6 +148,7 @@ class ReviewConfig(BaseModel):
 
     enabled: bool = True
     max_retries: int = 2
+    max_post_disposition_cycles: int = Field(default=2, ge=1)
 
 
 class SourceMetadata(BaseModel):

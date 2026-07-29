@@ -108,7 +108,7 @@ from top_down_planning.review_flow import ReviewFlowDeps, run_post_decomposition
 from top_down_planning.render_flow import RenderFlowDeps, existing_deliverable_artifacts, render_from_confirmed_plan
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from top_down_planning.digest import compute_plan_digest
-from top_down_planning.generation_context import prepare_batch_context
+from top_down_planning.generation_context import prepare_batch_context, prepare_disposition_context
 from top_down_planning.prompts import (
     build_continuation_prompt,
     build_disposition_prompt,
@@ -679,7 +679,12 @@ class Orchestrator:
         eligible_items: list[PlanItem],
         planning_state: PlanningState | None = None,
         disposition_only: bool = False,
+        disposition_checkpoint: ReviewCheckpoint | None = None,
     ):
+        if disposition_only and disposition_checkpoint is None:
+            raise PlanningToolError(
+                "Disposition planning iterations require disposition_checkpoint"
+            )
         limits = run_state.limits
         iteration = run_state.iteration + 1
         plan_snapshot = copy.deepcopy(plan)
@@ -690,18 +695,33 @@ class Orchestrator:
 
         plan_tool_command = resolve_plan_tool_command()
         self._ensure_run_model_provenance(run_state)
-        prepared = prepare_batch_context(
-            plan=plan_snapshot,
-            selected_items=[],
-            plan_digest=plan_digest,
-            output_dir=output_dir,
-            include_cross_item_updates=not disposition_only,
-        )
+        disposition_context_markdown = ""
+        plan_overview_relative = ""
+        if disposition_only:
+            disposition_prepared = prepare_disposition_context(
+                plan=plan_snapshot,
+                findings=active_planning_state.review_findings,
+                plan_digest=plan_digest,
+                output_dir=output_dir,
+            )
+            disposition_context_markdown = disposition_prepared.context_markdown
+            plan_overview_relative = disposition_prepared.plan_overview_relative
+            batch_context_markdown = disposition_context_markdown
+        else:
+            prepared = prepare_batch_context(
+                plan=plan_snapshot,
+                selected_items=[],
+                plan_digest=plan_digest,
+                output_dir=output_dir,
+                include_cross_item_updates=True,
+            )
+            batch_context_markdown = prepared.batch_context_markdown
+            plan_overview_relative = prepared.plan_overview_relative
         session_model = self._resolve_session_model(phase="planning")
         self.stream.emit(
             "generation.batch.context_prepared",
             plan_digest=plan_digest,
-            plan_overview_artifact=prepared.plan_overview_relative,
+            plan_overview_artifact=plan_overview_relative,
             model=session_model,
         )
         self.stream.emit(
@@ -715,7 +735,7 @@ class Orchestrator:
 
         context_path = iteration_context_path(output_dir, iteration)
         context_path.parent.mkdir(parents=True, exist_ok=True)
-        context_path.write_text(prepared.batch_context_markdown, encoding="utf-8")
+        context_path.write_text(batch_context_markdown, encoding="utf-8")
 
         prompt = self._build_iteration_prompt(
             loaded=loaded,
@@ -725,9 +745,10 @@ class Orchestrator:
             limits=limits,
             plan_tool_command=plan_tool_command,
             plan_digest=plan_digest,
-            batch_context_markdown=prepared.batch_context_markdown,
+            batch_context_markdown=batch_context_markdown,
             planning_state=active_planning_state,
             disposition_only=disposition_only,
+            disposition_checkpoint=disposition_checkpoint,
         )
         resume_chat_id = run_state.primary_chat_id
 
@@ -755,10 +776,11 @@ class Orchestrator:
                     limits=limits,
                     plan_tool_command=plan_tool_command,
                     plan_digest=plan_digest,
-                    batch_context_markdown=prepared.batch_context_markdown,
+                    batch_context_markdown=batch_context_markdown,
                     planning_state=active_planning_state,
                     validation_feedback=validation_feedback,
                     disposition_only=disposition_only,
+                    disposition_checkpoint=disposition_checkpoint,
                 )
 
             prompt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -774,7 +796,7 @@ class Orchestrator:
                         "transaction_path": str(transaction_path),
                         "plan_digest": plan_digest,
                         "batch_context_artifact": context_path.name,
-                        "plan_overview_artifact": prepared.plan_overview_relative,
+                        "plan_overview_artifact": plan_overview_relative,
                         "model": session_model,
                     },
                 )
@@ -991,7 +1013,7 @@ class Orchestrator:
                 iteration=iteration,
                 selected_items=selected_ids,
                 plan_digest=plan_digest_after,
-                plan_overview_artifact=prepared.plan_overview_relative,
+                plan_overview_artifact=plan_overview_relative,
                 model=session_model,
             )
             self.stream.emit(
@@ -1024,20 +1046,21 @@ class Orchestrator:
         planning_state: PlanningState,
         validation_feedback: list[str] | None = None,
         disposition_only: bool = False,
+        disposition_checkpoint: ReviewCheckpoint | None = None,
     ) -> str:
         if disposition_only:
             return build_disposition_prompt(
-                loaded_input=loaded,
                 workspace=self.config.workspace_root,
                 output_goal=self.config.output_goal,
-                plan=plan_snapshot,
                 planning_state=planning_state,
                 findings=planning_state.review_findings,
-                checkpoint=ReviewCheckpoint.FINAL_CANDIDATE,
+                checkpoint=disposition_checkpoint,
                 plan_digest=plan_digest,
                 embed_threshold=self._embed_threshold,
+                disposition_context_markdown=batch_context_markdown,
                 plan_tool_command=plan_tool_command,
                 agent_context=self._resolved_agent_context(phase="planning"),
+                validation_feedback=validation_feedback,
             )
         if processed_batches:
             selected_summary = ", ".join(item.id for item in eligible_items)
@@ -1081,7 +1104,6 @@ class Orchestrator:
             *,
             plan,
             planning_state: PlanningState,
-            findings,
             checkpoint: ReviewCheckpoint,
             run_state: RunState,
         ):
@@ -1089,7 +1111,6 @@ class Orchestrator:
                 loaded=loaded,
                 plan=plan,
                 planning_state=planning_state,
-                findings=findings,
                 checkpoint=checkpoint,
                 run_state=run_state,
                 output_dir=output_dir,
@@ -1142,19 +1163,11 @@ class Orchestrator:
         loaded: LoadedInput,
         plan,
         planning_state: PlanningState,
-        findings,
         checkpoint: ReviewCheckpoint,
         run_state: RunState,
         output_dir: Path,
     ) -> tuple[PlanState, PlanningState]:
-        planning_state = planning_state.model_copy(deep=True)
-        from top_down_planning.models import PlanningStateUpdate
-
-        planning_state = merge_planning_state_update(
-            planning_state,
-            PlanningStateUpdate(review_findings=findings),
-        )
-        if not findings:
+        if not planning_state.review_findings:
             return plan, planning_state
         plan = await self._run_planning_iteration(
             loaded=loaded,
@@ -1164,6 +1177,7 @@ class Orchestrator:
             eligible_items=expandable_items(plan) or [plan.plan[0]],
             planning_state=planning_state,
             disposition_only=True,
+            disposition_checkpoint=checkpoint,
         )
         planning_state = load_planning_state(output_dir) or planning_state
         return plan, planning_state

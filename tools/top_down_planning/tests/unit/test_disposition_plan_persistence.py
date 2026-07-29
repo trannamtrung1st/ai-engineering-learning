@@ -12,6 +12,7 @@ from top_down_planning.models import (
     CheckpointFinding,
     PlanningLimits,
     PlanningMode,
+    PlanningStateUpdate,
     ReviewCheckpoint,
     ReviewFindingCategory,
     ReviewFindingSeverity,
@@ -26,7 +27,7 @@ from top_down_planning.persistence import (
     save_planning_state,
     save_run_state,
 )
-from top_down_planning.planning_state import new_planning_state
+from top_down_planning.planning_state import merge_planning_state_update, new_planning_state
 from top_down_planning.session_strategy import resolve_session_strategy
 from top_down_planning.state_updates import apply_response
 from tests.helpers import make_agent_response, render_output_goal
@@ -103,12 +104,16 @@ async def test_disposition_turn_returns_updated_plan(tmp_path, example_input) ->
         )
     ]
 
+    planning_state = merge_planning_state_update(
+        planning_state,
+        PlanningStateUpdate(review_findings=findings),
+    )
+
     with patch.object(orch, "_run_planning_iteration", side_effect=fake_iteration):
         returned_plan, _planning_state = await orch._run_disposition_turn(
             loaded=loaded,
             plan=plan,
             planning_state=planning_state,
-            findings=findings,
             checkpoint=ReviewCheckpoint.FINAL_CANDIDATE,
             run_state=run_state,
             output_dir=output_dir,

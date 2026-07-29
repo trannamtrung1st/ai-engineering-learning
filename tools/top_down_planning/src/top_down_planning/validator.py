@@ -412,6 +412,24 @@ def _validate_updates(
     return errors
 
 
+def validate_update_operation(
+    plan: PlanState,
+    update: UpdateItemOperation,
+    *,
+    output_goal_text: str = "",
+) -> list[str]:
+    """Validate one cross-item update against the current plan snapshot."""
+    item = plan.item_by_id(update.node_id)
+    if item is None:
+        return [f"Unknown update node id: {update.node_id}"]
+    return _validate_update_item(
+        plan,
+        item,
+        update,
+        output_goal_text=output_goal_text,
+    )
+
+
 def _validate_update_item(
     plan: PlanState,
     item: PlanItem,

@@ -17,6 +17,7 @@ from top_down_planning.validator import (
     validate_amend_response,
     validate_patch_only_response,
     validate_response,
+    validate_update_operation,
     validate_wave_responses,
 )
 
@@ -588,3 +589,29 @@ def test_validate_patch_only_disposition_rejects_operations() -> None:
         disposition_only=True,
     )
     assert any("must not include planning operations" in error for error in errors)
+
+
+def test_validate_update_operation_rejects_outputs_on_needs_expansion() -> None:
+    plan = _plan()
+    errors = validate_update_operation(
+        plan,
+        UpdateItemOperation(
+            node_id="item-001",
+            reason="Narrow scope.",
+            expected_outputs=["Revised output"],
+        ),
+    )
+    assert any("expected_outputs" in error and "actionable" in error for error in errors)
+
+
+def test_validate_update_operation_accepts_notes_on_needs_expansion() -> None:
+    plan = _plan()
+    errors = validate_update_operation(
+        plan,
+        UpdateItemOperation(
+            node_id="item-001",
+            reason="Narrow scope.",
+            notes=["Boundary note."],
+        ),
+    )
+    assert errors == []

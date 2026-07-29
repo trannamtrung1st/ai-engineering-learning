@@ -276,8 +276,14 @@ Disposition workflow (`session_mode=disposition`):
 1. `planning-plan-tool record-planning-state-update --json '<update>'` with
    `finding_dispositions` and any plan-impacting state fields
 2. `planning-plan-tool record-update --json '<update_item>'` zero or more times for
-   affected plan items (no `select-batch` or `record-operation`)
+   affected plan items (no `select-batch` or `record-operation`). On non-`actionable`
+   items, only `title`, `objective`, `notes`, `dependencies`, `risks`, and
+   `open_questions` may change; `expected_outputs` and `acceptance_criteria` are
+   actionable-only. Use `validate-update` to check updates before finalize.
 3. `planning-plan-tool finalize`
+
+After disposition, checkpoint reviewers may be re-run at the updated plan digest until
+they approve or `review.max_post_disposition_cycles` is reached.
 
 The orchestrator loads the finalized transaction, validates the iteration atomically, assigns
 IDs/depth/order, and persists the updated state to `plan.yaml`. Successful batches also
@@ -319,7 +325,10 @@ Supported operation types:
 * `update_item` (optional cross-item patch for related existing nodes)
 
 `update_item` is recorded through `record-update`, not `record-operation`. Omitted fields
-preserve the current value; an empty list clears a list field. Related batches whose write
+preserve the current value; an empty list clears a list field. On non-`actionable` items,
+only `title`, `objective`, `notes`, `dependencies`, `risks`, and `open_questions` may
+change; `expected_outputs` and `acceptance_criteria` are actionable-only. Use
+`validate-update` to check updates against the current plan. Related batches whose write
 scopes overlap are serialized across iterations so later agents consume the persisted plan state.
 
 ## Validation
@@ -346,6 +355,9 @@ Validation must ensure:
 * `update_item` patches target only patchable related nodes, not assigned items;
 * cross-item updates require a reason and at least one changed field;
 * omitted patch fields preserve the current value and empty lists clear list fields;
+* `expected_outputs` and `acceptance_criteria` on `update_item` patches are actionable-only;
+* checkpoint disposition sessions re-run specialist review after each disposition round
+  until reviewers approve or `review.max_post_disposition_cycles` is reached;
 * only one planning iteration mutates the plan at a time.
 
 Apply each response atomically.
