@@ -415,8 +415,14 @@ Deliverables must be generated fresh from the confirmed plan. Zero workspace del
 is invalid once rendering starts unless the author sessions fail validation.
 
 Render agents must not copy or restore pre-existing files from git history or from paths
-cited in the output goal. They must not modify canonical state under `.planning-output/`.
-The tool backs up and restores `plan.yaml` if a session corrupts it.
+cited in the output goal. They must not modify canonical state under the configured run
+output directory (`.planning-output/` under `--output`). The tool backs up and restores
+`plan.yaml` if a session corrupts it.
+
+Workspace change detection ignores paths matched by `render.artifact_ignore_patterns`
+(gitignore-style globs) and always excludes canonical planning state under the configured
+run output directory. The run `--output` directory must lie inside `--workspace`. Only
+UTF-8 text deliverables participate in artifact tracking, digests, and review.
 
 Render failures (author validation exhaustion, blocked batch review, blocked final review)
 surface as explicit errors; there is no deterministic fallback deliverable.

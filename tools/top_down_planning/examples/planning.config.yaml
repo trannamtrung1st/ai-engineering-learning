@@ -70,6 +70,21 @@ render:
   max_batch_revision_cycles: 1
   max_final_revision_cycles: 2
   scaffold: true
+  # Gitignore-style patterns excluded from workspace snapshot diffing and artifact_paths.
+  # Canonical planning state under <output>/.planning-output/ is always excluded.
+  artifact_ignore_patterns:
+    - "**/__pycache__/"
+    - "**/.pytest_cache/"
+    - "**/.mypy_cache/"
+    - "**/.ruff_cache/"
+    - "**/.tox/"
+    - "**/node_modules/"
+    - "**/.eggs/"
+    - "**/build/"
+    - "**/dist/"
+    - "*.pyc"
+    - "*.pyo"
+    - "**/.DS_Store"
 
 # --- Agent / Cursor (optional) ------------------------------------------------
 

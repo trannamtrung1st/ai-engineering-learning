@@ -158,6 +158,10 @@ from planning: after confirmation, the tool runs a **sequential cumulative rende
 
 Agents write deliverables directly to workspace destination paths. The orchestrator
 discovers artifacts by diffing workspace file hashes before and after each session.
+Paths matching `render.artifact_ignore_patterns` (gitignore-style globs) and canonical
+planning state under the configured run output directory (`--output/.planning-output/`)
+are excluded from that diff. The run `--output` directory must lie inside `--workspace`.
+Deliverables are UTF-8 text files only.
 
 The output goal may be a one-line prompt or a longer specification. An optional
 `## Output artifacts` section is illustrative sample layout only.
@@ -202,6 +206,11 @@ render:
   max_batch_revision_cycles: 1
   max_final_revision_cycles: 2
   scaffold: true
+  artifact_ignore_patterns:
+    - "**/__pycache__/"
+    - "**/.pytest_cache/"
+    - "*.pyc"
+    - "**/build/"
 ```
 
 Incomplete, blocked, or failed planning runs keep internal state under `.planning-output/`

@@ -28,6 +28,7 @@ from top_down_planning.persistence import (
     write_json,
 )
 from top_down_planning.render_schedule import build_render_schedule, compute_schedule_digest
+from top_down_planning.render_flow import _artifact_ignore_matcher, RenderFlowDeps
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from tests.helpers import default_generation, render_output_goal
 from tests.plan_factory import make_root_plan
@@ -147,3 +148,33 @@ async def test_render_only_with_confirmed_plan(
         render_config=RenderConfig(),
     )
     assert compute_schedule_digest(schedule)
+
+
+def test_artifact_ignore_matcher_rejects_output_outside_workspace(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside_output = tmp_path / "outside-output"
+    outside_output.mkdir()
+    goal = render_output_goal()
+    deps = RenderFlowDeps(
+        workspace_root=workspace,
+        output_dir=outside_output,
+        loaded=None,
+        output_goal=goal,
+        embed_threshold=4000,
+        render=RenderConfig(),
+        client=None,  # type: ignore[arg-type]
+        renderer=None,  # type: ignore[arg-type]
+        stream=None,  # type: ignore[arg-type]
+        audit=False,
+        resolve_render_context=lambda: None,
+        resolve_render_model=lambda: None,
+        resolve_review_context=lambda: None,
+        resolve_review_model=lambda: None,
+        session_timeout_seconds=600,
+    )
+
+    with pytest.raises(PlanningToolError, match="must lie inside the workspace"):
+        _artifact_ignore_matcher(deps)

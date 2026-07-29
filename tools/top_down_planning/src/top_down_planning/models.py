@@ -90,6 +90,7 @@ class RenderConfig(BaseModel):
     max_batch_revision_cycles: int = 1
     max_final_revision_cycles: int = 2
     scaffold: bool = True
+    artifact_ignore_patterns: list[str] = Field(default_factory=list)
 
 
 class RenderStage(str, Enum):

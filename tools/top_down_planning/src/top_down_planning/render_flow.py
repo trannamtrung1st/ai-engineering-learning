@@ -50,8 +50,13 @@ from top_down_planning.render_context import (
     prepare_scaffold_context,
 )
 from top_down_planning.render_deliverables import (
+    ArtifactIgnoreMatcher,
+    build_artifact_ignore_matcher,
+    canonical_state_prefix,
     collect_deliverable_output,
     diff_workspace_snapshots,
+    filter_deliverable_candidates,
+    is_utf8_text_file,
     snapshot_workspace_files,
 )
 from top_down_planning.render_schedule import (
@@ -107,12 +112,13 @@ async def render_from_confirmed_plan(
     _validate_render_preconditions(plan)
 
     render_state = load_render_state(deps.output_dir) or RenderState()
+    matcher = _artifact_ignore_matcher(deps)
     if render_state.artifact_paths:
-        render_state.artifact_paths = [
-            path
-            for path in render_state.artifact_paths
-            if (deps.workspace_root / path).is_file()
-        ]
+        render_state.artifact_paths = _existing_artifact_paths(
+            deps.workspace_root,
+            render_state.artifact_paths,
+            matcher,
+        )
         if not render_state.artifact_paths and render_state.stage == RenderStage.COMPLETE:
             force_rerender = True
     reset_state = _should_reset_render_state(
@@ -170,11 +176,16 @@ async def render_from_confirmed_plan(
             run_state,
             render_state,
             output_dir=deps.output_dir,
+            artifact_ignore_patterns=deps.render.artifact_ignore_patterns,
         )
         if existing is not None:
             return RenderFlowResult(artifacts=existing)
 
-    artifact_paths = _existing_artifact_paths(deps.workspace_root, render_state.artifact_paths)
+    artifact_paths = _existing_artifact_paths(
+        deps.workspace_root,
+        render_state.artifact_paths,
+        matcher,
+    )
 
     if render_config.scaffold and not render_state.scaffold_complete:
         render_state.stage = RenderStage.SCAFFOLD
@@ -236,8 +247,8 @@ async def render_from_confirmed_plan(
     if not artifact_paths:
         raise PlanningToolError("Render completed without workspace deliverables")
 
-    artifact_paths = _existing_artifact_paths(deps.workspace_root, artifact_paths)
-    deliverable = collect_deliverable_output(deps.workspace_root, artifact_paths)
+    artifact_paths = _existing_artifact_paths(deps.workspace_root, artifact_paths, matcher)
+    deliverable = collect_deliverable_output(deps.workspace_root, artifact_paths, matcher)
     render_state.deliverable_output_digest = deliverable.digest
     render_state.stage = RenderStage.FINAL_REVIEW
     save_render_state(deps.output_dir, render_state)
@@ -250,8 +261,16 @@ async def render_from_confirmed_plan(
                 "render.final_review.started",
                 cycle=render_state.final_revision_cycle,
             )
-            artifact_paths = _existing_artifact_paths(deps.workspace_root, artifact_paths)
-            deliverable = collect_deliverable_output(deps.workspace_root, artifact_paths)
+            artifact_paths = _existing_artifact_paths(
+                deps.workspace_root,
+                artifact_paths,
+                matcher,
+            )
+            deliverable = collect_deliverable_output(
+                deps.workspace_root,
+                artifact_paths,
+                matcher,
+            )
             review_result = await run_render_output_review(
                 RenderReviewDeps(
                     workspace_root=deps.workspace_root,
@@ -346,6 +365,7 @@ async def _run_batch_pipeline(
     render_state: RenderState,
 ) -> list[str]:
     revision_cycle = 0
+    matcher = _artifact_ignore_matcher(deps)
     while True:
         batch.status = RenderBatchStatus.AUTHORING
         artifact_paths = await _run_batch_author_session(
@@ -359,8 +379,16 @@ async def _run_batch_pipeline(
         )
 
         batch.status = RenderBatchStatus.REVIEWING
-        artifact_paths = _existing_artifact_paths(deps.workspace_root, artifact_paths)
-        deliverable = collect_deliverable_output(deps.workspace_root, artifact_paths)
+        artifact_paths = _existing_artifact_paths(
+            deps.workspace_root,
+            artifact_paths,
+            matcher,
+        )
+        deliverable = collect_deliverable_output(
+            deps.workspace_root,
+            artifact_paths,
+            matcher,
+        )
         deps.stream.emit(
             "render.batch.review.started",
             batch_index=batch.batch_index,
@@ -595,7 +623,8 @@ async def _run_author_session(
     run_state: RunState,
     session_label: str,
 ) -> list[str]:
-    before = snapshot_workspace_files(deps.workspace_root)
+    matcher = _artifact_ignore_matcher(deps)
+    before = snapshot_workspace_files(deps.workspace_root, matcher)
     validation_feedback: list[str] | None = None
 
     for attempt in range(1, deps.render.max_retries + 1):
@@ -627,7 +656,7 @@ async def _run_author_session(
             validation_feedback = [str(exc)]
             continue
 
-        after = snapshot_workspace_files(deps.workspace_root)
+        after = snapshot_workspace_files(deps.workspace_root, matcher)
         changed = diff_workspace_snapshots(before, after)
         if not changed and not artifact_paths:
             validation_feedback = ["session did not create or update workspace deliverables"]
@@ -637,7 +666,20 @@ async def _run_author_session(
                 )
             continue
 
-        merged = sorted(set(artifact_paths) | set(changed))
+        merged = _existing_artifact_paths(
+            deps.workspace_root,
+            sorted(set(artifact_paths) | set(changed)),
+            matcher,
+        )
+        if not merged:
+            validation_feedback = [
+                "session did not create or update tracked workspace deliverables"
+            ]
+            if attempt >= deps.render.max_retries:
+                raise CursorSessionError(
+                    f"Render session {session_label} produced no workspace deliverables"
+                )
+            continue
         return merged
 
     raise CursorSessionError(
@@ -706,12 +748,32 @@ def _validate_loaded_schedule(
         )
 
 
-def _existing_artifact_paths(workspace: Path, artifact_paths: list[str]) -> list[str]:
-    return [
-        path
-        for path in artifact_paths
-        if (workspace / path).is_file()
-    ]
+def _artifact_ignore_matcher(deps: RenderFlowDeps) -> ArtifactIgnoreMatcher:
+    if canonical_state_prefix(deps.workspace_root, deps.output_dir) is None:
+        raise PlanningToolError(
+            "Render cannot proceed: the run output directory must lie inside the "
+            "workspace so canonical planning state can be excluded from artifact "
+            "discovery."
+        )
+    return build_artifact_ignore_matcher(
+        deps.workspace_root,
+        deps.output_dir,
+        deps.render.artifact_ignore_patterns,
+    )
+
+
+def _existing_artifact_paths(
+    workspace: Path,
+    artifact_paths: list[str],
+    matcher: ArtifactIgnoreMatcher,
+) -> list[str]:
+    existing: list[str] = []
+    for path in artifact_paths:
+        destination = workspace / path
+        if not destination.is_file() or not is_utf8_text_file(destination):
+            continue
+        existing.append(path)
+    return filter_deliverable_candidates(existing, matcher)
 
 
 def _reset_render_state(output_dir: Path) -> None:
@@ -727,9 +789,10 @@ def _persist_render_result(
     run_state: RunState,
     artifact_paths: list[str],
 ) -> list[str]:
-    relative: list[str] = []
     workspace = deps.workspace_root.resolve()
-    for artifact in artifact_paths:
+    relative: list[str] = []
+    matcher = _artifact_ignore_matcher(deps)
+    for artifact in _existing_artifact_paths(workspace, artifact_paths, matcher):
         path = Path(artifact)
         if path.is_absolute():
             relative.append(path.resolve().relative_to(workspace).as_posix())
@@ -745,22 +808,28 @@ def existing_deliverable_artifacts(
     run_state: RunState,
     render_state: RenderState | None,
     *,
-    output_dir: Path | None = None,
+    output_dir: Path,
+    artifact_ignore_patterns: list[str],
 ) -> list[str] | None:
     if render_state is None or render_state.stage != RenderStage.COMPLETE:
         return None
     if not run_state.generated_artifacts:
         return None
-    absolute: list[str] = []
-    for relative in run_state.generated_artifacts:
-        path = workspace / relative
-        if not path.is_file():
-            return None
-        absolute.append(str(path))
-    if output_dir is not None and render_state.deliverable_output_digest:
+    if canonical_state_prefix(workspace, output_dir) is None:
+        return None
+    matcher = build_artifact_ignore_matcher(
+        workspace,
+        output_dir,
+        artifact_ignore_patterns,
+    )
+    normalized = _existing_artifact_paths(workspace, run_state.generated_artifacts, matcher)
+    if not normalized:
+        return None
+    absolute = [str(workspace / relative) for relative in normalized]
+    if render_state.deliverable_output_digest:
         try:
-            current = collect_deliverable_output(workspace, run_state.generated_artifacts)
-        except ValueError:
+            current = collect_deliverable_output(workspace, normalized, matcher)
+        except (ValueError, UnicodeDecodeError):
             return None
         if current.digest != render_state.deliverable_output_digest:
             return None

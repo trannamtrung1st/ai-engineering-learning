@@ -409,6 +409,7 @@ class Orchestrator:
                 run_state,
                 render_state,
                 output_dir=output_dir,
+                artifact_ignore_patterns=self.config.render.artifact_ignore_patterns,
             )
             if existing and not self.config.force_rerender:
                 self._artifacts = existing
@@ -655,6 +656,7 @@ class Orchestrator:
             run_state,
             render_state,
             output_dir=output_dir,
+            artifact_ignore_patterns=self.config.render.artifact_ignore_patterns,
         )
         if existing and not self.config.force_rerender:
             self._artifacts = existing

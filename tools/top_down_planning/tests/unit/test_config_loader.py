@@ -230,6 +230,49 @@ def test_merge_run_options_resolves_content_paths_relative_to_workspace(
     assert options.output_goal_file == goal_file.resolve()
 
 
+def test_merge_run_options_loads_render_ignore_patterns(tmp_path: Path) -> None:
+    config_path = tmp_path / "planning.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "input: ./idea.md",
+                "output: ./out",
+                "output_goal: Produce a plan",
+                "render:",
+                "  artifact_ignore_patterns:",
+                "    - '**/__pycache__/'",
+                "    - '*.pyc'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    options = merge_run_options(config_path=config_path)
+
+    assert options.render.artifact_ignore_patterns == [
+        "**/__pycache__/",
+        "*.pyc",
+    ]
+
+
+def test_merge_run_options_render_ignore_patterns_default_empty(tmp_path: Path) -> None:
+    config_path = tmp_path / "planning.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "input: ./idea.md",
+                "output: ./out",
+                "output_goal: Produce a plan",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    options = merge_run_options(config_path=config_path)
+
+    assert options.render.artifact_ignore_patterns == []
+
+
 def test_merge_run_options_requires_input_and_output(tmp_path: Path) -> None:
     config_path = tmp_path / "planning.yaml"
     config_path.write_text("output_goal: Produce a plan\n", encoding="utf-8")
