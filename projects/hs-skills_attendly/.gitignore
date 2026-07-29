@@ -1,7 +1,0 @@
-node_modules/
-.next/
-data/
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal
-node_modules

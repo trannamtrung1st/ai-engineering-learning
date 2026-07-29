@@ -1,9 +1,0 @@
-{
-  "extends": "@we-event/config/tsconfig/base.json",
-  "include": ["src"],
-  "compilerOptions": {
-    "noEmit": true,
-    "lib": ["ES2022"],
-    "skipLibCheck": true
-  }
-}

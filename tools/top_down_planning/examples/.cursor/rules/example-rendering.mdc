@@ -1,4 +1,0 @@
-# Rendering-phase example rule
-
-Render author and revision sessions write directly to workspace destination paths.
-Do not modify files under `.planning-output/`.

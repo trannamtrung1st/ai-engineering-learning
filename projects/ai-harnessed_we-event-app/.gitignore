@@ -1,9 +1,0 @@
-.env
-node_modules/
-.npm-cache/
-ai-harness/generated/runs/
-.playwright-mcp/
-*.log
-dist/
-.next/
-*.tsbuildinfo
