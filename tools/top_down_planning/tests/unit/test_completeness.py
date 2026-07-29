@@ -1,4 +1,10 @@
-from top_down_planning.completeness import compute_final_status, is_plan_complete, limit_reached
+from top_down_planning.completeness import (
+    compute_final_status,
+    count_by_status,
+    is_plan_complete,
+    limit_reached,
+    structural_errors,
+)
 from top_down_planning.models import (
     AgentResponse,
     ChildDraft,
@@ -6,6 +12,7 @@ from top_down_planning.models import (
     ExpandOperation,
     FinalStatus,
     MarkActionableOperation,
+    PlanItem,
     PlanningLimits,
 )
 from top_down_planning.scheduler import select_batch
@@ -89,3 +96,67 @@ def test_multi_level_bfs_expansion() -> None:
         ),
     )
     assert is_plan_complete(plan)
+
+
+def test_complete_plan_with_expanded_internal_nodes() -> None:
+    plan = _plan()
+    plan = apply_response(
+        plan,
+        make_agent_response(
+            operations=[
+                ExpandOperation(
+                    node_id="item-001",
+                    title="Generated root",
+                    objective="Describe the requested plan",
+                    children=[
+                        ChildDraft(title="Area A", objective="A"),
+                        ChildDraft(title="Area B", objective="B"),
+                    ],
+                )
+            ]
+        ),
+    )
+    root = plan.item_by_id("item-001")
+    assert root is not None
+    assert root.decomposition_status == DecompositionStatus.EXPANDED
+    for child in plan.children_of("item-001"):
+        plan = apply_response(
+            plan,
+            make_agent_response(
+                operations=[
+                    MarkActionableOperation(
+                        node_id=child.id,
+                        expected_outputs=["Out"],
+                        acceptance_criteria=["Done"],
+                    )
+                ]
+            ),
+        )
+    counts = count_by_status(plan)
+    assert counts["expanded"] == 1
+    assert counts["actionable"] == 2
+    assert is_plan_complete(plan)
+
+
+def test_structural_errors_reject_actionable_non_leaf() -> None:
+    plan = _plan()
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id="item-001",
+            title="Child",
+            objective="child",
+            depth=1,
+            order=2,
+        )
+    )
+    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    errors = structural_errors(plan)
+    assert any("actionable but is not a leaf" in error for error in errors)
+
+
+def test_structural_errors_reject_expanded_without_children() -> None:
+    plan = _plan()
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
+    errors = structural_errors(plan)
+    assert any("expanded but has no children" in error for error in errors)

@@ -59,7 +59,7 @@ def _apply_expand(
         objective=operation.objective,
         operation_name="Expand",
     )
-    parent.decomposition_status = DecompositionStatus.ACTIONABLE
+    parent.decomposition_status = DecompositionStatus.EXPANDED
     parent.readiness_status = ReadinessStatus.READY
 
     ref_to_id: dict[str, str] = {}
@@ -232,30 +232,15 @@ def _apply_metadata_patch(
 
 
 def _recompute_readiness(plan: PlanState) -> None:
-    by_id = {item.id: item for item in plan.plan}
     for item in plan.plan:
         if item.decomposition_status in {
             DecompositionStatus.BLOCKED,
             DecompositionStatus.OUT_OF_SCOPE,
             DecompositionStatus.ACTIONABLE,
+            DecompositionStatus.EXPANDED,
         }:
             continue
-        if item.decomposition_status == DecompositionStatus.NEEDS_EXPANSION:
-            item.readiness_status = ReadinessStatus.PENDING
-            continue
-        unresolved = [
-            dep
-            for dep in item.dependencies
-            if dep in by_id
-            and by_id[dep].decomposition_status
-            not in {
-                DecompositionStatus.ACTIONABLE,
-                DecompositionStatus.OUT_OF_SCOPE,
-            }
-        ]
-        item.readiness_status = (
-            ReadinessStatus.BLOCKED if unresolved else ReadinessStatus.READY
-        )
+        item.readiness_status = ReadinessStatus.PENDING
 
 
 def detect_dependency_cycles(plan: PlanState) -> list[str]:

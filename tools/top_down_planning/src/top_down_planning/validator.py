@@ -19,7 +19,7 @@ from top_down_planning.models import (
     ReviseActionableOperation,
     UpdateItemOperation,
 )
-from top_down_planning.completeness import structural_errors
+from top_down_planning.completeness import is_leaf, structural_errors
 from top_down_planning.state_updates import apply_response
 
 
@@ -474,6 +474,11 @@ def _validate_revise_actionable(
                 f"Revise on {item.id} requires acceptance_criteria "
                 "for this output goal"
             )
+    if not is_leaf(plan, item.id):
+        errors.append(
+            f"Revise on {item.id} must target an actionable leaf; use reopen "
+            "when the branch structure must change"
+        )
     return errors
 
 
@@ -571,6 +576,10 @@ def _validate_actionable(
     for dep in operation.dependencies or item.dependencies:
         if plan.item_by_id(dep) is None:
             errors.append(f"Actionable item {item.id} references unknown dependency: {dep}")
+    if not is_leaf(plan, item.id):
+        errors.append(
+            f"Actionable item {item.id} must be a leaf; expand it instead"
+        )
     return errors
 
 

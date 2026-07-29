@@ -242,6 +242,7 @@ or hint comes from a file, `plan.yaml` also records `output_goal_file` or
 Supported decomposition statuses:
 
 - `needs_expansion`
+- `expanded`
 - `actionable`
 - `blocked`
 - `out_of_scope`
@@ -405,7 +406,10 @@ digests of the resolved goal content.
 
 Actionability criteria are inferred from `--output-goal`. Implementation-oriented goals require expected outputs and acceptance criteria on actionable leaves.
 
-Planning completes when no expandable items remain and the graph is structurally valid.
+Planning completes when no expandable items remain, decomposed internal nodes are
+`expanded`, relevant leaves are `actionable`, `blocked`, or `out_of_scope`, and the
+graph is structurally valid (`expanded` nodes have children; `actionable` nodes are
+leaves). Persisted plans use `schema_version: 2`.
 Safety limits (`--max-iterations`, `--max-depth`, `--max-items`, `max_children_per_expansion`,
 `--batch-size`, `--concurrent-batches`, `--max-retries`) preserve partial output with
 explicit final statuses.
@@ -577,7 +581,7 @@ Integration tests use a deterministic fake agent fixture; live Cursor tests are 
 
 ## Design note: render scope
 
-Rendering schedules **actionable leaf items** into coherent batches. Expanded
-parent/container items provide context in prompts but do not receive separate render
-sessions. Each batch author integrates its assigned leaves into the cumulative workspace
-deliverables established by the scaffold and prior batches.
+Rendering schedules **actionable leaf items** into coherent batches. **Expanded**
+internal nodes provide context in prompts but are not render deliverables and do not
+receive separate render sessions. Each batch author integrates its assigned leaves into
+the cumulative workspace deliverables established by the scaffold and prior batches.

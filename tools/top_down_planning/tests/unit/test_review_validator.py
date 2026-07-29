@@ -52,7 +52,7 @@ def _plan_with_actionable_leaves() -> PlanState:
                 id="item-001",
                 title="Root",
                 objective="Root objective",
-                decomposition_status=DecompositionStatus.ACTIONABLE,
+                decomposition_status=DecompositionStatus.EXPANDED,
             ),
             PlanItem(
                 id="item-002",
@@ -165,3 +165,27 @@ def test_amend_rejects_non_actionable_node() -> None:
     )
     errors = validate_whole_plan_review(result, plan=plan, expected_digest="abc")
     assert any("revision_mode=amend requires actionable node" in error for error in errors)
+
+
+def test_amend_rejects_expanded_non_leaf() -> None:
+    plan = _plan_with_actionable_leaves()
+    result = WholePlanReviewResult(
+        plan_digest="abc",
+        decision=ReviewDecision.NEEDS_REVISION,
+        summary="Fix root",
+        findings=[
+            ReviewFinding(
+                severity=ReviewFindingSeverity.MAJOR,
+                category=ReviewFindingCategory.GRANULARITY,
+                revision_mode=RevisionMode.AMEND,
+                node_ids=["item-001"],
+                description="Wrong mode",
+            )
+        ],
+    )
+    errors = validate_whole_plan_review(result, plan=plan, expected_digest="abc")
+    assert any(
+        "revision_mode=amend requires actionable node" in error
+        and "expanded" in error
+        for error in errors
+    )

@@ -17,12 +17,17 @@ from top_down_planning.scheduler import expandable_items
 from top_down_planning.state_updates import detect_dependency_cycles
 
 
+def is_leaf(plan: PlanState, item_id: str) -> bool:
+    return not any(child.parent_id == item_id for child in plan.plan)
+
+
 def count_by_status(plan: PlanState) -> dict[str, int]:
     counts = {
         "actionable": 0,
         "blocked": 0,
         "out_of_scope": 0,
         "needs_expansion": 0,
+        "expanded": 0,
     }
     for item in plan.plan:
         if item.decomposition_status == DecompositionStatus.ACTIONABLE:
@@ -33,17 +38,15 @@ def count_by_status(plan: PlanState) -> dict[str, int]:
             counts["out_of_scope"] += 1
         elif item.decomposition_status == DecompositionStatus.NEEDS_EXPANSION:
             counts["needs_expansion"] += 1
+        elif item.decomposition_status == DecompositionStatus.EXPANDED:
+            counts["expanded"] += 1
     return counts
-
-
-def _is_leaf(plan: PlanState, item_id: str) -> bool:
-    return not any(child.parent_id == item_id for child in plan.plan)
 
 
 def has_child_limit_blocked_leaves(plan: PlanState) -> bool:
     return any(
         item.decomposition_status == DecompositionStatus.BLOCKED
-        and _is_leaf(plan, item.id)
+        and is_leaf(plan, item.id)
         and item.blocked_constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
         for item in plan.plan
     )
@@ -63,7 +66,7 @@ def reopen_eligible_child_limit_blocked(
             or item.blocked_constraint_code != BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
             or item.blocked_required_min_children is None
             or item.blocked_required_min_children > max_children_per_expansion
-            or not _is_leaf(updated, item.id)
+            or not is_leaf(updated, item.id)
         ):
             continue
         item.decomposition_status = DecompositionStatus.NEEDS_EXPANSION
@@ -83,7 +86,7 @@ def child_limit_blocked_summary(
     for item in plan.plan:
         if (
             item.decomposition_status == DecompositionStatus.BLOCKED
-            and _is_leaf(plan, item.id)
+            and is_leaf(plan, item.id)
             and item.blocked_constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
             and item.blocked_required_min_children is not None
         ):
@@ -109,6 +112,14 @@ def structural_errors(plan: PlanState) -> list[str]:
         for dep in item.dependencies:
             if dep not in ids:
                 errors.append(f"{item.id} references missing dependency {dep}")
+        if item.decomposition_status == DecompositionStatus.EXPANDED and is_leaf(
+            plan, item.id
+        ):
+            errors.append(f"{item.id} is expanded but has no children")
+        if item.decomposition_status == DecompositionStatus.ACTIONABLE and not is_leaf(
+            plan, item.id
+        ):
+            errors.append(f"{item.id} is actionable but is not a leaf")
     errors.extend(detect_dependency_cycles(plan))
     return errors
 
@@ -122,6 +133,7 @@ def is_plan_complete(plan: PlanState) -> bool:
         if item.decomposition_status == DecompositionStatus.NEEDS_EXPANSION:
             return False
         if item.decomposition_status not in {
+            DecompositionStatus.EXPANDED,
             DecompositionStatus.ACTIONABLE,
             DecompositionStatus.BLOCKED,
             DecompositionStatus.OUT_OF_SCOPE,

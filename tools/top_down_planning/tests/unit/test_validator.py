@@ -308,7 +308,7 @@ def test_validate_amend_response_rejects_cross_item_updates() -> None:
 
 def test_validate_response_accepts_patchable_update() -> None:
     plan = _plan()
-    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
     plan.plan[0].expected_outputs = ["Root output"]
     plan.plan[0].acceptance_criteria = ["Root done"]
     plan.plan.append(
@@ -368,7 +368,7 @@ def test_validate_response_rejects_update_on_selected_node() -> None:
 
 def test_validate_wave_rejects_conflicting_cross_batch_updates() -> None:
     plan = _plan()
-    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
     plan.plan[0].expected_outputs = ["Root output"]
     plan.plan[0].acceptance_criteria = ["Root done"]
     plan.plan.append(
@@ -482,3 +482,30 @@ def test_validate_wave_rejects_overlapping_write_scopes() -> None:
         plan_digest="wave-digest",
     )
     assert any("overlapping write scopes" in error for error in errors)
+
+
+def test_validate_actionable_rejects_non_leaf() -> None:
+    plan = _plan()
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id="item-001",
+            title="Child",
+            objective="child",
+            depth=1,
+            order=2,
+        )
+    )
+    response = make_agent_response(
+        operations=[
+            MarkActionableOperation(
+                node_id="item-001",
+                title="Plan the requested work",
+                objective="Produce the requested plan.",
+                expected_outputs=["Plan"],
+                acceptance_criteria=["Done"],
+            )
+        ]
+    )
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    assert any("must be a leaf" in error for error in errors)

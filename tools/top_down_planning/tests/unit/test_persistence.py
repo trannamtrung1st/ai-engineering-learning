@@ -21,7 +21,7 @@ def test_resume_rejects_generation_mismatch(tmp_path: Path) -> None:
     (state_dir / "plan.yaml").write_text(
         "\n".join(
             [
-                "schema_version: 1",
+                "schema_version: 2",
                 "source:",
                 "  input_file: ./idea.md",
                 "  output_goal: goal",
@@ -66,7 +66,7 @@ def test_resume_allows_increased_max_iterations(tmp_path: Path) -> None:
     (state_dir / "plan.yaml").write_text(
         "\n".join(
             [
-                "schema_version: 1",
+                "schema_version: 2",
                 "source:",
                 "  input_file: ./idea.md",
                 "  output_goal: goal",
@@ -120,7 +120,7 @@ def test_resume_rejects_structural_limit_mismatch(tmp_path: Path) -> None:
     (state_dir / "plan.yaml").write_text(
         "\n".join(
             [
-                "schema_version: 1",
+                "schema_version: 2",
                 "source:",
                 "  input_file: ./idea.md",
                 "  output_goal: goal",
@@ -166,7 +166,7 @@ def test_resume_allows_increased_max_children_per_expansion(tmp_path: Path) -> N
     (state_dir / "plan.yaml").write_text(
         "\n".join(
             [
-                "schema_version: 1",
+                "schema_version: 2",
                 "source:",
                 "  input_file: ./idea.md",
                 "  output_goal: goal",
@@ -219,7 +219,7 @@ def test_resume_rejects_decreased_max_children_per_expansion(tmp_path: Path) -> 
     (state_dir / "plan.yaml").write_text(
         "\n".join(
             [
-                "schema_version: 1",
+                "schema_version: 2",
                 "source:",
                 "  input_file: ./idea.md",
                 "  output_goal: goal",
@@ -251,6 +251,51 @@ def test_resume_rejects_decreased_max_children_per_expansion(tmp_path: Path) -> 
             input_digest="input-digest",
             output_goal_digest="goal-digest",
             limits=PlanningLimits(max_children_per_expansion=10),
+            generation=default_generation(),
+            render=RenderConfig(),
+            resume=True,
+        )
+
+
+def test_resume_rejects_schema_version_one(tmp_path: Path) -> None:
+    output_dir = tmp_path / "planning-output"
+    output_dir.mkdir()
+    state_dir = output_dir / ".planning-output"
+    state_dir.mkdir()
+    (state_dir / "plan.yaml").write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "source:",
+                "  input_file: ./idea.md",
+                "  output_goal: goal",
+                "  input_digest: input-digest",
+                "  output_goal_digest: goal-digest",
+                "plan:",
+                "  - id: item-001",
+                "    title: Root",
+                "    objective: Root objective",
+                "    depth: 0",
+                "    order: 1",
+                "result:",
+                "  status: planning",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    run_state = RunState(
+        input_digest="input-digest",
+        output_goal_digest="goal-digest",
+        generation=default_generation(),
+    )
+    save_run_state(output_dir, run_state)
+
+    with pytest.raises(ResumeError, match="Incompatible plan schema version: 1"):
+        ensure_resume_compatible(
+            output_dir,
+            input_digest="input-digest",
+            output_goal_digest="goal-digest",
+            limits=PlanningLimits(),
             generation=default_generation(),
             render=RenderConfig(),
             resume=True,

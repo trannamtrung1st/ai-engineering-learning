@@ -276,7 +276,7 @@ async def test_resume_after_child_limit_blocked_with_increased_max_children(
     assert plan.result.status == FinalStatus.COMPLETE
     root = plan.item_by_id("item-001")
     assert root is not None
-    assert root.decomposition_status != DecompositionStatus.BLOCKED
+    assert root.decomposition_status == DecompositionStatus.EXPANDED
 
 
 @pytest.mark.asyncio

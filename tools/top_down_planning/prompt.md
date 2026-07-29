@@ -99,7 +99,7 @@ Use a flat collection with stable IDs and parent references so the tool can perf
 Suggested structure:
 
 ```yaml
-schema_version: 1
+schema_version: 2
 
 source:
   input_file: ./idea.md
@@ -135,6 +135,7 @@ to the input document and output goal, whether it expands or reaches a terminal 
 Supported `decomposition_status` values:
 
 * `needs_expansion`
+* `expanded`
 * `actionable`
 * `blocked`
 * `out_of_scope`
@@ -198,18 +199,19 @@ may run in parallel per wave and are merged atomically after validation.
 
 For every selected item, the agent must choose exactly one result:
 
-1. mark the item as actionable;
-2. expand it into child items;
+1. expand it into child items (the parent becomes `expanded`);
+2. mark the item as actionable (leaf only);
 3. mark it blocked;
 4. mark it out of scope.
 
 ### Expand
 
 Use when the item still contains multiple meaningful pieces of work or unresolved planning concerns.
+Expanding marks the parent `expanded` and creates child items for further decomposition.
 
 ### Actionable
 
-Use when the item is detailed enough for the output goal.
+Use when the item is a leaf detailed enough for the output goal.
 
 For example, when the output goal asks for an implementation plan, an actionable item should normally include:
 
@@ -311,7 +313,9 @@ Validate every finalized transaction before modifying the planning state.
 Validation must ensure:
 
 * referenced item IDs exist;
-* only expandable items are expanded;
+* only `needs_expansion` items are expanded;
+* `mark_actionable` applies only to leaves;
+* expanded nodes have children and are not render deliverables;
 * an item cannot be expanded and marked actionable in the same operation set;
 * children have meaningful titles and objectives;
 * duplicate siblings are rejected or explicitly merged;
@@ -358,6 +362,7 @@ For the first version, sending the complete input Markdown may be acceptable. Ke
 Planning completes when:
 
 * no items remain with `needs_expansion`;
+* internal nodes that were decomposed are `expanded`;
 * all relevant leaves are `actionable`, `blocked`, or `out_of_scope`;
 * the overall plan satisfies the output goal;
 * dependencies are valid;

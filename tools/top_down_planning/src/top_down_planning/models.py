@@ -9,13 +9,14 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_CURSOR_MODEL = "composer-2.5"
 DEFAULT_INLINE_EMBED_THRESHOLD = 4000
 
 
 class DecompositionStatus(str, Enum):
     NEEDS_EXPANSION = "needs_expansion"
+    EXPANDED = "expanded"
     ACTIONABLE = "actionable"
     BLOCKED = "blocked"
     OUT_OF_SCOPE = "out_of_scope"

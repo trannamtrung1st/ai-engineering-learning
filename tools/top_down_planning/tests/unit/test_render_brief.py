@@ -20,7 +20,7 @@ def _plan_with_leaves() -> tuple:
     )
     plan.plan[0].title = "Plan the requested areas"
     plan.plan[0].objective = "Produce the requested plan."
-    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
     plan.plan.extend(
         [
             PlanItem(
@@ -51,7 +51,7 @@ def _plan_with_leaves() -> tuple:
     return plan
 
 
-def test_actionable_leaf_items_excludes_container_nodes() -> None:
+def test_actionable_leaf_items_excludes_expanded_nodes() -> None:
     plan = _plan_with_leaves()
     plan.plan.append(
         PlanItem(

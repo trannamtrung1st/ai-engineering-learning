@@ -34,7 +34,7 @@ def _expanded_plan() -> PlanState:
                 id="item-001",
                 title="Root",
                 objective="Root objective",
-                decomposition_status=DecompositionStatus.ACTIONABLE,
+                decomposition_status=DecompositionStatus.EXPANDED,
             ),
             PlanItem(
                 id="item-002",

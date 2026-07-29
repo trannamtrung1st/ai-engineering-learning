@@ -122,7 +122,7 @@ def test_select_concurrent_batches_serializes_overlapping_write_scopes() -> None
         input_digest="a",
         output_goal_digest="b",
     )
-    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
     plan.plan.extend(
         [
             PlanItem(
@@ -140,7 +140,7 @@ def test_select_concurrent_batches_serializes_overlapping_write_scopes() -> None
                 objective="branch b",
                 depth=0,
                 order=3,
-                decomposition_status=DecompositionStatus.ACTIONABLE,
+                decomposition_status=DecompositionStatus.EXPANDED,
             ),
             PlanItem(
                 id="item-004",
@@ -191,7 +191,7 @@ def test_select_amend_batches_allows_concurrent_sibling_revisions() -> None:
         input_digest="a",
         output_goal_digest="b",
     )
-    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
     plan.plan.extend(
         [
             PlanItem(

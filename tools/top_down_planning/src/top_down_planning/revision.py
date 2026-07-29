@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 
+from top_down_planning.completeness import is_leaf
 from top_down_planning.models import (
     DecompositionStatus,
     PlanState,
@@ -153,6 +154,11 @@ def validate_amend_target(plan: PlanState, node_id: str) -> list[str]:
             f"(status={item.decomposition_status.value}); use revision_mode=reopen "
             "when the branch structure must change"
         ]
+    if not is_leaf(plan, node_id):
+        return [
+            f"Node {node_id} is not amendable because it is not a leaf; "
+            "use revision_mode=reopen when the branch structure must change"
+        ]
     return []
 
 
@@ -173,6 +179,8 @@ def filter_amend_targets_after_reopen(
             continue
         item = post_reopen_plan.item_by_id(node_id)
         if item is None or item.decomposition_status != DecompositionStatus.ACTIONABLE:
+            continue
+        if not is_leaf(post_reopen_plan, node_id):
             continue
         kept.append(node_id)
     return kept

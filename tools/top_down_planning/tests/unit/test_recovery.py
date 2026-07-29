@@ -5,6 +5,7 @@ import pytest
 
 from top_down_planning.models import (
     ChildDraft,
+    DecompositionStatus,
     ExpandOperation,
     PlanningLimits,
     RunActiveStatus,
@@ -420,6 +421,9 @@ async def test_interrupt_preserves_persisted_plan_progress(
     persisted = load_plan(output_dir)
     assert persisted is not None
     assert len(persisted.plan) == len(expanded_plan.plan)
+    root = persisted.item_by_id("item-001")
+    assert root is not None
+    assert root.decomposition_status == DecompositionStatus.EXPANDED
     resumed_run = load_run_state(output_dir)
     assert resumed_run is not None
     assert resumed_run.iteration == 1

@@ -27,7 +27,7 @@ def _plan_with_leaves() -> PlanState:
                 objective="Root objective",
                 depth=0,
                 order=1,
-                decomposition_status=DecompositionStatus.ACTIONABLE,
+                decomposition_status=DecompositionStatus.EXPANDED,
             ),
             PlanItem(
                 id="item-002",

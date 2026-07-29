@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from top_down_planning.completeness import is_leaf
 from top_down_planning.models import (
     ConfirmationDecision,
     DecompositionStatus,
@@ -41,14 +42,18 @@ def _validate_findings(plan: PlanState, findings: list[ReviewFinding]) -> list[s
                 errors.append(f"{prefix}: unknown node id {node_id!r}")
             elif mode == RevisionMode.AMEND:
                 item = plan.item_by_id(node_id)
-                if (
-                    item is not None
-                    and item.decomposition_status != DecompositionStatus.ACTIONABLE
-                ):
+                if item is None:
+                    continue
+                if item.decomposition_status != DecompositionStatus.ACTIONABLE:
                     errors.append(
                         f"{prefix}: revision_mode=amend requires actionable node "
                         f"{node_id!r} (status={item.decomposition_status.value}); "
                         "use revision_mode=reopen when structure must change"
+                    )
+                elif not is_leaf(plan, node_id):
+                    errors.append(
+                        f"{prefix}: revision_mode=amend requires actionable leaf "
+                        f"{node_id!r}; use revision_mode=reopen when structure must change"
                     )
         if mode == RevisionMode.REOPEN and finding.node_ids:
             for node_id in finding.node_ids:

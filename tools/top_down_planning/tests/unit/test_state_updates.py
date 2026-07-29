@@ -45,7 +45,7 @@ def test_apply_expand_assigns_ids_and_dependencies() -> None:
     updated = apply_response(plan, response)
     root = updated.item_by_id("item-001")
     assert root is not None
-    assert root.decomposition_status == DecompositionStatus.ACTIONABLE
+    assert root.decomposition_status == DecompositionStatus.EXPANDED
     assert root.title == "Build the CSV conversion CLI"
     assert root.objective == "Plan a reliable CLI for converting CSV input."
     children = updated.children_of("item-001")
@@ -76,7 +76,7 @@ def test_apply_actionable() -> None:
 
 def test_apply_update_item_replaces_and_clears_fields() -> None:
     plan = _plan()
-    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
     plan.plan[0].notes = ["old note"]
     plan.plan[0].dependencies = ["item-999"]
     plan.plan.append(
@@ -144,3 +144,38 @@ def test_cycle_detection() -> None:
     )
     cycles = detect_dependency_cycles(plan)
     assert cycles
+
+
+def test_expand_marks_parent_expanded_and_passes_structural_validation() -> None:
+    plan = _plan()
+    plan = apply_response(
+        plan,
+        make_agent_response(
+            operations=[
+                ExpandOperation(
+                    node_id="item-001",
+                    title="Generated root",
+                    objective="Describe the requested plan",
+                    children=[
+                        ChildDraft(
+                            ref="child-1",
+                            title="First",
+                            objective="first",
+                        ),
+                        ChildDraft(
+                            ref="child-2",
+                            title="Second",
+                            objective="second",
+                            dependencies=["item-001"],
+                        ),
+                    ],
+                )
+            ]
+        ),
+    )
+    root = plan.item_by_id("item-001")
+    assert root is not None
+    assert root.decomposition_status == DecompositionStatus.EXPANDED
+    from top_down_planning.completeness import structural_errors
+
+    assert structural_errors(plan) == []
