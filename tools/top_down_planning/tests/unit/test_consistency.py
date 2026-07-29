@@ -32,6 +32,8 @@ def test_apply_blocked_and_out_of_scope() -> None:
             operations=[
                 MarkBlockedOperation(
                     node_id="item-001",
+                    title="Resolve the output format",
+                    objective="Determine the required JSON formatting before planning.",
                     reason="Missing stakeholder decision",
                     missing_information="Output JSON formatting preference",
                     open_question="Should output be pretty-printed or compact?",
@@ -51,6 +53,8 @@ def test_apply_blocked_and_out_of_scope() -> None:
             operations=[
                 MarkOutOfScopeOperation(
                     node_id="item-001",
+                    title="Assess the requested work",
+                    objective="Determine whether the input contributes to the output goal.",
                     reason="Not required for this output goal",
                 )
             ]
@@ -67,6 +71,8 @@ def test_validate_rejects_cycles_before_apply() -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[
                     ChildDraft(
                         ref="child-a",
@@ -100,10 +106,14 @@ def test_invalid_response_does_not_mutate_plan() -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[ChildDraft(title="Only", objective="one")],
             ),
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[ChildDraft(title="Duplicate", objective="op")],
             ),
         ]

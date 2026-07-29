@@ -18,6 +18,9 @@ def _plan_with_leaves() -> tuple:
         input_digest="a",
         output_goal_digest="b",
     )
+    plan.plan[0].title = "Plan the requested areas"
+    plan.plan[0].objective = "Produce the requested plan."
+    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
     plan.plan.extend(
         [
             PlanItem(
@@ -50,7 +53,6 @@ def _plan_with_leaves() -> tuple:
 
 def test_actionable_leaf_items_excludes_container_nodes() -> None:
     plan = _plan_with_leaves()
-    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
     plan.plan.append(
         PlanItem(
             id="item-004",
@@ -66,7 +68,7 @@ def test_actionable_leaf_items_excludes_container_nodes() -> None:
     leaves = actionable_leaf_items(plan)
     titles = [item.title for item in leaves]
 
-    assert "Understand and plan the requested work" not in titles
+    assert "Plan the requested areas" not in titles
     assert "Area A" not in titles
     assert "Area B" in titles
     assert "Nested leaf" in titles

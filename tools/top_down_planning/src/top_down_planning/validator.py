@@ -323,7 +323,12 @@ def _validate_expand(
     *,
     limits: PlanningLimits,
 ) -> list[str]:
-    errors: list[str] = []
+    errors = _validate_root_metadata(
+        item,
+        title=operation.title,
+        objective=operation.objective,
+        operation_name="Expand",
+    )
     if not operation.children:
         errors.append(f"Expand on {item.id} requires at least one child")
         return errors
@@ -381,10 +386,16 @@ def _validate_actionable(
     item: PlanItem,
     operation: MarkActionableOperation,
 ) -> list[str]:
-    errors: list[str] = []
+    errors = _validate_root_metadata(
+        item,
+        title=operation.title,
+        objective=operation.objective,
+        operation_name="Mark actionable",
+    )
     outputs = operation.expected_outputs or item.expected_outputs
     criteria = operation.acceptance_criteria or item.acceptance_criteria
-    if not item.objective.strip():
+    objective = operation.objective or item.objective
+    if not objective.strip():
         errors.append(f"Actionable item {item.id} requires a non-empty objective")
     if _is_implementation_goal(plan.source.output_goal):
         if not outputs:
@@ -408,7 +419,12 @@ def _validate_blocked(
     *,
     limits: PlanningLimits,
 ) -> list[str]:
-    errors: list[str] = []
+    errors = _validate_root_metadata(
+        item,
+        title=operation.title,
+        objective=operation.objective,
+        operation_name="Mark blocked",
+    )
     if not operation.reason.strip():
         errors.append(f"Blocked item {item.id} requires a reason")
 
@@ -437,7 +453,35 @@ def _validate_out_of_scope(
     item: PlanItem,
     operation: MarkOutOfScopeOperation,
 ) -> list[str]:
+    errors = _validate_root_metadata(
+        item,
+        title=operation.title,
+        objective=operation.objective,
+        operation_name="Mark out of scope",
+    )
     if not operation.reason.strip():
-        return [f"Out-of-scope item {item.id} requires a reason"]
+        errors.append(f"Out-of-scope item {item.id} requires a reason")
+    return errors
+
+
+def _validate_root_metadata(
+    item: PlanItem,
+    *,
+    title: str | None,
+    objective: str | None,
+    operation_name: str,
+) -> list[str]:
+    has_title = title is not None
+    has_objective = objective is not None
+    if item.parent_id is None and not (has_title and has_objective):
+        return [
+            f"{operation_name} on root item {item.id} requires a generated "
+            "title and objective"
+        ]
+    if item.parent_id is not None and (has_title or has_objective):
+        return [
+            f"{operation_name} on {item.id} may update title and objective only "
+            "for the root item"
+        ]
     return []
 

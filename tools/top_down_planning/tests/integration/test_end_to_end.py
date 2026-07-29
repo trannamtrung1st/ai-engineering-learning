@@ -82,6 +82,8 @@ async def test_resume_after_partial_run(
             operations=[
                 ExpandOperation(
                     node_id="item-001",
+                    title="Plan the CSV conversion CLI",
+                    objective="Define the work required to deliver the requested CLI.",
                     children=[
                         ChildDraft(title="Area A", objective="A"),
                         ChildDraft(title="Area B", objective="B"),
@@ -144,6 +146,8 @@ async def test_resume_after_limit_reached_with_increased_max_iterations(
             operations=[
                 ExpandOperation(
                     node_id="item-001",
+                    title="Plan the CSV conversion CLI",
+                    objective="Define the work required to deliver the requested CLI.",
                     children=[
                         ChildDraft(title="Area A", objective="A"),
                         ChildDraft(title="Area B", objective="B"),
@@ -215,6 +219,8 @@ async def test_resume_after_child_limit_blocked_with_increased_max_children(
                 {
                     "type": "mark_blocked",
                     "node_id": "item-001",
+                    "title": "Plan the required top-level workstreams",
+                    "objective": "Preserve all explicitly required sibling groups.",
                     "reason": "Source requires at least 9 direct children under item-001",
                     "constraint_code": "max_children_exceeded",
                     "required_min_children": 9,

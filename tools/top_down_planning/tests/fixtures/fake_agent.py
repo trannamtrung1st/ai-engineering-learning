@@ -80,6 +80,8 @@ def _default_planning_response(selected: list[str]) -> dict:
                         "type": "expand",
                         "node_id": "item-001",
                         "reason": "Multiple planning areas",
+                        "title": "Plan the CSV conversion CLI",
+                        "objective": "Define the work required to deliver the requested CLI.",
                         "children": [
                             {
                                 "ref": "child-1",
@@ -103,16 +105,22 @@ def _default_planning_response(selected: list[str]) -> dict:
 
     operations = []
     for node_id in selected:
-        operations.append(
-            {
-                "type": "mark_actionable",
-                "node_id": node_id,
-                "reason": "Detailed enough",
-                "expected_outputs": [f"Output for {node_id}"],
-                "acceptance_criteria": [f"Done when {node_id} complete"],
-                "dependencies": [],
-            }
-        )
+        operation = {
+            "type": "mark_actionable",
+            "node_id": node_id,
+            "reason": "Detailed enough",
+            "expected_outputs": [f"Output for {node_id}"],
+            "acceptance_criteria": [f"Done when {node_id} complete"],
+            "dependencies": [],
+        }
+        if node_id == "item-001":
+            operation.update(
+                {
+                    "title": "Plan the CSV conversion CLI",
+                    "objective": "Define the work required to deliver the requested CLI.",
+                }
+            )
+        operations.append(operation)
     return {
         "assessment": {
             "plan_complete": len(operations) > 0,

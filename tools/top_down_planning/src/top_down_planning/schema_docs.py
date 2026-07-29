@@ -208,6 +208,8 @@ def _example_plan() -> dict[str, Any]:
 def _example_operation() -> dict[str, Any]:
     return MarkActionableOperation(
         node_id="item-001",
+        title="Plan the requested implementation",
+        objective="Produce the implementation plan defined by the input and output goal.",
         expected_outputs=["Implementation plan"],
         acceptance_criteria=["Plan is actionable"],
     ).model_dump(mode="json")
@@ -216,7 +218,15 @@ def _example_operation() -> dict[str, Any]:
 def _example_transaction() -> dict[str, Any]:
     return AgentResponse(
         assessment=Assessment(plan_complete=False, summary="Root actionable"),
-        operations=[MarkActionableOperation(node_id="item-001")],
+        operations=[
+            MarkActionableOperation(
+                node_id="item-001",
+                title="Plan the requested implementation",
+                objective=(
+                    "Produce the implementation plan defined by the input and output goal."
+                ),
+            )
+        ],
         plan_digest=_PLAN_DIGEST,
         selected_items=["item-001"],
     ).model_dump(mode="json")
@@ -359,6 +369,8 @@ def operation_examples() -> dict[str, dict[str, Any]]:
             "type": "expand",
             "node_id": "item-001",
             "reason": "Break down the root objective",
+            "title": "Plan the requested migration",
+            "objective": "Produce the migration plan defined by the source and output goal.",
             "children": [
                 {
                     "ref": "child-1",

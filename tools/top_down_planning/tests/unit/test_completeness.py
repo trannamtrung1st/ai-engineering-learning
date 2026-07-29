@@ -31,6 +31,8 @@ def test_complete_when_no_expandable_items() -> None:
             operations=[
                 MarkActionableOperation(
                     node_id="item-001",
+                    title="Plan the requested work",
+                    objective="Produce the requested implementation plan.",
                     expected_outputs=["Plan"],
                     acceptance_criteria=["Done"],
                 )
@@ -61,6 +63,8 @@ def test_multi_level_bfs_expansion() -> None:
             operations=[
                 ExpandOperation(
                     node_id="item-001",
+                    title="Generated root",
+                    objective="Describe the requested plan",
                     children=[
                         ChildDraft(title="Area A", objective="A"),
                         ChildDraft(title="Area B", objective="B"),

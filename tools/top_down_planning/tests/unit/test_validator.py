@@ -35,6 +35,8 @@ def test_validate_expand_success() -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[
                     ChildDraft(title="A", objective="Do A"),
                     ChildDraft(title="B", objective="Do B"),
@@ -43,6 +45,49 @@ def test_validate_expand_success() -> None:
         ]
     )
     assert validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits()) == []
+
+
+def test_validate_root_expand_requires_generated_metadata() -> None:
+    plan = _plan()
+    response = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-001",
+                children=[ChildDraft(title="A", objective="Do A")],
+            )
+        ]
+    )
+
+    errors = validate_response(
+        plan,
+        response,
+        selected_ids=["item-001"],
+        limits=PlanningLimits(),
+    )
+
+    assert any("requires a generated title and objective" in error for error in errors)
+
+
+def test_validate_root_terminal_decision_requires_generated_metadata() -> None:
+    plan = _plan()
+    response = make_agent_response(
+        operations=[
+            MarkActionableOperation(
+                node_id="item-001",
+                expected_outputs=["Plan"],
+                acceptance_criteria=["Done"],
+            )
+        ]
+    )
+
+    errors = validate_response(
+        plan,
+        response,
+        selected_ids=["item-001"],
+        limits=PlanningLimits(),
+    )
+
+    assert any("requires a generated title and objective" in error for error in errors)
 
 
 def test_validate_missing_operation() -> None:
@@ -58,6 +103,8 @@ def test_validate_duplicate_sibling_title() -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[
                     ChildDraft(title="Same", objective="A"),
                     ChildDraft(title="Same", objective="B"),
@@ -72,7 +119,13 @@ def test_validate_duplicate_sibling_title() -> None:
 def test_validate_actionable_requires_outputs() -> None:
     plan = _plan()
     response = make_agent_response(
-        operations=[MarkActionableOperation(node_id="item-001")]
+        operations=[
+            MarkActionableOperation(
+                node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
+            )
+        ]
     )
     errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
     assert any("expected_outputs" in error for error in errors)
@@ -81,7 +134,14 @@ def test_validate_actionable_requires_outputs() -> None:
 def test_validate_blocked_requires_fields() -> None:
     plan = _plan()
     response = make_agent_response(
-        operations=[MarkBlockedOperation(node_id="item-001", reason="blocked")]
+        operations=[
+            MarkBlockedOperation(
+                node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
+                reason="blocked",
+            )
+        ]
     )
     errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
     assert any("missing_information" in error for error in errors)
@@ -91,7 +151,14 @@ def test_validate_max_children_limit() -> None:
     plan = _plan()
     children = [ChildDraft(title=f"C{i}", objective=f"obj {i}") for i in range(3)]
     response = make_agent_response(
-        operations=[ExpandOperation(node_id="item-001", children=children)]
+        operations=[
+            ExpandOperation(
+                node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
+                children=children,
+            )
+        ]
     )
     errors = validate_response(
         plan,
@@ -108,6 +175,8 @@ def test_validate_cumulative_max_items_within_single_response() -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[ChildDraft(title="A", objective="a")],
             )
         ]
@@ -140,6 +209,8 @@ def test_validate_wave_responses_checks_combined_item_limit() -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[ChildDraft(title="A", objective="a")],
             )
         ],
@@ -149,6 +220,8 @@ def test_validate_wave_responses_checks_combined_item_limit() -> None:
         operations=[
             ExpandOperation(
                 node_id="item-002",
+                title="Generated sibling root",
+                objective="Describe the sibling plan",
                 children=[ChildDraft(title="B", objective="b")],
             )
         ],

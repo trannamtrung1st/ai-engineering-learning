@@ -27,6 +27,8 @@ def test_apply_expand_assigns_ids_and_dependencies() -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Build the CSV conversion CLI",
+                objective="Plan a reliable CLI for converting CSV input.",
                 children=[
                     ChildDraft(ref="child-1", title="First", objective="first"),
                     ChildDraft(
@@ -43,6 +45,8 @@ def test_apply_expand_assigns_ids_and_dependencies() -> None:
     root = updated.item_by_id("item-001")
     assert root is not None
     assert root.decomposition_status == DecompositionStatus.ACTIONABLE
+    assert root.title == "Build the CSV conversion CLI"
+    assert root.objective == "Plan a reliable CLI for converting CSV input."
     children = updated.children_of("item-001")
     assert len(children) == 2
     assert children[0].id == "item-002"
@@ -55,6 +59,8 @@ def test_apply_actionable() -> None:
         operations=[
             MarkActionableOperation(
                 node_id="item-001",
+                title="Plan the requested work",
+                objective="Produce the requested implementation plan.",
                 expected_outputs=["Spec"],
                 acceptance_criteria=["Complete"],
             )

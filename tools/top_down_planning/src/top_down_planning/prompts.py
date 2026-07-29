@@ -240,6 +240,9 @@ Do not execute implementation work.
 ## Rules
 - Choose exactly one operation per **assigned** item only.
 - Do not record operations for unassigned nodes.
+- For the root item's operation, provide `title` and `objective` that specifically
+  summarize the input and requested output; do not preserve its generic bootstrap wording.
+- Do not provide operation-level `title` or `objective` for non-root items.
 - Use `expand` when the item still contains multiple meaningful planning concerns.
 - Use `mark_actionable` when the item is detailed enough for the output goal.
 - Use `mark_blocked` only when required information is missing and cannot be inferred safely.

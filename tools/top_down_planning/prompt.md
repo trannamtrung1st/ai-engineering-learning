@@ -128,6 +128,10 @@ result:
   summary: null
 ```
 
+The initial root wording is bootstrap state only. The root's first decomposition
+operation must replace its `title` and `objective` with agent-generated values specific
+to the input document and output goal, whether it expands or reaches a terminal status.
+
 Supported `decomposition_status` values:
 
 * `needs_expansion`
@@ -267,6 +271,8 @@ Example operation payload for `record-operation`:
   "type": "expand",
   "node_id": "item-001",
   "reason": "The root contains multiple independent planning areas.",
+  "title": "Design and implement the top-down planning tool",
+  "objective": "Produce a generic planning tool that satisfies the requested contracts.",
   "children": [
     {
       "title": "Define the planning state model",

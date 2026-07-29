@@ -28,7 +28,7 @@ Helper CLIs also expose offline discovery:
 planning-plan-tool usage
 planning-plan-tool schema --target operation
 planning-plan-tool example --type mark_actionable
-planning-plan-tool validate --json '{"type":"mark_actionable","node_id":"item-001"}'
+planning-plan-tool validate --json '{"type":"mark_actionable","node_id":"item-002"}'
 
 planning-review-tool usage --stage whole_plan_review
 planning-review-tool schema --stage whole_plan_review
@@ -309,6 +309,11 @@ During decomposition, the agent records structured operations through the bundle
 - `mark_blocked`
 - `mark_out_of_scope`
 - `revise_actionable` (amend sessions after review only)
+
+The first decomposition operation on `item-001` must include an agent-generated `title`
+and `objective` specific to the input and output goal. This applies whether the root is
+expanded or marked actionable, blocked, or out of scope. These values replace the
+generic bootstrap wording before the root enters later plan context, review, or rendering.
 
 Each batch session writes `.planning-output/iterations/{NNN}-transaction.json`. The
 orchestrator validates the full wave atomically, assigns IDs/depth/order, and persists

@@ -128,6 +128,7 @@ def test_prompt_embeds_small_input_document(
     assert "```markdown" in prompt
     assert "Build a small CLI that converts CSV" in prompt
     assert "Produce an actionable implementation plan" in prompt
+    assert "For the root item's operation, provide `title` and `objective`" in prompt
     goal_section = format_output_goal_section(
         output_goal=output_goal,
         workspace=tmp_path,

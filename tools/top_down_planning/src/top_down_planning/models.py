@@ -231,6 +231,15 @@ class PlanState(BaseModel):
         )
 
 
+def _validated_optional_detail(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("must not be empty")
+    return stripped
+
+
 class ChildDraft(BaseModel):
     ref: str | None = None
     title: str
@@ -260,34 +269,62 @@ class ExpandOperation(BaseModel):
     type: Literal["expand"] = "expand"
     node_id: str
     reason: str = ""
+    title: str | None = None
+    objective: str | None = None
     children: list[ChildDraft]
+
+    @field_validator("title", "objective")
+    @classmethod
+    def _non_empty_parent_detail(cls, value: str | None) -> str | None:
+        return _validated_optional_detail(value)
 
 
 class MarkActionableOperation(BaseModel):
     type: Literal["mark_actionable"] = "mark_actionable"
     node_id: str
     reason: str = ""
+    title: str | None = None
+    objective: str | None = None
     expected_outputs: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
 
+    @field_validator("title", "objective")
+    @classmethod
+    def _non_empty_root_detail(cls, value: str | None) -> str | None:
+        return _validated_optional_detail(value)
+
 
 class MarkBlockedOperation(BaseModel):
     type: Literal["mark_blocked"] = "mark_blocked"
     node_id: str
     reason: str = ""
+    title: str | None = None
+    objective: str | None = None
     missing_information: str = ""
     open_question: str = ""
     constraint_code: BlockedConstraintCode | None = None
     required_min_children: int | None = None
+
+    @field_validator("title", "objective")
+    @classmethod
+    def _non_empty_root_detail(cls, value: str | None) -> str | None:
+        return _validated_optional_detail(value)
 
 
 class MarkOutOfScopeOperation(BaseModel):
     type: Literal["mark_out_of_scope"] = "mark_out_of_scope"
     node_id: str
     reason: str = ""
+    title: str | None = None
+    objective: str | None = None
+
+    @field_validator("title", "objective")
+    @classmethod
+    def _non_empty_root_detail(cls, value: str | None) -> str | None:
+        return _validated_optional_detail(value)
 
 
 class ReviseActionableOperation(BaseModel):

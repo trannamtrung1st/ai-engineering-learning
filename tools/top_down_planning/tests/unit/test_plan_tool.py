@@ -56,6 +56,8 @@ def test_record_and_finalize_transaction(plan_session) -> None:
             {
                 "type": "mark_actionable",
                 "node_id": "item-001",
+                "title": "Plan the requested work",
+                "objective": "Produce the requested plan.",
                 "expected_outputs": ["Plan"],
                 "acceptance_criteria": ["Done"],
             }
@@ -87,6 +89,8 @@ def test_finalize_requires_all_selected_operations(
             {
                 "type": "mark_actionable",
                 "node_id": "item-001",
+                "title": "Plan the requested work",
+                "objective": "Produce the requested plan.",
                 "expected_outputs": ["Plan"],
                 "acceptance_criteria": ["Done"],
             }
@@ -118,6 +122,8 @@ def test_status_reports_missing_nodes(plan_session, capsys) -> None:
             {
                 "type": "mark_actionable",
                 "node_id": "item-001",
+                "title": "Plan the requested work",
+                "objective": "Produce the requested plan.",
                 "expected_outputs": ["Plan"],
                 "acceptance_criteria": ["Done"],
             }
@@ -147,6 +153,8 @@ def test_reset_transaction_clears_draft_and_final(tmp_path: Path, plan_session) 
             {
                 "type": "mark_actionable",
                 "node_id": "item-001",
+                "title": "Plan the requested work",
+                "objective": "Produce the requested plan.",
                 "expected_outputs": ["Plan"],
                 "acceptance_criteria": ["Done"],
             }

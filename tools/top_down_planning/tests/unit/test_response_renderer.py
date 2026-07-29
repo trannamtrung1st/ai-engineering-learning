@@ -18,6 +18,8 @@ def test_parse_fenced_json_legacy() -> None:
         operations=[
             MarkActionableOperation(
                 node_id="item-001",
+                title="Plan the requested work",
+                objective="Produce the requested plan.",
                 expected_outputs=["x"],
                 acceptance_criteria=["y"],
             )
@@ -33,6 +35,8 @@ def test_load_planning_response_from_transaction_file(tmp_path: Path) -> None:
         operations=[
             MarkActionableOperation(
                 node_id="item-001",
+                title="Plan the requested work",
+                objective="Produce the requested plan.",
                 expected_outputs=["x"],
                 acceptance_criteria=["y"],
             )

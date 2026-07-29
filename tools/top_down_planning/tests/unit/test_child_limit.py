@@ -48,6 +48,8 @@ def test_structured_mark_blocked_for_child_limit() -> None:
         operations=[
             MarkBlockedOperation(
                 node_id="item-001",
+                title="Plan the required workstreams",
+                objective="Preserve every explicitly required top-level workstream.",
                 reason="Requires at least 9 direct children",
                 constraint_code=BlockedConstraintCode.MAX_CHILDREN_EXCEEDED,
                 required_min_children=9,
@@ -78,6 +80,8 @@ def test_required_min_children_must_exceed_limit() -> None:
         operations=[
             MarkBlockedOperation(
                 node_id="item-001",
+                title="Plan the required workstreams",
+                objective="Preserve every explicitly required top-level workstream.",
                 reason="Requires 8 children",
                 constraint_code=BlockedConstraintCode.MAX_CHILDREN_EXCEEDED,
                 required_min_children=8,
@@ -99,6 +103,8 @@ def test_reopen_eligible_child_limit_blocked_when_limit_increases() -> None:
         operations=[
             MarkBlockedOperation(
                 node_id="item-001",
+                title="Plan the required workstreams",
+                objective="Preserve every explicitly required top-level workstream.",
                 reason="Requires at least 11 direct children",
                 constraint_code=BlockedConstraintCode.MAX_CHILDREN_EXCEEDED,
                 required_min_children=11,

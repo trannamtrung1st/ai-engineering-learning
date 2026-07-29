@@ -59,6 +59,8 @@ def test_recover_plan_from_iteration_audit(tmp_path: Path) -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[
                     ChildDraft(title="Area A", objective="Do A"),
                     ChildDraft(title="Area B", objective="Do B"),
@@ -91,6 +93,8 @@ def test_recover_skips_failed_validation_audit(tmp_path: Path) -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[ChildDraft(title="Area A", objective="Do A")],
             )
         ]
@@ -99,6 +103,8 @@ def test_recover_skips_failed_validation_audit(tmp_path: Path) -> None:
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[ChildDraft(title="Area B", objective="Do B")],
             )
         ]
@@ -152,6 +158,8 @@ def test_restore_canonical_plan_after_agent_reset(tmp_path: Path) -> None:
             operations=[
                 ExpandOperation(
                     node_id="item-001",
+                    title="Generated root",
+                    objective="Describe the requested plan",
                     children=[ChildDraft(title="Area A", objective="Do A")],
                 )
             ]
@@ -201,6 +209,8 @@ async def test_resume_recovers_reset_plan_from_audit(
         operations=[
             ExpandOperation(
                 node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
                 children=[
                     ChildDraft(title="Area A", objective="A"),
                     ChildDraft(title="Area B", objective="B"),

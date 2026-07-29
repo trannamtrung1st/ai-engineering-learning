@@ -207,6 +207,7 @@ def test_finalize_rejects_stale_plan_digest(
     record_operation(
         json_payload=(
             '{"type":"mark_actionable","node_id":"item-001",'
+            '"title":"Plan the requested work","objective":"Produce the requested plan.",'
             '"expected_outputs":["Plan"],"acceptance_criteria":["Done"]}'
         )
     )
@@ -230,6 +231,8 @@ def test_validate_wave_rejects_stale_digest() -> None:
         operations=[
             MarkActionableOperation(
                 node_id="item-001",
+                title="Plan the requested work",
+                objective="Produce the requested plan.",
                 expected_outputs=["x"],
                 acceptance_criteria=["y"],
             )

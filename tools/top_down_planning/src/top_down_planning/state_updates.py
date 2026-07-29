@@ -47,6 +47,12 @@ def _apply_expand(
     parent: PlanItem,
     operation: ExpandOperation,
 ) -> None:
+    _apply_root_metadata(
+        parent,
+        title=operation.title,
+        objective=operation.objective,
+        operation_name="Expand",
+    )
     parent.decomposition_status = DecompositionStatus.ACTIONABLE
     parent.readiness_status = ReadinessStatus.READY
 
@@ -86,6 +92,12 @@ def _apply_expand(
 
 
 def _apply_actionable(item: PlanItem, operation: MarkActionableOperation) -> None:
+    _apply_root_metadata(
+        item,
+        title=operation.title,
+        objective=operation.objective,
+        operation_name="Mark actionable",
+    )
     item.decomposition_status = DecompositionStatus.ACTIONABLE
     item.readiness_status = ReadinessStatus.READY
     if operation.expected_outputs:
@@ -101,6 +113,12 @@ def _apply_actionable(item: PlanItem, operation: MarkActionableOperation) -> Non
 
 
 def _apply_blocked(item: PlanItem, operation: MarkBlockedOperation) -> None:
+    _apply_root_metadata(
+        item,
+        title=operation.title,
+        objective=operation.objective,
+        operation_name="Mark blocked",
+    )
     item.decomposition_status = DecompositionStatus.BLOCKED
     item.readiness_status = ReadinessStatus.BLOCKED
     item.blocked_reason = operation.reason.strip()
@@ -115,9 +133,37 @@ def _apply_blocked(item: PlanItem, operation: MarkBlockedOperation) -> None:
 
 
 def _apply_out_of_scope(item: PlanItem, operation: MarkOutOfScopeOperation) -> None:
+    _apply_root_metadata(
+        item,
+        title=operation.title,
+        objective=operation.objective,
+        operation_name="Mark out of scope",
+    )
     item.decomposition_status = DecompositionStatus.OUT_OF_SCOPE
     item.readiness_status = ReadinessStatus.READY
     item.out_of_scope_reason = operation.reason.strip()
+
+
+def _apply_root_metadata(
+    item: PlanItem,
+    *,
+    title: str | None,
+    objective: str | None,
+    operation_name: str,
+) -> None:
+    if item.parent_id is None:
+        if title is None or objective is None:
+            raise ValueError(
+                f"{operation_name} on root item {item.id} requires a generated "
+                "title and objective"
+            )
+        item.title = title
+        item.objective = objective
+    elif title is not None or objective is not None:
+        raise ValueError(
+            f"{operation_name} on {item.id} may update title and objective only "
+            "for the root item"
+        )
 
 
 def _apply_revise_actionable(item: PlanItem, operation: ReviseActionableOperation) -> None:
