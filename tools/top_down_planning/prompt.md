@@ -256,18 +256,28 @@ Each batch session receives scoped environment variables:
 
 * `PLANNING_TOOL_TXN_FILE` — path to `{NNN}-transaction.json`
 * `PLANNING_TOOL_ELIGIBLE_IDS` — comma-separated eligible node ids
-* `PLANNING_TOOL_PATCHABLE_IDS` — comma-separated related node ids eligible for `update_item`
 * `PLANNING_TOOL_PLAN_FILE` — read-only path to canonical `plan.yaml`
+* `PLANNING_TOOL_PLAN_DIGEST` — expected digest for the current plan snapshot
+* `PLANNING_TOOL_SESSION_MODE` — `batch` (default) or `disposition`
 * `PLANNING_TOOL_COMMAND` — resolved shell command for the CLI
 
-Workflow per batch:
+Workflow per batch (`session_mode=batch`):
 
 1. `planning-plan-tool select-batch --node-id <id> [--purpose "..."]`
 2. `planning-plan-tool show-context` (optional)
 3. `planning-plan-tool status` (optional)
 4. `planning-plan-tool record-operation --json '<operation>'` once per selected item
-5. `planning-plan-tool record-update --json '<update_item>'` zero or more times for patchable related items
+5. `planning-plan-tool record-update --json '<update_item>'` zero or more times for
+   patchable related items (computed from the selected batch scope)
 6. `planning-plan-tool finalize`
+
+Disposition workflow (`session_mode=disposition`):
+
+1. `planning-plan-tool record-planning-state-update --json '<update>'` with
+   `finding_dispositions` and any plan-impacting state fields
+2. `planning-plan-tool record-update --json '<update_item>'` zero or more times for
+   affected plan items (no `select-batch` or `record-operation`)
+3. `planning-plan-tool finalize`
 
 The orchestrator loads the finalized transaction, validates the iteration atomically, assigns
 IDs/depth/order, and persists the updated state to `plan.yaml`. Successful batches also

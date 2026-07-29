@@ -15,6 +15,7 @@ from tests.helpers import DEFAULT_LIMITS, make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.validator import (
     validate_amend_response,
+    validate_patch_only_response,
     validate_response,
     validate_wave_responses,
 )
@@ -501,3 +502,89 @@ def test_validate_expand_rejects_expand_at_max_depth() -> None:
         limits=limits,
     )
     assert any("max_depth=6" in error for error in errors)
+
+
+def test_validate_patch_only_disposition_accepts_any_plan_item() -> None:
+    plan = _plan()
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id="item-001",
+            title="Sibling",
+            objective="sibling work",
+            depth=1,
+            order=2,
+            decomposition_status=DecompositionStatus.NEEDS_EXPANSION,
+        )
+    )
+    response = make_agent_response(
+        operations=[],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-002",
+                reason="Accepted reviewer finding.",
+                notes=["patched"],
+            )
+        ],
+    )
+    errors = validate_patch_only_response(
+        plan,
+        response,
+        plan_digest=response.plan_digest,
+        output_goal_text=GOAL_TEXT,
+        disposition_only=True,
+    )
+    assert errors == []
+
+
+def test_validate_patch_only_batch_requires_selected_items() -> None:
+    plan = _plan()
+    response = make_agent_response(
+        operations=[],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-001",
+                reason="Align notes.",
+                notes=["patched"],
+            )
+        ],
+    )
+    errors = validate_patch_only_response(
+        plan,
+        response,
+        plan_digest=response.plan_digest,
+        output_goal_text=GOAL_TEXT,
+        disposition_only=False,
+    )
+    assert any("selected_items" in error for error in errors)
+
+
+def test_validate_patch_only_disposition_rejects_operations() -> None:
+    plan = _plan()
+    response = make_agent_response(
+        operations=[
+            MarkActionableOperation(
+                node_id="item-001",
+                title="Plan",
+                objective="Plan the work.",
+                expected_outputs=["Plan"],
+                acceptance_criteria=["Complete"],
+            )
+        ],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-001",
+                reason="Should not combine with operations.",
+                notes=["patched"],
+            )
+        ],
+    )
+    errors = validate_patch_only_response(
+        plan,
+        response,
+        plan_digest=response.plan_digest,
+        output_goal_text=GOAL_TEXT,
+        disposition_only=True,
+    )
+    assert any("must not include planning operations" in error for error in errors)

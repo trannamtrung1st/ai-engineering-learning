@@ -261,6 +261,77 @@ def validate_wave_responses(
     return structural_errors(updated)
 
 
+def validate_patch_only_response(
+    plan: PlanState,
+    response: AgentResponse,
+    *,
+    plan_digest: str,
+    output_goal_text: str,
+    disposition_only: bool = False,
+) -> list[str]:
+    """Validate transactions that patch existing items without primary operations."""
+    if response.plan_digest != plan_digest:
+        return [
+            f"Transaction plan_digest mismatch: expected {plan_digest}, "
+            f"got {response.plan_digest}"
+        ]
+    if not response.updates:
+        return ["Patch-only transaction must include at least one update"]
+    if disposition_only and response.operations:
+        return ["Disposition transactions must not include planning operations"]
+
+    if disposition_only:
+        errors = _validate_disposition_updates(
+            plan,
+            response.updates,
+            output_goal_text=output_goal_text,
+        )
+    else:
+        selected_set = set(response.selected_items)
+        if not selected_set:
+            return [
+                "Patch-only batch transactions require selected_items from select-batch"
+            ]
+        errors = _validate_updates(
+            plan,
+            response.updates,
+            selected_ids=selected_set,
+            output_goal_text=output_goal_text,
+        )
+    if errors:
+        return errors
+    return _validate_applied_state(plan, response)
+
+
+def _validate_disposition_updates(
+    plan: PlanState,
+    updates: list[UpdateItemOperation],
+    *,
+    output_goal_text: str,
+) -> list[str]:
+    errors: list[str] = []
+    seen: set[str] = set()
+    for update in updates:
+        node_id = update.node_id
+        if node_id in seen:
+            errors.append(f"Duplicate update for node: {node_id}")
+            continue
+        seen.add(node_id)
+        item = plan.item_by_id(node_id)
+        if item is None:
+            errors.append(f"Unknown update node id: {node_id}")
+            continue
+        errors.extend(
+            _validate_update_item(
+                plan,
+                item,
+                update,
+                output_goal_text=output_goal_text,
+            )
+        )
+    return errors
+
+
 def _validate_eligible_selection(
     selected_ids: list[str],
     eligible_ids: set[str] | None,

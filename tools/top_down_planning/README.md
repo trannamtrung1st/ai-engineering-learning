@@ -280,7 +280,10 @@ Each primary-planner turn includes:
 - **Agent-selected scope (writable)** — items recorded via `select-batch`; exactly one
   operation per selected item via `planning-plan-tool`.
 - **Patchable related items** — directly related existing nodes may receive optional
-  `update_item` patches through `planning-plan-tool record-update`.
+  `update_item` patches through `planning-plan-tool record-update` (scope is derived from
+  the selected batch; no separate env var).
+- **Disposition sessions** — use `session_mode=disposition`; record finding dispositions
+  and optional `update_item` patches without `select-batch` or `record-operation`.
 - **Global plan context (read-only)** — a digest-addressed plan-overview file reference
   plus broader relevant context. Read the overview file before recording operations.
 

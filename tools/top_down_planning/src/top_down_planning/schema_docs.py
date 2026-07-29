@@ -421,9 +421,16 @@ Workflow:
 4. Optionally run `{plan_tool_command} status` to inspect the current draft.
 5. For **each selected item**, run `{plan_tool_command} record-operation --json '<operation>'`.
 6. Optionally run `{plan_tool_command} record-update --json '<update_item>'` for related items
-   listed in the patchable scope. Omitted fields preserve the current value; an empty list
-   clears a list field.
-7. Run `{plan_tool_command} finalize` to commit the session transaction."""
+   listed in the patchable scope (derived from the selected batch). Omitted fields preserve
+   the current value; an empty list clears a list field.
+7. Run `{plan_tool_command} finalize` to commit the session transaction.
+
+Disposition sessions (`PLANNING_TOOL_SESSION_MODE=disposition`):
+1. Run `{plan_tool_command} record-planning-state-update --json '<update>'` with
+   `finding_dispositions` and any plan-impacting state fields.
+2. Optionally run `{plan_tool_command} record-update --json '<update_item>'` for affected
+   plan items. Do not use `select-batch` or `record-operation`.
+3. Run `{plan_tool_command} finalize`."""
 
 
 def format_review_schema_section(

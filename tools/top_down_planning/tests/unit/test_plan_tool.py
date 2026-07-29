@@ -9,11 +9,12 @@ from top_down_planning.models import MarkActionableOperation
 from top_down_planning.persistence import save_plan
 from top_down_planning.plan_tool import (
     ENV_ELIGIBLE_IDS,
-    ENV_PATCHABLE_IDS,
     ENV_PLAN_DIGEST,
     ENV_PLAN_FILE,
+    ENV_SESSION_MODE,
     ENV_TXN_FILE,
     PlanToolError,
+    SESSION_MODE_DISPOSITION,
     finalize,
     load_transaction,
     plan_tool_argv,
@@ -46,7 +47,6 @@ def plan_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     txn_file.parent.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv(ENV_TXN_FILE, str(txn_file))
     monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-001")
-    monkeypatch.setenv(ENV_PATCHABLE_IDS, "")
     monkeypatch.setenv(ENV_PLAN_FILE, str(output_dir / ".planning-output" / "plan.yaml"))
     monkeypatch.setenv(ENV_PLAN_DIGEST, "expected-digest")
     reset_transaction(txn_file)
@@ -76,7 +76,10 @@ def test_record_and_finalize_transaction(plan_session) -> None:
 
 
 def test_finalize_requires_at_least_one_operation(plan_session) -> None:
-    with pytest.raises(PlanToolError, match="at least one operation or planning state update"):
+    with pytest.raises(
+        PlanToolError,
+        match="at least one operation, update, or planning state update",
+    ):
         finalize()
 
 
@@ -111,7 +114,7 @@ def test_load_transaction_rejects_empty_transaction(tmp_path: Path) -> None:
         json.dumps({"operations": [], "plan_digest": "abc"}),
         encoding="utf-8",
     )
-    with pytest.raises(PlanToolError, match="no operations or state update"):
+    with pytest.raises(PlanToolError, match="no operations, updates, or state update"):
         load_transaction(txn_file)
 
 
@@ -297,6 +300,51 @@ def test_plan_tool_discovery_commands_offline() -> None:
     assert "Valid planning operation." in validate.stdout
 
 
+def test_finalize_and_load_updates_only_transaction(
+    plan_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, txn_file = plan_session
+    plan.plan.append(
+        make_root_plan(
+            input_file="idea.md",
+            output_goal="goal",
+            input_digest="a",
+            output_goal_digest="b",
+        ).plan[0].model_copy(
+            update={
+                "id": "item-002",
+                "parent_id": "item-001",
+                "title": "Child",
+                "objective": "child",
+                "depth": 1,
+                "order": 2,
+            }
+        )
+    )
+    output_dir = txn_file.parent.parent.parent
+    save_plan(output_dir, plan)
+    reset_transaction(txn_file)
+    monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-002")
+    select_batch(node_id=["item-002"])
+    record_update(
+        json_payload=json.dumps(
+            {
+                "type": "update_item",
+                "node_id": "item-001",
+                "reason": "Align parent notes.",
+                "notes": ["updated"],
+            }
+        )
+    )
+    finalize()
+
+    loaded = load_transaction(txn_file)
+    assert loaded.operations == []
+    assert len(loaded.updates) == 1
+    assert loaded.planning_state_update is None
+
+
 def test_record_update_and_finalize(plan_session, monkeypatch: pytest.MonkeyPatch) -> None:
     plan, txn_file = plan_session
     plan.plan.append(
@@ -322,7 +370,6 @@ def test_record_update_and_finalize(plan_session, monkeypatch: pytest.MonkeyPatc
     save_plan(output_dir, plan)
     reset_transaction(txn_file)
     monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-002")
-    monkeypatch.setenv(ENV_PATCHABLE_IDS, "item-001")
     select_batch(node_id=["item-002"])
     record_operation(
         json_payload=json.dumps(
@@ -381,8 +428,41 @@ def test_record_operation_rejects_existing_finalized_transaction(
         )
 
 
+def test_disposition_record_update_without_select_batch(
+    plan_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, txn_file = plan_session
+    reset_transaction(txn_file)
+    monkeypatch.setenv(ENV_SESSION_MODE, SESSION_MODE_DISPOSITION)
+    record_update(
+        json_payload=json.dumps(
+            {
+                "type": "update_item",
+                "node_id": "item-001",
+                "reason": "Accepted reviewer finding.",
+                "notes": ["updated"],
+            }
+        )
+    )
+    finalize()
+    loaded = load_transaction(txn_file)
+    assert len(loaded.updates) == 1
+
+
+def test_disposition_rejects_select_batch(
+    plan_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, txn_file = plan_session
+    reset_transaction(txn_file)
+    monkeypatch.setenv(ENV_SESSION_MODE, SESSION_MODE_DISPOSITION)
+    with pytest.raises(PlanToolError, match="Disposition sessions do not support select-batch"):
+        select_batch(node_id=["item-001"])
+
+
 def test_record_update_rejects_selected_node(plan_session, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(ENV_PATCHABLE_IDS, "item-001")
+    monkeypatch.setenv(ENV_ELIGIBLE_IDS, "item-001")
     with pytest.raises(PlanToolError, match="must not be an assigned item"):
         record_update(
             json_payload=json.dumps(

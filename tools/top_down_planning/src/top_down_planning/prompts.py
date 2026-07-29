@@ -436,7 +436,10 @@ For every finding, choose one of:
 Record dispositions and any resulting plan/state changes:
 1. Use `{plan_tool_command} record-planning-state-update --json '<update>'` with
    `finding_dispositions` and any plan-impacting state fields.
-2. If plan graph changes are required, also record planning operations and finalize.
+2. If plan graph changes are required, use `{plan_tool_command} record-update --json
+   '<update_item>'` for each affected item. Disposition sessions do not use
+   `select-batch` or `record-operation`.
+3. Run `{plan_tool_command} finalize`.
 
 Accepted findings must produce concrete plan or state changes with concise rationale.
 """

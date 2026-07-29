@@ -99,7 +99,7 @@ def recover_plan_from_iterations(output_dir: Path, plan: PlanState) -> PlanState
             response = AgentResponse.model_validate(payload)
         except (OSError, json.JSONDecodeError, PydanticValidationError, ValueError):
             continue
-        if not response.operations or not response.plan_digest:
+        if not response.has_plan_changes or not response.plan_digest:
             continue
         recovered = apply_response(recovered, response)
         applied += 1

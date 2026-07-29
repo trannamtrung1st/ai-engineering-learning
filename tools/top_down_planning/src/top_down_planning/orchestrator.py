@@ -90,6 +90,8 @@ from top_down_planning.planning_state import (
 )
 from top_down_planning.plan_tool import (
     PlanToolError,
+    SESSION_MODE_BATCH,
+    SESSION_MODE_DISPOSITION,
     build_session_env,
     load_transaction,
     reset_transaction,
@@ -121,7 +123,7 @@ from top_down_planning.scheduler import (
 )
 from top_down_planning.state_updates import apply_response
 from top_down_planning.stream_events import StreamEmitter
-from top_down_planning.validator import validate_wave_responses
+from top_down_planning.validator import validate_patch_only_response, validate_wave_responses
 
 
 @dataclass
@@ -776,6 +778,9 @@ class Orchestrator:
                 plan_file=canonical_plan_file,
                 plan_digest=plan_digest,
                 plan_tool_command=plan_tool_command,
+                session_mode=SESSION_MODE_DISPOSITION
+                if disposition_only
+                else SESSION_MODE_BATCH,
             )
             min_plan_items = len(plan.plan)
             plan_backup = backup_canonical_plan(
@@ -888,10 +893,20 @@ class Orchestrator:
                     limits=limits,
                     eligible_ids=eligible_id_set,
                 )
+            elif response.updates:
+                errors = validate_patch_only_response(
+                    plan_snapshot,
+                    response,
+                    plan_digest=plan_digest,
+                    output_goal_text=self.config.output_goal.text,
+                    disposition_only=disposition_only,
+                )
             else:
                 errors = []
                 if response.plan_digest != plan_digest:
-                    errors.append("plan_digest mismatch for state-only transaction")
+                    errors.append(
+                        "plan_digest mismatch for planning-state-only transaction"
+                    )
             if errors:
                 validation_feedback = errors
                 self.stream.emit(
@@ -923,7 +938,7 @@ class Orchestrator:
                 success=True,
                 plan_digest=plan_digest,
             )
-            if response.operations:
+            if response.has_plan_changes:
                 plan = apply_response(plan, response)
                 self._emit_operation_events(response)
             if response.planning_state_update is not None:

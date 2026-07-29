@@ -63,7 +63,7 @@ def _coverage_errors(
     elif output_goal_text.strip():
         # Soft requirement: encourage explicit coverage mapping in full mode.
         pass
-    # Every branch should map to something when coverage map exists
+    # Actionable top-level branches must be covered; expanded container roots are exempt.
     if planning_state.coverage_map:
         mapped_branches = {
             branch
@@ -73,6 +73,7 @@ def _coverage_errors(
         for item in plan.plan:
             if item.parent_id is None and item.id not in mapped_branches and item.decomposition_status not in {
                 DecompositionStatus.OUT_OF_SCOPE,
+                DecompositionStatus.EXPANDED,
             }:
                 errors.append(
                     f"{item.id} top-level branch is not mapped in coverage_map"

@@ -29,10 +29,13 @@ from top_down_planning import schema_docs
 
 ENV_TXN_FILE = "PLANNING_TOOL_TXN_FILE"
 ENV_ELIGIBLE_IDS = "PLANNING_TOOL_ELIGIBLE_IDS"
-ENV_PATCHABLE_IDS = "PLANNING_TOOL_PATCHABLE_IDS"
 ENV_PLAN_FILE = "PLANNING_TOOL_PLAN_FILE"
 ENV_PLAN_DIGEST = "PLANNING_TOOL_PLAN_DIGEST"
+ENV_SESSION_MODE = "PLANNING_TOOL_SESSION_MODE"
 PLAN_TOOL_COMMAND_ENV = "PLANNING_TOOL_COMMAND"
+
+SESSION_MODE_BATCH = "batch"
+SESSION_MODE_DISPOSITION = "disposition"
 
 _OPERATION_ADAPTER = TypeAdapter(PlanningOperation)
 _UPDATE_ADAPTER = TypeAdapter(UpdateItemOperation)
@@ -76,6 +79,7 @@ def build_session_env(
     plan_file: Path,
     plan_digest: str,
     plan_tool_command: str | None = None,
+    session_mode: str = SESSION_MODE_BATCH,
 ) -> dict[str, str]:
     """Environment variables scoped to one planning batch session."""
     command = resolve_plan_tool_command(explicit=plan_tool_command)
@@ -84,6 +88,7 @@ def build_session_env(
         ENV_ELIGIBLE_IDS: ",".join(eligible_ids),
         ENV_PLAN_FILE: str(plan_file.resolve()),
         ENV_PLAN_DIGEST: plan_digest,
+        ENV_SESSION_MODE: session_mode,
         PLAN_TOOL_COMMAND_ENV: command,
     }
 
@@ -100,6 +105,19 @@ def _eligible_ids() -> set[str]:
     if not raw:
         return set()
     return {part.strip() for part in raw.split(",") if part.strip()}
+
+
+def _is_disposition_session() -> bool:
+    mode = os.environ.get(ENV_SESSION_MODE, SESSION_MODE_BATCH).strip().lower()
+    return mode == SESSION_MODE_DISPOSITION
+
+
+def _reject_disposition_command(command: str) -> None:
+    if _is_disposition_session():
+        raise PlanToolError(
+            f"Disposition sessions do not support {command}; use "
+            "record-update and/or record-planning-state-update instead"
+        )
 
 
 def _selected_ids_from_draft(draft: dict[str, Any]) -> set[str]:
@@ -182,8 +200,10 @@ def load_transaction(path: Path) -> AgentResponse:
         response = AgentResponse.model_validate(data)
     except (OSError, json.JSONDecodeError, PydanticValidationError) as exc:
         raise PlanToolError(f"Invalid transaction file {path}: {exc}") from exc
-    if not response.operations and response.planning_state_update is None:
-        raise PlanToolError(f"Transaction file {path} contains no operations or state update")
+    if not response.has_plan_changes and response.planning_state_update is None:
+        raise PlanToolError(
+            f"Transaction file {path} contains no operations, updates, or state update"
+        )
     return response
 
 
@@ -395,6 +415,7 @@ def select_batch(
     ] = "",
 ) -> None:
     """Record the agent-selected batch scope for this iteration."""
+    _reject_disposition_command("select-batch")
     if not node_id:
         raise PlanToolError("select-batch requires at least one --node-id")
     txn_file = _txn_file()
@@ -437,6 +458,7 @@ def record_operation(
     ],
 ) -> None:
     """Append one planning operation for an allowed selected node."""
+    _reject_disposition_command("record-operation")
     txn_file = _txn_file()
     _reject_if_finalized(txn_file)
     draft = _load_draft(txn_file)
@@ -486,9 +508,7 @@ def record_update(
     txn_file = _txn_file()
     _reject_if_finalized(txn_file)
     draft = _load_draft(txn_file)
-    selected = _require_selected_ids(draft)
     plan = _load_plan_state()
-    patchable = _patchable_ids_for_selected(plan, selected)
     try:
         raw = json.loads(json_payload)
     except json.JSONDecodeError as exc:
@@ -499,15 +519,21 @@ def record_update(
     node_id = raw.get("node_id")
     if not isinstance(node_id, str):
         raise PlanToolError("Update node_id must be a string")
-    if node_id in selected:
-        raise PlanToolError(
-            f"Update node_id must not be an assigned item: {node_id}"
-        )
-    if node_id not in patchable:
-        raise PlanToolError(
-            f"Update node_id must be one of the patchable items: "
-            f"{', '.join(sorted(patchable)) or '(none)'}"
-        )
+    if _is_disposition_session():
+        if plan.item_by_id(node_id) is None:
+            raise PlanToolError(f"Unknown node id: {node_id}")
+    else:
+        selected = _require_selected_ids(draft)
+        patchable = _patchable_ids_for_selected(plan, selected)
+        if node_id in selected:
+            raise PlanToolError(
+                f"Update node_id must not be an assigned item: {node_id}"
+            )
+        if node_id not in patchable:
+            raise PlanToolError(
+                f"Update node_id must be one of the patchable items: "
+                f"{', '.join(sorted(patchable)) or '(none)'}"
+            )
 
     try:
         update = _UPDATE_ADAPTER.validate_python(raw)
@@ -576,8 +602,10 @@ def finalize() -> None:
     except PydanticValidationError as exc:
         raise PlanToolError(f"Cannot finalize invalid transaction: {exc}") from exc
 
-    if not response.operations and response.planning_state_update is None:
-        raise PlanToolError("Cannot finalize: at least one operation or planning state update is required")
+    if not response.has_plan_changes and response.planning_state_update is None:
+        raise PlanToolError(
+            "Cannot finalize: at least one operation, update, or planning state update is required"
+        )
 
     if response.operations:
         selected = set(response.selected_items)

@@ -573,6 +573,10 @@ class AgentResponse(BaseModel):
     batch_purpose: str = ""
     planning_state_update: PlanningStateUpdate | None = None
 
+    @property
+    def has_plan_changes(self) -> bool:
+        return bool(self.operations or self.updates)
+
 
 class RunState(BaseModel):
     model_config = ConfigDict(extra="forbid")
