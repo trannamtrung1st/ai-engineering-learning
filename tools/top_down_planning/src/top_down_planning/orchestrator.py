@@ -43,6 +43,7 @@ from top_down_planning.models import (
     FindingDisposition,
     FindingDispositionRecord,
     PlanItem,
+    PlanState,
     PlanningMode,
     PlanningState,
     ProcessedBatchRecord,
@@ -440,7 +441,7 @@ class Orchestrator:
                 output_goal_text=self.config.output_goal.text,
             )
             if not validation_errors:
-                self._planning_state = await self._maybe_run_checkpoint(
+                plan, self._planning_state = await self._maybe_run_checkpoint(
                     loaded=loaded,
                     plan=plan,
                     planning_state=self._planning_state,
@@ -527,7 +528,7 @@ class Orchestrator:
 
             if _has_first_level_decomposition(plan) and not run_state.first_level_decomposed:
                 run_state.first_level_decomposed = True
-                planning_state = await self._maybe_run_checkpoint(
+                plan, planning_state = await self._maybe_run_checkpoint(
                     loaded=loaded,
                     plan=plan,
                     planning_state=planning_state,
@@ -539,7 +540,7 @@ class Orchestrator:
 
             if is_plan_complete(plan) and not run_state.all_branches_actionable:
                 run_state.all_branches_actionable = True
-                planning_state = await self._maybe_run_checkpoint(
+                plan, planning_state = await self._maybe_run_checkpoint(
                     loaded=loaded,
                     plan=plan,
                     planning_state=planning_state,
@@ -565,6 +566,12 @@ class Orchestrator:
             )
         update_final_status(plan, status, summary)
         run_state.active_status = RunActiveStatus.COMPLETED
+        # Disposition iterations persist plan.yaml directly; reload so the final
+        # save does not overwrite accepted remediation with a stale in-memory plan.
+        persisted = load_plan(output_dir)
+        if persisted is not None:
+            update_final_status(persisted, status, summary)
+            plan = persisted
         save_plan(output_dir, plan)
         save_run_state(output_dir, run_state)
         return plan, run_state
@@ -1115,10 +1122,10 @@ class Orchestrator:
         run_state: RunState,
         output_dir: Path,
         checkpoint: ReviewCheckpoint,
-    ) -> PlanningState:
+    ) -> tuple[PlanState, PlanningState]:
         if run_state.resolved_planning_mode == PlanningMode.SIMPLE:
-            return planning_state
-        updated, _findings = await run_checkpoint_reviews(
+            return plan, planning_state
+        plan, updated, _findings = await run_checkpoint_reviews(
             self._checkpoint_flow_deps(loaded=loaded, output_dir=output_dir),
             plan=plan,
             planning_state=planning_state,
@@ -1127,7 +1134,7 @@ class Orchestrator:
         )
         save_planning_state(output_dir, updated)
         save_run_state(output_dir, run_state)
-        return updated
+        return plan, updated
 
     async def _run_disposition_turn(
         self,
@@ -1139,7 +1146,7 @@ class Orchestrator:
         checkpoint: ReviewCheckpoint,
         run_state: RunState,
         output_dir: Path,
-    ) -> PlanningState:
+    ) -> tuple[PlanState, PlanningState]:
         planning_state = planning_state.model_copy(deep=True)
         from top_down_planning.models import PlanningStateUpdate
 
@@ -1148,8 +1155,8 @@ class Orchestrator:
             PlanningStateUpdate(review_findings=findings),
         )
         if not findings:
-            return planning_state
-        await self._run_planning_iteration(
+            return plan, planning_state
+        plan = await self._run_planning_iteration(
             loaded=loaded,
             plan=plan,
             run_state=run_state,
@@ -1158,7 +1165,8 @@ class Orchestrator:
             planning_state=planning_state,
             disposition_only=True,
         )
-        return load_planning_state(output_dir) or planning_state
+        planning_state = load_planning_state(output_dir) or planning_state
+        return plan, planning_state
 
     def _emit_operation_events(self, response: AgentResponse) -> None:
         for operation in response.operations:

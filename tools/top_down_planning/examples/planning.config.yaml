@@ -98,7 +98,7 @@ render:
 # --- Cursor agent client ------------------------------------------------------
 
 agent_bin: cursor-agent
-# model: composer-2.5 # default: composer-2.5; env: PLANNING_TOOL_MODEL
+# model: auto # default: auto; env: PLANNING_TOOL_MODEL
 # skip_probe: false
 # embed_threshold: 4000 # env: PLANNING_TOOL_EMBED_THRESHOLD
 
@@ -111,7 +111,6 @@ agent_bin: cursor-agent
 
 agent_context:
   default:
-    model: composer-2.5
     skills:
       - ./.cursor/skills/example-shared/SKILL.md
     rules:

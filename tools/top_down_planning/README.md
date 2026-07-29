@@ -106,9 +106,9 @@ Iteration progress is not notified. `--stream-json` stdout remains machine-reada
 
 ### Model selection
 
-By default the tool uses Cursor model `composer-2.5`. Override with `--model` or `PLANNING_TOOL_MODEL`:
+By default the tool uses Cursor model `auto`. Override with `--model` or `PLANNING_TOOL_MODEL`:
 
-- **Default:** `composer-2.5` (`DEFAULT_CURSOR_MODEL` in `models.py`)
+- **Default:** `auto` (`DEFAULT_CURSOR_MODEL` in `models.py`)
 - **Override:** `--model <slug>` or env var `PLANNING_TOOL_MODEL`
 - **Precedence:** `agent_context.<phase>.model` → `agent_context.default.model` → CLI `--model` → `PLANNING_TOOL_MODEL` → package default
 
@@ -117,7 +117,7 @@ top-down-planning \
   --input ./examples/idea.md \
   --output-goal "Produce an actionable implementation plan" \
   --output ./planning-output \
-  --model composer-2.5
+  --model composer-2.5  # override default auto
 ```
 
 ## Outputs
@@ -352,12 +352,13 @@ prior run stored a digest.
 
 ### Agent context
 
-Configure workspace-relative skill and rule file paths under `agent_context` in the run config:
+Configure workspace-relative skill and rule file paths under `agent_context` in the run config.
+Per-phase `model` overrides are optional (default: `auto`):
 
 ```yaml
 agent_context:
   default:
-    model: composer-2.5
+    # model: auto  # optional; package default is auto
     skills:
       - ./.cursor/skills/shared/SKILL.md
     rules:

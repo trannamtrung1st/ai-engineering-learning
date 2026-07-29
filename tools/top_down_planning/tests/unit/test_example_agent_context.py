@@ -13,7 +13,8 @@ from top_down_planning.config_loader import merge_run_options
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal
 from top_down_planning.prompts import build_render_batch_author_prompt, build_planning_prompt
 from top_down_planning.scheduler import initialize_root_plan
-from top_down_planning.models import SourceMetadata
+from top_down_planning.model_config import resolve_model
+from top_down_planning.models import SourceMetadata, DEFAULT_CURSOR_MODEL
 from tests.helpers import planning_prompt_kwargs
 
 
@@ -29,9 +30,10 @@ def test_bundled_planning_example_agent_context() -> None:
     planning = resolve_phase_agent_context("planning", options.agent_context)
     rendering = resolve_phase_agent_context("rendering", options.agent_context)
     review = resolve_phase_agent_context("review", options.agent_context)
-    assert resolve_phase_model("planning", None, options.agent_context) == "composer-2.5"
-    assert resolve_phase_model("rendering", None, options.agent_context) == "composer-2.5"
-    assert resolve_phase_model("review", None, options.agent_context) == "composer-2.5"
+    base_model = resolve_model(None)
+    assert resolve_phase_model("planning", base_model, options.agent_context) == DEFAULT_CURSOR_MODEL
+    assert resolve_phase_model("rendering", base_model, options.agent_context) == DEFAULT_CURSOR_MODEL
+    assert resolve_phase_model("review", base_model, options.agent_context) == DEFAULT_CURSOR_MODEL
     validate_agent_context_paths(examples_root, planning, label="planning")
     validate_agent_context_paths(examples_root, rendering, label="rendering")
     validate_agent_context_paths(examples_root, review, label="review")

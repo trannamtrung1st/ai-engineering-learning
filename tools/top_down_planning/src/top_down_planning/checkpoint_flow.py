@@ -90,9 +90,9 @@ async def run_checkpoint_reviews(
     planning_state: PlanningState,
     run_state: RunState,
     checkpoint: ReviewCheckpoint,
-) -> tuple[PlanningState, list[CheckpointFinding]]:
+) -> tuple[PlanState, PlanningState, list[CheckpointFinding]]:
     if not checkpoint_enabled(deps.strategy, checkpoint):
-        return planning_state, []
+        return plan, planning_state, []
     findings: list[CheckpointFinding] = []
     plan_digest = compute_plan_digest(plan)
     for role in roles_for_checkpoint(checkpoint):
@@ -113,7 +113,7 @@ async def run_checkpoint_reviews(
             + len(result.findings)
         )
     if not findings:
-        return planning_state, []
+        return plan, planning_state, []
     updated_state = planning_state.model_copy(deep=True)
     from top_down_planning.models import PlanningStateUpdate
 
@@ -121,14 +121,14 @@ async def run_checkpoint_reviews(
         updated_state,
         PlanningStateUpdate(review_findings=findings),
     )
-    updated_state = await deps.run_primary_disposition(
+    plan, updated_state = await deps.run_primary_disposition(
         plan=plan,
         planning_state=updated_state,
         findings=findings,
         checkpoint=checkpoint,
         run_state=run_state,
     )
-    return updated_state, findings
+    return plan, updated_state, findings
 
 
 async def _ensure_specialist_review(
