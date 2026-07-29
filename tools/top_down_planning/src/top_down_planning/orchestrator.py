@@ -316,10 +316,9 @@ class Orchestrator:
             run_state.agent_pids = []
             save_run_state(output_dir, run_state)
             # Do not save `plan` here: it is the snapshot from before
-            # `_planning_loop` and would overwrite waves already persisted to
+            # `_planning_loop` and would overwrite iterations already persisted to
             # plan.yaml. In-flight agent sessions restore canonical plan.yaml in
-            # their finally blocks; `_run_planning_wave` re-saves the pre-wave
-            # plan when a wave is interrupted.
+            # their finally blocks when an iteration is interrupted.
             raise
         except PlanningToolError as exc:
             run_state.active_status = RunActiveStatus.FAILED
