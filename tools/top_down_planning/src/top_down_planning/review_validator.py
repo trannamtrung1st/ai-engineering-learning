@@ -156,6 +156,18 @@ def validate_final_confirmation(
     elif result.decision == ConfirmationDecision.NEEDS_REVISION:
         if not result.findings:
             errors.append("needs_revision decision requires at least one finding")
+        elif not any(
+            finding.revision_mode in {RevisionMode.REOPEN, RevisionMode.AMEND}
+            or (
+                finding.revision_mode == RevisionMode.ANNOTATE
+                and finding.node_ids
+            )
+            for finding in result.findings
+        ):
+            errors.append(
+                "needs_revision requires at least one actionable finding "
+                "(reopen, amend, or annotate with node_ids)"
+            )
     elif result.decision == ConfirmationDecision.BLOCKED:
         if not result.summary.strip():
             errors.append("blocked decision requires a summary explanation")

@@ -105,11 +105,13 @@ Record exactly one structured review result through the review transaction CLI.
 - Coverage: explicit source requirements represented; required sibling groups distinct;
   nothing important omitted; non-goals not leaked into scope.
 - Consistency: no contradictions; no substantial duplicate scope; assumptions aligned.
-- Decomposition quality: actionable leaves bounded; granularity reasonably consistent;
-  render phase should not require major design rediscovery.
+- Decomposition quality: actionable leaves bounded for the output goal; granularity
+  reasonably consistent; render should not require major design rediscovery.
 - Dependency quality: real prerequisites only; preferred order not encoded as hard deps.
-- Verification quality: concrete expected outputs; observable acceptance criteria;
-  no contradictory criteria; integration/verification steps present when needed.
+- Completion quality: concrete expected outputs and observable acceptance criteria where
+  the output goal requires them; no contradictory criteria; unresolved decisions surfaced
+  via blocked items or open questions when needed.
+- Ownership: each major concern has a clear owner; no overlapping duplicate workstreams.
 
 {schema_docs.format_review_schema_section(
     review_tool_command=review_tool_command,
@@ -118,8 +120,8 @@ Record exactly one structured review result through the review transaction CLI.
 )}
 
 Revision modes (required on every finding when decision is `needs_revision`):
-- `amend` — actionable item detail is wrong (acceptance criteria, sequencing, evidence,
-  wording). Cite only the actionable node ids to patch in place. Do not cite ancestors
+- `amend` — actionable item detail is wrong (acceptance criteria, sequencing, wording).
+  Cite only the actionable node ids to patch in place. Do not cite ancestors
   together with descendants.
 - `reopen` — branch structure or decomposition is wrong. Cite only the minimal reopen
   root id(s). Never cite both a parent and its descendant in the same finding.

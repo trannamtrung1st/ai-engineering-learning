@@ -36,7 +36,6 @@ ITERATIONS_DIR = "iterations"
 CONTEXT_DIR = "context"
 REVIEWS_DIR = "reviews"
 STATE_DIRNAME = ".planning-output"
-LEGACY_STATE_DIRNAME = ".top-down-planning"
 RENDER_DIRNAME = "render"
 RENDER_STATE_FILENAME = "render-state.json"
 RENDER_SCHEDULE_FILENAME = "batch-schedule.yaml"
@@ -46,44 +45,16 @@ def state_dir(output_dir: Path) -> Path:
     return output_dir / STATE_DIRNAME
 
 
-def _read_state_dir(output_dir: Path) -> Path:
-    current = output_dir / STATE_DIRNAME
-    legacy = output_dir / LEGACY_STATE_DIRNAME
-    if current.is_dir() or not legacy.is_dir():
-        return current
-    return legacy
-
-
 def plan_path(output_dir: Path) -> Path:
-    for dirname in (STATE_DIRNAME, LEGACY_STATE_DIRNAME):
-        state_path = output_dir / dirname / PLAN_FILENAME
-        if state_path.is_file():
-            return state_path
-    legacy = output_dir / PLAN_FILENAME
-    if legacy.is_file():
-        return legacy
     return state_dir(output_dir) / PLAN_FILENAME
 
 
 def run_state_path(output_dir: Path) -> Path:
-    for dirname in (STATE_DIRNAME, LEGACY_STATE_DIRNAME):
-        state_path = output_dir / dirname / RUN_STATE_FILENAME
-        if state_path.is_file():
-            return state_path
-    legacy = output_dir / RUN_STATE_FILENAME
-    if legacy.is_file():
-        return legacy
     return state_dir(output_dir) / RUN_STATE_FILENAME
 
 
 def iterations_dir(output_dir: Path) -> Path:
-    current = state_dir(output_dir) / ITERATIONS_DIR
-    if current.is_dir():
-        return current
-    legacy = _read_state_dir(output_dir) / ITERATIONS_DIR
-    if legacy.is_dir():
-        return legacy
-    return current
+    return state_dir(output_dir) / ITERATIONS_DIR
 
 
 def iteration_prefix(output_dir: Path, iteration: int) -> str:
@@ -248,7 +219,6 @@ def save_plan(output_dir: Path, plan: PlanState) -> None:
     target = directory / PLAN_FILENAME
     payload = plan.model_dump(mode="json")
     _atomic_write_yaml(target, payload)
-    _remove_legacy_file(output_dir / PLAN_FILENAME, target)
 
 
 def load_run_state(output_dir: Path) -> RunState | None:
@@ -269,7 +239,6 @@ def save_run_state(output_dir: Path, state: RunState) -> None:
     state.updated_at = datetime.now(timezone.utc)
     payload = state.model_dump(mode="json")
     _atomic_write_json(target, payload)
-    _remove_legacy_file(output_dir / RUN_STATE_FILENAME, target)
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -329,18 +298,18 @@ def ensure_resume_compatible(
         if not resume:
             raise ResumeError(
                 f"Output directory already contains planning state under "
-                f"{STATE_DIRNAME}/ (or legacy root files). "
+                f"{STATE_DIRNAME}/. "
                 "Pass --resume to continue or choose a different --output path."
             )
         if existing_run is None:
             raise ResumeError(
                 f"Cannot resume: {RUN_STATE_FILENAME} missing under "
-                f"{output_dir}/{STATE_DIRNAME}/ (or legacy root)"
+                f"{output_dir}/{STATE_DIRNAME}/"
             )
         if existing_plan is None:
             raise ResumeError(
                 f"Cannot resume: {PLAN_FILENAME} missing under "
-                f"{output_dir}/{STATE_DIRNAME}/ (or legacy root)"
+                f"{output_dir}/{STATE_DIRNAME}/"
             )
         if existing_run.input_digest != input_digest:
             raise ResumeError(
@@ -547,8 +516,3 @@ def _atomic_write_yaml(path: Path, payload: dict[str, Any]) -> None:
 def update_final_status(plan: PlanState, status: FinalStatus, summary: str | None) -> None:
     plan.result.status = status
     plan.result.summary = summary
-
-
-def _remove_legacy_file(legacy: Path, canonical: Path) -> None:
-    if legacy.is_file() and legacy.resolve() != canonical.resolve():
-        legacy.unlink()

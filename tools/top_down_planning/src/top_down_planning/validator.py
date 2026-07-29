@@ -47,6 +47,7 @@ def validate_response(
     *,
     selected_ids: list[str],
     limits: PlanningLimits,
+    output_goal_text: str,
 ) -> list[str]:
     errors: list[str] = []
     selected_set = set(selected_ids)
@@ -84,7 +85,15 @@ def validate_response(
                 f"(status={item.decomposition_status.value})"
             )
             continue
-        errors.extend(_validate_operation(plan, item, operation, limits=limits))
+        errors.extend(
+            _validate_operation(
+                plan,
+                item,
+                operation,
+                limits=limits,
+                output_goal_text=output_goal_text,
+            )
+        )
 
     if not errors:
         errors.extend(
@@ -92,6 +101,7 @@ def validate_response(
                 plan,
                 response.updates,
                 selected_ids=selected_set,
+                output_goal_text=output_goal_text,
             )
         )
 
@@ -111,6 +121,7 @@ def validate_amend_response(
     response: AgentResponse,
     *,
     selected_ids: list[str],
+    output_goal_text: str,
 ) -> list[str]:
     """Validate in-place revision operations for actionable items."""
     errors: list[str] = []
@@ -158,7 +169,14 @@ def validate_amend_response(
                 f"(status={item.decomposition_status.value})"
             )
             continue
-        errors.extend(_validate_revise_actionable(plan, item, operation))
+        errors.extend(
+            _validate_revise_actionable(
+                plan,
+                item,
+                operation,
+                output_goal_text=output_goal_text,
+            )
+        )
 
     if not errors:
         errors.extend(_validate_applied_state(plan, response))
@@ -171,6 +189,7 @@ def validate_amend_wave_responses(
     batches: list[tuple[list[str], AgentResponse]],
     *,
     plan_digest: str,
+    output_goal_text: str,
 ) -> list[str]:
     """Validate concurrent amend batch responses against one plan snapshot."""
     for selected_ids, response in batches:
@@ -183,6 +202,7 @@ def validate_amend_wave_responses(
             plan,
             response,
             selected_ids=selected_ids,
+            output_goal_text=output_goal_text,
         )
         if errors:
             return errors
@@ -203,6 +223,7 @@ def validate_wave_responses(
     *,
     limits: PlanningLimits,
     plan_digest: str,
+    output_goal_text: str,
 ) -> list[str]:
     """Validate independent concurrent batch responses against one plan snapshot."""
     all_operations: list[PlanningOperation] = []
@@ -218,6 +239,7 @@ def validate_wave_responses(
             response,
             selected_ids=selected_ids,
             limits=limits,
+            output_goal_text=output_goal_text,
         )
         if errors:
             return errors
@@ -293,6 +315,7 @@ def _validate_updates(
     updates: list[UpdateItemOperation],
     *,
     selected_ids: set[str],
+    output_goal_text: str,
 ) -> list[str]:
     errors: list[str] = []
     patchable = select_patchable_node_ids(plan, selected_ids)
@@ -317,7 +340,14 @@ def _validate_updates(
         if item is None:
             errors.append(f"Unknown update node id: {node_id}")
             continue
-        errors.extend(_validate_update_item(plan, item, update))
+        errors.extend(
+            _validate_update_item(
+                plan,
+                item,
+                update,
+                output_goal_text=output_goal_text,
+            )
+        )
 
     return errors
 
@@ -326,6 +356,8 @@ def _validate_update_item(
     plan: PlanState,
     item: PlanItem,
     update: UpdateItemOperation,
+    *,
+    output_goal_text: str,
 ) -> list[str]:
     errors: list[str] = []
     if not update.reason.strip():
@@ -359,7 +391,7 @@ def _validate_update_item(
         if update.acceptance_criteria is not None
         else item.acceptance_criteria
     )
-    if _is_implementation_goal(plan.source.output_goal):
+    if _is_implementation_goal(output_goal_text):
         if item.decomposition_status == DecompositionStatus.ACTIONABLE:
             if not outputs:
                 errors.append(
@@ -423,11 +455,17 @@ def _validate_operation(
     operation: PlanningOperation,
     *,
     limits: PlanningLimits,
+    output_goal_text: str,
 ) -> list[str]:
     if isinstance(operation, ExpandOperation):
         return _validate_expand(plan, item, operation, limits=limits)
     if isinstance(operation, MarkActionableOperation):
-        return _validate_actionable(plan, item, operation)
+        return _validate_actionable(
+            plan,
+            item,
+            operation,
+            output_goal_text=output_goal_text,
+        )
     if isinstance(operation, MarkBlockedOperation):
         return _validate_blocked(item, operation, limits=limits)
     if isinstance(operation, MarkOutOfScopeOperation):
@@ -439,6 +477,8 @@ def _validate_revise_actionable(
     plan: PlanState,
     item: PlanItem,
     operation: ReviseActionableOperation,
+    *,
+    output_goal_text: str,
 ) -> list[str]:
     errors: list[str] = []
     if not operation.reason.strip():
@@ -464,7 +504,7 @@ def _validate_revise_actionable(
     objective = operation.objective if operation.objective is not None else item.objective
     if not objective.strip():
         errors.append(f"Revise on {item.id} requires a non-empty objective")
-    if _is_implementation_goal(plan.source.output_goal):
+    if _is_implementation_goal(output_goal_text):
         if not outputs:
             errors.append(
                 f"Revise on {item.id} requires expected_outputs for this output goal"
@@ -551,6 +591,8 @@ def _validate_actionable(
     plan: PlanState,
     item: PlanItem,
     operation: MarkActionableOperation,
+    *,
+    output_goal_text: str,
 ) -> list[str]:
     errors = _validate_root_metadata(
         item,
@@ -563,7 +605,7 @@ def _validate_actionable(
     objective = operation.objective or item.objective
     if not objective.strip():
         errors.append(f"Actionable item {item.id} requires a non-empty objective")
-    if _is_implementation_goal(plan.source.output_goal):
+    if _is_implementation_goal(output_goal_text):
         if not outputs:
             errors.append(
                 f"Actionable item {item.id} requires expected_outputs for this output goal"

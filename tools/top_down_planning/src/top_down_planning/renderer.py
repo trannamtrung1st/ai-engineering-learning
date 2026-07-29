@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from top_down_planning.input_loader import resolve_output_goal_text
 from top_down_planning.models import DecompositionStatus, PlanState
 from top_down_planning.render_brief import actionable_leaf_items, blocked_leaf_items
 
@@ -9,8 +10,10 @@ from top_down_planning.render_brief import actionable_leaf_items, blocked_leaf_i
 def _format_output_goal_label(plan: PlanState) -> str:
     if plan.source.output_goal_file:
         return plan.source.output_goal_file
-    first_line = plan.source.output_goal.strip().splitlines()[0]
-    return first_line[:200]
+    text = resolve_output_goal_text(plan).strip()
+    if not text:
+        return plan.source.output_goal
+    return text.splitlines()[0][:200]
 
 
 def render_plan_markdown(plan: PlanState) -> str:
@@ -60,6 +63,12 @@ def _render_hierarchy(
             lines.extend(f"     - {value}" for value in item.acceptance_criteria)
         if item.dependencies:
             lines.append(f"   - Dependencies: {', '.join(item.dependencies)}")
+        if item.notes:
+            lines.append("   - Notes:")
+            lines.extend(f"     - {value}" for value in item.notes)
+        if item.risks:
+            lines.append("   - Risks:")
+            lines.extend(f"     - {value}" for value in item.risks)
         if item.out_of_scope_reason:
             lines.append(f"   - Out of scope: {item.out_of_scope_reason}")
         child_prefix = f"{number}."
@@ -88,4 +97,10 @@ def _render_actionable_list(plan: PlanState) -> list[str]:
         if item.acceptance_criteria:
             lines.append("   - Acceptance criteria:")
             lines.extend(f"     - {value}" for value in item.acceptance_criteria)
+        if item.notes:
+            lines.append("   - Notes:")
+            lines.extend(f"     - {value}" for value in item.notes)
+        if item.risks:
+            lines.append("   - Risks:")
+            lines.extend(f"     - {value}" for value in item.risks)
     return lines

@@ -21,7 +21,6 @@ from top_down_planning.plan_tool import (
     record_update,
     reset_transaction,
     resolve_plan_tool_command,
-    set_assessment,
     status,
 )
 from top_down_planning.schema_docs import operation_examples
@@ -66,17 +65,14 @@ def test_record_and_finalize_transaction(plan_session) -> None:
             }
         )
     )
-    set_assessment(plan_complete=False, summary="Root actionable")
     finalize()
 
     loaded = load_transaction(txn_file)
     assert len(loaded.operations) == 1
     assert isinstance(loaded.operations[0], MarkActionableOperation)
-    assert loaded.assessment.summary == "Root actionable"
 
 
 def test_finalize_requires_at_least_one_operation(plan_session) -> None:
-    set_assessment(plan_complete=False, summary="Empty")
     with pytest.raises(PlanToolError, match="at least one operation"):
         finalize()
 
@@ -99,7 +95,6 @@ def test_finalize_requires_all_selected_operations(
             }
         )
     )
-    set_assessment(plan_complete=False, summary="Partial")
     with pytest.raises(PlanToolError, match="missing operations"):
         finalize()
     assert not txn_file.is_file()
@@ -163,7 +158,6 @@ def test_reset_transaction_clears_draft_and_final(tmp_path: Path, plan_session) 
             }
         )
     )
-    set_assessment(plan_complete=False, summary="Ready")
     finalize()
     assert txn_file.is_file()
     reset_transaction(txn_file)
@@ -234,11 +228,42 @@ def test_record_update_and_finalize(plan_session, monkeypatch: pytest.MonkeyPatc
             }
         )
     )
-    set_assessment(plan_complete=False, summary="Expanded with parent patch")
     finalize()
     loaded = load_transaction(txn_file)
     assert len(loaded.updates) == 1
     assert loaded.updates[0].node_id == "item-001"
+
+
+def test_record_operation_rejects_existing_finalized_transaction(
+    plan_session,
+) -> None:
+    _, txn_file = plan_session
+    record_operation(
+        json_payload=json.dumps(
+            {
+                "type": "mark_actionable",
+                "node_id": "item-001",
+                "title": "Plan the requested work",
+                "objective": "Produce the requested plan.",
+                "expected_outputs": ["Plan"],
+                "acceptance_criteria": ["Done"],
+            }
+        )
+    )
+    finalize()
+    with pytest.raises(PlanToolError, match="finalized transaction already exists"):
+        record_operation(
+            json_payload=json.dumps(
+                {
+                    "type": "mark_actionable",
+                    "node_id": "item-001",
+                    "title": "Again",
+                    "objective": "Again",
+                    "expected_outputs": ["Plan"],
+                    "acceptance_criteria": ["Done"],
+                }
+            )
+        )
 
 
 def test_record_update_rejects_selected_node(plan_session, monkeypatch: pytest.MonkeyPatch) -> None:

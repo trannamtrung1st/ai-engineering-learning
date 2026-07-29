@@ -360,8 +360,8 @@ Optional guidance for when to stop expanding versus marking items actionable:
 - Config: `stop_hint` or `stop_hint_file`
 
 The stop hint is included in planning prompts to help the agent decide between
-`expand`, `mark_actionable`, and `plan_complete` (via `set-assessment`). Resume rejects
-runs when the stop hint changes after a prior run stored a digest.
+`expand` and `mark_actionable`. Resume rejects runs when the stop hint changes after a
+prior run stored a digest.
 
 ### Agent context
 
@@ -404,12 +404,15 @@ digests of the resolved goal content.
 
 ### Actionability and stopping
 
-Actionability criteria are inferred from `--output-goal`. Implementation-oriented goals require expected outputs and acceptance criteria on actionable leaves.
+Actionability criteria are inferred from the **full resolved output goal text** (inline or
+file-backed), not just the compact label stored in `plan.yaml`. Implementation-oriented
+goals require expected outputs and acceptance criteria on actionable leaves.
 
-Planning completes when no expandable items remain, decomposed internal nodes are
-`expanded`, relevant leaves are `actionable`, `blocked`, or `out_of_scope`, and the
-graph is structurally valid (`expanded` nodes have children; `actionable` nodes are
-leaves). Persisted plans use `schema_version: 2`.
+Structural completion is evaluated deterministically: planning finishes when no expandable
+items remain, decomposed internal nodes are `expanded`, relevant leaves are `actionable`,
+`blocked`, or `out_of_scope`, and the graph is structurally valid (`expanded` nodes have
+children; `actionable` nodes are leaves). Whole-plan review and final confirmation then
+provide goal-aware semantic approval before render. Persisted plans use `schema_version: 2`.
 Safety limits (`--max-iterations`, `--max-depth`, `--max-items`, `max_children_per_expansion`,
 `--batch-size`, `--concurrent-batches`, `--max-retries`) preserve partial output with
 explicit final statuses.

@@ -84,7 +84,6 @@ async def test_child_limit_blocked_does_not_render(
     loaded_goal = render_output_goal()
     blocked_response = json.dumps(
         {
-            "assessment": {"plan_complete": False, "summary": "Blocked"},
             "operations": [
                 {
                     "type": "mark_blocked",
@@ -204,7 +203,7 @@ async def test_amend_revision_cycle_completes_and_renders(
                         "revision_mode": "amend",
                         "node_ids": ["item-002", "item-003"],
                         "description": "Tighten acceptance criteria",
-                        "recommended_change": "Provide revised evidence commands",
+                        "recommended_change": "Tighten acceptance criteria and expected outputs",
                     }
                 ],
             },

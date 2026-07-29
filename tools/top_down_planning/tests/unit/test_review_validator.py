@@ -128,6 +128,31 @@ def test_needs_revision_requires_actionable_finding() -> None:
     assert any("requires at least one actionable finding" in error for error in errors)
 
 
+def test_final_confirmation_needs_revision_requires_actionable_finding() -> None:
+    plan = _plan_with_actionable_leaves()
+    result = FinalConfirmationResult(
+        plan_digest="abc",
+        decision=ConfirmationDecision.NEEDS_REVISION,
+        summary="Fix items",
+        findings=[
+            ReviewFinding(
+                severity=ReviewFindingSeverity.MINOR,
+                category=ReviewFindingCategory.OTHER,
+                revision_mode=RevisionMode.ANNOTATE,
+                node_ids=[],
+                description="Informational only",
+            )
+        ],
+    )
+    errors = validate_final_confirmation(
+        result,
+        plan=plan,
+        expected_digest="abc",
+        deterministic_validation_passed=True,
+    )
+    assert any("requires at least one actionable finding" in error for error in errors)
+
+
 def test_confirmed_rejects_failed_deterministic_validation() -> None:
     plan = _plan()
     result = FinalConfirmationResult(

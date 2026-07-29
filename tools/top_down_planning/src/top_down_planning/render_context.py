@@ -10,7 +10,8 @@ from top_down_planning.errors import PlanningToolError
 from top_down_planning.generation_context import build_plan_overview
 from top_down_planning.input_loader import LoadedOutputGoal
 from top_down_planning.models import PlanItem, PlanState, RenderBatchItem, WholePlanContextMode
-from top_down_planning.prompts import _format_item_context, format_input_file_reference
+from top_down_planning.item_format import format_item_context
+from top_down_planning.prompts import format_input_file_reference
 from top_down_planning.render_brief import build_render_brief
 
 
@@ -170,7 +171,7 @@ def _build_context_markdown(
     if assigned_items:
         lines.extend(["## Assigned plan items", ""])
         for item in assigned_items:
-            lines.append(_format_item_context(plan, item))
+            lines.append(format_item_context(plan, item))
             lines.append("")
     if include_full_brief or not assigned_items:
         lines.append(build_render_brief(plan))

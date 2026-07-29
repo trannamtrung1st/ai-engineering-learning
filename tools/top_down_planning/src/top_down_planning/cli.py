@@ -172,7 +172,7 @@ def _execute_run(
     goal_override = output_goal is not None or output_goal_file is not None
     if options.render_only and not goal_override:
         from top_down_planning.persistence import load_plan, load_run_state
-        from top_down_planning.input_loader import resolve_output_goal_text
+        from top_down_planning.input_loader import load_output_goal_from_plan
 
         plan = load_plan(options.output_dir)
         run_state = load_run_state(options.output_dir)
@@ -180,12 +180,11 @@ def _execute_run(
             raise typer.BadParameter(
                 "Render-only requires existing planning output under --output"
             )
-        goal_text = resolve_output_goal_text(plan)
-        loaded_goal = LoadedOutputGoal(
-            text=goal_text,
-            digest=run_state.output_goal_digest,
-            path=Path(plan.source.output_goal_file) if plan.source.output_goal_file else None,
-        )
+        loaded_goal = load_output_goal_from_plan(plan)
+        if loaded_goal.digest != run_state.output_goal_digest:
+            raise typer.BadParameter(
+                "Output goal digest mismatch: goal file content changed since the last run"
+            )
     else:
         loaded_goal = _resolve_run_goal(
             output_goal=options.output_goal,

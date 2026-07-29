@@ -95,6 +95,7 @@ def test_validate_rejects_cycles_before_apply() -> None:
         response,
         selected_ids=["item-001"],
         limits=PlanningLimits(),
+        output_goal_text="Produce an actionable implementation plan",
     )
     assert any("->" in error for error in errors)
 
@@ -123,6 +124,7 @@ def test_invalid_response_does_not_mutate_plan() -> None:
         response,
         selected_ids=["item-001"],
         limits=PlanningLimits(),
+        output_goal_text="Produce an actionable implementation plan",
     )
     assert errors
     assert len(plan.plan) == original_count

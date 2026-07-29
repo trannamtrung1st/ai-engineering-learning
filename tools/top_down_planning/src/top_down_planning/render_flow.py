@@ -284,6 +284,7 @@ async def render_from_confirmed_plan(
                     resolve_review_model=deps.resolve_review_model,
                     session_timeout_seconds=deps.session_timeout_seconds,
                 ),
+                plan=plan,
                 plan_digest=plan_digest,
                 schedule=schedule,
                 schedule_digest=schedule_digest,
@@ -407,6 +408,7 @@ async def _run_batch_pipeline(
                 resolve_review_model=deps.resolve_review_model,
                 session_timeout_seconds=deps.session_timeout_seconds,
             ),
+            plan=plan,
             batch=batch,
             plan_digest=plan_digest,
             schedule_digest=schedule_digest,
@@ -632,6 +634,11 @@ async def _run_author_session(
         prompt_path = session_dir / f"{session_label}-request-{attempt:03d}-prompt.md"
         prompt_path.write_text(prompt, encoding="utf-8")
         try:
+            def on_started(pid: int) -> None:
+                if pid not in run_state.agent_pids:
+                    run_state.agent_pids.append(pid)
+                save_run_state(deps.output_dir, run_state)
+
             await deps.client.run_session(
                 workspace=deps.workspace_root,
                 prompt=prompt,
@@ -646,6 +653,7 @@ async def _run_author_session(
                 renderer=deps.renderer,
                 session_mode="agent",
                 model=deps.resolve_render_model(),
+                on_agent_started=on_started,
             )
         except UserInterrupted:
             run_state.agent_pids = []

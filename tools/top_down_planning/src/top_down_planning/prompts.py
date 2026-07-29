@@ -8,6 +8,7 @@ from pathlib import Path
 from top_down_planning import schema_docs
 from top_down_planning.agent_context import ResolvedAgentContext
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
+from top_down_planning.item_format import format_item_context
 from top_down_planning.models import PlanItem, PlanState, ReviewFinding, WholePlanContextMode
 
 
@@ -95,8 +96,8 @@ def format_stop_hint_section(
         return (
             "Read the expansion stop guidance before deciding whether to expand or stop:\n\n"
             f"{format_input_file_reference(stop_hint.path, workspace)}\n\n"
-            "Open and read that file in full. Use it when choosing `expand`, "
-            "`mark_actionable`, and `plan_complete` via `set-assessment`."
+            "Open and read that file in full. Use it when choosing `expand` "
+            "or `mark_actionable`."
         )
     return format_embedded_markdown(text)
 
@@ -121,64 +122,6 @@ def format_input_document_section(
     )
 
 
-def _ancestors(plan: PlanState, item: PlanItem) -> list[PlanItem]:
-    chain: list[PlanItem] = []
-    current = item.parent_id
-    while current is not None:
-        parent = plan.item_by_id(current)
-        if parent is None:
-            break
-        chain.append(parent)
-        current = parent.parent_id
-    chain.reverse()
-    return chain
-
-
-def _siblings(plan: PlanState, item: PlanItem) -> list[PlanItem]:
-    return [
-        sibling
-        for sibling in plan.children_of(item.parent_id)
-        if sibling.id != item.id
-    ]
-
-
-def _format_item_context(plan: PlanState, item: PlanItem) -> str:
-    parts = [
-        f"### Selected item `{item.id}`",
-        f"- Title: {item.title}",
-        f"- Objective: {item.objective}",
-        f"- Depth: {item.depth}",
-        f"- Status: {item.decomposition_status.value}",
-    ]
-    if item.dependencies:
-        parts.append(f"- Dependencies: {', '.join(item.dependencies)}")
-    if item.expected_outputs:
-        parts.append("- Expected outputs:")
-        parts.extend(f"  - {value}" for value in item.expected_outputs)
-    if item.acceptance_criteria:
-        parts.append("- Acceptance criteria:")
-        parts.extend(f"  - {value}" for value in item.acceptance_criteria)
-    if item.open_questions:
-        parts.append("- Open questions:")
-        parts.extend(f"  - {value}" for value in item.open_questions)
-
-    ancestors = _ancestors(plan, item)
-    if ancestors:
-        parts.append("- Ancestors:")
-        for ancestor in ancestors:
-            parts.append(f"  - [{ancestor.id}] {ancestor.title}")
-
-    siblings = _siblings(plan, item)
-    if siblings:
-        parts.append("- Direct siblings:")
-        for sibling in siblings:
-            parts.append(
-                f"  - [{sibling.id}] {sibling.title} "
-                f"({sibling.decomposition_status.value})"
-            )
-    return "\n".join(parts)
-
-
 def build_planning_prompt(
     *,
     loaded_input: LoadedInput,
@@ -200,8 +143,7 @@ def build_planning_prompt(
     if stop_hint is not None:
         stop_hint_block = (
             "## Expansion stop guidance\n"
-            "Use this when deciding whether to `expand`, `mark_actionable`, or set "
-            "`plan_complete` with `set-assessment`:\n\n"
+            "Use this when deciding whether to `expand` or `mark_actionable`:\n\n"
             f"{format_stop_hint_section(stop_hint=stop_hint, workspace=workspace, embed_threshold=embed_threshold)}\n\n"
         )
 
@@ -252,8 +194,6 @@ Do not execute implementation work.
 - Use `mark_actionable` when the item is a leaf detailed enough for the output goal.
 - Use `mark_blocked` only when required information is missing and cannot be inferred safely.
 - Use `mark_out_of_scope` when the item does not contribute to the output goal.
-- Set `plan_complete` to true only when every relevant item is sufficiently detailed for the
-  output goal and no further expansion is warranted.
 - Do not invent canonical item IDs. The orchestrator assigns IDs on apply.
 - For sibling dependencies in an `expand`, use child `ref` values or existing item ids.
 - Prefer breadth-first planning: keep major areas coherent before over-detailing one branch.
@@ -340,7 +280,6 @@ items, and do not execute implementation work.
 - Preserve unaffected detail unless the review finding requires a change.
 - Do not record `expand`, `mark_actionable`, `mark_blocked`, `mark_out_of_scope`, or
   cross-item `update_item` patches.
-- Set `plan_complete` to true with `set-assessment` once every assigned item is revised.
 - Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
 
 {feedback_block}## Review findings for assigned items
@@ -441,6 +380,8 @@ Integrate the assigned plan items into the cumulative workspace deliverables.
 {_render_author_instructions()}
 ## Instructions
 - Cover every assigned plan item in the current workspace deliverables.
+- Preserve expected outputs, acceptance criteria, notes, risks, and scope boundaries
+  recorded on assigned plan items.
 - Preserve valid content from earlier batches and the scaffold.
 - Do not modify canonical planning files.
 """
@@ -586,6 +527,12 @@ Assigned plan items: {", ".join(batch_item_ids)}
 ## Workspace deliverables
 {destination_lines}
 
+## Review checklist
+- Every assigned plan item appears in the cumulative deliverables with preserved detail.
+- Expected outputs, acceptance criteria, notes, risks, and scope boundaries from the plan
+  are reflected where relevant.
+- No duplicate or contradictory coverage introduced in this batch.
+
 {schema_docs.format_review_schema_section(
     review_tool_command=review_tool_command,
     stage="render_batch_review",
@@ -657,6 +604,11 @@ Use `blocked` for unfixable tool/goal mismatches.
 
 ## Workspace deliverables
 {destination_lines}
+
+## Review checklist
+- Every actionable leaf from the confirmed plan appears in the deliverables.
+- Plan detail (outputs, criteria, notes, risks, boundaries) is preserved where relevant.
+- No major omissions, contradictions, or unresolved blocking issues remain.
 
 {schema_docs.format_review_schema_section(
     review_tool_command=review_tool_command,

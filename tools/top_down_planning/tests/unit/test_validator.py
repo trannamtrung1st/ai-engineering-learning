@@ -1,6 +1,5 @@
 from top_down_planning.models import (
     AgentResponse,
-    Assessment,
     ChildDraft,
     DecompositionStatus,
     ExpandOperation,
@@ -21,10 +20,13 @@ from top_down_planning.validator import (
 )
 
 
+GOAL_TEXT = "Produce an actionable implementation plan"
+
+
 def _plan():
     return make_root_plan(
         input_file="./idea.md",
-        output_goal="Produce an actionable implementation plan",
+        output_goal=GOAL_TEXT,
         input_digest="a",
         output_goal_digest="b",
     )
@@ -45,7 +47,7 @@ def test_validate_expand_success() -> None:
             )
         ]
     )
-    assert validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits()) == []
+    assert validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits(), output_goal_text=GOAL_TEXT) == []
 
 
 def test_validate_root_expand_requires_generated_metadata() -> None:
@@ -64,6 +66,7 @@ def test_validate_root_expand_requires_generated_metadata() -> None:
         response,
         selected_ids=["item-001"],
         limits=PlanningLimits(),
+        output_goal_text=GOAL_TEXT,
     )
 
     assert any("requires a generated title and objective" in error for error in errors)
@@ -86,6 +89,7 @@ def test_validate_root_terminal_decision_requires_generated_metadata() -> None:
         response,
         selected_ids=["item-001"],
         limits=PlanningLimits(),
+        output_goal_text=GOAL_TEXT,
     )
 
     assert any("requires a generated title and objective" in error for error in errors)
@@ -94,7 +98,7 @@ def test_validate_root_terminal_decision_requires_generated_metadata() -> None:
 def test_validate_missing_operation() -> None:
     plan = _plan()
     response = make_agent_response(operations=[])
-    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits(), output_goal_text=GOAL_TEXT)
     assert any("at least one operation" in error for error in errors)
 
 
@@ -113,7 +117,7 @@ def test_validate_duplicate_sibling_title() -> None:
             )
         ]
     )
-    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits(), output_goal_text=GOAL_TEXT)
     assert any("Duplicate sibling title" in error for error in errors)
 
 
@@ -128,7 +132,7 @@ def test_validate_actionable_requires_outputs() -> None:
             )
         ]
     )
-    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits(), output_goal_text=GOAL_TEXT)
     assert any("expected_outputs" in error for error in errors)
 
 
@@ -144,7 +148,7 @@ def test_validate_blocked_requires_fields() -> None:
             )
         ]
     )
-    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits(), output_goal_text=GOAL_TEXT)
     assert any("missing_information" in error for error in errors)
 
 
@@ -166,6 +170,7 @@ def test_validate_max_children_limit() -> None:
         response,
         selected_ids=["item-001"],
         limits=PlanningLimits(max_children_per_expansion=2),
+        output_goal_text=GOAL_TEXT,
     )
     assert any("max children" in error for error in errors)
 
@@ -187,6 +192,7 @@ def test_validate_cumulative_max_items_within_single_response() -> None:
         response,
         selected_ids=["item-001"],
         limits=PlanningLimits(max_items=1),
+        output_goal_text=GOAL_TEXT,
     )
     assert any("max items" in error for error in errors)
 
@@ -235,6 +241,7 @@ def test_validate_wave_responses_checks_combined_item_limit() -> None:
         ],
         limits=PlanningLimits(max_items=2),
         plan_digest="wave-digest",
+        output_goal_text=GOAL_TEXT,
     )
     assert any("max items" in error for error in errors)
 
@@ -251,7 +258,7 @@ def test_validate_response_rejects_revise_actionable() -> None:
             )
         ]
     )
-    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits(), output_goal_text=GOAL_TEXT)
     assert any("Unsupported operation type" in error for error in errors)
 
 
@@ -275,6 +282,7 @@ def test_validate_amend_response_accepts_revise_actionable() -> None:
             plan,
             response,
             selected_ids=["item-001"],
+            output_goal_text=GOAL_TEXT,
         )
         == []
     )
@@ -302,7 +310,9 @@ def test_validate_amend_response_rejects_cross_item_updates() -> None:
             )
         ],
     )
-    errors = validate_amend_response(plan, response, selected_ids=["item-001"])
+    errors = validate_amend_response(
+        plan, response, selected_ids=["item-001"], output_goal_text=GOAL_TEXT
+    )
     assert any("cross-item updates" in error for error in errors)
 
 
@@ -337,7 +347,7 @@ def test_validate_response_accepts_patchable_update() -> None:
         ],
     )
     assert (
-        validate_response(plan, response, selected_ids=["item-002"], limits=PlanningLimits())
+        validate_response(plan, response, selected_ids=["item-002"], limits=PlanningLimits(), output_goal_text=GOAL_TEXT)
         == []
     )
 
@@ -362,7 +372,7 @@ def test_validate_response_rejects_update_on_selected_node() -> None:
             )
         ],
     )
-    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits(), output_goal_text=GOAL_TEXT)
     assert any("assigned node" in error for error in errors)
 
 
@@ -431,6 +441,7 @@ def test_validate_wave_rejects_conflicting_cross_batch_updates() -> None:
         ],
         limits=PlanningLimits(),
         plan_digest="wave-digest",
+        output_goal_text=GOAL_TEXT,
     )
     assert any("cross-item updates" in error for error in errors)
 
@@ -480,6 +491,7 @@ def test_validate_wave_rejects_overlapping_write_scopes() -> None:
         ],
         limits=PlanningLimits(),
         plan_digest="wave-digest",
+        output_goal_text=GOAL_TEXT,
     )
     assert any("overlapping write scopes" in error for error in errors)
 
@@ -507,5 +519,44 @@ def test_validate_actionable_rejects_non_leaf() -> None:
             )
         ]
     )
-    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits(), output_goal_text=GOAL_TEXT)
     assert any("must be a leaf" in error for error in errors)
+
+
+def test_validate_actionable_uses_full_goal_not_compact_label() -> None:
+    """Full resolved goal text governs actionability, not the compact plan label."""
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="# Output goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    response = make_agent_response(
+        operations=[
+            MarkActionableOperation(
+                node_id="item-001",
+                title="Plan the requested work",
+                objective="Produce the requested plan.",
+            )
+        ]
+    )
+    errors_compact = validate_response(
+        plan,
+        response,
+        selected_ids=["item-001"],
+        limits=PlanningLimits(),
+        output_goal_text=plan.source.output_goal,
+    )
+    assert errors_compact == []
+
+    full_implementation_goal = (
+        "# Output goal\n\nProduce an actionable implementation plan with deliverables."
+    )
+    errors_full = validate_response(
+        plan,
+        response,
+        selected_ids=["item-001"],
+        limits=PlanningLimits(),
+        output_goal_text=full_implementation_goal,
+    )
+    assert any("expected_outputs" in error for error in errors_full)

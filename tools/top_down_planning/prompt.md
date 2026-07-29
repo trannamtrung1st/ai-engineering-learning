@@ -261,8 +261,7 @@ Workflow per batch:
 2. `planning-plan-tool status` (optional)
 3. `planning-plan-tool record-operation --json '<operation>'` once per selected item
 4. `planning-plan-tool record-update --json '<update_item>'` zero or more times for patchable related items
-5. `planning-plan-tool set-assessment [--plan-complete|--no-plan-complete] --summary "..."`
-6. `planning-plan-tool finalize`
+5. `planning-plan-tool finalize`
 
 The orchestrator loads the finalized transaction, validates the wave atomically, assigns
 IDs/depth/order, and persists the updated state to `plan.yaml`. Successful batches also
@@ -324,7 +323,7 @@ Validation must ensure:
 * ordering remains deterministic;
 * blocked items contain a reason and open question;
 * out-of-scope items contain a reason;
-* actionable items satisfy the minimum criteria derived from the output goal;
+* actionable items satisfy the minimum criteria derived from the full resolved output goal;
 * limits are respected;
 * `update_item` patches target only patchable related nodes, not assigned items;
 * cross-item updates require a reason and at least one changed field;

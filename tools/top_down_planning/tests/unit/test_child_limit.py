@@ -61,6 +61,7 @@ def test_structured_mark_blocked_for_child_limit() -> None:
         response,
         selected_ids=["item-001"],
         limits=PlanningLimits(max_children_per_expansion=8),
+        output_goal_text="Produce an actionable implementation plan",
     )
     assert errors == []
     updated = apply_response(plan, response)
@@ -93,6 +94,7 @@ def test_required_min_children_must_exceed_limit() -> None:
         response,
         selected_ids=["item-001"],
         limits=PlanningLimits(max_children_per_expansion=8),
+        output_goal_text="Produce an actionable implementation plan",
     )
     assert any("must exceed" in error for error in errors)
 

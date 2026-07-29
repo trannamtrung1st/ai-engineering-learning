@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from top_down_planning.item_format import format_leaf_brief_section
 from top_down_planning.models import (
     DecompositionStatus,
     PlanItem,
@@ -61,7 +62,7 @@ def build_render_brief(plan: PlanState) -> str:
         lines.append("_No actionable leaf items._")
     else:
         for index, item in enumerate(leaves, start=1):
-            lines.extend(_format_leaf_section(plan, item, index))
+            lines.extend(format_leaf_brief_section(plan, item, index))
 
     if blocked:
         lines.extend(["", f"## Blocked items ({len(blocked)})", ""])
@@ -69,33 +70,24 @@ def build_render_brief(plan: PlanState) -> str:
             lines.append(f"- **{item.title}**")
             if item.blocked_reason:
                 lines.append(f"  - Reason: {item.blocked_reason}")
+            if item.blocked_constraint_code is not None:
+                lines.append(
+                    f"  - Constraint: {item.blocked_constraint_code.value}"
+                )
+            if item.blocked_required_min_children is not None:
+                lines.append(
+                    f"  - Required min children: {item.blocked_required_min_children}"
+                )
+            for note in item.notes:
+                lines.append(f"  - Note: {note}")
+            for risk in item.risks:
+                lines.append(f"  - Risk: {risk}")
             for question in item.open_questions:
                 lines.append(f"  - Open question: {question}")
 
     lines.extend(["", "## Hierarchy reference", ""])
     lines.extend(_render_hierarchy(plan, parent_id=None, prefix=""))
     return "\n".join(lines).rstrip() + "\n"
-
-
-def _format_leaf_section(plan: PlanState, item: PlanItem, index: int) -> list[str]:
-    lines = [
-        f"### {index}. {item.title}",
-        f"- **Objective:** {item.objective}",
-    ]
-    dependencies = _dependency_labels(plan, item)
-    if dependencies:
-        lines.append(f"- **Dependencies:** {', '.join(dependencies)}")
-    if item.expected_outputs:
-        lines.append("- **Expected outputs:**")
-        lines.extend(f"  - {value}" for value in item.expected_outputs)
-    if item.acceptance_criteria:
-        lines.append("- **Acceptance criteria:**")
-        lines.extend(f"  - {value}" for value in item.acceptance_criteria)
-    if item.open_questions:
-        lines.append("- **Open questions:**")
-        lines.extend(f"  - {value}" for value in item.open_questions)
-    lines.append("")
-    return lines
 
 
 def _render_hierarchy(

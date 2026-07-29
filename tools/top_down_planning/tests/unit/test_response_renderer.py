@@ -13,7 +13,7 @@ from tests.plan_factory import make_root_plan
 from top_down_planning.renderer import render_plan_markdown
 
 
-def test_parse_fenced_json_legacy() -> None:
+def test_parse_fenced_json() -> None:
     payload = make_agent_response(
         operations=[
             MarkActionableOperation(

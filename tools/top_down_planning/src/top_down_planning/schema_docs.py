@@ -12,7 +12,6 @@ from top_down_planning import __version__
 from top_down_planning.config_loader import RunConfigFile
 from top_down_planning.models import (
     AgentResponse,
-    Assessment,
     FinalConfirmationResult,
     MarkActionableOperation,
     PlanItem,
@@ -219,7 +218,6 @@ def _example_operation() -> dict[str, Any]:
 
 def _example_transaction() -> dict[str, Any]:
     return AgentResponse(
-        assessment=Assessment(plan_complete=False, summary="Root actionable"),
         operations=[
             MarkActionableOperation(
                 node_id="item-001",
@@ -442,8 +440,7 @@ Workflow:
 5. Optionally run `{plan_tool_command} record-update --json '<update_item>'` for related items
    listed in the patchable scope. Omitted fields preserve the current value; an empty list
    clears a list field.
-6. Run `{plan_tool_command} set-assessment [--plan-complete|--no-plan-complete] --summary "..."`.
-7. Run `{plan_tool_command} finalize` to commit the session transaction."""
+6. Run `{plan_tool_command} finalize` to commit the session transaction."""
 
 
 def format_amend_tool_usage(*, plan_tool_command: str = "planning-plan-tool") -> str:
@@ -459,8 +456,7 @@ Authoritative schemas and examples:
 Workflow:
 1. Read the assigned item context and review findings below.
 2. For **each assigned item**, run `{plan_tool_command} record-operation --json '<revise_actionable>'`.
-3. Run `{plan_tool_command} set-assessment [--plan-complete|--no-plan-complete] --summary "..."`.
-4. Run `{plan_tool_command} finalize` to commit the session transaction.
+3. Run `{plan_tool_command} finalize` to commit the session transaction.
 
 Amend sessions use `revise_actionable` only. Do not use `record-update`."""
 

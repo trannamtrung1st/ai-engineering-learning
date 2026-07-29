@@ -261,11 +261,6 @@ class ChildDraft(BaseModel):
         return stripped
 
 
-class Assessment(BaseModel):
-    plan_complete: bool = False
-    summary: str = ""
-
-
 class ExpandOperation(BaseModel):
     type: Literal["expand"] = "expand"
     node_id: str
@@ -404,7 +399,8 @@ PlanningOperation = Annotated[
 
 
 class AgentResponse(BaseModel):
-    assessment: Assessment = Field(default_factory=Assessment)
+    model_config = ConfigDict(extra="forbid")
+
     operations: list[PlanningOperation] = Field(default_factory=list)
     updates: list[UpdateItemOperation] = Field(default_factory=list)
     plan_digest: str
@@ -426,21 +422,10 @@ class RunState(BaseModel):
     output_goal: str = ""
     last_successful_update: datetime | None = None
     agent_pids: list[int] = Field(default_factory=list)
-    agent_pid: int | None = None
     last_error: str | None = None
     history: list[dict[str, Any]] = Field(default_factory=list)
     generated_artifacts: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _migrate_legacy_agent_pid(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        if "agent_pids" not in data:
-            legacy_pid = data.get("agent_pid")
-            data["agent_pids"] = [legacy_pid] if legacy_pid is not None else []
-        return data
 
 
 class ReviewFindingSeverity(str, Enum):

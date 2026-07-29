@@ -83,3 +83,36 @@ def test_build_render_brief_lists_every_actionable_leaf() -> None:
     assert "### 2. Area B" in brief
     assert "Output A" in brief
     assert "Done B" in brief
+
+
+def test_build_render_brief_includes_notes_and_risks() -> None:
+    plan = _plan_with_leaves()
+    plan.plan[1].notes = ["Keep scope narrow"]
+    plan.plan[1].risks = ["May overlap with Area B"]
+    brief = build_render_brief(plan)
+
+    assert "Keep scope narrow" in brief
+    assert "May overlap with Area B" in brief
+
+
+def test_build_render_brief_includes_blocked_notes_and_risks() -> None:
+    plan = _plan_with_leaves()
+    plan.plan.append(
+        PlanItem(
+            id="item-004",
+            parent_id="item-001",
+            title="Blocked leaf",
+            objective="Blocked work",
+            depth=1,
+            order=4,
+            decomposition_status=DecompositionStatus.BLOCKED,
+            blocked_reason="Needs more siblings",
+            notes=["Escalate to user"],
+            risks=["May block delivery"],
+        )
+    )
+    brief = build_render_brief(plan)
+
+    assert "Blocked leaf" in brief
+    assert "Escalate to user" in brief
+    assert "May block delivery" in brief

@@ -214,7 +214,6 @@ async def test_resume_after_child_limit_blocked_with_increased_max_children(
     loaded_goal = render_output_goal()
     blocked_response = json.dumps(
         {
-            "assessment": {"plan_complete": False, "summary": "Blocked"},
             "operations": [
                 {
                     "type": "mark_blocked",

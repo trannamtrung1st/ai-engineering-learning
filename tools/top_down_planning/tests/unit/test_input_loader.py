@@ -119,3 +119,43 @@ def test_build_source_metadata_stores_file_reference(tmp_path: Path) -> None:
     assert "\n" not in (source.stop_hint or "")
     assert source.stop_hint_file is None
 
+
+def test_load_output_goal_from_plan_reads_file(tmp_path: Path) -> None:
+    from top_down_planning.input_loader import load_output_goal_from_plan
+    from top_down_planning.models import PlanState, SourceMetadata
+
+    goal_file = tmp_path / "goal.md"
+    goal_file.write_text("# Goal\n\nProduce an actionable implementation plan.\n", encoding="utf-8")
+    loaded = load_output_goal(goal_file=goal_file)
+    plan = PlanState(
+        source=SourceMetadata(
+            input_file="idea.md",
+            output_goal="Please use the ia-conventions skill.",
+            output_goal_file=str(goal_file.resolve()),
+            input_digest="a",
+            output_goal_digest=loaded.digest,
+        ),
+        plan=[],
+    )
+    resolved = load_output_goal_from_plan(plan)
+    assert "actionable implementation plan" in resolved.text
+    assert resolved.digest == loaded.digest
+
+
+def test_load_output_goal_from_plan_rejects_missing_file(tmp_path: Path) -> None:
+    from top_down_planning.input_loader import load_output_goal_from_plan
+    from top_down_planning.models import PlanState, SourceMetadata
+
+    plan = PlanState(
+        source=SourceMetadata(
+            input_file="idea.md",
+            output_goal="# Goal",
+            output_goal_file=str(tmp_path / "missing-goal.md"),
+            input_digest="a",
+            output_goal_digest="b",
+        ),
+        plan=[],
+    )
+    with pytest.raises(PlanningToolError, match="Output goal file not found"):
+        load_output_goal_from_plan(plan)
+

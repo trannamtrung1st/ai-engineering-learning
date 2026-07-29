@@ -165,18 +165,18 @@ def test_dotfile_paths_are_not_ignored_by_default(tmp_path: Path) -> None:
     assert not matcher.is_ignored("src/.env.example")
 
 
-def test_legacy_state_dirname_is_not_auto_excluded(tmp_path: Path) -> None:
+def test_nested_state_dirname_is_not_auto_excluded(tmp_path: Path) -> None:
     workspace = tmp_path
     output_dir = workspace / "planning-output"
     output_dir.mkdir()
-    legacy_plan = output_dir / ".top-down-planning" / "plan.yaml"
-    legacy_plan.parent.mkdir(parents=True)
-    legacy_plan.write_text("plan: []\n", encoding="utf-8")
+    nested_plan = output_dir / ".custom-state" / "plan.yaml"
+    nested_plan.parent.mkdir(parents=True)
+    nested_plan.write_text("plan: []\n", encoding="utf-8")
     matcher = build_artifact_ignore_matcher(workspace, output_dir, [])
 
-    assert not matcher.is_ignored("planning-output/.top-down-planning/plan.yaml")
+    assert not matcher.is_ignored("planning-output/.custom-state/plan.yaml")
     snapshots = snapshot_workspace_files(workspace, matcher)
-    assert "planning-output/.top-down-planning/plan.yaml" in snapshots
+    assert "planning-output/.custom-state/plan.yaml" in snapshots
 
 
 def test_is_utf8_text_file(tmp_path: Path) -> None:

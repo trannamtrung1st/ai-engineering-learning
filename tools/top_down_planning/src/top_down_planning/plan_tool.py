@@ -22,7 +22,7 @@ from top_down_planning.models import (
     UpdateItemOperation,
 )
 from top_down_planning.persistence import write_json
-from top_down_planning.prompts import _format_item_context
+from top_down_planning.item_format import format_item_context
 from top_down_planning import schema_docs
 
 ENV_TXN_FILE = "PLANNING_TOOL_TXN_FILE"
@@ -123,7 +123,6 @@ def _draft_path(txn_file: Path) -> Path:
 
 def _empty_draft() -> dict[str, Any]:
     return {
-        "assessment": {"plan_complete": False, "summary": ""},
         "operations": [],
         "updates": [],
     }
@@ -139,7 +138,6 @@ def _load_draft(txn_file: Path) -> dict[str, Any]:
         raise PlanToolError(f"Failed to read draft transaction: {exc}") from exc
     if not isinstance(data, dict):
         raise PlanToolError("Draft transaction must be a JSON object")
-    data.setdefault("assessment", {"plan_complete": False, "summary": ""})
     data.setdefault("operations", [])
     data.setdefault("updates", [])
     return data
@@ -211,7 +209,6 @@ def _draft_status(txn_file: Path) -> dict[str, Any]:
     draft = _load_draft(txn_file)
     operations = draft.get("operations") or []
     updates = draft.get("updates") or []
-    assessment = draft.get("assessment") or {}
     selected = _selected_ids()
     patchable = _patchable_ids()
     covered = {
@@ -234,7 +231,6 @@ def _draft_status(txn_file: Path) -> dict[str, Any]:
         "covered_node_ids": sorted(covered),
         "updated_node_ids": sorted(updated_nodes),
         "missing_node_ids": sorted(selected - covered),
-        "assessment": assessment,
         "plan_digest": draft.get("plan_digest"),
     }
 
@@ -344,7 +340,7 @@ def show_context() -> None:
         item = plan.item_by_id(node_id)
         if item is None:
             raise PlanToolError(f"Unknown selected node id: {node_id}")
-        parts.append(_format_item_context(plan, item))
+        parts.append(format_item_context(plan, item))
     typer.echo("\n\n".join(parts))
 
 
@@ -352,6 +348,13 @@ def show_context() -> None:
 def status() -> None:
     """Show the current draft or finalized transaction state."""
     typer.echo(json.dumps(_draft_status(_txn_file()), indent=2))
+
+
+def _reject_if_finalized(txn_file: Path) -> None:
+    if txn_file.is_file():
+        raise PlanToolError(
+            "A finalized transaction already exists; run reset before recording changes"
+        )
 
 
 @app.command("record-operation")
@@ -363,6 +366,7 @@ def record_operation(
 ) -> None:
     """Append one planning operation for an allowed selected node."""
     txn_file = _txn_file()
+    _reject_if_finalized(txn_file)
     selected = _selected_ids()
     try:
         raw = json.loads(json_payload)
@@ -408,6 +412,7 @@ def record_update(
 ) -> None:
     """Record one cross-item update for a patchable related node."""
     txn_file = _txn_file()
+    _reject_if_finalized(txn_file)
     selected = _selected_ids()
     patchable = _patchable_ids()
     try:
@@ -449,28 +454,6 @@ def record_update(
     updates.append(update.model_dump(mode="json"))
     _save_draft(txn_file, draft)
     typer.echo(f"Recorded update_item for {node_id}")
-
-
-@app.command("set-assessment")
-def set_assessment(
-    plan_complete: Annotated[
-        bool,
-        typer.Option(
-            "--plan-complete/--no-plan-complete",
-            help="Whether planning is complete",
-        ),
-    ] = False,
-    summary: Annotated[str, typer.Option(help="Planning assessment summary")] = "",
-) -> None:
-    """Set the session assessment metadata."""
-    txn_file = _txn_file()
-    draft = _load_draft(txn_file)
-    draft["assessment"] = {
-        "plan_complete": plan_complete,
-        "summary": summary.strip(),
-    }
-    _save_draft(txn_file, draft)
-    typer.echo("Assessment updated")
 
 
 @app.command("reset")

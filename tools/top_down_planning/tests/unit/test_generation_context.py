@@ -286,5 +286,6 @@ def test_validate_wave_rejects_stale_digest() -> None:
         [(["item-001"], response)],
         limits=PlanningLimits(),
         plan_digest="current-digest",
+        output_goal_text="Produce an actionable implementation plan",
     )
     assert any("plan_digest mismatch" in error for error in errors)

@@ -878,6 +878,7 @@ class Orchestrator:
                     plan_snapshot,
                     wave_pairs,
                     plan_digest=plan_digest,
+                    output_goal_text=self.config.output_goal.text,
                 )
                 if wave_kind == "amend"
                 else validate_wave_responses(
@@ -885,6 +886,7 @@ class Orchestrator:
                     wave_pairs,
                     limits=limits,
                     plan_digest=plan_digest,
+                    output_goal_text=self.config.output_goal.text,
                 )
             )
             if errors:
@@ -1259,7 +1261,6 @@ class Orchestrator:
         with self._agent_pid_lock:
             if pid not in run_state.agent_pids:
                 run_state.agent_pids.append(pid)
-            run_state.agent_pid = None
             save_run_state(output_dir, run_state)
 
 

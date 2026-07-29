@@ -14,7 +14,11 @@ from top_down_planning.models import (
     WholePlanContextMode,
 )
 from top_down_planning.persistence import plan_overview_artifact_path, whole_plan_review_result_path
-from top_down_planning.prompts import _format_item_context
+from top_down_planning.item_format import (
+    format_item_context,
+    format_item_summary,
+    format_patchable_item_context,
+)
 from top_down_planning.render_brief import _render_hierarchy
 
 
@@ -163,61 +167,11 @@ def select_relevant_node_ids(
 
 
 def _format_item_summary(plan: PlanState, item: PlanItem) -> str:
-    parts = [
-        f"- [{item.id}] **{item.title}** ({item.decomposition_status.value})",
-        f"  - Objective: {item.objective}",
-    ]
-    if item.dependencies:
-        parts.append(f"  - Dependencies: {', '.join(item.dependencies)}")
-    if item.expected_outputs:
-        parts.append("  - Expected outputs:")
-        parts.extend(f"    - {value}" for value in item.expected_outputs)
-    if item.acceptance_criteria:
-        parts.append("  - Acceptance criteria:")
-        parts.extend(f"    - {value}" for value in item.acceptance_criteria)
-    if item.risks:
-        parts.append("  - Risks:")
-        parts.extend(f"    - {value}" for value in item.risks)
-    if item.open_questions:
-        parts.append("  - Open questions:")
-        parts.extend(f"    - {value}" for value in item.open_questions)
-    if item.blocked_reason:
-        parts.append(f"  - Blocked: {item.blocked_reason}")
-    return "\n".join(parts)
+    return format_item_summary(plan, item)
 
 
 def _format_patchable_item_context(plan: PlanState, item: PlanItem) -> str:
-    parts = [
-        f"### [{item.id}] {item.title} ({item.decomposition_status.value})",
-        f"- Objective: {item.objective}",
-    ]
-    parts.append(
-        "- Dependencies: "
-        + (", ".join(item.dependencies) if item.dependencies else "(none)")
-    )
-    parts.append(
-        "- Expected outputs: "
-        + (", ".join(item.expected_outputs) if item.expected_outputs else "(none)")
-    )
-    parts.append(
-        "- Acceptance criteria: "
-        + (
-            ", ".join(item.acceptance_criteria)
-            if item.acceptance_criteria
-            else "(none)"
-        )
-    )
-    parts.append(
-        "- Notes: " + (", ".join(item.notes) if item.notes else "(none)")
-    )
-    parts.append(
-        "- Risks: " + (", ".join(item.risks) if item.risks else "(none)")
-    )
-    parts.append(
-        "- Open questions: "
-        + (", ".join(item.open_questions) if item.open_questions else "(none)")
-    )
-    return "\n".join(parts)
+    return format_patchable_item_context(plan, item)
 
 
 def build_plan_overview(
@@ -301,7 +255,7 @@ def estimate_context_size(
 ) -> int:
     total = len(overview)
     for item in selected_items:
-        total += len(_format_item_context(plan, item))
+        total += len(format_item_context(plan, item))
     for item_id in sorted(relevant_ids):
         item = plan.item_by_id(item_id)
         if item is not None:
@@ -326,7 +280,7 @@ def build_batch_context_markdown(
         "",
     ]
     for item in selected_items:
-        assigned_lines.append(_format_item_context(plan, item))
+        assigned_lines.append(format_item_context(plan, item))
         assigned_lines.append("")
 
     patchable_ids: set[str] = set()

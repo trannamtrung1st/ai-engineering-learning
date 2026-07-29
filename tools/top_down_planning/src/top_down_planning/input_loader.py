@@ -117,15 +117,34 @@ def load_stop_hint(
 
 def resolve_output_goal_text(plan: PlanState) -> str:
     """Load the full output goal text from file when plan.yaml stores a reference."""
+    return load_output_goal_from_plan(plan).text
+
+
+def load_output_goal_from_plan(plan: PlanState) -> LoadedOutputGoal:
+    """Rebuild the resolved output goal from canonical plan source metadata."""
     if plan.source.output_goal_file:
         path = Path(plan.source.output_goal_file)
-        if path.is_file():
-            return path.read_text(encoding="utf-8")
-    return plan.source.output_goal
+        if not path.is_file():
+            raise PlanningToolError(f"Output goal file not found: {path}")
+        if path.suffix.lower() not in _GOAL_SUFFIXES:
+            raise PlanningToolError(
+                "Output goal file must be .md, .markdown, or .txt: "
+                f"{path}"
+            )
+        resolved = path.resolve()
+        text = resolved.read_text(encoding="utf-8")
+        if not text.strip():
+            raise PlanningToolError(f"Output goal file is empty: {path}")
+        return LoadedOutputGoal(text=text, digest=digest_file(resolved), path=resolved)
+    text = plan.source.output_goal.strip()
+    if not text:
+        raise PlanningToolError("Plan source output_goal is empty")
+    digest = plan.source.output_goal_digest or digest_text(text)
+    return LoadedOutputGoal(text=text, digest=digest)
 
 
 def digest_output_goal(output_goal: str) -> str:
-    """Backward-compatible helper for inline goal digests."""
+    """Compute SHA-256 digest for inline output goal text."""
     text = output_goal.strip()
     if not text:
         raise PlanningToolError("--output-goal must not be empty")

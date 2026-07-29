@@ -10,6 +10,7 @@ from top_down_planning.cursor_client import CursorClient
 from top_down_planning.errors import CursorSessionError, UserInterrupted
 from top_down_planning.input_loader import LoadedOutputGoal
 from top_down_planning.models import (
+    PlanState,
     RenderBatchSchedule,
     RenderOutputReviewDecision,
     RenderOutputReviewStatus,
@@ -44,8 +45,16 @@ class RenderReviewDeps:
     session_timeout_seconds: int = 600
 
 
-def validate_render_output_review(result: RenderedOutputReviewResult) -> list[str]:
+def validate_render_output_review(
+    result: RenderedOutputReviewResult,
+    *,
+    plan: PlanState | None = None,
+    deliverable_paths: list[str] | None = None,
+    schedule_batch_indices: list[int] | None = None,
+) -> list[str]:
     errors: list[str] = []
+    if not result.summary.strip():
+        errors.append("Review summary must not be empty")
     blocking_or_major = [
         finding
         for finding in result.findings
@@ -62,12 +71,38 @@ def validate_render_output_review(result: RenderedOutputReviewResult) -> list[st
         )
     if result.decision == RenderOutputReviewDecision.BLOCKED and not result.summary.strip():
         errors.append("blocked decision must include a summary")
+
+    valid_item_ids = {item.id for item in plan.plan} if plan is not None else None
+    allowed_artifacts = set(deliverable_paths or [])
+    allowed_batches = set(schedule_batch_indices or [])
+
+    for index, finding in enumerate(result.findings, start=1):
+        prefix = f"Finding {index}"
+        if not finding.description.strip():
+            errors.append(f"{prefix}: description must not be empty")
+        for node_id in finding.plan_item_ids:
+            if valid_item_ids is not None and node_id not in valid_item_ids:
+                errors.append(f"{prefix}: unknown plan item id {node_id!r}")
+        for artifact_path in finding.artifact_paths:
+            if allowed_artifacts and artifact_path not in allowed_artifacts:
+                errors.append(
+                    f"{prefix}: artifact path {artifact_path!r} is not in scope"
+                )
+
+    for batch_index in result.affected_batch_indices:
+        if allowed_batches and batch_index not in allowed_batches:
+            errors.append(f"affected batch index {batch_index} is not in schedule scope")
+    for artifact_path in result.affected_artifact_paths:
+        if allowed_artifacts and artifact_path not in allowed_artifacts:
+            errors.append(f"affected artifact path {artifact_path!r} is not in scope")
+
     return errors
 
 
 async def run_render_output_review(
     deps: RenderReviewDeps,
     *,
+    plan: PlanState,
     plan_digest: str,
     schedule: RenderBatchSchedule,
     schedule_digest: str,
@@ -140,16 +175,40 @@ async def run_render_output_review(
             continue
 
         result = raw
+        digest_errors: list[str] = []
         if result.plan_digest != plan_digest:
-            return None
+            digest_errors.append(
+                f"plan_digest mismatch: expected {plan_digest}, "
+                f"got {result.plan_digest}"
+            )
         if result.output_goal_digest != schedule.output_goal_digest:
-            return None
+            digest_errors.append(
+                f"output_goal_digest mismatch: expected {schedule.output_goal_digest}, "
+                f"got {result.output_goal_digest}"
+            )
         if result.schedule_digest != schedule_digest:
-            return None
+            digest_errors.append(
+                f"schedule_digest mismatch: expected {schedule_digest}, "
+                f"got {result.schedule_digest}"
+            )
         if result.deliverable_output_digest != deliverable.digest:
-            return None
+            digest_errors.append(
+                f"deliverable_output_digest mismatch: expected {deliverable.digest}, "
+                f"got {result.deliverable_output_digest}"
+            )
+        if digest_errors:
+            if attempt >= max_retries:
+                return None
+            continue
 
-        validation_errors = validate_render_output_review(result)
+        validation_errors = validate_render_output_review(
+            result,
+            plan=plan,
+            deliverable_paths=sorted(deliverable.files.keys()),
+            schedule_batch_indices=[
+                batch.batch_index for batch in schedule.batches
+            ],
+        )
         if validation_errors:
             if attempt >= max_retries:
                 return None

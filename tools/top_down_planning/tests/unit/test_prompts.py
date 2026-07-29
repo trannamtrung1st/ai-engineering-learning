@@ -338,7 +338,7 @@ def test_prompt_includes_stop_hint_when_provided(
 
     assert "Expansion stop guidance" in prompt
     assert "actionable leaf tasks" in prompt
-    assert "plan_complete" in prompt
+    assert "planning-plan-tool finalize" in prompt
     assert prompt.count("```markdown") >= 2
 
 

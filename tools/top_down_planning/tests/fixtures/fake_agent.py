@@ -74,7 +74,6 @@ def _default_planning_response(selected: list[str]) -> dict:
     if os.environ.get("FAKE_AGENT_EXPAND_ROOT", "true").lower() in {"1", "true", "yes"}:
         if "item-001" in selected:
             return {
-                "assessment": {"plan_complete": False, "summary": "Root expanded"},
                 "operations": [
                     {
                         "type": "expand",
@@ -121,13 +120,7 @@ def _default_planning_response(selected: list[str]) -> dict:
                 }
             )
         operations.append(operation)
-    return {
-        "assessment": {
-            "plan_complete": len(operations) > 0,
-            "summary": "Leaves marked actionable",
-        },
-        "operations": operations,
-    }
+    return {"operations": operations}
 
 
 def _default_amend_response(selected: list[str]) -> dict:
@@ -143,13 +136,7 @@ def _default_amend_response(selected: list[str]) -> dict:
                 "dependencies": [],
             }
         )
-    return {
-        "assessment": {
-            "plan_complete": True,
-            "summary": "Amendments applied",
-        },
-        "operations": operations,
-    }
+    return {"operations": operations}
 
 
 def _write_planning_transaction(response: dict) -> None:
@@ -168,15 +155,6 @@ def _write_planning_transaction(response: dict) -> None:
             "--json",
             json.dumps(update, separators=(",", ":")),
         )
-    assessment = response.get("assessment") or {}
-    plan_complete = bool(assessment.get("plan_complete", False))
-    summary = str(assessment.get("summary") or "")
-    assessment_args = ["set-assessment", "--summary", summary]
-    if plan_complete:
-        assessment_args.append("--plan-complete")
-    else:
-        assessment_args.append("--no-plan-complete")
-    _run_plan_tool(*assessment_args)
     _run_plan_tool("finalize")
 
 
