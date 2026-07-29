@@ -8,11 +8,14 @@
 # Contract discovery:
 #   top-down-planning usage
 #   planning-plan-tool schema --target transaction
+#   planning-plan-tool usage
+#   planning-render-tool --help
 #   planning-review-tool schema --stage whole_plan_review
 #
-# Planning sessions end each batch with planning-plan-tool finalize (no
-# set-assessment). Structural graph completion precedes whole-plan review and
-# final confirmation.
+# Planning sessions: choose batch scope with planning-plan-tool select-batch,
+# record operations, then finalize. Render uses planning-render-tool select-batch
+# for agent-selected sequential batches. Structural graph completion precedes
+# whole-plan review and final confirmation.
 #
 # CLI flags override values from this file. Paths are resolved relative to
 # `workspace` (or this file's directory when `workspace` is `.` or omitted),
@@ -47,6 +50,8 @@ limits:
   # parse_error_threshold: 20 # default: 20 — stream parse errors before abort
 
 # --- Generation context -------------------------------------------------------
+# Each iteration runs one agent session; the agent chooses batch scope via
+# planning-plan-tool select-batch before recording operations.
 
 generation:
   whole_plan_context: hybrid # embedded | referenced | hybrid

@@ -181,7 +181,7 @@ def build_plan_overview(
     *,
     output_dir: Path | None = None,
 ) -> str:
-    """Complete read-only whole-plan reference for a wave snapshot."""
+    """Complete read-only whole-plan reference for one planning iteration snapshot."""
     lines: list[str] = [
         "# Plan overview",
         "",
