@@ -56,7 +56,12 @@ class EvidenceMode(str, Enum):
     DRIVER = "driver"
 
 
-SUPPORTED_RUN_STATE_SCHEMA_VERSION = 2
+class ReviewPolicy(str, Enum):
+    DETERMINISTIC = "deterministic"
+    INDEPENDENT = "independent"
+
+
+SUPPORTED_RUN_STATE_SCHEMA_VERSION = 3
 
 
 class Transition(str, Enum):
@@ -76,6 +81,8 @@ class Transition(str, Enum):
     REVIEW_SESSION_RESTARTED = "review_session_restarted"
     REVIEW_PASSED = "review_passed"
     REVIEW_FAILED = "review_failed"
+    WORKER_CORRECTION_STARTED = "worker_correction_started"
+    WORKER_REPLACED = "worker_replaced"
     COMMIT_STARTED = "commit_started"
     COMMIT_COMPLETED = "commit_completed"
     COMMIT_FAILED = "commit_failed"
@@ -174,6 +181,8 @@ class ManifestSettings:
     model: str | None = DEFAULT_CURSOR_MODEL
     project_check: str | None = None
     auto_format_before_validation: bool = True
+    max_worker_corrections_per_attempt: int = 2
+    max_worker_replacements: int = 2
 
     def __post_init__(self) -> None:
         if self.model is not None:
@@ -236,6 +245,14 @@ class ManifestSettings:
             auto_format_before_validation=bool(
                 mapping.get("auto_format_before_validation", True)
             ),
+            max_worker_corrections_per_attempt=_non_negative_int(
+                mapping.get("max_worker_corrections_per_attempt", 2),
+                label="max_worker_corrections_per_attempt",
+            ),
+            max_worker_replacements=_non_negative_int(
+                mapping.get("max_worker_replacements", 2),
+                label="max_worker_replacements",
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -252,11 +269,51 @@ class ManifestSettings:
             "model": self.model,
             "project_check": self.project_check,
             "auto_format_before_validation": self.auto_format_before_validation,
+            "max_worker_corrections_per_attempt": self.max_worker_corrections_per_attempt,
+            "max_worker_replacements": self.max_worker_replacements,
         }
 
     @classmethod
     def model_validate(cls, data: Any) -> ManifestSettings:
         return cls.from_dict(_require_mapping(data, label="settings"))
+
+    def model_dump(self, mode: str = "json", **kwargs: Any) -> dict[str, Any]:
+        return self.to_dict()
+
+
+@dataclass
+class ExecutionGroup:
+    id: str
+    members: list[str]
+    rationale: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ExecutionGroup:
+        mapping = _require_mapping(data, label="execution group")
+        unknown = set(mapping) - {f.name for f in fields(cls)}
+        if unknown:
+            raise ValueError(f"Unknown execution group fields: {sorted(unknown)}")
+        members = _parse_str_list(mapping.get("members"), label="members")
+        if not members:
+            raise ValueError("execution group members must not be empty")
+        return cls(
+            id=_require_str(mapping["id"], label="id").strip(),
+            members=[_validate_item_id(member) for member in members],
+            rationale=_require_str(mapping.get("rationale", ""), label="rationale").strip(),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "id": self.id,
+            "members": list(self.members),
+        }
+        if self.rationale:
+            payload["rationale"] = self.rationale
+        return payload
+
+    @classmethod
+    def model_validate(cls, data: Any) -> ExecutionGroup:
+        return cls.from_dict(_require_mapping(data, label="execution group"))
 
     def model_dump(self, mode: str = "json", **kwargs: Any) -> dict[str, Any]:
         return self.to_dict()
@@ -299,6 +356,7 @@ class Manifest:
     stop_conditions: list[str] = field(default_factory=list)
     out_of_scope: list[str] = field(default_factory=list)
     agent_context: AgentContextConfig | None = None
+    execution_groups: list[ExecutionGroup] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Manifest:
@@ -330,6 +388,10 @@ class Manifest:
                 mapping.get("out_of_scope"), label="out_of_scope"
             ),
             agent_context=agent_context,
+            execution_groups=[
+                ExecutionGroup.from_dict(entry)
+                for entry in mapping.get("execution_groups") or []
+            ],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -348,6 +410,10 @@ class Manifest:
             payload["out_of_scope"] = list(self.out_of_scope)
         if self.agent_context is not None and not self.agent_context.is_empty():
             payload["agent_context"] = self.agent_context.to_dict()
+        if self.execution_groups:
+            payload["execution_groups"] = [
+                group.to_dict() for group in self.execution_groups
+            ]
         return payload
 
     @classmethod
@@ -370,6 +436,7 @@ def validate_manifest(data: dict[str, Any]) -> None:
         "stop_conditions",
         "out_of_scope",
         "agent_context",
+        "execution_groups",
     }
     if unknown:
         raise ValueError(f"Unknown manifest fields: {sorted(unknown)}")
@@ -615,6 +682,7 @@ class TodoItem:
     agent_context: AgentContextConfig | None = None
     source_file: str | None = None
     allow_empty_commit: bool = DEFAULT_ALLOW_EMPTY_COMMIT
+    review_policy: ReviewPolicy = ReviewPolicy.DETERMINISTIC
 
     def __post_init__(self) -> None:
         if isinstance(self.type, str):
@@ -671,6 +739,11 @@ class TodoItem:
                 if "allow_empty_commit" in mapping
                 else DEFAULT_ALLOW_EMPTY_COMMIT
             ),
+            review_policy=_parse_enum(
+                ReviewPolicy,
+                mapping.get("review_policy", ReviewPolicy.DETERMINISTIC.value),
+                label="review_policy",
+            ),  # type: ignore[arg-type]
         )
 
     def to_dict(self, *, include_source_file: bool = False) -> dict[str, Any]:
@@ -698,6 +771,8 @@ class TodoItem:
             payload["agent_context"] = self.agent_context.to_dict()
         if not self.allow_empty_commit:
             payload["allow_empty_commit"] = False
+        if self.review_policy != ReviewPolicy.DETERMINISTIC:
+            payload["review_policy"] = self.review_policy.value
         if include_source_file and self.source_file is not None:
             payload["source_file"] = self.source_file
         return payload
@@ -750,6 +825,7 @@ def validate_todo_item(data: dict[str, Any]) -> None:
         "agent_context",
         "source_file",
         "allow_empty_commit",
+        "review_policy",
     }
     if unknown:
         raise ValueError(f"Unknown item fields: {sorted(unknown)}")
@@ -780,6 +856,8 @@ def validate_todo_item(data: dict[str, Any]) -> None:
         mapping["allow_empty_commit"], bool
     ):
         raise ValueError("item.allow_empty_commit must be a boolean")
+    if "review_policy" in mapping and mapping["review_policy"] is not None:
+        _parse_enum(ReviewPolicy, mapping["review_policy"], label="review_policy")
     checklist = mapping.get("checklist")
     if checklist is not None:
         if not isinstance(checklist, list):
@@ -935,7 +1013,7 @@ class InstructionCompliance:
 
 @dataclass
 class ReviewIssue:
-    """Structured or legacy review note."""
+    """Structured review note."""
 
     severity: Literal["info", "low", "medium", "high", "critical"] = "medium"
     title: str = ""
@@ -1127,9 +1205,126 @@ class ReviewResultRecord:
 
 
 @dataclass
+class CompletionReport:
+    item_id: str
+    summary: str
+    changed_paths: list[str] = field(default_factory=list)
+    accepted_decisions: list[str] = field(default_factory=list)
+    verification_evidence: str = ""
+    follow_up_findings: list[str] = field(default_factory=list)
+    commit_sha: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CompletionReport:
+        mapping = _require_mapping(data, label="completion report")
+        return cls(
+            item_id=_require_str(mapping["item_id"], label="item_id"),
+            summary=_require_str(mapping.get("summary", ""), label="summary"),
+            changed_paths=_parse_str_list(
+                mapping.get("changed_paths"), label="changed_paths"
+            ),
+            accepted_decisions=_parse_str_list(
+                mapping.get("accepted_decisions"), label="accepted_decisions"
+            ),
+            verification_evidence=_require_str(
+                mapping.get("verification_evidence", ""),
+                label="verification_evidence",
+            ),
+            follow_up_findings=_parse_str_list(
+                mapping.get("follow_up_findings"), label="follow_up_findings"
+            ),
+            commit_sha=_optional_str(mapping.get("commit_sha"), label="commit_sha"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "item_id": self.item_id,
+            "summary": self.summary,
+            "changed_paths": list(self.changed_paths),
+            "accepted_decisions": list(self.accepted_decisions),
+            "verification_evidence": self.verification_evidence,
+            "follow_up_findings": list(self.follow_up_findings),
+            "commit_sha": self.commit_sha,
+        }
+
+    @classmethod
+    def model_validate(cls, data: Any) -> CompletionReport:
+        return cls.from_dict(_require_mapping(data, label="completion report"))
+
+    def model_dump(self, mode: str = "json", **kwargs: Any) -> dict[str, Any]:
+        return self.to_dict()
+
+
+@dataclass
+class ReviewerFinding:
+    id: str
+    item_id: str
+    summary: str
+    severity: str = "medium"
+    accepted: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ReviewerFinding:
+        mapping = _require_mapping(data, label="reviewer finding")
+        return cls(
+            id=_require_str(mapping["id"], label="id"),
+            item_id=_require_str(mapping["item_id"], label="item_id"),
+            summary=_require_str(mapping["summary"], label="summary"),
+            severity=_require_str(mapping.get("severity", "medium"), label="severity"),
+            accepted=bool(mapping.get("accepted", True)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "item_id": self.item_id,
+            "summary": self.summary,
+            "severity": self.severity,
+            "accepted": self.accepted,
+        }
+
+    @classmethod
+    def model_validate(cls, data: Any) -> ReviewerFinding:
+        return cls.from_dict(_require_mapping(data, label="reviewer finding"))
+
+    def model_dump(self, mode: str = "json", **kwargs: Any) -> dict[str, Any]:
+        return self.to_dict()
+
+
+@dataclass
+class FindingDisposition:
+    finding_id: str
+    disposition: str
+    notes: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FindingDisposition:
+        mapping = _require_mapping(data, label="finding disposition")
+        return cls(
+            finding_id=_require_str(mapping["finding_id"], label="finding_id"),
+            disposition=_require_str(mapping["disposition"], label="disposition"),
+            notes=_require_str(mapping.get("notes", ""), label="notes"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "finding_id": self.finding_id,
+            "disposition": self.disposition,
+            "notes": self.notes,
+        }
+
+    @classmethod
+    def model_validate(cls, data: Any) -> FindingDisposition:
+        return cls.from_dict(_require_mapping(data, label="finding disposition"))
+
+    def model_dump(self, mode: str = "json", **kwargs: Any) -> dict[str, Any]:
+        return self.to_dict()
+
+
+@dataclass
 class RunState:
     item_id: str
-    schema_version: Literal[2] = SUPPORTED_RUN_STATE_SCHEMA_VERSION
+    schema_version: Literal[3] = SUPPORTED_RUN_STATE_SCHEMA_VERSION
     logical_attempt: int = 0
     phase: Phase = Phase.IDLE
     session_number: int = 0
@@ -1158,11 +1353,18 @@ class RunState:
     history: list[dict[str, Any]] = field(default_factory=list)
     updated_at: datetime | None = None
     agent_pid: int | None = None
+    worker_chat_id: str | None = None
+    worker_session_count: int = 0
+    reviewer_session_count: int = 0
+    worker_correction_count: int = 0
+    worker_replacement_count: int = 0
+    continuity_check_pending: bool = False
+    completion_report: CompletionReport | None = None
+    pre_dirty_fingerprints: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RunState:
         mapping = dict(_require_mapping(data, label="run state"))
-        mapping.pop("pre_dirty_fingerprints", None)
         raw_version = mapping.get("schema_version")
         if raw_version != SUPPORTED_RUN_STATE_SCHEMA_VERSION:
             raise ValueError(
@@ -1181,6 +1383,12 @@ class RunState:
         evidence_mode = (
             EvidenceMode(_require_str(evidence_mode_raw, label="evidence_mode"))
             if evidence_mode_raw is not None
+            else None
+        )
+        completion_raw = mapping.get("completion_report")
+        completion_report = (
+            CompletionReport.from_dict(completion_raw)
+            if completion_raw is not None
             else None
         )
         return cls(
@@ -1243,6 +1451,19 @@ class RunState:
                 if mapping.get("agent_pid") is not None
                 else None
             ),
+            worker_chat_id=_optional_str(
+                mapping.get("worker_chat_id"), label="worker_chat_id"
+            ),
+            worker_session_count=int(mapping.get("worker_session_count", 0)),
+            reviewer_session_count=int(mapping.get("reviewer_session_count", 0)),
+            worker_correction_count=int(mapping.get("worker_correction_count", 0)),
+            worker_replacement_count=int(mapping.get("worker_replacement_count", 0)),
+            continuity_check_pending=bool(mapping.get("continuity_check_pending", False)),
+            completion_report=completion_report,
+            pre_dirty_fingerprints={
+                str(key): str(value)
+                for key, value in (mapping.get("pre_dirty_fingerprints") or {}).items()
+            },
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -1289,6 +1510,18 @@ class RunState:
                 self.updated_at.isoformat() if self.updated_at is not None else None
             ),
             "agent_pid": self.agent_pid,
+            "worker_chat_id": self.worker_chat_id,
+            "worker_session_count": self.worker_session_count,
+            "reviewer_session_count": self.reviewer_session_count,
+            "worker_correction_count": self.worker_correction_count,
+            "worker_replacement_count": self.worker_replacement_count,
+            "continuity_check_pending": self.continuity_check_pending,
+            "completion_report": (
+                self.completion_report.to_dict()
+                if self.completion_report is not None
+                else None
+            ),
+            "pre_dirty_fingerprints": dict(self.pre_dirty_fingerprints),
         }
 
     @classmethod

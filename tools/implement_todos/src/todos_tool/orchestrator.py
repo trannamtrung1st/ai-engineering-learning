@@ -15,6 +15,7 @@ from todos_tool.continuation import (
     apply_restructure_proposal,
     build_continuation_context,
     load_restructure_proposal,
+    snapshot_pre_existing_dirty,
 )
 from todos_tool.cursor_client import CursorClient, SessionResult
 from todos_tool.errors import (
@@ -31,7 +32,17 @@ from todos_tool.evidence_gate import assess_evidence_gate, command_spec_fingerpr
 from todos_tool.evidence_matcher import ObservedShellRun
 from todos_tool.evidence_runner import format_evidence_results, run_evidence_commands
 from todos_tool.git_finalize import finalize_worktree
+from todos_tool.implementation_state import (
+    clear_active_worker_chat,
+    dependency_handoff_for_item,
+    load_workspace_run_state,
+    record_finding_dispositions,
+    record_item_completion,
+    record_reviewer_findings,
+    set_active_worker_chat,
+)
 from todos_tool.git_service import (
+    capture_pre_dirty_fingerprints,
     ensure_git_repo,
     head_sha,
     paths_changed_since,
@@ -45,21 +56,25 @@ from todos_tool.progress import build_progress, format_prompt_progress, write_pr
 from todos_tool.model_config import resolve_model
 from todos_tool.models import (
     CommitState,
+    CompletionReport,
     EvidenceMode,
+    FindingDisposition,
     ItemResult,
     ItemStatus,
     Phase,
+    ReviewPolicy,
+    ReviewerFinding,
     RunState,
     TodoItem,
     Transition,
 )
+from todos_tool.orchestration_validation import validate_item_ready_for_finalize
 from todos_tool.persistence import (
     attempts_dir,
     load_state,
     new_run_state,
     record_transition,
     save_state,
-    state_path,
     write_json,
 )
 from todos_tool.agent_context import (
@@ -70,7 +85,15 @@ from todos_tool.agent_context import (
 )
 from todos_tool.context_files import resolve_context_files, validate_required_context
 from todos_tool.project_context import ProjectContext
-from todos_tool.prompts import build_review_prompt, build_work_prompt
+from todos_tool.prompts import (
+    build_review_prompt,
+    build_worker_continuation_prompt,
+    build_work_prompt,
+)
+from todos_tool.recovery import (
+    can_continue_worker_corrections,
+    replace_worker_session,
+)
 from todos_tool.reviewer import accept_decision
 from todos_tool.review_context import build_review_context
 from todos_tool.review_scaffold import (
@@ -87,7 +110,7 @@ from todos_tool.review_tool import (
 )
 from todos_tool.notifications import notify_item_done
 from todos_tool.run_config import RunConfig
-from todos_tool.scheduler import list_ready, next_ready
+from todos_tool.scheduler import ExecutionUnit, list_ready, next_execution_unit, next_ready
 from todos_tool.validation_runner import (
     format_validation_results,
     infer_format_fix_commands,
@@ -127,7 +150,6 @@ class Orchestrator:
         )
         self.workspace: Workspace | None = None
         self._client: CursorClient | None = None
-        self._pre_dirty_fingerprints: dict[str, str] = {}
 
     @property
     def client(self) -> CursorClient:
@@ -179,6 +201,9 @@ class Orchestrator:
             resolved_context_files=self.resolved_context_files,
             renderer=self.renderer,
         )
+        from todos_tool.scheduler import validate_execution_groups
+
+        validate_execution_groups(self.workspace)
         return self.workspace
 
     async def _reload_workspace(self) -> None:
@@ -196,6 +221,56 @@ class Orchestrator:
         if self.workspace is None or not self.workspace.manifest.out_of_scope:
             return None
         return "\n".join(self.workspace.manifest.out_of_scope)
+
+    def _runs_root(self) -> Path:
+        if self.workspace is None:
+            raise TodosToolError("Workspace not loaded")
+        return self.workspace.todos_dir / "runs"
+
+    def _dependency_outputs(self, item: TodoItem) -> list:
+        if not item.depends_on:
+            return []
+        return dependency_handoff_for_item(self._runs_root(), item.depends_on)
+
+    def _build_completion_report(
+        self,
+        item: TodoItem,
+        state: RunState,
+        commit_sha: str | None,
+    ) -> CompletionReport:
+        verification = format_validation_results(state.validation_results)
+        evidence = format_evidence_results(state.evidence_results)
+        verification_evidence = "\n".join(
+            part for part in [verification, evidence] if part and part.strip()
+        )
+        return CompletionReport(
+            item_id=item.id,
+            summary=state.work_summary or state.review.summary or "",
+            changed_paths=list(state.changed_paths),
+            accepted_decisions=[],
+            verification_evidence=verification_evidence,
+            follow_up_findings=list(state.review.issues),
+            commit_sha=commit_sha,
+        )
+
+    def _record_completion_handoff(
+        self,
+        item: TodoItem,
+        state: RunState,
+        commit_sha: str | None,
+    ) -> None:
+        report = self._build_completion_report(item, state, commit_sha)
+        state.completion_report = report
+        attempt_dir = attempts_dir(
+            self.workspace.runs_dir(item.id),
+            state.logical_attempt,
+        )
+        write_json(attempt_dir / "completion-report.json", report.to_dict())
+        record_item_completion(
+            self._runs_root(),
+            report,
+            item_status=item.status.value,
+        )
 
     def _prompt_kwargs(self, item: TodoItem, *, phase: PhaseName) -> dict[str, Any]:
         manifest = self.workspace.manifest if self.workspace else None
@@ -220,6 +295,11 @@ class Orchestrator:
             "contract_refs": item.contract_refs,
             "agent_context": agent_context,
             "progress_section": progress_section,
+            **(
+                {"dependency_outputs": self._dependency_outputs(item)}
+                if phase == "implement"
+                else {}
+            ),
         }
 
     def _resolve_agent_context(self, item: TodoItem, *, phase: PhaseName):
@@ -300,12 +380,12 @@ class Orchestrator:
 
         while True:
             if first and initial_item is not None:
-                item = initial_item
+                unit = ExecutionUnit(items=[initial_item])
                 resuming = initial_resuming
                 first = False
             else:
                 try:
-                    item = next_ready(self.workspace, todo_id)
+                    unit = next_execution_unit(self.workspace, todo_id)
                 except SchedulingError as exc:
                     if todo_id is not None:
                         raise
@@ -316,26 +396,25 @@ class Orchestrator:
                 resuming = False
 
             outcome = "completed"
+            active_item = unit.items[0]
             try:
-                await self._execute_item(item, resuming=resuming)
+                await self._execute_execution_unit(unit, resuming=resuming)
             except (CursorEnvironmentError, UserInterrupted):
                 raise
             except TodosToolError as exc:
-                self.renderer.error(f"{item.id}: {exc}")
-                report.errors[item.id] = str(exc)
-                outcome = _classify_item_outcome(self.workspace.get(item.id))
+                self.renderer.error(f"{active_item.id}: {exc}")
+                report.errors[active_item.id] = str(exc)
+                outcome = _classify_item_outcome(self.workspace.get(active_item.id))
             else:
-                refreshed = self.workspace.get(item.id)
+                refreshed = self.workspace.get(active_item.id)
                 if refreshed and refreshed.status == ItemStatus.SUPERSEDED:
                     outcome = "skipped"
 
-            _apply_outcome(report, item.id, outcome)
+            _apply_outcome(report, unit.items[0].id, outcome)
 
             if outcome == "completed":
-                self._maybe_notify_item_done(item.id)
-
-            if initial_resuming:
-                self._pre_dirty_fingerprints = {}
+                for member in unit.items:
+                    self._maybe_notify_item_done(member.id)
 
             if todo_id is not None:
                 break
@@ -438,16 +517,12 @@ class Orchestrator:
             runs_dir = self.workspace.runs_dir(item.id)
             state = load_state(runs_dir)
             resume_state = state
-            if state is not None:
-                self._pre_dirty_fingerprints = _load_legacy_pre_dirty_fingerprints(
-                    runs_dir
+            if state is not None and state.pre_dirty_fingerprints:
+                verify_pre_dirty_unchanged(
+                    self.config.workspace_root,
+                    state.pre_dirty_fingerprints,
+                    item_id=item.id,
                 )
-                if self._pre_dirty_fingerprints:
-                    verify_pre_dirty_unchanged(
-                        self.config.workspace_root,
-                        self._pre_dirty_fingerprints,
-                        item_id=item.id,
-                    )
 
         if in_progress:
             item = in_progress[0]
@@ -477,7 +552,45 @@ class Orchestrator:
         self.renderer.info(f"Resuming {item.id}")
         return await self._run_loop(initial_item=item, initial_resuming=True)
 
-    async def _execute_item(self, item: TodoItem, *, resuming: bool = False) -> None:
+    async def _execute_execution_unit(
+        self,
+        unit: ExecutionUnit,
+        *,
+        resuming: bool = False,
+    ) -> None:
+        shared_chat: str | None = None
+        runs_root = self._runs_root()
+        if unit.group_id is not None:
+            ws_state = load_workspace_run_state(runs_root)
+            shared_chat = ws_state.active_worker_chat_id
+
+        for index, item in enumerate(unit.items):
+            await self._execute_item(
+                item,
+                resuming=resuming and index == 0,
+                shared_worker_chat_id=shared_chat,
+                group_id=unit.group_id,
+                is_first_in_unit=index == 0,
+                is_last_in_unit=index == len(unit.items) - 1,
+            )
+            if unit.group_id is not None:
+                member_state = load_state(self.workspace.runs_dir(item.id))
+                if member_state and member_state.worker_chat_id:
+                    shared_chat = member_state.worker_chat_id
+
+        if unit.group_id is not None:
+            clear_active_worker_chat(runs_root, group_id=unit.group_id)
+
+    async def _execute_item(
+        self,
+        item: TodoItem,
+        *,
+        resuming: bool = False,
+        shared_worker_chat_id: str | None = None,
+        group_id: str | None = None,
+        is_first_in_unit: bool = True,
+        is_last_in_unit: bool = True,
+    ) -> None:
         self._validate_item_agent_context(item)
         settings = self.workspace.manifest.settings
         runs_dir = self.workspace.runs_dir(item.id)
@@ -485,7 +598,12 @@ class Orchestrator:
 
         if state and state.commit_state == CommitState.COMPLETED and state.commit_sha:
             verify_commit_sha(self.config.workspace_root, state.commit_sha)
-            self._finalize_item_done(item, state.commit_sha, state.work_summary or "")
+            self._finalize_item_done(
+                item,
+                state.commit_sha,
+                state.work_summary or "",
+                state=state,
+            )
             return
 
         if state is None:
@@ -493,11 +611,17 @@ class Orchestrator:
             state = new_run_state(item.id, baseline)
             if self.config.evidence_mode:
                 state.evidence_mode = EvidenceMode(self.config.evidence_mode)
+            pre_dirty = snapshot_pre_existing_dirty(status(self.config.workspace_root))
+            if pre_dirty:
+                state.pre_dirty_fingerprints = capture_pre_dirty_fingerprints(
+                    self.config.workspace_root,
+                    pre_dirty,
+                )
             save_state(runs_dir, state)
-        elif resuming and self._pre_dirty_fingerprints:
+        elif resuming and state.pre_dirty_fingerprints:
             verify_pre_dirty_unchanged(
                 self.config.workspace_root,
-                self._pre_dirty_fingerprints,
+                state.pre_dirty_fingerprints,
                 item_id=item.id,
             )
 
@@ -543,7 +667,7 @@ class Orchestrator:
                 state,
                 runs_dir,
                 feedback,
-                preserve_session=True,
+                resuming_driver=True,
             )
             if review_outcome == "superseded":
                 return
@@ -563,7 +687,7 @@ class Orchestrator:
             )
         ):
             work_ok = await self._run_work_phase(
-                item, state, runs_dir, feedback, preserve_session=True
+                item, state, runs_dir, feedback, resuming_driver=True
             )
             if not work_ok:
                 raise TodosToolError(state.review.summary or "Work phase failed")
@@ -578,7 +702,7 @@ class Orchestrator:
                 state,
                 runs_dir,
                 feedback,
-                preserve_session=True,
+                resuming_driver=True,
             )
             if review_outcome == "superseded":
                 return
@@ -593,7 +717,7 @@ class Orchestrator:
             in (Transition.REVIEW_SESSION_STARTED, Transition.REVIEW_SESSION_RESTARTED)
         ):
             review_outcome = await self._run_review_phase(
-                item, state, runs_dir, feedback, preserve_session=True
+                item, state, runs_dir, feedback, resuming_driver=True
             )
             await self._handle_review_outcome(
                 item, state, runs_dir, review_outcome, feedback
@@ -612,11 +736,23 @@ class Orchestrator:
         ):
             start_attempt = state.logical_attempt + 1
             feedback = self._attempt_failure_feedback(state, runs_dir)
+            state.worker_chat_id = None
+
+        if is_first_in_unit and shared_worker_chat_id is None and not resuming:
+            state.worker_chat_id = None
 
         for attempt in range(start_attempt, settings.max_attempts + 1):
             state.logical_attempt = attempt
             state.session_number = 0
             state.session_restart_count = 0
+            state.worker_correction_count = 0
+            if attempt > start_attempt or state.last_transition in (
+                Transition.REVIEW_FAILED,
+                Transition.VALIDATION_FAILED,
+                Transition.EVIDENCE_FAILED,
+                Transition.EVIDENCE_STALL,
+            ):
+                state.worker_chat_id = shared_worker_chat_id
             state.validation_attempt = 0
             state.validation_results = []
             state.validation_repair_count = 0
@@ -633,7 +769,16 @@ class Orchestrator:
             state.commit_state = CommitState.NONE
             record_transition(runs_dir, state, Transition.ATTEMPT_STARTED)
 
-            work_ok = await self._run_work_phase(item, state, runs_dir, feedback)
+            continue_worker = bool(shared_worker_chat_id) and not is_first_in_unit
+            work_ok = await self._run_work_phase(
+                item,
+                state,
+                runs_dir,
+                feedback,
+                continue_worker_chat=continue_worker,
+                shared_worker_chat_id=shared_worker_chat_id,
+                group_id=group_id,
+            )
             if not work_ok:
                 continue
 
@@ -645,13 +790,23 @@ class Orchestrator:
                 return
 
             review_outcome = await self._work_validate_review_attempt(
-                item, state, runs_dir, feedback
+                item,
+                state,
+                runs_dir,
+                feedback,
+                shared_worker_chat_id=shared_worker_chat_id or state.worker_chat_id,
+                group_id=group_id,
             )
             if review_outcome == "superseded":
                 self.renderer.info(f"{item.id} superseded; stopping item")
                 return
             if review_outcome == "pass":
-                await self._commit_item(item, state, runs_dir)
+                await self._commit_item(
+                    item,
+                    state,
+                    runs_dir,
+                    is_last_in_unit=is_last_in_unit,
+                )
                 return
             if review_outcome == "blocked":
                 item = self.workspace.get(item.id) or item
@@ -668,7 +823,42 @@ class Orchestrator:
                     state.blocked_reason or "Item blocked by evidence or review"
                 )
 
+            if review_outcome == "fail" and item.review_policy == ReviewPolicy.INDEPENDENT:
+                correction_outcome = await self._run_worker_correction_loop(
+                    item,
+                    state,
+                    runs_dir,
+                    feedback,
+                    shared_worker_chat_id=shared_worker_chat_id or state.worker_chat_id,
+                    group_id=group_id,
+                )
+                if correction_outcome == "pass":
+                    await self._commit_item(
+                        item,
+                        state,
+                        runs_dir,
+                        is_last_in_unit=is_last_in_unit,
+                    )
+                    return
+                if correction_outcome == "blocked":
+                    item = self.workspace.get(item.id) or item
+                    item.status = ItemStatus.BLOCKED
+                    state.phase = Phase.IDLE
+                    record_transition(
+                        runs_dir,
+                        state,
+                        Transition.ITEM_BLOCKED,
+                        reason=state.blocked_reason,
+                    )
+                    self._persist_item(item)
+                    raise TodosToolError(
+                        state.blocked_reason or "Item blocked by review"
+                    )
+                if correction_outcome == "superseded":
+                    return
+
             feedback = self._attempt_failure_feedback(state, runs_dir)
+            state.worker_chat_id = None
 
         item = self.workspace.get(item.id) or item
         item.status = ItemStatus.BLOCKED
@@ -677,6 +867,97 @@ class Orchestrator:
         record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
         self._persist_item(item)
         raise TodosToolError(state.blocked_reason)
+
+    async def _run_worker_correction_loop(
+        self,
+        item: TodoItem,
+        state: RunState,
+        runs_dir: Path,
+        feedback: str | None,
+        *,
+        shared_worker_chat_id: str | None = None,
+        group_id: str | None = None,
+    ) -> str:
+        settings = self.workspace.manifest.settings
+        worker_chat = shared_worker_chat_id or state.worker_chat_id
+        while can_continue_worker_corrections(
+            state,
+            max_corrections=settings.max_worker_corrections_per_attempt,
+        ):
+            state.worker_correction_count += 1
+            record_transition(runs_dir, state, Transition.WORKER_CORRECTION_STARTED)
+            findings = self._build_reviewer_findings(item, state)
+            if findings:
+                record_reviewer_findings(self._runs_root(), findings)
+            reviewer_feedback = self._reviewer_correction_feedback(state)
+            work_ok = await self._run_work_phase(
+                item,
+                state,
+                runs_dir,
+                feedback,
+                continue_worker_chat=True,
+                shared_worker_chat_id=worker_chat,
+                group_id=group_id,
+                reviewer_feedback=reviewer_feedback,
+                use_continuation_prompt=True,
+            )
+            if not work_ok:
+                return "fail"
+            worker_chat = state.worker_chat_id or worker_chat
+            await self._reload_workspace()
+            self._maybe_apply_restructure(item, runs_dir)
+            item = self.workspace.get(item.id) or item
+            if item.status == ItemStatus.SUPERSEDED:
+                return "superseded"
+            outcome = await self._work_validate_review_attempt(
+                item,
+                state,
+                runs_dir,
+                feedback,
+                resuming_driver=True,
+                shared_worker_chat_id=worker_chat,
+                group_id=group_id,
+            )
+            if outcome == "pass":
+                dispositions = [
+                    FindingDisposition(
+                        finding_id=finding.id,
+                        disposition="addressed",
+                    )
+                    for finding in findings
+                ]
+                if dispositions:
+                    record_finding_dispositions(self._runs_root(), dispositions)
+                return "pass"
+            if outcome in {"blocked", "superseded"}:
+                return outcome
+        return "fail"
+
+    def _build_reviewer_findings(
+        self,
+        item: TodoItem,
+        state: RunState,
+    ) -> list[ReviewerFinding]:
+        findings: list[ReviewerFinding] = []
+        for idx, issue in enumerate(state.review.issues):
+            findings.append(
+                ReviewerFinding(
+                    id=f"{item.id}-finding-{state.logical_attempt}-{idx + 1}",
+                    item_id=item.id,
+                    summary=issue,
+                    accepted=True,
+                )
+            )
+        return findings
+
+    def _reviewer_correction_feedback(self, state: RunState) -> str:
+        parts: list[str] = []
+        if state.review.summary:
+            parts.append(state.review.summary.strip())
+        if state.review.issues:
+            parts.append("Issues:")
+            parts.extend(f"- {issue}" for issue in state.review.issues)
+        return "\n".join(parts)
 
     async def _handle_review_outcome(
         self,
@@ -1085,11 +1366,14 @@ class Orchestrator:
         runs_dir: Path,
         feedback: str | None,
         *,
-        preserve_session: bool = False,
+        resuming_driver: bool = False,
+        shared_worker_chat_id: str | None = None,
+        group_id: str | None = None,
     ) -> str:
         settings = self.workspace.manifest.settings
         current_feedback = feedback
-        self._resolve_evidence_mode(state, resuming=preserve_session)
+        self._resolve_evidence_mode(state, resuming=resuming_driver)
+        worker_chat = shared_worker_chat_id or state.worker_chat_id
 
         while True:
             while True:
@@ -1111,11 +1395,16 @@ class Orchestrator:
                     state,
                     runs_dir,
                     current_feedback,
-                    preserve_session=False,
+                    resuming_driver=resuming_driver,
+                    continue_worker_chat=True,
+                    shared_worker_chat_id=worker_chat,
+                    group_id=group_id,
                     evidence_failure_feedback=repair_feedback,
+                    use_continuation_prompt=True,
                 )
                 if not work_ok:
                     return "fail"
+                worker_chat = state.worker_chat_id or worker_chat
 
                 await self._reload_workspace()
                 self._maybe_apply_restructure(item, runs_dir)
@@ -1146,11 +1435,16 @@ class Orchestrator:
                 state,
                 runs_dir,
                 current_feedback,
-                preserve_session=False,
+                resuming_driver=resuming_driver,
+                continue_worker_chat=True,
+                shared_worker_chat_id=worker_chat,
+                group_id=group_id,
                 validation_failure_feedback=repair_feedback,
+                use_continuation_prompt=True,
             )
             if not work_ok:
                 return "fail"
+            worker_chat = state.worker_chat_id or worker_chat
 
             await self._reload_workspace()
             self._maybe_apply_restructure(item, runs_dir)
@@ -1159,12 +1453,25 @@ class Orchestrator:
                 return "superseded"
             current_feedback = feedback
 
+        if item.review_policy == ReviewPolicy.DETERMINISTIC:
+            ws_state = load_workspace_run_state(self._runs_root())
+            issues = validate_item_ready_for_finalize(state, ws_state)
+            if issues:
+                state.review.summary = "; ".join(issues)
+                state.review.issues = issues
+                record_transition(runs_dir, state, Transition.REVIEW_FAILED)
+                self._refresh_progress()
+                return "fail"
+            record_transition(runs_dir, state, Transition.REVIEW_PASSED)
+            self._refresh_progress()
+            return "pass"
+
         return await self._run_review_phase(
             item,
             state,
             runs_dir,
             current_feedback,
-            preserve_session=preserve_session,
+            resuming_driver=resuming_driver,
         )
 
     async def _ensure_validation_results(
@@ -1276,15 +1583,24 @@ class Orchestrator:
         runs_dir: Path,
         feedback: str | None,
         *,
-        preserve_session: bool = False,
+        resuming_driver: bool = False,
+        continue_worker_chat: bool = False,
+        shared_worker_chat_id: str | None = None,
+        group_id: str | None = None,
         validation_failure_feedback: str | None = None,
         evidence_failure_feedback: str | None = None,
+        reviewer_feedback: str | None = None,
+        use_continuation_prompt: bool = False,
     ) -> bool:
         settings = self.workspace.manifest.settings
         continuation: str | None = None
-        evidence_mode = self._resolve_evidence_mode(state, resuming=preserve_session)
-        if not preserve_session:
+        evidence_mode = self._resolve_evidence_mode(state, resuming=resuming_driver)
+        if not resuming_driver and not continue_worker_chat:
             state.session_restart_count = 0
+
+        resume_chat_id: str | None = None
+        if continue_worker_chat:
+            resume_chat_id = shared_worker_chat_id or state.worker_chat_id
 
         while True:
             state.phase = Phase.WORK
@@ -1301,18 +1617,45 @@ class Orchestrator:
             events_path = attempt_dir / f"work-session-{state.session_number}.ndjson"
             log_path = attempt_dir / f"work-session-{state.session_number}.log"
             prompt_path = attempt_dir / f"work-prompt-{state.session_number}.md"
-            prompt = build_work_prompt(
-                item,
-                logical_attempt=state.logical_attempt,
-                resolved_commands=self._resolved_validation_commands(item),
-                todos_dir=self.config.todos_dir,
-                previous_feedback=feedback,
-                validation_failure_feedback=validation_failure_feedback,
-                evidence_failure_feedback=evidence_failure_feedback,
-                evidence_mode=evidence_mode.value,
-                continuation=continuation,
-                **self._prompt_kwargs(item, phase="implement"),
-            )
+            continuity_context = None
+            if state.continuity_check_pending:
+                continuity_context = build_continuation_context(
+                    item=item,
+                    logical_attempt=state.logical_attempt,
+                    phase="work",
+                    workspace_root=self.config.workspace_root,
+                    previous_summary=state.work_summary,
+                    failure_reason="Worker session replaced; continue from durable state.",
+                    item_paths=self._item_paths(state),
+                    todos_dir=self.config.todos_dir,
+                )
+                state.continuity_check_pending = False
+            if (
+                use_continuation_prompt
+                or validation_failure_feedback
+                or evidence_failure_feedback
+                or reviewer_feedback
+            ):
+                prompt = build_worker_continuation_prompt(
+                    item,
+                    validation_failure_feedback=validation_failure_feedback,
+                    evidence_failure_feedback=evidence_failure_feedback,
+                    reviewer_feedback=reviewer_feedback,
+                    continuity_context=continuity_context,
+                )
+            else:
+                prompt = build_work_prompt(
+                    item,
+                    logical_attempt=state.logical_attempt,
+                    resolved_commands=self._resolved_validation_commands(item),
+                    todos_dir=self.config.todos_dir,
+                    previous_feedback=feedback,
+                    validation_failure_feedback=validation_failure_feedback,
+                    evidence_failure_feedback=evidence_failure_feedback,
+                    evidence_mode=evidence_mode.value,
+                    continuation=continuation or continuity_context,
+                    **self._prompt_kwargs(item, phase="implement"),
+                )
             prompt_path.write_text(prompt, encoding="utf-8")
 
             self.renderer.rule(
@@ -1324,6 +1667,18 @@ class Orchestrator:
                 self.renderer,
                 log_path,
             )
+
+            def on_session_id(chat_id: str) -> None:
+                if state.worker_chat_id is None:
+                    state.worker_chat_id = chat_id
+                    state.worker_session_count += 1
+                    save_state(runs_dir, state)
+                if group_id is not None:
+                    set_active_worker_chat(
+                        self._runs_root(),
+                        chat_id,
+                        group_id=group_id,
+                    )
 
             try:
                 result = await self.client.run_session(
@@ -1338,7 +1693,9 @@ class Orchestrator:
                     on_agent_started=lambda pid: _persist_agent_pid(
                         runs_dir, state, pid
                     ),
+                    on_session_id=on_session_id,
                     model=self._resolve_session_model(item, phase="implement"),
+                    resume_chat_id=resume_chat_id,
                 )
             except UserInterrupted as exc:
                 state.agent_pid = None
@@ -1354,6 +1711,17 @@ class Orchestrator:
                 if not exc.recoverable:
                     raise
                 if state.session_restart_count >= settings.max_session_restarts_per_phase:
+                    if (
+                        state.worker_replacement_count
+                        < settings.max_worker_replacements
+                    ):
+                        replace_worker_session(state)
+                        record_transition(runs_dir, state, Transition.WORKER_REPLACED)
+                        save_state(runs_dir, state)
+                        resume_chat_id = None
+                        continue_worker_chat = False
+                        state.session_restart_count = 0
+                        continue
                     state.review.summary = f"Work phase failed: {exc}"
                     record_transition(runs_dir, state, Transition.WORK_PHASE_FAILED)
                     self._refresh_progress()
@@ -1369,8 +1737,18 @@ class Orchestrator:
                     item_paths=self._item_paths(state),
                     todos_dir=self.config.todos_dir,
                 )
+                resume_chat_id = state.worker_chat_id
+                continue_worker_chat = True
                 continue
 
+            if result.session_id:
+                state.worker_chat_id = result.session_id
+                if group_id is not None:
+                    set_active_worker_chat(
+                        self._runs_root(),
+                        result.session_id,
+                        group_id=group_id,
+                    )
             state.work_summary = _extract_summary(result)
             state.changed_paths = self._item_paths(state)
             self._persist_work_shell_evidence(
@@ -1391,7 +1769,7 @@ class Orchestrator:
         runs_dir: Path,
         feedback: str | None,
         *,
-        preserve_session: bool = False,
+        resuming_driver: bool = False,
     ) -> str:
         settings = self.workspace.manifest.settings
         continuation: str | None = None
@@ -1412,13 +1790,14 @@ class Orchestrator:
             gate = await self._run_validation_gate(item, state, runs_dir)
             if gate != "pass":
                 return "fail"
-        if not preserve_session:
+        if not resuming_driver:
             state.session_restart_count = 0
             state.session_number = 0
 
         while True:
             state.phase = Phase.REVIEW
             state.session_number += 1
+            state.reviewer_session_count += 1
             transition = (
                 Transition.REVIEW_SESSION_RESTARTED
                 if state.session_restart_count > 0
@@ -1604,6 +1983,9 @@ class Orchestrator:
                 return "blocked"
 
             record_transition(runs_dir, state, Transition.REVIEW_FAILED)
+            findings = self._build_reviewer_findings(item, state)
+            if findings:
+                record_reviewer_findings(self._runs_root(), findings)
             self._refresh_progress()
             return "fail"
 
@@ -1612,20 +1994,28 @@ class Orchestrator:
         item: TodoItem,
         state: RunState,
         runs_dir: Path,
+        *,
+        is_last_in_unit: bool = True,
     ) -> None:
         if not self._resolve_auto_commit():
             self.renderer.info(
                 f"{item.id}: auto_commit disabled; marked done without git commit"
             )
-            self._finalize_item_done(item, None, state.work_summary or "")
+            self._finalize_item_done(item, None, state.work_summary or "", state=state)
             state.phase = Phase.IDLE
+            state.worker_chat_id = None if is_last_in_unit else state.worker_chat_id
             record_transition(runs_dir, state, Transition.ITEM_DONE)
             self._refresh_progress()
             return
 
         if state.commit_state == CommitState.COMPLETED and state.commit_sha:
             verify_commit_sha(self.config.workspace_root, state.commit_sha)
-            self._finalize_item_done(item, state.commit_sha, state.work_summary or "")
+            self._finalize_item_done(
+                item,
+                state.commit_sha,
+                state.work_summary or "",
+                state=state,
+            )
             return
 
         state.phase = Phase.COMMIT
@@ -1666,6 +2056,7 @@ class Orchestrator:
         item = self.workspace.get(item.id) or item
         item.result.commit_sha = sha
         self._persist_item(item)
+        self._record_completion_handoff(item, state, sha)
 
         state.commit_state = CommitState.COMPLETED
         state.commit_sha = sha
@@ -1678,6 +2069,10 @@ class Orchestrator:
         )
         state.phase = Phase.IDLE
         record_transition(runs_dir, state, Transition.ITEM_DONE, sha=sha)
+        if is_last_in_unit:
+            state.worker_chat_id = None
+            clear_active_worker_chat(self._runs_root())
+        save_state(runs_dir, state)
         self.renderer.info(result.message)
         self._refresh_progress()
 
@@ -1686,6 +2081,8 @@ class Orchestrator:
         item: TodoItem,
         commit_sha: str | None,
         summary: str,
+        *,
+        state: RunState | None = None,
     ) -> None:
         item = self.workspace.get(item.id) or item
         item.status = ItemStatus.DONE
@@ -1693,6 +2090,8 @@ class Orchestrator:
         item.result.commit_sha = commit_sha
         item.result.summary = summary
         self._persist_item(item)
+        if state is not None:
+            self._record_completion_handoff(item, state, commit_sha)
 
     def _maybe_notify_item_done(self, item_id: str) -> None:
         if not self.config.notify_per_item:
@@ -1746,21 +2145,6 @@ class Orchestrator:
             self._refresh_progress()
         except RestructuringError as exc:
             self.renderer.warn(f"Restructuring rejected: {exc}")
-
-
-def _load_legacy_pre_dirty_fingerprints(runs_dir: Path) -> dict[str, str]:
-    """Read pre_dirty_fingerprints from legacy state.json for resume safety."""
-    path = state_path(runs_dir)
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    raw = data.get("pre_dirty_fingerprints")
-    if not isinstance(raw, dict):
-        return {}
-    return {str(key): str(value) for key, value in raw.items()}
 
 
 def _classify_item_outcome(item: TodoItem | None) -> str:

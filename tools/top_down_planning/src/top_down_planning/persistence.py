@@ -16,6 +16,7 @@ from top_down_planning.models import (
     FinalStatus,
     PlanState,
     PlanningLimits,
+    PlanningState,
     RenderConfig,
     RenderState,
     ReviewState,
@@ -23,11 +24,13 @@ from top_down_planning.models import (
     RunActiveStatus,
     RunState,
     SCHEMA_VERSION,
+    SessionStrategy,
     SourceMetadata,
 )
 
 
 PLAN_FILENAME = "plan.yaml"
+PLANNING_STATE_FILENAME = "planning-state.yaml"
 RUN_STATE_FILENAME = "run-state.json"
 REVIEW_STATE_FILENAME = "review-state.json"
 ITERATIONS_DIR = "iterations"
@@ -44,6 +47,10 @@ def state_dir(output_dir: Path) -> Path:
 
 def plan_path(output_dir: Path) -> Path:
     return state_dir(output_dir) / PLAN_FILENAME
+
+
+def planning_state_path(output_dir: Path) -> Path:
+    return state_dir(output_dir) / PLANNING_STATE_FILENAME
 
 
 def run_state_path(output_dir: Path) -> Path:
@@ -87,18 +94,6 @@ def reviews_dir(output_dir: Path) -> Path:
 
 def review_state_path(output_dir: Path) -> Path:
     return state_dir(output_dir) / REVIEW_STATE_FILENAME
-
-
-def whole_plan_review_result_path(output_dir: Path) -> Path:
-    return reviews_dir(output_dir) / "whole-plan-result.json"
-
-
-def final_confirmation_result_path(output_dir: Path) -> Path:
-    return reviews_dir(output_dir) / "final-confirmation-result.json"
-
-
-def revision_prefix(output_dir: Path, revision_cycle: int) -> str:
-    return str(reviews_dir(output_dir) / f"revision-{revision_cycle:03d}")
 
 
 def load_review_state(output_dir: Path) -> ReviewState | None:
@@ -194,6 +189,25 @@ def save_plan(output_dir: Path, plan: PlanState) -> None:
     _atomic_write_yaml(target, payload)
 
 
+def load_planning_state(output_dir: Path) -> PlanningState | None:
+    path = planning_state_path(output_dir)
+    if not path.is_file():
+        return None
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return PlanningState.model_validate(data)
+    except (OSError, yaml.YAMLError, ValueError) as exc:
+        raise PersistenceError(f"Failed to load planning state from {path}: {exc}") from exc
+
+
+def save_planning_state(output_dir: Path, state: PlanningState) -> None:
+    directory = state_dir(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / PLANNING_STATE_FILENAME
+    payload = state.model_dump(mode="json")
+    _atomic_write_yaml(target, payload)
+
+
 def load_run_state(output_dir: Path) -> RunState | None:
     path = run_state_path(output_dir)
     if not path.is_file():
@@ -266,6 +280,7 @@ def ensure_resume_compatible(
     limits: PlanningLimits,
     render: RenderConfig,
     resume: bool,
+    session_strategy: SessionStrategy | None = None,
 ) -> tuple[PlanState | None, RunState | None]:
     existing_plan = load_plan(output_dir)
     existing_run = load_run_state(output_dir)
@@ -312,6 +327,8 @@ def ensure_resume_compatible(
             existing_run.render,
             limits,
             render,
+            existing_run.session_strategy,
+            session_strategy,
         )
         return existing_plan, existing_run
 
@@ -368,6 +385,8 @@ def _assert_run_config_compatible(
     stored_render: RenderConfig,
     requested_limits: PlanningLimits,
     requested_render: RenderConfig,
+    stored_strategy: SessionStrategy,
+    requested_strategy: SessionStrategy | None,
 ) -> None:
     resolve_resume_limits(stored_limits, requested_limits)
     mismatches: list[str] = []
@@ -378,6 +397,10 @@ def _assert_run_config_compatible(
             mismatches.append(
                 f"render.{field}: stored={stored_value!r}, requested={requested_value!r}"
             )
+    if requested_strategy is not None and stored_strategy != requested_strategy:
+        mismatches.append(
+            "session_strategy changed since the last run; start a new output directory"
+        )
     if mismatches:
         raise ResumeError(
             "Resume config mismatch with stored run-state:\n"

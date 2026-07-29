@@ -469,26 +469,6 @@ def verify_pre_dirty_unchanged(
         )
 
 
-def require_pre_dirty_fingerprints(
-    state_fingerprints: dict[str, str],
-    pre_existing_dirty: set[str],
-    *,
-    item_id: str,
-    resuming: bool,
-) -> dict[str, str]:
-    """Ensure persisted fingerprints exist for active runs with pre-dirty paths."""
-    if not pre_existing_dirty:
-        return state_fingerprints
-    if state_fingerprints:
-        return state_fingerprints
-    if resuming:
-        raise PersistenceError(
-            f"Run state for {item_id} has no pre_dirty_fingerprints but the tree "
-            "had unrelated dirty files. Cannot resume safely; fix or reset run state."
-        )
-    return {}
-
-
 def stage_paths(root: Path, paths: list[str], *, todos_dir: str = "todos") -> None:
     if not paths:
         raise GitError("No paths to stage")

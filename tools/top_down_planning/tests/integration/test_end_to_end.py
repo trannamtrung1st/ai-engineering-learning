@@ -12,6 +12,7 @@ from top_down_planning.models import (
     ExpandOperation,
     FinalStatus,
     PlanningLimits,
+    PlanningMode,
     RenderConfig,
     ReviewConfig,
     ReviewStatus,
@@ -267,24 +268,16 @@ async def test_resume_does_not_reset_review_blocked_without_limit_change(
     import os
 
     output_dir = tmp_path / "planning-output-review-blocked-resume"
-    loaded = load_markdown_input(example_input)
     loaded_goal = render_output_goal()
-    needs_revision = json.dumps(
+    blocked_review = json.dumps(
         {
-            "stage": "whole_plan_review",
+            "stage": "specialist_review",
+            "reviewer_role": "adversarial",
+            "checkpoint": "final_candidate",
             "plan_digest": "placeholder",
-            "decision": "needs_revision",
+            "decision": "blocked",
             "summary": "Fix coverage",
-            "findings": [
-                {
-                    "severity": "major",
-                    "category": "coverage",
-                    "revision_mode": "reopen",
-                    "node_ids": ["item-001"],
-                    "description": "Reopen root",
-                    "recommended_change": "Replan branch",
-                }
-            ],
+            "findings": [],
         }
     )
     config = RunConfig(
@@ -295,18 +288,19 @@ async def test_resume_does_not_reset_review_blocked_without_limit_change(
         limits=PlanningLimits(max_iterations=5),
         agent_bin=fake_agent_bin,
         skip_probe=True,
-        review=ReviewConfig(enabled=True, max_revision_cycles=0),
+        review=ReviewConfig(enabled=True),
+        planning_mode=PlanningMode.FULL,
     )
-    os.environ["FAKE_AGENT_REVIEW_JSON"] = needs_revision
+    os.environ["FAKE_AGENT_SPECIALIST_JSON"] = blocked_review
     try:
         first_report = await Orchestrator(config).run()
     finally:
-        os.environ.pop("FAKE_AGENT_REVIEW_JSON", None)
+        os.environ.pop("FAKE_AGENT_SPECIALIST_JSON", None)
 
     assert first_report.status == FinalStatus.INCOMPLETE_BLOCKED
     plan = load_plan(output_dir)
     assert plan is not None
-    assert plan.result.review_status == ReviewStatus.NEEDS_REVISION
+    assert plan.result.review_status == ReviewStatus.BLOCKED
 
     resume_report = await Orchestrator(
         RunConfig(
@@ -318,12 +312,13 @@ async def test_resume_does_not_reset_review_blocked_without_limit_change(
             resume=True,
             agent_bin=fake_agent_bin,
             skip_probe=True,
-            review=ReviewConfig(enabled=True, max_revision_cycles=0),
+            review=ReviewConfig(enabled=True),
+            planning_mode=PlanningMode.FULL,
         )
     ).run()
 
     assert resume_report.status == FinalStatus.INCOMPLETE_BLOCKED
-    assert resume_report.review_status == ReviewStatus.NEEDS_REVISION
+    assert resume_report.review_status == ReviewStatus.BLOCKED
 
 
 @pytest.mark.asyncio

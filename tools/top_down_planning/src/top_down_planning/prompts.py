@@ -10,11 +10,13 @@ from top_down_planning.agent_context import ResolvedAgentContext
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
 from top_down_planning.item_format import format_item_context, format_item_summary
 from top_down_planning.models import (
+    CheckpointFinding,
     PlanItem,
     PlanState,
     PlanningLimits,
+    PlanningState,
     ProcessedBatchRecord,
-    ReviewFinding,
+    ReviewCheckpoint,
 )
 
 
@@ -318,100 +320,125 @@ one branch.
 """
 
 
-def _format_review_findings_for_items(
-    findings: list[ReviewFinding],
-    selected_ids: list[str],
-) -> str:
-    selected = set(selected_ids)
-    lines: list[str] = []
-    for index, finding in enumerate(findings, start=1):
-        relevant = [node_id for node_id in finding.node_ids if node_id in selected]
-        if finding.node_ids and not relevant:
-            continue
-        target = ", ".join(relevant) if relevant else "(informational)"
-        lines.append(f"### Finding {index} — {target}")
-        lines.append(f"- Severity: {finding.severity.value}")
-        lines.append(f"- Category: {finding.category.value}")
-        lines.append(f"- Revision mode: {finding.revision_mode.value}")
-        lines.append(f"- Issue: {finding.description}")
-        if finding.recommended_change.strip():
-            lines.append(f"- Recommended change: {finding.recommended_change}")
-    if not lines:
-        return "No item-specific review findings were supplied for this batch."
-    return "\n".join(lines)
+def format_planning_state_section(planning_state: PlanningState) -> str:
+    import yaml
+
+    payload = planning_state.model_dump(mode="json", exclude={"updated_at"})
+    return (
+        "## Serialized planning state\n"
+        "Treat this as durable authority alongside the plan. Update it every iteration.\n\n"
+        f"```yaml\n{yaml.safe_dump(payload, sort_keys=False)}```\n"
+    )
 
 
-def build_amend_prompt(
+def build_continuation_prompt(
     *,
     loaded_input: LoadedInput,
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan: PlanState,
+    planning_state: PlanningState,
     eligible_items: list[PlanItem],
     processed_batches: list[ProcessedBatchRecord],
-    review_findings: list[ReviewFinding],
     embed_threshold: int,
+    limits: PlanningLimits,
+    stop_hint: LoadedStopHint | None = None,
     validation_feedback: list[str] | None = None,
     plan_tool_command: str = "planning-plan-tool",
     agent_context: ResolvedAgentContext | None = None,
     plan_digest: str,
     batch_context_markdown: str,
+    selected_branch_summary: str,
 ) -> str:
-    feedback_block = ""
-    if validation_feedback:
-        feedback_block = (
-            "## Validation feedback from previous attempt\n"
-            + "\n".join(f"- {error}" for error in validation_feedback)
-            + "\n\nFix every issue and finalize a valid transaction.\n\n"
+    base = build_planning_prompt(
+        loaded_input=loaded_input,
+        workspace=workspace,
+        output_goal=output_goal,
+        plan=plan,
+        eligible_items=eligible_items,
+        processed_batches=processed_batches,
+        embed_threshold=embed_threshold,
+        limits=limits,
+        stop_hint=stop_hint,
+        validation_feedback=validation_feedback,
+        plan_tool_command=plan_tool_command,
+        agent_context=agent_context,
+        plan_digest=plan_digest,
+        batch_context_markdown=batch_context_markdown,
+    )
+    continuation = f"""
+## Primary planner continuation
+
+Refine the selected branch against the current complete plan. Before modifying it, check its
+responsibility boundary, sibling overlap, dependencies, output-goal coverage, and stopping
+condition. Update the global plan and serialized planning state. Do not reopen frozen decisions
+without concrete contradictory evidence.
+
+### Selected work
+{selected_branch_summary}
+
+{format_planning_state_section(planning_state)}
+
+After recording plan operations, record a planning-state update with
+`{plan_tool_command} record-planning-state-update --json '<update>'`.
+"""
+    return base.replace(
+        "# Top-down planning session",
+        "# Top-down planning continuation session",
+        1,
+    ) + continuation
+
+
+def build_disposition_prompt(
+    *,
+    loaded_input: LoadedInput,
+    workspace: Path,
+    output_goal: LoadedOutputGoal,
+    plan: PlanState,
+    planning_state: PlanningState,
+    findings: list[CheckpointFinding],
+    checkpoint: ReviewCheckpoint,
+    plan_digest: str,
+    embed_threshold: int,
+    plan_tool_command: str = "planning-plan-tool",
+    agent_context: ResolvedAgentContext | None = None,
+) -> str:
+    finding_lines: list[str] = []
+    for finding in findings:
+        finding_lines.append(
+            f"- `{finding.id}` ({finding.severity.value}/{finding.category.value}): "
+            f"{finding.observation}"
         )
+    findings_block = "\n".join(finding_lines) or "- No findings supplied."
+    return f"""# Finding disposition session
 
-    generation_context_block = (
-        f"## Generation context\n\n"
-        f"Plan digest: `{plan_digest}`\n\n"
-        f"{batch_context_markdown}\n\n"
-    )
-
-    eligible_block = (
-        "## Eligible amend items\n"
-        f"{format_eligible_items_section(eligible_items)}\n\n"
-    )
-    history_block = (
-        "## Processed batches\n"
-        f"{format_processed_batches_section(processed_batches)}\n\n"
-    )
-
-    return f"""# Plan amendment session
-
-You are revising actionable plan items in place after whole-plan review. Apply the
-review findings surgically. Do not re-expand branches, do not add or remove plan
-items, and do not execute implementation work.
+You are the primary planner. Classify every reviewer finding and update plan/state for accepted
+items. Do not ignore findings silently.
 
 ## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-{_format_agent_context_section(agent_context)}## Workflow
-1. Review eligible items, processed batches, and review findings.
-2. Record your batch with `{plan_tool_command} select-batch`.
-3. Record one `revise_actionable` per selected item, then finalize.
+{_format_agent_context_section(agent_context)}## Checkpoint
+`{checkpoint.value}`
 
-## Rules
-- Record exactly one `revise_actionable` operation per selected item.
-- Provide replacement fields explicitly. Omitted fields preserve the current value;
-  an empty list clears a list field.
-- Preserve unaffected detail unless the review finding requires a change.
-- Do not record `expand`, `mark_actionable`, `mark_blocked`, `mark_out_of_scope`, or
-  cross-item `update_item` patches.
-- Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
+## Plan digest
+`{plan_digest}`
 
-{feedback_block}{eligible_block}{history_block}## Review findings
-{_format_review_findings_for_items(review_findings, [item.id for item in eligible_items])}
+{format_planning_state_section(planning_state)}
 
-## Input document
+## Reviewer findings
+{findings_block}
 
-{format_input_document_section(loaded_input=loaded_input, workspace=workspace, embed_threshold=embed_threshold)}
+## Required dispositions
+For every finding, choose one of:
+`accepted`, `partially_accepted`, `rejected`, `already_covered`, `deferred`, `not_applicable`.
 
-{generation_context_block}## Planning transaction CLI
-{schema_docs.format_amend_tool_usage(plan_tool_command=plan_tool_command)}
+Record dispositions and any resulting plan/state changes:
+1. Use `{plan_tool_command} record-planning-state-update --json '<update>'` with
+   `finding_dispositions` and any plan-impacting state fields.
+2. If plan graph changes are required, also record planning operations and finalize.
+
+Accepted findings must produce concrete plan or state changes with concise rationale.
 """
 
 

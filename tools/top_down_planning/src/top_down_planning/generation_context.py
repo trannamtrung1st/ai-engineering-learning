@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from top_down_planning.models import (
+    CheckpointFinding,
     DecompositionStatus,
     PlanItem,
     PlanState,
-    WholePlanReviewResult,
+    PlanningState,
 )
-from top_down_planning.persistence import plan_overview_artifact_path, whole_plan_review_result_path
+from top_down_planning.persistence import load_planning_state, plan_overview_artifact_path
 from top_down_planning.item_format import (
     format_item_context,
     format_item_summary,
@@ -74,17 +75,14 @@ def _top_level_branch_root(plan: PlanState, item: PlanItem) -> PlanItem:
     return current
 
 
-def _load_review_findings(output_dir: Path | None) -> WholePlanReviewResult | None:
+def _load_planning_state(output_dir: Path | None) -> PlanningState | None:
     if output_dir is None:
         return None
-    path = whole_plan_review_result_path(output_dir)
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return WholePlanReviewResult.model_validate(data)
-    except (OSError, json.JSONDecodeError, ValueError):
-        return None
+    return load_planning_state(output_dir)
+
+
+def _checkpoint_finding_node_ids(finding: CheckpointFinding) -> list[str]:
+    return list(finding.affected_branches)
 
 
 def select_patchable_node_ids(
@@ -122,11 +120,11 @@ def select_relevant_node_ids(
 ) -> set[str]:
     """Deterministic relevant-context node selection for one batch."""
     relevant: set[str] = set()
-    review = _load_review_findings(output_dir)
+    planning_state = _load_planning_state(output_dir)
     review_node_ids: set[str] = set()
-    if review is not None:
-        for finding in review.findings:
-            review_node_ids.update(finding.node_ids)
+    if planning_state is not None:
+        for finding in planning_state.review_findings:
+            review_node_ids.update(_checkpoint_finding_node_ids(finding))
 
     top_level_summaries: set[str] = set()
     for item in plan.plan:
@@ -195,17 +193,17 @@ def build_plan_overview(
         lines.append(_format_item_summary(plan, item))
         lines.append("")
 
-    review = _load_review_findings(output_dir)
-    if review is not None and review.findings:
+    review = _load_planning_state(output_dir)
+    if review is not None and review.review_findings:
         lines.extend(["## Review findings", ""])
-        for finding in review.findings:
-            nodes = ", ".join(finding.node_ids) if finding.node_ids else "plan-wide"
+        for finding in review.review_findings:
+            nodes = ", ".join(_checkpoint_finding_node_ids(finding)) or "plan-wide"
             lines.append(
                 f"- [{finding.severity.value}/{finding.category.value}] "
-                f"({nodes}) {finding.description}"
+                f"({nodes}) {finding.observation}"
             )
-            if finding.recommended_change:
-                lines.append(f"  - Recommended: {finding.recommended_change}")
+            if finding.recommended_disposition:
+                lines.append(f"  - Recommended: {finding.recommended_disposition}")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"

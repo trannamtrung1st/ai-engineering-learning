@@ -1,4 +1,4 @@
-"""Transaction CLI for whole-plan review and final confirmation sessions."""
+"""Transaction CLI for specialist and render review sessions."""
 
 from __future__ import annotations
 
@@ -15,10 +15,9 @@ from pydantic import TypeAdapter, ValidationError as PydanticValidationError
 
 from top_down_planning.errors import PlanningToolError
 from top_down_planning.models import (
-    FinalConfirmationResult,
     RenderBatchReviewResult,
     RenderedOutputReviewResult,
-    WholePlanReviewResult,
+    SpecialistReviewResult,
 )
 from top_down_planning.persistence import write_json
 from top_down_planning import schema_docs
@@ -28,10 +27,13 @@ ENV_STAGE = "PLANNING_REVIEW_STAGE"
 ENV_REVIEW_PASS = "PLANNING_REVIEW_PASS"
 REVIEW_TOOL_COMMAND_ENV = "PLANNING_REVIEW_TOOL_COMMAND"
 
-StageName = Literal["whole_plan_review", "final_confirmation", "rendered_output_review", "render_batch_review"]
+StageName = Literal[
+    "specialist_review",
+    "rendered_output_review",
+    "render_batch_review",
+]
 _RESULT_ADAPTERS: dict[StageName, TypeAdapter[Any]] = {
-    "whole_plan_review": TypeAdapter(WholePlanReviewResult),
-    "final_confirmation": TypeAdapter(FinalConfirmationResult),
+    "specialist_review": TypeAdapter(SpecialistReviewResult),
     "rendered_output_review": TypeAdapter(RenderedOutputReviewResult),
     "render_batch_review": TypeAdapter(RenderBatchReviewResult),
 }
@@ -99,7 +101,7 @@ def _stage() -> StageName:
     if raw not in _RESULT_ADAPTERS:
         raise ReviewToolError(
             f"Invalid {ENV_STAGE}: {raw!r} "
-            "(expected whole_plan_review, final_confirmation, rendered_output_review, or render_batch_review)"
+            "(expected specialist_review, rendered_output_review, or render_batch_review)"
         )
     return raw  # type: ignore[return-value]
 
@@ -144,8 +146,7 @@ def load_review_result(
     *,
     stage: StageName,
 ) -> (
-    WholePlanReviewResult
-    | FinalConfirmationResult
+    SpecialistReviewResult
     | RenderedOutputReviewResult
     | RenderBatchReviewResult
 ):
@@ -174,8 +175,7 @@ def usage_cmd(
         f"  {command} schema --stage <stage>",
         f"  {command} example --stage <stage>",
         f"  {command} validate --json '<result>' --stage <stage>",
-        "  top-down-planning schema show review-whole-plan",
-        "  top-down-planning schema show review-final-confirmation",
+        "  top-down-planning schema show review-specialist",
         "  top-down-planning schema show review-render-batch",
         "  top-down-planning schema show review-rendered-output",
         "",

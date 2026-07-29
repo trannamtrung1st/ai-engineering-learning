@@ -12,7 +12,6 @@ from top_down_planning import __version__
 from top_down_planning.config_loader import RunConfigFile
 from top_down_planning.models import (
     AgentResponse,
-    FinalConfirmationResult,
     MarkActionableOperation,
     PlanItem,
     PlanState,
@@ -20,8 +19,8 @@ from top_down_planning.models import (
     RenderBatchReviewResult,
     RenderedOutputReviewResult,
     SourceMetadata,
+    SpecialistReviewResult,
     UpdateItemOperation,
-    WholePlanReviewResult,
 )
 
 PUBLIC_CONTRACTS = (
@@ -29,15 +28,13 @@ PUBLIC_CONTRACTS = (
     "plan",
     "operation",
     "transaction",
-    "review-whole-plan",
-    "review-final-confirmation",
+    "review-specialist",
     "review-render-batch",
     "review-rendered-output",
 )
 
 REVIEW_STAGES = (
-    "whole_plan_review",
-    "final_confirmation",
+    "specialist_review",
     "render_batch_review",
     "rendered_output_review",
 )
@@ -45,8 +42,7 @@ REVIEW_STAGES = (
 _OPERATION_ADAPTER = TypeAdapter(PlanningOperation)
 _UPDATE_ADAPTER = TypeAdapter(UpdateItemOperation)
 _TRANSACTION_ADAPTER = TypeAdapter(AgentResponse)
-_WHOLE_PLAN_REVIEW_ADAPTER = TypeAdapter(WholePlanReviewResult)
-_FINAL_CONFIRMATION_ADAPTER = TypeAdapter(FinalConfirmationResult)
+_SPECIALIST_REVIEW_ADAPTER = TypeAdapter(SpecialistReviewResult)
 _RENDER_BATCH_REVIEW_ADAPTER = TypeAdapter(RenderBatchReviewResult)
 _RENDERED_OUTPUT_REVIEW_ADAPTER = TypeAdapter(RenderedOutputReviewResult)
 _CONFIG_ADAPTER = TypeAdapter(RunConfigFile)
@@ -103,9 +99,9 @@ def usage_payload() -> dict[str, Any]:
                 "purpose": "Session-scoped review/confirmation results",
                 "discovery": [
                     "planning-review-tool usage",
-                    "planning-review-tool schema --stage whole_plan_review",
-                    "planning-review-tool example --stage whole_plan_review",
-                    "planning-review-tool validate --json '<result>' --stage whole_plan_review",
+                    "planning-review-tool schema --stage specialist_review",
+                    "planning-review-tool example --stage specialist_review",
+                    "planning-review-tool validate --json '<result>' --stage specialist_review",
                 ],
             },
         ],
@@ -155,10 +151,8 @@ def _schema_for(name: str) -> dict[str, Any]:
         return {**_contract_meta("operation", description="Single planning operation for planning-plan-tool", authority="top_down_planning.models.PlanningOperation"), "schema": _OPERATION_ADAPTER.json_schema()}
     if name == "transaction":
         return {**_contract_meta("transaction", description="Finalized planning transaction", authority="top_down_planning.models.AgentResponse"), "schema": _TRANSACTION_ADAPTER.json_schema()}
-    if name == "review-whole-plan":
-        return {**_contract_meta("review-whole-plan", description="Whole-plan review result", authority="top_down_planning.models.WholePlanReviewResult"), "schema": _WHOLE_PLAN_REVIEW_ADAPTER.json_schema()}
-    if name == "review-final-confirmation":
-        return {**_contract_meta("review-final-confirmation", description="Final confirmation result", authority="top_down_planning.models.FinalConfirmationResult"), "schema": _FINAL_CONFIRMATION_ADAPTER.json_schema()}
+    if name == "review-specialist":
+        return {**_contract_meta("review-specialist", description="Specialist checkpoint review result", authority="top_down_planning.models.SpecialistReviewResult"), "schema": _SPECIALIST_REVIEW_ADAPTER.json_schema()}
     if name == "review-render-batch":
         return {**_contract_meta("review-render-batch", description="Render batch review result", authority="top_down_planning.models.RenderBatchReviewResult"), "schema": _RENDER_BATCH_REVIEW_ADAPTER.json_schema()}
     if name == "review-rendered-output":
@@ -242,19 +236,15 @@ def _example_config() -> dict[str, Any]:
     }
 
 
-def _example_review_whole_plan() -> dict[str, Any]:
-    return WholePlanReviewResult(
-        plan_digest=_PLAN_DIGEST,
-        decision="approve",
-        summary="Plan is complete and consistent.",
-    ).model_dump(mode="json")
+def _example_review_specialist() -> dict[str, Any]:
+    from top_down_planning.models import ReviewCheckpoint, ReviewDecision, ReviewerRole
 
-
-def _example_review_final_confirmation() -> dict[str, Any]:
-    return FinalConfirmationResult(
+    return SpecialistReviewResult(
+        reviewer_role=ReviewerRole.ADVERSARIAL,
         plan_digest=_PLAN_DIGEST,
-        decision="confirmed",
-        summary="Ready to render.",
+        checkpoint=ReviewCheckpoint.FINAL_CANDIDATE,
+        decision=ReviewDecision.APPROVE,
+        summary="Plan is ready for render.",
     ).model_dump(mode="json")
 
 
@@ -291,8 +281,7 @@ def _example_by_name(name: str) -> dict[str, Any]:
         "plan": _example_plan,
         "operation": _example_operation,
         "transaction": _example_transaction,
-        "review-whole-plan": _example_review_whole_plan,
-        "review-final-confirmation": _example_review_final_confirmation,
+        "review-specialist": _example_review_specialist,
         "review-render-batch": _example_review_render_batch,
         "review-rendered-output": _example_review_rendered_output,
     }
@@ -323,11 +312,8 @@ def validate_example(name: str, payload: dict[str, Any]) -> None:
     if name == "transaction":
         _TRANSACTION_ADAPTER.validate_python(payload)
         return
-    if name == "review-whole-plan":
-        _WHOLE_PLAN_REVIEW_ADAPTER.validate_python(payload)
-        return
-    if name == "review-final-confirmation":
-        _FINAL_CONFIRMATION_ADAPTER.validate_python(payload)
+    if name == "review-specialist":
+        _SPECIALIST_REVIEW_ADAPTER.validate_python(payload)
         return
     if name == "review-render-batch":
         _RENDER_BATCH_REVIEW_ADAPTER.validate_python(payload)
@@ -349,8 +335,7 @@ def validate_update(payload: dict[str, Any]) -> None:
 
 def validate_review_result(stage: str, payload: dict[str, Any]) -> None:
     adapters: dict[str, TypeAdapter[Any]] = {
-        "whole_plan_review": _WHOLE_PLAN_REVIEW_ADAPTER,
-        "final_confirmation": _FINAL_CONFIRMATION_ADAPTER,
+        "specialist_review": _SPECIALIST_REVIEW_ADAPTER,
         "render_batch_review": _RENDER_BATCH_REVIEW_ADAPTER,
         "rendered_output_review": _RENDERED_OUTPUT_REVIEW_ADAPTER,
     }
@@ -395,8 +380,7 @@ def operation_examples() -> dict[str, dict[str, Any]]:
 
 def review_schema(stage: str) -> dict[str, Any]:
     adapters: dict[str, TypeAdapter[Any]] = {
-        "whole_plan_review": _WHOLE_PLAN_REVIEW_ADAPTER,
-        "final_confirmation": _FINAL_CONFIRMATION_ADAPTER,
+        "specialist_review": _SPECIALIST_REVIEW_ADAPTER,
         "render_batch_review": _RENDER_BATCH_REVIEW_ADAPTER,
         "rendered_output_review": _RENDERED_OUTPUT_REVIEW_ADAPTER,
     }
@@ -408,8 +392,7 @@ def review_schema(stage: str) -> dict[str, Any]:
 
 def review_example(stage: str) -> dict[str, Any]:
     examples = {
-        "whole_plan_review": _example_review_whole_plan,
-        "final_confirmation": _example_review_final_confirmation,
+        "specialist_review": _example_review_specialist,
         "render_batch_review": _example_review_render_batch,
         "rendered_output_review": _example_review_rendered_output,
     }
@@ -441,25 +424,6 @@ Workflow:
    listed in the patchable scope. Omitted fields preserve the current value; an empty list
    clears a list field.
 7. Run `{plan_tool_command} finalize` to commit the session transaction."""
-
-
-def format_amend_tool_usage(*, plan_tool_command: str = "planning-plan-tool") -> str:
-    return f"""Use the planning transaction CLI — do **not** return JSON in chat and do **not**
-edit `.planning-output/plan.yaml` directly.
-
-Authoritative schemas and examples:
-  {plan_tool_command} schema --target operation
-  {plan_tool_command} schema --target transaction
-  {plan_tool_command} example --type mark_actionable
-  {plan_tool_command} validate --json '<operation>'
-
-Workflow:
-1. Review eligible items, processed batches, and review findings below.
-2. Record your batch with `{plan_tool_command} select-batch --node-id <id> [--purpose "..."]`.
-3. For **each selected item**, run `{plan_tool_command} record-operation --json '<revise_actionable>'`.
-4. Run `{plan_tool_command} finalize` to commit the session transaction.
-
-Amend sessions use `revise_actionable` only. Do not use `record-update`."""
 
 
 def format_review_schema_section(

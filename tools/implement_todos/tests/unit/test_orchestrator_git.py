@@ -19,6 +19,7 @@ from todos_tool.persistence import (
     load_state,
     new_run_state,
     record_transition,
+    save_state,
 )
 
 
@@ -45,22 +46,16 @@ async def test_resume_commit_includes_todos_metadata(
     runs_dir = ws.runs_dir(item.id)
     runs_dir.mkdir(parents=True, exist_ok=True)
     baseline = head_sha(git_project)
-    state = {
-        "schema_version": 2,
-        "item_id": item.id,
-        "logical_attempt": 1,
-        "phase": "commit",
-        "session_number": 1,
-        "session_restart_count": 0,
-        "last_transition": "commit_failed",
-        "review": {"decision": "pass", "summary": "ok", "issues": []},
-        "commit_state": "failed",
-        "baseline_head": baseline,
-        "work_summary": "metadata only",
-        "changed_paths": [],
-        "history": [],
-    }
-    (runs_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    state = new_run_state(item.id, baseline)
+    state.logical_attempt = 1
+    state.phase = Phase.COMMIT
+    state.session_number = 1
+    state.last_transition = Transition.COMMIT_FAILED
+    state.review.decision = "pass"
+    state.review.summary = "ok"
+    state.commit_state = CommitState.FAILED
+    state.work_summary = "metadata only"
+    save_state(runs_dir, state)
 
     orch = Orchestrator(
         RunConfig(

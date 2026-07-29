@@ -12,6 +12,7 @@ from todos_tool.models import (
 )
 from todos_tool.agent_context import ResolvedAgentContext
 from todos_tool.artifact_paths import extract_artifact_paths
+from todos_tool.implementation_state import DependencyOutput
 from todos_tool.project_context import ProjectContext, ResolvedContextFile
 from todos_tool.validation_runner import format_validation_results
 from todos_tool.evidence_runner import format_evidence_results
@@ -298,6 +299,96 @@ def _render_evidence_commands(item: TodoItem) -> list[str]:
     return ["", "## Completion evidence commands", "\n".join(lines)]
 
 
+def _render_dependency_handoff(outputs: list[DependencyOutput]) -> list[str]:
+    if not outputs:
+        return []
+    lines = [
+        "",
+        "## Dependency completion handoff",
+        "Use durable outputs from completed dependencies — not hidden conversation context.",
+    ]
+    for output in outputs:
+        lines.extend(
+            [
+                "",
+                f"### `{output.item_id}`",
+                output.summary.strip() or "(no summary recorded)",
+            ]
+        )
+        if output.commit_sha:
+            lines.append(f"- commit: `{output.commit_sha}`")
+        if output.changed_paths:
+            lines.append("- changed paths:")
+            lines.extend([f"  - `{path}`" for path in output.changed_paths])
+        if output.accepted_decisions:
+            lines.append("- accepted decisions:")
+            lines.extend([f"  - {decision}" for decision in output.accepted_decisions])
+        if output.verification_evidence:
+            lines.append(f"- verification: {output.verification_evidence.strip()}")
+    return lines
+
+
+def build_worker_continuation_prompt(
+    item: TodoItem,
+    *,
+    validation_failure_feedback: str | None = None,
+    evidence_failure_feedback: str | None = None,
+    reviewer_feedback: str | None = None,
+    continuity_context: str | None = None,
+) -> str:
+    parts = [
+        "# Worker continuation",
+        "",
+        f"Continue implementing `{item.id}` in the same worker session.",
+        "Inspect the current repository state and apply only the corrections below.",
+    ]
+    if validation_failure_feedback:
+        parts.extend(
+            [
+                "",
+                "## Authoritative validation failure",
+                validation_failure_feedback.strip(),
+            ]
+        )
+    if evidence_failure_feedback:
+        parts.extend(
+            [
+                "",
+                "## Completion evidence failure",
+                evidence_failure_feedback.strip(),
+            ]
+        )
+    if reviewer_feedback:
+        parts.extend(
+            [
+                "",
+                "## Accepted reviewer findings",
+                reviewer_feedback.strip(),
+            ]
+        )
+    if continuity_context:
+        parts.extend(
+            [
+                "",
+                "## Continuity context",
+                continuity_context.strip(),
+            ]
+        )
+    parts.extend(
+        [
+            "",
+            "## Completion report",
+            "When finished, include a structured completion report in your summary:",
+            "- summary of changes",
+            "- changed repository paths",
+            "- accepted implementation decisions",
+            "- verification evidence",
+            "- explicit follow-up findings (if any)",
+        ]
+    )
+    return _join_parts(parts)
+
+
 def build_work_prompt(
     item: TodoItem,
     *,
@@ -319,6 +410,7 @@ def build_work_prompt(
     allow_full_check: bool = False,
     agent_context: ResolvedAgentContext | None = None,
     progress_section: str | None = None,
+    dependency_outputs: list[DependencyOutput] | None = None,
 ) -> str:
     criteria = _bullet_lines(item.acceptance_criteria)
     command_lines = _bullet_lines([f"`{c}`" for c in resolved_commands])
@@ -351,6 +443,7 @@ def build_work_prompt(
         stop_conditions=stop_conditions,
         out_of_scope=out_of_scope,
     ))
+    parts.extend(_render_dependency_handoff(dependency_outputs or []))
     parts.extend(_render_project_context(project_context, resolved_context_files))
     parts.extend(_render_agent_context(agent_context))
     parts.extend(_render_evidence_commands(item))
@@ -406,6 +499,12 @@ def build_work_prompt(
             "files before ending the session (the orchestrator also runs an auto-format preflight).",
             "5. Leave the working tree ready for independent review.",
             "6. Return a concise summary of what changed and any targeted checks you ran.",
+            "7. Include a structured completion report in your summary:",
+            "   - summary of changes",
+            "   - changed repository paths",
+            "   - accepted implementation decisions",
+            "   - verification evidence",
+            "   - explicit follow-up findings (if any)",
             "",
             "## Hard constraints",
             "- Do NOT commit.",

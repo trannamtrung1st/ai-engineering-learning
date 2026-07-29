@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from top_down_planning.agent_context import AgentContextConfig
 from top_down_planning.errors import PlanningToolError
-from top_down_planning.models import PlanningLimits, RenderConfig, ReviewConfig
+from top_down_planning.models import PlanningLimits, PlanningMode, RenderConfig, ReviewConfig, SessionStrategy
 
 
 class RunConfigFile(BaseModel):
@@ -46,6 +46,8 @@ class RunConfigFile(BaseModel):
     review: ReviewConfig | None = None
     render_only: bool | None = None
     force_rerender: bool | None = None
+    planning_mode: PlanningMode | None = None
+    session_strategy: SessionStrategy | None = None
 
     @model_validator(mode="after")
     def _validate_goal_sources(self) -> RunConfigFile:
@@ -84,6 +86,8 @@ class ResolvedRunOptions:
     render: RenderConfig = field(default_factory=RenderConfig)
     render_only: bool = False
     force_rerender: bool = False
+    planning_mode: PlanningMode = PlanningMode.AUTO
+    session_strategy: SessionStrategy | None = None
 
 
 def load_run_config_file(path: Path) -> RunConfigFile:
@@ -199,6 +203,10 @@ def merge_run_options(
     agent_context = _parse_agent_context(file_cfg.agent_context if file_cfg else None)
     review = file_cfg.review if file_cfg and file_cfg.review is not None else ReviewConfig()
     render = file_render.model_copy() if file_render is not None else RenderConfig()
+    planning_mode = (
+        file_cfg.planning_mode if file_cfg and file_cfg.planning_mode is not None else PlanningMode.AUTO
+    )
+    session_strategy = file_cfg.session_strategy if file_cfg else None
 
     return ResolvedRunOptions(
         input_path=resolved_input or Path("."),
@@ -262,6 +270,8 @@ def merge_run_options(
         force_rerender=_pick_bool(
             force_rerender, file_cfg.force_rerender if file_cfg else None, default=False
         ),
+        planning_mode=planning_mode,
+        session_strategy=session_strategy,
     )
 
 

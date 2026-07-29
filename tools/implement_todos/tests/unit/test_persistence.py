@@ -68,3 +68,10 @@ def test_load_state_rejects_unsupported_schema_version(tmp_path: Path) -> None:
     )
     with pytest.raises(PersistenceError, match="Unsupported run state schema version"):
         load_state(runs)
+
+    (runs / "state.json").write_text(
+        json.dumps({"schema_version": 2, "item_id": "TASK-001"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(PersistenceError, match="Unsupported run state schema version"):
+        load_state(runs)

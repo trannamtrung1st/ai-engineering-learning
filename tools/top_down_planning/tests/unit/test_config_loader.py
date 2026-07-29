@@ -114,7 +114,6 @@ def test_merge_run_options_loads_review_config(tmp_path: Path) -> None:
                 "output_goal: Produce a plan",
                 "review:",
                 "  enabled: false",
-                "  max_revision_cycles: 2",
                 "  max_retries: 5",
             ]
         ),
@@ -124,7 +123,6 @@ def test_merge_run_options_loads_review_config(tmp_path: Path) -> None:
     options = merge_run_options(config_path=config_path)
 
     assert options.review.enabled is False
-    assert options.review.max_revision_cycles == 2
     assert options.review.max_retries == 5
 
 

@@ -430,7 +430,7 @@ planning-output/
 are written directly to workspace destination paths by render author agents.
 
 Deliverables are produced by a **sequential cumulative render pipeline** after decomposition
-completes (and after review/confirmation when review is enabled). Rendering is a separate
+completes (and after checkpoint review plus deterministic finalization when review is enabled). Rendering is a separate
 lifecycle from planning:
 
 1. Run a scaffold session that establishes destination paths, structure, and conventions.

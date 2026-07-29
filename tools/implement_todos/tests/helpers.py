@@ -21,6 +21,8 @@ def write_todos(
     refs = []
     for idx, item in enumerate(items, start=1):
         data = dict(item)
+        if "review_policy" not in data:
+            data["review_policy"] = "independent"
         rel = data.pop("_file", f"items/{idx:03d}.yaml")
         path = todos / rel
         path.parent.mkdir(parents=True, exist_ok=True)

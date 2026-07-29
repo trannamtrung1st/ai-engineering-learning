@@ -30,9 +30,9 @@ planning-plan-tool schema --target operation
 planning-plan-tool example --type mark_actionable
 planning-plan-tool validate --json '{"type":"mark_actionable","node_id":"item-002"}'
 
-planning-review-tool usage --stage whole_plan_review
-planning-review-tool schema --stage whole_plan_review
-planning-review-tool example --stage whole_plan_review
+planning-review-tool usage --stage specialist_review
+planning-review-tool schema --stage specialist_review
+planning-review-tool example --stage specialist_review
 ```
 
 ## Usage
@@ -266,18 +266,26 @@ corrective validation feedback.
 
 ### Generation batch context
 
-Each generation session runs in a **focused fresh Cursor session** with:
+By default, branch refinement reuses one **persistent primary planner chat** (`--resume <chatId>`)
+across iterations. Fresh Cursor sessions are used for independent checkpoint reviewers.
+
+Each primary-planner turn includes:
 
 - **Eligible item inventory** — only the shallowest incomplete depth (stable sort by
   `order`, then `id`); expandable or amendable items the agent may choose from.
 - **Processed batch history** — prior iterations for context; agents may revisit batches
   for refinement when warranted.
+- **Serialized planning state** — durable `planning-state.yaml` with frozen decisions,
+  coverage mappings, branch status, and finding dispositions.
 - **Agent-selected scope (writable)** — items recorded via `select-batch`; exactly one
   operation per selected item via `planning-plan-tool`.
 - **Patchable related items** — directly related existing nodes may receive optional
   `update_item` patches through `planning-plan-tool record-update`.
 - **Global plan context (read-only)** — a digest-addressed plan-overview file reference
   plus broader relevant context. Read the overview file before recording operations.
+
+Configure orchestration with `planning_mode` (`simple`, `lightweight`, `full`, `auto`) and
+`session_strategy` in the run config.
 
 Stream events: `generation.batch.context_prepared`, `generation.batch.validated`,
 `generation.batch.completed` (include `plan_overview_artifact` and `model` where
@@ -294,7 +302,6 @@ During decomposition, the agent records structured operations through the bundle
 - `mark_blocked`
 - `mark_out_of_scope`
 - `update_item` (optional cross-item patch for related existing nodes)
-- `revise_actionable` (amend sessions after review only)
 
 Cross-item `update_item` patches use explicit optional fields: omitted means preserve,
 empty list means clear. They may update `title`, `objective`, `dependencies`,
@@ -366,7 +373,7 @@ agent_context:
 ```
 
 Planning sessions receive `default` + `planning` references. Render sessions receive
-`default` + `rendering` references. Whole-plan review and final confirmation receive
+`default` + `rendering` references. Checkpoint specialist reviews receive
 `default` + `review` references. Supported phase keys are `default`, `planning`,
 `rendering`, and `review`; unknown keys fail at config load.
 
@@ -388,67 +395,53 @@ goals require expected outputs and acceptance criteria on actionable leaves.
 Structural completion is evaluated deterministically: planning finishes when no expandable
 items remain, decomposed internal nodes are `expanded`, relevant leaves are `actionable`,
 `blocked`, or `out_of_scope`, and the graph is structurally valid (`expanded` nodes have
-children; `actionable` nodes are leaves). Whole-plan review and final confirmation then
-provide goal-aware semantic approval before render. Persisted plans use `schema_version: 2`.
+children; `actionable` nodes are leaves). Checkpoint specialist reviews and deterministic
+orchestration validation provide goal-aware semantic approval before render. Persisted plans
+use `schema_version: 2`.
 Safety limits (`--max-iterations`, `--max-depth`, `--max-children-per-expansion`,
 `--max-retries`, `session_timeout_seconds`, `parse_error_threshold`) preserve partial
 output with explicit final statuses.
 
-### Whole-plan review and final confirmation
+### Checkpoint reviews and finalization
 
-After structural decomposition completes, the tool runs a bounded semantic quality gate
-before render (enabled by default):
+After structural decomposition completes, the tool runs checkpoint specialist reviews and a
+deterministic finalization gate before render (enabled by default):
 
 ```yaml
 review:
   enabled: true
-  max_revision_cycles: 1
   max_retries: 3
 ```
 
 Lifecycle:
 
 ```text
-Decomposition → deterministic validation → whole-plan review →
-(optional revision: annotate | amend | reopen+replan) → re-review →
-final confirmation → render
+Persistent primary decomposition → checkpoint specialist reviews →
+primary-planner finding disposition → deterministic validation → render
 ```
 
 Review sessions are read-only with respect to `plan.yaml`. Agents record structured
-results through `planning-review-tool` (not free-form chat approval). Each result is
-tied to a deterministic plan digest; stale approvals are rejected when the plan changes.
+results through `planning-review-tool` (not free-form chat approval). Each specialist
+result is tied to a deterministic plan digest; stale approvals are rejected when the
+plan changes.
 
 When `review.enabled: false`, structurally complete plans render immediately
 (`review_status: skipped`).
 
 Configure review agent context under `agent_context.review` (model, skills, rules).
-Amend and replan sessions reuse the planning agent context.
-
-When review returns `needs_revision`, each finding must include `revision_mode`:
-
-| `revision_mode` | Effect |
-|---|---|
-| `annotate` | Append review note to cited items; no agent session |
-| `amend` | Run in-place `revise_actionable` sessions on cited actionable items |
-| `reopen` | Remove descendants and resume decomposition for cited branch roots |
-
-The review agent chooses the mode per finding. Prefer `amend` over `reopen` when the
-tree is correct but actionable detail needs correction. Cite only minimal reopen roots;
-never cite a parent and descendant together on a `reopen` finding.
-
-At most `max_revision_cycles` revision passes run before the run blocks.
+Disposition and replan turns reuse the persistent primary planner session.
 
 Render requires `review_status: confirmed` when review is enabled.
 
 ### Persistence and resume
 
 `run-state.json` stores iteration counters, limits, resolved phase models
-(`planning_model`, `review_model`, `rendering_model`), and SHA-256 digests of the input
-file and output goal. `review-state.json` stores review stage, plan digest, revision
-cycle, and decisions. On resume, decomposition continues when expandable items remain;
-otherwise the tool reuses stored review/confirmation results only when their plan digest
-matches the current canonical plan, then proceeds to the next unfinished stage
-(review, confirmation, or render).
+(`planning_model`, `review_model`, `rendering_model`), SHA-256 digests of the input
+file and output goal, and durable `planning-state.yaml`. `review-state.json` stores
+review stage, plan digest, and completed checkpoints. On resume, decomposition continues
+when expandable items remain; otherwise the tool reuses stored specialist review artifacts
+only when their plan digest matches the current canonical plan, then proceeds to
+finalization or render.
 
 Resume rejects changed input, changed output goal, or mismatched `render`
 settings. Safety limits (`max_iterations`, `max_depth`, `max_children_per_expansion`,

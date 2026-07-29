@@ -540,14 +540,11 @@ async def test_resume_dry_run_enforces_dirty_tree_preflight(
     state = new_run_state(item.id, head_sha(git_project))
     state.logical_attempt = 1
     state.phase = Phase.WORK
-    save_state(ws.runs_dir(item.id), state)
-    state_path = ws.runs_dir(item.id) / "state.json"
-    raw = json.loads(state_path.read_text(encoding="utf-8"))
-    raw["pre_dirty_fingerprints"] = capture_pre_dirty_fingerprints(
+    state.pre_dirty_fingerprints = capture_pre_dirty_fingerprints(
         git_project,
         {"unrelated.txt"},
     )
-    state_path.write_text(json.dumps(raw), encoding="utf-8")
+    save_state(ws.runs_dir(item.id), state)
     unrelated.write_text("after\n", encoding="utf-8")
 
     orch = Orchestrator(

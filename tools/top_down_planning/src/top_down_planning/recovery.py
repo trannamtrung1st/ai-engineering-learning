@@ -109,6 +109,15 @@ def recover_plan_from_iterations(output_dir: Path, plan: PlanState) -> PlanState
     return recovered
 
 
+def replace_primary_session(run_state: RunState) -> RunState:
+    """Start a replacement primary planner chat from durable artifacts."""
+    run_state.primary_chat_id = None
+    run_state.continuity_check_pending = True
+    run_state.orchestration_metrics.context_recovery_count += 1
+    run_state.orchestration_metrics.primary_session_count += 1
+    return run_state
+
+
 def backup_canonical_plan(output_dir: Path, *, suffix: str | None = None) -> Path:
     """Copy plan.yaml to a backup file before an agent-mode session."""
     source = plan_path(output_dir)

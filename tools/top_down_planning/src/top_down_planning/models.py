@@ -38,8 +38,6 @@ class FinalStatus(str, Enum):
 
 class ReviewStatus(str, Enum):
     PENDING = "pending"
-    APPROVED = "approved"
-    NEEDS_REVISION = "needs_revision"
     CONFIRMED = "confirmed"
     BLOCKED = "blocked"
     SKIPPED = "skipped"
@@ -146,8 +144,9 @@ class RenderState(BaseModel):
 
 
 class ReviewConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = True
-    max_revision_cycles: int = 2
     max_retries: int = 2
 
 
@@ -370,6 +369,200 @@ PlanningOperation = Annotated[
 ]
 
 
+class PlanningMode(str, Enum):
+    SIMPLE = "simple"
+    LIGHTWEIGHT = "lightweight"
+    FULL = "full"
+    AUTO = "auto"
+
+
+class ReviewCheckpoint(str, Enum):
+    INITIAL_STRUCTURE = "initial_structure"
+    ALL_BRANCHES_ACTIONABLE = "all_branches_actionable"
+    FINAL_CANDIDATE = "final_candidate"
+
+
+class ReviewerRole(str, Enum):
+    COVERAGE_BOUNDARY = "coverage_boundary"
+    DEPENDENCY_SEQUENCING = "dependency_sequencing"
+    EXECUTABILITY_EVIDENCE = "executability_evidence"
+    ADVERSARIAL = "adversarial"
+
+
+class FindingDisposition(str, Enum):
+    ACCEPTED = "accepted"
+    PARTIALLY_ACCEPTED = "partially_accepted"
+    REJECTED = "rejected"
+    ALREADY_COVERED = "already_covered"
+    DEFERRED = "deferred"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class SessionStrategy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    primary_session: Literal["persistent"] = "persistent"
+    review_checkpoints: list[ReviewCheckpoint] = Field(
+        default_factory=lambda: [
+            ReviewCheckpoint.INITIAL_STRUCTURE,
+            ReviewCheckpoint.ALL_BRANCHES_ACTIONABLE,
+            ReviewCheckpoint.FINAL_CANDIDATE,
+        ]
+    )
+    final_adversarial_review: bool = True
+
+
+class FrozenDecision(BaseModel):
+    id: str
+    summary: str
+    rationale: str = ""
+    affected_branches: list[str] = Field(default_factory=list)
+
+
+class PlanningAssumption(BaseModel):
+    id: str
+    statement: str
+    confidence: str = "assumed"
+
+
+class CoverageMapping(BaseModel):
+    requirement: str
+    branch_ids: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class BranchStatus(BaseModel):
+    branch_id: str
+    status: str
+    notes: str = ""
+
+
+class CrossBranchDependency(BaseModel):
+    from_branch: str
+    to_branch: str
+    kind: str = "execution"
+    notes: str = ""
+
+
+class RejectedAlternative(BaseModel):
+    id: str
+    summary: str
+    reason: str
+
+
+class DiscoveredConstraint(BaseModel):
+    id: str
+    summary: str
+    source: str = ""
+
+
+class ReviewFindingSeverity(str, Enum):
+    BLOCKING = "blocking"
+    MAJOR = "major"
+    MINOR = "minor"
+
+
+class ReviewFindingCategory(str, Enum):
+    COVERAGE = "coverage"
+    OVERLAP = "overlap"
+    CONSISTENCY = "consistency"
+    DEPENDENCY = "dependency"
+    GRANULARITY = "granularity"
+    ACCEPTANCE = "acceptance"
+    SCOPE = "scope"
+    OTHER = "other"
+
+
+class ReviewDecision(str, Enum):
+    APPROVE = "approve"
+    NEEDS_REVISION = "needs_revision"
+    BLOCKED = "blocked"
+
+
+class CheckpointFinding(BaseModel):
+    id: str
+    severity: ReviewFindingSeverity
+    category: ReviewFindingCategory
+    reviewer_role: ReviewerRole
+    affected_branches: list[str] = Field(default_factory=list)
+    observation: str
+    violated_invariant: str = ""
+    recommended_disposition: str = ""
+    evidence: str = ""
+    checkpoint: ReviewCheckpoint | None = None
+
+
+class FindingDispositionRecord(BaseModel):
+    finding_id: str
+    disposition: FindingDisposition
+    rationale: str
+    reviewer_role: ReviewerRole | None = None
+
+
+class PlanningStateUpdate(BaseModel):
+    """Compact delta recorded alongside a planning transaction."""
+
+    frozen_decisions: list[FrozenDecision] = Field(default_factory=list)
+    assumptions: list[PlanningAssumption] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    coverage_map: list[CoverageMapping] = Field(default_factory=list)
+    branch_status: list[BranchStatus] = Field(default_factory=list)
+    cross_branch_dependencies: list[CrossBranchDependency] = Field(default_factory=list)
+    rejected_alternatives: list[RejectedAlternative] = Field(default_factory=list)
+    discovered_constraints: list[DiscoveredConstraint] = Field(default_factory=list)
+    review_findings: list[CheckpointFinding] = Field(default_factory=list)
+    finding_dispositions: list[FindingDispositionRecord] = Field(default_factory=list)
+
+
+class PlanningState(BaseModel):
+    schema_version: int = SCHEMA_VERSION
+    frozen_decisions: list[FrozenDecision] = Field(default_factory=list)
+    assumptions: list[PlanningAssumption] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    coverage_map: list[CoverageMapping] = Field(default_factory=list)
+    branch_status: list[BranchStatus] = Field(default_factory=list)
+    cross_branch_dependencies: list[CrossBranchDependency] = Field(default_factory=list)
+    rejected_alternatives: list[RejectedAlternative] = Field(default_factory=list)
+    discovered_constraints: list[DiscoveredConstraint] = Field(default_factory=list)
+    review_findings: list[CheckpointFinding] = Field(default_factory=list)
+    finding_dispositions: list[FindingDispositionRecord] = Field(default_factory=list)
+    updated_at: datetime | None = None
+
+
+class OrchestrationMetrics(BaseModel):
+    primary_session_count: int = 0
+    reviewer_session_count: int = 0
+    branch_iterations: int = 0
+    repeated_discoveries: int = 0
+    findings_by_reviewer: dict[str, int] = Field(default_factory=dict)
+    accepted_findings: int = 0
+    rejected_findings: int = 0
+    plan_rewrites: int = 0
+    context_recovery_count: int = 0
+
+
+class SpecialistReviewResult(BaseModel):
+    stage: Literal["specialist_review"] = "specialist_review"
+    reviewer_role: ReviewerRole
+    plan_digest: str
+    checkpoint: ReviewCheckpoint
+    decision: ReviewDecision
+    summary: str
+    findings: list[CheckpointFinding] = Field(default_factory=list)
+
+
+class DispositionResult(BaseModel):
+    stage: Literal["disposition"] = "disposition"
+    plan_digest: str
+    reviewer_role: ReviewerRole | None = None
+    checkpoint: ReviewCheckpoint | None = None
+    dispositions: list[FindingDispositionRecord] = Field(default_factory=list)
+    planning_state_update: PlanningStateUpdate = Field(
+        default_factory=PlanningStateUpdate
+    )
+    summary: str = ""
+
+
 class AgentResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -378,6 +571,7 @@ class AgentResponse(BaseModel):
     plan_digest: str
     selected_items: list[str] = Field(default_factory=list)
     batch_purpose: str = ""
+    planning_state_update: PlanningStateUpdate | None = None
 
 
 class RunState(BaseModel):
@@ -404,12 +598,16 @@ class RunState(BaseModel):
     processed_batches: list[ProcessedBatchRecord] = Field(default_factory=list)
     generated_artifacts: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
-
-
-class ReviewFindingSeverity(str, Enum):
-    BLOCKING = "blocking"
-    MAJOR = "major"
-    MINOR = "minor"
+    primary_chat_id: str | None = None
+    resolved_planning_mode: PlanningMode = PlanningMode.FULL
+    session_strategy: SessionStrategy = Field(default_factory=SessionStrategy)
+    orchestration_metrics: OrchestrationMetrics = Field(
+        default_factory=OrchestrationMetrics
+    )
+    continuity_check_pending: bool = False
+    planning_state_digest: str | None = None
+    first_level_decomposed: bool = False
+    all_branches_actionable: bool = False
 
 
 class RenderOutputFindingCategory(str, Enum):
@@ -478,67 +676,9 @@ class RenderedOutputReviewResult(BaseModel):
     affected_artifact_paths: list[str] = Field(default_factory=list)
 
 
-class ReviewFindingCategory(str, Enum):
-    COVERAGE = "coverage"
-    OVERLAP = "overlap"
-    CONSISTENCY = "consistency"
-    DEPENDENCY = "dependency"
-    GRANULARITY = "granularity"
-    ACCEPTANCE = "acceptance"
-    SCOPE = "scope"
-    OTHER = "other"
-
-
-class RevisionMode(str, Enum):
-    """How the orchestrator should apply a review finding."""
-
-    REOPEN = "reopen"
-    AMEND = "amend"
-    ANNOTATE = "annotate"
-
-
-class ReviewFinding(BaseModel):
-    severity: ReviewFindingSeverity
-    category: ReviewFindingCategory
-    revision_mode: RevisionMode
-    node_ids: list[str] = Field(default_factory=list)
-    description: str
-    recommended_change: str = ""
-
-
-class ReviewDecision(str, Enum):
-    APPROVE = "approve"
-    NEEDS_REVISION = "needs_revision"
-    BLOCKED = "blocked"
-
-
-class ConfirmationDecision(str, Enum):
-    CONFIRMED = "confirmed"
-    NEEDS_REVISION = "needs_revision"
-    BLOCKED = "blocked"
-
-
-class WholePlanReviewResult(BaseModel):
-    stage: Literal["whole_plan_review"] = "whole_plan_review"
-    plan_digest: str
-    decision: ReviewDecision
-    summary: str
-    findings: list[ReviewFinding] = Field(default_factory=list)
-
-
-class FinalConfirmationResult(BaseModel):
-    stage: Literal["final_confirmation"] = "final_confirmation"
-    plan_digest: str
-    decision: ConfirmationDecision
-    summary: str
-    findings: list[ReviewFinding] = Field(default_factory=list)
-
-
 class ReviewStage(str, Enum):
     DECOMPOSITION = "decomposition"
-    WHOLE_PLAN_REVIEW = "whole_plan_review"
-    REVISION = "revision"
-    FINAL_CONFIRMATION = "final_confirmation"
+    CHECKPOINT = "checkpoint"
     RENDERING = "rendering"
     COMPLETE = "complete"
     BLOCKED = "blocked"
@@ -548,12 +688,10 @@ class ReviewState(BaseModel):
     schema_version: int = SCHEMA_VERSION
     stage: ReviewStage = ReviewStage.DECOMPOSITION
     plan_digest: str | None = None
-    revision_cycle: int = 0
-    whole_plan_review_pass: int = 0
-    whole_plan_decision: ReviewDecision | None = None
-    final_confirmation_decision: ConfirmationDecision | None = None
-    pending_amend_node_ids: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
+    completed_checkpoints: list[str] = Field(default_factory=list)
+    pending_reviewer_roles: list[str] = Field(default_factory=list)
+    checkpoint_findings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PlanningReport(BaseModel):

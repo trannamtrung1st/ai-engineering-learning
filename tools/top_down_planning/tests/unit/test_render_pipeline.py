@@ -18,12 +18,10 @@ from top_down_planning.models import (
 )
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import (
-    final_confirmation_result_path,
     load_plan,
     new_run_state,
     save_plan,
     save_run_state,
-    whole_plan_review_result_path,
     write_json,
 )
 from top_down_planning.render_batches import processed_batches_digest
@@ -95,6 +93,8 @@ async def test_render_only_with_confirmed_plan(
         output_goal_digest=loaded_goal.digest,
     )
     plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].expected_outputs = ["Deliverable"]
+    plan.plan[0].acceptance_criteria = ["Done when complete"]
     plan.result.review_status = ReviewStatus.CONFIRMED
     plan.result.status = FinalStatus.COMPLETE
     save_plan(output_dir, plan)
@@ -106,22 +106,25 @@ async def test_render_only_with_confirmed_plan(
         limits=PlanningLimits(max_iterations=5),
     )
     save_run_state(output_dir, run_state)
+    from top_down_planning.checkpoint_flow import specialist_review_result_path
+    from top_down_planning.models import ReviewCheckpoint, ReviewDecision, ReviewerRole
+    from top_down_planning.persistence import save_planning_state
+    from top_down_planning.planning_state import new_planning_state
+
+    plan_digest = compute_plan_digest(plan)
+    save_planning_state(output_dir, new_planning_state())
     write_json(
-        whole_plan_review_result_path(output_dir),
+        specialist_review_result_path(
+            output_dir,
+            role=ReviewerRole.ADVERSARIAL,
+            plan_digest=plan_digest,
+        ),
         {
-            "stage": "whole_plan_review",
-            "plan_digest": compute_plan_digest(plan),
-            "decision": "approve",
-            "summary": "ok",
-            "findings": [],
-        },
-    )
-    write_json(
-        final_confirmation_result_path(output_dir),
-        {
-            "stage": "final_confirmation",
-            "plan_digest": compute_plan_digest(plan),
-            "decision": "confirmed",
+            "stage": "specialist_review",
+            "reviewer_role": ReviewerRole.ADVERSARIAL.value,
+            "plan_digest": plan_digest,
+            "checkpoint": ReviewCheckpoint.FINAL_CANDIDATE.value,
+            "decision": ReviewDecision.APPROVE.value,
             "summary": "ok",
             "findings": [],
         },

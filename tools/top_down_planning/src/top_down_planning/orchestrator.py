@@ -15,6 +15,7 @@ from top_down_planning.agent_context import (
     resolve_phase_model,
     validate_agent_context_paths,
 )
+from top_down_planning.checkpoint_flow import CheckpointFlowDeps, run_checkpoint_reviews
 from top_down_planning.completeness import (
     compute_final_status,
     count_by_status,
@@ -37,19 +38,27 @@ from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, Loaded
 from top_down_planning.model_config import resolve_embed_threshold, resolve_model
 from top_down_planning.models import (
     AgentResponse,
+    DecompositionStatus,
     FinalStatus,
+    FindingDisposition,
+    FindingDispositionRecord,
     PlanItem,
+    PlanningMode,
+    PlanningState,
     ProcessedBatchRecord,
     PlanningLimits,
     PlanningReport,
     RenderConfig,
     RenderStage,
+    ReviewCheckpoint,
     ReviewConfig,
-    ReviewFinding,
     ReviewStatus,
+    ReviewerRole,
     RunActiveStatus,
     RunState,
+    SessionStrategy,
 )
+from top_down_planning.orchestration_validation import orchestration_errors
 from top_down_planning.persistence import (
     ensure_resume_compatible,
     describe_resume_limit_changes,
@@ -59,6 +68,7 @@ from top_down_planning.persistence import (
     iteration_transaction_path,
     iterations_dir,
     load_plan,
+    load_planning_state,
     load_render_state,
     load_run_state,
     mark_last_success,
@@ -66,10 +76,17 @@ from top_down_planning.persistence import (
     plan_path,
     record_history,
     save_plan,
+    save_planning_state,
     save_run_state,
     update_final_status,
     update_review_status,
     write_json,
+)
+from top_down_planning.planning_state import (
+    compute_planning_state_digest,
+    merge_planning_state_update,
+    new_planning_state,
+    unresolved_finding_ids,
 )
 from top_down_planning.plan_tool import (
     PlanToolError,
@@ -89,18 +106,22 @@ from top_down_planning.render_flow import RenderFlowDeps, existing_deliverable_a
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import prepare_batch_context
-from top_down_planning.prompts import build_amend_prompt, build_planning_prompt
+from top_down_planning.prompts import (
+    build_continuation_prompt,
+    build_disposition_prompt,
+    build_planning_prompt,
+)
+from top_down_planning.session_strategy import (
+    resolve_planning_mode,
+    resolve_session_strategy,
+)
 from top_down_planning.scheduler import (
-    amendable_items,
     expandable_items,
     initialize_root_plan,
 )
 from top_down_planning.state_updates import apply_response
 from top_down_planning.stream_events import StreamEmitter
-from top_down_planning.validator import (
-    validate_amend_wave_responses,
-    validate_wave_responses,
-)
+from top_down_planning.validator import validate_wave_responses
 
 
 @dataclass
@@ -126,6 +147,8 @@ class RunConfig:
     notify: bool = True
     agent_context: AgentContextConfig | None = None
     review: ReviewConfig = field(default_factory=ReviewConfig)
+    planning_mode: PlanningMode = PlanningMode.AUTO
+    session_strategy: SessionStrategy | None = None
 
 
 
@@ -139,6 +162,7 @@ class Orchestrator:
         self._artifacts: list[str] = []
         self._embed_threshold = resolve_embed_threshold(config.embed_threshold)
         self._agent_pid_lock = threading.Lock()
+        self._planning_state: PlanningState | None = None
         self._validate_config_agent_context()
 
     def _validate_config_agent_context(self) -> None:
@@ -216,6 +240,19 @@ class Orchestrator:
         loaded_stop_hint = self.config.stop_hint
         goal_digest = loaded_goal.digest
         stop_hint_digest = loaded_stop_hint.digest if loaded_stop_hint else None
+        resolved_mode = resolve_planning_mode(
+            self.config.planning_mode,
+            loaded_input=loaded,
+            output_goal=loaded_goal,
+            stop_hint=loaded_stop_hint,
+        )
+        resolved_strategy = resolve_session_strategy(
+            self.config.session_strategy,
+            planning_mode=resolved_mode,
+        )
+        strategy_for_compat = (
+            resolved_strategy if self.config.session_strategy is not None else None
+        )
 
         existing_plan, existing_run = ensure_resume_compatible(
             output_dir,
@@ -225,11 +262,14 @@ class Orchestrator:
             limits=self.config.limits,
             render=self.config.render,
             resume=self.config.resume,
+            session_strategy=strategy_for_compat,
         )
 
         if existing_plan is not None and existing_run is not None:
             plan = existing_plan
             run_state = existing_run
+            resolved_mode = run_state.resolved_planning_mode
+            resolved_strategy = run_state.session_strategy
             self._ensure_run_model_provenance(run_state)
             if _any_agent_alive(run_state.agent_pids):
                 alive = [pid for pid in run_state.agent_pids if _pid_alive(pid)]
@@ -281,7 +321,10 @@ class Orchestrator:
                 save_plan(output_dir, plan)
             run_state.agent_pids = []
             run_state.active_status = RunActiveStatus.RUNNING
+            run_state.resolved_planning_mode = resolved_mode
+            run_state.session_strategy = resolved_strategy
             save_run_state(output_dir, run_state)
+            self._planning_state = load_planning_state(output_dir) or new_planning_state()
             self.renderer.info(f"Resuming planning in {output_dir}")
         else:
             source = build_source_metadata(
@@ -304,8 +347,13 @@ class Orchestrator:
                 review_model=review_model,
                 rendering_model=rendering_model,
             )
+            run_state.resolved_planning_mode = resolved_mode
+            run_state.session_strategy = resolved_strategy
+            run_state.orchestration_metrics.primary_session_count = 1
             save_plan(output_dir, plan)
             save_run_state(output_dir, run_state)
+            self._planning_state = new_planning_state()
+            save_planning_state(output_dir, self._planning_state)
 
         self.stream.emit(
             "planning.started",
@@ -372,15 +420,41 @@ class Orchestrator:
         run_state: RunState,
         output_dir: Path,
     ):
+        if self._planning_state is None:
+            self._planning_state = load_planning_state(output_dir) or new_planning_state()
         plan, run_state = await self._decomposition_loop(
             loaded=loaded,
             plan=plan,
             run_state=run_state,
             output_dir=output_dir,
+            planning_state=self._planning_state,
         )
+        self._planning_state = load_planning_state(output_dir) or self._planning_state
+
+        if run_state.resolved_planning_mode != PlanningMode.SIMPLE:
+            validation_errors = orchestration_errors(
+                plan,
+                planning_state=self._planning_state,
+                output_goal_text=self.config.output_goal.text,
+            )
+            if not validation_errors:
+                self._planning_state = await self._maybe_run_checkpoint(
+                    loaded=loaded,
+                    plan=plan,
+                    planning_state=self._planning_state,
+                    run_state=run_state,
+                    output_dir=output_dir,
+                    checkpoint=ReviewCheckpoint.FINAL_CANDIDATE,
+                )
 
         plan, run_state, should_render = await run_post_decomposition_flow(
-            self._review_flow_deps(loaded=loaded, output_dir=output_dir),
+            ReviewFlowDeps(
+                output_dir=output_dir,
+                output_goal=self.config.output_goal,
+                review=self.config.review,
+                strategy=run_state.session_strategy,
+                stream=self.stream,
+            ),
             plan=plan,
             run_state=run_state,
         )
@@ -414,6 +488,7 @@ class Orchestrator:
         plan,
         run_state: RunState,
         output_dir: Path,
+        planning_state: PlanningState,
     ):
         limits = run_state.limits
 
@@ -442,8 +517,35 @@ class Orchestrator:
                 run_state=run_state,
                 output_dir=output_dir,
                 eligible_items=eligible,
-                session_kind="planning",
+                planning_state=planning_state,
             )
+            planning_state = load_planning_state(output_dir) or planning_state
+            self._planning_state = planning_state
+            run_state.orchestration_metrics.branch_iterations += 1
+
+            if _has_first_level_decomposition(plan) and not run_state.first_level_decomposed:
+                run_state.first_level_decomposed = True
+                planning_state = await self._maybe_run_checkpoint(
+                    loaded=loaded,
+                    plan=plan,
+                    planning_state=planning_state,
+                    run_state=run_state,
+                    output_dir=output_dir,
+                    checkpoint=ReviewCheckpoint.INITIAL_STRUCTURE,
+                )
+                self._planning_state = planning_state
+
+            if is_plan_complete(plan) and not run_state.all_branches_actionable:
+                run_state.all_branches_actionable = True
+                planning_state = await self._maybe_run_checkpoint(
+                    loaded=loaded,
+                    plan=plan,
+                    planning_state=planning_state,
+                    run_state=run_state,
+                    output_dir=output_dir,
+                    checkpoint=ReviewCheckpoint.ALL_BRANCHES_ACTIONABLE,
+                )
+                self._planning_state = planning_state
 
         structural = structural_errors(plan)
         if structural:
@@ -464,107 +566,6 @@ class Orchestrator:
         save_plan(output_dir, plan)
         save_run_state(output_dir, run_state)
         return plan, run_state
-
-    async def _amend_loop(
-        self,
-        *,
-        loaded: LoadedInput,
-        plan,
-        run_state: RunState,
-        output_dir: Path,
-        amend_node_ids: list[str],
-        review_findings: list[ReviewFinding],
-    ):
-        limits = run_state.limits
-        pending = list(dict.fromkeys(amend_node_ids))
-
-        while pending:
-            if limit_reached(iteration=run_state.iteration, limits=limits):
-                status = compute_final_status(plan, limit_reached=True)
-                update_final_status(
-                    plan,
-                    status,
-                    "Amendment stopped because max_iterations was reached.",
-                )
-                run_state.active_status = RunActiveStatus.COMPLETED
-                save_plan(output_dir, plan)
-                save_run_state(output_dir, run_state)
-                return plan, run_state
-
-            eligible = amendable_items(plan, pending)
-            if not eligible:
-                break
-
-            plan = await self._run_planning_iteration(
-                loaded=loaded,
-                plan=plan,
-                run_state=run_state,
-                output_dir=output_dir,
-                eligible_items=eligible,
-                session_kind="amend",
-                review_findings=review_findings,
-            )
-            if run_state.processed_batches:
-                processed_ids = set(run_state.processed_batches[-1].selected_items)
-                pending = [node_id for node_id in pending if node_id not in processed_ids]
-
-        if pending:
-            raise PlanningToolError(
-                "Amendment did not reach all queued items: "
-                + ", ".join(pending)
-            )
-
-        save_plan(output_dir, plan)
-        save_run_state(output_dir, run_state)
-        return plan, run_state
-
-    def _review_flow_deps(
-        self,
-        *,
-        loaded: LoadedInput,
-        output_dir: Path,
-    ) -> ReviewFlowDeps:
-        async def _resume_decomposition_only(plan, run_state):
-            return await self._decomposition_loop(
-                loaded=loaded,
-                plan=plan,
-                run_state=run_state,
-                output_dir=output_dir,
-            )
-
-        async def _resume_amend_only(
-            plan,
-            run_state,
-            *,
-            amend_node_ids: list[str],
-            review_findings: list[ReviewFinding],
-        ):
-            return await self._amend_loop(
-                loaded=loaded,
-                plan=plan,
-                run_state=run_state,
-                output_dir=output_dir,
-                amend_node_ids=amend_node_ids,
-                review_findings=review_findings,
-            )
-
-        return ReviewFlowDeps(
-            workspace_root=self.config.workspace_root,
-            output_dir=output_dir,
-            loaded=loaded,
-            output_goal=self.config.output_goal,
-            stop_hint=self.config.stop_hint,
-            embed_threshold=self._embed_threshold,
-            review=self.config.review,
-            client=self.client,
-            renderer=self.renderer,
-            stream=self.stream,
-            audit=self.config.audit_iterations,
-            resolve_review_context=lambda: self._resolved_agent_context(phase="review"),
-            resolve_review_model=lambda: self._resolve_session_model(phase="review"),
-            run_planning_loop=_resume_decomposition_only,
-            run_amend_loop=_resume_amend_only,
-        )
 
     def _render_flow_deps(
         self,
@@ -667,8 +668,8 @@ class Orchestrator:
         run_state: RunState,
         output_dir: Path,
         eligible_items: list[PlanItem],
-        session_kind: str = "planning",
-        review_findings: list[ReviewFinding] | None = None,
+        planning_state: PlanningState | None = None,
+        disposition_only: bool = False,
     ):
         limits = run_state.limits
         iteration = run_state.iteration + 1
@@ -676,6 +677,7 @@ class Orchestrator:
         plan_digest = compute_plan_digest(plan_snapshot)
         eligible_ids = [item.id for item in eligible_items]
         eligible_id_set = set(eligible_ids)
+        active_planning_state = planning_state or self._planning_state or new_planning_state()
 
         plan_tool_command = resolve_plan_tool_command()
         self._ensure_run_model_provenance(run_state)
@@ -684,7 +686,7 @@ class Orchestrator:
             selected_items=[],
             plan_digest=plan_digest,
             output_dir=output_dir,
-            include_cross_item_updates=session_kind == "planning",
+            include_cross_item_updates=not disposition_only,
         )
         session_model = self._resolve_session_model(phase="planning")
         self.stream.emit(
@@ -699,54 +701,29 @@ class Orchestrator:
             eligible_items=eligible_ids,
         )
         self.renderer.rule(
-            f"{'AMEND' if session_kind == 'amend' else 'PLAN'} "
-            f"iteration={iteration} eligible={','.join(eligible_ids)}"
+            f"PLAN iteration={iteration} eligible={','.join(eligible_ids)}"
         )
 
         context_path = iteration_context_path(output_dir, iteration)
         context_path.parent.mkdir(parents=True, exist_ok=True)
         context_path.write_text(prepared.batch_context_markdown, encoding="utf-8")
 
-        prompt = (
-            build_amend_prompt(
-                loaded_input=loaded,
-                workspace=self.config.workspace_root,
-                output_goal=self.config.output_goal,
-                plan=plan_snapshot,
-                eligible_items=eligible_items,
-                processed_batches=run_state.processed_batches,
-                review_findings=review_findings or [],
-                embed_threshold=self._embed_threshold,
-                validation_feedback=None,
-                plan_tool_command=plan_tool_command,
-                agent_context=self._resolved_agent_context(phase="planning"),
-                plan_digest=plan_digest,
-                batch_context_markdown=prepared.batch_context_markdown,
-            )
-            if session_kind == "amend"
-            else build_planning_prompt(
-                loaded_input=loaded,
-                workspace=self.config.workspace_root,
-                output_goal=self.config.output_goal,
-                plan=plan_snapshot,
-                eligible_items=eligible_items,
-                processed_batches=run_state.processed_batches,
-                embed_threshold=self._embed_threshold,
-                limits=limits,
-                stop_hint=self.config.stop_hint,
-                validation_feedback=None,
-                plan_tool_command=plan_tool_command,
-                agent_context=self._resolved_agent_context(phase="planning"),
-                plan_digest=plan_digest,
-                batch_context_markdown=prepared.batch_context_markdown,
-            )
+        prompt = self._build_iteration_prompt(
+            loaded=loaded,
+            plan_snapshot=plan_snapshot,
+            eligible_items=eligible_items,
+            processed_batches=run_state.processed_batches,
+            limits=limits,
+            plan_tool_command=plan_tool_command,
+            plan_digest=plan_digest,
+            batch_context_markdown=prepared.batch_context_markdown,
+            planning_state=active_planning_state,
+            disposition_only=disposition_only,
         )
+        resume_chat_id = run_state.primary_chat_id
 
         prefix = Path(iteration_prefix(output_dir, iteration))
-        prompt_suffix = (
-            "-amend-request-prompt.md" if session_kind == "amend" else "-request-prompt.md"
-        )
-        prompt_path = prefix.with_name(prefix.name + prompt_suffix)
+        prompt_path = prefix.with_name(prefix.name + "-request-prompt.md")
         events_path = prefix.with_name(prefix.name + "-agent.ndjson")
         log_path = prefix.with_name(prefix.name + "-agent.log")
         transaction_path = iteration_transaction_path(output_dir, iteration)
@@ -761,39 +738,19 @@ class Orchestrator:
 
             current_prompt = prompt
             if validation_feedback:
-                if session_kind == "amend":
-                    current_prompt = build_amend_prompt(
-                        loaded_input=loaded,
-                        workspace=self.config.workspace_root,
-                        output_goal=self.config.output_goal,
-                        plan=plan_snapshot,
-                        eligible_items=eligible_items,
-                        processed_batches=run_state.processed_batches,
-                        review_findings=review_findings or [],
-                        embed_threshold=self._embed_threshold,
-                        validation_feedback=validation_feedback,
-                        plan_tool_command=plan_tool_command,
-                        agent_context=self._resolved_agent_context(phase="planning"),
-                        plan_digest=plan_digest,
-                        batch_context_markdown=prepared.batch_context_markdown,
-                    )
-                else:
-                    current_prompt = build_planning_prompt(
-                        loaded_input=loaded,
-                        workspace=self.config.workspace_root,
-                        output_goal=self.config.output_goal,
-                        plan=plan_snapshot,
-                        eligible_items=eligible_items,
-                        processed_batches=run_state.processed_batches,
-                        embed_threshold=self._embed_threshold,
-                        limits=limits,
-                        stop_hint=self.config.stop_hint,
-                        validation_feedback=validation_feedback,
-                        plan_tool_command=plan_tool_command,
-                        agent_context=self._resolved_agent_context(phase="planning"),
-                        plan_digest=plan_digest,
-                        batch_context_markdown=prepared.batch_context_markdown,
-                    )
+                current_prompt = self._build_iteration_prompt(
+                    loaded=loaded,
+                    plan_snapshot=plan_snapshot,
+                    eligible_items=eligible_items,
+                    processed_batches=run_state.processed_batches,
+                    limits=limits,
+                    plan_tool_command=plan_tool_command,
+                    plan_digest=plan_digest,
+                    batch_context_markdown=prepared.batch_context_markdown,
+                    planning_state=active_planning_state,
+                    validation_feedback=validation_feedback,
+                    disposition_only=disposition_only,
+                )
 
             prompt_path.parent.mkdir(parents=True, exist_ok=True)
             prompt_path.write_text(current_prompt, encoding="utf-8")
@@ -810,7 +767,6 @@ class Orchestrator:
                         "batch_context_artifact": context_path.name,
                         "plan_overview_artifact": prepared.plan_overview_relative,
                         "model": session_model,
-                        "session_kind": session_kind,
                     },
                 )
 
@@ -830,6 +786,11 @@ class Orchestrator:
             def on_started(pid: int) -> None:
                 self._add_agent_pid(output_dir, run_state, pid)
 
+            def on_session_id(chat_id: str) -> None:
+                if not run_state.primary_chat_id:
+                    run_state.primary_chat_id = chat_id
+                    save_run_state(output_dir, run_state)
+
             try:
                 session_result = await self.client.run_session(
                     workspace=self.config.workspace_root,
@@ -845,9 +806,11 @@ class Orchestrator:
                     if self.config.audit_iterations
                     else self.renderer,
                     on_agent_started=on_started,
+                    on_session_id=on_session_id,
                     session_mode="agent",
                     extra_env=session_env,
                     model=session_model,
+                    resume_chat_id=resume_chat_id,
                 )
             except UserInterrupted:
                 run_state.agent_pids = []
@@ -880,6 +843,9 @@ class Orchestrator:
                     )
 
             run_state.agent_pids = []
+            if session_result.session_id and not run_state.primary_chat_id:
+                run_state.primary_chat_id = session_result.session_id
+                save_run_state(output_dir, run_state)
             response_path = prefix.with_name(prefix.name + "-response.json")
             validation_path = prefix.with_name(prefix.name + "-validation.json")
             try:
@@ -913,16 +879,8 @@ class Orchestrator:
                 continue
 
             selected_ids = list(response.selected_items)
-            errors = (
-                validate_amend_wave_responses(
-                    plan_snapshot,
-                    [(selected_ids, response)],
-                    plan_digest=plan_digest,
-                    output_goal_text=self.config.output_goal.text,
-                    eligible_ids=eligible_id_set,
-                )
-                if session_kind == "amend"
-                else validate_wave_responses(
+            if response.operations:
+                errors = validate_wave_responses(
                     plan_snapshot,
                     [(selected_ids, response)],
                     plan_digest=plan_digest,
@@ -930,7 +888,10 @@ class Orchestrator:
                     limits=limits,
                     eligible_ids=eligible_id_set,
                 )
-            )
+            else:
+                errors = []
+                if response.plan_digest != plan_digest:
+                    errors.append("plan_digest mismatch for state-only transaction")
             if errors:
                 validation_feedback = errors
                 self.stream.emit(
@@ -962,8 +923,19 @@ class Orchestrator:
                 success=True,
                 plan_digest=plan_digest,
             )
-            plan = apply_response(plan, response)
-            self._emit_operation_events(response)
+            if response.operations:
+                plan = apply_response(plan, response)
+                self._emit_operation_events(response)
+            if response.planning_state_update is not None:
+                active_planning_state = merge_planning_state_update(
+                    active_planning_state,
+                    response.planning_state_update,
+                )
+                save_planning_state(output_dir, active_planning_state)
+                run_state.planning_state_digest = compute_planning_state_digest(
+                    active_planning_state
+                )
+                self._planning_state = active_planning_state
             plan_digest_after = compute_plan_digest(plan)
 
             if self.config.audit_iterations:
@@ -1015,6 +987,163 @@ class Orchestrator:
             )
 
         return plan
+
+    def _build_iteration_prompt(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan_snapshot,
+        eligible_items: list[PlanItem],
+        processed_batches: list[ProcessedBatchRecord],
+        limits: PlanningLimits,
+        plan_tool_command: str,
+        plan_digest: str,
+        batch_context_markdown: str,
+        planning_state: PlanningState,
+        validation_feedback: list[str] | None = None,
+        disposition_only: bool = False,
+    ) -> str:
+        if disposition_only:
+            return build_disposition_prompt(
+                loaded_input=loaded,
+                workspace=self.config.workspace_root,
+                output_goal=self.config.output_goal,
+                plan=plan_snapshot,
+                planning_state=planning_state,
+                findings=planning_state.review_findings,
+                checkpoint=ReviewCheckpoint.FINAL_CANDIDATE,
+                plan_digest=plan_digest,
+                embed_threshold=self._embed_threshold,
+                plan_tool_command=plan_tool_command,
+                agent_context=self._resolved_agent_context(phase="planning"),
+            )
+        if processed_batches:
+            selected_summary = ", ".join(item.id for item in eligible_items)
+            return build_continuation_prompt(
+                loaded_input=loaded,
+                workspace=self.config.workspace_root,
+                output_goal=self.config.output_goal,
+                plan=plan_snapshot,
+                planning_state=planning_state,
+                eligible_items=eligible_items,
+                processed_batches=processed_batches,
+                embed_threshold=self._embed_threshold,
+                limits=limits,
+                stop_hint=self.config.stop_hint,
+                validation_feedback=validation_feedback,
+                plan_tool_command=plan_tool_command,
+                agent_context=self._resolved_agent_context(phase="planning"),
+                plan_digest=plan_digest,
+                batch_context_markdown=batch_context_markdown,
+                selected_branch_summary=selected_summary,
+            )
+        return build_planning_prompt(
+            loaded_input=loaded,
+            workspace=self.config.workspace_root,
+            output_goal=self.config.output_goal,
+            plan=plan_snapshot,
+            eligible_items=eligible_items,
+            processed_batches=processed_batches,
+            embed_threshold=self._embed_threshold,
+            limits=limits,
+            stop_hint=self.config.stop_hint,
+            validation_feedback=validation_feedback,
+            plan_tool_command=plan_tool_command,
+            agent_context=self._resolved_agent_context(phase="planning"),
+            plan_digest=plan_digest,
+            batch_context_markdown=batch_context_markdown,
+        )
+
+    def _checkpoint_flow_deps(self, *, loaded: LoadedInput, output_dir: Path) -> CheckpointFlowDeps:
+        async def _run_primary_disposition(
+            *,
+            plan,
+            planning_state: PlanningState,
+            findings,
+            checkpoint: ReviewCheckpoint,
+            run_state: RunState,
+        ):
+            return await self._run_disposition_turn(
+                loaded=loaded,
+                plan=plan,
+                planning_state=planning_state,
+                findings=findings,
+                checkpoint=checkpoint,
+                run_state=run_state,
+                output_dir=output_dir,
+            )
+
+        return CheckpointFlowDeps(
+            workspace_root=self.config.workspace_root,
+            output_dir=output_dir,
+            loaded=loaded,
+            output_goal=self.config.output_goal,
+            stop_hint=self.config.stop_hint,
+            embed_threshold=self._embed_threshold,
+            review=self.config.review,
+            client=self.client,
+            renderer=self.renderer,
+            stream=self.stream,
+            audit=self.config.audit_iterations,
+            strategy=run_state_strategy(self.config, output_dir),
+            resolve_review_context=lambda: self._resolved_agent_context(phase="review"),
+            resolve_review_model=lambda: self._resolve_session_model(phase="review"),
+            run_primary_disposition=_run_primary_disposition,
+        )
+
+    async def _maybe_run_checkpoint(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan,
+        planning_state: PlanningState,
+        run_state: RunState,
+        output_dir: Path,
+        checkpoint: ReviewCheckpoint,
+    ) -> PlanningState:
+        if run_state.resolved_planning_mode == PlanningMode.SIMPLE:
+            return planning_state
+        updated, _findings = await run_checkpoint_reviews(
+            self._checkpoint_flow_deps(loaded=loaded, output_dir=output_dir),
+            plan=plan,
+            planning_state=planning_state,
+            run_state=run_state,
+            checkpoint=checkpoint,
+        )
+        save_planning_state(output_dir, updated)
+        save_run_state(output_dir, run_state)
+        return updated
+
+    async def _run_disposition_turn(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan,
+        planning_state: PlanningState,
+        findings,
+        checkpoint: ReviewCheckpoint,
+        run_state: RunState,
+        output_dir: Path,
+    ) -> PlanningState:
+        planning_state = planning_state.model_copy(deep=True)
+        from top_down_planning.models import PlanningStateUpdate
+
+        planning_state = merge_planning_state_update(
+            planning_state,
+            PlanningStateUpdate(review_findings=findings),
+        )
+        if not findings:
+            return planning_state
+        await self._run_planning_iteration(
+            loaded=loaded,
+            plan=plan,
+            run_state=run_state,
+            output_dir=output_dir,
+            eligible_items=expandable_items(plan) or [plan.plan[0]],
+            planning_state=planning_state,
+            disposition_only=True,
+        )
+        return load_planning_state(output_dir) or planning_state
 
     def _emit_operation_events(self, response: AgentResponse) -> None:
         for operation in response.operations:
@@ -1071,3 +1200,22 @@ def _pid_alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _has_first_level_decomposition(plan) -> bool:
+    root = plan.item_by_id("item-001")
+    if root is None:
+        return False
+    if root.decomposition_status != DecompositionStatus.EXPANDED:
+        return False
+    return len(plan.children_of(root.id)) > 0
+
+
+def run_state_strategy(config: RunConfig, output_dir: Path) -> SessionStrategy:
+    run_state = load_run_state(output_dir)
+    if run_state is not None:
+        return run_state.session_strategy
+    return resolve_session_strategy(
+        config.session_strategy,
+        planning_mode=config.planning_mode,
+    )

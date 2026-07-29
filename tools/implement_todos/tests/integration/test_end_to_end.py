@@ -476,25 +476,22 @@ async def test_duplicate_commit_prevention_on_resume(
         text=True,
         check=True,
     ).stdout.strip()
+    from todos_tool.models import CommitState, Phase, Transition
+    from todos_tool.persistence import new_run_state, save_state
+
     runs = git_project / "todos" / "runs" / "TASK-001"
     runs.mkdir(parents=True)
-    state = {
-        "schema_version": 2,
-        "item_id": "TASK-001",
-        "logical_attempt": 1,
-        "phase": "commit",
-        "session_number": 1,
-        "session_restart_count": 0,
-        "last_transition": "commit_completed",
-        "review": {"decision": "pass", "summary": "ok", "issues": []},
-        "commit_state": "completed",
-        "commit_sha": real_sha,
-        "baseline_head": real_sha,
-        "work_summary": "done",
-        "changed_paths": [],
-        "history": [],
-    }
-    (runs / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    state = new_run_state("TASK-001", real_sha)
+    state.logical_attempt = 1
+    state.phase = Phase.COMMIT
+    state.session_number = 1
+    state.last_transition = Transition.COMMIT_COMPLETED
+    state.review.decision = "pass"
+    state.review.summary = "ok"
+    state.commit_state = CommitState.COMPLETED
+    state.commit_sha = real_sha
+    state.work_summary = "done"
+    save_state(runs, state)
     item_path = git_project / "todos" / "items" / "001.yaml"
     data = yaml.safe_load(item_path.read_text())
     data["status"] = "in_progress"

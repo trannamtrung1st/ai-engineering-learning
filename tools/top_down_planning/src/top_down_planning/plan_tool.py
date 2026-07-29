@@ -20,6 +20,7 @@ from top_down_planning.models import (
     AgentResponse,
     PlanState,
     PlanningOperation,
+    PlanningStateUpdate,
     UpdateItemOperation,
 )
 from top_down_planning.persistence import write_json
@@ -35,6 +36,7 @@ PLAN_TOOL_COMMAND_ENV = "PLANNING_TOOL_COMMAND"
 
 _OPERATION_ADAPTER = TypeAdapter(PlanningOperation)
 _UPDATE_ADAPTER = TypeAdapter(UpdateItemOperation)
+_STATE_UPDATE_ADAPTER = TypeAdapter(PlanningStateUpdate)
 
 app = typer.Typer(
     name="planning-plan-tool",
@@ -138,6 +140,7 @@ def _empty_draft() -> dict[str, Any]:
         "updates": [],
         "selected_items": [],
         "batch_purpose": "",
+        "planning_state_update": None,
     }
 
 
@@ -180,7 +183,7 @@ def load_transaction(path: Path) -> AgentResponse:
     except (OSError, json.JSONDecodeError, PydanticValidationError) as exc:
         raise PlanToolError(f"Invalid transaction file {path}: {exc}") from exc
     if not response.operations:
-        raise PlanToolError(f"Transaction file {path} contains no operations")
+        raise PlanToolError(f"Transaction file {path} contains no operations or state update")
     return response
 
 
@@ -527,6 +530,33 @@ def record_update(
     typer.echo(f"Recorded update_item for {node_id}")
 
 
+@app.command("record-planning-state-update")
+def record_planning_state_update(
+    json_payload: Annotated[
+        str,
+        typer.Option("--json", help="Planning state update JSON object"),
+    ],
+) -> None:
+    """Record the compact planning-state delta for this iteration."""
+    txn_file = _txn_file()
+    _reject_if_finalized(txn_file)
+    try:
+        raw = json.loads(json_payload)
+    except json.JSONDecodeError as exc:
+        raise PlanToolError(f"Invalid planning state update JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise PlanToolError("Planning state update JSON must be an object")
+    try:
+        update = _STATE_UPDATE_ADAPTER.validate_python(raw)
+    except PydanticValidationError as exc:
+        raise PlanToolError(f"Invalid planning state update: {exc}") from exc
+    draft = _load_draft(txn_file)
+    _validate_plan_digest(draft)
+    draft["planning_state_update"] = update.model_dump(mode="json")
+    _save_draft(txn_file, draft)
+    typer.echo("Recorded planning state update")
+
+
 @app.command("reset")
 def reset() -> None:
     """Clear the current draft and any finalized transaction file."""
@@ -546,19 +576,20 @@ def finalize() -> None:
     except PydanticValidationError as exc:
         raise PlanToolError(f"Cannot finalize invalid transaction: {exc}") from exc
 
-    if not response.operations:
-        raise PlanToolError("Cannot finalize: at least one operation is required")
+    if not response.operations and response.planning_state_update is None:
+        raise PlanToolError("Cannot finalize: at least one operation or planning state update is required")
 
-    selected = set(response.selected_items)
-    if not selected:
-        raise PlanToolError("Cannot finalize: batch selection is missing")
-    covered = {operation.node_id for operation in response.operations}
-    missing = selected - covered
-    if missing:
-        raise PlanToolError(
-            "Cannot finalize: missing operations for selected nodes: "
-            + ", ".join(sorted(missing))
-        )
+    if response.operations:
+        selected = set(response.selected_items)
+        if not selected:
+            raise PlanToolError("Cannot finalize: batch selection is missing")
+        covered = {operation.node_id for operation in response.operations}
+        missing = selected - covered
+        if missing:
+            raise PlanToolError(
+                "Cannot finalize: missing operations for selected nodes: "
+                + ", ".join(sorted(missing))
+            )
 
     expected = _expected_plan_digest()
     if response.plan_digest != expected:

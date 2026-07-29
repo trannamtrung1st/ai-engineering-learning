@@ -208,6 +208,8 @@ def _execute_run(
         notify=notify_enabled,
         agent_context=options.agent_context,
         review=options.review,
+        planning_mode=options.planning_mode,
+        session_strategy=options.session_strategy,
     )
     orch = Orchestrator(config)
     try:

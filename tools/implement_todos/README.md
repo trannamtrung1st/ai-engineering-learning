@@ -196,16 +196,20 @@ todos/                       # location is configurable via --todos-dir
 │   └── TASK-001.yaml
 └── runs/                    # local artifacts (typically gitignored)
     ├── progress.json        # driver-owned workspace progress snapshot
+    ├── run-state.json       # cross-todo dependency handoff (driver-owned)
     └── <item-id>/
-        ├── state.json
+        ├── state.json       # schema version 3
+        ├── completion-report.json
         └── attempts/
 ```
 
 ### Shared progress snapshot
 
-The orchestrator maintains `todos/runs/progress.json` as a **read-only projection** for humans and agents. It is rebuilt from item YAML (`status`, checklist `done`) and per-item `state.json` (phase, validation/evidence gates).
+The orchestrator maintains `todos/runs/progress.json` as a **read-only projection** for humans and agents. It is rebuilt from item YAML (`status`, checklist `done`) and per-item `state.json` (phase, validation/evidence gates, worker chat id).
 
-- **Driver-owned:** only the orchestrator writes this file; agents must not edit it.
+Authoritative cross-TODO handoff lives in `todos/runs/run-state.json` (`dependency_outputs`, reviewer findings, dispositions). Per-item `state.json` uses **schema version 3** (worker chat continuity, completion reports, pre-dirty fingerprints).
+
+- **Driver-owned:** only the orchestrator writes progress/run-state files; agents must not edit them.
 - **Authoritative checklist state:** item YAML remains the source of truth for step completion.
 - **Refreshed:** after item status changes, work/evidence/validation/review/commit transitions, workspace reloads, restructuring, and on every `todos-tool status` run.
 
@@ -226,8 +230,10 @@ settings:
   stop_on_failure: true
   parse_error_threshold: 20
   model: composer-2.5
-  project_check: pytest   # optional legacy shared gate
-  auto_format_before_validation: true  # run formatter before pnpm/npm check gates
+  project_check: pytest   # optional shared validation gate (manifest-level)
+  auto_format_before_validation: true
+  max_worker_corrections_per_attempt: 2
+  max_worker_replacements: 2
 authority: []               # optional manifest authority references
 hard_rules: []              # optional free-form rules
 stop_conditions: []
@@ -236,6 +242,10 @@ agent_context:          # optional manifest-level additions
   implement:
     rules:
       - .cursor/rules/manifest-implement.mdc
+execution_groups:       # optional atomic multi-item units (one worker chat)
+  - id: pair
+    members: [TASK-001, TASK-002]
+    rationale: inseparable intermediate repository state
 items:
   - id: TASK-001
     file: items/001-feature.yaml
@@ -279,6 +289,7 @@ evidence:
   commands: []         # optional mapping entries: {command, cwd?, timeout_seconds?}
 context:
   files: []
+review_policy: deterministic  # or independent for a fresh reviewer session
 # allow_empty_commit defaults to true; set false to require a tracked commit
 agent_context:          # optional item-level additions
   review:
@@ -367,6 +378,15 @@ Implementation prompts require tool-managed background execution for long comman
 Success requires a validated review submission artifact (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, authoritative completion-evidence results copied when `evidence.commands` is configured, instruction compliance (including checklist coverage when the item has open steps without justification), no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` when there are trackable changes to commit (or when the item sets `allow_empty_commit: false`). Review sessions submit decisions through `todos-review-tool`; assistant chat is not parsed. Review sessions do not rerun validation or evidence commands.
 
 Missing or invalid review artifacts restart only the review session. After `max_session_restarts_per_phase` is exhausted, the item is blocked with the artifact diagnostic instead of silently consuming another work attempt.
+
+Items default to `review_policy: deterministic` (skip independent reviewer when validation/evidence gates pass). Set `review_policy: independent` for high-risk or architectural work that needs a fresh read-only reviewer session.
+
+## Session model
+
+- **One worker chat per TODO** (or per explicit `execution_groups` unit in `manifest.yaml`).
+- Within that TODO, the same worker chat continues across implementation, evidence/validation repair, and reviewer-driven corrections (`agent --resume`).
+- **Fresh worker chat** for each next TODO; cross-TODO handoff uses `todos/runs/run-state.json` (`dependency_outputs`, completion reports), not hidden chat memory.
+- Independent reviewers always start a fresh read-only session; YAML repair sessions remain separate auxiliary chats.
 
 ## Streaming and transport
 

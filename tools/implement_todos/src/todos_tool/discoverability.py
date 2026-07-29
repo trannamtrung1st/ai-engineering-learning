@@ -139,6 +139,7 @@ def _manifest_contract() -> dict[str, Any]:
             "stop_conditions": "Optional list of stop conditions",
             "out_of_scope": "Optional list of out-of-scope notes",
             "agent_context": "Optional phase-specific skills/rules/model overrides",
+            "execution_groups": "Optional [{id, members, rationale?}] atomic multi-item units",
         },
     }
 
@@ -167,6 +168,7 @@ def _item_contract() -> dict[str, Any]:
             "contract_refs": "Optional authority references",
             "agent_context": "Optional phase-specific skills/rules/model",
             "allow_empty_commit": "Boolean; default true",
+            "review_policy": "deterministic | independent; default deterministic",
             "result": "{completed_at, commit_sha, summary}",
         },
     }

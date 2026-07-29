@@ -98,6 +98,7 @@ def main() -> int:
             "  --output-format stream-json\n"
             "  --stream-partial-output\n"
             "  --mode ask\n"
+            "  --resume <session_id>\n"
         )
         return 0
     if "--version" in argv or "-v" in argv:
@@ -110,11 +111,20 @@ def main() -> int:
     attempt = int(os.environ.get("FAKE_AGENT_ATTEMPT", "1"))
     workspace = Path(os.environ.get("FAKE_AGENT_WORKSPACE", os.getcwd()))
 
+    resume_chat_id: str | None = None
+    if "--resume" in argv:
+        idx = argv.index("--resume")
+        if idx + 1 < len(argv):
+            resume_chat_id = argv[idx + 1]
+
+    session_id = resume_chat_id or f"fake-session-{item_id}-{attempt}"
+    os.environ["FAKE_AGENT_LAST_SESSION_ID"] = session_id
+
     emit(
         {
             "type": "system",
             "subtype": "init",
-            "session_id": "fake-session",
+            "session_id": session_id,
             "model": "fake-model",
             "cwd": str(workspace),
         }

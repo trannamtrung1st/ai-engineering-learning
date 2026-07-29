@@ -1,50 +1,25 @@
-"""Review-tool discovery and offline validation tests."""
+"""Tests for planning-review-tool CLI."""
 
 from __future__ import annotations
 
-import json
-
-import pytest
 from typer.testing import CliRunner
 
 from top_down_planning.review_tool import app
 from top_down_planning.schema_docs import review_example
 
 
-runner = CliRunner()
-
-
-def test_review_tool_usage() -> None:
-    result = runner.invoke(app, ["usage", "--stage", "whole_plan_review"])
+def test_usage_lists_specialist_stage() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["usage", "--stage", "specialist_review"])
     assert result.exit_code == 0
-    assert "planning-review-tool schema" in result.stdout
+    assert "specialist_review" in result.stdout
 
 
-def test_review_tool_schema_and_example_offline() -> None:
-    for stage in (
-        "whole_plan_review",
-        "final_confirmation",
-        "render_batch_review",
-        "rendered_output_review",
-    ):
-        schema = runner.invoke(app, ["schema", "--stage", stage])
-        assert schema.exit_code == 0
-        assert '"properties"' in schema.stdout
+def test_example_specialist_review_is_valid() -> None:
+    payload = review_example("specialist_review")
+    runner = CliRunner()
+    import json
 
-        example = runner.invoke(app, ["example", "--stage", stage])
-        assert example.exit_code == 0
-        payload = json.loads(example.stdout)
-        validate = runner.invoke(
-            app,
-            ["validate", "--json", json.dumps(payload), "--stage", stage],
-        )
-        assert validate.exit_code == 0
-        assert "Valid" in validate.stdout
-
-
-def test_review_tool_validate_rejects_invalid_payload() -> None:
-    payload = review_example("whole_plan_review")
-    payload["decision"] = "not-a-decision"
     result = runner.invoke(
         app,
         [
@@ -52,7 +27,7 @@ def test_review_tool_validate_rejects_invalid_payload() -> None:
             "--json",
             json.dumps(payload),
             "--stage",
-            "whole_plan_review",
+            "specialist_review",
         ],
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 0

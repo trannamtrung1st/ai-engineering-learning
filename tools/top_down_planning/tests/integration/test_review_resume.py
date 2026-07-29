@@ -1,4 +1,4 @@
-"""Resume behavior through review stages."""
+"""Resume behavior through checkpoint review stages."""
 
 from __future__ import annotations
 
@@ -7,17 +7,15 @@ from pathlib import Path
 import pytest
 
 from tests.helpers import render_output_goal
-from top_down_planning.models import FinalStatus, PlanningLimits, ReviewConfig, ReviewStatus
+from top_down_planning.checkpoint_flow import specialist_review_result_path
+from top_down_planning.digest import compute_plan_digest
+from top_down_planning.models import FinalStatus, PlanningLimits, PlanningMode, ReviewConfig, ReviewStatus, ReviewerRole
 from top_down_planning.orchestrator import Orchestrator, RunConfig
-from top_down_planning.persistence import (
-    final_confirmation_result_path,
-    load_run_state,
-    whole_plan_review_result_path,
-)
+from top_down_planning.persistence import load_plan, load_run_state, save_run_state
 
 
 @pytest.mark.asyncio
-async def test_resume_reuses_whole_plan_review_and_runs_confirmation(
+async def test_resume_reuses_specialist_reviews_and_reconfirms(
     tmp_path: Path,
     example_input: Path,
     fake_agent_bin: str,
@@ -34,18 +32,24 @@ async def test_resume_reuses_whole_plan_review_and_runs_confirmation(
         agent_bin=fake_agent_bin,
         skip_probe=True,
         review=ReviewConfig(enabled=True),
+        planning_mode=PlanningMode.FULL,
     )
     first = await Orchestrator(config).run()
     assert first.review_status == ReviewStatus.CONFIRMED
-    assert whole_plan_review_result_path(output_dir).is_file()
-    assert final_confirmation_result_path(output_dir).is_file()
+    plan = load_plan(output_dir)
+    assert plan is not None
+    digest = compute_plan_digest(plan)
+    adversarial_path = specialist_review_result_path(
+        output_dir,
+        role=ReviewerRole.ADVERSARIAL,
+        plan_digest=digest,
+    )
+    assert adversarial_path.is_file()
 
-    final_confirmation_result_path(output_dir).unlink()
+    adversarial_path.unlink()
     run_state = load_run_state(output_dir)
     assert run_state is not None
     run_state.generated_artifacts = []
-    from top_down_planning.persistence import save_run_state
-
     save_run_state(output_dir, run_state)
     artifact = tmp_path / "implementation-plan.md"
     if artifact.is_file():
@@ -67,6 +71,5 @@ async def test_resume_reuses_whole_plan_review_and_runs_confirmation(
 
     assert second.status == FinalStatus.COMPLETE
     assert second.review_status == ReviewStatus.CONFIRMED
-    assert whole_plan_review_result_path(output_dir).is_file()
-    assert final_confirmation_result_path(output_dir).is_file()
+    assert adversarial_path.is_file()
     assert len(second.artifacts) == 1

@@ -21,6 +21,7 @@ from todos_tool.errors import CursorEnvironmentError, CursorSessionError, UserIn
 
 PhaseName = Literal["work", "review", "repair"]
 AgentStartedCallback = Callable[[int], None]
+SessionIdCallback = Callable[[str], None]
 
 PROMPT_FILE_ENV = "TODOS_TOOL_PROMPT_FILE"
 
@@ -37,6 +38,7 @@ class SessionResult:
     malformed: list[str] = field(default_factory=list)
     stderr_text: str = ""
     agent_pid: int | None = None
+    session_id: str | None = None
     shell_commands: list[str] = field(default_factory=list)
     shell_evidence: list[ShellCommandEvidence] = field(default_factory=list)
 
@@ -105,6 +107,7 @@ def build_agent_args(
     model: str | None,
     stream_flags: list[str],
     force: bool = True,
+    resume_chat_id: str | None = None,
 ) -> list[str]:
     args = [
         "-p",
@@ -117,6 +120,8 @@ def build_agent_args(
         args.append("--force")
     if model:
         args.extend(["--model", model])
+    if resume_chat_id:
+        args.extend(["--resume", resume_chat_id])
     args.append(prompt)
     return args
 
@@ -175,8 +180,10 @@ class CursorTransport:
         prompt_path: Path | None = None,
         renderer: ConsoleRenderer | None = None,
         on_agent_started: AgentStartedCallback | None = None,
+        on_session_id: SessionIdCallback | None = None,
         extra_env: dict[str, str] | None = None,
         model: str | None = None,
+        resume_chat_id: str | None = None,
     ) -> SessionResult:
         await self.ensure_ready()
         assert self._stream_flags is not None
@@ -193,6 +200,7 @@ class CursorTransport:
             phase=phase,
             model=session_model,
             stream_flags=self._stream_flags,
+            resume_chat_id=resume_chat_id,
         )
         renderer = renderer or ConsoleRenderer(no_color=self.no_color, log_path=log_path)
         parser = NdjsonStreamParser(parse_error_threshold=self.parse_error_threshold)
@@ -200,6 +208,7 @@ class CursorTransport:
         assistant_parts: list[str] = []
         all_events: list[dict[str, Any]] = []
         stderr_chunks: list[str] = []
+        session_id: str | None = resume_chat_id
 
         stdout_path, stderr_path, tmp_paths = _resolve_capture_paths(events_path, log_path)
         proc: subprocess.Popen[bytes] | None = None
@@ -229,6 +238,14 @@ class CursorTransport:
         def handle_stdout_events(events: list[dict[str, Any]]) -> None:
             for event in events:
                 all_events.append(event)
+                if (
+                    event.get("type") == "system"
+                    and event.get("subtype") == "init"
+                    and event.get("session_id")
+                ):
+                    session_id = str(event["session_id"])
+                    if on_session_id is not None:
+                        on_session_id(session_id)
                 for normalized in normalizer.normalize(event):
                     renderer.render(normalized)
                     if normalized.category == "assistant":
@@ -302,6 +319,7 @@ class CursorTransport:
             malformed=list(parser.malformed),
             stderr_text=stderr_text,
             agent_pid=proc.pid,
+            session_id=session_id,
             shell_commands=[entry.command for entry in shell_evidence],
             shell_evidence=list(shell_evidence),
         )

@@ -78,6 +78,7 @@ def sample_item() -> dict:
             "Basic unit tests cover the happy path.",
         ],
         "validation": {"commands": []},
+        "review_policy": "independent",
         "context": {"files": []},
         "result": {
             "completed_at": None,
