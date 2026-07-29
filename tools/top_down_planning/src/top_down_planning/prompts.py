@@ -239,7 +239,11 @@ Do not execute implementation work.
 
 ## Rules
 - Choose exactly one operation per **assigned** item only.
-- Do not record operations for unassigned nodes.
+- Do not record primary operations for unassigned nodes.
+- When your assigned decomposition changes related items, record `update_item` patches
+  immediately for items listed in the patchable scope.
+- For cross-item updates, omitted fields preserve the current value and an empty list
+  clears a list field.
 - For the root item's operation, provide `title` and `objective` that specifically
   summarize the input and requested output; do not preserve its generic bootstrap wording.
 - Do not provide operation-level `title` or `objective` for non-root items.
@@ -330,9 +334,11 @@ items, and do not execute implementation work.
 
 {_format_agent_context_section(agent_context)}## Rules
 - Record exactly one `revise_actionable` operation per assigned item.
-- Provide full replacement `expected_outputs` and `acceptance_criteria` lists.
+- Provide replacement fields explicitly. Omitted fields preserve the current value;
+  an empty list clears a list field.
 - Preserve unaffected detail unless the review finding requires a change.
-- Do not record `expand`, `mark_actionable`, `mark_blocked`, or `mark_out_of_scope`.
+- Do not record `expand`, `mark_actionable`, `mark_blocked`, `mark_out_of_scope`, or
+  cross-item `update_item` patches.
 - Set `plan_complete` to true with `set-assessment` once every assigned item is revised.
 - Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
 
@@ -344,7 +350,7 @@ items, and do not execute implementation work.
 {format_input_document_section(loaded_input=loaded_input, workspace=workspace, embed_threshold=embed_threshold)}
 
 {generation_context_block}## Planning transaction CLI
-{schema_docs.format_plan_tool_usage(plan_tool_command=plan_tool_command)}
+{schema_docs.format_amend_tool_usage(plan_tool_command=plan_tool_command)}
 """
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from top_down_planning.generation_context import select_patchable_node_ids
+from top_down_planning.scheduler import compute_batch_write_scope
 from top_down_planning.models import (
     AgentResponse,
     BlockedConstraintCode,
@@ -15,6 +17,7 @@ from top_down_planning.models import (
     PlanningLimits,
     PlanningOperation,
     ReviseActionableOperation,
+    UpdateItemOperation,
 )
 from top_down_planning.completeness import structural_errors
 from top_down_planning.state_updates import apply_response
@@ -85,6 +88,15 @@ def validate_response(
 
     if not errors:
         errors.extend(
+            _validate_updates(
+                plan,
+                response.updates,
+                selected_ids=selected_set,
+            )
+        )
+
+    if not errors:
+        errors.extend(
             _validate_cumulative_item_limit(plan, list(op_by_node.values()), limits=limits)
         )
 
@@ -108,6 +120,9 @@ def validate_amend_response(
     if not response.operations:
         errors.append("Response must include at least one operation")
         return errors
+
+    if response.updates:
+        errors.append("Amend sessions must not include cross-item updates")
 
     for operation in response.operations:
         node_id = operation.node_id
@@ -191,6 +206,7 @@ def validate_wave_responses(
 ) -> list[str]:
     """Validate independent concurrent batch responses against one plan snapshot."""
     all_operations: list[PlanningOperation] = []
+    all_update_targets: list[str] = []
     for selected_ids, response in batches:
         if response.plan_digest != plan_digest:
             return [
@@ -206,6 +222,15 @@ def validate_wave_responses(
         if errors:
             return errors
         all_operations.extend(response.operations)
+        all_update_targets.extend(update.node_id for update in response.updates)
+
+    errors = _validate_cross_batch_update_conflicts(all_update_targets)
+    if errors:
+        return errors
+
+    errors = _validate_wave_write_scope_separation(plan, batches)
+    if errors:
+        return errors
 
     errors = _validate_cumulative_item_limit(plan, all_operations, limits=limits)
     if errors:
@@ -223,6 +248,130 @@ def validate_wave_responses(
         return errors
 
     return structural_errors(updated)
+
+
+def _validate_cross_batch_update_conflicts(update_targets: list[str]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for node_id in update_targets:
+        if node_id in seen:
+            duplicates.add(node_id)
+        seen.add(node_id)
+    if not duplicates:
+        return []
+    return [
+        "Concurrent batches attempted cross-item updates for the same node: "
+        + ", ".join(sorted(duplicates))
+    ]
+
+
+def _validate_wave_write_scope_separation(
+    plan: PlanState,
+    batches: list[tuple[list[str], AgentResponse]],
+) -> list[str]:
+    scopes: list[set[str]] = []
+    for selected_ids, _ in batches:
+        items = [
+            item
+            for item in (plan.item_by_id(node_id) for node_id in selected_ids)
+            if item is not None
+        ]
+        if not items:
+            continue
+        scope = compute_batch_write_scope(plan, items)
+        if any(scope & existing for existing in scopes):
+            return [
+                "Concurrent wave batches have overlapping write scopes: "
+                + ", ".join(sorted(selected_ids))
+            ]
+        scopes.append(scope)
+    return []
+
+
+def _validate_updates(
+    plan: PlanState,
+    updates: list[UpdateItemOperation],
+    *,
+    selected_ids: set[str],
+) -> list[str]:
+    errors: list[str] = []
+    patchable = select_patchable_node_ids(plan, selected_ids)
+    seen: set[str] = set()
+
+    for update in updates:
+        node_id = update.node_id
+        if node_id in selected_ids:
+            errors.append(
+                f"Update targets assigned node {node_id}; use the primary operation instead"
+            )
+            continue
+        if node_id not in patchable:
+            errors.append(f"Update targets non-patchable node: {node_id}")
+            continue
+        if node_id in seen:
+            errors.append(f"Duplicate update for node: {node_id}")
+            continue
+        seen.add(node_id)
+
+        item = plan.item_by_id(node_id)
+        if item is None:
+            errors.append(f"Unknown update node id: {node_id}")
+            continue
+        errors.extend(_validate_update_item(plan, item, update))
+
+    return errors
+
+
+def _validate_update_item(
+    plan: PlanState,
+    item: PlanItem,
+    update: UpdateItemOperation,
+) -> list[str]:
+    errors: list[str] = []
+    if not update.reason.strip():
+        errors.append(f"Update on {item.id} requires a reason")
+
+    objective = update.objective if update.objective is not None else item.objective
+    if not objective.strip():
+        errors.append(f"Update on {item.id} would leave an empty objective")
+
+    if (
+        update.expected_outputs is not None
+        or update.acceptance_criteria is not None
+    ) and item.decomposition_status != DecompositionStatus.ACTIONABLE:
+        errors.append(
+            f"Update on {item.id} may change expected_outputs or acceptance_criteria "
+            "only for actionable items"
+        )
+
+    deps = update.dependencies if update.dependencies is not None else item.dependencies
+    for dep in deps:
+        if plan.item_by_id(dep) is None:
+            errors.append(f"Update on {item.id} references unknown dependency: {dep}")
+
+    outputs = (
+        update.expected_outputs
+        if update.expected_outputs is not None
+        else item.expected_outputs
+    )
+    criteria = (
+        update.acceptance_criteria
+        if update.acceptance_criteria is not None
+        else item.acceptance_criteria
+    )
+    if _is_implementation_goal(plan.source.output_goal):
+        if item.decomposition_status == DecompositionStatus.ACTIONABLE:
+            if not outputs:
+                errors.append(
+                    f"Update on {item.id} requires expected_outputs for this output goal"
+                )
+            if not criteria:
+                errors.append(
+                    f"Update on {item.id} requires acceptance_criteria "
+                    "for this output goal"
+                )
+
+    return errors
 
 
 def _validate_cross_batch_duplicates(plan: PlanState) -> list[str]:
@@ -294,9 +443,25 @@ def _validate_revise_actionable(
     errors: list[str] = []
     if not operation.reason.strip():
         errors.append(f"Revise on {item.id} requires a reason")
-    outputs = operation.expected_outputs or item.expected_outputs
-    criteria = operation.acceptance_criteria or item.acceptance_criteria
-    objective = operation.objective.strip() if operation.objective else item.objective
+    deps = (
+        operation.dependencies
+        if operation.dependencies is not None
+        else item.dependencies
+    )
+    for dep in deps:
+        if plan.item_by_id(dep) is None:
+            errors.append(f"Revise on {item.id} references unknown dependency: {dep}")
+    outputs = (
+        operation.expected_outputs
+        if operation.expected_outputs is not None
+        else item.expected_outputs
+    )
+    criteria = (
+        operation.acceptance_criteria
+        if operation.acceptance_criteria is not None
+        else item.acceptance_criteria
+    )
+    objective = operation.objective if operation.objective is not None else item.objective
     if not objective.strip():
         errors.append(f"Revise on {item.id} requires a non-empty objective")
     if _is_implementation_goal(plan.source.output_goal):
@@ -309,10 +474,6 @@ def _validate_revise_actionable(
                 f"Revise on {item.id} requires acceptance_criteria "
                 "for this output goal"
             )
-    deps = operation.dependencies if operation.dependencies else item.dependencies
-    for dep in deps:
-        if plan.item_by_id(dep) is None:
-            errors.append(f"Revise on {item.id} references unknown dependency: {dep}")
     return errors
 
 

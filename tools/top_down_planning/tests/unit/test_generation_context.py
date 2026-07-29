@@ -8,6 +8,7 @@ from top_down_planning.generation_context import (
     build_plan_overview,
     ensure_plan_overview_artifact,
     prepare_batch_context,
+    select_patchable_node_ids,
     select_relevant_node_ids,
 )
 from top_down_planning.models import (
@@ -90,6 +91,48 @@ def test_select_relevant_context_includes_ancestors_and_siblings() -> None:
     assert "item-002" in relevant
     assert "item-003" in relevant
     assert "item-004" not in relevant
+
+
+def test_select_patchable_context_matches_direct_relations() -> None:
+    plan = _plan_with_branches()
+    patchable = select_patchable_node_ids(plan, {"item-004"})
+    assert patchable == {"item-001", "item-002"}
+
+
+def test_prepare_batch_context_omits_patchable_section_for_amend(tmp_path: Path) -> None:
+    plan = _plan_with_branches()
+    digest = compute_plan_digest(plan)
+    output_dir = tmp_path / "planning-output"
+    item = plan.item_by_id("item-002")
+    assert item is not None
+    prepared = prepare_batch_context(
+        plan=plan,
+        selected_items=[item],
+        plan_digest=digest,
+        output_dir=output_dir,
+        whole_plan_context=WholePlanContextMode.HYBRID,
+        max_context_characters=30000,
+        include_cross_item_updates=False,
+    )
+    assert "Patchable related items" not in prepared.batch_context_markdown
+
+
+def test_prepare_batch_context_includes_patchable_section(tmp_path: Path) -> None:
+    plan = _plan_with_branches()
+    digest = compute_plan_digest(plan)
+    output_dir = tmp_path / "planning-output"
+    item = plan.item_by_id("item-002")
+    assert item is not None
+    prepared = prepare_batch_context(
+        plan=plan,
+        selected_items=[item],
+        plan_digest=digest,
+        output_dir=output_dir,
+        whole_plan_context=WholePlanContextMode.HYBRID,
+        max_context_characters=30000,
+    )
+    assert "Patchable related items" in prepared.batch_context_markdown
+    assert "[item-001]" in prepared.batch_context_markdown
 
 
 def test_plan_overview_artifact_is_reused(tmp_path: Path) -> None:

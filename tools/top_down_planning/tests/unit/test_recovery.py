@@ -8,6 +8,7 @@ from top_down_planning.models import (
     ExpandOperation,
     PlanningLimits,
     RunActiveStatus,
+    UpdateItemOperation,
 )
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import (
@@ -78,6 +79,58 @@ def test_recover_plan_from_iteration_audit(tmp_path: Path) -> None:
     recovered = recover_plan_from_iterations(tmp_path, plan)
     assert recovered is not None
     assert len(recovered.plan) == 3
+
+
+def test_recover_plan_replays_cross_item_updates(tmp_path: Path) -> None:
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    save_plan(tmp_path, plan)
+
+    first = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
+                children=[ChildDraft(title="Child", objective="child")],
+            )
+        ]
+    )
+    second = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-002",
+                children=[ChildDraft(title="Slice", objective="slice")],
+            )
+        ],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-001",
+                reason="Align parent notes after child expansion.",
+                notes=["updated during recovery replay"],
+            )
+        ],
+    )
+    audit_dir = tmp_path / ".planning-output" / "iterations"
+    audit_dir.mkdir(parents=True)
+    (audit_dir / "001-response.json").write_text(
+        json.dumps(first.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+    (audit_dir / "002-response.json").write_text(
+        json.dumps(second.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+
+    recovered = recover_plan_from_iterations(tmp_path, plan)
+    assert recovered is not None
+    parent = recovered.item_by_id("item-001")
+    assert parent is not None
+    assert parent.notes == ["updated during recovery replay"]
 
 
 def test_recover_skips_failed_validation_audit(tmp_path: Path) -> None:

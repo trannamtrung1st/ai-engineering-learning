@@ -333,11 +333,63 @@ class ReviseActionableOperation(BaseModel):
     reason: str = ""
     title: str | None = None
     objective: str | None = None
-    expected_outputs: list[str] = Field(default_factory=list)
-    acceptance_criteria: list[str] = Field(default_factory=list)
-    dependencies: list[str] = Field(default_factory=list)
-    notes: list[str] = Field(default_factory=list)
-    risks: list[str] = Field(default_factory=list)
+    expected_outputs: list[str] | None = None
+    acceptance_criteria: list[str] | None = None
+    dependencies: list[str] | None = None
+    notes: list[str] | None = None
+    risks: list[str] | None = None
+
+    @field_validator("title", "objective")
+    @classmethod
+    def _non_empty_detail(cls, value: str | None) -> str | None:
+        return _validated_optional_detail(value)
+
+
+class UpdateItemOperation(BaseModel):
+    """Cross-item metadata patch for related existing nodes during generation."""
+
+    type: Literal["update_item"] = "update_item"
+    node_id: str
+    reason: str
+    title: str | None = None
+    objective: str | None = None
+    dependencies: list[str] | None = None
+    expected_outputs: list[str] | None = None
+    acceptance_criteria: list[str] | None = None
+    notes: list[str] | None = None
+    risks: list[str] | None = None
+    open_questions: list[str] | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def _non_empty_reason(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be empty")
+        return stripped
+
+    @field_validator("title", "objective")
+    @classmethod
+    def _non_empty_detail(cls, value: str | None) -> str | None:
+        return _validated_optional_detail(value)
+
+    @model_validator(mode="after")
+    def _requires_at_least_one_field(self) -> UpdateItemOperation:
+        if any(
+            value is not None
+            for value in (
+                self.title,
+                self.objective,
+                self.dependencies,
+                self.expected_outputs,
+                self.acceptance_criteria,
+                self.notes,
+                self.risks,
+                self.open_questions,
+            )
+        ):
+            return self
+        raise ValueError("update_item requires at least one field to change")
 
 
 PlanningOperation = Annotated[
@@ -353,6 +405,7 @@ PlanningOperation = Annotated[
 class AgentResponse(BaseModel):
     assessment: Assessment = Field(default_factory=Assessment)
     operations: list[PlanningOperation] = Field(default_factory=list)
+    updates: list[UpdateItemOperation] = Field(default_factory=list)
     plan_digest: str
     selected_items: list[str] = Field(default_factory=list)
 

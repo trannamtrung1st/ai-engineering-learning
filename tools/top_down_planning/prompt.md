@@ -249,6 +249,7 @@ Each batch session receives scoped environment variables:
 
 * `PLANNING_TOOL_TXN_FILE` — path to `{NNN}-transaction.json`
 * `PLANNING_TOOL_SELECTED_IDS` — comma-separated selected node ids
+* `PLANNING_TOOL_PATCHABLE_IDS` — comma-separated related node ids eligible for `update_item`
 * `PLANNING_TOOL_PLAN_FILE` — read-only path to canonical `plan.yaml`
 * `PLANNING_TOOL_COMMAND` — resolved shell command for the CLI
 
@@ -257,8 +258,9 @@ Workflow per batch:
 1. `planning-plan-tool show-context` (optional)
 2. `planning-plan-tool status` (optional)
 3. `planning-plan-tool record-operation --json '<operation>'` once per selected item
-4. `planning-plan-tool set-assessment [--plan-complete|--no-plan-complete] --summary "..."`
-5. `planning-plan-tool finalize`
+4. `planning-plan-tool record-update --json '<update_item>'` zero or more times for patchable related items
+5. `planning-plan-tool set-assessment [--plan-complete|--no-plan-complete] --summary "..."`
+6. `planning-plan-tool finalize`
 
 The orchestrator loads the finalized transaction, validates the wave atomically, assigns
 IDs/depth/order, and persists the updated state to `plan.yaml`. Successful batches also
@@ -296,8 +298,11 @@ Supported operation types:
 * `mark_actionable`
 * `mark_blocked`
 * `mark_out_of_scope`
+* `update_item` (optional cross-item patch for related existing nodes)
 
-Keep the initial version small. Only include `update_item` if it is necessary for correcting or enriching existing items.
+`update_item` is recorded through `record-update`, not `record-operation`. Omitted fields
+preserve the current value; an empty list clears a list field. Related batches whose write
+scopes overlap are serialized across waves so later agents consume the persisted plan state.
 
 ## Validation
 
@@ -316,7 +321,11 @@ Validation must ensure:
 * blocked items contain a reason and open question;
 * out-of-scope items contain a reason;
 * actionable items satisfy the minimum criteria derived from the output goal;
-* limits are respected.
+* limits are respected;
+* `update_item` patches target only patchable related nodes, not assigned items;
+* cross-item updates require a reason and at least one changed field;
+* omitted patch fields preserve the current value and empty lists clear list fields;
+* concurrent batches do not patch the same node in one wave.
 
 Apply each response atomically.
 

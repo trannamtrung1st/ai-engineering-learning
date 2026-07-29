@@ -5,6 +5,7 @@ from top_down_planning.models import (
     ExpandOperation,
     MarkActionableOperation,
     PlanItem,
+    UpdateItemOperation,
 )
 from top_down_planning.scheduler import initialize_root_plan
 from tests.helpers import default_generation, make_agent_response
@@ -71,6 +72,45 @@ def test_apply_actionable() -> None:
     assert item is not None
     assert item.decomposition_status == DecompositionStatus.ACTIONABLE
     assert item.expected_outputs == ["Spec"]
+
+
+def test_apply_update_item_replaces_and_clears_fields() -> None:
+    plan = _plan()
+    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].notes = ["old note"]
+    plan.plan[0].dependencies = ["item-999"]
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id="item-001",
+            title="Sibling",
+            objective="sibling work",
+            depth=1,
+            order=2,
+            decomposition_status=DecompositionStatus.NEEDS_EXPANSION,
+        )
+    )
+    response = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-002",
+                children=[ChildDraft(title="Child", objective="child work")],
+            )
+        ],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-001",
+                reason="Align parent notes with the new branch.",
+                notes=["updated note"],
+                dependencies=[],
+            )
+        ],
+    )
+    updated = apply_response(plan, response)
+    parent = updated.item_by_id("item-001")
+    assert parent is not None
+    assert parent.notes == ["updated note"]
+    assert parent.dependencies == []
 
 
 def test_cycle_detection() -> None:

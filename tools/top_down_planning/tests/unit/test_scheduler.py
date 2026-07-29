@@ -1,6 +1,7 @@
 from top_down_planning.models import BatchStrategy, DecompositionStatus, GenerationConfig, PlanItem
 from top_down_planning.scheduler import (
     are_independent,
+    select_amend_batches,
     select_batch,
     select_concurrent_batches,
     wave_batch_budget,
@@ -108,13 +109,13 @@ def test_select_concurrent_batches_respects_limits() -> None:
 
     generation = default_generation(batch_size=2)
     batches = select_concurrent_batches(plan, generation, max_batches=3)
-    assert len(batches) == 3
-    assert all(len(batch) == 2 for batch in batches)
+    assert len(batches) == 1
+    assert len(batches[0]) == 2
     scheduled = [item.id for batch in batches for item in batch]
     assert len(scheduled) == len(set(scheduled))
 
 
-def test_select_concurrent_batches_prefers_shallow_items() -> None:
+def test_select_concurrent_batches_serializes_overlapping_write_scopes() -> None:
     plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
@@ -127,26 +128,101 @@ def test_select_concurrent_batches_prefers_shallow_items() -> None:
             PlanItem(
                 id="item-002",
                 parent_id="item-001",
-                title="Branch child",
-                objective="branch",
+                title="Branch A child",
+                objective="branch a",
                 depth=1,
                 order=2,
             ),
             PlanItem(
                 id="item-003",
                 parent_id=None,
-                title="Separate root",
-                objective="root",
+                title="Branch B root",
+                objective="branch b",
                 depth=0,
                 order=3,
+                decomposition_status=DecompositionStatus.ACTIONABLE,
+            ),
+            PlanItem(
+                id="item-004",
+                parent_id="item-003",
+                title="Branch B child",
+                objective="branch b child",
+                depth=1,
+                order=4,
             ),
         ]
     )
-    generation = default_generation(batch_size=1)
+    generation = default_generation(batch_size=1, concurrent_batches=2)
     batches = select_concurrent_batches(plan, generation, max_batches=2)
     assert len(batches) == 2
-    assert batches[0][0].id == "item-003"
-    assert batches[1][0].id == "item-002"
+    scheduled = {item.id for batch in batches for item in batch}
+    assert scheduled == {"item-002", "item-004"}
+
+
+def test_single_strategy_serializes_overlapping_write_scopes() -> None:
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    for index in range(2, 5):
+        plan.plan.append(
+            PlanItem(
+                id=f"item-{index:03d}",
+                parent_id=None,
+                title=f"Sibling {index}",
+                objective=f"obj {index}",
+                depth=0,
+                order=index,
+            )
+        )
+
+    generation = default_generation(batch_strategy=BatchStrategy.SINGLE, concurrent_batches=3)
+    batches = select_concurrent_batches(plan, generation, max_batches=3)
+    assert len(batches) == 1
+    assert batches[0][0].id == "item-001"
+
+
+def test_select_amend_batches_allows_concurrent_sibling_revisions() -> None:
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan.extend(
+        [
+            PlanItem(
+                id="item-002",
+                parent_id="item-001",
+                title="Branch A",
+                objective="a",
+                depth=1,
+                order=2,
+                decomposition_status=DecompositionStatus.ACTIONABLE,
+            ),
+            PlanItem(
+                id="item-003",
+                parent_id="item-001",
+                title="Branch B",
+                objective="b",
+                depth=1,
+                order=3,
+                decomposition_status=DecompositionStatus.ACTIONABLE,
+            ),
+        ]
+    )
+    generation = default_generation(batch_strategy=BatchStrategy.SINGLE, concurrent_batches=2)
+    batches = select_amend_batches(
+        plan,
+        ["item-002", "item-003"],
+        generation,
+        max_batches=2,
+    )
+    assert len(batches) == 2
+    assert {item.id for batch in batches for item in batch} == {"item-002", "item-003"}
 
 
 def test_are_independent_rejects_ancestor_pairs() -> None:

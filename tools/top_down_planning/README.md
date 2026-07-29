@@ -254,16 +254,26 @@ When a wave completes, all batch responses are validated against the same plan
 snapshot and merged atomically. If any batch in a wave fails after retries, the
 entire wave is discarded and nothing from that wave is applied.
 
+Batches whose write scopes overlap (selected items plus their patchable related
+nodes) are not scheduled in the same concurrent wave. Related work therefore lands in
+`plan.yaml` before the next related batch starts.
+
 ### Generation batch context
 
 Each generation batch runs in a **focused fresh Cursor session** with:
 
 - **Assigned generation scope (writable)** — only the selected item IDs; exactly one
   operation per assigned item via `planning-plan-tool`.
-- **Global plan context (read-only)** — whole-plan overview plus relevant ancestors,
-  siblings, dependencies, and branch summaries.
-- **Batch-limited transaction authority** — `PLANNING_TOOL_SELECTED_IDS` and
-  `PLANNING_TOOL_PLAN_DIGEST` scope finalize; operations for unassigned nodes are rejected.
+- **Patchable related items** — directly related existing nodes (ancestors, siblings,
+  dependencies, reverse dependents) may receive optional `update_item` patches through
+  `planning-plan-tool record-update`.
+- **Global plan context (read-only)** — whole-plan overview plus broader relevant context.
+- **Batch-limited transaction authority** — `PLANNING_TOOL_SELECTED_IDS`,
+  `PLANNING_TOOL_PATCHABLE_IDS`, and `PLANNING_TOOL_PLAN_DIGEST` scope finalize;
+  operations for unassigned nodes and updates for non-patchable nodes are rejected.
+
+Related batches whose write scopes overlap are serialized across waves so later agents
+read the persisted `plan.yaml` produced by earlier related work.
 
 Context artifacts (under `.planning-output/`):
 
@@ -308,7 +318,13 @@ During decomposition, the agent records structured operations through the bundle
 - `mark_actionable`
 - `mark_blocked`
 - `mark_out_of_scope`
+- `update_item` (optional cross-item patch for related existing nodes)
 - `revise_actionable` (amend sessions after review only)
+
+Cross-item `update_item` patches use explicit optional fields: omitted means preserve,
+empty list means clear. They may update `title`, `objective`, `dependencies`,
+`expected_outputs`, `acceptance_criteria`, `notes`, `risks`, and `open_questions` on
+patchable related nodes only.
 
 The first decomposition operation on `item-001` must include an agent-generated `title`
 and `objective` specific to the input and output goal. This applies whether the root is
@@ -526,7 +542,7 @@ When `--stream-json` is enabled, planning-phase events include:
 - `planning.started` (with `concurrent_batches`)
 - `wave.started` / `wave.completed` / `wave.retrying`
 - `iteration.started` / `iteration.completed` (with `batch_index`, `batch_count`)
-- `validation.failed`, `item.expanded`, `item.actionable`, etc.
+- `validation.failed`, `item.expanded`, `item.actionable`, `item.updated`, etc.
 
 Render-phase events include:
 

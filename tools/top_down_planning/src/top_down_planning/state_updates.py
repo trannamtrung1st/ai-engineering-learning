@@ -16,6 +16,7 @@ from top_down_planning.models import (
     PlanningOperation,
     ReadinessStatus,
     ReviseActionableOperation,
+    UpdateItemOperation,
 )
 from top_down_planning.scheduler import next_item_id, next_order
 
@@ -38,6 +39,11 @@ def apply_response(plan: PlanState, response: AgentResponse) -> PlanState:
             _apply_revise_actionable(item, operation)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
+    for update in sorted(response.updates, key=lambda entry: entry.node_id):
+        item = updated.item_by_id(update.node_id)
+        if item is None:
+            raise ValueError(f"Unknown node id: {update.node_id}")
+        _apply_update_item(item, update)
     _recompute_readiness(updated)
     return updated
 
@@ -169,20 +175,60 @@ def _apply_root_metadata(
 def _apply_revise_actionable(item: PlanItem, operation: ReviseActionableOperation) -> None:
     item.decomposition_status = DecompositionStatus.ACTIONABLE
     item.readiness_status = ReadinessStatus.READY
-    if operation.title and operation.title.strip():
-        item.title = operation.title.strip()
-    if operation.objective and operation.objective.strip():
-        item.objective = operation.objective.strip()
-    if operation.expected_outputs:
-        item.expected_outputs = list(operation.expected_outputs)
-    if operation.acceptance_criteria:
-        item.acceptance_criteria = list(operation.acceptance_criteria)
-    if operation.dependencies:
-        item.dependencies = list(operation.dependencies)
-    if operation.notes:
-        item.notes.extend(operation.notes)
-    if operation.risks:
-        item.risks.extend(operation.risks)
+    _apply_metadata_patch(
+        item,
+        title=operation.title,
+        objective=operation.objective,
+        dependencies=operation.dependencies,
+        expected_outputs=operation.expected_outputs,
+        acceptance_criteria=operation.acceptance_criteria,
+        notes=operation.notes,
+        risks=operation.risks,
+    )
+
+
+def _apply_update_item(item: PlanItem, update: UpdateItemOperation) -> None:
+    _apply_metadata_patch(
+        item,
+        title=update.title,
+        objective=update.objective,
+        dependencies=update.dependencies,
+        expected_outputs=update.expected_outputs,
+        acceptance_criteria=update.acceptance_criteria,
+        notes=update.notes,
+        risks=update.risks,
+        open_questions=update.open_questions,
+    )
+
+
+def _apply_metadata_patch(
+    item: PlanItem,
+    *,
+    title: str | None,
+    objective: str | None,
+    dependencies: list[str] | None,
+    expected_outputs: list[str] | None,
+    acceptance_criteria: list[str] | None,
+    notes: list[str] | None,
+    risks: list[str] | None,
+    open_questions: list[str] | None = None,
+) -> None:
+    if title is not None:
+        item.title = title.strip()
+    if objective is not None:
+        item.objective = objective.strip()
+    if dependencies is not None:
+        item.dependencies = list(dependencies)
+    if expected_outputs is not None:
+        item.expected_outputs = list(expected_outputs)
+    if acceptance_criteria is not None:
+        item.acceptance_criteria = list(acceptance_criteria)
+    if notes is not None:
+        item.notes = list(notes)
+    if risks is not None:
+        item.risks = list(risks)
+    if open_questions is not None:
+        item.open_questions = list(open_questions)
 
 
 def _recompute_readiness(plan: PlanState) -> None:

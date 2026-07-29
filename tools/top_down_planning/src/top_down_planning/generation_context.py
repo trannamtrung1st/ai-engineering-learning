@@ -84,6 +84,33 @@ def _load_review_findings(output_dir: Path | None) -> WholePlanReviewResult | No
         return None
 
 
+def select_patchable_node_ids(
+    plan: PlanState,
+    selected_ids: set[str],
+) -> set[str]:
+    """Directly related existing nodes that may receive cross-item updates."""
+    patchable: set[str] = set()
+    for item_id in sorted(selected_ids):
+        item = plan.item_by_id(item_id)
+        if item is None:
+            continue
+
+        for ancestor in _ancestors(plan, item_id):
+            patchable.add(ancestor.id)
+
+        for sibling in _siblings(plan, item):
+            patchable.add(sibling.id)
+
+        for dep in item.dependencies:
+            patchable.add(dep)
+
+        for dependent in _reverse_dependents(plan, item_id):
+            patchable.add(dependent.id)
+
+    patchable -= selected_ids
+    return patchable
+
+
 def select_relevant_node_ids(
     plan: PlanState,
     selected_ids: set[str],
@@ -156,6 +183,40 @@ def _format_item_summary(plan: PlanState, item: PlanItem) -> str:
         parts.extend(f"    - {value}" for value in item.open_questions)
     if item.blocked_reason:
         parts.append(f"  - Blocked: {item.blocked_reason}")
+    return "\n".join(parts)
+
+
+def _format_patchable_item_context(plan: PlanState, item: PlanItem) -> str:
+    parts = [
+        f"### [{item.id}] {item.title} ({item.decomposition_status.value})",
+        f"- Objective: {item.objective}",
+    ]
+    parts.append(
+        "- Dependencies: "
+        + (", ".join(item.dependencies) if item.dependencies else "(none)")
+    )
+    parts.append(
+        "- Expected outputs: "
+        + (", ".join(item.expected_outputs) if item.expected_outputs else "(none)")
+    )
+    parts.append(
+        "- Acceptance criteria: "
+        + (
+            ", ".join(item.acceptance_criteria)
+            if item.acceptance_criteria
+            else "(none)"
+        )
+    )
+    parts.append(
+        "- Notes: " + (", ".join(item.notes) if item.notes else "(none)")
+    )
+    parts.append(
+        "- Risks: " + (", ".join(item.risks) if item.risks else "(none)")
+    )
+    parts.append(
+        "- Open questions: "
+        + (", ".join(item.open_questions) if item.open_questions else "(none)")
+    )
     return "\n".join(parts)
 
 
@@ -254,31 +315,60 @@ def build_batch_context_markdown(
     selected_items: list[PlanItem],
     plan_digest: str,
     output_dir: Path | None = None,
-) -> tuple[str, str]:
-    """Return (assigned scope section, relevant inline context section)."""
+    include_cross_item_updates: bool = True,
+) -> tuple[str, str, str]:
+    """Return (assigned scope, patchable scope, relevant read-only context)."""
     selected_ids = {item.id for item in selected_items}
     assigned_lines = [
         "## Assigned generation scope (writable)",
         "",
-        "Produce exactly one operation for each assigned item below. "
-        "Do not record operations for any other node.",
+        "Produce exactly one operation for each assigned item below.",
         "",
     ]
     for item in selected_items:
         assigned_lines.append(_format_item_context(plan, item))
         assigned_lines.append("")
 
+    patchable_ids: set[str] = set()
+    patchable_lines: list[str] = []
+    if include_cross_item_updates:
+        patchable_ids = select_patchable_node_ids(plan, selected_ids)
+        patchable_lines = [
+            "## Patchable related items (cross-item updates)",
+            "",
+            "You may record zero or more `update_item` patches for the related items below "
+            "when your assigned decomposition changes their dependencies, notes, risks, "
+            "open questions, or detail. Omitted fields preserve the current value; an empty "
+            "list clears a list field.",
+            "",
+        ]
+        if not patchable_ids:
+            patchable_lines.append(
+                "_No related existing items are patchable in this batch._"
+            )
+        else:
+            for item_id in sorted(patchable_ids, key=lambda node_id: (
+                plan.item_by_id(node_id).order if plan.item_by_id(node_id) else 0,
+                node_id,
+            )):
+                item = plan.item_by_id(item_id)
+                if item is not None:
+                    patchable_lines.append(_format_patchable_item_context(plan, item))
+                    patchable_lines.append("")
+
     relevant_ids = select_relevant_node_ids(
         plan,
         selected_ids,
         output_dir=output_dir,
     )
+    if include_cross_item_updates:
+        relevant_ids -= patchable_ids
     relevant_lines = [
         "## Relevant plan context (read-only)",
         "",
     ]
     if not relevant_ids:
-        relevant_lines.append("_No additional relevant nodes beyond assigned scope._")
+        relevant_lines.append("_No additional read-only context beyond assigned scope._")
     else:
         for item_id in sorted(relevant_ids, key=lambda node_id: (
             plan.item_by_id(node_id).order if plan.item_by_id(node_id) else 0,
@@ -290,7 +380,12 @@ def build_batch_context_markdown(
                 relevant_lines.append("")
 
     relevant_lines.append(f"Plan digest: `{plan_digest}`")
-    return "\n".join(assigned_lines).rstrip() + "\n", "\n".join(relevant_lines).rstrip() + "\n"
+    assigned_section = "\n".join(assigned_lines).rstrip() + "\n"
+    patchable_section = (
+        "\n".join(patchable_lines).rstrip() + "\n" if patchable_lines else ""
+    )
+    relevant_section = "\n".join(relevant_lines).rstrip() + "\n"
+    return assigned_section, patchable_section, relevant_section
 
 
 def prepare_batch_context(
@@ -301,24 +396,31 @@ def prepare_batch_context(
     output_dir: Path,
     whole_plan_context: WholePlanContextMode,
     max_context_characters: int,
+    include_cross_item_updates: bool = True,
 ) -> PreparedBatchContext:
     """Prepare per-batch context and decide embedding vs reference mode."""
     overview_path = ensure_plan_overview_artifact(output_dir, plan, plan_digest)
     overview = build_plan_overview(plan, plan_digest, output_dir=output_dir)
     overview_relative = _relative_output_path(overview_path, output_dir)
 
-    assigned_section, relevant_section = build_batch_context_markdown(
+    assigned_section, patchable_section, relevant_section = build_batch_context_markdown(
         plan=plan,
         selected_items=selected_items,
         plan_digest=plan_digest,
         output_dir=output_dir,
+        include_cross_item_updates=include_cross_item_updates,
     )
 
     selected_ids = {item.id for item in selected_items}
     relevant_ids = select_relevant_node_ids(plan, selected_ids, output_dir=output_dir)
+    patchable_ids = (
+        select_patchable_node_ids(plan, selected_ids)
+        if include_cross_item_updates
+        else set()
+    )
     estimated = estimate_context_size(
         selected_items=selected_items,
-        relevant_ids=relevant_ids,
+        relevant_ids=relevant_ids | patchable_ids,
         plan=plan,
         overview=overview,
     )
@@ -357,14 +459,20 @@ Do not:
 - contradict established decisions;
 - create dependencies merely to express preferred execution order;
 - merge or omit explicit source groups to satisfy configured limits;
-- re-plan unrelated branches.
+- re-plan unrelated branches without using the assigned operation or a patchable
+  `update_item` when related detail must change.
 
 When a conflict cannot be resolved within your write scope, mark the assigned item
 blocked or record a structured note/open question indicating the affected external
-node. Do not silently change unrelated scope.
+node. Use `record-update` to patch related items listed in the patchable scope when
+your assigned decomposition changes their dependencies or invalidates existing detail.
 """.strip()
 
-    parts = [assigned_section, relevant_section, global_consistency]
+    parts = (
+        [assigned_section, patchable_section, relevant_section, global_consistency]
+        if patchable_section
+        else [assigned_section, relevant_section, global_consistency]
+    )
     if embedded_overview is not None:
         parts.extend(
             [

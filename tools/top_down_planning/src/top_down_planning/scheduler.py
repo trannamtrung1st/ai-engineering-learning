@@ -8,6 +8,7 @@ from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import (
     build_plan_overview,
     estimate_context_size,
+    select_patchable_node_ids,
     select_relevant_node_ids,
 )
 from top_down_planning.models import (
@@ -56,6 +57,25 @@ def are_independent(plan: PlanState, left: PlanItem, right: PlanItem) -> bool:
         return False
     return not is_ancestor(plan, left.id, right.id) and not is_ancestor(
         plan, right.id, left.id
+    )
+
+
+def compute_batch_write_scope(plan: PlanState, items: list[PlanItem]) -> set[str]:
+    """Nodes that one batch may write through primary ops or cross-item updates."""
+    scope: set[str] = set()
+    for item in items:
+        scope.add(item.id)
+        scope.update(select_patchable_node_ids(plan, {item.id}))
+    return scope
+
+
+def write_scopes_overlap(
+    plan: PlanState,
+    left: list[PlanItem],
+    right: list[PlanItem],
+) -> bool:
+    return bool(
+        compute_batch_write_scope(plan, left) & compute_batch_write_scope(plan, right)
     )
 
 
@@ -109,6 +129,7 @@ def _estimate_batch_context_size(
         selected_ids,
         output_dir=output_dir,
     )
+    patchable_ids = select_patchable_node_ids(plan, selected_ids)
     overview = ""
     if output_dir is not None:
         plan_digest = compute_plan_digest(plan)
@@ -116,7 +137,7 @@ def _estimate_batch_context_size(
     return (
         estimate_context_size(
             selected_items=batch,
-            relevant_ids=relevant_ids,
+            relevant_ids=relevant_ids | patchable_ids,
             plan=plan,
             overview=overview,
         )
@@ -131,27 +152,55 @@ def _pack_into_batches(
     generation: GenerationConfig,
     max_batches: int,
     output_dir: Path | None = None,
+    enforce_write_scope_separation: bool = True,
 ) -> list[list[PlanItem]]:
     if not candidates:
         return []
 
     if generation.batch_strategy == BatchStrategy.SINGLE:
-        return [[item] for item in candidates[:max_batches]]
+        batches: list[list[PlanItem]] = []
+        for item in candidates[:max_batches]:
+            if enforce_write_scope_separation and batches and any(
+                write_scopes_overlap(plan, [item], other_batch)
+                for other_batch in batches
+            ):
+                break
+            batches.append([item])
+        return batches
 
     remaining = list(candidates)
     batches: list[list[PlanItem]] = []
 
     while remaining and len(batches) < max_batches:
+        if (
+            enforce_write_scope_separation
+            and batches
+            and any(
+                write_scopes_overlap(plan, [remaining[0]], other_batch)
+                for other_batch in batches
+            )
+        ):
+            break
         seed = remaining.pop(0)
         batch = [seed]
 
         if generation.batch_strategy == BatchStrategy.THROUGHPUT:
             while len(batch) < generation.batch_size and remaining:
                 next_item = remaining[0]
-                if all(are_independent(plan, next_item, other) for other in batch):
-                    batch.append(remaining.pop(0))
-                else:
+                if not all(are_independent(plan, next_item, other) for other in batch):
                     break
+                trial = batch + [next_item]
+                if enforce_write_scope_separation and any(
+                    write_scopes_overlap(plan, trial, other_batch)
+                    for other_batch in batches
+                ):
+                    break
+                batch.append(remaining.pop(0))
+            if enforce_write_scope_separation and batches and any(
+                write_scopes_overlap(plan, batch, other_batch) for other_batch in batches
+            ):
+                remaining[0:0] = batch
+                break
             batches.append(batch)
             continue
 
@@ -175,10 +224,21 @@ def _pack_into_batches(
             ):
                 index += 1
                 continue
+            if enforce_write_scope_separation and any(
+                write_scopes_overlap(plan, trial, other_batch)
+                for other_batch in batches
+            ):
+                index += 1
+                continue
 
             batch.append(remaining.pop(index))
             index = 0
 
+        if enforce_write_scope_separation and batches and any(
+            write_scopes_overlap(plan, batch, other_batch) for other_batch in batches
+        ):
+            remaining[0:0] = batch
+            break
         batches.append(batch)
 
     return [batch for batch in batches if batch]
@@ -249,6 +309,7 @@ def select_amend_batches(
         generation=generation,
         max_batches=max_batches,
         output_dir=output_dir,
+        enforce_write_scope_separation=False,
     )
 
 

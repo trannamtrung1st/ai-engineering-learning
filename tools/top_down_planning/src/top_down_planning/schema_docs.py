@@ -21,6 +21,7 @@ from top_down_planning.models import (
     RenderBatchReviewResult,
     RenderedOutputReviewResult,
     SourceMetadata,
+    UpdateItemOperation,
     WholePlanReviewResult,
 )
 
@@ -43,6 +44,7 @@ REVIEW_STAGES = (
 )
 
 _OPERATION_ADAPTER = TypeAdapter(PlanningOperation)
+_UPDATE_ADAPTER = TypeAdapter(UpdateItemOperation)
 _TRANSACTION_ADAPTER = TypeAdapter(AgentResponse)
 _WHOLE_PLAN_REVIEW_ADAPTER = TypeAdapter(WholePlanReviewResult)
 _FINAL_CONFIRMATION_ADAPTER = TypeAdapter(FinalConfirmationResult)
@@ -229,6 +231,7 @@ def _example_transaction() -> dict[str, Any]:
         ],
         plan_digest=_PLAN_DIGEST,
         selected_items=["item-001"],
+        updates=[],
     ).model_dump(mode="json")
 
 
@@ -343,6 +346,10 @@ def validate_operation(payload: dict[str, Any]) -> None:
     _OPERATION_ADAPTER.validate_python(payload)
 
 
+def validate_update(payload: dict[str, Any]) -> None:
+    _UPDATE_ADAPTER.validate_python(payload)
+
+
 def validate_review_result(stage: str, payload: dict[str, Any]) -> None:
     adapters: dict[str, TypeAdapter[Any]] = {
         "whole_plan_review": _WHOLE_PLAN_REVIEW_ADAPTER,
@@ -379,6 +386,13 @@ def operation_examples() -> dict[str, dict[str, Any]]:
                 }
             ],
         },
+        "update_item": {
+            "type": "update_item",
+            "node_id": "item-002",
+            "reason": "Align dependency with the newly expanded sibling scope.",
+            "dependencies": ["item-003"],
+            "notes": ["Depends on the API contract item before implementation."],
+        },
     }
 
 
@@ -414,16 +428,41 @@ edit `.planning-output/plan.yaml` directly.
 
 Authoritative schemas and examples:
   {plan_tool_command} schema --target operation
+  {plan_tool_command} schema --target transaction
   {plan_tool_command} example --type mark_actionable
+  {plan_tool_command} example --type update_item
   {plan_tool_command} validate --json '<operation>'
+  {plan_tool_command} validate-update --json '<update_item>'
 
 Workflow:
 1. Read the complete plan overview (embedded below or at the referenced path).
 2. Optionally run `{plan_tool_command} show-context` for selected-node details.
 3. Optionally run `{plan_tool_command} status` to inspect the current draft.
 4. For **each assigned item**, run `{plan_tool_command} record-operation --json '<operation>'`.
-5. Run `{plan_tool_command} set-assessment [--plan-complete|--no-plan-complete] --summary "..."`.
-6. Run `{plan_tool_command} finalize` to commit the session transaction."""
+5. Optionally run `{plan_tool_command} record-update --json '<update_item>'` for related items
+   listed in the patchable scope. Omitted fields preserve the current value; an empty list
+   clears a list field.
+6. Run `{plan_tool_command} set-assessment [--plan-complete|--no-plan-complete] --summary "..."`.
+7. Run `{plan_tool_command} finalize` to commit the session transaction."""
+
+
+def format_amend_tool_usage(*, plan_tool_command: str = "planning-plan-tool") -> str:
+    return f"""Use the planning transaction CLI — do **not** return JSON in chat and do **not**
+edit `.planning-output/plan.yaml` directly.
+
+Authoritative schemas and examples:
+  {plan_tool_command} schema --target operation
+  {plan_tool_command} schema --target transaction
+  {plan_tool_command} example --type mark_actionable
+  {plan_tool_command} validate --json '<operation>'
+
+Workflow:
+1. Read the assigned item context and review findings below.
+2. For **each assigned item**, run `{plan_tool_command} record-operation --json '<revise_actionable>'`.
+3. Run `{plan_tool_command} set-assessment [--plan-complete|--no-plan-complete] --summary "..."`.
+4. Run `{plan_tool_command} finalize` to commit the session transaction.
+
+Amend sessions use `revise_actionable` only. Do not use `record-update`."""
 
 
 def format_review_schema_section(

@@ -15,18 +15,25 @@ import yaml
 from pydantic import TypeAdapter, ValidationError as PydanticValidationError
 
 from top_down_planning.errors import PlanningToolError
-from top_down_planning.models import AgentResponse, PlanState, PlanningOperation
+from top_down_planning.models import (
+    AgentResponse,
+    PlanState,
+    PlanningOperation,
+    UpdateItemOperation,
+)
 from top_down_planning.persistence import write_json
 from top_down_planning.prompts import _format_item_context
 from top_down_planning import schema_docs
 
 ENV_TXN_FILE = "PLANNING_TOOL_TXN_FILE"
 ENV_SELECTED_IDS = "PLANNING_TOOL_SELECTED_IDS"
+ENV_PATCHABLE_IDS = "PLANNING_TOOL_PATCHABLE_IDS"
 ENV_PLAN_FILE = "PLANNING_TOOL_PLAN_FILE"
 ENV_PLAN_DIGEST = "PLANNING_TOOL_PLAN_DIGEST"
 PLAN_TOOL_COMMAND_ENV = "PLANNING_TOOL_COMMAND"
 
 _OPERATION_ADAPTER = TypeAdapter(PlanningOperation)
+_UPDATE_ADAPTER = TypeAdapter(UpdateItemOperation)
 
 app = typer.Typer(
     name="planning-plan-tool",
@@ -63,6 +70,7 @@ def build_session_env(
     *,
     transaction_path: Path,
     selected_ids: list[str],
+    patchable_ids: list[str],
     plan_file: Path,
     plan_digest: str,
     plan_tool_command: str | None = None,
@@ -72,6 +80,7 @@ def build_session_env(
     return {
         ENV_TXN_FILE: str(transaction_path.resolve()),
         ENV_SELECTED_IDS: ",".join(selected_ids),
+        ENV_PATCHABLE_IDS: ",".join(patchable_ids),
         ENV_PLAN_FILE: str(plan_file.resolve()),
         ENV_PLAN_DIGEST: plan_digest,
         PLAN_TOOL_COMMAND_ENV: command,
@@ -93,6 +102,13 @@ def _selected_ids() -> set[str]:
     return ids
 
 
+def _patchable_ids() -> set[str]:
+    raw = os.environ.get(ENV_PATCHABLE_IDS, "").strip()
+    if not raw:
+        return set()
+    return {part.strip() for part in raw.split(",") if part.strip()}
+
+
 def _plan_file() -> Path:
     return Path(_require_env(ENV_PLAN_FILE)).resolve()
 
@@ -106,7 +122,11 @@ def _draft_path(txn_file: Path) -> Path:
 
 
 def _empty_draft() -> dict[str, Any]:
-    return {"assessment": {"plan_complete": False, "summary": ""}, "operations": []}
+    return {
+        "assessment": {"plan_complete": False, "summary": ""},
+        "operations": [],
+        "updates": [],
+    }
 
 
 def _load_draft(txn_file: Path) -> dict[str, Any]:
@@ -121,6 +141,7 @@ def _load_draft(txn_file: Path) -> dict[str, Any]:
         raise PlanToolError("Draft transaction must be a JSON object")
     data.setdefault("assessment", {"plan_complete": False, "summary": ""})
     data.setdefault("operations", [])
+    data.setdefault("updates", [])
     return data
 
 
@@ -189,19 +210,29 @@ def _validate_plan_digest(draft: dict[str, Any]) -> None:
 def _draft_status(txn_file: Path) -> dict[str, Any]:
     draft = _load_draft(txn_file)
     operations = draft.get("operations") or []
+    updates = draft.get("updates") or []
     assessment = draft.get("assessment") or {}
     selected = _selected_ids()
+    patchable = _patchable_ids()
     covered = {
         op.get("node_id")
         for op in operations
         if isinstance(op, dict) and isinstance(op.get("node_id"), str)
     }
+    updated_nodes = {
+        update.get("node_id")
+        for update in updates
+        if isinstance(update, dict) and isinstance(update.get("node_id"), str)
+    }
     return {
         "transaction_file": str(txn_file),
         "finalized": txn_file.is_file(),
         "selected_ids": sorted(selected),
+        "patchable_ids": sorted(patchable),
         "recorded_operations": len(operations),
+        "recorded_updates": len(updates),
         "covered_node_ids": sorted(covered),
+        "updated_node_ids": sorted(updated_nodes),
         "missing_node_ids": sorted(selected - covered),
         "assessment": assessment,
         "plan_digest": draft.get("plan_digest"),
@@ -282,6 +313,27 @@ def validate_cmd(
     typer.echo("Valid planning operation.")
 
 
+@app.command("validate-update")
+def validate_update_cmd(
+    json_payload: Annotated[
+        str,
+        typer.Option("--json", help="Cross-item update JSON object"),
+    ],
+) -> None:
+    """Validate a cross-item update without recording it."""
+    try:
+        raw = json.loads(json_payload)
+    except json.JSONDecodeError as exc:
+        raise PlanToolError(f"Invalid update JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise PlanToolError("Update JSON must be an object")
+    try:
+        schema_docs.validate_update(raw)
+    except PydanticValidationError as exc:
+        raise PlanToolError(f"Invalid cross-item update: {exc}") from exc
+    typer.echo("Valid cross-item update.")
+
+
 @app.command("show-context")
 def show_context() -> None:
     """Print context for all selected planning nodes."""
@@ -345,6 +397,58 @@ def record_operation(
     operations.append(operation.model_dump(mode="json"))
     _save_draft(txn_file, draft)
     typer.echo(f"Recorded {operation.type} for {node_id}")
+
+
+@app.command("record-update")
+def record_update(
+    json_payload: Annotated[
+        str,
+        typer.Option("--json", help="Cross-item update JSON object"),
+    ],
+) -> None:
+    """Record one cross-item update for a patchable related node."""
+    txn_file = _txn_file()
+    selected = _selected_ids()
+    patchable = _patchable_ids()
+    try:
+        raw = json.loads(json_payload)
+    except json.JSONDecodeError as exc:
+        raise PlanToolError(f"Invalid update JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise PlanToolError("Update JSON must be an object")
+
+    node_id = raw.get("node_id")
+    if not isinstance(node_id, str):
+        raise PlanToolError("Update node_id must be a string")
+    if node_id in selected:
+        raise PlanToolError(
+            f"Update node_id must not be an assigned item: {node_id}"
+        )
+    if node_id not in patchable:
+        raise PlanToolError(
+            f"Update node_id must be one of the patchable items: "
+            f"{', '.join(sorted(patchable)) or '(none)'}"
+        )
+
+    try:
+        update = _UPDATE_ADAPTER.validate_python(raw)
+    except PydanticValidationError as exc:
+        raise PlanToolError(f"Invalid cross-item update: {exc}") from exc
+
+    draft = _load_draft(txn_file)
+    _validate_plan_digest(draft)
+    updates = draft.setdefault("updates", [])
+    if not isinstance(updates, list):
+        raise PlanToolError("Draft updates must be a list")
+    for existing in updates:
+        if isinstance(existing, dict) and existing.get("node_id") == node_id:
+            raise PlanToolError(
+                f"Update already recorded for node {node_id}; "
+                "run reset or finalize before replacing it"
+            )
+    updates.append(update.model_dump(mode="json"))
+    _save_draft(txn_file, draft)
+    typer.echo(f"Recorded update_item for {node_id}")
 
 
 @app.command("set-assessment")

@@ -162,6 +162,12 @@ def _write_planning_transaction(response: dict) -> None:
             "--json",
             json.dumps(operation, separators=(",", ":")),
         )
+    for update in response.get("updates") or []:
+        _run_plan_tool(
+            "record-update",
+            "--json",
+            json.dumps(update, separators=(",", ":")),
+        )
     assessment = response.get("assessment") or {}
     plan_complete = bool(assessment.get("plan_complete", False))
     summary = str(assessment.get("summary") or "")

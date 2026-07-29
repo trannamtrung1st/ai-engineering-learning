@@ -91,7 +91,11 @@ from top_down_planning.review_flow import ReviewFlowDeps, run_post_decomposition
 from top_down_planning.render_flow import RenderFlowDeps, existing_deliverable_artifacts, render_from_confirmed_plan
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from top_down_planning.digest import compute_plan_digest
-from top_down_planning.generation_context import ensure_plan_overview_artifact, prepare_batch_context
+from top_down_planning.generation_context import (
+    ensure_plan_overview_artifact,
+    prepare_batch_context,
+    select_patchable_node_ids,
+)
 from top_down_planning.prompts import build_amend_prompt, build_planning_prompt
 from top_down_planning.scheduler import (
     initialize_root_plan,
@@ -1077,6 +1081,7 @@ class Orchestrator:
             output_dir=output_dir,
             whole_plan_context=generation.whole_plan_context,
             max_context_characters=generation.max_context_characters,
+            include_cross_item_updates=session_kind == "planning",
         )
 
         context_path = iteration_context_path(output_dir, spec.iteration)
@@ -1155,6 +1160,11 @@ class Orchestrator:
         session_env = build_session_env(
             transaction_path=transaction_path,
             selected_ids=spec.selected_ids,
+            patchable_ids=(
+                sorted(select_patchable_node_ids(plan, set(spec.selected_ids)))
+                if session_kind == "planning"
+                else []
+            ),
             plan_file=canonical_plan_file,
             plan_digest=plan_digest,
             plan_tool_command=plan_tool_command,
@@ -1228,6 +1238,11 @@ class Orchestrator:
                     "item.revised",
                     item_id=operation.node_id,
                 )
+        for update in response.updates:
+            self.stream.emit(
+                "item.updated",
+                item_id=update.node_id,
+            )
 
     def _add_agent_pid(self, output_dir: Path, run_state: RunState, pid: int) -> None:
         with self._agent_pid_lock:

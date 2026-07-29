@@ -9,6 +9,7 @@ from top_down_planning.models import (
     PlanItem,
     PlanningLimits,
     ReviseActionableOperation,
+    UpdateItemOperation,
 )
 from top_down_planning.scheduler import initialize_root_plan
 from tests.helpers import default_generation, make_agent_response
@@ -277,3 +278,207 @@ def test_validate_amend_response_accepts_revise_actionable() -> None:
         )
         == []
     )
+
+
+def test_validate_amend_response_rejects_cross_item_updates() -> None:
+    plan = _plan()
+    item = plan.item_by_id("item-001")
+    assert item is not None
+    item.decomposition_status = DecompositionStatus.ACTIONABLE
+    response = make_agent_response(
+        operations=[
+            ReviseActionableOperation(
+                node_id="item-001",
+                reason="Apply review fix",
+                expected_outputs=["Revised output"],
+                acceptance_criteria=["Revised criteria"],
+            )
+        ],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-001",
+                reason="Should not be in amend session",
+                notes=["bad"],
+            )
+        ],
+    )
+    errors = validate_amend_response(plan, response, selected_ids=["item-001"])
+    assert any("cross-item updates" in error for error in errors)
+
+
+def test_validate_response_accepts_patchable_update() -> None:
+    plan = _plan()
+    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].expected_outputs = ["Root output"]
+    plan.plan[0].acceptance_criteria = ["Root done"]
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id="item-001",
+            title="Child",
+            objective="child",
+            depth=1,
+            order=2,
+        )
+    )
+    response = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-002",
+                children=[ChildDraft(title="Slice", objective="slice")],
+            )
+        ],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-001",
+                reason="Parent now depends on the new child branch.",
+                notes=["Updated parent context"],
+            )
+        ],
+    )
+    assert (
+        validate_response(plan, response, selected_ids=["item-002"], limits=PlanningLimits())
+        == []
+    )
+
+
+def test_validate_response_rejects_update_on_selected_node() -> None:
+    plan = _plan()
+    response = make_agent_response(
+        operations=[
+            MarkActionableOperation(
+                node_id="item-001",
+                title="Plan the requested work",
+                objective="Produce the requested plan.",
+                expected_outputs=["Plan"],
+                acceptance_criteria=["Done"],
+            )
+        ],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-001",
+                reason="Should use primary operation instead.",
+                notes=["bad"],
+            )
+        ],
+    )
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    assert any("assigned node" in error for error in errors)
+
+
+def test_validate_wave_rejects_conflicting_cross_batch_updates() -> None:
+    plan = _plan()
+    plan.plan[0].decomposition_status = DecompositionStatus.ACTIONABLE
+    plan.plan[0].expected_outputs = ["Root output"]
+    plan.plan[0].acceptance_criteria = ["Root done"]
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id="item-001",
+            title="Branch A",
+            objective="a",
+            depth=1,
+            order=2,
+        )
+    )
+    plan.plan.append(
+        PlanItem(
+            id="item-003",
+            parent_id="item-001",
+            title="Branch B",
+            objective="b",
+            depth=1,
+            order=3,
+        )
+    )
+    first = make_agent_response(
+        plan_digest="wave-digest",
+        operations=[
+            ExpandOperation(
+                node_id="item-002",
+                children=[ChildDraft(title="A child", objective="a")],
+            )
+        ],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-001",
+                reason="Update parent from branch A.",
+                notes=["from A"],
+            )
+        ],
+    )
+    second = make_agent_response(
+        plan_digest="wave-digest",
+        operations=[
+            ExpandOperation(
+                node_id="item-003",
+                children=[ChildDraft(title="B child", objective="b")],
+            )
+        ],
+        updates=[
+            UpdateItemOperation(
+                node_id="item-001",
+                reason="Update parent from branch B.",
+                notes=["from B"],
+            )
+        ],
+    )
+    errors = validate_wave_responses(
+        plan,
+        [
+            (["item-002"], first),
+            (["item-003"], second),
+        ],
+        limits=PlanningLimits(),
+        plan_digest="wave-digest",
+    )
+    assert any("cross-item updates" in error for error in errors)
+
+
+def test_validate_wave_rejects_overlapping_write_scopes() -> None:
+    plan = _plan()
+    for index in range(2, 5):
+        plan.plan.append(
+            PlanItem(
+                id=f"item-{index:03d}",
+                parent_id=None,
+                title=f"Sibling {index}",
+                objective=f"obj {index}",
+                depth=0,
+                order=index,
+            )
+        )
+    first = make_agent_response(
+        plan_digest="wave-digest",
+        operations=[
+            MarkActionableOperation(
+                node_id="item-001",
+                title="Plan the requested work",
+                objective="Produce the requested plan.",
+                expected_outputs=["Plan"],
+                acceptance_criteria=["Done"],
+            )
+        ],
+    )
+    second = make_agent_response(
+        plan_digest="wave-digest",
+        operations=[
+            MarkActionableOperation(
+                node_id="item-002",
+                title="Sibling plan",
+                objective="Plan sibling work.",
+                expected_outputs=["Plan"],
+                acceptance_criteria=["Done"],
+            )
+        ],
+    )
+    errors = validate_wave_responses(
+        plan,
+        [
+            (["item-001"], first),
+            (["item-002"], second),
+        ],
+        limits=PlanningLimits(),
+        plan_digest="wave-digest",
+    )
+    assert any("overlapping write scopes" in error for error in errors)
