@@ -8,7 +8,7 @@ from top_down_planning.response_parser import (
     load_planning_response,
     parse_agent_response,
 )
-from tests.helpers import default_generation, make_agent_response
+from tests.helpers import make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.renderer import render_plan_markdown
 

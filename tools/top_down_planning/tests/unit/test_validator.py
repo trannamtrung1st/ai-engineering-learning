@@ -10,7 +10,7 @@ from top_down_planning.models import (
     UpdateItemOperation,
 )
 from top_down_planning.scheduler import initialize_root_plan
-from tests.helpers import default_generation, make_agent_response
+from tests.helpers import make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.validator import (
     validate_amend_response,
@@ -410,3 +410,33 @@ def test_validate_actionable_uses_full_goal_not_compact_label() -> None:
         output_goal_text=full_implementation_goal,
     )
     assert any("expected_outputs" in error for error in errors_full)
+
+
+def test_validate_response_rejects_non_eligible_selection() -> None:
+    plan = _plan()
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id="item-001",
+            title="Child",
+            objective="child",
+            depth=1,
+            order=2,
+        )
+    )
+    response = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-002",
+                children=[ChildDraft(title="Slice", objective="slice")],
+            )
+        ]
+    )
+    errors = validate_response(
+        plan,
+        response,
+        selected_ids=["item-002"],
+        output_goal_text=GOAL_TEXT,
+        eligible_ids={"item-001"},
+    )
+    assert any("not eligible" in error for error in errors)

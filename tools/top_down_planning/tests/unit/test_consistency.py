@@ -8,7 +8,7 @@ from top_down_planning.models import (
     PlanItem,
 )
 from top_down_planning.scheduler import initialize_root_plan
-from tests.helpers import default_generation, make_agent_response
+from tests.helpers import make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 from top_down_planning.validator import validate_response

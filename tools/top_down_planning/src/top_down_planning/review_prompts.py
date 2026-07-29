@@ -112,6 +112,10 @@ Record exactly one structured review result through the review transaction CLI.
   the output goal requires them; no contradictory criteria; unresolved decisions surfaced
   via blocked items or open questions when needed.
 - Ownership: each major concern has a clear owner; no overlapping duplicate workstreams.
+- Scope framing: named examples and paths are investigation anchors unless the source
+  explicitly treats them as exhaustive inventories.
+- Checkpoint discipline: avoid mechanical checkpoint leaves when one correction leaf can
+  own the verification.
 
 {schema_docs.format_review_schema_section(
     review_tool_command=review_tool_command,
@@ -199,6 +203,8 @@ Record exactly one structured confirmation result through the review transaction
 - Every actionable leaf is renderable.
 - Dependency graph is coherent.
 - Output goal can be rendered without major planning rediscovery.
+- Named examples and paths are investigation anchors unless the source says otherwise.
+- No unnecessary checkpoint-like leaves when one correction leaf can own verification.
 
 {schema_docs.format_review_schema_section(
     review_tool_command=review_tool_command,

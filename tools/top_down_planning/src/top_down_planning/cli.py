@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 
 from top_down_planning import __version__
-from top_down_planning.config_loader import merge_run_options, options_to_generation_config, options_to_planning_limits, options_to_render_config
+from top_down_planning.config_loader import merge_run_options, options_to_planning_limits, options_to_render_config
 from top_down_planning.errors import PlanningToolError, ResumeError, UserInterrupted, ValidationError
 from top_down_planning.input_loader import LoadedOutputGoal, load_output_goal, load_stop_hint
 from top_down_planning.model_config import resolve_model
@@ -156,7 +156,6 @@ def _execute_run(
         "yes",
     }
     limits = options_to_planning_limits(options)
-    generation = options_to_generation_config(options)
     render = options_to_render_config(options)
 
     goal_override = output_goal is not None or output_goal_file is not None
@@ -187,7 +186,6 @@ def _execute_run(
         output_dir=options.output_dir,
         workspace_root=options.workspace.resolve(),
         limits=limits,
-        generation=generation,
         render=render,
         render_only=options.render_only,
         force_rerender=options.force_rerender,

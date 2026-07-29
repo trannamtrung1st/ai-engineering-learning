@@ -21,6 +21,7 @@ from top_down_planning.completeness import (
     is_plan_complete,
     leaf_actionable_count,
     limit_reached,
+    structural_errors,
 )
 from top_down_planning.console_renderer import ConsoleRenderer
 from top_down_planning.cursor_client import CursorClient
@@ -37,7 +38,6 @@ from top_down_planning.model_config import resolve_embed_threshold, resolve_mode
 from top_down_planning.models import (
     AgentResponse,
     FinalStatus,
-    GenerationConfig,
     PlanItem,
     ProcessedBatchRecord,
     PlanningLimits,
@@ -49,7 +49,6 @@ from top_down_planning.models import (
     ReviewStatus,
     RunActiveStatus,
     RunState,
-    WholePlanContextMode,
 )
 from top_down_planning.persistence import (
     ensure_resume_compatible,
@@ -89,10 +88,7 @@ from top_down_planning.review_flow import ReviewFlowDeps, run_post_decomposition
 from top_down_planning.render_flow import RenderFlowDeps, existing_deliverable_artifacts, render_from_confirmed_plan
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from top_down_planning.digest import compute_plan_digest
-from top_down_planning.generation_context import (
-    ensure_plan_overview_artifact,
-    prepare_batch_context,
-)
+from top_down_planning.generation_context import prepare_batch_context
 from top_down_planning.prompts import build_amend_prompt, build_planning_prompt
 from top_down_planning.scheduler import (
     amendable_items,
@@ -114,7 +110,6 @@ class RunConfig:
     output_dir: Path
     workspace_root: Path
     limits: PlanningLimits
-    generation: GenerationConfig = field(default_factory=GenerationConfig)
     render: RenderConfig = field(default_factory=RenderConfig)
     render_only: bool = False
     force_rerender: bool = False
@@ -183,6 +178,19 @@ class Orchestrator:
             self.config.agent_context,
         )
 
+    def _resolved_phase_models(self) -> tuple[str | None, str | None, str | None]:
+        return (
+            self._resolve_session_model(phase="planning"),
+            self._resolve_session_model(phase="review"),
+            self._resolve_session_model(phase="rendering"),
+        )
+
+    def _ensure_run_model_provenance(self, run_state: RunState) -> None:
+        planning_model, review_model, rendering_model = self._resolved_phase_models()
+        run_state.planning_model = planning_model
+        run_state.review_model = review_model
+        run_state.rendering_model = rendering_model
+
     @property
     def client(self) -> CursorClient:
         if self._client is None:
@@ -215,7 +223,6 @@ class Orchestrator:
             output_goal_digest=goal_digest,
             stop_hint_digest=stop_hint_digest,
             limits=self.config.limits,
-            generation=self.config.generation,
             render=self.config.render,
             resume=self.config.resume,
         )
@@ -223,6 +230,7 @@ class Orchestrator:
         if existing_plan is not None and existing_run is not None:
             plan = existing_plan
             run_state = existing_run
+            self._ensure_run_model_provenance(run_state)
             if _any_agent_alive(run_state.agent_pids):
                 alive = [pid for pid in run_state.agent_pids if _pid_alive(pid)]
                 raise PlanningToolError(
@@ -283,6 +291,7 @@ class Orchestrator:
                 loaded_stop_hint=loaded_stop_hint,
             )
             plan = initialize_root_plan(source=source)
+            planning_model, review_model, rendering_model = self._resolved_phase_models()
             run_state = new_run_state(
                 input_file=str(loaded.path),
                 output_goal=loaded_goal.source_label,
@@ -290,8 +299,10 @@ class Orchestrator:
                 output_goal_digest=goal_digest,
                 stop_hint_digest=stop_hint_digest,
                 limits=self.config.limits,
-                generation=self.config.generation,
                 render=self.config.render,
+                planning_model=planning_model,
+                review_model=review_model,
+                rendering_model=rendering_model,
             )
             save_plan(output_dir, plan)
             save_run_state(output_dir, run_state)
@@ -434,12 +445,20 @@ class Orchestrator:
                 session_kind="planning",
             )
 
-        status = compute_final_status(plan)
-        summary = (
-            "Planning decomposition completed."
-            if status == FinalStatus.COMPLETE
-            else "Planning finished with remaining incomplete items."
-        )
+        structural = structural_errors(plan)
+        if structural:
+            status = compute_final_status(plan, failed=True)
+            summary = (
+                "Planning stopped due to invalid plan structure: "
+                + "; ".join(structural)
+            )
+        else:
+            status = compute_final_status(plan)
+            summary = (
+                "Planning decomposition completed."
+                if status == FinalStatus.COMPLETE
+                else "Planning finished with remaining incomplete items."
+            )
         update_final_status(plan, status, summary)
         run_state.active_status = RunActiveStatus.COMPLETED
         save_plan(output_dir, plan)
@@ -581,6 +600,8 @@ class Orchestrator:
         run_state = load_run_state(output_dir)
         if run_state is None:
             raise PlanningToolError("Render-only requires existing run-state.json")
+        self._ensure_run_model_provenance(run_state)
+        save_run_state(output_dir, run_state)
 
         render_state = load_render_state(output_dir)
         existing = existing_deliverable_artifacts(
@@ -654,16 +675,23 @@ class Orchestrator:
         plan_snapshot = copy.deepcopy(plan)
         plan_digest = compute_plan_digest(plan_snapshot)
         eligible_ids = [item.id for item in eligible_items]
+        eligible_id_set = set(eligible_ids)
 
-        overview_path = ensure_plan_overview_artifact(
-            output_dir,
-            plan_snapshot,
-            plan_digest,
+        plan_tool_command = resolve_plan_tool_command()
+        self._ensure_run_model_provenance(run_state)
+        prepared = prepare_batch_context(
+            plan=plan_snapshot,
+            selected_items=[],
+            plan_digest=plan_digest,
+            output_dir=output_dir,
+            include_cross_item_updates=session_kind == "planning",
         )
+        session_model = self._resolve_session_model(phase="planning")
         self.stream.emit(
             "generation.batch.context_prepared",
             plan_digest=plan_digest,
-            plan_overview=str(overview_path),
+            plan_overview_artifact=prepared.plan_overview_relative,
+            model=session_model,
         )
         self.stream.emit(
             "iteration.started",
@@ -673,17 +701,6 @@ class Orchestrator:
         self.renderer.rule(
             f"{'AMEND' if session_kind == 'amend' else 'PLAN'} "
             f"iteration={iteration} eligible={','.join(eligible_ids)}"
-        )
-
-        generation = self.config.generation
-        plan_tool_command = resolve_plan_tool_command()
-        prepared = prepare_batch_context(
-            plan=plan_snapshot,
-            selected_items=[],
-            plan_digest=plan_digest,
-            output_dir=output_dir,
-            whole_plan_context=generation.whole_plan_context,
-            include_cross_item_updates=session_kind == "planning",
         )
 
         context_path = iteration_context_path(output_dir, iteration)
@@ -705,7 +722,6 @@ class Orchestrator:
                 agent_context=self._resolved_agent_context(phase="planning"),
                 plan_digest=plan_digest,
                 batch_context_markdown=prepared.batch_context_markdown,
-                context_mode=prepared.context_mode,
             )
             if session_kind == "amend"
             else build_planning_prompt(
@@ -722,7 +738,6 @@ class Orchestrator:
                 agent_context=self._resolved_agent_context(phase="planning"),
                 plan_digest=plan_digest,
                 batch_context_markdown=prepared.batch_context_markdown,
-                context_mode=prepared.context_mode,
             )
         )
 
@@ -738,7 +753,6 @@ class Orchestrator:
 
         validation_feedback: list[str] | None = None
         applied = False
-        context_mode = prepared.context_mode
         for attempt in range(1, limits.max_retries + 1):
             run_state.retry_count = attempt - 1
             run_state.agent_pids = []
@@ -761,7 +775,6 @@ class Orchestrator:
                         agent_context=self._resolved_agent_context(phase="planning"),
                         plan_digest=plan_digest,
                         batch_context_markdown=prepared.batch_context_markdown,
-                        context_mode=prepared.context_mode,
                     )
                 else:
                     current_prompt = build_planning_prompt(
@@ -778,7 +791,6 @@ class Orchestrator:
                         agent_context=self._resolved_agent_context(phase="planning"),
                         plan_digest=plan_digest,
                         batch_context_markdown=prepared.batch_context_markdown,
-                        context_mode=prepared.context_mode,
                     )
 
             prompt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -794,7 +806,8 @@ class Orchestrator:
                         "transaction_path": str(transaction_path),
                         "plan_digest": plan_digest,
                         "batch_context_artifact": context_path.name,
-                        "context_mode": prepared.context_mode.value,
+                        "plan_overview_artifact": prepared.plan_overview_relative,
+                        "model": session_model,
                         "session_kind": session_kind,
                     },
                 )
@@ -832,7 +845,7 @@ class Orchestrator:
                     on_agent_started=on_started,
                     session_mode="agent",
                     extra_env=session_env,
-                    model=self._resolve_session_model(phase="planning"),
+                    model=session_model,
                 )
             except UserInterrupted:
                 run_state.agent_pids = []
@@ -904,6 +917,7 @@ class Orchestrator:
                     [(selected_ids, response)],
                     plan_digest=plan_digest,
                     output_goal_text=self.config.output_goal.text,
+                    eligible_ids=eligible_id_set,
                 )
                 if session_kind == "amend"
                 else validate_wave_responses(
@@ -911,6 +925,7 @@ class Orchestrator:
                     [(selected_ids, response)],
                     plan_digest=plan_digest,
                     output_goal_text=self.config.output_goal.text,
+                    eligible_ids=eligible_id_set,
                 )
             )
             if errors:
@@ -935,6 +950,7 @@ class Orchestrator:
                     "iteration.retrying",
                     iteration=iteration,
                     attempt=attempt + 1,
+                    reason=errors[0] if errors else "validation failed",
                 )
                 continue
 
@@ -978,11 +994,13 @@ class Orchestrator:
                 iteration=iteration,
                 selected_items=selected_ids,
                 plan_digest=plan_digest_after,
-                context_mode=context_mode.value,
+                plan_overview_artifact=prepared.plan_overview_relative,
+                model=session_model,
             )
             self.stream.emit(
                 "iteration.completed",
                 iteration=iteration,
+                eligible_items=eligible_ids,
                 selected_items=selected_ids,
             )
             applied = True

@@ -15,14 +15,57 @@ def _is_leaf(plan: PlanState, item_id: str) -> bool:
 
 
 def actionable_leaf_items(plan: PlanState) -> list[PlanItem]:
-    """Return actionable leaf items in deterministic order."""
+    """Return actionable leaf items in dependency-safe topological order."""
     leaves = [
         item
         for item in plan.plan
         if item.decomposition_status == DecompositionStatus.ACTIONABLE
         and _is_leaf(plan, item.id)
     ]
-    return sorted(leaves, key=lambda item: item.order)
+    return _topological_actionable_order(plan, leaves)
+
+
+def _topological_actionable_order(
+    plan: PlanState,
+    leaves: list[PlanItem],
+) -> list[PlanItem]:
+    """Stable topological sort using creation order as tie-breaker."""
+    leaf_ids = {item.id for item in leaves}
+    if not leaf_ids:
+        return []
+
+    order_index = {item.id: item.order for item in leaves}
+    in_degree: dict[str, int] = {item_id: 0 for item_id in leaf_ids}
+    dependents: dict[str, list[str]] = {item_id: [] for item_id in leaf_ids}
+
+    for item in leaves:
+        for dep in item.dependencies:
+            if dep in leaf_ids:
+                in_degree[item.id] += 1
+                dependents[dep].append(item.id)
+
+    for dep_id, waiting in dependents.items():
+        waiting.sort(key=lambda item_id: (order_index[item_id], item_id))
+
+    ready = sorted(
+        (item_id for item_id, degree in in_degree.items() if degree == 0),
+        key=lambda item_id: (order_index[item_id], item_id),
+    )
+    ordered: list[PlanItem] = []
+    by_id = {item.id: item for item in leaves}
+
+    while ready:
+        current_id = ready.pop(0)
+        ordered.append(by_id[current_id])
+        for dependent_id in dependents[current_id]:
+            in_degree[dependent_id] -= 1
+            if in_degree[dependent_id] == 0:
+                ready.append(dependent_id)
+                ready.sort(key=lambda item_id: (order_index[item_id], item_id))
+
+    if len(ordered) != len(leaves):
+        return sorted(leaves, key=lambda item: (item.order, item.id))
+    return ordered
 
 
 def blocked_leaf_items(plan: PlanState) -> list[PlanItem]:
@@ -50,9 +93,13 @@ def build_render_brief(plan: PlanState) -> str:
     lines: list[str] = [
         "# Render brief",
         "",
-        "The decomposition breakdown below is the **authoritative scope** for "
-        "deliverables. The output goal defines format and schema; this brief "
+        "The decomposition breakdown below defines **authoritative ownership and "
+        "deliverables**. The output goal defines format and schema; this brief "
         "defines which items must appear and what must be preserved.",
+        "",
+        "Named paths, examples, and investigation anchors in each item are "
+        "starting surfaces, not exhaustive inventories, unless the source "
+        "explicitly says otherwise.",
         "",
         f"## Actionable deliverable units ({len(leaves)})",
         "",

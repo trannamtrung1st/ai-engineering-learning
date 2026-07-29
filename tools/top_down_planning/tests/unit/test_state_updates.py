@@ -8,7 +8,7 @@ from top_down_planning.models import (
     UpdateItemOperation,
 )
 from top_down_planning.scheduler import initialize_root_plan
-from tests.helpers import default_generation, make_agent_response
+from tests.helpers import make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response, detect_dependency_cycles
 
@@ -111,6 +111,37 @@ def test_apply_update_item_replaces_and_clears_fields() -> None:
     assert parent is not None
     assert parent.notes == ["updated note"]
     assert parent.dependencies == []
+
+
+def test_apply_expand_allows_non_root_title_and_objective_updates() -> None:
+    plan = _plan()
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id="item-001",
+            title="Old title",
+            objective="Old objective",
+            depth=1,
+            order=2,
+            decomposition_status=DecompositionStatus.NEEDS_EXPANSION,
+        )
+    )
+    response = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-002",
+                title="Refined title",
+                objective="Refined objective",
+                children=[ChildDraft(title="Child", objective="child work")],
+            )
+        ]
+    )
+    updated = apply_response(plan, response)
+    item = updated.item_by_id("item-002")
+    assert item is not None
+    assert item.title == "Refined title"
+    assert item.objective == "Refined objective"
 
 
 def test_cycle_detection() -> None:

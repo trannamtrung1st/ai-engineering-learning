@@ -6,11 +6,19 @@ from top_down_planning.models import DecompositionStatus, PlanItem, PlanState, S
 
 
 def expandable_items(plan: PlanState) -> list[PlanItem]:
-    return [
+    """Return incomplete items at the shallowest depth only, stably sorted."""
+    candidates = [
         item
         for item in plan.plan
         if item.decomposition_status == DecompositionStatus.NEEDS_EXPANSION
     ]
+    if not candidates:
+        return []
+    min_depth = min(item.depth for item in candidates)
+    return sorted(
+        (item for item in candidates if item.depth == min_depth),
+        key=lambda item: (item.order, item.id),
+    )
 
 
 def amendable_items(plan: PlanState, node_ids: list[str]) -> list[PlanItem]:

@@ -71,10 +71,10 @@ def _validation_path_for_response(response_path: Path) -> Path:
 
 
 def _response_passed_validation(response_path: Path) -> bool:
-    """Return False when a sibling validation audit records errors."""
+    """Return False when validation audit is missing or records errors."""
     validation_path = _validation_path_for_response(response_path)
     if not validation_path.is_file():
-        return True
+        return False
     try:
         payload = json.loads(validation_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):

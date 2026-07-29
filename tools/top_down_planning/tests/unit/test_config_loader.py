@@ -37,7 +37,7 @@ def test_load_run_config_file_resolves_paths_relative_to_config(tmp_path: Path) 
     assert options.workspace == config_dir.resolve()
 
 
-def test_merge_run_options_uses_generation_block(tmp_path: Path) -> None:
+def test_merge_run_options_rejects_generation_block(tmp_path: Path) -> None:
     config_path = tmp_path / "planning.yaml"
     config_path.write_text(
         "\n".join(
@@ -45,9 +45,6 @@ def test_merge_run_options_uses_generation_block(tmp_path: Path) -> None:
                 "input: ./idea.md",
                 "output: ./out",
                 "output_goal: Produce a plan",
-                "limits:",
-                "  max_iterations: 12",
-                "  session_timeout_seconds: 900",
                 "generation:",
                 "  whole_plan_context: referenced",
             ]
@@ -55,11 +52,8 @@ def test_merge_run_options_uses_generation_block(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    options = merge_run_options(config_path=config_path)
-
-    assert options.max_iterations == 12
-    assert options.generation.whole_plan_context.value == "referenced"
-    assert options.session_timeout_seconds == 900
+    with pytest.raises(PlanningToolError):
+        merge_run_options(config_path=config_path)
 
 
 def test_options_to_planning_limits_includes_advanced_fields(tmp_path: Path) -> None:

@@ -161,3 +161,9 @@ def test_structural_errors_reject_expanded_without_children() -> None:
     plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
     errors = structural_errors(plan)
     assert any("expanded but has no children" in error for error in errors)
+
+
+def test_compute_final_status_failed_for_structural_errors() -> None:
+    plan = _plan()
+    plan.plan[0].decomposition_status = DecompositionStatus.EXPANDED
+    assert compute_final_status(plan, failed=True) == FinalStatus.FAILED

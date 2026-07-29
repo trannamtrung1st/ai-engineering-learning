@@ -74,11 +74,17 @@ def test_actionable_leaf_items_excludes_expanded_nodes() -> None:
     assert "Nested leaf" in titles
 
 
+def test_actionable_leaf_items_respect_dependencies() -> None:
+    plan = _plan_with_leaves()
+    leaves = actionable_leaf_items(plan)
+    assert [item.title for item in leaves] == ["Area A", "Area B"]
+
+
 def test_build_render_brief_lists_every_actionable_leaf() -> None:
     plan = _plan_with_leaves()
     brief = build_render_brief(plan)
 
-    assert "authoritative scope" in brief
+    assert "authoritative ownership" in brief
     assert "### 1. Area A" in brief
     assert "### 2. Area B" in brief
     assert "Output A" in brief

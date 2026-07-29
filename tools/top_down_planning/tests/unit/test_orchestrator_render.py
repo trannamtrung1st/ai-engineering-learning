@@ -10,7 +10,7 @@ from top_down_planning.models import DecompositionStatus, FinalStatus, PlanningL
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import new_run_state, save_plan
 from top_down_planning.render_flow import render_from_confirmed_plan
-from tests.helpers import default_generation, render_output_goal
+from tests.helpers import render_output_goal
 from tests.plan_factory import make_root_plan
 
 
@@ -42,7 +42,6 @@ async def test_render_author_retry_records_audit_files(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
-        generation=default_generation(),
         render=RenderConfig(max_retries=2, final_review=False, scaffold=False),
     )
 

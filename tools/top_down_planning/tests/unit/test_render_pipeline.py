@@ -29,7 +29,7 @@ from top_down_planning.persistence import (
 from top_down_planning.render_batches import processed_batches_digest
 from top_down_planning.render_flow import _artifact_ignore_matcher, RenderFlowDeps
 from top_down_planning.render_preconditions import validate_render_only_preconditions
-from tests.helpers import default_generation, render_output_goal
+from tests.helpers import render_output_goal
 from tests.plan_factory import make_root_plan
 
 
@@ -68,7 +68,6 @@ def test_render_only_rejects_incomplete_plan(tmp_path: Path, example_input: Path
         input_digest="in",
         output_goal_digest=loaded_goal.digest,
         limits=PlanningLimits(),
-        generation=default_generation(),
     )
     save_run_state(output_dir, run_state)
     with pytest.raises(PlanningToolError):
@@ -105,7 +104,6 @@ async def test_render_only_with_confirmed_plan(
         input_digest="in",
         output_goal_digest=loaded_goal.digest,
         limits=PlanningLimits(max_iterations=5),
-        generation=default_generation(),
     )
     save_run_state(output_dir, run_state)
     write_json(

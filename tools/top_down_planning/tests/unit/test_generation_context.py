@@ -14,7 +14,6 @@ from top_down_planning.models import (
     DecompositionStatus,
     MarkActionableOperation,
     PlanItem,
-    WholePlanContextMode,
 )
 from top_down_planning.plan_tool import (
     ENV_ELIGIBLE_IDS,
@@ -106,7 +105,6 @@ def test_prepare_batch_context_omits_patchable_section_for_amend(tmp_path: Path)
         selected_items=[item],
         plan_digest=digest,
         output_dir=output_dir,
-        whole_plan_context=WholePlanContextMode.HYBRID,
         include_cross_item_updates=False,
     )
     assert "Patchable related items" not in prepared.batch_context_markdown
@@ -123,7 +121,6 @@ def test_prepare_batch_context_includes_patchable_section(tmp_path: Path) -> Non
         selected_items=[item],
         plan_digest=digest,
         output_dir=output_dir,
-        whole_plan_context=WholePlanContextMode.HYBRID,
     )
     assert "Patchable related items" in prepared.batch_context_markdown
     assert "[item-001]" in prepared.batch_context_markdown
@@ -148,12 +145,11 @@ def test_prepare_batch_context_without_selection(tmp_path: Path) -> None:
         selected_items=[],
         plan_digest=digest,
         output_dir=output_dir,
-        whole_plan_context=WholePlanContextMode.HYBRID,
     )
     assert "No batch selected yet" in prepared.batch_context_markdown
 
 
-def test_prepare_batch_context_hybrid_mode(tmp_path: Path) -> None:
+def test_prepare_batch_context_references_plan_overview(tmp_path: Path) -> None:
     plan = _plan_with_branches()
     digest = compute_plan_digest(plan)
     output_dir = tmp_path / "planning-output"
@@ -164,29 +160,11 @@ def test_prepare_batch_context_hybrid_mode(tmp_path: Path) -> None:
         selected_items=[item],
         plan_digest=digest,
         output_dir=output_dir,
-        whole_plan_context=WholePlanContextMode.HYBRID,
     )
-    assert prepared.context_mode == WholePlanContextMode.HYBRID
     assert "Assigned generation scope" in prepared.batch_context_markdown
-    assert prepared.embedded_overview is not None
-
-
-def test_prepare_batch_context_referenced_mode(tmp_path: Path) -> None:
-    plan = _plan_with_branches()
-    digest = compute_plan_digest(plan)
-    output_dir = tmp_path / "planning-output"
-    item = plan.item_by_id("item-002")
-    assert item is not None
-    prepared = prepare_batch_context(
-        plan=plan,
-        selected_items=[item],
-        plan_digest=digest,
-        output_dir=output_dir,
-        whole_plan_context=WholePlanContextMode.REFERENCED,
-    )
-    assert prepared.context_mode == WholePlanContextMode.REFERENCED
-    assert prepared.embedded_overview is None
     assert "plan-overview" in prepared.batch_context_markdown
+    assert "Read the complete plan overview" in prepared.batch_context_markdown
+    assert prepared.plan_overview_relative.startswith("context/plan-overview-")
 
 
 def test_finalize_rejects_stale_plan_digest(

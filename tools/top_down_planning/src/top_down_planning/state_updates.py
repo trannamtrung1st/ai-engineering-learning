@@ -165,11 +165,11 @@ def _apply_root_metadata(
             )
         item.title = title
         item.objective = objective
-    elif title is not None or objective is not None:
-        raise ValueError(
-            f"{operation_name} on {item.id} may update title and objective only "
-            "for the root item"
-        )
+    else:
+        if title is not None:
+            item.title = title
+        if objective is not None:
+            item.objective = objective
 
 
 def _apply_revise_actionable(item: PlanItem, operation: ReviseActionableOperation) -> None:

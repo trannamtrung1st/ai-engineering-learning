@@ -12,8 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 SCHEMA_VERSION = 2
 DEFAULT_CURSOR_MODEL = "composer-2.5"
 DEFAULT_INLINE_EMBED_THRESHOLD = 4000
-# Internal adaptive context budget (not user-configurable).
-DEFAULT_CONTEXT_CHARACTERS = 30000
 
 
 class DecompositionStatus(str, Enum):
@@ -66,17 +64,10 @@ class PlanningLimits(BaseModel):
     parse_error_threshold: int = 20
 
 
-class WholePlanContextMode(str, Enum):
-    EMBEDDED = "embedded"
-    REFERENCED = "referenced"
-    HYBRID = "hybrid"
-
-
 class RenderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_retries: int = 2
-    whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID
     final_review: bool = True
     max_batch_revision_cycles: int = 2
     max_final_revision_cycles: int = 2
@@ -154,10 +145,6 @@ class RenderState(BaseModel):
     final_revision_cycle: int = 0
     scaffold_complete: bool = False
     updated_at: datetime | None = None
-
-
-class GenerationConfig(BaseModel):
-    whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID
 
 
 class ReviewConfig(BaseModel):
@@ -400,13 +387,17 @@ class AgentResponse(BaseModel):
 
 
 class RunState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     schema_version: int = SCHEMA_VERSION
     active_status: RunActiveStatus = RunActiveStatus.IDLE
     iteration: int = 0
     retry_count: int = 0
     limits: PlanningLimits = Field(default_factory=PlanningLimits)
-    generation: GenerationConfig = Field(default_factory=GenerationConfig)
     render: RenderConfig = Field(default_factory=RenderConfig)
+    planning_model: str | None = None
+    review_model: str | None = None
+    rendering_model: str | None = None
     input_digest: str = ""
     output_goal_digest: str = ""
     stop_hint_digest: str | None = None

@@ -30,10 +30,10 @@ Use top-down decomposition.
 4. Continue expanding incomplete items.
 5. Stop when all relevant leaf items are sufficiently detailed for the requested output goal.
 
-Prefer breadth-first planning:
+Prefer breadth-first planning (enforced by the orchestrator):
 
 * create a coherent high-level plan before producing low-level details;
-* expand items at the shallowest incomplete level first;
+* only items at the shallowest incomplete depth are eligible each iteration;
 * avoid fully detailing one branch while other major branches remain undefined.
 
 This is not bottom-up planning. The tool must not generate disconnected low-level tasks and group them afterward.
@@ -171,8 +171,8 @@ load the input Markdown
 initialize the planning state
 
 while expandable items remain:
-    select the shallowest incomplete items
-    prepare the relevant planning context
+    expose only the shallowest incomplete items as eligible
+    prepare the relevant planning context (including a plan-overview file reference)
     ask the agent to assess or expand those items
     parse the structured operations
     validate all proposed operations
@@ -266,7 +266,8 @@ Workflow per batch:
 
 The orchestrator loads the finalized transaction, validates the iteration atomically, assigns
 IDs/depth/order, and persists the updated state to `plan.yaml`. Successful batches also
-write matching `{NNN}-response.json` audit files for resume recovery.
+write matching `{NNN}-response.json` and `{NNN}-validation.json` audit files for resume
+recovery (replay requires sibling validation with `"errors": []`).
 
 Example operation payload for `record-operation`:
 
@@ -494,9 +495,9 @@ Contains resumable runtime information such as:
 The input digest should prevent accidentally resuming a state against a different input document.
 
 Resume should detect when `plan.yaml` was reset but `run-state.json` still shows prior
-progress. In that case, rebuild the plan by replaying stored
-`iterations/*-response.json` audit files before continuing. During render, back up and
-restore `plan.yaml` if the render agent modifies canonical state.
+progress. In that case, rebuild the plan by replaying stored `iterations/*-response.json`
+audit files whose sibling `*-validation.json` records `"errors": []` before continuing.
+During render, back up and restore `plan.yaml` if the render agent modifies canonical state.
 
 ## Final plan views
 
@@ -588,7 +589,7 @@ Separate these concerns:
 * CLI and configuration;
 * Markdown input loading;
 * planning-state models;
-* breadth-first item selection;
+* breadth-first item selection (shallowest incomplete depth only);
 * agent prompt construction;
 * agent invocation;
 * response parsing;
@@ -610,7 +611,7 @@ Use a replaceable agent adapter so the planning engine is not tightly coupled to
 * Do not create a Markdown file for every item.
 * During planning, the agent only proposes structured operations; the tool validates and applies them.
 * During render, the agent writes deliverables wherever the output goal calls for them and must not modify `.planning-output/`.
-* Prefer breadth-first top-down decomposition.
+* Prefer breadth-first top-down decomposition (orchestrator-enforced shallowest depth).
 * Do not execute the generated plan.
 * Keep the tool generic across domains.
 * Make interrupted runs resumable.
@@ -623,7 +624,7 @@ Add focused unit tests for:
 
 * input loading;
 * root-plan initialization;
-* breadth-first item selection;
+* breadth-first item selection (shallowest incomplete depth only);
 * deterministic ordering;
 * expansion;
 * actionable-item validation;
@@ -643,7 +644,7 @@ Add focused unit tests for:
 Before implementation, briefly document:
 
 1. the canonical planning-state schema;
-2. the breadth-first selection algorithm;
+2. the shallowest-depth eligibility and topological ordering rules;
 3. the agent operation schema;
 4. actionability and stopping decisions;
 5. persistence and resume behavior.

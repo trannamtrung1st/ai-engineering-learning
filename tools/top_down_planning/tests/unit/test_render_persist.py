@@ -3,7 +3,7 @@ from pathlib import Path
 from top_down_planning.models import PlanningLimits, RenderConfig
 from top_down_planning.persistence import load_run_state, new_run_state, save_run_state
 from top_down_planning.render_flow import RenderFlowDeps, _persist_render_result
-from tests.helpers import default_generation, render_output_goal
+from tests.helpers import render_output_goal
 
 
 def test_persist_render_result_writes_generated_artifacts(tmp_path: Path) -> None:
@@ -18,7 +18,6 @@ def test_persist_render_result_writes_generated_artifacts(tmp_path: Path) -> Non
         input_digest="input",
         output_goal_digest="goal-digest",
         limits=PlanningLimits(),
-        generation=default_generation(),
     )
     save_run_state(output_dir, run_state)
 

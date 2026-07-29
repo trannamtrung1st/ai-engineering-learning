@@ -10,7 +10,7 @@ from top_down_planning.input_loader import load_markdown_input
 from top_down_planning.models import MarkActionableOperation, PlanningLimits
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import new_run_state, save_plan
-from tests.helpers import default_generation, make_agent_response, render_output_goal
+from tests.helpers import make_agent_response, render_output_goal
 from tests.plan_factory import make_root_plan
 
 
@@ -39,7 +39,6 @@ async def test_run_planning_iteration_issues_single_agent_session(
         output_dir=output_dir,
         workspace_root=tmp_path,
         limits=limits,
-        generation=default_generation(),
         agent_bin=fake_agent_bin,
         skip_probe=True,
     )
@@ -50,7 +49,6 @@ async def test_run_planning_iteration_issues_single_agent_session(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
-        generation=default_generation(),
     )
     session_calls = 0
 
@@ -113,7 +111,6 @@ async def test_failed_iteration_does_not_mutate_plan(
         output_dir=output_dir,
         workspace_root=tmp_path,
         limits=limits,
-        generation=default_generation(),
         agent_bin=fake_agent_bin,
         skip_probe=True,
     )
@@ -124,7 +121,6 @@ async def test_failed_iteration_does_not_mutate_plan(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
-        generation=default_generation(),
     )
 
     async def fake_run_session(**kwargs):

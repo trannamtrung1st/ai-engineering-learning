@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from top_down_planning.agent_context import AgentContextConfig
 from top_down_planning.errors import PlanningToolError
-from top_down_planning.models import GenerationConfig, PlanningLimits, RenderConfig, ReviewConfig
+from top_down_planning.models import PlanningLimits, RenderConfig, ReviewConfig
 
 
 class RunConfigFile(BaseModel):
@@ -40,7 +40,6 @@ class RunConfigFile(BaseModel):
     embed_threshold: int | None = Field(default=None, ge=0)
     agent_context: dict[str, Any] | None = None
     limits: PlanningLimits | None = None
-    generation: GenerationConfig | None = None
     render: RenderConfig | None = None
     review: ReviewConfig | None = None
     render_only: bool | None = None
@@ -78,7 +77,6 @@ class ResolvedRunOptions:
     embed_threshold: int | None
     agent_context: AgentContextConfig | None = None
     review: ReviewConfig = field(default_factory=ReviewConfig)
-    generation: GenerationConfig = field(default_factory=GenerationConfig)
     render: RenderConfig = field(default_factory=RenderConfig)
     render_only: bool = False
     force_rerender: bool = False
@@ -130,7 +128,6 @@ def merge_run_options(
     file_cfg = load_run_config_file(config_path) if config_path is not None else None
     config_dir = config_path.resolve().parent if config_path is not None else Path.cwd()
     defaults = PlanningLimits()
-    generation_defaults = GenerationConfig()
 
     resolved_workspace = _pick_path(
         cli_value=workspace,
@@ -192,11 +189,9 @@ def merge_run_options(
         raise PlanningToolError("Use either stop_hint or stop_hint_file, not both")
 
     file_limits = file_cfg.limits if file_cfg else None
-    file_generation = file_cfg.generation if file_cfg else None
     file_render = file_cfg.render if file_cfg else None
     agent_context = _parse_agent_context(file_cfg.agent_context if file_cfg else None)
     review = file_cfg.review if file_cfg and file_cfg.review is not None else ReviewConfig()
-    generation = file_generation.model_copy() if file_generation is not None else generation_defaults
     render = file_render.model_copy() if file_render is not None else RenderConfig()
 
     return ResolvedRunOptions(
@@ -244,7 +239,6 @@ def merge_run_options(
         ),
         agent_context=agent_context,
         review=review,
-        generation=generation,
         render=render,
         render_only=resolved_render_only,
         force_rerender=_pick_bool(
@@ -260,10 +254,6 @@ def options_to_planning_limits(options: ResolvedRunOptions) -> PlanningLimits:
         session_timeout_seconds=options.session_timeout_seconds,
         parse_error_threshold=options.parse_error_threshold,
     )
-
-
-def options_to_generation_config(options: ResolvedRunOptions) -> GenerationConfig:
-    return options.generation
 
 
 def options_to_render_config(options: ResolvedRunOptions) -> RenderConfig:

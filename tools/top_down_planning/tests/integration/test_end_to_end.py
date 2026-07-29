@@ -20,7 +20,7 @@ from top_down_planning.models import (
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import load_plan, load_run_state, new_run_state, save_plan, save_run_state
 from top_down_planning.scheduler import initialize_root_plan
-from tests.helpers import default_generation, make_agent_response, render_output_goal
+from tests.helpers import make_agent_response, render_output_goal
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 
@@ -98,7 +98,6 @@ async def test_resume_after_partial_run(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
-        generation=default_generation(),
     )
     run_state.iteration = 1
     run_state.active_status = RunActiveStatus.PAUSED
@@ -170,7 +169,6 @@ async def test_resume_after_limit_reached_with_increased_max_iterations(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=stored_limits,
-        generation=default_generation(),
     )
     run_state.iteration = 2
     run_state.active_status = RunActiveStatus.COMPLETED
@@ -239,7 +237,6 @@ async def test_resume_loads_blocked_plan_without_mutating_state(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
-        generation=default_generation(),
     )
     run_state.active_status = RunActiveStatus.COMPLETED
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -251,7 +248,6 @@ async def test_resume_loads_blocked_plan_without_mutating_state(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
-        generation=default_generation(),
         render=RenderConfig(),
         resume=True,
     )

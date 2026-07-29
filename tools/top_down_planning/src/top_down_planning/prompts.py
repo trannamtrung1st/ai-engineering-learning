@@ -14,7 +14,6 @@ from top_down_planning.models import (
     PlanState,
     ProcessedBatchRecord,
     ReviewFinding,
-    WholePlanContextMode,
 )
 
 
@@ -175,7 +174,6 @@ def build_planning_prompt(
     agent_context: ResolvedAgentContext | None = None,
     plan_digest: str,
     batch_context_markdown: str,
-    context_mode: WholePlanContextMode,
 ) -> str:
     stop_hint_block = ""
     if stop_hint is not None:
@@ -186,7 +184,7 @@ def build_planning_prompt(
         )
 
     generation_context_block = (
-        f"## Generation context ({context_mode.value})\n\n"
+        f"## Generation context\n\n"
         f"Plan digest: `{plan_digest}`\n\n"
         f"{batch_context_markdown}\n\n"
     )
@@ -223,7 +221,8 @@ Do not execute implementation work.
 {stop_hint_block}{_format_agent_context_section(agent_context)}## Workflow
 1. Review the eligible items and processed-batch history.
 2. Choose a coherent batch and record it with `{plan_tool_command} select-batch`.
-3. Record one operation per selected item, then finalize the transaction.
+3. Optionally run `{plan_tool_command} show-context` for selected-node details.
+4. Record one operation per selected item, then finalize the transaction.
 
 ## Rules
 - Choose batch scope based on the output goal, stop guidance, and remaining work.
@@ -235,7 +234,8 @@ Do not execute implementation work.
   clears a list field.
 - For the root item's operation, provide `title` and `objective` that specifically
   summarize the input and requested output; do not preserve its generic bootstrap wording.
-- Do not provide operation-level `title` or `objective` for non-root items.
+- You may optionally refine the assigned item's `title` and/or `objective` when the
+  current wording is misleading or too narrow for the output goal.
 - Use `expand` when the item still contains multiple meaningful planning concerns.
   Expanding marks the parent `expanded` and creates child items for further decomposition.
 - Use `mark_actionable` when the item is a leaf detailed enough for the output goal.
@@ -243,10 +243,20 @@ Do not execute implementation work.
 - Use `mark_out_of_scope` when the item does not contribute to the output goal.
 - Do not invent canonical item IDs. The orchestrator assigns IDs on apply.
 - For sibling dependencies in an `expand`, use child `ref` values or existing item ids.
-- Prefer breadth-first planning: keep major areas coherent before over-detailing one branch.
+Prefer breadth-first planning: the orchestrator only exposes the shallowest
+incomplete depth as eligible items, so keep major areas coherent before over-detailing
+one branch.
 - Do not write final deliverable files during this session. A dedicated render phase runs
   after decomposition completes.
 - Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
+
+## Planning quality checks
+- Preserve explicit requirements from the input document and output goal.
+- Avoid unnecessary repeated decomposition or checkpoint-like leaves when one leaf can
+  own the work.
+- Use dependencies only for real prerequisites, not preferred execution order.
+- Treat named examples, paths, and concerns as investigation anchors unless the source
+  explicitly treats them as exhaustive scope.
 
 {feedback_block}{eligible_block}{history_block}## Input document
 
@@ -295,7 +305,6 @@ def build_amend_prompt(
     agent_context: ResolvedAgentContext | None = None,
     plan_digest: str,
     batch_context_markdown: str,
-    context_mode: WholePlanContextMode,
 ) -> str:
     feedback_block = ""
     if validation_feedback:
@@ -306,7 +315,7 @@ def build_amend_prompt(
         )
 
     generation_context_block = (
-        f"## Generation context ({context_mode.value})\n\n"
+        f"## Generation context\n\n"
         f"Plan digest: `{plan_digest}`\n\n"
         f"{batch_context_markdown}\n\n"
     )

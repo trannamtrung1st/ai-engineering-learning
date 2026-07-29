@@ -14,7 +14,6 @@ import yaml
 from top_down_planning.errors import PersistenceError, ResumeError
 from top_down_planning.models import (
     FinalStatus,
-    GenerationConfig,
     PlanState,
     PlanningLimits,
     RenderConfig,
@@ -237,9 +236,11 @@ def new_run_state(
     input_digest: str,
     output_goal_digest: str,
     limits: PlanningLimits,
-    generation: GenerationConfig,
     render: RenderConfig | None = None,
     stop_hint_digest: str | None = None,
+    planning_model: str | None = None,
+    review_model: str | None = None,
+    rendering_model: str | None = None,
 ) -> RunState:
     return RunState(
         input_file=input_file,
@@ -248,8 +249,10 @@ def new_run_state(
         output_goal_digest=output_goal_digest,
         stop_hint_digest=stop_hint_digest,
         limits=limits,
-        generation=generation,
         render=render or RenderConfig(),
+        planning_model=planning_model,
+        review_model=review_model,
+        rendering_model=rendering_model,
         active_status=RunActiveStatus.RUNNING,
     )
 
@@ -261,7 +264,6 @@ def ensure_resume_compatible(
     output_goal_digest: str,
     stop_hint_digest: str | None = None,
     limits: PlanningLimits,
-    generation: GenerationConfig,
     render: RenderConfig,
     resume: bool,
 ) -> tuple[PlanState | None, RunState | None]:
@@ -307,10 +309,8 @@ def ensure_resume_compatible(
             )
         _assert_run_config_compatible(
             existing_run.limits,
-            existing_run.generation,
             existing_run.render,
             limits,
-            generation,
             render,
         )
         return existing_plan, existing_run
@@ -363,21 +363,12 @@ def describe_resume_limit_changes(
 
 def _assert_run_config_compatible(
     stored_limits: PlanningLimits,
-    stored_generation: GenerationConfig,
     stored_render: RenderConfig,
     requested_limits: PlanningLimits,
-    requested_generation: GenerationConfig,
     requested_render: RenderConfig,
 ) -> None:
     resolve_resume_limits(stored_limits, requested_limits)
     mismatches: list[str] = []
-    for field in ("whole_plan_context",):
-        stored_value = getattr(stored_generation, field)
-        requested_value = getattr(requested_generation, field)
-        if stored_value != requested_value:
-            mismatches.append(
-                f"generation.{field}: stored={stored_value!r}, requested={requested_value!r}"
-            )
     for field in RenderConfig.model_fields:
         stored_value = getattr(stored_render, field)
         requested_value = getattr(requested_render, field)

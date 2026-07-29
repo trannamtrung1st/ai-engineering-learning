@@ -2,7 +2,7 @@ from pathlib import Path
 
 from top_down_planning.digest import compute_plan_digest
 from top_down_planning.input_loader import load_output_goal
-from top_down_planning.models import DecompositionStatus, RenderBatchItem, RenderConfig
+from top_down_planning.models import DecompositionStatus, RenderBatchItem
 from top_down_planning.render_context import prepare_batch_context, prepare_scaffold_context
 from tests.helpers import render_output_goal
 from tests.plan_factory import make_root_plan
@@ -21,7 +21,6 @@ def test_prepare_scaffold_context(tmp_path: Path) -> None:
         workspace=tmp_path,
         output_goal=loaded_goal,
         plan_digest=compute_plan_digest(plan),
-        whole_plan_context=RenderConfig().whole_plan_context,
         embed_threshold=4000,
     )
     assert prepared.context_digest
@@ -43,7 +42,6 @@ def test_prepare_batch_context_includes_assigned_items(tmp_path: Path) -> None:
         workspace=tmp_path,
         output_goal=loaded_goal,
         plan_digest=compute_plan_digest(plan),
-        whole_plan_context=RenderConfig().whole_plan_context,
         embed_threshold=4000,
         artifact_paths=["implementation-plan.md"],
     )

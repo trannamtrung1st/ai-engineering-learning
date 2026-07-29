@@ -26,7 +26,7 @@ from top_down_planning.recovery import (
     recover_plan_from_iterations,
     restore_canonical_plan,
 )
-from tests.helpers import default_generation, make_agent_response
+from tests.helpers import make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 
@@ -44,7 +44,6 @@ def test_detect_desynced_plan_and_run_state() -> None:
         input_digest="a",
         output_goal_digest="b",
         limits=PlanningLimits(),
-        generation=default_generation(),
     )
     run.iteration = 4
     assert is_plan_run_state_desynced(plan, run)
@@ -76,6 +75,10 @@ def test_recover_plan_from_iteration_audit(tmp_path: Path) -> None:
     audit_dir.mkdir(parents=True)
     (audit_dir / "001-response.json").write_text(
         json.dumps(response.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+    (audit_dir / "001-validation.json").write_text(
+        json.dumps({"errors": []}),
         encoding="utf-8",
     )
 
@@ -124,8 +127,16 @@ def test_recover_plan_replays_cross_item_updates(tmp_path: Path) -> None:
         json.dumps(first.model_dump(mode="json")),
         encoding="utf-8",
     )
+    (audit_dir / "001-validation.json").write_text(
+        json.dumps({"errors": []}),
+        encoding="utf-8",
+    )
     (audit_dir / "002-response.json").write_text(
         json.dumps(second.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+    (audit_dir / "002-validation.json").write_text(
+        json.dumps({"errors": []}),
         encoding="utf-8",
     )
 
@@ -187,6 +198,36 @@ def test_recover_skips_failed_validation_audit(tmp_path: Path) -> None:
     recovered = recover_plan_from_iterations(tmp_path, plan)
     assert recovered is not None
     assert len(recovered.plan) == 2
+
+
+def test_recover_skips_response_without_validation_audit(tmp_path: Path) -> None:
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    save_plan(tmp_path, plan)
+
+    response = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
+                children=[ChildDraft(title="Area A", objective="Do A")],
+            )
+        ]
+    )
+    audit_dir = tmp_path / ".planning-output" / "iterations"
+    audit_dir.mkdir(parents=True)
+    (audit_dir / "001-response.json").write_text(
+        json.dumps(response.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+
+    recovered = recover_plan_from_iterations(tmp_path, plan)
+    assert recovered is None
 
 
 def test_backup_uses_iteration_and_batch_suffix(tmp_path: Path) -> None:
@@ -389,7 +430,6 @@ async def test_interrupt_preserves_persisted_plan_progress(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
-        generation=default_generation(),
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     save_plan(output_dir, plan)
@@ -470,7 +510,6 @@ async def test_resume_recovers_reset_plan_from_audit(
         input_digest=loaded.digest,
         output_goal_digest=loaded_goal.digest,
         limits=limits,
-        generation=default_generation(),
     )
     run_state.iteration = 1
     run_state.active_status = RunActiveStatus.PAUSED
@@ -483,6 +522,10 @@ async def test_resume_recovers_reset_plan_from_audit(
     audit_dir.mkdir(parents=True, exist_ok=True)
     (audit_dir / "001-response.json").write_text(
         json.dumps(response.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+    (audit_dir / "001-validation.json").write_text(
+        json.dumps({"errors": []}),
         encoding="utf-8",
     )
 

@@ -3,17 +3,17 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.errors import ResumeError
-from top_down_planning.models import GenerationConfig, PlanningLimits, RenderConfig, RunState, WholePlanContextMode
+from top_down_planning.errors import PersistenceError, ResumeError
+from top_down_planning.models import PlanningLimits, RenderConfig, RunState
 from top_down_planning.persistence import (
     ensure_resume_compatible,
+    load_run_state,
     resolve_resume_limits,
     save_run_state,
 )
-from tests.helpers import default_generation
 
 
-def test_resume_rejects_generation_mismatch(tmp_path: Path) -> None:
+def test_resume_rejects_render_mismatch(tmp_path: Path) -> None:
     output_dir = tmp_path / "planning-output"
     output_dir.mkdir()
     state_dir = output_dir / ".planning-output"
@@ -42,18 +42,17 @@ def test_resume_rejects_generation_mismatch(tmp_path: Path) -> None:
     run_state = RunState(
         input_digest="input-digest",
         output_goal_digest="goal-digest",
-        generation=GenerationConfig(whole_plan_context=WholePlanContextMode.HYBRID),
+        render=RenderConfig(final_review=True),
     )
     save_run_state(output_dir, run_state)
 
-    with pytest.raises(ResumeError, match="generation.whole_plan_context"):
+    with pytest.raises(ResumeError, match="render.final_review"):
         ensure_resume_compatible(
             output_dir,
             input_digest="input-digest",
             output_goal_digest="goal-digest",
             limits=PlanningLimits(),
-            generation=GenerationConfig(whole_plan_context=WholePlanContextMode.REFERENCED),
-            render=RenderConfig(),
+            render=RenderConfig(final_review=False),
             resume=True,
         )
 
@@ -88,7 +87,6 @@ def test_resume_allows_increased_max_iterations(tmp_path: Path) -> None:
         input_digest="input-digest",
         output_goal_digest="goal-digest",
         limits=PlanningLimits(max_iterations=40),
-        generation=default_generation(),
         iteration=40,
     )
     save_run_state(output_dir, run_state)
@@ -98,7 +96,6 @@ def test_resume_allows_increased_max_iterations(tmp_path: Path) -> None:
         input_digest="input-digest",
         output_goal_digest="goal-digest",
         limits=PlanningLimits(max_iterations=80),
-        generation=default_generation(),
         render=RenderConfig(),
         resume=True,
     )
@@ -141,7 +138,6 @@ def test_resume_rejects_schema_version_one(tmp_path: Path) -> None:
     run_state = RunState(
         input_digest="input-digest",
         output_goal_digest="goal-digest",
-        generation=default_generation(),
     )
     save_run_state(output_dir, run_state)
 
@@ -151,7 +147,26 @@ def test_resume_rejects_schema_version_one(tmp_path: Path) -> None:
             input_digest="input-digest",
             output_goal_digest="goal-digest",
             limits=PlanningLimits(),
-            generation=default_generation(),
             render=RenderConfig(),
             resume=True,
         )
+
+
+def test_load_run_state_rejects_obsolete_generation_field(tmp_path: Path) -> None:
+    output_dir = tmp_path / "planning-output"
+    state_dir = output_dir / ".planning-output"
+    state_dir.mkdir(parents=True)
+    (state_dir / "run-state.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "input_digest": "input-digest",
+                "output_goal_digest": "goal-digest",
+                "generation": {"whole_plan_context": "embedded"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PersistenceError, match="Failed to load run state"):
+        load_run_state(output_dir)

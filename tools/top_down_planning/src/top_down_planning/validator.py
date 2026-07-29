@@ -45,10 +45,15 @@ def validate_response(
     *,
     selected_ids: list[str],
     output_goal_text: str,
+    eligible_ids: set[str] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     selected_set = set(selected_ids)
     op_by_node: dict[str, PlanningOperation] = {}
+
+    errors.extend(_validate_eligible_selection(selected_ids, eligible_ids))
+    if errors:
+        return errors
 
     if not response.operations:
         errors.append("Response must include at least one operation")
@@ -113,11 +118,16 @@ def validate_amend_response(
     *,
     selected_ids: list[str],
     output_goal_text: str,
+    eligible_ids: set[str] | None = None,
 ) -> list[str]:
     """Validate in-place revision operations for actionable items."""
     errors: list[str] = []
     selected_set = set(selected_ids)
     op_by_node: dict[str, PlanningOperation] = {}
+
+    errors.extend(_validate_eligible_selection(selected_ids, eligible_ids))
+    if errors:
+        return errors
 
     if not response.operations:
         errors.append("Response must include at least one operation")
@@ -181,8 +191,10 @@ def validate_amend_wave_responses(
     *,
     plan_digest: str,
     output_goal_text: str,
+    eligible_ids: set[str] | None = None,
 ) -> list[str]:
     """Validate concurrent amend batch responses against one plan snapshot."""
+    updated = plan
     for selected_ids, response in batches:
         if response.plan_digest != plan_digest:
             return [
@@ -190,20 +202,18 @@ def validate_amend_wave_responses(
                 f"got {response.plan_digest}"
             ]
         errors = validate_amend_response(
-            plan,
+            updated,
             response,
             selected_ids=selected_ids,
             output_goal_text=output_goal_text,
+            eligible_ids=eligible_ids,
         )
         if errors:
             return errors
-
-    updated = plan
-    try:
-        for _, response in batches:
+        try:
             updated = apply_response(updated, response)
-    except ValueError as exc:
-        return [str(exc)]
+        except ValueError as exc:
+            return [str(exc)]
 
     return structural_errors(updated)
 
@@ -214,9 +224,11 @@ def validate_wave_responses(
     *,
     plan_digest: str,
     output_goal_text: str,
+    eligible_ids: set[str] | None = None,
 ) -> list[str]:
-    """Validate one or more batch responses against one plan snapshot."""
+    """Validate one or more batch responses against cumulative plan state."""
     all_update_targets: list[str] = []
+    updated = plan
     for selected_ids, response in batches:
         if response.plan_digest != plan_digest:
             return [
@@ -224,27 +236,40 @@ def validate_wave_responses(
                 f"got {response.plan_digest}"
             ]
         errors = validate_response(
-            plan,
+            updated,
             response,
             selected_ids=selected_ids,
             output_goal_text=output_goal_text,
+            eligible_ids=eligible_ids,
         )
         if errors:
             return errors
         all_update_targets.extend(update.node_id for update in response.updates)
+        try:
+            updated = apply_response(updated, response)
+        except ValueError as exc:
+            return [str(exc)]
 
     errors = _validate_cross_batch_update_conflicts(all_update_targets)
     if errors:
         return errors
 
-    updated = plan
-    try:
-        for _, response in batches:
-            updated = apply_response(updated, response)
-    except ValueError as exc:
-        return [str(exc)]
-
     return structural_errors(updated)
+
+
+def _validate_eligible_selection(
+    selected_ids: list[str],
+    eligible_ids: set[str] | None,
+) -> list[str]:
+    if eligible_ids is None:
+        return []
+    invalid = set(selected_ids) - eligible_ids
+    if not invalid:
+        return []
+    return [
+        "Selected nodes are not eligible in this iteration: "
+        + ", ".join(sorted(invalid))
+    ]
 
 
 def _validate_cross_batch_update_conflicts(update_targets: list[str]) -> list[str]:
@@ -597,11 +622,6 @@ def _validate_root_metadata(
         return [
             f"{operation_name} on root item {item.id} requires a generated "
             "title and objective"
-        ]
-    if item.parent_id is not None and (has_title or has_objective):
-        return [
-            f"{operation_name} on {item.id} may update title and objective only "
-            "for the root item"
         ]
     return []
 

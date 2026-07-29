@@ -1,5 +1,5 @@
 from top_down_planning.models import DecompositionStatus, PlanItem
-from top_down_planning.scheduler import are_independent, initialize_root_plan
+from top_down_planning.scheduler import are_independent, expandable_items, initialize_root_plan
 from tests.plan_factory import make_root_plan
 
 
@@ -37,3 +37,37 @@ def test_are_independent_rejects_ancestor_pairs() -> None:
     root = plan.plan[0]
     assert not are_independent(plan, root, child)
     assert are_independent(plan, root, root) is False
+
+
+def test_expandable_items_returns_shallowest_depth_only() -> None:
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    plan.plan.extend(
+        [
+            PlanItem(
+                id="item-002",
+                parent_id="item-001",
+                title="Branch",
+                objective="Branch work",
+                depth=1,
+                order=2,
+            ),
+            PlanItem(
+                id="item-003",
+                parent_id="item-002",
+                title="Deep branch",
+                objective="Deep work",
+                depth=2,
+                order=3,
+            ),
+        ]
+    )
+    eligible = expandable_items(plan)
+    assert [item.id for item in eligible] == ["item-001"]
+    plan.item_by_id("item-001").decomposition_status = DecompositionStatus.EXPANDED
+    eligible = expandable_items(plan)
+    assert [item.id for item in eligible] == ["item-002"]

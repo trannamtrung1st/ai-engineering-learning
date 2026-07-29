@@ -209,7 +209,7 @@ async def render_from_confirmed_plan(
         deps.stream.emit(
             "render.batch.started",
             batch_index=batch.batch_index,
-            eligible_items=batch.item_ids,
+            eligible_items=[item.id for item in eligible],
         )
         artifact_paths = await _run_batch_pipeline(
             deps,
@@ -498,7 +498,6 @@ async def _run_scaffold_session(
         workspace=deps.workspace_root,
         output_goal=deps.output_goal,
         plan_digest=plan_digest,
-        whole_plan_context=deps.render.whole_plan_context,
         embed_threshold=deps.embed_threshold,
     )
     def build_prompt(validation_feedback: list[str] | None) -> str:
@@ -555,7 +554,6 @@ async def _run_batch_author_session(
             workspace=deps.workspace_root,
             output_goal=deps.output_goal,
             plan_digest=plan_digest,
-            whole_plan_context=deps.render.whole_plan_context,
             embed_threshold=deps.embed_threshold,
             artifact_paths=artifact_paths,
             revision=revision,
@@ -690,7 +688,6 @@ async def _run_final_revision_session(
         workspace=deps.workspace_root,
         output_goal=deps.output_goal,
         plan_digest=plan_digest,
-        whole_plan_context=deps.render.whole_plan_context,
         embed_threshold=deps.embed_threshold,
         artifact_paths=artifact_paths,
         affected_batch_indices=affected_batch_indices,

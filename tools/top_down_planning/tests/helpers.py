@@ -9,11 +9,9 @@ from top_down_planning.generation_context import prepare_batch_context
 from top_down_planning.input_loader import LoadedOutputGoal, load_output_goal
 from top_down_planning.models import (
     AgentResponse,
-    GenerationConfig,
     PlanItem,
     PlanState,
     ProcessedBatchRecord,
-    WholePlanContextMode,
 )
 
 DEFAULT_PLAN_DIGEST = "a" * 64
@@ -26,10 +24,6 @@ def render_output_goal(text: str | None = None) -> LoadedOutputGoal:
     return load_output_goal(inline=text or STANDARD_RENDER_OUTPUT_GOAL)
 
 
-def default_generation(**overrides) -> GenerationConfig:
-    return GenerationConfig(**overrides)
-
-
 def make_agent_response(**kwargs) -> AgentResponse:
     kwargs.setdefault("plan_digest", DEFAULT_PLAN_DIGEST)
     return AgentResponse(**kwargs)
@@ -40,7 +34,6 @@ def planning_prompt_kwargs(
     plan: PlanState,
     eligible_items: list[PlanItem],
     output_dir: Path,
-    whole_plan_context: WholePlanContextMode = WholePlanContextMode.HYBRID,
     processed_batches: list[ProcessedBatchRecord] | None = None,
 ) -> dict[str, object]:
     digest = compute_plan_digest(plan)
@@ -49,12 +42,10 @@ def planning_prompt_kwargs(
         selected_items=[],
         plan_digest=digest,
         output_dir=output_dir,
-        whole_plan_context=whole_plan_context,
     )
     return {
         "plan_digest": digest,
         "batch_context_markdown": prepared.batch_context_markdown,
-        "context_mode": prepared.context_mode,
         "eligible_items": eligible_items,
         "processed_batches": processed_batches or [],
     }

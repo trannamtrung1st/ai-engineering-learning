@@ -7,12 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from top_down_planning.models import (
-    DEFAULT_CONTEXT_CHARACTERS,
     DecompositionStatus,
     PlanItem,
     PlanState,
     WholePlanReviewResult,
-    WholePlanContextMode,
 )
 from top_down_planning.persistence import plan_overview_artifact_path, whole_plan_review_result_path
 from top_down_planning.item_format import (
@@ -233,10 +231,8 @@ def ensure_plan_overview_artifact(
 @dataclass(frozen=True)
 class PreparedBatchContext:
     batch_context_markdown: str
-    context_mode: WholePlanContextMode
-    plan_overview_relative: str | None
+    plan_overview_relative: str
     inline_relevant_context: str
-    embedded_overview: str | None
 
 
 def _relative_output_path(path: Path, output_dir: Path) -> str:
@@ -245,23 +241,6 @@ def _relative_output_path(path: Path, output_dir: Path) -> str:
         return str(path.resolve().relative_to(state_root.resolve())).replace("\\", "/")
     except ValueError:
         return str(path.name)
-
-
-def estimate_context_size(
-    *,
-    selected_items: list[PlanItem],
-    relevant_ids: set[str],
-    plan: PlanState,
-    overview: str,
-) -> int:
-    total = len(overview)
-    for item in selected_items:
-        total += len(format_item_context(plan, item))
-    for item_id in sorted(relevant_ids):
-        item = plan.item_by_id(item_id)
-        if item is not None:
-            total += len(_format_item_summary(plan, item))
-    return total
 
 
 def build_batch_context_markdown(
@@ -358,13 +337,10 @@ def prepare_batch_context(
     selected_items: list[PlanItem],
     plan_digest: str,
     output_dir: Path,
-    whole_plan_context: WholePlanContextMode,
-    max_context_characters: int = DEFAULT_CONTEXT_CHARACTERS,
     include_cross_item_updates: bool = True,
 ) -> PreparedBatchContext:
-    """Prepare per-batch context and decide embedding vs reference mode."""
+    """Prepare per-batch context with a mandatory whole-plan overview reference."""
     overview_path = ensure_plan_overview_artifact(output_dir, plan, plan_digest)
-    overview = build_plan_overview(plan, plan_digest, output_dir=output_dir)
     overview_relative = _relative_output_path(overview_path, output_dir)
 
     assigned_section, patchable_section, relevant_section = build_batch_context_markdown(
@@ -375,40 +351,11 @@ def prepare_batch_context(
         include_cross_item_updates=include_cross_item_updates,
     )
 
-    selected_ids = {item.id for item in selected_items}
-    relevant_ids = select_relevant_node_ids(plan, selected_ids, output_dir=output_dir)
-    patchable_ids = (
-        select_patchable_node_ids(plan, selected_ids)
-        if include_cross_item_updates
-        else set()
-    )
-    estimated = estimate_context_size(
-        selected_items=selected_items,
-        relevant_ids=relevant_ids | patchable_ids,
-        plan=plan,
-        overview=overview,
-    )
-
-    embedded_overview: str | None = None
-    if whole_plan_context == WholePlanContextMode.EMBEDDED:
-        if len(overview) <= max_context_characters:
-            context_mode = WholePlanContextMode.EMBEDDED
-            embedded_overview = overview
-        else:
-            context_mode = WholePlanContextMode.REFERENCED
-    elif whole_plan_context == WholePlanContextMode.REFERENCED:
-        context_mode = WholePlanContextMode.REFERENCED
-    elif estimated + len(overview) <= max_context_characters:
-        context_mode = WholePlanContextMode.HYBRID
-        embedded_overview = overview
-    else:
-        context_mode = WholePlanContextMode.HYBRID
-
     global_consistency = """
 ## Global consistency checks
 
 Before recording an operation, compare the proposed decomposition with the
-current whole-plan context.
+plan overview artifact.
 
 Preserve:
 - source terminology and explicit structure;
@@ -437,29 +384,21 @@ your assigned decomposition changes their dependencies or invalidates existing d
         if patchable_section
         else [assigned_section, relevant_section, global_consistency]
     )
-    if embedded_overview is not None:
-        parts.extend(
-            [
-                "## Complete plan overview (read-only)",
-                "",
-                embedded_overview,
-            ]
-        )
-    elif context_mode in {WholePlanContextMode.REFERENCED, WholePlanContextMode.HYBRID}:
-        parts.extend(
-            [
-                "## Complete plan overview (read-only)",
-                "",
-                f"Read the complete plan overview before recording operations: "
-                f"`.planning-output/{overview_relative}`",
-            ]
-        )
+    parts.extend(
+        [
+            "## Complete plan overview (read-only)",
+            "",
+            "Read the complete plan overview before recording operations:",
+            f"`.planning-output/{overview_relative}`",
+            "",
+            "Open that file and use it as the authoritative whole-plan reference for "
+            "this batch.",
+        ]
+    )
 
     batch_markdown = "\n\n".join(parts).rstrip() + "\n"
     return PreparedBatchContext(
         batch_context_markdown=batch_markdown,
-        context_mode=context_mode,
         plan_overview_relative=overview_relative,
         inline_relevant_context=relevant_section,
-        embedded_overview=embedded_overview,
     )

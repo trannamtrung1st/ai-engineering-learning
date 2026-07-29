@@ -7,9 +7,9 @@ from pathlib import Path
 
 from top_down_planning.digest import digest_text
 from top_down_planning.errors import PlanningToolError
-from top_down_planning.generation_context import build_plan_overview
+from top_down_planning.generation_context import ensure_plan_overview_artifact
 from top_down_planning.input_loader import LoadedOutputGoal
-from top_down_planning.models import PlanItem, PlanState, RenderBatchItem, WholePlanContextMode
+from top_down_planning.models import PlanItem, PlanState, RenderBatchItem
 from top_down_planning.item_format import format_item_context
 from top_down_planning.prompts import format_input_file_reference
 from top_down_planning.render_brief import build_render_brief
@@ -29,9 +29,9 @@ def prepare_scaffold_context(
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan_digest: str,
-    whole_plan_context: WholePlanContextMode,
     embed_threshold: int,
 ) -> PreparedRenderContext:
+    del embed_threshold
     batch_dir = output_dir / ".planning-output" / "render" / "scaffold"
     batch_dir.mkdir(parents=True, exist_ok=True)
     markdown = _build_context_markdown(
@@ -42,8 +42,6 @@ def prepare_scaffold_context(
         workspace=workspace,
         output_goal=output_goal,
         plan_digest=plan_digest,
-        whole_plan_context=whole_plan_context,
-        embed_threshold=embed_threshold,
         artifact_paths=[],
         include_full_brief=True,
     )
@@ -62,11 +60,11 @@ def prepare_batch_context(
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan_digest: str,
-    whole_plan_context: WholePlanContextMode,
     embed_threshold: int,
     artifact_paths: list[str],
     revision: bool = False,
 ) -> PreparedRenderContext:
+    del embed_threshold
     batch_dir = output_dir / ".planning-output" / "render" / "batches" / f"{batch.batch_index:03d}"
     batch_dir.mkdir(parents=True, exist_ok=True)
     assigned = [plan.item_by_id(item_id) for item_id in batch.item_ids]
@@ -88,8 +86,6 @@ def prepare_batch_context(
         workspace=workspace,
         output_goal=output_goal,
         plan_digest=plan_digest,
-        whole_plan_context=whole_plan_context,
-        embed_threshold=embed_threshold,
         artifact_paths=artifact_paths,
         batch=batch,
     )
@@ -107,12 +103,12 @@ def prepare_final_revision_context(
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan_digest: str,
-    whole_plan_context: WholePlanContextMode,
     embed_threshold: int,
     artifact_paths: list[str],
     affected_batch_indices: list[int],
     findings_summary: str,
 ) -> PreparedRenderContext:
+    del embed_threshold
     batch_dir = output_dir / ".planning-output" / "render" / "final-revision"
     batch_dir.mkdir(parents=True, exist_ok=True)
     markdown = _build_context_markdown(
@@ -123,8 +119,6 @@ def prepare_final_revision_context(
         workspace=workspace,
         output_goal=output_goal,
         plan_digest=plan_digest,
-        whole_plan_context=whole_plan_context,
-        embed_threshold=embed_threshold,
         artifact_paths=artifact_paths,
         include_full_brief=True,
         extra_sections=[
@@ -152,13 +146,12 @@ def _build_context_markdown(
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan_digest: str,
-    whole_plan_context: WholePlanContextMode,
-    embed_threshold: int,
     artifact_paths: list[str],
     batch: RenderBatchItem | None = None,
     include_full_brief: bool = False,
     extra_sections: list[str] | None = None,
 ) -> str:
+    del output_goal
     lines = [f"# {heading}", "", f"Plan digest: `{plan_digest}`", ""]
     if batch is not None:
         lines.extend(
@@ -175,27 +168,17 @@ def _build_context_markdown(
             lines.append("")
     if include_full_brief or not assigned_items:
         lines.append(build_render_brief(plan))
-    if whole_plan_context == WholePlanContextMode.EMBEDDED:
-        lines.extend(
-            [
-                "",
-                "## Whole-plan overview",
-                build_plan_overview(plan, plan_digest, output_dir=output_dir),
-                "",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "",
-                "## Whole-plan overview reference",
-                format_input_file_reference(
-                    output_dir / ".planning-output" / "context" / f"plan-overview-{plan_digest}.md",
-                    workspace,
-                ),
-                "",
-            ]
-        )
+    overview_path = ensure_plan_overview_artifact(output_dir, plan, plan_digest)
+    lines.extend(
+        [
+            "",
+            "## Whole-plan overview reference",
+            "",
+            "Read the complete plan overview before editing deliverables:",
+            format_input_file_reference(overview_path, workspace),
+            "",
+        ]
+    )
     if artifact_paths:
         lines.extend(["## Current workspace deliverables", ""])
         for relative in sorted(artifact_paths):

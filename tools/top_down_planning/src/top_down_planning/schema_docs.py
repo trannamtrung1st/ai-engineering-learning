@@ -238,7 +238,6 @@ def _example_config() -> dict[str, Any]:
         "input": "examples/idea.md",
         "output": "planning-output",
         "output_goal": "Produce an actionable implementation plan",
-        "generation": {"whole_plan_context": "hybrid"},
         "review": {"enabled": True},
     }
 
