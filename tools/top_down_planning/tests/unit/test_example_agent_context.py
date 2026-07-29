@@ -6,6 +6,7 @@ from pathlib import Path
 
 from top_down_planning.agent_context import (
     resolve_phase_agent_context,
+    resolve_phase_model,
     validate_agent_context_paths,
 )
 from top_down_planning.config_loader import merge_run_options
@@ -28,6 +29,9 @@ def test_bundled_planning_example_agent_context() -> None:
     planning = resolve_phase_agent_context("planning", options.agent_context)
     rendering = resolve_phase_agent_context("rendering", options.agent_context)
     review = resolve_phase_agent_context("review", options.agent_context)
+    assert resolve_phase_model("planning", None, options.agent_context) == "composer-2.5"
+    assert resolve_phase_model("rendering", None, options.agent_context) == "composer-2.5"
+    assert resolve_phase_model("review", None, options.agent_context) == "composer-2.5"
     validate_agent_context_paths(examples_root, planning, label="planning")
     validate_agent_context_paths(examples_root, rendering, label="rendering")
     validate_agent_context_paths(examples_root, review, label="review")

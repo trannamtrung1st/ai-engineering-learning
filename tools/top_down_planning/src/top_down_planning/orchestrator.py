@@ -350,14 +350,24 @@ class Orchestrator:
                 output_dir=output_dir,
             )
         except (CursorEnvironmentError, UserInterrupted):
+            persisted_run = load_run_state(output_dir)
+            if persisted_run is not None:
+                run_state = persisted_run
             run_state.active_status = RunActiveStatus.PAUSED
             run_state.agent_pids = []
             save_run_state(output_dir, run_state)
-            save_plan(output_dir, plan)
+            # Do not save `plan` here: it is the snapshot from before
+            # `_planning_loop` and would overwrite waves already persisted to
+            # plan.yaml. In-flight agent sessions restore canonical plan.yaml in
+            # their finally blocks; `_run_planning_wave` re-saves the pre-wave
+            # plan when a wave is interrupted.
             raise
         except PlanningToolError as exc:
             run_state.active_status = RunActiveStatus.FAILED
             run_state.last_error = str(exc)
+            persisted_plan = load_plan(output_dir)
+            if persisted_plan is not None:
+                plan = persisted_plan
             update_final_status(plan, FinalStatus.FAILED, str(exc))
             save_run_state(output_dir, run_state)
             save_plan(output_dir, plan)
@@ -790,6 +800,7 @@ class Orchestrator:
                 )
             except UserInterrupted:
                 run_state.agent_pids = []
+                save_plan(output_dir, plan)
                 save_run_state(output_dir, run_state)
                 raise
             except CursorEnvironmentError:
@@ -1172,7 +1183,7 @@ class Orchestrator:
         min_plan_items = len(plan.plan)
         plan_backup = backup_canonical_plan(
             output_dir,
-            suffix=f"{spec.iteration:03d}",
+            suffix=f"{spec.iteration:03d}-{spec.batch_index:02d}",
         )
 
         def on_started(pid: int) -> None:
@@ -1201,7 +1212,7 @@ class Orchestrator:
             if restore_canonical_plan(
                 output_dir, plan_backup, min_items=min_plan_items
             ):
-                self.renderer.warning(
+                self.renderer.warn(
                     "Restored plan.yaml after planning session modified canonical state"
                 )
         return _BatchSessionResult(

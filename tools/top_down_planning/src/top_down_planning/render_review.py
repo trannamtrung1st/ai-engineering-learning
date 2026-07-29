@@ -122,7 +122,7 @@ async def run_render_output_review(
             raise
         except CursorSessionError as exc:
             if attempt >= max_retries:
-                deps.renderer.warning(f"Output review session failed: {exc}")
+                deps.renderer.warn(f"Output review session failed: {exc}")
                 return None
             continue
 
@@ -130,7 +130,7 @@ async def run_render_output_review(
             raw = load_review_result(result_path, stage="rendered_output_review")  # type: ignore[arg-type]
         except ReviewToolError as exc:
             if attempt >= max_retries:
-                deps.renderer.warning(f"Output review result invalid: {exc}")
+                deps.renderer.warn(f"Output review result invalid: {exc}")
                 return None
             continue
 

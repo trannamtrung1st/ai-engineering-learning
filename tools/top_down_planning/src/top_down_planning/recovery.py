@@ -128,12 +128,33 @@ def restore_canonical_plan(output_dir: Path, backup: Path, *, min_items: int) ->
     """Restore plan.yaml when an agent session corrupted or reset it."""
     if not backup.is_file():
         return False
-    current = load_plan(output_dir)
-    if current is not None and len(current.plan) >= min_items:
-        backup.unlink(missing_ok=True)
+    backup_plan = _load_plan_file(backup)
+    if backup_plan is None:
         return False
+    current = load_plan(output_dir)
+    if current is not None:
+        if len(current.plan) >= min_items and not plan_looks_reset(current):
+            backup.unlink(missing_ok=True)
+            return False
+        if (
+            plan_looks_reset(current)
+            and plan_looks_reset(backup_plan)
+            and len(current.plan) == len(backup_plan.plan)
+        ):
+            backup.unlink(missing_ok=True)
+            return False
     target = plan_path(output_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(backup, target)
     backup.unlink(missing_ok=True)
     return True
+
+
+def _load_plan_file(path: Path) -> PlanState | None:
+    try:
+        import yaml
+
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return PlanState.model_validate(data)
+    except (OSError, yaml.YAMLError, ValueError, PydanticValidationError):
+        return None

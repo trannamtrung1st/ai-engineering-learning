@@ -6,7 +6,7 @@ from top_down_planning.models import DEFAULT_CURSOR_MODEL, DEFAULT_INLINE_EMBED_
 
 def test_resolve_model_default() -> None:
     assert resolve_model(None) == DEFAULT_CURSOR_MODEL
-    assert DEFAULT_CURSOR_MODEL == "auto"
+    assert DEFAULT_CURSOR_MODEL == "composer-2.5"
 
 
 def test_resolve_model_cli_override() -> None:

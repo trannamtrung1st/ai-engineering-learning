@@ -582,14 +582,14 @@ async def _run_review_session(
             raise
         except CursorSessionError as exc:
             if attempt >= deps.review.max_retries:
-                deps.renderer.warning(f"{stage} session failed: {exc}")
+                deps.renderer.warn(f"{stage} session failed: {exc}")
                 return None
             continue
         finally:
             if restore_canonical_plan(
                 deps.output_dir, plan_backup, min_items=min_plan_items
             ):
-                deps.renderer.warning(
+                deps.renderer.warn(
                     f"Restored plan.yaml after {stage} session modified canonical state"
                 )
 

@@ -13,6 +13,7 @@ from top_down_planning.models import (
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import (
     load_plan,
+    load_run_state,
     new_run_state,
     save_plan,
     save_run_state,
@@ -20,6 +21,7 @@ from top_down_planning.persistence import (
 from top_down_planning.recovery import (
     backup_canonical_plan,
     is_plan_run_state_desynced,
+    plan_looks_reset,
     recover_plan_from_iterations,
     restore_canonical_plan,
 )
@@ -186,7 +188,7 @@ def test_recover_skips_failed_validation_audit(tmp_path: Path) -> None:
     assert len(recovered.plan) == 2
 
 
-def test_backup_uses_iteration_suffix(tmp_path: Path) -> None:
+def test_backup_uses_iteration_and_batch_suffix(tmp_path: Path) -> None:
     plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
@@ -194,8 +196,8 @@ def test_backup_uses_iteration_suffix(tmp_path: Path) -> None:
         output_goal_digest="b",
     )
     save_plan(tmp_path, plan)
-    backup = backup_canonical_plan(tmp_path, suffix="002")
-    assert backup.name == "plan.yaml.bak.002"
+    backup = backup_canonical_plan(tmp_path, suffix="002-01")
+    assert backup.name == "plan.yaml.bak.002-01"
 
 
 def test_restore_canonical_plan_after_agent_reset(tmp_path: Path) -> None:
@@ -236,6 +238,192 @@ def test_restore_canonical_plan_after_agent_reset(tmp_path: Path) -> None:
     loaded = load_plan(tmp_path)
     assert loaded is not None
     assert len(loaded.plan) == 2
+
+
+def test_restore_canonical_plan_when_reset_root_matches_min_items(tmp_path: Path) -> None:
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    plan = apply_response(
+        plan,
+        make_agent_response(
+            operations=[
+                ExpandOperation(
+                    node_id="item-001",
+                    title="Generated root",
+                    objective="Describe the requested plan",
+                    children=[ChildDraft(title="Area A", objective="Do A")],
+                )
+            ]
+        ),
+    )
+    save_plan(tmp_path, plan)
+    backup = backup_canonical_plan(tmp_path)
+
+    save_plan(
+        tmp_path,
+        make_root_plan(
+            input_file="./idea.md",
+            output_goal="goal",
+            input_digest="a",
+            output_goal_digest="b",
+        ),
+    )
+    reset_plan = load_plan(tmp_path)
+    assert reset_plan is not None
+    assert plan_looks_reset(reset_plan)
+
+    restored = restore_canonical_plan(tmp_path, backup, min_items=1)
+    assert restored
+    loaded = load_plan(tmp_path)
+    assert loaded is not None
+    assert len(loaded.plan) == 2
+
+
+def test_restore_canonical_plan_when_progressed_plan_reset_to_root(tmp_path: Path) -> None:
+    progressed = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    progressed = apply_response(
+        progressed,
+        make_agent_response(
+            operations=[
+                ExpandOperation(
+                    node_id="item-001",
+                    title="Generated root",
+                    objective="Describe the requested plan",
+                    children=[
+                        ChildDraft(title="Area A", objective="Do A"),
+                        ChildDraft(title="Area B", objective="Do B"),
+                        ChildDraft(title="Area C", objective="Do C"),
+                    ],
+                )
+            ]
+        ),
+    )
+    save_plan(tmp_path, progressed)
+    backup = backup_canonical_plan(tmp_path, suffix="003-00")
+
+    save_plan(
+        tmp_path,
+        make_root_plan(
+            input_file="./idea.md",
+            output_goal="goal",
+            input_digest="a",
+            output_goal_digest="b",
+        ),
+    )
+
+    restored = restore_canonical_plan(
+        tmp_path,
+        backup,
+        min_items=len(progressed.plan),
+    )
+    assert restored
+    loaded = load_plan(tmp_path)
+    assert loaded is not None
+    assert len(loaded.plan) == len(progressed.plan)
+
+
+def test_restore_skips_when_backup_and_current_match_unexpanded_root(
+    tmp_path: Path,
+) -> None:
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    save_plan(tmp_path, plan)
+    backup = backup_canonical_plan(tmp_path, suffix="001-00")
+
+    restored = restore_canonical_plan(tmp_path, backup, min_items=1)
+    assert not restored
+    assert not backup.is_file()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_preserves_persisted_plan_progress(
+    tmp_path: Path,
+    example_input: Path,
+) -> None:
+    from top_down_planning.errors import UserInterrupted
+    from top_down_planning.input_loader import load_markdown_input
+    from tests.helpers import render_output_goal
+
+    output_dir = tmp_path / "planning-output"
+    loaded = load_markdown_input(example_input)
+    loaded_goal = render_output_goal()
+    limits = PlanningLimits(max_iterations=5)
+
+    plan = make_root_plan(
+        input_file=str(loaded.path),
+        output_goal=loaded_goal.text,
+        input_digest=loaded.digest,
+        output_goal_digest=loaded_goal.digest,
+    )
+    response = make_agent_response(
+        operations=[
+            ExpandOperation(
+                node_id="item-001",
+                title="Generated root",
+                objective="Describe the requested plan",
+                children=[
+                    ChildDraft(title="Area A", objective="A"),
+                    ChildDraft(title="Area B", objective="B"),
+                ],
+            )
+        ]
+    )
+    expanded_plan = apply_response(plan, response)
+    run_state = new_run_state(
+        input_file=str(loaded.path),
+        output_goal=loaded_goal.source_label,
+        input_digest=loaded.digest,
+        output_goal_digest=loaded_goal.digest,
+        limits=limits,
+        generation=default_generation(),
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_plan(output_dir, plan)
+    save_run_state(output_dir, run_state)
+
+    config = RunConfig(
+        input_path=example_input,
+        output_goal=loaded_goal,
+        output_dir=output_dir,
+        workspace_root=tmp_path,
+        limits=limits,
+        resume=True,
+        skip_probe=True,
+    )
+    orchestrator = Orchestrator(config)
+
+    async def _interrupt_after_persisting_wave(loaded, plan, run_state, output_dir):
+        save_plan(output_dir, expanded_plan)
+        run_state.iteration = 1
+        run_state.history.append({"event": "iteration_applied", "iteration": 1})
+        save_run_state(output_dir, run_state)
+        raise UserInterrupted("cancelled during second wave")
+
+    orchestrator._planning_loop = _interrupt_after_persisting_wave  # type: ignore[method-assign]
+
+    with pytest.raises(UserInterrupted):
+        await orchestrator.run()
+
+    persisted = load_plan(output_dir)
+    assert persisted is not None
+    assert len(persisted.plan) == len(expanded_plan.plan)
+    resumed_run = load_run_state(output_dir)
+    assert resumed_run is not None
+    assert resumed_run.iteration == 1
+    assert resumed_run.active_status == RunActiveStatus.PAUSED
 
 
 @pytest.mark.asyncio

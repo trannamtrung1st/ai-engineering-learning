@@ -106,14 +106,18 @@ Wave/iteration progress is not notified. `--stream-json` stdout remains machine-
 
 ### Model selection
 
-By default the tool uses Cursor model `auto`. Override with `--model` or `PLANNING_TOOL_MODEL`:
+By default the tool uses Cursor model `composer-2.5`. Override with `--model` or `PLANNING_TOOL_MODEL`:
+
+- **Default:** `composer-2.5` (`DEFAULT_CURSOR_MODEL` in `models.py`)
+- **Override:** `--model <slug>` or env var `PLANNING_TOOL_MODEL`
+- **Precedence:** `agent_context.<phase>.model` → `agent_context.default.model` → CLI `--model` → `PLANNING_TOOL_MODEL` → package default
 
 ```bash
 top-down-planning \
   --input ./examples/idea.md \
   --output-goal "Produce an actionable implementation plan" \
   --output ./planning-output \
-  --model auto
+  --model composer-2.5
 ```
 
 ## Outputs
@@ -365,12 +369,12 @@ Configure workspace-relative skill and rule file paths under `agent_context` in 
 ```yaml
 agent_context:
   default:
+    model: composer-2.5
     skills:
       - ./.cursor/skills/shared/SKILL.md
     rules:
       - ./.cursor/rules/shared.mdc
   planning:
-    model: gpt-5.6-sol-high
     skills:
       - ./.cursor/skills/planning/SKILL.md
   rendering:
