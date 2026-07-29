@@ -27,6 +27,8 @@ class RunConfigFile(BaseModel):
     stop_hint_file: Path | None = None
     workspace: Path | None = None
     max_iterations: int | None = Field(default=None, ge=1)
+    max_depth: int | None = Field(default=None, ge=1)
+    max_children_per_expansion: int | None = Field(default=None, ge=1)
     max_retries: int | None = Field(default=None, ge=1)
     session_timeout_seconds: int | None = Field(default=None, ge=1)
     parse_error_threshold: int | None = Field(default=None, ge=1)
@@ -64,6 +66,8 @@ class ResolvedRunOptions:
     stop_hint_file: Path | None
     workspace: Path
     max_iterations: int
+    max_depth: int
+    max_children_per_expansion: int
     max_retries: int
     session_timeout_seconds: int
     parse_error_threshold: int
@@ -111,6 +115,8 @@ def merge_run_options(
     stop_hint_file: Path | None = None,
     workspace: Path | None = None,
     max_iterations: int | None = None,
+    max_depth: int | None = None,
+    max_children_per_expansion: int | None = None,
     max_retries: int | None = None,
     session_timeout_seconds: int | None = None,
     parse_error_threshold: int | None = None,
@@ -208,6 +214,18 @@ def merge_run_options(
             file_limits.max_iterations if file_limits else None,
             defaults.max_iterations,
         ),
+        max_depth=_pick_int(
+            max_depth,
+            file_cfg.max_depth if file_cfg else None,
+            file_limits.max_depth if file_limits else None,
+            defaults.max_depth,
+        ),
+        max_children_per_expansion=_pick_int(
+            max_children_per_expansion,
+            file_cfg.max_children_per_expansion if file_cfg else None,
+            file_limits.max_children_per_expansion if file_limits else None,
+            defaults.max_children_per_expansion,
+        ),
         max_retries=_pick_int(
             max_retries,
             file_cfg.max_retries if file_cfg else None,
@@ -250,6 +268,8 @@ def merge_run_options(
 def options_to_planning_limits(options: ResolvedRunOptions) -> PlanningLimits:
     return PlanningLimits(
         max_iterations=options.max_iterations,
+        max_depth=options.max_depth,
+        max_children_per_expansion=options.max_children_per_expansion,
         max_retries=options.max_retries,
         session_timeout_seconds=options.session_timeout_seconds,
         parse_error_threshold=options.parse_error_threshold,

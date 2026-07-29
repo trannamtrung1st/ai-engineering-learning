@@ -441,3 +441,39 @@ def test_render_batch_author_prompt_includes_batch_index(
 
     assert "Render batch author session: batch 0" in prompt
     assert "Produce an actionable implementation plan" in prompt
+
+
+def test_prompt_includes_expansion_limits_and_depth_budget(
+    example_input: Path,
+    tmp_path: Path,
+) -> None:
+    loaded_input = load_markdown_input(example_input)
+    output_goal = render_output_goal()
+    plan = make_root_plan(
+        input_file=str(example_input),
+        output_goal=output_goal.text,
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    root = plan.item_by_id("item-001")
+    assert root is not None
+
+    prompt = build_planning_prompt(
+        loaded_input=loaded_input,
+        workspace=tmp_path,
+        output_goal=output_goal,
+        plan=plan,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        **planning_prompt_kwargs(
+            plan=plan,
+            eligible_items=[root],
+            output_dir=tmp_path / "planning-output",
+        ),
+    )
+
+    assert "## Expansion limits" in prompt
+    assert "max_depth" in prompt
+    assert "max_children_per_expansion" in prompt
+    assert "remaining_depth" in prompt
+    assert "notes" in prompt
+    assert "| item-001 | 0 | 6 | 12 |" in prompt

@@ -45,6 +45,8 @@ stop_hint: |
 
 limits:
   max_iterations: 50
+  max_depth: 6 # default: 6 — deepest plan item depth (root is 0)
+  max_children_per_expansion: 12 # default: 12 — max direct children per expand
   max_retries: 2
   # session_timeout_seconds: 600 # default: 600 — Cursor agent session timeout
   # parse_error_threshold: 20 # default: 20 — stream parse errors before abort

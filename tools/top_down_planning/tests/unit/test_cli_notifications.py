@@ -54,6 +54,8 @@ def test_execute_run_notifies_on_success(
         stop_hint_file=None,
         workspace=tmp_path,
         max_iterations=10,
+        max_depth=6,
+        max_children_per_expansion=12,
         max_retries=2,
         session_timeout_seconds=600,
         parse_error_threshold=20,

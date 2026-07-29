@@ -8,7 +8,7 @@ from top_down_planning.models import (
     PlanItem,
 )
 from top_down_planning.scheduler import initialize_root_plan
-from tests.helpers import make_agent_response
+from tests.helpers import DEFAULT_LIMITS, make_agent_response
 from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 from top_down_planning.validator import validate_response
@@ -94,6 +94,7 @@ def test_validate_rejects_cycles_before_apply() -> None:
         response,
         selected_ids=["item-001"],
         output_goal_text="Produce an actionable implementation plan",
+        limits=DEFAULT_LIMITS,
     )
     assert any("->" in error for error in errors)
 
@@ -122,6 +123,7 @@ def test_invalid_response_does_not_mutate_plan() -> None:
         response,
         selected_ids=["item-001"],
         output_goal_text="Produce an actionable implementation plan",
+        limits=DEFAULT_LIMITS,
     )
     assert errors
     assert len(plan.plan) == original_count

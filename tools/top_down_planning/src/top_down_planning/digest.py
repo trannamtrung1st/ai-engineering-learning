@@ -46,12 +46,6 @@ def compute_plan_digest(plan: PlanState) -> str:
                 "risks": list(item.risks),
                 "open_questions": list(item.open_questions),
                 "blocked_reason": item.blocked_reason,
-                "blocked_constraint_code": (
-                    item.blocked_constraint_code.value
-                    if item.blocked_constraint_code is not None
-                    else None
-                ),
-                "blocked_required_min_children": item.blocked_required_min_children,
                 "out_of_scope_reason": item.out_of_scope_reason,
             }
             for item in sorted(plan.plan, key=lambda entry: (entry.order, entry.id))

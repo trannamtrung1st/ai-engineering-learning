@@ -76,6 +76,32 @@ def test_options_to_planning_limits_includes_advanced_fields(tmp_path: Path) -> 
 
     assert limits.parse_error_threshold == 10
     assert limits.session_timeout_seconds == 600
+    assert limits.max_depth == 6
+    assert limits.max_children_per_expansion == 12
+
+
+def test_options_to_planning_limits_includes_structural_limits(tmp_path: Path) -> None:
+    config_path = tmp_path / "planning.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "input: ./idea.md",
+                "output: ./out",
+                "output_goal: Produce a plan",
+                "limits:",
+                "  max_depth: 4",
+                "  max_children_per_expansion: 8",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    from top_down_planning.config_loader import options_to_planning_limits
+
+    options = merge_run_options(config_path=config_path)
+    limits = options_to_planning_limits(options)
+
+    assert limits.max_depth == 4
+    assert limits.max_children_per_expansion == 8
 
 
 def test_merge_run_options_loads_review_config(tmp_path: Path) -> None:

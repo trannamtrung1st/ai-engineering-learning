@@ -129,8 +129,6 @@ def reopen_branch(plan: PlanState, node_id: str) -> PlanState:
     item.risks = []
     item.open_questions = []
     item.blocked_reason = None
-    item.blocked_constraint_code = None
-    item.blocked_required_min_children = None
     item.out_of_scope_reason = None
     return updated
 

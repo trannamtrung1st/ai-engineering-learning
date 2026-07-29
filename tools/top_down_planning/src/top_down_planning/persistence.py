@@ -326,6 +326,8 @@ def ensure_resume_compatible(
 _RELAXABLE_LIMIT_FIELDS = frozenset(
     {
         "max_iterations",
+        "max_depth",
+        "max_children_per_expansion",
         "max_retries",
         "session_timeout_seconds",
         "parse_error_threshold",

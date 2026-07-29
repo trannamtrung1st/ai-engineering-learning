@@ -45,10 +45,6 @@ class ReviewStatus(str, Enum):
     SKIPPED = "skipped"
 
 
-class BlockedConstraintCode(str, Enum):
-    MAX_CHILDREN_EXCEEDED = "max_children_exceeded"
-
-
 class RunActiveStatus(str, Enum):
     IDLE = "idle"
     RUNNING = "running"
@@ -59,6 +55,8 @@ class RunActiveStatus(str, Enum):
 
 class PlanningLimits(BaseModel):
     max_iterations: int = 50
+    max_depth: int = 6
+    max_children_per_expansion: int = 12
     max_retries: int = 2
     session_timeout_seconds: int = 600
     parse_error_threshold: int = 20
@@ -180,8 +178,6 @@ class PlanItem(BaseModel):
     risks: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
     blocked_reason: str | None = None
-    blocked_constraint_code: BlockedConstraintCode | None = None
-    blocked_required_min_children: int | None = None
     out_of_scope_reason: str | None = None
 
 
@@ -279,8 +275,6 @@ class MarkBlockedOperation(BaseModel):
     objective: str | None = None
     missing_information: str = ""
     open_question: str = ""
-    constraint_code: BlockedConstraintCode | None = None
-    required_min_children: int | None = None
 
     @field_validator("title", "objective")
     @classmethod

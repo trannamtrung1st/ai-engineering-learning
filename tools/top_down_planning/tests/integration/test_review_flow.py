@@ -1,4 +1,4 @@
-"""Integration tests for review gate and child-limit behavior."""
+"""Integration tests for review gate and structural expansion limits."""
 
 from __future__ import annotations
 
@@ -8,10 +8,9 @@ from pathlib import Path
 import pytest
 
 from tests.helpers import render_output_goal
+from top_down_planning.errors import ValidationError
 from top_down_planning.models import (
-    BlockedConstraintCode,
     FinalStatus,
-    MarkBlockedOperation,
     PlanningLimits,
     ReviewConfig,
     ReviewStatus,
@@ -75,24 +74,28 @@ async def test_review_disabled_skips_review_artifacts_but_renders(
 
 
 @pytest.mark.asyncio
-async def test_child_limit_blocked_does_not_render(
+async def test_oversized_expand_fails_validation(
     tmp_path: Path,
     example_input: Path,
     fake_agent_bin: str,
 ) -> None:
-    output_dir = tmp_path / "planning-output-blocked"
+    import os
+
+    output_dir = tmp_path / "planning-output-oversized-expand"
     loaded_goal = render_output_goal()
-    blocked_response = json.dumps(
+    too_many_children = [
+        {"title": f"Child {index}", "objective": f"Do {index}"}
+        for index in range(1, 10)
+    ]
+    oversized_expand = json.dumps(
         {
             "operations": [
                 {
-                    "type": "mark_blocked",
+                    "type": "expand",
                     "node_id": "item-001",
-                    "title": "Plan the required top-level workstreams",
-                    "objective": "Preserve all explicitly required sibling groups.",
-                    "reason": "Source requires at least 9 direct children under item-001",
-                    "constraint_code": "max_children_exceeded",
-                    "required_min_children": 9,
+                    "title": "Generated root",
+                    "objective": "Describe the requested plan",
+                    "children": too_many_children,
                 }
             ],
         }
@@ -104,40 +107,28 @@ async def test_child_limit_blocked_does_not_render(
         workspace_root=tmp_path,
         limits=PlanningLimits(
             max_iterations=2,
+            max_retries=1,
+            max_children_per_expansion=3,
         ),
         agent_bin=fake_agent_bin,
         skip_probe=True,
-        review=ReviewConfig(enabled=True),
+        review=ReviewConfig(enabled=False),
     )
-    import os
-
-    blocked_review = json.dumps(
-        {
-            "stage": "whole_plan_review",
-            "plan_digest": "placeholder",
-            "decision": "blocked",
-            "summary": "Blocked items prevent rendering",
-            "findings": [],
-        }
-    )
-    os.environ["FAKE_AGENT_PLANNING_JSON"] = blocked_response
+    os.environ["FAKE_AGENT_PLANNING_JSON"] = oversized_expand
     os.environ["FAKE_AGENT_EXPAND_ROOT"] = "false"
-    os.environ["FAKE_AGENT_REVIEW_JSON"] = blocked_review
     try:
-        report = await Orchestrator(config).run()
+        with pytest.raises(ValidationError) as exc_info:
+            await Orchestrator(config).run()
     finally:
         os.environ.pop("FAKE_AGENT_PLANNING_JSON", None)
         os.environ.pop("FAKE_AGENT_EXPAND_ROOT", None)
-        os.environ.pop("FAKE_AGENT_REVIEW_JSON", None)
 
-    assert report.status == FinalStatus.INCOMPLETE_BLOCKED
-    assert report.review_status == ReviewStatus.BLOCKED
-    assert report.artifacts == []
+    assert any("exceeds max children" in error for error in exc_info.value.errors)
     plan = load_plan(output_dir)
     assert plan is not None
     root = plan.item_by_id("item-001")
     assert root is not None
-    assert root.blocked_constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
+    assert root.decomposition_status.value == "needs_expansion"
 
 
 @pytest.mark.asyncio

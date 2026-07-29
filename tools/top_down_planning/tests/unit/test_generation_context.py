@@ -27,7 +27,7 @@ from top_down_planning.plan_tool import (
     select_batch,
 )
 from top_down_planning.validator import validate_wave_responses
-from tests.helpers import make_agent_response
+from tests.helpers import DEFAULT_LIMITS, make_agent_response
 from tests.plan_factory import make_root_plan
 
 
@@ -229,5 +229,6 @@ def test_validate_wave_rejects_stale_digest() -> None:
         [(["item-001"], response)],
         plan_digest="current-digest",
         output_goal_text="Produce an actionable implementation plan",
+        limits=DEFAULT_LIMITS,
     )
     assert any("plan_digest mismatch" in error for error in errors)

@@ -369,7 +369,9 @@ Do not:
 - duplicate work already owned by another branch;
 - contradict established decisions;
 - create dependencies merely to express preferred execution order;
-- do not merge or omit explicit source groups to satisfy artificial limits;
+- do not merge or omit explicit source groups to satisfy structural limits; group
+  related work within the child cap and capture ancillary detail in item notes or
+  actionable metadata instead;
 - re-plan unrelated branches without using the assigned operation or a patchable
   `update_item` when related detail must change.
 

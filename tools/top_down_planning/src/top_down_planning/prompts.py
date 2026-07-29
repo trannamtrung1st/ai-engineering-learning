@@ -12,6 +12,7 @@ from top_down_planning.item_format import format_item_context, format_item_summa
 from top_down_planning.models import (
     PlanItem,
     PlanState,
+    PlanningLimits,
     ProcessedBatchRecord,
     ReviewFinding,
 )
@@ -127,6 +128,11 @@ def format_input_document_section(
     )
 
 
+def remaining_depth_budget(item: PlanItem, *, max_depth: int) -> int:
+    """Levels below this item that may still be created (0 means must not expand)."""
+    return max(0, max_depth - item.depth)
+
+
 def format_eligible_items_section(items: list[PlanItem]) -> str:
     if not items:
         return "No eligible items remain for this session."
@@ -137,6 +143,45 @@ def format_eligible_items_section(items: list[PlanItem]) -> str:
             f"{item.decomposition_status.value} |"
         )
     return "\n".join(lines)
+
+
+def format_planning_eligible_items_section(
+    items: list[PlanItem],
+    *,
+    limits: PlanningLimits,
+) -> str:
+    if not items:
+        return "No eligible items remain for this session."
+    lines = [
+        "| id | depth | remaining_depth | max_children | title | status |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in items:
+        remaining = remaining_depth_budget(item, max_depth=limits.max_depth)
+        lines.append(
+            f"| {item.id} | {item.depth} | {remaining} | "
+            f"{limits.max_children_per_expansion} | {item.title} | "
+            f"{item.decomposition_status.value} |"
+        )
+    return "\n".join(lines)
+
+
+def format_expansion_limits_section(*, limits: PlanningLimits) -> str:
+    return (
+        "## Expansion limits\n"
+        f"- `max_depth`: {limits.max_depth} (root depth is 0).\n"
+        f"- `max_children_per_expansion`: {limits.max_children_per_expansion} "
+        "(maximum direct children per `expand`).\n"
+        "- Plan within these limits before recording operations. The eligible-items "
+        "table shows each item's `remaining_depth` and per-expand child cap.\n"
+        "- When `remaining_depth` is 0, use `mark_actionable` instead of `expand`.\n"
+        "- When an item has more detail than fits in the child cap, group related "
+        "concerns into fewer children and capture ancillary detail in `notes`, "
+        "`expected_outputs`, `acceptance_criteria`, `risks`, or `open_questions`.\n"
+        "- Do not use `mark_blocked` solely because a structural limit was reached.\n"
+        "- Expand only for independently trackable planning concerns; do not create "
+        "child items for every bullet or minor detail in the source.\n\n"
+    )
 
 
 def format_processed_batches_section(records: list[ProcessedBatchRecord]) -> str:
@@ -168,6 +213,7 @@ def build_planning_prompt(
     eligible_items: list[PlanItem],
     processed_batches: list[ProcessedBatchRecord],
     embed_threshold: int,
+    limits: PlanningLimits,
     stop_hint: LoadedStopHint | None = None,
     validation_feedback: list[str] | None = None,
     plan_tool_command: str = "planning-plan-tool",
@@ -193,7 +239,7 @@ def build_planning_prompt(
         "## Eligible items\n"
         "Choose a coherent batch from these items. Prefer same-parent siblings or "
         "nearby depth when batching multiple items.\n\n"
-        f"{format_eligible_items_section(eligible_items)}\n\n"
+        f"{format_planning_eligible_items_section(eligible_items, limits=limits)}\n\n"
     )
 
     history_block = (
@@ -218,7 +264,7 @@ Do not execute implementation work.
 ## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-{stop_hint_block}{_format_agent_context_section(agent_context)}## Workflow
+{stop_hint_block}{_format_agent_context_section(agent_context)}{format_expansion_limits_section(limits=limits)}## Workflow
 1. Review the eligible items and processed-batch history.
 2. Choose a coherent batch and record it with `{plan_tool_command} select-batch`.
 3. Optionally run `{plan_tool_command} show-context` for selected-node details.
@@ -236,9 +282,14 @@ Do not execute implementation work.
   summarize the input and requested output; do not preserve its generic bootstrap wording.
 - You may optionally refine the assigned item's `title` and/or `objective` when the
   current wording is misleading or too narrow for the output goal.
-- Use `expand` when the item still contains multiple meaningful planning concerns.
+- Use `expand` when the item still contains multiple meaningful planning concerns
+  and `remaining_depth` is greater than 0.
   Expanding marks the parent `expanded` and creates child items for further decomposition.
-- Use `mark_actionable` when the item is a leaf detailed enough for the output goal.
+- Use `mark_actionable` when the item is a leaf detailed enough for the output goal,
+  or when `remaining_depth` is 0.
+- When finer source detail does not warrant its own child, keep it on the actionable
+  item in `notes`, `expected_outputs`, `acceptance_criteria`, `risks`, or
+  `open_questions` instead of expanding further.
 - Use `mark_blocked` only when required information is missing and cannot be inferred safely.
 - Use `mark_out_of_scope` when the item does not contribute to the output goal.
 - Do not invent canonical item IDs. The orchestrator assigns IDs on apply.

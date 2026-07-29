@@ -732,6 +732,7 @@ class Orchestrator:
                 eligible_items=eligible_items,
                 processed_batches=run_state.processed_batches,
                 embed_threshold=self._embed_threshold,
+                limits=limits,
                 stop_hint=self.config.stop_hint,
                 validation_feedback=None,
                 plan_tool_command=plan_tool_command,
@@ -785,6 +786,7 @@ class Orchestrator:
                         eligible_items=eligible_items,
                         processed_batches=run_state.processed_batches,
                         embed_threshold=self._embed_threshold,
+                        limits=limits,
                         stop_hint=self.config.stop_hint,
                         validation_feedback=validation_feedback,
                         plan_tool_command=plan_tool_command,
@@ -925,6 +927,7 @@ class Orchestrator:
                     [(selected_ids, response)],
                     plan_digest=plan_digest,
                     output_goal_text=self.config.output_goal.text,
+                    limits=limits,
                     eligible_ids=eligible_id_set,
                 )
             )

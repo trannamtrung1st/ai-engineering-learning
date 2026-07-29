@@ -64,12 +64,6 @@ def format_item_detail_lines(
         parts.extend(f"{sub}  - {value}" for value in item.open_questions)
     if item.blocked_reason:
         parts.append(f"{sub}Blocked: {item.blocked_reason}")
-    if item.blocked_constraint_code is not None:
-        parts.append(f"{sub}Blocked constraint: {item.blocked_constraint_code.value}")
-    if item.blocked_required_min_children is not None:
-        parts.append(
-            f"{sub}Required min children: {item.blocked_required_min_children}"
-        )
     if item.out_of_scope_reason:
         parts.append(f"{sub}Out of scope: {item.out_of_scope_reason}")
     return parts
@@ -103,12 +97,6 @@ def format_item_context(plan: PlanState, item: PlanItem) -> str:
         parts.extend(f"  - {value}" for value in item.open_questions)
     if item.blocked_reason:
         parts.append(f"- Blocked: {item.blocked_reason}")
-    if item.blocked_constraint_code is not None:
-        parts.append(f"- Blocked constraint: {item.blocked_constraint_code.value}")
-    if item.blocked_required_min_children is not None:
-        parts.append(
-            f"- Required min children: {item.blocked_required_min_children}"
-        )
     if item.out_of_scope_reason:
         parts.append(f"- Out of scope: {item.out_of_scope_reason}")
 

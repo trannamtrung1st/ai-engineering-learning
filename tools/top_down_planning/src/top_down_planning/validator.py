@@ -5,7 +5,6 @@ from __future__ import annotations
 from top_down_planning.generation_context import select_patchable_node_ids
 from top_down_planning.models import (
     AgentResponse,
-    BlockedConstraintCode,
     DecompositionStatus,
     ExpandOperation,
     MarkActionableOperation,
@@ -13,6 +12,7 @@ from top_down_planning.models import (
     MarkOutOfScopeOperation,
     PlanItem,
     PlanState,
+    PlanningLimits,
     PlanningOperation,
     ReviseActionableOperation,
     UpdateItemOperation,
@@ -45,6 +45,7 @@ def validate_response(
     *,
     selected_ids: list[str],
     output_goal_text: str,
+    limits: PlanningLimits,
     eligible_ids: set[str] | None = None,
 ) -> list[str]:
     errors: list[str] = []
@@ -92,6 +93,7 @@ def validate_response(
                 plan,
                 item,
                 operation,
+                limits=limits,
                 output_goal_text=output_goal_text,
             )
         )
@@ -224,6 +226,7 @@ def validate_wave_responses(
     *,
     plan_digest: str,
     output_goal_text: str,
+    limits: PlanningLimits,
     eligible_ids: set[str] | None = None,
 ) -> list[str]:
     """Validate one or more batch responses against cumulative plan state."""
@@ -240,6 +243,7 @@ def validate_wave_responses(
             response,
             selected_ids=selected_ids,
             output_goal_text=output_goal_text,
+            limits=limits,
             eligible_ids=eligible_ids,
         )
         if errors:
@@ -391,19 +395,6 @@ def _validate_update_item(
     return errors
 
 
-def _validate_cross_batch_duplicates(plan: PlanState) -> list[str]:
-    del plan
-    return []
-
-
-def _validate_cumulative_item_limit(
-    plan: PlanState,
-    operations: list[PlanningOperation],
-) -> list[str]:
-    del plan, operations
-    return []
-
-
 def _validate_applied_state(plan: PlanState, response: AgentResponse) -> list[str]:
     try:
         updated = apply_response(plan, response)
@@ -417,10 +408,11 @@ def _validate_operation(
     item: PlanItem,
     operation: PlanningOperation,
     *,
+    limits: PlanningLimits,
     output_goal_text: str,
 ) -> list[str]:
     if isinstance(operation, ExpandOperation):
-        return _validate_expand(plan, item, operation)
+        return _validate_expand(plan, item, operation, limits=limits)
     if isinstance(operation, MarkActionableOperation):
         return _validate_actionable(
             plan,
@@ -488,6 +480,8 @@ def _validate_expand(
     plan: PlanState,
     item: PlanItem,
     operation: ExpandOperation,
+    *,
+    limits: PlanningLimits,
 ) -> list[str]:
     errors = _validate_root_metadata(
         item,
@@ -498,6 +492,23 @@ def _validate_expand(
     if not operation.children:
         errors.append(f"Expand on {item.id} requires at least one child")
         return errors
+
+    if item.depth >= limits.max_depth:
+        errors.append(
+            f"Expand on {item.id} is not allowed at depth {item.depth} "
+            f"(max_depth={limits.max_depth}). Use mark_actionable and capture "
+            "remaining detail in notes, expected_outputs, acceptance_criteria, "
+            "risks, or open_questions."
+        )
+
+    if len(operation.children) > limits.max_children_per_expansion:
+        errors.append(
+            f"Expand on {item.id} exceeds max children "
+            f"({len(operation.children)} > {limits.max_children_per_expansion}). "
+            "Group related concerns into fewer children or use mark_actionable with "
+            "rich notes, expected_outputs, acceptance_criteria, risks, or "
+            "open_questions for ancillary detail."
+        )
 
     sibling_titles = {
         _normalize(child.title)
@@ -578,14 +589,6 @@ def _validate_blocked(
     )
     if not operation.reason.strip():
         errors.append(f"Blocked item {item.id} requires a reason")
-
-    if operation.constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED:
-        if operation.required_min_children is None:
-            errors.append(
-                f"Blocked item {item.id} with max_children_exceeded "
-                "requires required_min_children"
-            )
-        return errors
 
     if not operation.missing_information.strip():
         errors.append(f"Blocked item {item.id} requires missing_information")

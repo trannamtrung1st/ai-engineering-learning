@@ -117,14 +117,6 @@ def build_render_brief(plan: PlanState) -> str:
             lines.append(f"- **{item.title}**")
             if item.blocked_reason:
                 lines.append(f"  - Reason: {item.blocked_reason}")
-            if item.blocked_constraint_code is not None:
-                lines.append(
-                    f"  - Constraint: {item.blocked_constraint_code.value}"
-                )
-            if item.blocked_required_min_children is not None:
-                lines.append(
-                    f"  - Required min children: {item.blocked_required_min_children}"
-                )
             for note in item.notes:
                 lines.append(f"  - Note: {note}")
             for risk in item.risks:

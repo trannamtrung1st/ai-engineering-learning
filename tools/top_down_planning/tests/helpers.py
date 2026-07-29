@@ -11,10 +11,12 @@ from top_down_planning.models import (
     AgentResponse,
     PlanItem,
     PlanState,
+    PlanningLimits,
     ProcessedBatchRecord,
 )
 
 DEFAULT_PLAN_DIGEST = "a" * 64
+DEFAULT_LIMITS = PlanningLimits()
 
 STANDARD_RENDER_OUTPUT_GOAL = "Produce an actionable implementation plan."
 
@@ -48,4 +50,5 @@ def planning_prompt_kwargs(
         "batch_context_markdown": prepared.batch_context_markdown,
         "eligible_items": eligible_items,
         "processed_batches": processed_batches or [],
+        "limits": DEFAULT_LIMITS,
     }

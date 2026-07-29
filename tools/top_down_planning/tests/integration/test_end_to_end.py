@@ -204,7 +204,7 @@ async def test_resume_loads_blocked_plan_without_mutating_state(
     tmp_path: Path,
     example_input: Path,
 ) -> None:
-    from top_down_planning.models import BlockedConstraintCode, ReadinessStatus
+    from top_down_planning.models import ReadinessStatus
     from top_down_planning.persistence import ensure_resume_compatible, update_final_status
 
     output_dir = tmp_path / "planning-output-blocked-resume"
@@ -222,9 +222,8 @@ async def test_resume_loads_blocked_plan_without_mutating_state(
     assert root is not None
     root.decomposition_status = DecompositionStatus.BLOCKED
     root.readiness_status = ReadinessStatus.BLOCKED
-    root.blocked_reason = "Requires more children than can be planned safely"
-    root.blocked_constraint_code = BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
-    root.blocked_required_min_children = 9
+    root.blocked_reason = "Missing stakeholder decision on output format"
+    root.open_questions.append("Should output be pretty-printed or compact?")
     update_final_status(
         plan,
         FinalStatus.INCOMPLETE_BLOCKED,
@@ -260,7 +259,7 @@ async def test_resume_loads_blocked_plan_without_mutating_state(
 
 
 @pytest.mark.asyncio
-async def test_resume_does_not_reset_review_blocked_without_child_limit_change(
+async def test_resume_does_not_reset_review_blocked_without_limit_change(
     tmp_path: Path,
     example_input: Path,
     fake_agent_bin: str,

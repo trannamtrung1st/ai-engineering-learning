@@ -206,12 +206,17 @@ For every selected item, the agent must choose exactly one result:
 
 ### Expand
 
-Use when the item still contains multiple meaningful pieces of work or unresolved planning concerns.
-Expanding marks the parent `expanded` and creates child items for further decomposition.
+Use when the item still contains multiple meaningful pieces of work or unresolved planning
+concerns, `remaining_depth` is greater than 0, and the child count stays within
+`max_children_per_expansion`. Expanding marks the parent `expanded` and creates child
+items for further decomposition. When finer source detail does not warrant its own child,
+capture it in `notes`, `expected_outputs`, `acceptance_criteria`, `risks`, or
+`open_questions` on the actionable leaf instead of expanding further.
 
 ### Actionable
 
-Use when the item is a leaf detailed enough for the output goal.
+Use when the item is a leaf detailed enough for the output goal, or when
+`remaining_depth` is 0.
 
 For example, when the output goal asks for an implementation plan, an actionable item should normally include:
 
@@ -326,7 +331,8 @@ Validation must ensure:
 * blocked items contain a reason and open question;
 * out-of-scope items contain a reason;
 * actionable items satisfy the minimum criteria derived from the full resolved output goal;
-* limits are respected;
+* `max_depth` and `max_children_per_expansion` are respected (oversized `expand` is rejected
+  with corrective feedback);
 * `update_item` patches target only patchable related nodes, not assigned items;
 * cross-item updates require a reason and at least one changed field;
 * omitted patch fields preserve the current value and empty lists clear list fields;
@@ -349,6 +355,8 @@ The agent should receive:
 * the output goal;
 * relevant content from the input Markdown;
 * the selected planning items;
+* configured `max_depth` and `max_children_per_expansion`, plus each eligible item's
+  `remaining_depth` budget;
 * their ancestors;
 * their direct siblings;
 * a concise summary of other established branches;
@@ -369,16 +377,22 @@ Planning completes when:
 * dependencies are valid;
 * no unresolved structural gaps remain.
 
-Do not stop only because a maximum depth was reached.
+Do not stop only because a structural limit was reached. When `max_depth` or
+`max_children_per_expansion` prevents further expansion, use `mark_actionable` and
+capture remaining detail in item notes and actionable metadata instead of blocking.
 
 Use configurable safety limits:
 
 * maximum iterations;
+* maximum depth;
+* maximum children per expansion;
 * maximum validation retries;
 * session timeout;
 * parse error threshold.
 
-When a limit is reached, preserve the partial plan and return an explicit incomplete result.
+When `max_iterations` is exhausted, preserve the partial plan and return
+`incomplete_limit_reached`. Structural limits (`max_depth`, `max_children_per_expansion`)
+do not terminate the run; the agent must adapt within the budget instead.
 
 Final statuses:
 
@@ -632,7 +646,7 @@ Add focused unit tests for:
 * duplicate detection;
 * cycle prevention;
 * atomic rejection of invalid operations;
-* maximum iteration, depth, and item limits;
+* maximum iteration, depth, and children-per-expansion limits;
 * retry behavior;
 * persistence;
 * resume compatibility;

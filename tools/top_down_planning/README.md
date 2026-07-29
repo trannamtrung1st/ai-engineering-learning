@@ -256,6 +256,14 @@ Each iteration counts toward `limits.max_iterations` (default `50`). When a sess
 completes, the transaction is validated and applied atomically. Failed sessions retry
 up to `limits.max_retries` without mutating the plan.
 
+Structural decomposition limits (`limits.max_depth`, default `6`; root depth is `0`, and
+`limits.max_children_per_expansion`, default `12`) are shown in each planning prompt with
+per-item remaining depth budget. The agent should plan within these caps: group related
+work, use `mark_actionable` with rich `notes` / `expected_outputs` / `acceptance_criteria`
+when finer source detail does not warrant its own child, and avoid `mark_blocked` solely
+because a structural limit was reached. Oversized `expand` operations are rejected with
+corrective validation feedback.
+
 ### Generation batch context
 
 Each generation session runs in a **focused fresh Cursor session** with:
@@ -382,8 +390,9 @@ items remain, decomposed internal nodes are `expanded`, relevant leaves are `act
 `blocked`, or `out_of_scope`, and the graph is structurally valid (`expanded` nodes have
 children; `actionable` nodes are leaves). Whole-plan review and final confirmation then
 provide goal-aware semantic approval before render. Persisted plans use `schema_version: 2`.
-Safety limits (`--max-iterations`, `--max-retries`, `session_timeout_seconds`,
-`parse_error_threshold`) preserve partial output with explicit final statuses.
+Safety limits (`--max-iterations`, `--max-depth`, `--max-children-per-expansion`,
+`--max-retries`, `session_timeout_seconds`, `parse_error_threshold`) preserve partial
+output with explicit final statuses.
 
 ### Whole-plan review and final confirmation
 
@@ -442,9 +451,9 @@ matches the current canonical plan, then proceeds to the next unfinished stage
 (review, confirmation, or render).
 
 Resume rejects changed input, changed output goal, or mismatched `render`
-settings. Safety limits (`max_iterations`, `max_retries`,
-`session_timeout_seconds`, `parse_error_threshold`) may be updated on resume —
-for example, raise `max_iterations` after hitting
+settings. Safety limits (`max_iterations`, `max_depth`, `max_children_per_expansion`,
+`max_retries`, `session_timeout_seconds`, `parse_error_threshold`) may be updated on
+resume — for example, raise `max_iterations` after hitting
 `incomplete_limit_reached`. Resuming an
 already-complete, confirmed run skips render when render state is `complete` and prior
 deliverables still exist on disk (use `--force-rerender` to regenerate).
