@@ -18,6 +18,7 @@ from top_down_planning.plan_tool import (
     load_transaction,
     plan_tool_argv,
     record_operation,
+    record_planning_state_update,
     record_update,
     reset_transaction,
     resolve_plan_tool_command,
@@ -75,8 +76,43 @@ def test_record_and_finalize_transaction(plan_session) -> None:
 
 
 def test_finalize_requires_at_least_one_operation(plan_session) -> None:
-    with pytest.raises(PlanToolError, match="at least one operation"):
+    with pytest.raises(PlanToolError, match="at least one operation or planning state update"):
         finalize()
+
+
+def test_finalize_and_load_state_only_transaction(plan_session) -> None:
+    _, txn_file = plan_session
+    reset_transaction(txn_file)
+    record_planning_state_update(
+        json_payload=json.dumps(
+            {
+                "finding_dispositions": [
+                    {
+                        "finding_id": "dep-001",
+                        "disposition": "accepted",
+                        "rationale": "Valid dependency fix",
+                    }
+                ]
+            }
+        )
+    )
+    finalize()
+
+    loaded = load_transaction(txn_file)
+    assert loaded.operations == []
+    assert loaded.planning_state_update is not None
+    assert len(loaded.planning_state_update.finding_dispositions) == 1
+    assert loaded.planning_state_update.finding_dispositions[0].finding_id == "dep-001"
+
+
+def test_load_transaction_rejects_empty_transaction(tmp_path: Path) -> None:
+    txn_file = tmp_path / "empty-transaction.json"
+    txn_file.write_text(
+        json.dumps({"operations": [], "plan_digest": "abc"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(PlanToolError, match="no operations or state update"):
+        load_transaction(txn_file)
 
 
 def test_record_operation_requires_select_batch(

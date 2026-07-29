@@ -182,7 +182,7 @@ def load_transaction(path: Path) -> AgentResponse:
         response = AgentResponse.model_validate(data)
     except (OSError, json.JSONDecodeError, PydanticValidationError) as exc:
         raise PlanToolError(f"Invalid transaction file {path}: {exc}") from exc
-    if not response.operations:
+    if not response.operations and response.planning_state_update is None:
         raise PlanToolError(f"Transaction file {path} contains no operations or state update")
     return response
 
