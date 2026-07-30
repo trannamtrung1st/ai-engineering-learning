@@ -8,7 +8,7 @@ from typing import Any
 from top_down_planning.agent_tool.errors import AgentToolError
 from top_down_planning.agent_tool.production_service import ProductionAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
-from top_down_planning.domain.production import all_applicable_items_processed
+from top_down_planning.domain.production import all_applicable_items_processed, has_pending_amendment, latest_reconciliation_report
 from top_down_planning.domain.readiness import detect_deadlock
 from top_down_planning.domain.reviews import find_whole_plan_approval
 from top_down_planning.orchestrator.errors import ProviderRunError
@@ -81,6 +81,7 @@ class ProductionPhaseOrchestrator:
                 self._store.load_run(self._run_id),
                 config,
                 plan_revision=int(self._store.load_plan(self._run_id)["revision"]),
+                production=self._store.load_production(self._run_id),
             )
             session_id = self._provider.start_primary_session("producer", manifest)
             run = _persist_session_id(self._store, self._run_id, session_id)
@@ -96,6 +97,27 @@ class ProductionPhaseOrchestrator:
 
         batch_agent_turns = 0
         while True:
+            if self._has_pending_amendment():
+                from top_down_planning.orchestrator.plan_amendment import (
+                    PlanAmendmentOrchestrator,
+                )
+
+                amendment_result = PlanAmendmentOrchestrator(
+                    self._store,
+                    self._run_id,
+                    self._provider,
+                ).run()
+                if not amendment_result.ok:
+                    return self._result_from_run(
+                        self._store.load_run(self._run_id),
+                        ok=False,
+                        session_id=session_id,
+                        reason=amendment_result.reason,
+                    )
+                session_id = amendment_result.producer_session_id or session_id
+                batch_agent_turns = 0
+                continue
+
             if self._has_blocker_report():
                 return self._terminate_from_blocker_report(session_id)
 
@@ -140,11 +162,7 @@ class ProductionPhaseOrchestrator:
 
             self._provider.resume_primary_session(
                 session_id,
-                {
-                    "action": "continue",
-                    "phase": PRODUCTION,
-                    "ready_item_ids": self._ready_item_ids(),
-                },
+                self._producer_resume_request(),
             )
 
     def _consume_provider_turn(self, session_id: str) -> tuple[str | None, int]:
@@ -199,6 +217,25 @@ class ProductionPhaseOrchestrator:
         production = self._store.load_production(self._run_id)
         claim = production.get("completion_claim")
         return isinstance(claim, dict)
+
+    def _has_pending_amendment(self) -> bool:
+        production = self._store.load_production(self._run_id)
+        return has_pending_amendment(production)
+
+    def _producer_resume_request(self) -> dict[str, Any]:
+        production = self._store.load_production(self._run_id)
+        plan = self._store.load_plan(self._run_id)
+        request: dict[str, Any] = {
+            "action": "continue",
+            "phase": PRODUCTION,
+            "ready_item_ids": self._ready_item_ids(),
+            "approved_plan_revision": int(plan["revision"]),
+        }
+        reconciliation = latest_reconciliation_report(production)
+        if reconciliation is not None:
+            request["action"] = "continue_after_amendment"
+            request["reconciliation"] = reconciliation
+        return request
 
     def _has_blocker_report(self) -> bool:
         production = self._store.load_production(self._run_id)
@@ -325,6 +362,7 @@ def build_producer_context_manifest(
     config: dict[str, Any],
     *,
     plan_revision: int,
+    production: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Package producer prompt context and tool usage instructions."""
 
@@ -332,7 +370,7 @@ def build_producer_context_manifest(
     limits = _production_loop_limits(config)
     digests = dict(run.get("digests") or {})
 
-    return {
+    manifest: dict[str, Any] = {
         "run_id": run_id,
         "phase": PRODUCTION,
         "input_refs": list(run_section.get("input_refs") or []),
@@ -365,6 +403,11 @@ def build_producer_context_manifest(
             "batch_complete_signal": _BATCH_COMPLETE_SIGNAL,
         },
     }
+    if production is not None:
+        reconciliation = latest_reconciliation_report(production)
+        if reconciliation is not None:
+            manifest["reconciliation"] = reconciliation
+    return manifest
 
 
 def _production_loop_limits(config: dict[str, Any]) -> dict[str, int]:

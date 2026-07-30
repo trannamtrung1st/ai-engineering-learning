@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS, TerminalDisposition
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.readiness import compute_ready_view, detect_deadlock, is_applicable_item
@@ -367,3 +368,28 @@ def validate_production_checks(
 def next_amendment_id(existing_requests: list[dict[str, Any]]) -> str:
     index = len(existing_requests) + 1
     return f"amendment-{index:02d}"
+
+
+def amendment_request_count(production: dict[str, Any]) -> int:
+    return len(production.get("amendment_requests") or [])
+
+
+def amendment_limit(config: dict[str, Any]) -> int:
+    amendment_limits = (config.get("limits") or {}).get("amendment") or {}
+    defaults = DEFAULT_CONFIG["limits"]["amendment"]
+    return int(amendment_limits.get("max_requests", defaults["max_requests"]))
+
+
+def has_pending_amendment(production: dict[str, Any]) -> bool:
+    pending = production.get("pending_amendment_id")
+    return isinstance(pending, str) and bool(pending.strip())
+
+
+def latest_reconciliation_report(production: dict[str, Any]) -> dict[str, Any] | None:
+    reports = production.get("reconciliation_reports") or []
+    if not reports:
+        return None
+    latest = reports[-1]
+    if not isinstance(latest, dict):
+        return None
+    return dict(latest)

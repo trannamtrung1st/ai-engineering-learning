@@ -23,6 +23,7 @@ from top_down_planning.config import (
     resolve_config,
 )
 from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.production import has_pending_amendment
 from top_down_planning.domain.reviews import find_whole_output_approval, find_whole_plan_approval
 from top_down_planning.domain.output_validators import (
     build_output_approval_validation_context,
@@ -37,6 +38,7 @@ from top_down_planning.domain.validators import (
 )
 from top_down_planning.orchestrator import (
     PlanningPhaseOrchestrator,
+    PlanAmendmentOrchestrator,
     ProductionPhaseOrchestrator,
     ProviderRunError,
     WholeOutputReviewOrchestrator,
@@ -173,6 +175,54 @@ def handle_resume_command(args: Namespace) -> None:
         )
 
     phase = str(run.get("phase") or "")
+    production = store.load_production(args.run)
+    if has_pending_amendment(production) and phase != PRODUCTION:
+        config = store.load_resolved_config(args.run)
+        workspace = _run_workspace(run)
+        provider = create_provider(config, workspace=workspace)
+        try:
+            result = PlanAmendmentOrchestrator(store, args.run, provider).run()
+        except ProviderRunError as exc:
+            emit_error_message(
+                str(exc),
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="provider_run_error",
+            )
+
+        run = store.load_run(args.run)
+        payload = {
+            "ok": result.ok,
+            "run_id": args.run,
+            "phase": run.get("phase"),
+            "status": run.get("status"),
+            "outcome": run.get("outcome"),
+            "amendment_id": result.amendment_id,
+            "planner_session_id": result.planner_session_id,
+            "producer_session_id": result.producer_session_id,
+            "reconciliation": result.reconciliation,
+        }
+        if result.reason:
+            payload["reason"] = result.reason
+        exit_code = 0 if result.ok else 1
+        if args.stream_json:
+            emit_payload(payload, exit_code=exit_code)
+
+        if result.ok and result.phase == PRODUCTION:
+            message = (
+                f"Run {args.run} completed plan amendment "
+                f"(amendment={result.amendment_id}, phase={PRODUCTION})."
+            )
+        elif not result.ok:
+            message = (
+                f"Run {args.run} stopped during plan amendment: {result.reason} "
+                f"(outcome={result.outcome})."
+            )
+        else:
+            message = f"Run {args.run} phase={result.phase} status={result.status}."
+        emit_message(message, exit_code=exit_code)
+        return
+
     if phase == OUTPUT_VALIDATED:
         payload = {
             "ok": True,

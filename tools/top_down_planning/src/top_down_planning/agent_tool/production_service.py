@@ -18,7 +18,10 @@ from top_down_planning.domain.production import (
     all_applicable_items_processed,
     allows_production_mutations,
     disposition_map_from_records,
+    has_pending_amendment,
     next_amendment_id,
+    amendment_limit,
+    amendment_request_count,
     next_batch_id,
     parse_disposition_records,
     ready_item_ids_for_plan,
@@ -73,6 +76,12 @@ class ProductionAgentService:
 
         plan = self._store.load_plan_model(self._run_id)
         self._require_production_context(plan)
+
+        production = self._store.load_production(self._run_id)
+        if has_pending_amendment(production):
+            raise RequestError(
+                "production batches are paused while a plan amendment is pending"
+            )
 
         if "production_revision" not in request:
             raise RequestError("apply requires production_revision")
@@ -223,8 +232,18 @@ class ProductionAgentService:
         summary = str(request.get("summary") or "").strip()
 
         production = self._store.load_production(self._run_id)
-        expected_revision = int(production["revision"])
+        if has_pending_amendment(production):
+            raise RequestError("an amendment request is already pending")
+
+        config = self._store.load_resolved_config(self._run_id)
+        max_requests = amendment_limit(config)
         requests = list(production.get("amendment_requests") or [])
+        if amendment_request_count(production) >= max_requests:
+            raise RequestError(
+                f"plan amendment limit exceeded (max_requests={max_requests})"
+            )
+
+        expected_revision = int(production["revision"])
         amendment_id = str(request.get("id") or next_amendment_id(requests))
         amendment = {
             "id": amendment_id,
@@ -292,6 +311,10 @@ class ProductionAgentService:
         plan = self._store.load_plan_model(self._run_id)
         self._require_production_context(plan)
         production = self._store.load_production(self._run_id)
+        if has_pending_amendment(production):
+            raise RequestError(
+                "production is paused while a plan amendment is pending"
+            )
         dispositions = self._dispositions(production)
         if not all_applicable_items_processed(plan, dispositions):
             raise RequestError(
@@ -360,6 +383,10 @@ class ProductionAgentService:
         plan = self._store.load_plan_model(self._run_id)
         self._require_production_context(plan)
         production = self._store.load_production(self._run_id)
+        if has_pending_amendment(production):
+            raise RequestError(
+                "production is paused while a plan amendment is pending"
+            )
         expected_revision = int(production["revision"])
         report = {
             "evidence": evidence,

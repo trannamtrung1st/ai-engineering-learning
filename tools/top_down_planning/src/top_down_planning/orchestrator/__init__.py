@@ -6,12 +6,17 @@ Owns plan → review → validate → produce → amend → review output → ou
 from top_down_planning.orchestrator.errors import OrchestratorError, ProviderRunError
 from top_down_planning.orchestrator.phases import (
     OUTPUT_VALIDATED,
+    PLAN_AMENDMENT,
     PLAN_VALIDATED,
     PLANNING,
     PLANNING_CONSTRUCTION_PHASES,
     PRODUCTION,
     WHOLE_OUTPUT_REVIEW,
     WHOLE_PLAN_REVIEW,
+)
+from top_down_planning.orchestrator.plan_amendment import (
+    PlanAmendmentOrchestrator,
+    PlanAmendmentResult,
 )
 from top_down_planning.orchestrator.planning import (
     PlanningPhaseOrchestrator,
@@ -39,8 +44,11 @@ __all__ = [
     "OrchestratorError",
     "PLANNING",
     "PLANNING_CONSTRUCTION_PHASES",
+    "PLAN_AMENDMENT",
     "PLAN_VALIDATED",
     "PRODUCTION",
+    "PlanAmendmentOrchestrator",
+    "PlanAmendmentResult",
     "PlanningPhaseOrchestrator",
     "PlanningPhaseResult",
     "ProductionPhaseOrchestrator",
