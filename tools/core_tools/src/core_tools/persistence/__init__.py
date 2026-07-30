@@ -13,6 +13,7 @@ from core_tools.persistence.digests import (
     digest_text,
 )
 from core_tools.persistence.errors import PersistenceError
+from core_tools.persistence.file_lock import exclusive_file_lock
 from core_tools.persistence.revision import (
     RunNotFoundError,
     StoreRevisionConflictError,
@@ -35,6 +36,7 @@ __all__ = [
     "digest_json",
     "digest_text",
     "dump_yaml",
+    "exclusive_file_lock",
     "load_yaml",
     "require_revision_field",
 ]

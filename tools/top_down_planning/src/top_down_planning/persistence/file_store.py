@@ -18,7 +18,9 @@ from core_tools.persistence import (
     atomic_write_bytes,
     atomic_write_json,
     atomic_write_text,
+    digest_file,
     dump_yaml,
+    exclusive_file_lock,
     load_yaml,
     require_revision_field,
 )
@@ -202,10 +204,21 @@ class FileRunStore:
 
     def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
         validated_run_id = validate_store_id(run_id, label="run_id")
-        self._recover_incomplete_transactions(validated_run_id)
         run_dir = self.run_dir(validated_run_id)
         if not run_dir.is_dir():
             raise RunNotFoundError(validated_run_id, "run directory missing", runs_root=self._root)
+
+        lock_path = self._assert_contained(run_dir / ".commit.lock")
+        with exclusive_file_lock(lock_path):
+            return self._commit_locked(validated_run_id, run_dir, spec)
+
+    def _commit_locked(
+        self,
+        validated_run_id: str,
+        run_dir: Path,
+        spec: CommitSpec,
+    ) -> dict[str, Any]:
+        self._recover_incomplete_transactions(validated_run_id)
 
         if spec.run is not None:
             expected = spec.run_expected_revision
@@ -266,7 +279,7 @@ class FileRunStore:
         backups_dir = staging_dir / "backups"
         staging_dir.mkdir()
         backups_dir.mkdir()
-        staged_files: list[dict[str, str]] = []
+        staged_files: list[dict[str, Any]] = []
 
         journal_events = [dict(event) for event in spec.events]
         for event in journal_events:
@@ -277,17 +290,35 @@ class FileRunStore:
             if run_payload is not None:
                 staged_path = staging_dir / "run.json"
                 atomic_write_json(staged_path, run_payload)
-                staged_files.append({"kind": "run", "name": "run.json"})
+                staged_files.append(
+                    {
+                        "kind": "run",
+                        "name": "run.json",
+                        "digest": digest_file(staged_path),
+                    }
+                )
 
             if plan_payload is not None:
                 staged_path = staging_dir / "plan.json"
                 atomic_write_json(staged_path, plan_payload)
-                staged_files.append({"kind": "plan", "name": "plan.json"})
+                staged_files.append(
+                    {
+                        "kind": "plan",
+                        "name": "plan.json",
+                        "digest": digest_file(staged_path),
+                    }
+                )
 
             if production_payload is not None:
                 staged_path = staging_dir / "production.json"
                 atomic_write_json(staged_path, production_payload)
-                staged_files.append({"kind": "production", "name": "production.json"})
+                staged_files.append(
+                    {
+                        "kind": "production",
+                        "name": "production.json",
+                        "digest": digest_file(staged_path),
+                    }
+                )
 
             for review_id, review_payload in review_payloads:
                 staged_name = f"review__{review_id}.json"
@@ -298,6 +329,7 @@ class FileRunStore:
                         "kind": "review",
                         "name": staged_name,
                         "review_id": review_id,
+                        "digest": digest_file(staged_path),
                     }
                 )
 
@@ -328,9 +360,9 @@ class FileRunStore:
                     shutil.copy2(dest, backup_path)
                     journal["backups"].append(entry["name"])
                     atomic_write_json(journal_path, journal)
+                staged_path.replace(dest)
                 journal["replaced"].append(entry["name"])
                 atomic_write_json(journal_path, journal)
-                staged_path.replace(dest)
 
             journal["status"] = "appending_events"
             atomic_write_json(journal_path, journal)
@@ -597,6 +629,11 @@ class FileRunStore:
                 status == "replacing"
                 and all_names
                 and replaced_names >= all_names
+                and self._verify_replaced_files_match_staged(
+                    run_dir,
+                    staged_files,
+                    replaced,
+                )
             ):
                 if txn_id and journal_events:
                     self._ensure_events_appended(run_id, txn_id, journal_events)
@@ -605,7 +642,11 @@ class FileRunStore:
             self._rollback_replaced_files(
                 run_dir,
                 staged_files,
-                replaced,
+                self._collect_names_for_rollback(
+                    run_dir,
+                    staged_files,
+                    replaced,
+                ),
                 backups_dir,
             )
             shutil.rmtree(staging_dir)
@@ -622,6 +663,50 @@ class FileRunStore:
             return
 
         shutil.rmtree(staging_dir)
+
+    def _destination_for_staged_entry(self, run_dir: Path, entry: dict[str, Any]) -> Path:
+        if entry.get("kind") == "review":
+            review_id = str(entry.get("review_id") or "")
+            return self._assert_contained(run_dir / "reviews" / f"{review_id}.json")
+        return self._assert_contained(run_dir / str(entry.get("name") or ""))
+
+    def _verify_replaced_files_match_staged(
+        self,
+        run_dir: Path,
+        staged_files: list[dict[str, Any]],
+        replaced: list[str],
+    ) -> bool:
+        entry_by_name = {str(entry.get("name") or ""): entry for entry in staged_files}
+        for name in replaced:
+            entry = entry_by_name.get(name)
+            if entry is None:
+                return False
+            dest = self._destination_for_staged_entry(run_dir, entry)
+            if not dest.is_file():
+                return False
+            expected_digest = str(entry.get("digest") or "")
+            if not expected_digest or digest_file(dest) != expected_digest:
+                return False
+        return True
+
+    def _collect_names_for_rollback(
+        self,
+        run_dir: Path,
+        staged_files: list[dict[str, Any]],
+        replaced: list[str],
+    ) -> list[str]:
+        names = {str(name) for name in replaced}
+        for entry in staged_files:
+            name = str(entry.get("name") or "")
+            if not name or name in names:
+                continue
+            expected_digest = str(entry.get("digest") or "")
+            if not expected_digest:
+                continue
+            dest = self._destination_for_staged_entry(run_dir, entry)
+            if dest.is_file() and digest_file(dest) == expected_digest:
+                names.add(name)
+        return sorted(names)
 
     def _rollback_replaced_files(
         self,

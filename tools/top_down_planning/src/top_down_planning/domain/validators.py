@@ -642,3 +642,23 @@ def validate_plan(
         issues.extend(validate_digest_hooks(plan, digests, mode=mode))
 
     return ValidationResult(issues=issues)
+
+
+def hard_validation_issue_keys(validation: ValidationResult) -> set[tuple[str, tuple[str, ...]]]:
+    return {
+        (issue.code, tuple(issue.path))
+        for issue in validation.issues
+        if issue.severity == "error"
+    }
+
+
+def new_hard_validation_issues(
+    before: ValidationResult,
+    after: ValidationResult,
+) -> list[ValidationIssue]:
+    before_keys = hard_validation_issue_keys(before)
+    return [
+        issue
+        for issue in after.issues
+        if issue.severity == "error" and (issue.code, tuple(issue.path)) not in before_keys
+    ]

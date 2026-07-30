@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
+from core_tools.persistence import atomic_write_json, digest_file
+
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.commit import CommitSpec
@@ -66,6 +68,25 @@ def _find_txn_dir(store: FileRunStore, run_id: str) -> Path | None:
     return txn_dirs[0] if txn_dirs else None
 
 
+def _crash_before_dest_replace_count(replace_count: int) -> Any:
+    original_replace = Path.replace
+    calls = 0
+
+    def patched_replace(self: Path, target: Path) -> Path:
+        nonlocal calls
+        self_parts = self.parts
+        target_parts = target.parts
+        if any(part.startswith(".txn-") for part in self_parts) and not any(
+            part.startswith(".txn-") for part in target_parts
+        ):
+            calls += 1
+            if calls == replace_count:
+                raise OSError("simulated crash")
+        return original_replace(self, target)
+
+    return patched_replace
+
+
 def _crash_after_dest_replace_count(replace_count: int) -> Any:
     original_replace = Path.replace
     calls = 0
@@ -86,6 +107,17 @@ def _crash_after_dest_replace_count(replace_count: int) -> Any:
     return patched_replace
 
 
+def _crash_before_appending_events() -> Any:
+    original_write = atomic_write_json
+
+    def patched_write(path: Path, payload: dict[str, Any]) -> None:
+        original_write(path, payload)
+        if path.name == "journal.json" and payload.get("status") == "appending_events":
+            raise OSError("simulated crash")
+
+    return patched_write
+
+
 def test_crash_during_replace_restores_prior_state(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
@@ -100,7 +132,7 @@ def test_crash_during_replace_restores_prior_state(tmp_path: Path) -> None:
     assert txn_dir is not None
     journal = json.loads((txn_dir / "journal.json").read_text(encoding="utf-8"))
     assert journal["status"] == "replacing"
-    assert journal["replaced"]
+    assert journal["replaced"] == []
 
     recovered = FileRunStore(tmp_path)
     run_after = recovered.load_run("run-crash")
@@ -115,14 +147,15 @@ def test_crash_after_all_replaces_finishes_events_on_recovery(tmp_path: Path) ->
     _create_run(store)
     events_before = store.load_events("run-crash")
 
-    with patch.object(Path, "replace", _crash_after_dest_replace_count(2)):
+    with patch("top_down_planning.persistence.file_store.atomic_write_json", _crash_before_appending_events()):
         with pytest.raises(OSError, match="simulated crash"):
             _multi_file_commit(store, "run-crash")
 
     txn_dir = _find_txn_dir(store, "run-crash")
     assert txn_dir is not None
     journal = json.loads((txn_dir / "journal.json").read_text(encoding="utf-8"))
-    assert journal["status"] == "replacing"
+    assert journal["status"] == "appending_events"
+    assert set(journal["replaced"]) == {"run.json", "plan.json"}
 
     recovered = FileRunStore(tmp_path)
     run_after = recovered.load_run("run-crash")
@@ -133,6 +166,67 @@ def test_crash_after_all_replaces_finishes_events_on_recovery(tmp_path: Path) ->
     assert len(events_after) == len(events_before) + 1
     assert events_after[-1]["type"] == "test_commit"
     assert events_after[-1]["txn_id"] == journal["txn_id"]
+    assert not _find_txn_dir(recovered, "run-crash")
+
+
+def test_crash_before_replace_does_not_record_replaced(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    run_before = store.load_run("run-crash")
+    plan_before = store.load_plan("run-crash")
+
+    with patch.object(Path, "replace", _crash_before_dest_replace_count(2)):
+        with pytest.raises(OSError, match="simulated crash"):
+            _multi_file_commit(store, "run-crash")
+
+    txn_dir = _find_txn_dir(store, "run-crash")
+    assert txn_dir is not None
+    journal = json.loads((txn_dir / "journal.json").read_text(encoding="utf-8"))
+    assert journal["status"] == "replacing"
+    assert journal["replaced"] == ["run.json"]
+
+    recovered = FileRunStore(tmp_path)
+    run_after = recovered.load_run("run-crash")
+    plan_after = recovered.load_plan("run-crash")
+    assert run_after["revision"] == run_before["revision"]
+    assert plan_after["revision"] == plan_before["revision"]
+    events_after = recovered.load_events("run-crash")
+    assert not any(event.get("type") == "test_commit" for event in events_after)
+    assert not _find_txn_dir(recovered, "run-crash")
+
+
+def test_false_replaced_journal_without_digest_mismatch_rolls_back(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    run_before = store.load_run("run-crash")
+    plan_before = store.load_plan("run-crash")
+
+    txn_dir = store.run_dir("run-crash") / ".txn-false-replaced"
+    txn_dir.mkdir()
+    backups_dir = txn_dir / "backups"
+    backups_dir.mkdir()
+    staged_plan = dict(plan_before)
+    staged_plan["revision"] = int(plan_before["revision"]) + 1
+    (txn_dir / "plan.json").write_text(
+        json.dumps(staged_plan, sort_keys=True),
+        encoding="utf-8",
+    )
+    shutil.copy2(store.run_dir("run-crash") / "plan.json", backups_dir / "plan.json")
+    journal = {
+        "txn_id": "false-replaced",
+        "status": "replacing",
+        "files": [{"kind": "plan", "name": "plan.json", "digest": "deadbeef"}],
+        "events": [{"type": "test_commit", "run_id": "run-crash", "txn_id": "false-replaced"}],
+        "backups": ["plan.json"],
+        "replaced": ["plan.json"],
+    }
+    (txn_dir / "journal.json").write_text(json.dumps(journal), encoding="utf-8")
+
+    recovered = FileRunStore(tmp_path)
+    assert recovered.load_plan("run-crash")["revision"] == plan_before["revision"]
+    assert recovered.load_run("run-crash")["revision"] == run_before["revision"]
+    events_after = recovered.load_events("run-crash")
+    assert not any(event.get("type") == "test_commit" for event in events_after)
     assert not _find_txn_dir(recovered, "run-crash")
 
 
@@ -151,10 +245,17 @@ def test_prepared_journal_discarded_without_mutating_destinations(tmp_path: Path
         json.dumps(atomic_payload, sort_keys=True),
         encoding="utf-8",
     )
+    staged_plan_path = staging / "plan.json"
     journal = {
         "txn_id": "manual",
         "status": "prepared",
-        "files": [{"kind": "plan", "name": "plan.json"}],
+        "files": [
+            {
+                "kind": "plan",
+                "name": "plan.json",
+                "digest": digest_file(staged_plan_path),
+            }
+        ],
         "events": [],
         "backups": [],
         "replaced": [],

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.agent_tool import PlanAgentService, RevisionConflictError
-from top_down_planning.agent_tool.errors import CapabilityDeniedError
+from top_down_planning.agent_tool.errors import CapabilityDeniedError, OperationError
 from top_down_planning.cli.main import main
 from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.orchestrator.phases import PLANNING
@@ -322,7 +322,9 @@ def test_main_help_still_works() -> None:
     assert exc_info.value.code == 0
 
 
-def test_apply_returns_post_mutation_validation_issues(tmp_path: Path) -> None:
+def test_apply_returns_post_mutation_validation_issues_for_pre_existing_errors(
+    tmp_path: Path,
+) -> None:
     store = FileRunStore(tmp_path)
     gate = PlanItem("item-gate", None, "0000000000", "Gate")
     worker = PlanItem(
@@ -370,6 +372,33 @@ def test_apply_returns_post_mutation_validation_issues(tmp_path: Path) -> None:
     assert result["ok"] is False
     assert result["applied"] is True
     assert any(issue["code"] == "dependency_deadlock" for issue in result["issues"])
+
+
+def test_apply_rejects_add_item_without_title(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+
+    service = PlanAgentService(store, "run-001")
+    token = grant_capability(store, "run-001", role="planner", phase=PLANNING)
+    with pytest.raises(OperationError, match="item title is required"):
+        service.apply(
+            {
+                "base_revision": 0,
+                "operations": [
+                    {
+                        "op": "add_item",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {},
+                    }
+                ],
+            },
+            capability_token=token,
+        )
+
+    assert store.load_plan("run-001")["revision"] == 0
+    events = store.load_events("run-001")
+    assert not any(event.get("type") == "plan_applied" for event in events)
 
 
 def test_cli_plan_apply_exits_nonzero_when_validation_fails(

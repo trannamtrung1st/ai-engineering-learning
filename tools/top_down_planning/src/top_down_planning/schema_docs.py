@@ -33,6 +33,40 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "blocker-report",
 )
 
+_PLAN_ITEM_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["title"],
+    "properties": {
+        "title": {"type": "string", "minLength": 1},
+        "outcome": {"type": "string"},
+        "scope": {
+            "type": "object",
+            "properties": {
+                "includes": {"type": "array", "items": {"type": "string"}},
+                "excludes": {"type": "array", "items": {"type": "string"}},
+            },
+            "additionalProperties": False,
+        },
+        "boundaries": {"type": "array", "items": {"type": "string"}},
+        "depends_on": {"type": "array", "items": {"type": "string"}},
+        "acceptance": {"type": "array", "items": {"type": "string"}},
+    },
+    "additionalProperties": False,
+}
+
+_PLAN_ITEM_PATCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "minProperties": 1,
+    "properties": {
+        "title": {"type": "string", "minLength": 1},
+        "outcome": {"type": "string"},
+        "scope": _PLAN_ITEM_INPUT_SCHEMA["properties"]["scope"],
+        "boundaries": {"type": "array", "items": {"type": "string"}},
+        "acceptance": {"type": "array", "items": {"type": "string"}},
+    },
+    "additionalProperties": False,
+}
+
 _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
     "oneOf": [
         {
@@ -43,7 +77,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
                 "temp_id": {"type": "string"},
                 "parent_id": {"type": ["string", "null"]},
                 "placement": {"type": "object"},
-                "item": {"type": "object"},
+                "item": _PLAN_ITEM_INPUT_SCHEMA,
             },
             "additionalProperties": True,
         },
@@ -53,7 +87,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
             "properties": {
                 "op": {"const": "update_item"},
                 "item_id": {"type": "string"},
-                "patch": {"type": "object"},
+                "patch": _PLAN_ITEM_PATCH_SCHEMA,
             },
             "additionalProperties": True,
         },
@@ -71,11 +105,12 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
         {
             "type": "object",
             "required": ["op", "item_id", "replacement"],
+            "description": "Replace a leaf item only; items with active children are rejected.",
             "properties": {
                 "op": {"const": "supersede_item"},
                 "item_id": {"type": "string"},
                 "temp_id": {"type": "string"},
-                "replacement": {"type": "object"},
+                "replacement": _PLAN_ITEM_INPUT_SCHEMA,
             },
             "additionalProperties": True,
         },
@@ -864,9 +899,11 @@ output evidence IDs when revising terminal items after reviewer `changes_request
 Plan `snapshot` and `check` responses separate validation `issues` (errors with
 `code`, `message`, optional `path`) from `warnings` (human-readable strings).
 `apply` returns the same split plus mutation budget warnings and sets
-`applied: true` when the batch was persisted. `ok` is true only when validation
-has no error-severity issues (inspect `issues` after apply even when
-`applied: true`). Production `snapshot` uses the same plan validation shape;
+`applied: true` only when the batch was persisted. Mutations that would introduce
+new hard validation errors are rejected before persistence with `operation_error`
+and leave the plan revision unchanged. `ok` is true only when validation has no
+error-severity issues after a persisted apply (inspect `issues` after apply even
+when `applied: true` for pre-existing draft issues). Production `snapshot` uses the same plan validation shape;
 use `production check` for batch/disposition-specific checks. Tree item
 snapshots include `scope`, `boundaries`, and `acceptance` alongside core
 planning fields. Plan `ready` views exclude items blocked by unresolved
@@ -879,9 +916,10 @@ stored approval when one exists for the current revision, otherwise surface
 plan item when a more specific descendant already captures the prerequisite.
 
 `plan snapshot`, `plan apply`, and `plan check` exit 0 only when `ok` is true.
-`production snapshot` and `production check` follow the same rule. `plan apply`
-may return `applied: true` with exit 1 when post-apply validation reports
-errors. `production apply` returns `ok: true` when the batch was persisted;
+`production snapshot` and `production check` follow the same rule. A persisted
+`plan apply` may return `applied: true` with exit 1 only when post-apply validation
+reports pre-existing error-severity issues that the mutation did not introduce.
+`production apply` returns `ok: true` when the batch was persisted;
 use `production snapshot` or `production check` for plan validation.
 
 ## Further reading

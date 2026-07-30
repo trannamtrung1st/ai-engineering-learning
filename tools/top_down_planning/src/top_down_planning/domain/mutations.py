@@ -88,11 +88,14 @@ def _build_item(item_id: str, parent_id: str | None, order_key: str, payload: di
         raise InvalidMutationError(
             "new items must use planning_status open; use supersede_item or remove_item"
         )
+    title = payload.get("title")
+    if not title or not str(title).strip():
+        raise InvalidMutationError("item title is required")
     return PlanItem(
         id=item_id,
         parent_id=parent_id,
         order_key=order_key,
-        title=payload.get("title", ""),
+        title=str(title).strip(),
         outcome=payload.get("outcome", ""),
         scope=Scope.from_dict(payload.get("scope")),
         boundaries=list(payload.get("boundaries") or []),
@@ -163,7 +166,10 @@ def _apply_update_item(plan: Plan, op: Operation, id_map: dict[str, str], change
 
     for field_name in ("title", "outcome", "boundaries", "acceptance"):
         if field_name in patch:
-            setattr(item, field_name, patch[field_name])
+            value = patch[field_name]
+            if field_name == "title" and (not value or not str(value).strip()):
+                raise InvalidMutationError("item title is required")
+            setattr(item, field_name, value)
     if "scope" in patch:
         item.scope = Scope.from_dict(patch["scope"])
     changed.add(item_id)
@@ -195,6 +201,10 @@ def _apply_move_subtree(plan: Plan, op: Operation, id_map: dict[str, str], chang
 def _apply_supersede_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
     old_item = _require_active_item(plan, item_id)
+    if children_of(plan, item_id):
+        raise InvalidMutationError(
+            "supersede_item requires the item to have no active children"
+        )
 
     temp_id = op.get("temp_id")
     replacement_id = _stable_id()

@@ -274,6 +274,41 @@ def test_dependency_cycle_rejects_transaction() -> None:
         )
 
 
+def test_add_item_rejects_missing_title() -> None:
+    plan = _sample_plan()
+
+    with pytest.raises(InvalidMutationError, match="item title is required"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "add_item",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {},
+                }
+            ],
+        )
+
+
+def test_supersede_item_rejects_items_with_active_children() -> None:
+    plan = _sample_plan()
+
+    with pytest.raises(InvalidMutationError, match="no active children"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "supersede_item",
+                    "item_id": "item-root",
+                    "replacement": {"title": "Replacement root"},
+                }
+            ],
+        )
+
+
 def test_add_item_rejects_non_open_planning_status() -> None:
     plan = _sample_plan()
 

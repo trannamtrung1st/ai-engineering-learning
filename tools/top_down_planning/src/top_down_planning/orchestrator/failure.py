@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import re
+
 from core_tools.persistence import RunNotFoundError
 from top_down_planning.persistence.interface import RunStore
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed"})
+_MAX_FAILURE_MESSAGE_LENGTH = 500
+_PATH_PATTERN = re.compile(r"(?:/[\w.\-]+)+")
+
+
+def sanitize_operational_error(exc: BaseException) -> str:
+    message = str(exc).strip() or exc.__class__.__name__
+    message = _PATH_PATTERN.sub("<path>", message)
+    if len(message) > _MAX_FAILURE_MESSAGE_LENGTH:
+        return message[: _MAX_FAILURE_MESSAGE_LENGTH - 3] + "..."
+    return message
 
 
 def mark_run_failed(store: RunStore, run_id: str, *, message: str) -> None:

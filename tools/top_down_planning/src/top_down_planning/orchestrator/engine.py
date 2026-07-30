@@ -10,7 +10,7 @@ from core_tools.observability import ConsoleEvent
 from top_down_planning.domain.production import has_pending_amendment
 from top_down_planning.observability import ObservabilityContext
 from top_down_planning.orchestrator.errors import ProviderRunError
-from top_down_planning.orchestrator.failure import mark_run_failed
+from top_down_planning.orchestrator.failure import mark_run_failed, sanitize_operational_error
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.production import ProductionPhaseOrchestrator
@@ -234,6 +234,22 @@ class RunEngine:
                     outcome=self._store.load_run(run_id).get("outcome"),
                     steps=steps,
                     reason=str(exc),
+                )
+                self._emit_done(result, started_at=started_at)
+                return result
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:
+                message = sanitize_operational_error(exc)
+                mark_run_failed(self._store, run_id, message=message)
+                result = RunContinuationResult(
+                    ok=False,
+                    run_id=run_id,
+                    phase=phase,
+                    status=str(self._store.load_run(run_id).get("status") or ""),
+                    outcome=self._store.load_run(run_id).get("outcome"),
+                    steps=steps,
+                    reason=message,
                 )
                 self._emit_done(result, started_at=started_at)
                 return result

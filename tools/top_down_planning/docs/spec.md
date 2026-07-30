@@ -502,7 +502,13 @@ Example request:
 }
 ```
 
-The transaction should either apply completely or not apply at all. The response returns:
+The transaction should either apply completely or not apply at all. Before persistence,
+the service compares hard validation errors before and after the candidate mutation
+and rejects the transaction when new error-severity issues would be introduced.
+Soft-limit warnings may still be introduced. Invalid item payloads (for example
+missing or blank `title` on `add_item`) are rejected at the domain layer.
+
+The response returns:
 
 - The new plan revision.
 - Assigned stable IDs for temporary IDs.
@@ -528,7 +534,7 @@ remove_dependency
 replace_dependencies
 ```
 
-`remove_item` should be restricted to safe draft cases with no active references or review history. Once an item is materially used, `supersede_item` preserves auditability and redirects affected relationships explicitly.
+`remove_item` should be restricted to safe draft cases with no active references or review history. Once an item is materially used, `supersede_item` preserves auditability and redirects affected relationships explicitly. `supersede_item` is leaf-only: the target must have no active children.
 
 ### 8.4 Tree-local ordering
 
@@ -582,8 +588,11 @@ The plan tool should reject mutations that would corrupt structural integrity, i
 - Duplicate dependency edges when normalization is not requested.
 - Adding or changing a dependency in a way that creates a dependency cycle.
 - Stale base revisions.
+- `supersede_item` on an item with active children.
+- Missing or blank item titles on `add_item`, `supersede_item`, or `update_item` patches.
+- Candidate mutations that introduce new hard deterministic validation errors.
 
-Soft depth or expansion limit violations should return prominent warnings rather than automatically rejecting the operation. They must still be resolved or reported as a blocker before plan acceptance.
+Soft depth or expansion limit violations should return prominent warnings rather than automatically rejecting the operation. They must still be resolved or reported as a blocker before plan acceptance. Pre-existing hard validation issues may remain after a persisted apply; the response reports them without advancing acceptance.
 
 ---
 
@@ -1200,7 +1209,7 @@ Responsibilities:
 - `reviews/`: review-loop records and stable findings.
 - `events.jsonl`: append-only audit trail; commit events carry `txn_id` for idempotent recovery.
 
-Multi-file mutations use `RunStore.commit()` with a journaled staging directory: per-file backups before replace, rollback of partial replaces on recovery, and completion of pending event appends when all file replacements finished before a crash. `create_run` stages under `.creating-<run-id>/` and renames atomically on success.
+Multi-file mutations use `RunStore.commit()` with a journaled staging directory: per-file backups before replace, per-file staged-content digests recorded in the journal, replacement recorded in the journal only after `Path.replace()` succeeds, digest verification before completing recovery, rollback of partial or falsely journaled replaces, completion of pending event appends when replacements finished before a crash, and a per-run OS file lock (`.commit.lock`) around recovery, revision checks, replacements, and event appends. `create_run` stages under `.creating-<run-id>/` and renames atomically on success.
 
 Storage should be behind an interface so the implementation may later move from files to another backend without changing orchestration semantics.
 

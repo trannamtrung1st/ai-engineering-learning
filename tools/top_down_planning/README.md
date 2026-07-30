@@ -205,7 +205,7 @@ When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR` and a
 
 `tdp run` supports `--until plan|validated|completed` (default `plan`). `tdp resume` advances one phase step by default, or loops to `--until` when set. Both use the central `RunEngine` continuation loop.
 
-Persistence uses journaled `RunStore.commit()` for multi-file mutations: staged writes, per-file backups, and recovery that rolls back partial replaces or finishes pending event appends after a crash. Each run directory includes `invocation.json` (latest CLI invocation metadata, not part of semantic config digests). Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files under immutable UUID paths in the run store. Evidence IDs are unique across the full run history.
+Persistence uses journaled `RunStore.commit()` for multi-file mutations: staged writes, per-file digests and backups, journal records replacements only after successful `Path.replace()`, digest-verified recovery, per-run `.commit.lock` serialization, and rollback or completion of pending event appends after a crash. Each run directory includes `invocation.json` (latest CLI invocation metadata, not part of semantic config digests). Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files under immutable UUID paths in the run store. Evidence IDs are unique across the full run history.
 
 `tdp run` creates the run store and drives the run until the requested milestone or a limit/failure. On the default `plan` target, success means phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing.
 
@@ -248,15 +248,19 @@ Agent plan `snapshot`/`check`/`apply` and production `snapshot` (tree/ready) sha
 plan validation contract: structured `issues` for errors, string `warnings` for
 non-blocking findings, and `ok` when validation has no error-severity issues.
 Production-specific batch checks use `production check`. Tree snapshots include
-`scope`, `boundaries`, and `acceptance` on each item. `plan apply` also sets
-`applied: true` when the mutation batch was persisted (exit code still reflects
-`ok`, not whether the batch was saved). Plan apply commits plan, run digests, and
-events through a journaled store commit with crash recovery.
+`scope`, `boundaries`, and `acceptance` on each item. `plan apply` sets
+`applied: true` only when the mutation batch was persisted (exit code still reflects
+`ok`, not whether the batch was saved). Invalid operations and mutations that would
+introduce new hard validation errors are rejected before persistence with
+`operation_error`. `supersede_item` is leaf-only (no active children). Plan apply
+commits plan, run digests, and events through a journaled store commit with per-run
+file locking and crash recovery.
 
 `tdp agent plan snapshot`, `plan apply`, and `plan check` exit 0 only when
 `ok` is true. `production snapshot` and `production check` follow the same rule.
-`plan apply` may return `applied: true` with exit 1 when post-apply validation
-reports errors. `production apply` returns `ok: true` when the batch was
+A persisted `plan apply` may return `applied: true` with exit 1 only when
+post-apply validation reports pre-existing error-severity issues that the mutation
+did not introduce. `production apply` returns `ok: true` when the batch was
 persisted; use `production snapshot` or `production check` for plan validation.
 
 When planning dependencies, prefer the narrowest meaningful plan item as the dependency target (e.g. depend on a leaf API item rather than its parent epic) so readiness and production batching stay precise.

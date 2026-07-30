@@ -30,7 +30,11 @@ from top_down_planning.domain.errors import (
 )
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.mutations import apply_operations
-from top_down_planning.domain.validators import ValidationMode, validate_plan
+from top_down_planning.domain.validators import (
+    ValidationMode,
+    new_hard_validation_issues,
+    validate_plan,
+)
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.persistence import StoreRevisionConflictError
@@ -115,6 +119,13 @@ class PlanAgentService:
         limits = self._planning_limits()
         dispositions = self._dispositions()
         reviews = self._store.list_reviews(self._run_id)
+        before_validation = validate_plan(
+            plan,
+            limits=limits,
+            dispositions=dispositions,
+            reviews=reviews,
+            mode="draft",
+        )
 
         try:
             result = apply_operations(
@@ -134,6 +145,20 @@ class PlanAgentService:
             raise OperationError(str(exc)) from exc
         except DomainError as exc:
             raise OperationError(str(exc)) from exc
+
+        after_validation = validate_plan(
+            result.plan,
+            limits=limits,
+            dispositions=dispositions,
+            reviews=reviews,
+            mode="draft",
+        )
+        introduced_errors = new_hard_validation_issues(before_validation, after_validation)
+        if introduced_errors:
+            first = introduced_errors[0]
+            raise OperationError(
+                f"mutation introduced validation error: {first.code}: {first.message}"
+            )
 
         before_plan = plan
         run = self._store.load_run(self._run_id)
@@ -170,13 +195,7 @@ class PlanAgentService:
                 actual=exc.actual,
             ) from exc
 
-        validation = validate_plan(
-            result.plan,
-            limits=limits,
-            dispositions=dispositions,
-            reviews=reviews,
-            mode="draft",
-        )
+        validation = after_validation
 
         return {
             "ok": validation.ok,
