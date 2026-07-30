@@ -1,0 +1,242 @@
+"""Unit tests for domain plan tree and atomic mutations."""
+
+from __future__ import annotations
+
+import pytest
+
+from top_down_planning.domain.errors import (
+    DependencyCycleError,
+    InvalidMutationError,
+    RevisionConflictError,
+)
+from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits
+from top_down_planning.domain.mutations import apply_operations
+from top_down_planning.domain.plan_tree import children_of, display_traversal
+
+
+def _sample_plan() -> Plan:
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+    )
+    first = PlanItem(
+        id="item-first",
+        parent_id="item-root",
+        order_key="0000000000",
+        title="First",
+    )
+    second = PlanItem(
+        id="item-second",
+        parent_id="item-root",
+        order_key="0000000100",
+        title="Second",
+    )
+    return Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={
+            "item-root": root,
+            "item-first": first,
+            "item-second": second,
+        },
+    )
+
+
+def test_add_sibling_after_preserves_order_under_parent() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "add_item",
+                "temp_id": "item-middle",
+                "parent_id": "item-root",
+                "placement": {"after": "item-first"},
+                "item": {"title": "Middle"},
+            }
+        ],
+    )
+
+    sibling_ids = [item.id for item in children_of(result.plan, "item-root")]
+    assert sibling_ids == ["item-first", result.id_map["item-middle"], "item-second"]
+    assert display_traversal(result.plan) == [
+        ("item-root", "1"),
+        ("item-first", "1.1"),
+        (result.id_map["item-middle"], "1.2"),
+        ("item-second", "1.3"),
+    ]
+
+
+def test_move_subtree_rejects_descendant_parent() -> None:
+    plan = _sample_plan()
+    child = PlanItem(
+        id="item-child",
+        parent_id="item-first",
+        order_key="0000000000",
+        title="Child",
+    )
+    plan.items["item-child"] = child
+
+    with pytest.raises(InvalidMutationError, match="descendants"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "move_subtree",
+                    "item_id": "item-first",
+                    "new_parent_id": "item-child",
+                    "placement": {"last_child": True},
+                }
+            ],
+        )
+
+
+def test_stale_base_revision_fails_clearly() -> None:
+    plan = _sample_plan()
+
+    with pytest.raises(RevisionConflictError, match="revision conflict"):
+        apply_operations(
+            plan,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-first",
+                    "patch": {"title": "Renamed"},
+                }
+            ],
+        )
+
+
+def test_temp_ids_resolve_within_transaction() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "add_item",
+                "temp_id": "temp-api",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {"title": "API"},
+            },
+            {
+                "op": "add_dependency",
+                "item_id": "item-second",
+                "depends_on": "temp-api",
+            },
+        ],
+    )
+
+    api_id = result.id_map["temp-api"]
+    assert result.plan.items["item-second"].depends_on == [api_id]
+
+
+def test_exceeding_max_depth_warns_without_rejecting() -> None:
+    plan = Plan(
+        id="plan-deep",
+        revision=1,
+        output_goal="Deep tree",
+        items={
+            "item-a": PlanItem("item-a", None, "0000000000", "A"),
+        },
+    )
+    current_parent = "item-a"
+    for index in range(4):
+        child_id = f"item-d{index}"
+        plan.items[child_id] = PlanItem(
+            child_id,
+            current_parent,
+            "0000000000",
+            f"Depth {index}",
+        )
+        current_parent = child_id
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "add_item",
+                "parent_id": current_parent,
+                "placement": {"last_child": True},
+                "item": {"title": "Too deep"},
+            }
+        ],
+        limits=PlanningLimits(max_depth=3),
+    )
+
+    assert result.revision == 2
+    assert any("exceeded_depth_limit" in warning for warning in result.warnings)
+    assert len(result.warnings) == len(set(result.warnings))
+
+
+def test_superseded_items_excluded_from_active_traversal() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "supersede_item",
+                "item_id": "item-first",
+                "temp_id": "item-first-v2",
+                "replacement": {"title": "First revised"},
+            }
+        ],
+    )
+
+    replacement_id = result.id_map["item-first-v2"]
+    traversal_ids = [item_id for item_id, _ in display_traversal(result.plan)]
+    assert "item-first" not in traversal_ids
+    assert replacement_id in traversal_ids
+    assert result.plan.items["item-first"].planning_status == "superseded"
+
+
+def test_budget_warnings_are_not_duplicated() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "add_item",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {"title": "Another sibling"},
+            }
+        ],
+        limits=PlanningLimits(max_expansion_per_item=2),
+    )
+
+    assert result.warnings.count("item-root: exceeded_expansion_limit") == 1
+
+
+def test_dependency_cycle_rejects_transaction() -> None:
+    plan = _sample_plan()
+    plan.items["item-a"] = PlanItem("item-a", "item-root", "0000000200", "A")
+    plan.items["item-b"] = PlanItem("item-b", "item-root", "0000000300", "B", depends_on=["item-a"])
+    plan.items["item-c"] = PlanItem("item-c", "item-root", "0000000400", "C", depends_on=["item-b"])
+
+    with pytest.raises(DependencyCycleError):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "add_dependency",
+                    "item_id": "item-a",
+                    "depends_on": "item-c",
+                }
+            ],
+        )
