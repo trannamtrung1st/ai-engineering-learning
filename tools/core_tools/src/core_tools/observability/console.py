@@ -28,6 +28,7 @@ _CATEGORY_STYLES: dict[str, str] = {
     "phase:start": "cyan",
     "phase:end": "cyan",
     "session:start": "blue",
+    "session:end": "blue",
     "session:resume": "blue",
     "session:cancel": "bold yellow",
     "thinking": "dim",

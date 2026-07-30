@@ -228,11 +228,13 @@ class FocusedReviewOrchestrator:
         )
         bind_provider_capability(self._provider, self._capability_token)
         self._append_event(
-            "focused_review_started",
+            "reviewer_session_started",
             loop_id=loop.id,
             review_type=loop.type,
             session_id=session_id,
             scope=loop.scope,
+            role="reviewer",
+            phase=phase,
         )
         return session_id
 

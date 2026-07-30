@@ -8,7 +8,11 @@ from typing import Any, Callable
 
 from core_tools.observability import ConsoleEvent
 from top_down_planning.domain.production import has_pending_amendment
-from top_down_planning.observability import ObservabilityContext, cancel_console_event
+from top_down_planning.observability import (
+    ObservabilityContext,
+    cancel_console_event,
+    session_lifecycle_event,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.failure import mark_run_failed, sanitize_operational_error
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
@@ -266,6 +270,17 @@ class RunEngine:
                 self._emit_done(result, started_at=started_at)
                 return result
             finally:
+                for session in provider.list_active_sessions():
+                    self._emit(
+                        session_lifecycle_event(
+                            category="session:end",
+                            role=session["role"],
+                            phase=phase,
+                            session_id=session["session_id"],
+                            run_id=run_id,
+                            kind=session.get("kind"),
+                        )
+                    )
                 provider.terminate_all_sessions()
 
             steps.append(step)

@@ -114,6 +114,16 @@ class StubProvider:
             "turn_count": len(session.history),
         }
 
+    def list_active_sessions(self) -> list[dict[str, str]]:
+        return [
+            {
+                "session_id": session_id,
+                "role": session.role,
+                "kind": session.kind,
+            }
+            for session_id, session in self._sessions.items()
+        ]
+
     def terminate_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
 

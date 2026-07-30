@@ -24,6 +24,20 @@ class _CollectSink:
         self.events.append(event)
 
 
+def test_session_end_category_renders() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(
+        ConsoleEvent(
+            category="session:end",
+            message="planner session ended",
+            fields={"phase": "planning", "role": "planner"},
+        )
+    )
+    assert "[session:end]" in stderr.getvalue()
+    assert "planner session ended" in stderr.getvalue()
+
+
 def test_category_block_prefix_on_first_line_only() -> None:
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never")

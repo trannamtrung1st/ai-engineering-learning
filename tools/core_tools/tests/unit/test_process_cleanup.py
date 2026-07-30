@@ -61,6 +61,18 @@ def test_cursor_provider_terminate_all_sessions_kills_active_turn(tmp_path: Path
     assert provider._active_turn_proc is None
 
 
+def test_stub_provider_list_active_sessions() -> None:
+    provider = StubProvider()
+    provider.script_turn([{"type": "done", "subtype": "success", "text": "ok"}])
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+
+    active = provider.list_active_sessions()
+
+    assert active == [
+        {"session_id": session_id, "role": "planner", "kind": "primary"},
+    ]
+
+
 def test_stub_provider_terminate_all_sessions_clears_sessions() -> None:
     provider = StubProvider()
     provider.script_turn([{"type": "done", "subtype": "success", "text": "ok"}])

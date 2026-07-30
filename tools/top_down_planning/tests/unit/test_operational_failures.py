@@ -200,6 +200,46 @@ def test_engine_keyboard_interrupt_terminates_provider_sessions(tmp_path: Path) 
     assert store.load_run("run-failed")["status"] == "running"
 
 
+def test_engine_emits_session_end_before_terminate(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    provider = StubProvider()
+    provider.script_turn([{"type": "done", "subtype": "success", "text": "ok"}])
+    collector: list[ConsoleEvent] = []
+
+    class _CollectSink:
+        def emit(self, event: ConsoleEvent) -> None:
+            collector.append(event)
+
+    observability = ObservabilityContext(sink=_CollectSink(), run_id="run-failed")
+    engine = RunEngine(
+        store,
+        create_provider=lambda config, workspace: provider,
+        observability=observability,
+    )
+
+    def start_session_and_interrupt(self: PlanningPhaseOrchestrator) -> None:
+        self._provider.start_primary_session("planner", {"goal": "x"})
+        raise KeyboardInterrupt
+
+    with patch.object(PlanningPhaseOrchestrator, "run", start_session_and_interrupt):
+        result = engine.continue_run("run-failed", single_step=True)
+
+    assert result.cancelled is True
+    end_events = [event for event in collector if event.category == "session:end"]
+    assert len(end_events) == 1
+    assert end_events[0].fields["phase"] == PLANNING
+    assert end_events[0].fields["role"] == "planner"
+    assert end_events[0].session_id is not None
+    cancel_index = next(
+        index for index, event in enumerate(collector) if event.category == "session:cancel"
+    )
+    end_index = next(
+        index for index, event in enumerate(collector) if event.category == "session:end"
+    )
+    assert cancel_index < end_index
+
+
 def test_resume_keyboard_interrupt_exits_without_marking_failed(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store, phase=PLANNING)

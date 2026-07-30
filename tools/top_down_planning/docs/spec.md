@@ -1026,6 +1026,8 @@ Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary
 
 Console output prints `[category]` once per discrete event block (optional `[timestamp]` when `show_timestamps` is enabled). Multi-line discrete messages omit the prefix on continuation lines. `thinking` and `response` events are incremental deltas: the prefix appears once per block, further deltas omit it, and text is written without trailing newlines until the category changes. Explicit `\n` characters in agent text produce line breaks within the block.
 
+Agent session lifecycle lines use `[session:start]` and `[session:end]`. Audit events `planner_session_started`, `producer_session_started`, and `reviewer_session_started` require `role`, `phase`, `run_id`, and `session_id`; the console prints them on start (for example `planner session started phase=planning role=planner ...`). After each blocking phase step and before provider teardown (including Ctrl+C cancel), `RunEngine` emits one `[session:end]` line per active provider session with the same fields.
+
 `tdp run` and `tdp resume` treat Ctrl+C as a cooperative cancel: `RunEngine` calls `terminate_all_sessions()`, emits a `session:cancel` observability event, returns without marking the run failed, and the CLI exits with code 130. With `--stream-json`, the final stdout payload includes `"cancelled": true` and `"reason": "cancelled by user"`.
 
 Dedicated operational flags include:
@@ -1094,6 +1096,7 @@ send(session_id, request)
 stream_events(session_id)
 get_capabilities()
 get_session_reference(session_id)
+list_active_sessions()
 terminate_session(session_id)
 terminate_all_sessions()
 ```
@@ -1107,7 +1110,8 @@ The provider adapter is responsible for:
 - Working-directory behavior.
 - Native project context integration.
 - Provider-specific rules, skills, and instruction discovery.
-- Terminating in-flight provider subprocesses when orchestration no longer needs them. `terminate_all_sessions()` is called by the run engine after each phase step and on user cancel (Ctrl+C); the Cursor adapter kills the active CLI process tree so background agent subprocesses are not left running.
+- Reporting tracked sessions via `list_active_sessions()` before teardown.
+- Terminating in-flight provider subprocesses when orchestration no longer needs them. `RunEngine` emits `[session:end]` for each active session, then calls `terminate_all_sessions()` after each phase step and on user cancel (Ctrl+C); the Cursor adapter kills the active CLI process tree so background agent subprocesses are not left running.
 
 The provider should run in the project workspace so existing project context remains naturally available. Explicit context configured by the Top Down Planning tool supplements provider-native context rather than replacing it.
 

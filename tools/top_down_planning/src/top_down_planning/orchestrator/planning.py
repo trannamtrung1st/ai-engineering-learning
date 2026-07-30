@@ -90,6 +90,8 @@ class PlanningPhaseOrchestrator:
             self._append_event(
                 "planner_session_started",
                 session_id=session_id,
+                role="planner",
+                phase=PLANNING,
             )
         else:
             self._provider.resume_primary_session(

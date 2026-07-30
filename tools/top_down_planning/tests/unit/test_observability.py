@@ -49,6 +49,60 @@ def test_map_audit_event_maps_planning_candidate_ready() -> None:
     assert mapped.fields["plan_revision"] == 2
 
 
+def test_map_audit_event_maps_planner_session_started_with_phase_and_role() -> None:
+    mapped = map_audit_event(
+        {
+            "type": "planner_session_started",
+            "run_id": "run-001",
+            "session_id": "planner-1",
+            "role": "planner",
+            "phase": "planning",
+        }
+    )
+    assert mapped is not None
+    assert mapped.category == "session:start"
+    assert mapped.message == "planner session started"
+    assert mapped.session_id == "planner-1"
+    assert mapped.fields["phase"] == "planning"
+    assert mapped.fields["role"] == "planner"
+    assert mapped.fields["run_id"] == "run-001"
+
+
+def test_map_audit_event_requires_role_and_phase_for_session_start() -> None:
+    assert map_audit_event(
+        {
+            "type": "planner_session_started",
+            "run_id": "run-001",
+            "session_id": "planner-1",
+        }
+    ) is None
+
+
+def test_session_lifecycle_event_builds_start_and_end() -> None:
+    from top_down_planning.observability import session_lifecycle_event
+
+    started = session_lifecycle_event(
+        category="session:start",
+        role="planner",
+        phase="planning",
+        session_id="planner-1",
+        run_id="run-001",
+    )
+    ended = session_lifecycle_event(
+        category="session:end",
+        role="planner",
+        phase="planning",
+        session_id="planner-1",
+        run_id="run-001",
+        kind="primary",
+    )
+    assert started.category == "session:start"
+    assert started.message == "planner session started"
+    assert ended.category == "session:end"
+    assert ended.message == "planner session ended"
+    assert ended.fields["kind"] == "primary"
+
+
 def test_provider_bridge_streams_thinking_deltas_not_empty_lines() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(sink=collector)

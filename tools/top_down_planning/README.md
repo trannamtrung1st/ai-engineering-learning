@@ -51,7 +51,7 @@ provider:
 
 Per-role model selection uses `agent_context.<role>.model`, falling back to `agent_context.default.model`. `model: auto` means no explicit Cursor `--model` argument.
 
-- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json --trust --approve-mcps --force`). `--force` is required so non-interactive turns can run shell/`tdp agent …` tools; without it those calls are rejected. Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today. After each phase step (including user cancel via Ctrl+C), `RunEngine` calls `terminate_all_sessions()` so in-flight CLI process trees are stopped and background agent subprocesses are not left running.
+- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json --trust --approve-mcps --force`). `--force` is required so non-interactive turns can run shell/`tdp agent …` tools; without it those calls are rejected. Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today. After each phase step (including user cancel via Ctrl+C), `RunEngine` lists active provider sessions, emits `[session:end]` for each, then calls `terminate_all_sessions()` so in-flight CLI process trees are stopped and background agent subprocesses are not left running.
 - `stub` — deterministic scripted turns for **tests only**; call `script_turn()` before each provider turn.
 
 Production runs default to `cursor`. Use `provider.name=stub` only in unit/integration tests.
@@ -91,9 +91,11 @@ Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary
 
 Console output prints `[category]` once per discrete event block (optional `[timestamp]` when `show_timestamps` is enabled). `thinking` and `response` stream incrementally with one prefix per block; explicit `\n` in agent text breaks lines within the block.
 
+Agent session lifecycle: `[session:start]` on `planner_session_started` / `producer_session_started` / `reviewer_session_started` audit events (`phase`, `role`, `run_id`, `session_id` required); `[session:end]` when the engine tears down provider sessions after each blocking phase step or Ctrl+C cancel.
+
 `events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens, secrets, and oversized payloads are redacted at every log level.
 
-`tdp run` and `tdp resume` handle Ctrl+C without a traceback: the engine stops provider subprocesses, emits a `[session:cancel]` line on stderr, leaves the run in `running` status for resume, and exits with code 130. With `--stream-json`, stdout carries `{"cancelled": true, "reason": "cancelled by user", ...}`.
+`tdp run` and `tdp resume` handle Ctrl+C without a traceback: the engine stops provider subprocesses, emits a `[session:cancel]` line on stderr, emits `[session:end]` for each active provider session, leaves the run in `running` status for resume, and exits with code 130. With `--stream-json`, stdout carries `{"cancelled": true, "reason": "cancelled by user", ...}`.
 
 ## Import boundaries
 

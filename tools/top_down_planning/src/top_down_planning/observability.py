@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from core_tools.observability import (
     AgentTextStreamController,
@@ -33,6 +33,39 @@ def cancel_console_event(*, run_id: str, phase: str) -> ConsoleEvent:
         ),
         fields={"phase": phase},
         run_id=run_id,
+    )
+
+
+_SESSION_START_EVENT_TYPES = frozenset(
+    {
+        "planner_session_started",
+        "producer_session_started",
+        "reviewer_session_started",
+    }
+)
+
+
+def session_lifecycle_event(
+    *,
+    category: Literal["session:start", "session:end"],
+    role: str,
+    phase: str,
+    session_id: str,
+    run_id: str | None = None,
+    **extra_fields: Any,
+) -> ConsoleEvent:
+    """Build a consistent agent session start/end console event."""
+
+    verb = "started" if category == "session:start" else "ended"
+    fields: dict[str, Any] = {"phase": phase, "role": role, **extra_fields}
+    if run_id is not None:
+        fields.setdefault("run_id", run_id)
+    return ConsoleEvent(
+        category=category,
+        message=f"{role} session {verb}",
+        fields=fields,
+        run_id=run_id,
+        session_id=session_id,
     )
 
 
@@ -272,18 +305,35 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
     event_type = str(payload.get("type") or "")
     fields = {k: v for k, v in payload.items() if k not in {"type", "ts", "txn_id"}}
 
+    if event_type in _SESSION_START_EVENT_TYPES:
+        session_id = fields.get("session_id")
+        role = fields.get("role")
+        phase = fields.get("phase")
+        if not all(isinstance(value, str) and value for value in (session_id, role, phase)):
+            return None
+        run_id = fields.get("run_id")
+        extra = {
+            k: v
+            for k, v in fields.items()
+            if k not in {"session_id", "role", "phase", "run_id"}
+        }
+        return session_lifecycle_event(
+            category="session:start",
+            role=role,
+            phase=phase,
+            session_id=session_id,
+            run_id=str(run_id) if isinstance(run_id, str) else None,
+            **extra,
+        )
+
     mapping: dict[str, tuple[str, str]] = {
         "run_created": ("session:start", "run created"),
-        "planner_session_started": ("session:start", "planner session started"),
-        "producer_session_started": ("session:start", "producer session started"),
-        "reviewer_session_started": ("session:start", "reviewer session started"),
         "production_phase_started": ("phase:start", "production phase started"),
         "production_completed": ("phase:end", "production completed"),
         "production_failed": ("error", "production failed"),
         "planning_candidate_ready": ("state", "planning candidate ready"),
         "planning_expansion_recorded": ("state", "planning expansion recorded"),
         "planning_limit_exceeded": ("warning", "planning limit exceeded"),
-        "focused_review_started": ("review", "focused review started"),
         "focused_review_approved": ("review", "focused review approved"),
         "focused_review_failed": ("review", "focused review failed"),
         "whole_plan_review_started": ("phase:start", "whole plan review started"),
@@ -304,7 +354,13 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
     if mapped is None:
         return None
     category, message = mapped
-    return ConsoleEvent(category=category, message=message, fields=fields)
+    session_id = fields.get("session_id")
+    return ConsoleEvent(
+        category=category,
+        message=message,
+        fields=fields,
+        session_id=str(session_id) if isinstance(session_id, str) else None,
+    )
 
 
 class ObservingRunStore:

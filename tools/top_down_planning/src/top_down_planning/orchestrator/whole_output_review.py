@@ -363,6 +363,8 @@ class WholeOutputReviewOrchestrator:
             "reviewer_session_started",
             loop_id=loop.id,
             session_id=session_id,
+            role="reviewer",
+            phase=phase,
         )
         return session_id
 

@@ -43,6 +43,9 @@ class Provider(Protocol):
     def get_session_reference(self, session_id: str) -> dict[str, Any]:
         """Return a durable reference for resuming this session later."""
 
+    def list_active_sessions(self) -> list[dict[str, str]]:
+        """Return tracked sessions as session_id, role, and kind before termination."""
+
     def terminate_session(self, session_id: str) -> None:
         """Terminate a provider session when orchestration no longer needs it."""
 

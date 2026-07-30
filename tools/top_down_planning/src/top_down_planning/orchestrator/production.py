@@ -107,9 +107,12 @@ class ProductionPhaseOrchestrator:
                 model=role_context.model,
             )
             run = _persist_session_id(self._store, self._run_id, session_id)
+            phase = str(run.get("phase") or PRODUCTION)
             self._append_event(
                 "producer_session_started",
                 session_id=session_id,
+                role="producer",
+                phase=phase,
             )
         else:
             self._provider.resume_primary_session(
