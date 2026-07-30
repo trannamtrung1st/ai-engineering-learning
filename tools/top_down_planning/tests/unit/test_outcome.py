@@ -148,3 +148,16 @@ def test_unapproved_output_cannot_accept() -> None:
     assert output_validation.ok is False
     assert invariant.satisfied is False
     assert invariant.output_whole_output_review_approved_current_revision is False
+
+
+def test_accepted_outcome_is_not_assigned_directly_in_source() -> None:
+    from pathlib import Path
+
+    src_root = Path(__file__).resolve().parents[2] / "src" / "top_down_planning"
+    direct_assignments: list[str] = []
+    for path in sorted(src_root.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if 'run["outcome"] = "accepted"' in text or "run['outcome'] = 'accepted'" in text:
+            direct_assignments.append(str(path.relative_to(src_root)))
+
+    assert direct_assignments == []

@@ -140,6 +140,38 @@ def test_temp_ids_resolve_within_transaction() -> None:
     assert result.plan.items["item-second"].depends_on == [api_id]
 
 
+def test_add_item_resolves_depends_on_temp_ids_in_same_transaction() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "add_item",
+                "temp_id": "temp-api",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {"title": "API"},
+            },
+            {
+                "op": "add_item",
+                "temp_id": "temp-ui",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {
+                    "title": "UI",
+                    "depends_on": ["temp-api"],
+                },
+            },
+        ],
+    )
+
+    api_id = result.id_map["temp-api"]
+    ui_id = result.id_map["temp-ui"]
+    assert result.plan.items[ui_id].depends_on == [api_id]
+
+
 def test_exceeding_max_depth_warns_without_rejecting() -> None:
     plan = Plan(
         id="plan-deep",

@@ -15,7 +15,10 @@ def load_yaml(text: str) -> Any:
 
     def next_non_empty(start: int) -> int:
         current = start
-        while current < len(lines) and not lines[current].strip():
+        while current < len(lines):
+            stripped = lines[current].strip()
+            if stripped and not stripped.startswith("#"):
+                return current
             current += 1
         return current
 

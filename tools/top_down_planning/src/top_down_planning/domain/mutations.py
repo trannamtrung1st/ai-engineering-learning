@@ -122,8 +122,10 @@ def _apply_add_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: 
         }
 
     payload = _item_payload_from_op(op)
-    depends_on = list(payload.get("depends_on") or [])
+    depends_on = [_resolve_id(dep, id_map) for dep in payload.get("depends_on") or []]
     _validate_depends_on(plan, depends_on, id_map, item_id=stable)
+    payload = dict(payload)
+    payload["depends_on"] = depends_on
     item = _build_item(stable, parent_id, "0000000000", payload)
     insert_item_at(plan, item, parent_id, placement)
     changed.add(stable)

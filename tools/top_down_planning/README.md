@@ -116,6 +116,6 @@ cd tools/top_down_planning
 python -m pip install -e ".[dev]"
 tdp --help
 pytest                  # unit tests (default; excludes integration)
-pytest -m integration   # multi-layer smoke test
+pytest -m integration   # stub-provider e2e and smoke tests
 pytest -m ""            # full suite
 ```
