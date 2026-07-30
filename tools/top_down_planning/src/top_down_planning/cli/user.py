@@ -23,7 +23,11 @@ from top_down_planning.config import (
     resolve_config,
 )
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.domain.reviews import find_whole_plan_approval
+from top_down_planning.domain.reviews import find_whole_output_approval, find_whole_plan_approval
+from top_down_planning.domain.output_validators import (
+    build_output_approval_validation_context,
+    validate_output,
+)
 from top_down_planning.domain.validators import (
     DigestBundle,
     ReviewState,
@@ -35,9 +39,11 @@ from top_down_planning.orchestrator import (
     PlanningPhaseOrchestrator,
     ProductionPhaseOrchestrator,
     ProviderRunError,
+    WholeOutputReviewOrchestrator,
     WholePlanReviewOrchestrator,
 )
 from top_down_planning.orchestrator.phases import (
+    OUTPUT_VALIDATED,
     PLANNING,
     PLAN_VALIDATED,
     PRODUCTION,
@@ -45,7 +51,11 @@ from top_down_planning.orchestrator.phases import (
     WHOLE_PLAN_REVIEW,
 )
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
-from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
+from top_down_planning.persistence.digests import (
+    compute_config_digest,
+    compute_output_digest,
+    compute_plan_digest,
+)
 from top_down_planning.provider import create_provider
 
 
@@ -163,20 +173,67 @@ def handle_resume_command(args: Namespace) -> None:
         )
 
     phase = str(run.get("phase") or "")
-    if phase == WHOLE_OUTPUT_REVIEW:
+    if phase == OUTPUT_VALIDATED:
         payload = {
             "ok": True,
             "run_id": args.run,
             "phase": phase,
             "status": run.get("status"),
             "outcome": run.get("outcome"),
-            "message": "production already completed",
+            "message": "run already completed with final outcome",
         }
         if args.stream_json:
             emit_payload(payload)
         emit_message(
-            f"Run {args.run} already completed production (phase={WHOLE_OUTPUT_REVIEW}).",
+            f"Run {args.run} already completed "
+            f"(phase={OUTPUT_VALIDATED}, outcome={run.get('outcome')}).",
         )
+        return
+
+    if phase == WHOLE_OUTPUT_REVIEW:
+        config = store.load_resolved_config(args.run)
+        workspace = _run_workspace(run)
+        provider = create_provider(config, workspace=workspace)
+        try:
+            result = WholeOutputReviewOrchestrator(store, args.run, provider).run()
+        except ProviderRunError as exc:
+            emit_error_message(
+                str(exc),
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="provider_run_error",
+            )
+
+        run = store.load_run(args.run)
+        payload = {
+            "ok": result.ok,
+            "run_id": args.run,
+            "phase": run.get("phase"),
+            "status": run.get("status"),
+            "outcome": run.get("outcome"),
+            "loop_id": result.loop_id,
+            "reviewer_session_id": result.reviewer_session_id,
+            "revision_cycles": result.revision_cycles,
+        }
+        if result.reason:
+            payload["reason"] = result.reason
+        exit_code = 0 if result.ok else 1
+        if args.stream_json:
+            emit_payload(payload, exit_code=exit_code)
+
+        if result.ok and result.phase == OUTPUT_VALIDATED:
+            message = (
+                f"Run {args.run} accepted output "
+                f"(phase={OUTPUT_VALIDATED}, outcome={result.outcome})."
+            )
+        elif not result.ok:
+            message = (
+                f"Run {args.run} stopped during whole-output review: {result.reason} "
+                f"(outcome={result.outcome})."
+            )
+        else:
+            message = f"Run {args.run} phase={result.phase} status={result.status}."
+        emit_message(message, exit_code=exit_code)
         return
 
     if phase == PLAN_VALIDATED or phase == PRODUCTION:
@@ -433,9 +490,10 @@ def handle_validate_command(args: Namespace) -> None:
 
     limits = planning_limits_from_config(config)
     dispositions = dict(production.get("dispositions") or {})
+    phase = str(run.get("phase") or "")
     mode, review_state, digest_bundle = _validation_context(store, args.run, run, plan)
 
-    validation = validate_plan(
+    plan_validation = validate_plan(
         plan,
         limits=limits,
         dispositions=dispositions,
@@ -443,24 +501,70 @@ def handle_validate_command(args: Namespace) -> None:
         review_state=review_state,
         digests=digest_bundle,
     )
+
+    output_validation = None
+    output_mode = "draft"
+    completion_claim = production.get("completion_claim")
+    output_revision = int(production.get("output_revision") or 0)
+    output_approval = find_whole_output_approval(store.list_reviews(args.run), output_revision)
+    should_validate_output = (
+        output_approval is not None
+        or phase in {WHOLE_OUTPUT_REVIEW, OUTPUT_VALIDATED}
+        or isinstance(completion_claim, dict)
+    )
+    if should_validate_output:
+        output_mode = "approval" if output_approval is not None else "draft"
+        output_review_state = None
+        output_digest_bundle = None
+        if output_approval is not None:
+            output_review_state, output_digest_bundle = build_output_approval_validation_context(
+                run=run,
+                production=production,
+                approval=output_approval,
+                actual_output_digest=compute_output_digest(production),
+                actual_plan_digest=compute_plan_digest(plan),
+            )
+        output_validation = validate_output(
+            plan,
+            production,
+            review_state=output_review_state,
+            digests=output_digest_bundle,
+            reviews=store.list_reviews(args.run),
+            mode=output_mode,
+        )
+
+    ok = plan_validation.ok and (output_validation.ok if output_validation is not None else True)
     payload = {
-        "ok": validation.ok,
-        "mode": mode,
-        "revision": plan.revision,
-        "issues": [issue.to_dict() for issue in validation.issues],
+        "ok": ok,
+        "plan": {
+            "mode": mode,
+            "revision": plan.revision,
+            "issues": [issue.to_dict() for issue in plan_validation.issues],
+        },
     }
-    exit_code = 0 if validation.ok else 1
+    if output_validation is not None:
+        payload["output"] = {
+            "mode": output_mode,
+            "output_revision": output_revision,
+            "issues": [issue.to_dict() for issue in output_validation.issues],
+        }
+    exit_code = 0 if ok else 1
     if args.stream_json:
         emit_payload(payload, exit_code=exit_code)
 
-    if validation.ok:
-        emit_message(f"Validation passed ({mode} mode).", exit_code=0)
+    if ok:
+        emit_message(f"Validation passed (plan={mode}, output={output_mode}).", exit_code=0)
         return
 
-    lines = [f"Validation failed ({mode} mode):"]
-    for issue in validation.issues:
+    lines = [f"Validation failed (plan={mode}):"]
+    for issue in plan_validation.issues:
         path = ".".join(issue.path) if issue.path else "-"
         lines.append(f"  [{issue.severity}] {issue.code} ({path}): {issue.message}")
+    if output_validation is not None and not output_validation.ok:
+        lines.append(f"Output validation failed ({output_mode}):")
+        for issue in output_validation.issues:
+            path = ".".join(issue.path) if issue.path else "-"
+            lines.append(f"  [{issue.severity}] {issue.code} ({path}): {issue.message}")
     emit_message("\n".join(lines), exit_code=exit_code)
 
 

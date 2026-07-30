@@ -52,16 +52,21 @@ class ReviewAgentService:
         except ValueError as exc:
             raise RequestError(str(exc)) from exc
 
-        plan_revision = int(self._store.load_plan(self._run_id)["revision"])
-        if target_revision != plan_revision:
-            raise RequestError(
-                f"target_revision {target_revision} does not match current plan "
-                f"revision {plan_revision}"
-            )
-
         loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
         if loop.status in {"approved", "blocked"}:
             raise RequestError(f"review loop {loop_id} is already terminal: {loop.status}")
+
+        if loop.type == "whole_output":
+            current_revision = int(self._store.load_production(self._run_id)["output_revision"])
+            revision_label = "output"
+        else:
+            current_revision = int(self._store.load_plan(self._run_id)["revision"])
+            revision_label = "plan"
+        if target_revision != current_revision:
+            raise RequestError(
+                f"target_revision {target_revision} does not match current {revision_label} "
+                f"revision {current_revision}"
+            )
 
         try:
             updated = apply_review_response(

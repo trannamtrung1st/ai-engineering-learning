@@ -10,6 +10,7 @@ from top_down_planning.domain.models import Plan
 from top_down_planning.domain.readiness import compute_ready_view, detect_deadlock, is_applicable_item
 
 PRODUCTION_PHASE = "production"
+WHOLE_OUTPUT_REVIEW_PHASE = "whole_output_review"
 
 
 @dataclass(frozen=True)
@@ -158,6 +159,10 @@ class ProductionBatch:
 
 def is_production_phase(phase: str) -> bool:
     return phase == PRODUCTION_PHASE
+
+
+def allows_production_mutations(phase: str) -> bool:
+    return phase in {PRODUCTION_PHASE, WHOLE_OUTPUT_REVIEW_PHASE}
 
 
 def parse_disposition_records(

@@ -105,6 +105,24 @@ def blocking_unresolved_finding_ids_from_payload(review: dict[str, Any]) -> list
     return blocking_unresolved_finding_ids(findings)
 
 
+def find_whole_output_approval(
+    reviews: list[dict[str, Any]],
+    output_revision: int,
+) -> dict[str, Any] | None:
+    for payload in reversed(reviews):
+        if payload.get("type") != "whole_output":
+            continue
+        if payload.get("status") != "approved":
+            continue
+        target_revision = payload.get("target_revision")
+        if target_revision is None:
+            continue
+        if int(target_revision) != output_revision:
+            continue
+        return payload
+    return None
+
+
 def find_whole_plan_approval(
     reviews: list[dict[str, Any]],
     plan_revision: int,

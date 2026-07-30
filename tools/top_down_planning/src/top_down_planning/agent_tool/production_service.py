@@ -16,8 +16,8 @@ from top_down_planning.domain.production import (
     OutputEvidence,
     ProductionBatch,
     all_applicable_items_processed,
+    allows_production_mutations,
     disposition_map_from_records,
-    is_production_phase,
     next_amendment_id,
     next_batch_id,
     parse_disposition_records,
@@ -441,9 +441,10 @@ class ProductionAgentService:
     def _require_production_context(self, plan) -> None:
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or "")
-        if not is_production_phase(phase):
+        if not allows_production_mutations(phase):
             raise RequestError(
-                f"production commands are only allowed in production phase (current: {phase!r})"
+                "production commands are only allowed in production or "
+                f"whole-output review phases (current: {phase!r})"
             )
         if find_whole_plan_approval(self._store.list_reviews(self._run_id), plan.revision) is None:
             raise RequestError(

@@ -42,3 +42,15 @@ def compute_config_digest(config: dict[str, Any]) -> str:
 
 def compute_context_digest(context: dict[str, Any]) -> str:
     return digest_text(_canonical_json(context))
+
+
+def compute_output_digest(production: dict[str, Any]) -> str:
+    """Deterministic digest of production output state (excluding revision counters)."""
+
+    payload = {
+        "batches": production.get("batches") or [],
+        "dispositions": production.get("dispositions") or {},
+        "output_evidence": production.get("output_evidence") or [],
+        "completion_claim": production.get("completion_claim"),
+    }
+    return digest_text(_canonical_json(payload))

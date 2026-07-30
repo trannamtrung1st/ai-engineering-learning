@@ -206,4 +206,4 @@ def test_validate_uses_approval_mode_when_whole_plan_review_approved(
             )
         assert exit_info.value.code == 0
         payload = emit_payload.call_args.args[0]
-        assert payload["mode"] == "approval"
+        assert payload["plan"]["mode"] == "approval"

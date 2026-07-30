@@ -127,6 +127,17 @@ def _issue(
     )
 
 
+def validation_issue(
+    code: str,
+    severity: ValidationSeverity,
+    message: str,
+    path: list[str] | None = None,
+) -> ValidationIssue:
+    """Public helper for constructing validation issues from sibling modules."""
+
+    return _issue(code, severity, message, path)
+
+
 def _severity_for_mode(mode: ValidationMode, draft_severity: ValidationSeverity) -> ValidationSeverity:
     if mode == "approval" and draft_severity == "warning":
         return "error"

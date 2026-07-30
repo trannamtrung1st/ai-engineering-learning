@@ -365,7 +365,7 @@ def test_production_apply_rejects_plan_validated_phase(tmp_path: Path) -> None:
     _create_run_at_plan_validated(store)
     service = ProductionAgentService(store, "run-production")
 
-    with pytest.raises(RequestError, match="production phase"):
+    with pytest.raises(RequestError, match="whole-output review phases"):
         service.apply(
             _batch_apply_request(
                 plan_items=["item-first"],

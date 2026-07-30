@@ -23,6 +23,11 @@ from top_down_planning.orchestrator.production import (
     ProductionPhaseResult,
     build_producer_context_manifest,
 )
+from top_down_planning.orchestrator.whole_output_review import (
+    WholeOutputReviewOrchestrator,
+    WholeOutputReviewResult,
+    build_whole_output_review_package,
+)
 from top_down_planning.orchestrator.whole_plan_review import (
     WholePlanReviewOrchestrator,
     WholePlanReviewResult,
@@ -43,9 +48,12 @@ __all__ = [
     "ProviderRunError",
     "WHOLE_OUTPUT_REVIEW",
     "WHOLE_PLAN_REVIEW",
+    "WholeOutputReviewOrchestrator",
+    "WholeOutputReviewResult",
     "WholePlanReviewOrchestrator",
     "WholePlanReviewResult",
     "build_planner_context_manifest",
     "build_producer_context_manifest",
+    "build_whole_output_review_package",
     "build_whole_plan_review_package",
 ]

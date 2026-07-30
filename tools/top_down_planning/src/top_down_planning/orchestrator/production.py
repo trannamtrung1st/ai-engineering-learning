@@ -17,6 +17,7 @@ from top_down_planning.orchestrator.phases import (
     PRODUCTION,
     WHOLE_OUTPUT_REVIEW,
 )
+from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.provider.interface import Provider
 
@@ -222,10 +223,14 @@ class ProductionPhaseOrchestrator:
 
     def _complete_production(self, session_id: str) -> ProductionPhaseResult:
         run = self._store.load_run(self._run_id)
+        production = self._store.load_production(self._run_id)
         expected_revision = int(run["revision"])
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = WHOLE_OUTPUT_REVIEW
+        digests = dict(run.get("digests") or {})
+        digests["output"] = compute_output_digest(production)
+        run["digests"] = digests
         self._store.save_run(self._run_id, run, expected_revision)
         self._append_event(
             "production_completed",
