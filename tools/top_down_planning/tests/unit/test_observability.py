@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from core_tools.observability import ConsoleEvent
+from core_tools.provider.events import normalize_cursor_event
 from core_tools.provider.stub import StubProvider
 from top_down_planning.observability import (
     ObservabilityContext,
@@ -27,6 +28,12 @@ class _CollectSink:
 
     def emit(self, event: ConsoleEvent) -> None:
         self.events.append(event)
+
+
+def _normalized_tool_call(**fields: object) -> dict:
+    event = normalize_cursor_event({"type": "tool_call", **fields})
+    assert event is not None
+    return event
 
 
 def test_map_audit_event_maps_planning_candidate_ready() -> None:
@@ -52,7 +59,7 @@ def test_provider_bridge_streams_thinking_sentences_not_empty_lines() -> None:
 
     thinking = [event.message for event in collector.events if event.category == "thinking"]
     assert thinking == ["Let me inspect the config."]
-    bridge.handle({"type": "tool_call", "tool": "read", "call_id": "call-1"})
+    bridge.handle(_normalized_tool_call(tool="read", request={"path": "schema.md"}))
     thinking = [event.message for event in collector.events if event.category == "thinking"]
     assert thinking == ["Let me inspect the config.", "I'll read the schema next"]
 
@@ -72,7 +79,7 @@ def test_provider_bridge_flushes_response_on_tool_call() -> None:
     bridge = ProviderToConsoleBridge(context)
 
     bridge.handle({"type": "assistant", "text": "Partial reply"})
-    bridge.handle({"type": "tool_call", "tool": "read", "call_id": "call-1"})
+    bridge.handle(_normalized_tool_call(tool="read", request={"path": "README.md"}))
 
     response = [event.message for event in collector.events if event.category == "response"]
     assert response == ["Partial reply"]
@@ -92,45 +99,81 @@ def test_provider_bridge_streams_cumulative_thinking_chunks() -> None:
     assert thinking == ["Hello world.", "Done."]
 
 
-def test_provider_bridge_correlates_tool_start_and_end() -> None:
+def test_provider_bridge_emits_tool_start_summary_only() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(sink=collector)
     bridge = ProviderToConsoleBridge(context)
     bridge.handle(
-        {
-            "type": "tool_call",
-            "tool": "plan_apply",
-            "call_id": "call-12",
-            "request": {"base_revision": 0, "operations": [{}, {}, {}]},
-        }
+        _normalized_tool_call(
+            tool="plan_apply",
+            request={"base_revision": 0, "operations": [{}, {}, {}]},
+        )
     )
-    bridge.handle(
-        {
-            "type": "tool_result",
-            "tool": "plan_apply",
-            "call_id": "call-12",
-            "ok": True,
-        }
-    )
-    assert [event.category for event in collector.events] == ["tool:start", "tool:end"]
-    assert collector.events[0].fields["call_id"] == "call-12"
-    assert collector.events[0].fields["operations"] == 3
-    assert collector.events[1].fields["ok"] is True
-    assert "duration_ms" in collector.events[1].fields
+    assert [event.category for event in collector.events] == ["tool:start"]
+    assert collector.events[0].message == "plan_apply @r0 3 ops"
+    assert collector.events[0].fields == {}
 
 
-def test_provider_bridge_closes_open_tools_on_done() -> None:
+def test_provider_bridge_ignores_completed_tool_calls() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(sink=collector)
     bridge = ProviderToConsoleBridge(context)
-    bridge.handle(
+    started = normalize_cursor_event(
         {
             "type": "tool_call",
-            "tool": "plan_apply",
+            "subtype": "started",
+            "tool_call": {"readToolCall": {"args": {"path": "src/app.ts"}}},
+        }
+    )
+    completed = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "completed",
+            "tool_call": {"readToolCall": {"args": {"path": "src/app.ts"}}},
+        }
+    )
+    assert started is not None
+    assert completed is None
+    bridge.handle(started)
+    assert [event.category for event in collector.events] == ["tool:start"]
+    assert collector.events[0].message == "read src/app.ts"
+
+
+def test_provider_bridge_dedupes_duplicate_tool_call_start() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    started = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "call_id": "call_bPgGmDNx1soGmKYA0hHy5zMy",
+            "tool_call": {"grepToolCall": {"args": {"pattern": "plan_apply"}}},
+        }
+    )
+    assert started is not None
+    bridge.handle(started)
+    bridge.handle(dict(started))
+    tool_starts = [event for event in collector.events if event.category == "tool:start"]
+    assert len(tool_starts) == 1
+    assert tool_starts[0].message == "grep plan_apply"
+
+
+def test_provider_bridge_clears_tool_start_dedup_on_done() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    started = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "started",
             "call_id": "call-9",
+            "tool": "plan_apply",
             "request": {"base_revision": 0, "operations": [{}]},
         }
     )
+    assert started is not None
+    bridge.handle(started)
     bridge.handle(
         {
             "type": "done",
@@ -139,8 +182,9 @@ def test_provider_bridge_closes_open_tools_on_done() -> None:
             "is_error": False,
         }
     )
-    assert [event.category for event in collector.events] == ["tool:start", "tool:end"]
-    assert collector.events[1].fields["call_id"] == "call-9"
+    bridge.handle(started)
+    tool_starts = [event for event in collector.events if event.category == "tool:start"]
+    assert len(tool_starts) == 2
 
 
 def test_stub_provider_events_reach_bridge_before_stream_drain() -> None:
@@ -205,7 +249,7 @@ def test_secret_redaction_in_console_output() -> None:
         context.emit(
             ConsoleEvent(
                 category="tool:start",
-                message="plan_apply",
+                message="plan_apply @r0 1 ops",
                 fields={"token": token},
                 run_id="run-secret",
             )

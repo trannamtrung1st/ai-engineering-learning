@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,7 +18,23 @@ from core_tools.observability import (
     LogLevel,
     NullSink,
 )
+from core_tools.provider.events import is_tool_call_start
 from top_down_planning.persistence.interface import RunStore
+
+
+def cancel_console_event(*, run_id: str, phase: str) -> ConsoleEvent:
+    """Console event emitted when the user interrupts a blocking run."""
+
+    return ConsoleEvent(
+        category="session:cancel",
+        message=(
+            f"Run cancelled by user during {phase} "
+            f"(agent sessions stopped; resume with `tdp resume --run {run_id}`)."
+        ),
+        fields={"phase": phase},
+        run_id=run_id,
+    )
+
 
 @dataclass
 class ObservabilityOptions:
@@ -111,8 +126,6 @@ def build_observability_context(
                         "thinking",
                         "response",
                         "tool:start",
-                        "tool:end",
-                        "tool:error",
                         "retry",
                         "error",
                     }
@@ -140,8 +153,8 @@ class ProviderToConsoleBridge:
 
     def __init__(self, context: ObservabilityContext) -> None:
         self._context = context
-        self._tool_starts: dict[str, tuple[float, str]] = {}
         self._agent_text = AgentTextStreamController()
+        self._seen_tool_starts: set[str] = set()
 
     def handle(self, event: dict[str, Any]) -> None:
         event_type = str(event.get("type") or "")
@@ -162,35 +175,23 @@ class ProviderToConsoleBridge:
             self._emit_sentences("response", response, session_id=session)
             return
         if event_type == "tool_call":
+            if not is_tool_call_start(event):
+                return
             flushed_thinking, flushed_response = self._agent_text.flush_for_tool_call()
             self._emit_sentences("thinking", flushed_thinking, session_id=session)
             self._emit_sentences("response", flushed_response, session_id=session)
-            call_id = str(event.get("call_id") or f"call-{len(self._tool_starts) + 1}")
-            tool_name = str(event.get("tool") or "tool")
-            self._tool_starts[call_id] = (time.monotonic(), tool_name)
+            summary = str(event.get("summary") or "")
+            if not summary:
+                return
+            key = _tool_start_key(event, summary)
+            if key in self._seen_tool_starts:
+                return
+            self._seen_tool_starts.add(key)
             self._context.emit(
                 ConsoleEvent(
                     category="tool:start",
-                    message=tool_name,
+                    message=summary,
                     session_id=session,
-                    fields=_tool_start_fields(event, call_id=call_id),
-                )
-            )
-            return
-        if event_type == "tool_result":
-            call_id = str(event.get("call_id") or "")
-            started = self._tool_starts.pop(call_id, None)
-            duration_ms = _duration_ms(started[0] if started else None)
-            ok = event.get("ok")
-            if ok is None:
-                ok = not bool(event.get("is_error"))
-            category = "tool:end" if ok else "tool:error"
-            self._context.emit(
-                ConsoleEvent(
-                    category=category,
-                    message=str(event.get("tool") or "tool"),
-                    session_id=session,
-                    fields=_tool_end_fields(event, call_id=call_id, duration_ms=duration_ms, ok=bool(ok)),
                 )
             )
             return
@@ -219,6 +220,7 @@ class ProviderToConsoleBridge:
             flushed_thinking, flushed_response = self._agent_text.flush_for_done()
             self._emit_sentences("thinking", flushed_thinking, session_id=session)
             self._emit_sentences("response", flushed_response, session_id=session)
+            self._seen_tool_starts.clear()
             if event.get("is_error"):
                 self._context.emit(
                     ConsoleEvent(
@@ -227,8 +229,6 @@ class ProviderToConsoleBridge:
                         session_id=session,
                     )
                 )
-            else:
-                self._flush_open_tools(ok=True)
             return
 
     def _emit_sentences(
@@ -247,20 +247,13 @@ class ProviderToConsoleBridge:
                 )
             )
 
-    def _flush_open_tools(self, *, ok: bool) -> None:
-        for call_id, (started_at, tool_name) in list(self._tool_starts.items()):
-            self._tool_starts.pop(call_id, None)
-            self._context.emit(
-                ConsoleEvent(
-                    category="tool:end" if ok else "tool:error",
-                    message=tool_name,
-                    fields={
-                        "call_id": call_id,
-                        "ok": ok,
-                        "duration_ms": _duration_ms(started_at),
-                    },
-                )
-            )
+
+def _tool_start_key(event: dict[str, Any], summary: str) -> str:
+    call_id = event.get("call_id")
+    if call_id:
+        return f"call:{call_id}"
+    return f"summary:{summary}"
+
 
 def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
     """Map a persisted audit event to a console event."""
@@ -338,48 +331,3 @@ def wrap_store_with_observability(
     if isinstance(store, ObservingRunStore):
         return store
     return ObservingRunStore(store, context)
-
-
-def _tool_start_fields(event: dict[str, Any], *, call_id: str) -> dict[str, Any]:
-    fields: dict[str, Any] = {"call_id": call_id}
-    tool = event.get("tool")
-    if tool:
-        fields["tool"] = tool
-    request = event.get("request")
-    if isinstance(request, dict):
-        if "base_revision" in request:
-            fields["base_revision"] = request["base_revision"]
-        operations = request.get("operations")
-        if isinstance(operations, list):
-            fields["operations"] = len(operations)
-        if "loop_id" in request:
-            fields["loop_id"] = request["loop_id"]
-        if "review_type" in request:
-            fields["review_type"] = request["review_type"]
-    return fields
-
-
-def _tool_end_fields(
-    event: dict[str, Any],
-    *,
-    call_id: str,
-    duration_ms: int | None,
-    ok: bool,
-) -> dict[str, Any]:
-    fields: dict[str, Any] = {"ok": ok}
-    if call_id:
-        fields["call_id"] = call_id
-    tool = event.get("tool")
-    if tool:
-        fields["tool"] = tool
-    if duration_ms is not None:
-        fields["duration_ms"] = duration_ms
-    if event.get("duration_ms") is not None:
-        fields["duration_ms"] = int(event["duration_ms"])
-    return fields
-
-
-def _duration_ms(started_at: float | None) -> int | None:
-    if started_at is None:
-        return None
-    return int((time.monotonic() - started_at) * 1000)

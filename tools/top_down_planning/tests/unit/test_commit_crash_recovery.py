@@ -169,6 +169,28 @@ def test_crash_after_all_replaces_finishes_events_on_recovery(tmp_path: Path) ->
     assert not _find_txn_dir(recovered, "run-crash")
 
 
+def test_load_events_recovers_pending_event_append_without_canonical_reads(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    events_before = store.load_events("run-crash")
+
+    with patch("top_down_planning.persistence.file_store.atomic_write_json", _crash_before_appending_events()):
+        with pytest.raises(OSError, match="simulated crash"):
+            _multi_file_commit(store, "run-crash")
+
+    txn_dir = _find_txn_dir(store, "run-crash")
+    assert txn_dir is not None
+    journal = json.loads((txn_dir / "journal.json").read_text(encoding="utf-8"))
+    assert journal["status"] == "appending_events"
+
+    recovered = FileRunStore(tmp_path)
+    events_after = recovered.load_events("run-crash")
+    assert len(events_after) == len(events_before) + 1
+    assert events_after[-1]["type"] == "test_commit"
+    assert events_after[-1]["txn_id"] == journal["txn_id"]
+    assert not _find_txn_dir(recovered, "run-crash")
+
+
 def test_crash_before_replace_does_not_record_replaced(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)

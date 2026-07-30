@@ -8,11 +8,14 @@ from unittest.mock import patch
 
 import pytest
 
+from core_tools.observability import ConsoleEvent
 from core_tools.persistence import PersistenceError
 from core_tools.provider import create_provider
+from core_tools.provider.stub import StubProvider
 from top_down_planning.cli.user import handle_resume_command
 from top_down_planning.cli.user import handle_status_command
 from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.observability import ObservabilityContext
 from top_down_planning.orchestrator import mark_run_failed, sanitize_operational_error
 from top_down_planning.orchestrator.engine import RunEngine
 from top_down_planning.orchestrator.errors import ProviderRunError
@@ -151,6 +154,102 @@ def test_engine_store_exception_sets_failed_status(tmp_path: Path) -> None:
 
     assert result.ok is False
     assert store.load_run("run-failed")["status"] == "failed"
+
+
+def test_engine_keyboard_interrupt_terminates_provider_sessions(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    provider = StubProvider()
+    terminated: list[bool] = []
+    original_terminate = provider.terminate_all_sessions
+
+    def spy_terminate() -> None:
+        terminated.append(True)
+        original_terminate()
+
+    provider.terminate_all_sessions = spy_terminate  # type: ignore[method-assign]
+
+    collector: list[ConsoleEvent] = []
+
+    class _CollectSink:
+        def emit(self, event: ConsoleEvent) -> None:
+            collector.append(event)
+
+    observability = ObservabilityContext(sink=_CollectSink(), run_id="run-failed")
+    engine = RunEngine(
+        store,
+        create_provider=lambda config, workspace: provider,
+        observability=observability,
+    )
+
+    with patch.object(
+        PlanningPhaseOrchestrator,
+        "run",
+        side_effect=KeyboardInterrupt,
+    ):
+        result = engine.continue_run("run-failed", single_step=True)
+
+    assert result.cancelled is True
+    assert result.ok is False
+    assert result.reason == "cancelled by user"
+    assert terminated == [True]
+    cancel_events = [event for event in collector if event.category == "session:cancel"]
+    assert len(cancel_events) == 1
+    assert cancel_events[0].fields["phase"] == PLANNING
+    assert "run-failed" in cancel_events[0].message
+    assert store.load_run("run-failed")["status"] == "running"
+
+
+def test_resume_keyboard_interrupt_exits_without_marking_failed(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    run = store.load_run("run-failed")
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["sessions"] = {"primary_planner_session_id": "stub-planner-session"}
+    store.save_run("run-failed", run, expected_revision)
+
+    with patch.object(
+        PlanningPhaseOrchestrator,
+        "run",
+        side_effect=KeyboardInterrupt,
+    ):
+        with pytest.raises(SystemExit) as exit_info:
+            handle_resume_command(
+                Namespace(run="run-failed", runs_dir=str(store.root), stream_json=False)
+            )
+        assert exit_info.value.code == 130
+
+    assert store.load_run("run-failed")["status"] == "running"
+
+
+def test_resume_keyboard_interrupt_stream_json_payload(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    run = store.load_run("run-failed")
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["sessions"] = {"primary_planner_session_id": "stub-planner-session"}
+    store.save_run("run-failed", run, expected_revision)
+
+    with patch.object(
+        PlanningPhaseOrchestrator,
+        "run",
+        side_effect=KeyboardInterrupt,
+    ):
+        with patch("top_down_planning.cli.user.emit_payload") as emit_payload:
+            with pytest.raises(SystemExit) as exit_info:
+                handle_resume_command(
+                    Namespace(run="run-failed", runs_dir=str(store.root), stream_json=True)
+                )
+            assert exit_info.value.code == 130
+            payload = emit_payload.call_args.args[0]
+
+    assert payload["cancelled"] is True
+    assert payload["reason"] == "cancelled by user"
+    assert payload["run_id"] == "run-failed"
 
 
 def test_provider_run_error_resume_exits_nonzero(tmp_path: Path) -> None:

@@ -1022,7 +1022,11 @@ Observability and other presentation settings may be set in YAML under `observab
 
 Agent thinking/response console output uses `core_tools.observability.AgentTextStreamController`: Cursor `stream-json` text is read from `text` or `message.content`, cumulative chunks are deduplicated, complete sentences are emitted as they arrive, and any trailing fragment flushes before tool calls or turn completion. Empty thinking events are not normalized or printed.
 
-Multi-line console messages print `[timestamp] [category]` on the first line only; continuation lines are plain text with no prefix or category styling.
+Tool invocations print as `[tool:start]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools are summarized from the nested `tool_call` payload; structured Top Down Planning agent tools summarize from `tool` and `request` (for example `plan_apply @r0 3 ops`). Only `tool_call` events with `subtype: started` reach the console bridge; completed tool calls, tool results, and duplicate starts for the same `call_id` are dropped.
+
+Console output prints `[timestamp] [category]` once per category block. Multi-line messages and consecutive events with the same category share that prefix; continuation lines are plain text with no prefix or styling until the category changes.
+
+`tdp run` and `tdp resume` treat Ctrl+C as a cooperative cancel: `RunEngine` calls `terminate_all_sessions()`, emits a `session:cancel` observability event, returns without marking the run failed, and the CLI exits with code 130. With `--stream-json`, the final stdout payload includes `"cancelled": true` and `"reason": "cancelled by user"`.
 
 Dedicated operational flags include:
 
@@ -1103,7 +1107,7 @@ The provider adapter is responsible for:
 - Working-directory behavior.
 - Native project context integration.
 - Provider-specific rules, skills, and instruction discovery.
-- Terminating in-flight provider subprocesses when orchestration no longer needs them. `terminate_all_sessions()` is called by the run engine after each phase step; the Cursor adapter kills the active CLI process tree so background agent subprocesses are not left running.
+- Terminating in-flight provider subprocesses when orchestration no longer needs them. `terminate_all_sessions()` is called by the run engine after each phase step and on user cancel (Ctrl+C); the Cursor adapter kills the active CLI process tree so background agent subprocesses are not left running.
 
 The provider should run in the project workspace so existing project context remains naturally available. Explicit context configured by the Top Down Planning tool supplements provider-native context rather than replacing it.
 
@@ -1209,7 +1213,7 @@ Responsibilities:
 - `reviews/`: review-loop records and stable findings.
 - `events.jsonl`: append-only audit trail; commit events carry `txn_id` for idempotent recovery.
 
-Multi-file mutations use `RunStore.commit()` with a journaled staging directory: per-file backups before replace, per-file staged-content digests recorded in the journal, replacement recorded in the journal only after `Path.replace()` succeeds, digest verification before completing recovery, rollback of partial or falsely journaled replaces, completion of pending event appends when replacements finished before a crash, and a per-run OS file lock (`.commit.lock`) around recovery, revision checks, replacements, and event appends. `create_run` stages under `.creating-<run-id>/` and renames atomically on success.
+Multi-file mutations use `RunStore.commit()` with a journaled staging directory: per-file backups before replace, per-file staged-content digests recorded in the journal, replacement recorded in the journal only after `Path.replace()` succeeds, digest verification before completing recovery, rollback of partial or falsely journaled replaces, completion of pending event appends when replacements finished before a crash, and a per-run OS file lock (`.commit.lock`) around recovery, revision checks, replacements, event appends, commits, and commit-managed reads (`load_run`, `load_plan`, `load_production`, `load_events`, `load_review`, `list_reviews`). `create_run` stages under `.creating-<run-id>/` and renames atomically on success.
 
 Storage should be behind an interface so the implementation may later move from files to another backend without changing orchestration semantics.
 

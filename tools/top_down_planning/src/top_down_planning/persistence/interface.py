@@ -28,22 +28,22 @@ class RunStore(Protocol):
         """Create a new run directory and initial artifacts."""
 
     def load_run(self, run_id: str) -> dict[str, Any]:
-        """Load the current run record."""
+        """Load the current run record under the per-run commit lock."""
 
     def load_plan(self, run_id: str) -> dict[str, Any]:
-        """Load the canonical current plan snapshot."""
+        """Load the canonical current plan snapshot under the per-run commit lock."""
 
     def load_plan_model(self, run_id: str) -> Plan:
         """Load the canonical plan snapshot as a domain model."""
 
     def load_production(self, run_id: str) -> dict[str, Any]:
-        """Load the current production snapshot."""
+        """Load the current production snapshot under the per-run commit lock."""
 
     def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
-        """Apply a journaled commit across run artifacts with crash recovery."""
+        """Apply a journaled commit under the per-run commit lock."""
 
     def load_events(self, run_id: str) -> list[dict[str, Any]]:
-        """Load all persisted audit events for a run."""
+        """Load audit events under the per-run commit lock."""
 
     def append_event(self, run_id: str, event: dict[str, Any]) -> None:
         """Append a single audit event to events.jsonl."""
@@ -55,10 +55,10 @@ class RunStore(Protocol):
         """Persist a review-loop record under reviews/."""
 
     def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
-        """Load a single review-loop record."""
+        """Load a single review-loop record under the per-run commit lock."""
 
     def list_reviews(self, run_id: str) -> list[dict[str, Any]]:
-        """Load all review-loop records for a run."""
+        """Load all review-loop records for a run under the per-run commit lock."""
 
     def create_capability(
         self,

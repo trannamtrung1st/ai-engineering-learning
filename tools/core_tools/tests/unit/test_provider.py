@@ -18,6 +18,7 @@ from core_tools.provider import (
     normalize_cursor_event,
     resolve_agent_binary,
 )
+from core_tools.provider.events import format_tool_call_summary, is_tool_call_start
 
 
 def test_stub_start_send_stream_round_trip() -> None:
@@ -226,14 +227,105 @@ def test_normalize_cursor_event_enriches_tool_call() -> None:
             "type": "tool_call",
             "session_id": "chat-1",
             "tool": "plan_apply",
-            "call_id": "call-12",
             "request": {"base_revision": 0, "operations": [{}, {}, {}]},
         }
     )
     assert normalized is not None
     assert normalized["tool"] == "plan_apply"
-    assert normalized["call_id"] == "call-12"
+    assert normalized["subtype"] == "started"
     assert normalized["request"]["base_revision"] == 0
+    assert normalized["summary"] == "plan_apply @r0 3 ops"
+
+
+def test_normalize_cursor_event_formats_native_tool_call_details() -> None:
+    normalized = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "session_id": "chat-1",
+            "call_id": "call_42",
+            "tool_call": {
+                "shellToolCall": {"args": {"command": "tdp agent plan snapshot"}},
+            },
+        }
+    )
+    assert normalized is not None
+    assert normalized["tool"] == "shell"
+    assert normalized["call_id"] == "call_42"
+    assert normalized["summary"] == "shell: tdp agent plan snapshot"
+    assert is_tool_call_start(normalized) is True
+
+
+def test_normalize_cursor_event_dedupes_call_id_from_fc_id() -> None:
+    normalized = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "call_id": "call_bPgGmDNx1soGmKYA0hHy5zMy",
+            "id": "fc_0fa0b760219b86b0016a6b6111c32081a3bb69b021a4e17163",
+            "tool_call": {"grepToolCall": {"args": {"pattern": "plan_apply"}}},
+        }
+    )
+    assert normalized is not None
+    assert normalized["call_id"] == "call_bPgGmDNx1soGmKYA0hHy5zMy"
+    assert format_tool_call_summary(normalized) == "grep plan_apply"
+
+
+def test_normalize_cursor_event_drops_completed_tool_call() -> None:
+    assert normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "completed",
+            "session_id": "chat-1",
+            "tool_call": {
+                "readToolCall": {"args": {"path": "README.md"}},
+            },
+        }
+    ) is None
+
+
+def test_normalize_cursor_event_drops_tool_result() -> None:
+    assert normalize_cursor_event(
+        {
+            "type": "tool_result",
+            "session_id": "chat-1",
+            "tool": "read",
+            "is_error": False,
+        }
+    ) is None
+
+
+def test_normalize_cursor_event_passes_through_error_text() -> None:
+    normalized = normalize_cursor_event({"type": "error", "text": "provider crashed"})
+    assert normalized is not None
+    assert normalized["text"] == "provider crashed"
+
+
+def test_normalize_cursor_event_passes_through_done() -> None:
+    normalized = normalize_cursor_event(
+        {
+            "type": "done",
+            "subtype": "success",
+            "text": "ok",
+            "is_error": False,
+            "signal": "candidate_plan_ready",
+        }
+    )
+    assert normalized is not None
+    assert normalized["type"] == "done"
+    assert normalized["signal"] == "candidate_plan_ready"
+
+
+def test_format_tool_call_summary_formats_cursor_grep() -> None:
+    normalized = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "tool_call": {"grepToolCall": {"args": {"pattern": "plan_apply"}}},
+        }
+    )
+    assert normalized is not None
+    assert format_tool_call_summary(normalized) == "grep plan_apply"
 
 
 def test_stub_emits_events_before_stream_events_drain() -> None:

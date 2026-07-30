@@ -59,12 +59,58 @@ from top_down_planning.invocation import (
 from top_down_planning.observability import (
     ObservabilityContext,
     build_observability_context,
+    cancel_console_event,
     wrap_store_with_observability,
 )
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.observability import ConsoleEvent
 from core_tools.provider import create_provider
+
+_CANCEL_EXIT_CODE = 130
+
+
+def _exit_for_cancel(
+    *,
+    run_id: str,
+    store: FileRunStore,
+    stream_json: bool,
+) -> None:
+    """Exit with SIGINT convention (130) after cancellation was logged."""
+
+    run = store.load_run(run_id)
+    if stream_json:
+        emit_payload(
+            {
+                "ok": False,
+                "cancelled": True,
+                "run_id": run_id,
+                "phase": run.get("phase"),
+                "status": run.get("status"),
+                "reason": "cancelled by user",
+            },
+            exit_code=_CANCEL_EXIT_CODE,
+        )
+    raise SystemExit(_CANCEL_EXIT_CODE) from None
+
+
+def _handle_blocking_run_interrupt(
+    *,
+    run_id: str,
+    store: FileRunStore,
+    observability: ObservabilityContext,
+    stream_json: bool,
+) -> None:
+    """Emit cancel observability and exit when Ctrl+C escapes the engine loop."""
+
+    run = store.load_run(run_id)
+    observability.emit(
+        cancel_console_event(
+            run_id=run_id,
+            phase=str(run.get("phase") or "unknown"),
+        )
+    )
+    _exit_for_cancel(run_id=run_id, store=store, stream_json=stream_json)
 
 
 def _open_run_store_for_command(
@@ -220,10 +266,21 @@ def handle_run_command(args: Namespace) -> None:
     )
 
     try:
-        engine = _build_run_engine(store, resolved_runs, observability=observability)
-        continuation = engine.continue_run(run_id, until=until)
+        try:
+            engine = _build_run_engine(store, resolved_runs, observability=observability)
+            continuation = engine.continue_run(run_id, until=until)
+        except KeyboardInterrupt:
+            _handle_blocking_run_interrupt(
+                run_id=run_id,
+                store=store,
+                observability=observability,
+                stream_json=args.stream_json,
+            )
     finally:
         observability.close()
+
+    if continuation.cancelled:
+        _exit_for_cancel(run_id=run_id, store=store, stream_json=args.stream_json)
 
     run_record = store.load_run(run_id)
     last_step = continuation.steps[-1].details if continuation.steps else {}
@@ -353,17 +410,28 @@ def handle_resume_command(args: Namespace) -> None:
         )
     )
     try:
-        engine = _build_run_engine(store, resolved_runs, observability=observability)
-        if until:
-            continuation = engine.continue_run(args.run, until=until)
-        else:
-            continuation = engine.continue_run(
-                args.run,
-                until="completed",
-                single_step=True,
+        try:
+            engine = _build_run_engine(store, resolved_runs, observability=observability)
+            if until:
+                continuation = engine.continue_run(args.run, until=until)
+            else:
+                continuation = engine.continue_run(
+                    args.run,
+                    until="completed",
+                    single_step=True,
+                )
+        except KeyboardInterrupt:
+            _handle_blocking_run_interrupt(
+                run_id=args.run,
+                store=store,
+                observability=observability,
+                stream_json=args.stream_json,
             )
     finally:
         observability.close()
+
+    if continuation.cancelled:
+        _exit_for_cancel(run_id=args.run, store=store, stream_json=args.stream_json)
 
     run = store.load_run(args.run)
     payload = {

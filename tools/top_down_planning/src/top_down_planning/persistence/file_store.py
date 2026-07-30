@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -187,30 +189,40 @@ class FileRunStore:
         )
         return self.load_run(validated_run_id)
 
+    @contextmanager
+    def _with_run_commit_lock(self, run_id: str) -> Iterator[str]:
+        validated_run_id = validate_store_id(run_id, label="run_id")
+        run_dir = self.run_dir(validated_run_id)
+        if not run_dir.is_dir():
+            raise RunNotFoundError(validated_run_id, "run directory missing", runs_root=self._root)
+        lock_path = self._assert_contained(run_dir / ".commit.lock")
+        with exclusive_file_lock(lock_path):
+            yield validated_run_id
+
+    @contextmanager
+    def _with_recovered_run(self, run_id: str) -> Iterator[str]:
+        with self._with_run_commit_lock(run_id) as validated_run_id:
+            self._recover_incomplete_transactions(validated_run_id)
+            yield validated_run_id
+
     def load_run(self, run_id: str) -> dict[str, Any]:
-        self._recover_incomplete_transactions(run_id)
-        return self._read_json(self._run_path(run_id))
+        with self._with_recovered_run(run_id) as validated_run_id:
+            return self._read_run(validated_run_id)
 
     def load_plan(self, run_id: str) -> dict[str, Any]:
-        self._recover_incomplete_transactions(run_id)
-        return self._read_json(self._plan_path(run_id))
+        with self._with_recovered_run(run_id) as validated_run_id:
+            return self._read_plan(validated_run_id)
 
     def load_plan_model(self, run_id: str) -> Plan:
         return Plan.from_dict(self.load_plan(run_id))
 
     def load_production(self, run_id: str) -> dict[str, Any]:
-        self._recover_incomplete_transactions(run_id)
-        return self._read_json(self._production_path(run_id))
+        with self._with_recovered_run(run_id) as validated_run_id:
+            return self._read_production(validated_run_id)
 
     def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
-        validated_run_id = validate_store_id(run_id, label="run_id")
-        run_dir = self.run_dir(validated_run_id)
-        if not run_dir.is_dir():
-            raise RunNotFoundError(validated_run_id, "run directory missing", runs_root=self._root)
-
-        lock_path = self._assert_contained(run_dir / ".commit.lock")
-        with exclusive_file_lock(lock_path):
-            return self._commit_locked(validated_run_id, run_dir, spec)
+        with self._with_recovered_run(run_id) as validated_run_id:
+            return self._commit_locked(validated_run_id, self.run_dir(validated_run_id), spec)
 
     def _commit_locked(
         self,
@@ -218,13 +230,11 @@ class FileRunStore:
         run_dir: Path,
         spec: CommitSpec,
     ) -> dict[str, Any]:
-        self._recover_incomplete_transactions(validated_run_id)
-
         if spec.run is not None:
             expected = spec.run_expected_revision
             if expected is None:
                 raise PersistenceError("commit with run payload requires run_expected_revision")
-            current_revision = int(self.load_run(validated_run_id)["revision"])
+            current_revision = int(self._read_run(validated_run_id)["revision"])
             if current_revision != expected:
                 raise StoreRevisionConflictError(expected, current_revision)
             next_revision = require_revision_field(spec.run, "run")
@@ -239,7 +249,7 @@ class FileRunStore:
             expected = spec.plan_expected_revision
             if expected is None:
                 raise PersistenceError("commit with plan payload requires plan_expected_revision")
-            current_revision = int(self.load_plan(validated_run_id)["revision"])
+            current_revision = int(self._read_plan(validated_run_id)["revision"])
             if current_revision != expected:
                 raise StoreRevisionConflictError(expected, current_revision)
             next_revision = require_revision_field(spec.plan, "plan")
@@ -255,7 +265,7 @@ class FileRunStore:
                 raise PersistenceError(
                     "commit with production payload requires production_expected_revision"
                 )
-            current_revision = int(self.load_production(validated_run_id)["revision"])
+            current_revision = int(self._read_production(validated_run_id)["revision"])
             if current_revision != expected:
                 raise StoreRevisionConflictError(expected, current_revision)
             next_revision = require_revision_field(spec.production, "production")
@@ -433,15 +443,16 @@ class FileRunStore:
         self.commit(run_id, CommitSpec(events=[dict(event)]))
 
     def load_events(self, run_id: str) -> list[dict[str, Any]]:
-        path = self._events_path(run_id)
-        if not path.exists():
-            raise RunNotFoundError(run_id, "events.jsonl missing", runs_root=self._root)
-        events: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            events.append(json.loads(line))
-        return events
+        with self._with_recovered_run(run_id) as validated_run_id:
+            path = self._events_path(validated_run_id)
+            if not path.exists():
+                raise RunNotFoundError(validated_run_id, "events.jsonl missing", runs_root=self._root)
+            events: list[dict[str, Any]] = []
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                events.append(json.loads(line))
+            return events
 
     def load_resolved_config(self, run_id: str) -> dict[str, Any]:
         path = self.run_dir(run_id) / "resolved-config.yaml"
@@ -576,25 +587,28 @@ class FileRunStore:
 
     def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
         validated_review_id = validate_store_id(review_id, label="review_id")
-        path = self.reviews_dir(run_id) / f"{validated_review_id}.json"
-        if not path.exists():
-            raise RunNotFoundError(
-                run_id,
-                f"review {validated_review_id} missing",
-                runs_root=self._root,
-            )
-        return self._read_json(path)
+        with self._with_recovered_run(run_id) as validated_run_id:
+            path = self.reviews_dir(validated_run_id) / f"{validated_review_id}.json"
+            if not path.exists():
+                raise RunNotFoundError(
+                    validated_run_id,
+                    f"review {validated_review_id} missing",
+                    runs_root=self._root,
+                )
+            return self._read_json(path)
 
     def list_reviews(self, run_id: str) -> list[dict[str, Any]]:
-        reviews_dir = self.reviews_dir(run_id)
-        if not reviews_dir.is_dir():
-            return []
-        reviews: list[dict[str, Any]] = []
-        for path in sorted(reviews_dir.glob("*.json")):
-            reviews.append(self._read_json(path))
-        return reviews
+        with self._with_recovered_run(run_id) as validated_run_id:
+            reviews_dir = self.reviews_dir(validated_run_id)
+            if not reviews_dir.is_dir():
+                return []
+            reviews: list[dict[str, Any]] = []
+            for path in sorted(reviews_dir.glob("*.json")):
+                reviews.append(self._read_json(path))
+            return reviews
 
     def _recover_incomplete_transactions(self, run_id: str) -> None:
+        """Recover journaled transactions. Caller must hold the per-run commit lock."""
         run_dir = self.run_dir(run_id)
         if not run_dir.is_dir():
             return
@@ -772,15 +786,24 @@ class FileRunStore:
         self._require_file(path, run_id)
         return path
 
+    def _read_run(self, run_id: str) -> dict[str, Any]:
+        return self._read_json(self._run_path(run_id))
+
     def _plan_path(self, run_id: str) -> Path:
         path = self.run_dir(run_id) / "plan.json"
         self._require_file(path, run_id)
         return path
 
+    def _read_plan(self, run_id: str) -> dict[str, Any]:
+        return self._read_json(self._plan_path(run_id))
+
     def _production_path(self, run_id: str) -> Path:
         path = self.run_dir(run_id) / "production.json"
         self._require_file(path, run_id)
         return path
+
+    def _read_production(self, run_id: str) -> dict[str, Any]:
+        return self._read_json(self._production_path(run_id))
 
     def _events_path(self, run_id: str) -> Path:
         return self.run_dir(run_id) / "events.jsonl"

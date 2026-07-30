@@ -51,7 +51,7 @@ provider:
 
 Per-role model selection uses `agent_context.<role>.model`, falling back to `agent_context.default.model`. `model: auto` means no explicit Cursor `--model` argument.
 
-- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json --trust --approve-mcps --force`). `--force` is required so non-interactive turns can run shell/`tdp agent …` tools; without it those calls are rejected. Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today. After each phase step, `RunEngine` calls `terminate_all_sessions()` so in-flight CLI process trees are stopped and background agent subprocesses are not left running.
+- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json --trust --approve-mcps --force`). `--force` is required so non-interactive turns can run shell/`tdp agent …` tools; without it those calls are rejected. Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today. After each phase step (including user cancel via Ctrl+C), `RunEngine` calls `terminate_all_sessions()` so in-flight CLI process trees are stopped and background agent subprocesses are not left running.
 - `stub` — deterministic scripted turns for **tests only**; call `script_turn()` before each provider turn.
 
 Production runs default to `cursor`. Use `provider.name=stub` only in unit/integration tests.
@@ -80,16 +80,20 @@ tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-pla
 | `--log-level quiet\|normal\|verbose\|trace` | from config / `normal` | Verbosity |
 | `--log-format console\|jsonl` | from config / `console` | Human console vs JSONL on stderr |
 | `--agent-text` / `--no-agent-text` | from config / on | Show thinking/response text (streamed sentence-by-sentence) |
-| `--timestamps` / `--no-timestamps` | from config / on | Timestamp/category prefix on the first line only |
+| `--timestamps` / `--no-timestamps` | from config / on | Timestamp/category prefix on the first line of each category block |
 | `--agent-transcript` / `--no-agent-transcript` | from config / off | Persist redacted provider transcript |
 
 Observability can be set in YAML under `observability` (same file as orchestration config). Precedence for presentation settings: built-in defaults → YAML → `--set` → explicitly supplied dedicated CLI flag (omitted flags do not override YAML). Changing observability or `runtime.runs_dir` does not invalidate resume; semantic config digests exclude those fields.
 
 Provider thinking and response text is normalized from Cursor `stream-json` (`text` field or `message.content`), deduplicated when cumulative, and printed one complete sentence at a time. Empty thinking chunks are dropped. Remaining text flushes before tool calls and turn completion.
 
-Multi-line console messages (for example startup diagnostics) print `[timestamp] [category]` on the first line only; continuation lines are plain text with no prefix or category styling.
+Tool invocations print as `[tool:start]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools are summarized from the nested `tool_call` payload; structured Top Down Planning agent tools summarize from `tool` and `request` (for example `plan_apply @r0 3 ops`). Only `tool_call` events with `subtype: started` reach the console bridge; completed tool calls, tool results, and duplicate starts for the same `call_id` are dropped.
+
+Console output prints `[timestamp] [category]` once per category block. Multi-line messages and consecutive events with the same category share that prefix; continuation lines are plain text with no prefix or styling until the category changes.
 
 `events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens, secrets, and oversized payloads are redacted at every log level.
+
+`tdp run` and `tdp resume` handle Ctrl+C without a traceback: the engine stops provider subprocesses, emits a `[session:cancel]` line on stderr, leaves the run in `running` status for resume, and exits with code 130. With `--stream-json`, stdout carries `{"cancelled": true, "reason": "cancelled by user", ...}`.
 
 ## Import boundaries
 
@@ -205,7 +209,7 @@ When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR` and a
 
 `tdp run` supports `--until plan|validated|completed` (default `plan`). `tdp resume` advances one phase step by default, or loops to `--until` when set. Both use the central `RunEngine` continuation loop.
 
-Persistence uses journaled `RunStore.commit()` for multi-file mutations: staged writes, per-file digests and backups, journal records replacements only after successful `Path.replace()`, digest-verified recovery, per-run `.commit.lock` serialization, and rollback or completion of pending event appends after a crash. Each run directory includes `invocation.json` (latest CLI invocation metadata, not part of semantic config digests). Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files under immutable UUID paths in the run store. Evidence IDs are unique across the full run history.
+Persistence uses journaled `RunStore.commit()` for multi-file mutations: staged writes, per-file digests and backups, journal records replacements only after successful `Path.replace()`, digest-verified recovery, per-run `.commit.lock` serialization around commits and commit-managed reads (`load_run`, `load_plan`, `load_production`, `load_events`, `load_review`, `list_reviews`), and rollback or completion of pending event appends after a crash. Each run directory includes `invocation.json` (latest CLI invocation metadata, not part of semantic config digests). Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files under immutable UUID paths in the run store. Evidence IDs are unique across the full run history.
 
 `tdp run` creates the run store and drives the run until the requested milestone or a limit/failure. On the default `plan` target, success means phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing.
 
@@ -253,8 +257,8 @@ Production-specific batch checks use `production check`. Tree snapshots include
 `ok`, not whether the batch was saved). Invalid operations and mutations that would
 introduce new hard validation errors are rejected before persistence with
 `operation_error`. `supersede_item` is leaf-only (no active children). Plan apply
-commits plan, run digests, and events through a journaled store commit with per-run
-file locking and crash recovery.
+commits plan, run digests, and events through a journaled store commit serialized by
+per-run `.commit.lock` (commits and commit-managed reads).
 
 `tdp agent plan snapshot`, `plan apply`, and `plan check` exit 0 only when
 `ok` is true. `production snapshot` and `production check` follow the same rule.

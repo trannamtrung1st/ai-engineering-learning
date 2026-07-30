@@ -18,11 +18,10 @@ _CATEGORY_STYLES: dict[str, str] = {
     "phase:end": "cyan",
     "session:start": "blue",
     "session:resume": "blue",
+    "session:cancel": "bold yellow",
     "thinking": "dim",
     "response": "",
     "tool:start": "yellow",
-    "tool:end": "green",
-    "tool:error": "bold red",
     "review": "magenta",
     "state": "cyan",
     "artifact": "cyan",
@@ -60,6 +59,7 @@ class ColorizedConsoleSink:
             no_color=not self._use_color,
             highlight=False,
         )
+        self._last_category: str | None = None
 
     def emit(self, event: ConsoleEvent) -> None:
         safe = redact_event(
@@ -69,11 +69,16 @@ class ColorizedConsoleSink:
         )
         tag = category_tag(safe.category)
         body = _format_message(safe)
-        prefix = _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
+        show_prefix = safe.category != self._last_category
+        prefix = (
+            _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
+            if show_prefix
+            else ""
+        )
         lines = body.splitlines() or [""]
 
         if self._use_color:
-            style = _CATEGORY_STYLES.get(safe.category, "")
+            style = _CATEGORY_STYLES.get(safe.category, "") if show_prefix else ""
             first = f"{prefix}{lines[0]}"
             text = Text(first)
             if style:
@@ -87,6 +92,8 @@ class ColorizedConsoleSink:
                 output += "\n" + "\n".join(lines[1:])
             self._stream.write(output + "\n")
             self._stream.flush()
+
+        self._last_category = safe.category
 
 
 def _build_prefix(ts: datetime, tag: str, *, show_timestamps: bool) -> str:

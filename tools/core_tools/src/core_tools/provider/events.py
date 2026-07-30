@@ -11,7 +11,6 @@ ProviderEventType = Literal[
     "assistant",
     "thinking",
     "tool_call",
-    "tool_result",
     "error",
     "done",
     "retry",
@@ -21,6 +20,31 @@ _ASSISTANT_TYPES = frozenset({"assistant"})
 _THINKING_TYPES = frozenset({"thinking"})
 _DONE_TYPES = frozenset({"result"})
 _ERROR_TYPES = frozenset({"error"})
+
+_TOOL_LABELS: dict[str, str] = {
+    "readToolCall": "read",
+    "writeToolCall": "write",
+    "editToolCall": "edit",
+    "deleteToolCall": "delete",
+    "grepToolCall": "grep",
+    "globToolCall": "glob",
+    "lsToolCall": "ls",
+    "semanticSearchToolCall": "search",
+    "todoToolCall": "todo",
+}
+
+_TOOL_DETAIL_KEYS = (
+    "path",
+    "targetDirectory",
+    "globPattern",
+    "glob_pattern",
+    "pattern",
+    "query",
+    "searchTerm",
+    "command",
+)
+
+_TOOL_SUMMARY_MAX_LEN = 120
 
 
 def format_manifest_prompt(role: str, manifest: dict[str, Any]) -> str:
@@ -34,6 +58,34 @@ def format_request_prompt(request: dict[str, Any]) -> str:
     """Serialize a follow-up request into a provider prompt."""
 
     return json.dumps(request, indent=2, sort_keys=True)
+
+
+def is_tool_call_start(event: dict[str, Any]) -> bool:
+    """Return True when a normalized tool_call event begins a tool invocation."""
+
+    return (
+        str(event.get("type") or "") == "tool_call"
+        and str(event.get("subtype") or "") == "started"
+    )
+
+
+def format_tool_call_summary(event: dict[str, Any]) -> str:
+    """Return a concise human-readable summary for a tool invocation."""
+
+    request = event.get("request")
+    tool = event.get("tool")
+    if isinstance(request, dict) and isinstance(tool, str) and tool:
+        return _format_structured_tool_summary(tool, request)
+
+    raw = event.get("raw")
+    if isinstance(raw, dict):
+        summary = _format_cursor_tool_call_summary(raw)
+        if summary:
+            return summary
+
+    if isinstance(tool, str) and tool:
+        return tool
+    return "tool"
 
 
 def normalize_cursor_event(raw: dict[str, Any]) -> dict[str, Any] | None:
@@ -75,51 +127,170 @@ def normalize_cursor_event(raw: dict[str, Any]) -> dict[str, Any] | None:
 
     if event_type in _ERROR_TYPES:
         normalized["type"] = "error"
-        normalized["text"] = raw.get("message") or raw.get("result")
+        normalized["text"] = raw.get("message") or raw.get("result") or raw.get("text")
         return normalized
 
-    if event_type in {"tool_call", "tool_result"}:
-        normalized["text"] = _extract_text(raw.get("message")) or json.dumps(
-            raw, sort_keys=True
-        )
+    if event_type == "done":
+        normalized["subtype"] = raw.get("subtype")
+        normalized["text"] = raw.get("text") or raw.get("result")
+        normalized["is_error"] = bool(raw.get("is_error"))
+        if raw.get("signal") is not None:
+            normalized["signal"] = raw["signal"]
+        return normalized
+
+    if event_type == "tool_result":
+        return None
+
+    if event_type == "tool_call":
         _enrich_tool_event(normalized, raw)
+        if not is_tool_call_start(normalized):
+            return None
         return normalized
 
     return None
 
 
 def _enrich_tool_event(normalized: dict[str, Any], raw: dict[str, Any]) -> None:
-    tool = raw.get("tool") or raw.get("tool_name") or raw.get("name")
+    request = raw.get("request")
+    if not isinstance(request, dict):
+        request = None
+
+    tool = raw.get("tool")
+    if tool is None:
+        tool = _cursor_tool_name(raw)
     if tool is not None:
         normalized["tool"] = str(tool)
 
-    call_id = (
-        raw.get("call_id")
-        or raw.get("tool_call_id")
-        or raw.get("id")
-        or _nested_call_id(raw)
-    )
-    if call_id is not None:
-        normalized["call_id"] = str(call_id)
+    subtype = raw.get("subtype")
+    if subtype is None and tool is not None and request is not None:
+        subtype = "started"
+    if subtype is not None:
+        normalized["subtype"] = subtype
 
-    request = raw.get("request") or raw.get("arguments") or raw.get("input")
-    if isinstance(request, dict):
+    if request is not None:
         normalized["request"] = request
-    elif request is not None:
-        normalized["request"] = {"value": request}
 
-    if normalized.get("type") == "tool_result":
-        normalized["ok"] = not bool(raw.get("is_error"))
-        if raw.get("duration_ms") is not None:
-            normalized["duration_ms"] = int(raw["duration_ms"])
+    call_id = _resolve_call_id(raw)
+    if call_id is not None:
+        normalized["call_id"] = call_id
+
+    normalized["summary"] = format_tool_call_summary(normalized)
 
 
-def _nested_call_id(raw: dict[str, Any]) -> str | None:
-    for key in ("tool_call", "call"):
-        nested = raw.get(key)
-        if isinstance(nested, dict) and nested.get("id"):
-            return str(nested["id"])
+def _resolve_call_id(raw: dict[str, Any]) -> str | None:
+    for key in ("call_id", "tool_call_id"):
+        call_id = _normalize_call_id(raw.get(key))
+        if call_id is not None:
+            return call_id
+    tool_call = raw.get("tool_call")
+    if isinstance(tool_call, dict):
+        call_id = _normalize_call_id(tool_call.get("id"))
+        if call_id is not None:
+            return call_id
+    return _normalize_call_id(raw.get("id"))
+
+
+def _normalize_call_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    for part in text.split():
+        if part.startswith("call_"):
+            return part
+    first_line = text.splitlines()[0].strip()
+    if first_line.startswith("call_"):
+        return first_line
     return None
+
+
+def _format_structured_tool_summary(tool: str, request: dict[str, Any]) -> str:
+    parts = [tool]
+    if "base_revision" in request:
+        parts.append(f"@r{request['base_revision']}")
+    operations = request.get("operations")
+    if isinstance(operations, list) and operations:
+        parts.append(f"{len(operations)} ops")
+    if "loop_id" in request:
+        parts.append(f"loop={request['loop_id']}")
+    if "review_type" in request:
+        parts.append(str(request["review_type"]))
+    return " ".join(parts)
+
+
+def _format_cursor_tool_call_summary(raw: dict[str, Any]) -> str | None:
+    tool_call = raw.get("tool_call")
+    if not isinstance(tool_call, dict):
+        return None
+
+    if "shellToolCall" in tool_call:
+        shell = tool_call.get("shellToolCall") or {}
+        args = shell.get("args") or {}
+        result = shell.get("result") or {}
+        success = result.get("success") or {}
+        if not isinstance(args, dict):
+            args = {}
+        if not isinstance(success, dict):
+            success = {}
+        command = args.get("command") or success.get("command") or "shell"
+        return f"shell: {_shorten_summary(str(command))}"
+
+    for key, label in _TOOL_LABELS.items():
+        if key not in tool_call:
+            continue
+        payload = tool_call.get(key) or {}
+        args = payload.get("args") or {}
+        if not isinstance(args, dict):
+            args = {}
+        detail = _first_str(args, *_TOOL_DETAIL_KEYS)
+        if detail:
+            return f"{label} {_shorten_summary(detail)}"
+        return label
+
+    function = tool_call.get("function")
+    if isinstance(function, dict):
+        name = function.get("name")
+        if isinstance(name, str) and name:
+            return name
+
+    keys = list(tool_call.keys())
+    if keys:
+        return keys[0].replace("ToolCall", "")
+    return None
+
+
+def _cursor_tool_name(raw: dict[str, Any]) -> str | None:
+    tool_call = raw.get("tool_call")
+    if not isinstance(tool_call, dict):
+        return None
+    if "shellToolCall" in tool_call:
+        return "shell"
+    for key, label in _TOOL_LABELS.items():
+        if key in tool_call:
+            return label
+    function = tool_call.get("function")
+    if isinstance(function, dict) and function.get("name"):
+        return str(function["name"])
+    keys = list(tool_call.keys())
+    if keys:
+        return keys[0].replace("ToolCall", "").lower()
+    return None
+
+
+def _first_str(mapping: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = mapping.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _shorten_summary(text: str, *, max_len: int = _TOOL_SUMMARY_MAX_LEN) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 3] + "..."
 
 
 def _provider_event_text(raw: dict[str, Any]) -> str | None:

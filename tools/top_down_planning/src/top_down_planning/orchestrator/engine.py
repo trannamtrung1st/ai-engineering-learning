@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from core_tools.observability import ConsoleEvent
 from top_down_planning.domain.production import has_pending_amendment
-from top_down_planning.observability import ObservabilityContext
+from top_down_planning.observability import ObservabilityContext, cancel_console_event
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.failure import mark_run_failed, sanitize_operational_error
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
@@ -51,6 +51,7 @@ class RunContinuationResult:
     outcome: str | None
     steps: list[RunStepResult] = field(default_factory=list)
     reason: str | None = None
+    cancelled: bool = False
 
 
 def _target_reached(run: dict[str, Any], until: str) -> bool:
@@ -237,8 +238,19 @@ class RunEngine:
                 )
                 self._emit_done(result, started_at=started_at)
                 return result
-            except (KeyboardInterrupt, SystemExit):
-                raise
+            except KeyboardInterrupt:
+                self._emit(cancel_console_event(run_id=run_id, phase=phase))
+                result = RunContinuationResult(
+                    ok=False,
+                    run_id=run_id,
+                    phase=phase,
+                    status=str(self._store.load_run(run_id).get("status") or ""),
+                    outcome=self._store.load_run(run_id).get("outcome"),
+                    steps=steps,
+                    reason="cancelled by user",
+                    cancelled=True,
+                )
+                return result
             except Exception as exc:
                 message = sanitize_operational_error(exc)
                 mark_run_failed(self._store, run_id, message=message)

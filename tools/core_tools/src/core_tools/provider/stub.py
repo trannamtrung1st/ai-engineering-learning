@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core_tools.provider.errors import ProviderSessionError, ProviderTurnError
-from core_tools.provider.events import format_manifest_prompt, format_request_prompt
+from core_tools.provider.events import format_manifest_prompt, format_request_prompt, normalize_cursor_event
 
 ProviderEventCallback = Callable[[dict[str, Any]], None]
 
@@ -141,7 +141,9 @@ class StubProvider:
         session.history.append(copy.deepcopy(request))
         scripted = self._resolve_script(session_id)
         for event in scripted:
-            normalized = copy.deepcopy(event)
+            normalized = normalize_cursor_event(copy.deepcopy(event))
+            if normalized is None:
+                continue
             normalized.setdefault("session_id", session_id)
             self._emit_provider_event(normalized)
             session.pending_events.append(normalized)
