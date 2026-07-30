@@ -22,7 +22,7 @@ from tests.integration.e2e_helpers import (
     E2EStubProvider,
     assert_acceptance_invariant_for_run,
     current_plan_revision,
-    leaf_item_ids,
+    root_child_item_ids,
     planning_single_leaf_script,
     planning_two_item_script,
     production_batch_script,
@@ -92,7 +92,7 @@ def test_happy_path_lifecycle_reaches_accepted(
     plan_review_payload = _resume(run_id, runs_dir)
     assert plan_review_payload["phase"] == PLAN_VALIDATED
 
-    leaf_id = leaf_item_ids(store, run_id)[0]
+    leaf_id = root_child_item_ids(store, run_id)[0]
     patch_provider.script_turn(
         production_batch_script(
             plan_items=[leaf_id],
@@ -182,12 +182,12 @@ def test_amendment_mid_production_finishes_accepted(
     )
     _resume(run_id, runs_dir)
 
-    first_id, second_id = leaf_item_ids(store, run_id)
+    first_id, second_id = root_child_item_ids(store, run_id)
 
     def remaining_production_turn(_session_id: str) -> list[dict[str, Any]]:
         new_item_id = next(
             item_id
-            for item_id in leaf_item_ids(store, run_id)
+            for item_id in root_child_item_ids(store, run_id)
             if item_id not in {first_id, second_id}
         )
         production = store.load_production(run_id)
@@ -316,7 +316,7 @@ def test_checkpoint_resume_from_whole_plan_review_reaches_accepted(
     )
     _resume(run_id, runs_dir)
 
-    leaf_id = leaf_item_ids(store, run_id)[0]
+    leaf_id = root_child_item_ids(store, run_id)[0]
     patch_provider.script_turn(
         production_batch_script(
             plan_items=[leaf_id],

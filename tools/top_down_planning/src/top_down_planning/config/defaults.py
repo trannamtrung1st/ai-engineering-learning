@@ -28,7 +28,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "provider": {
         "name": "cursor",
-        "use_native_project_context": True,
         "skip_probe": False,
     },
     "limits": {
@@ -79,7 +78,6 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "review.focused_output.enabled",
         "review.whole_output.required",
         "provider.name",
-        "provider.use_native_project_context",
         "provider.model",
         "provider.binary",
         "provider.skip_probe",

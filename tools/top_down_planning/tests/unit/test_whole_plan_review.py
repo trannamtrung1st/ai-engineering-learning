@@ -71,6 +71,7 @@ def _create_run_at_whole_plan_review(
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
         phase=WHOLE_PLAN_REVIEW,
+        workspace=str(store.root),
     )
     session_id = None
     if provider is not None:

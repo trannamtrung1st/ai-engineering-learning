@@ -102,6 +102,7 @@ def _create_run_at_whole_output_review(
         output_goal_digest=output_goal_digest,
         phase=WHOLE_OUTPUT_REVIEW,
         production=production,
+        workspace=str(store.root),
     )
     store.save_review(
         run_id,

@@ -107,6 +107,7 @@ def _create_run_in_production_with_sessions(
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
         phase=PRODUCTION,
+        workspace=str(store.root),
     )
     store.save_review(run_id, whole_plan_approval_record(
         store,

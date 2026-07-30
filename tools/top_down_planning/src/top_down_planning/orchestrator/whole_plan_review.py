@@ -17,7 +17,7 @@ from top_down_planning.domain.validators import (
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
-from top_down_planning.orchestrator.workspace import run_workspace
+from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
@@ -125,7 +125,7 @@ class WholePlanReviewOrchestrator:
             actual_config_digest=compute_config_digest(config),
             actual_input_digest=compute_input_digest(
                 config,
-                base_dir=run_workspace(run, fallback=self._store.root),
+                base_dir=run_workspace(run),
             ),
             actual_output_goal_digest=compute_output_goal_digest(config),
             actual_context_digest=(run.get("digests") or {}).get("context"),

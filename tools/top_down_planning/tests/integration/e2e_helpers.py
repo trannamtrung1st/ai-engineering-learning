@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
+from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.domain.outcome import (
     evaluate_acceptance_invariant,
     load_approvals_for_acceptance,
 )
+from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import (
     compute_config_digest,
@@ -196,7 +198,8 @@ def production_batch_script(
     return events
 
 
-def leaf_item_ids(store: FileRunStore, run_id: str) -> list[str]:
+def root_child_item_ids(store: FileRunStore, run_id: str) -> list[str]:
+    """Direct children of item-root (flat e2e fixtures only)."""
     plan = store.load_plan_model(run_id)
     return sorted(
         item_id
@@ -270,12 +273,17 @@ def assert_acceptance_invariant_for_run(store: FileRunStore, run_id: str) -> Non
         production=production,
         reviews=reviews,
         limits=limits,
-        run=run,
         plan_approval=plan_approval,
         output_approval=output_approval,
         actual_plan_digest=compute_plan_digest(plan),
         actual_config_digest=compute_config_digest(config),
         actual_output_digest=compute_output_digest(production),
+        actual_input_digest=compute_input_digest(
+            config,
+            base_dir=run_workspace(run),
+        ),
+        actual_output_goal_digest=compute_output_goal_digest(config),
+        actual_context_digest=(run.get("digests") or {}).get("context"),
     )
 
     assert invariant.satisfied is True

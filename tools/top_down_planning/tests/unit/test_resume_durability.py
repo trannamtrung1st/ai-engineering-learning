@@ -443,6 +443,7 @@ def test_resume_cli_stream_json_for_completed_run(tmp_path: Path) -> None:
         input_digest=compute_input_digest(config, base_dir=store.root),
         output_goal_digest=compute_output_goal_digest(config),
         phase="output_validated",
+        workspace=str(store.root),
     )
     run = store.load_run(run_id)
     expected_revision = int(run["revision"])
@@ -497,6 +498,7 @@ def test_resume_plan_validated_allows_missing_producer_session(tmp_path: Path) -
         input_digest=compute_input_digest(config, base_dir=store.root),
         output_goal_digest=compute_output_goal_digest(config),
         phase=PLAN_VALIDATED,
+        workspace=str(store.root),
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
@@ -553,6 +555,7 @@ def test_resume_plan_amendment_without_pending_request_fails(tmp_path: Path) -> 
         input_digest=compute_input_digest(config, base_dir=store.root),
         output_goal_digest=compute_output_goal_digest(config),
         phase="plan_amendment",
+        workspace=str(store.root),
     )
 
     with pytest.raises(ResumeError, match="without a pending amendment request"):

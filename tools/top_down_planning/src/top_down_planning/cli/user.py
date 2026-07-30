@@ -53,6 +53,7 @@ from top_down_planning.orchestrator.phases import (
     WHOLE_OUTPUT_REVIEW,
     WHOLE_PLAN_REVIEW,
 )
+from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
 from top_down_planning.persistence.digests import (
     compute_config_digest,
@@ -184,7 +185,7 @@ def handle_resume_command(args: Namespace) -> None:
     production = store.load_production(args.run)
     if has_pending_amendment(production) and phase != PRODUCTION:
         config = store.load_resolved_config(args.run)
-        workspace = _run_workspace(run)
+        workspace = _require_run_workspace(run, stream_json=args.stream_json)
         provider = create_provider(config, workspace=workspace)
         try:
             result = PlanAmendmentOrchestrator(store, args.run, provider).run()
@@ -243,7 +244,7 @@ def handle_resume_command(args: Namespace) -> None:
 
     if phase == WHOLE_OUTPUT_REVIEW:
         config = store.load_resolved_config(args.run)
-        workspace = _run_workspace(run)
+        workspace = _require_run_workspace(run, stream_json=args.stream_json)
         provider = create_provider(config, workspace=workspace)
         try:
             result = WholeOutputReviewOrchestrator(store, args.run, provider).run()
@@ -284,7 +285,7 @@ def handle_resume_command(args: Namespace) -> None:
 
     if phase == PLAN_VALIDATED or phase == PRODUCTION:
         config = store.load_resolved_config(args.run)
-        workspace = _run_workspace(run)
+        workspace = _require_run_workspace(run, stream_json=args.stream_json)
         provider = create_provider(config, workspace=workspace)
         try:
             result = ProductionPhaseOrchestrator(store, args.run, provider).run()
@@ -324,7 +325,7 @@ def handle_resume_command(args: Namespace) -> None:
 
     if phase == WHOLE_PLAN_REVIEW:
         config = store.load_resolved_config(args.run)
-        workspace = _run_workspace(run)
+        workspace = _require_run_workspace(run, stream_json=args.stream_json)
         provider = create_provider(config, workspace=workspace)
         try:
             result = WholePlanReviewOrchestrator(store, args.run, provider).run()
@@ -365,7 +366,7 @@ def handle_resume_command(args: Namespace) -> None:
 
     if phase == PLANNING:
         config = store.load_resolved_config(args.run)
-        workspace = _run_workspace(run)
+        workspace = _require_run_workspace(run, stream_json=args.stream_json)
         provider = create_provider(config, workspace=workspace)
         try:
             result = PlanningPhaseOrchestrator(store, args.run, provider).run()
@@ -651,8 +652,13 @@ def _handle_provider_run_error(
     )
 
 
-def _run_workspace(run: dict[str, Any]) -> Path | None:
-    workspace = run.get("workspace")
-    if workspace is None:
-        return None
-    return Path(str(workspace))
+def _require_run_workspace(run: dict[str, Any], *, stream_json: bool = False) -> Path:
+    try:
+        return run_workspace(run)
+    except ValueError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=stream_json,
+            code="missing_workspace",
+        )

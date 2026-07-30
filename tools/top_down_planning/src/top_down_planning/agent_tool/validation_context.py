@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
@@ -14,6 +13,7 @@ from top_down_planning.domain.validators import (
     ValidationMode,
     build_plan_approval_validation_context,
 )
+from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 
@@ -27,8 +27,7 @@ def compute_plan_approval_actual_digests(
     """Recompute digests for approval-mode comparison against reviewed bindings."""
 
     config = store.load_resolved_config(run_id)
-    workspace = run.get("workspace")
-    base_dir = Path(str(workspace)) if workspace else store.root
+    base_dir = run_workspace(run)
     run_digests = run.get("digests") or {}
     return (
         compute_plan_digest(plan),

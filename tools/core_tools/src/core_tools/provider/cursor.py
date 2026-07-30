@@ -190,11 +190,6 @@ class CursorProvider:
             "workspace": str(self._workspace),
             "models": models,
             "features": {"resume": True, "stream_json": True},
-            "config": {
-                "use_native_project_context": bool(
-                    provider_cfg.get("use_native_project_context", True)
-                ),
-            },
         }
 
     def get_session_reference(self, session_id: str) -> dict[str, Any]:

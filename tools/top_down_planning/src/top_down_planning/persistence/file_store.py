@@ -48,7 +48,7 @@ def new_run_record(
     plan_digest: str,
     context_digest: str | None = None,
     phase: str = "planning",
-    workspace: str | None = None,
+    workspace: str,
 ) -> dict[str, Any]:
     now = _utc_now()
     record = {
@@ -77,9 +77,8 @@ def new_run_record(
         },
         "created_at": now,
         "updated_at": now,
+        "workspace": workspace,
     }
-    if workspace is not None:
-        record["workspace"] = workspace
     return record
 
 
@@ -118,10 +117,12 @@ class FileRunStore:
         context_digest: str | None = None,
         phase: str = "planning",
         production: dict[str, Any] | None = None,
-        workspace: str | None = None,
+        workspace: str,
     ) -> dict[str, Any]:
         if not input_digest or not output_goal_digest:
             raise PersistenceError("input_digest and output_goal_digest are required")
+        if not workspace or not str(workspace).strip():
+            raise PersistenceError("workspace is required")
 
         run_path = self.run_dir(run_id)
         if run_path.exists():

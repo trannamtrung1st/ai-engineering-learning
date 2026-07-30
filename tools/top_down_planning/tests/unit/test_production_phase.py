@@ -101,6 +101,7 @@ def _create_run_at_plan_validated(
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
         phase=PLAN_VALIDATED,
+        workspace=str(store.root),
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
@@ -387,6 +388,7 @@ def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
         input_digest="a",
         output_goal_digest="b",
         phase=PRODUCTION,
+        workspace=str(store.root),
     )
     service = ProductionAgentService(store, "run-unapproved")
 
@@ -447,6 +449,7 @@ def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
         input_digest="a",
         output_goal_digest="b",
         phase=PLAN_VALIDATED,
+        workspace=str(store.root),
     )
     provider = StubProvider()
 

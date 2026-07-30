@@ -43,6 +43,7 @@ def _create_planning_run(store: FileRunStore, run_id: str = "run-failed") -> Non
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
         phase=WHOLE_PLAN_REVIEW,
+        workspace=str(store.root),
     )
 
 

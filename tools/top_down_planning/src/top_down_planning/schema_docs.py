@@ -148,6 +148,43 @@ _REVIEW_FINDING_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+_FOCUSED_REVIEW_SCOPE_SCHEMA = {
+    "type": "object",
+    "required": ["kind", "item_ids"],
+    "properties": {
+        "item_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"},
+        },
+    },
+    "additionalProperties": False,
+}
+
+_FOCUSED_REVIEW_BRANCH_SCHEMAS = [
+    {
+        "type": "object",
+        "required": ["type", "scope"],
+        "properties": {
+            "role": {"type": "string"},
+            "type": {"const": review_type},
+            "scope": {
+                **{
+                    k: v
+                    for k, v in _FOCUSED_REVIEW_SCOPE_SCHEMA.items()
+                    if k != "properties"
+                },
+                "properties": {
+                    "kind": {"const": review_type},
+                    **(_FOCUSED_REVIEW_SCOPE_SCHEMA["properties"]),
+                },
+            },
+        },
+        "additionalProperties": False,
+    }
+    for review_type in ("focused_plan", "focused_output")
+]
+
 _SCHEMAS: dict[str, dict[str, Any]] = {
     "config": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -162,7 +199,10 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                 "properties": {
                     "input_refs": {"type": "array", "items": {"type": "string"}},
                     "output_goal": {"type": "string"},
+                    "boundaries": {"type": "array", "items": {"type": "string"}},
+                    "acceptance": {"type": "array", "items": {"type": "string"}},
                 },
+                "additionalProperties": False,
             },
             "planning": {
                 "type": "object",
@@ -171,21 +211,113 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                     "max_depth": {"type": "integer"},
                     "max_expansion_per_item": {"type": "integer"},
                 },
+                "additionalProperties": False,
             },
-            "review": {"type": "object"},
+            "review": {
+                "type": "object",
+                "properties": {
+                    "focused_plan": {
+                        "type": "object",
+                        "properties": {"enabled": {"type": "boolean"}},
+                        "additionalProperties": False,
+                    },
+                    "whole_plan": {
+                        "type": "object",
+                        "properties": {"required": {"type": "boolean"}},
+                        "additionalProperties": False,
+                    },
+                    "focused_output": {
+                        "type": "object",
+                        "properties": {"enabled": {"type": "boolean"}},
+                        "additionalProperties": False,
+                    },
+                    "whole_output": {
+                        "type": "object",
+                        "properties": {"required": {"type": "boolean"}},
+                        "additionalProperties": False,
+                    },
+                },
+                "additionalProperties": False,
+            },
             "provider": {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "enum": ["cursor", "stub"]},
-                    "use_native_project_context": {"type": "boolean"},
                     "model": {"type": "string"},
                     "binary": {"type": "string"},
                     "skip_probe": {"type": "boolean"},
                 },
+                "additionalProperties": False,
             },
-            "limits": {"type": "object"},
+            "limits": {
+                "type": "object",
+                "properties": {
+                    "planning": {
+                        "type": "object",
+                        "properties": {
+                            "max_expansion_iterations": {"type": "integer"},
+                            "max_agent_turns": {"type": "integer"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "focused_plan_review": {
+                        "type": "object",
+                        "properties": {
+                            "max_loops": {"type": "integer"},
+                            "max_revision_cycles_per_loop": {"type": "integer"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "whole_plan_review": {
+                        "type": "object",
+                        "properties": {
+                            "max_revision_cycles": {"type": "integer"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "production": {
+                        "type": "object",
+                        "properties": {
+                            "max_batches": {"type": "integer"},
+                            "max_agent_turns_per_batch": {"type": "integer"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "focused_output_review": {
+                        "type": "object",
+                        "properties": {
+                            "max_loops": {"type": "integer"},
+                            "max_revision_cycles_per_loop": {"type": "integer"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "whole_output_review": {
+                        "type": "object",
+                        "properties": {
+                            "max_revision_cycles": {"type": "integer"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "amendment": {
+                        "type": "object",
+                        "properties": {
+                            "max_requests": {"type": "integer"},
+                            "max_revision_cycles_per_request": {"type": "integer"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "provider": {
+                        "type": "object",
+                        "properties": {
+                            "max_retries_per_call": {"type": "integer"},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "additionalProperties": False,
+            },
         },
-        "additionalProperties": True,
+        "additionalProperties": False,
     },
     "plan-transaction": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -294,33 +426,11 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     "focused-review-request": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "FocusedReviewRequest",
-        "description": "Optional focused review request for `tdp agent review request`.",
-        "type": "object",
-        "required": ["type", "scope"],
-        "properties": {
-            "role": {"type": "string"},
-            "type": {
-                "type": "string",
-                "enum": ["focused_plan", "focused_output"],
-            },
-            "scope": {
-                "type": "object",
-                "required": ["kind", "item_ids"],
-                "properties": {
-                    "kind": {
-                        "type": "string",
-                        "enum": ["focused_plan", "focused_output"],
-                    },
-                    "item_ids": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {"type": "string"},
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-        "additionalProperties": False,
+        "description": (
+            "Optional focused review request for `tdp agent review request`. "
+            "type must match scope.kind."
+        ),
+        "oneOf": _FOCUSED_REVIEW_BRANCH_SCHEMAS,
     },
     "amendment-request": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -824,6 +934,8 @@ def validate_against_schema(value: Any, schema: dict[str, Any], *, path: str = "
     if schema_type == "boolean":
         if not isinstance(value, bool):
             return [f"{path}: expected boolean"]
+        if "const" in schema and value != schema["const"]:
+            issues.append(f"{path}: expected const {schema['const']!r}")
         return issues
 
     if isinstance(schema_type, list):

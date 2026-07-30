@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
@@ -28,6 +27,7 @@ from top_down_planning.persistence.digests import (
     compute_plan_digest,
 )
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.workspace import run_workspace
 
 
 class ResumeError(OrchestratorError):
@@ -104,9 +104,14 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
             code="digest_mismatch",
         )
 
-    workspace = run.get("workspace")
-    if workspace and stored.get("input"):
-        base_dir = Path(str(workspace))
+    try:
+        base_dir = run_workspace(run)
+    except ValueError as exc:
+        raise ResumeError(
+            str(exc),
+            code="missing_workspace",
+        ) from exc
+    if stored.get("input"):
         expected_input = compute_input_digest(config, base_dir=base_dir)
         if stored["input"] != expected_input:
             raise ResumeError(

@@ -325,18 +325,19 @@ def _handle_example_command(args: argparse.Namespace) -> None:
         emit_response(schema_docs.unknown_example_response(name))
 
 
+def _resolve_role(
+    args: argparse.Namespace,
+    request: dict[str, Any],
+    verb: str,
+) -> str:
+    role = args.role if args.role is not None else request.get("role")
+    if role is None or not str(role).strip():
+        raise RequestError(f"{verb} requires --role or request.role")
+    return str(role).strip()
+
+
 def _resolve_apply_role(args: argparse.Namespace, request: dict[str, Any]) -> str:
-    role = args.role if args.role is not None else request.get("role")
-    if role is None or not str(role).strip():
-        raise RequestError("apply requires --role or request.role")
-    return str(role).strip()
-
-
-def _resolve_respond_role(args: argparse.Namespace, request: dict[str, Any]) -> str:
-    role = args.role if args.role is not None else request.get("role")
-    if role is None or not str(role).strip():
-        raise RequestError("respond requires --role or request.role")
-    return str(role).strip()
+    return _resolve_role(args, request, "apply")
 
 
 def _handle_plan_command(args: argparse.Namespace) -> None:
@@ -404,17 +405,17 @@ def _handle_production_command(args: argparse.Namespace) -> None:
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "request-amendment":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_apply_role(args, request)
+            role = _resolve_role(args, request, "request-amendment")
             payload = service.request_amendment(request, role=role)
             emit_response(payload)
         elif args.production_command == "submit-completion":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_apply_role(args, request)
+            role = _resolve_role(args, request, "submit-completion")
             payload = service.submit_completion(request, role=role)
             emit_response(payload)
         elif args.production_command == "report-blocked":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_apply_role(args, request)
+            role = _resolve_role(args, request, "report-blocked")
             payload = service.report_blocked(request, role=role)
             emit_response(payload)
         else:
@@ -441,12 +442,12 @@ def _handle_review_command(args: argparse.Namespace) -> None:
     try:
         if args.review_command == "respond":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_respond_role(args, request)
+            role = _resolve_role(args, request, "respond")
             payload = service.respond(request, role=role)
             emit_response(payload)
         elif args.review_command == "request":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_respond_role(args, request)
+            role = _resolve_role(args, request, "request")
             payload = service.request(request, role=role)
             emit_response(payload)
         else:

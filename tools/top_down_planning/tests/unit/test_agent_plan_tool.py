@@ -51,6 +51,7 @@ def _create_run(store: FileRunStore, run_id: str = "run-001", *, revision: int =
         resolved_config=config,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        workspace=str(store.root),
     )
 
 
@@ -333,6 +334,7 @@ def test_apply_returns_post_mutation_validation_issues(tmp_path: Path) -> None:
         input_digest="input-a",
         output_goal_digest="goal-b",
         production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
+        workspace=str(store.root),
     )
 
     service = PlanAgentService(store, "run-001")
@@ -378,6 +380,7 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(tmp_path: Path) -> N
         input_digest="input-a",
         output_goal_digest="goal-b",
         production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
+        workspace=str(store.root),
     )
 
     request_path = tmp_path / "apply.json"
@@ -476,6 +479,7 @@ def test_snapshot_tree_includes_scope_boundaries_acceptance(tmp_path: Path) -> N
         resolved_config={"planning": {"max_depth": 4, "max_expansion_per_item": 7}},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
 
     service = PlanAgentService(store, "run-001")

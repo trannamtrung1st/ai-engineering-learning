@@ -62,6 +62,14 @@ def test_unknown_schema_lists_available_names() -> None:
     assert payload["available"] == list(schema_docs.PUBLIC_SCHEMAS)
 
 
+def test_unknown_example_lists_available_names() -> None:
+    result = run_cli(["agent", "example", "missing"])
+    assert result.exit_code == 0
+    payload = result.json()
+    assert payload["ok"] is False
+    assert payload["available"] == list(schema_docs.PUBLIC_EXAMPLES)
+
+
 def test_example_list_and_show() -> None:
     listed = run_cli(["agent", "example"])
     assert listed.exit_code == 0
@@ -91,6 +99,28 @@ def test_default_config_validates_against_config_schema() -> None:
         schema_docs.show_schema("config"),
     )
     assert issues == []
+
+
+def test_completion_claim_schema_rejects_goal_met_false() -> None:
+    schema = schema_docs.show_schema("completion-claim")
+    issues = schema_docs.validate_against_schema(
+        {"goal_assessment": "Not met.", "goal_met": False},
+        schema,
+    )
+    assert issues
+    assert any("const" in issue for issue in issues)
+
+
+def test_focused_review_request_schema_rejects_type_kind_mismatch() -> None:
+    schema = schema_docs.show_schema("focused-review-request")
+    issues = schema_docs.validate_against_schema(
+        {
+            "type": "focused_plan",
+            "scope": {"kind": "focused_output", "item_ids": ["item-api"]},
+        },
+        schema,
+    )
+    assert issues
 
 
 def test_every_advertised_schema_loads() -> None:

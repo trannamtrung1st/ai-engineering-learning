@@ -89,6 +89,7 @@ def _create_planning_run(
         resolved_config=_planning_config(limits=limits, review=review),
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
 
 
@@ -483,6 +484,7 @@ def _create_production_run(
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
         phase=PRODUCTION,
+        workspace=str(store.root),
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
     run = store.load_run(run_id)

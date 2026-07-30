@@ -150,6 +150,7 @@ def _create_validate_run(
         resolved_config=config,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        workspace=str(store.root),
     )
 
 

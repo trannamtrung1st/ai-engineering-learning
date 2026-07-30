@@ -14,16 +14,14 @@ tdp agent help
 tdp agent schema plan-transaction
 tdp agent example expand-branch
 
-# Stub is for scripted tests only — not an interactive quickstart:
-# tdp run --config examples/top-down-planning.yaml --set provider.name=stub
 tdp run --config examples/top-down-planning.yaml
 tdp status --run <run-id>
 tdp resume --run <run-id>
 ```
 
 The default provider is `cursor` (requires the Cursor CLI on PATH). For deterministic
-orchestration tests, use `provider.name=stub` and queue each turn with `script_turn()`
-(see `tests/unit/`).
+orchestration tests, use `provider.name=stub` with `script_turn()` in unit/integration
+tests — not as an interactive `tdp run` quickstart.
 
 ## Architecture layers (proposal §17)
 
@@ -44,7 +42,6 @@ Provider adapters live in `core_tools.provider`. Resolved configuration selects 
 ```yaml
 provider:
   name: cursor          # cursor | stub
-  use_native_project_context: true
   model: composer-2.5   # optional Cursor model
   binary: /path/to/agent  # optional; otherwise agent or cursor-agent on PATH
   skip_probe: false     # skip CLI version probe when true

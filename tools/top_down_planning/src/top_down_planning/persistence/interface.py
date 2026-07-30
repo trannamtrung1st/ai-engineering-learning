@@ -21,7 +21,7 @@ class RunStore(Protocol):
         context_digest: str | None = None,
         phase: str = "planning",
         production: dict[str, Any] | None = None,
-        workspace: str | None = None,
+        workspace: str,
     ) -> dict[str, Any]:
         """Create a new run directory and initial artifacts."""
 

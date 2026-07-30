@@ -44,11 +44,13 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
 
     run_dir = tmp_path / "run-001"
     assert run["revision"] == 0
     assert run["status"] == "running"
+    assert run["workspace"] == str(store.root)
     assert run["digests"]["config"] == compute_config_digest(config)
     assert run["digests"]["plan"] == compute_plan_digest(plan)
     assert (run_dir / "resolved-config.yaml").exists()
@@ -74,6 +76,7 @@ def test_load_resolved_config_round_trip(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
 
     assert store.load_resolved_config("run-001") == config
@@ -88,6 +91,20 @@ def test_create_run_requires_digests(tmp_path: Path) -> None:
             resolved_config={},
             input_digest="",
             output_goal_digest="goal-b",
+            workspace=str(store.root),
+        )
+
+
+def test_create_run_requires_workspace(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    with pytest.raises(PersistenceError, match="workspace is required"):
+        store.create_run(
+            "run-001",
+            plan=_sample_plan(),
+            resolved_config={},
+            input_digest="input-a",
+            output_goal_digest="goal-b",
+            workspace="",
         )
 
 
@@ -100,6 +117,7 @@ def test_save_plan_revision_conflict(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
 
     updated = plan.to_dict()
@@ -121,6 +139,7 @@ def test_save_plan_requires_explicit_revision(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
 
     payload = plan.to_dict()
@@ -138,6 +157,7 @@ def test_save_plan_model_round_trip(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
 
     updated = _sample_plan(revision=1)
@@ -156,6 +176,7 @@ def test_reload_after_new_store_instance(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
 
     updated = plan.to_dict()
@@ -175,6 +196,7 @@ def test_append_event_is_append_only(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
 
     store.append_event("run-001", {"type": "phase_changed", "phase": "production"})
@@ -228,6 +250,7 @@ def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        workspace=str(store.root),
     )
     with pytest.raises(PersistenceError, match="already exists"):
         store.create_run(
@@ -236,4 +259,5 @@ def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
             resolved_config={},
             input_digest="input-a",
             output_goal_digest="goal-b",
+            workspace=str(store.root),
         )

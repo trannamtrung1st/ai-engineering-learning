@@ -6,6 +6,12 @@ from pathlib import Path
 from typing import Any
 
 
+def test_run_workspace(store: Any) -> str:
+    """Workspace path for test runs (required on ``create_run``)."""
+
+    return str(store.root)
+
+
 def write_config(path: Path, body: str) -> Path:
     path.write_text(body, encoding="utf-8")
     return path

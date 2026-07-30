@@ -86,7 +86,6 @@ def evaluate_acceptance_invariant(
     production: dict[str, Any],
     reviews: list[dict[str, Any]],
     limits: PlanningLimits,
-    run: dict[str, Any],
     plan_approval: dict[str, Any] | None,
     output_approval: dict[str, Any] | None,
     actual_plan_digest: str,
