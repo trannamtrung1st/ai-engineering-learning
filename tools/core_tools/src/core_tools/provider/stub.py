@@ -86,6 +86,7 @@ class StubProvider:
         return session_id
 
     def resume_primary_session(self, session_id: str, request: dict[str, Any]) -> None:
+        self._ensure_durable_session(session_id, role="primary", kind="primary")
         self._enqueue_turn(session_id, request)
 
     def start_reviewer_session(
@@ -106,6 +107,7 @@ class StubProvider:
         return session_id
 
     def send(self, session_id: str, request: dict[str, Any]) -> None:
+        self._ensure_durable_session(session_id, role="reviewer", kind="reviewer")
         self._enqueue_turn(session_id, request)
 
     def canonical_session_id(self, session_id: str) -> str:
@@ -169,6 +171,21 @@ class StubProvider:
                 session_id=session_id,
             )
         return session
+
+    def _ensure_durable_session(
+        self,
+        session_id: str,
+        *,
+        role: str,
+        kind: str,
+    ) -> None:
+        if session_id in self._sessions:
+            return
+        self._sessions[session_id] = _StubSession(
+            role=role,
+            kind=kind,
+            manifest={},
+        )
 
     def _enqueue_turn(self, session_id: str, request: dict[str, Any]) -> None:
         session = self._require_session(session_id)

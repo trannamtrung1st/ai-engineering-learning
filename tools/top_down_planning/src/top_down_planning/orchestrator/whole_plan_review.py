@@ -10,6 +10,7 @@ from top_down_planning.agent_tool.views import build_plan_review_snapshot
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
 from top_down_planning.domain.validators import (
     build_plan_approval_validation_context,
     validate_plan,
@@ -91,11 +92,12 @@ class WholePlanReviewOrchestrator:
 
         config = self._store.load_resolved_config(self._run_id)
         max_revision_cycles = _whole_plan_revision_limit(config)
-        loop, reviewer_turn_delivered = self._normalize_loop_for_resume(
-            self._get_or_create_active_loop()
-        )
-        deliver_on_existing_session = (
-            loop.reviewer_session_id is not None and not reviewer_turn_delivered
+        plan_revision = int(self._store.load_plan(self._run_id)["revision"])
+        loop, deliver_on_existing_session = bootstrap_whole_review_loop(
+            self._get_or_create_active_loop(),
+            current_revision=plan_revision,
+            resume_interrupted_revision=self._resume_interrupted_planner_revision,
+            normalize_loop_for_resume=self._normalize_loop_for_resume,
         )
 
         while True:
@@ -366,6 +368,10 @@ class WholePlanReviewOrchestrator:
             session_id,
         )
         return review_decision_from_store(self._store, self._run_id, loop_id)
+
+    def _resume_interrupted_planner_revision(self, loop: ReviewLoop) -> ReviewLoop:
+        self._resume_planner_with_findings(loop)
+        return self._prepare_recheck(loop)
 
     def _resume_planner_with_findings(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)

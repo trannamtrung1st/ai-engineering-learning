@@ -417,3 +417,113 @@ def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> Non
             _review_respond_request(decision="approved", target_revision=0),
             capability_token=token,
         )
+
+
+def test_whole_output_review_resumes_interrupted_producer_revision(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    producer_session_id = _create_run_at_whole_output_review(store, provider=provider)
+    run_id = "run-20260101T000801-000801"
+    store.save_review(
+        run_id,
+        {
+            "id": "review-whole-output-01",
+            "type": "whole_output",
+            "reviewer_session_id": "stub-session-reviewer",
+            "target_revision": 1,
+            "scope": {"kind": "whole_output"},
+            "status": "pending",
+            "revision_cycles": 1,
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "importance": "blocking",
+                    "target_refs": ["item-leaf"],
+                    "issue": "Output evidence is missing.",
+                    "required_change": "Add artifact reference.",
+                    "status": "unresolved",
+                }
+            ],
+        },
+    )
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "failed"
+    run["sessions"] = {"primary_producer_session_id": producer_session_id}
+    store.save_run(run_id, run, expected_revision)
+
+    provider = StubProvider()
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=lambda: (
+            apply_production(
+                store,
+                run_id,
+                {
+                    "production_revision": 2,
+                    "evidence_revision": True,
+                    "plan_items": ["item-leaf"],
+                    "dispositions": {
+                        "item-leaf": {
+                            "disposition": "completed",
+                            "evidence": "Added artifact reference.",
+                        }
+                    },
+                    "outputs": [
+                        {
+                            "id": "output-leaf",
+                            "type": "artifact",
+                            "ref": "artifacts/leaf.txt",
+                        }
+                    ],
+                    "contributions": [
+                        {
+                            "item_id": "item-leaf",
+                            "output_refs": ["output-leaf"],
+                            "summary": "Revised evidence.",
+                        }
+                    ],
+                    "summary": "Addressed reviewer finding.",
+                },
+                handler="apply",
+                phase=WHOLE_OUTPUT_REVIEW,
+            )(),
+            apply_production(
+                store,
+                run_id,
+                {
+                    "goal_assessment": "Output goal is fully met after revision.",
+                    "goal_met": True,
+                },
+                handler="submit_completion",
+                phase=WHOLE_OUTPUT_REVIEW,
+            )(),
+        ),
+    )
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="approved",
+                target_revision=2,
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id="review-whole-output-01",
+        ),
+    )
+
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.phase == OUTPUT_VALIDATED
+    assert result.outcome == "accepted"
+    assert store.load_run(run_id)["status"] == "completed"

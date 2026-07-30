@@ -613,3 +613,51 @@ def test_cursor_provider_stores_model_and_reuses_on_resume(tmp_path: Path) -> No
     list(provider.stream_events(session_id))
     assert captured_argv[1][captured_argv[1].index("--model") + 1] == "planner-model"
 
+
+def test_cursor_resume_primary_session_restores_after_terminate(tmp_path: Path) -> None:
+    stream_lines = [
+        json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "chat-abc",
+            }
+        ),
+        json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": "chat-abc",
+                "is_error": False,
+                "result": "ok",
+            }
+        ),
+    ]
+    captured_argv: list[list[str]] = []
+
+    def fake_runner(argv: list[str], cwd: Path):
+        captured_argv.append(argv)
+        for line in stream_lines:
+            yield line
+
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        {},
+        workspace=tmp_path,
+        runner=fake_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+
+    session_id = provider.start_primary_session("producer", {"goal": "build"})
+    list(provider.stream_events(session_id))
+    canonical_id = provider.canonical_session_id(session_id)
+    assert canonical_id == "chat-abc"
+
+    provider.terminate_all_sessions()
+    provider.resume_primary_session(canonical_id, {"action": "address_review_findings"})
+    list(provider.stream_events(canonical_id))
+
+    assert captured_argv[1][captured_argv[1].index("--resume") + 1] == "chat-abc"
+

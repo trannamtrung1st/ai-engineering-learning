@@ -315,7 +315,7 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
             )
         )
 
-    traversal_ids = [item_id for item_id, _ in walk.rows]
+    traversal_ids = [item_id for item_id, _, _ in walk.rows]
     active_ids = {
         active_id
         for active_id, active_item in plan.items.items()

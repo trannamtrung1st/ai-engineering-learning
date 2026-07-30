@@ -541,6 +541,7 @@ def test_snapshot_tree_includes_scope_boundaries_acceptance(tmp_path: Path) -> N
     snapshot = service.snapshot(view="tree")
 
     item = snapshot["items"][0]
+    assert item["depth"] == 0
     assert item["scope"] == {"includes": ["auth"], "excludes": ["billing"]}
     assert item["boundaries"] == ["No external APIs"]
     assert item["acceptance"] == ["Login works"]

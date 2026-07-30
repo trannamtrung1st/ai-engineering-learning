@@ -61,7 +61,7 @@ def validate_resume_preconditions(store: RunStore, run_id: str) -> ResumePrecond
 
     terminal_outcome = outcome if isinstance(outcome, str) else None
 
-    if status in {"completed", "failed"}:
+    if status == "completed":
         return ResumePreconditions(
             run_id=run_id,
             phase=phase,

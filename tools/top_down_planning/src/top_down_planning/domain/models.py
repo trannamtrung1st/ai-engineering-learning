@@ -110,8 +110,12 @@ class Plan:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Plan:
+        from top_down_planning.domain.plan_tree import validate_persisted_item_depths
+
         if "schema_version" not in data:
             raise ValueError("plan schema_version is required")
+        if "revision" not in data:
+            raise ValueError("plan revision is required")
 
         items_list = data.get("items") or []
         items: dict[str, PlanItem] = {}
@@ -122,9 +126,9 @@ class Plan:
             if item.id in items:
                 raise ValueError(f"duplicate plan item id: {item.id}")
             items[item.id] = item
-        return cls(
+        plan = cls(
             id=data["id"],
-            revision=int(data.get("revision", 0)),
+            revision=int(data["revision"]),
             output_goal=data.get("output_goal", ""),
             items=items,
             input_refs=list(data.get("input_refs") or []),
@@ -135,6 +139,8 @@ class Plan:
             acceptance=list(data.get("acceptance") or []),
             schema_version=int(data["schema_version"]),
         )
+        validate_persisted_item_depths(plan, items_list)
+        return plan
 
 
 @dataclass

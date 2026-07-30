@@ -18,6 +18,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.observability import ObservabilityContext
 from top_down_planning.orchestrator import mark_run_failed, sanitize_operational_error
 from top_down_planning.orchestrator.engine import RunEngine
+from top_down_planning.orchestrator.resume import validate_resume_preconditions
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
@@ -314,3 +315,15 @@ def test_provider_run_error_resume_exits_nonzero(tmp_path: Path) -> None:
         assert exit_info.value.code == 1
 
     assert store.load_run("run-20260101T001701-001701")["status"] == "failed"
+
+
+def test_operational_failed_run_remains_resumable(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    mark_run_failed(store, "run-20260101T001701-001701", message="provider crashed")
+
+    preconditions = validate_resume_preconditions(store, "run-20260101T001701-001701")
+
+    assert preconditions.status == "failed"
+    assert preconditions.outcome is None
+    assert preconditions.phase == PLANNING

@@ -49,6 +49,11 @@ def _utc_now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _canonical_plan_payload(plan: Plan | dict[str, Any]) -> dict[str, Any]:
+    model = plan if isinstance(plan, Plan) else Plan.from_dict(dict(plan))
+    return model.to_dict()
+
+
 def new_run_record(
     run_id: str,
     *,
@@ -137,7 +142,7 @@ class FileRunStore:
         if staging_dir.exists():
             shutil.rmtree(staging_dir)
 
-        plan_payload = plan.to_dict() if isinstance(plan, Plan) else dict(plan)
+        plan_payload = _canonical_plan_payload(plan)
         config_digest = compute_config_digest(resolved_config)
         plan_digest = compute_plan_digest(plan_payload)
         run_record = new_run_record(
@@ -254,7 +259,7 @@ class FileRunStore:
                 raise StoreRevisionConflictError(expected, current_revision)
             next_revision = require_revision_field(spec.plan, "plan")
             assert_next_revision(expected, next_revision)
-            plan_payload = dict(spec.plan)
+            plan_payload = _canonical_plan_payload(spec.plan)
             plan_payload["revision"] = next_revision
         else:
             plan_payload = None
@@ -412,8 +417,8 @@ class FileRunStore:
         return next_revision
 
     def save_plan(self, run_id: str, plan: dict[str, Any], expected_revision: int) -> int:
-        payload = dict(plan)
-        next_revision = require_revision_field(payload, "plan")
+        next_revision = require_revision_field(dict(plan), "plan")
+        payload = _canonical_plan_payload(plan)
         assert_next_revision(expected_revision, next_revision)
         self.commit(
             run_id,

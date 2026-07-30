@@ -15,6 +15,7 @@ from top_down_planning.domain.outcome import (
 )
 from top_down_planning.domain.production import build_production_review_snapshot
 from top_down_planning.domain.reviews import ReviewLoop, find_whole_plan_approval
+from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     resolve_role_session_context,
@@ -98,11 +99,12 @@ class WholeOutputReviewOrchestrator:
 
         config = self._store.load_resolved_config(self._run_id)
         max_revision_cycles = _whole_output_revision_limit(config)
-        loop, reviewer_turn_delivered = self._normalize_loop_for_resume(
-            self._get_or_create_active_loop()
-        )
-        deliver_on_existing_session = (
-            loop.reviewer_session_id is not None and not reviewer_turn_delivered
+        output_revision = int(self._store.load_production(self._run_id)["output_revision"])
+        loop, deliver_on_existing_session = bootstrap_whole_review_loop(
+            self._get_or_create_active_loop(),
+            current_revision=output_revision,
+            resume_interrupted_revision=self._resume_interrupted_producer_revision,
+            normalize_loop_for_resume=self._normalize_loop_for_resume,
         )
 
         while True:
@@ -412,6 +414,10 @@ class WholeOutputReviewOrchestrator:
             session_id,
         )
         return review_decision_from_store(self._store, self._run_id, loop_id)
+
+    def _resume_interrupted_producer_revision(self, loop: ReviewLoop) -> ReviewLoop:
+        self._resume_producer_with_findings(loop)
+        return self._prepare_recheck(loop)
 
     def _resume_producer_with_findings(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)

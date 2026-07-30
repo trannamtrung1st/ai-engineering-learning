@@ -29,19 +29,19 @@ def active_children_of(plan: Plan, parent_id: str | None) -> list[PlanItem]:
 
 @dataclass(frozen=True)
 class TraversalWalk:
-    rows: list[tuple[str, str]]
+    rows: list[tuple[str, str, int]]
     duplicate_ids: list[str]
 
 
 def walk_active_tree(plan: Plan) -> TraversalWalk:
     """Depth-first preorder walk; tolerates corrupt trees without infinite recursion."""
 
-    rows: list[tuple[str, str]] = []
+    rows: list[tuple[str, str, int]] = []
     duplicate_ids: list[str] = []
     seen_global: set[str] = set()
     visiting: set[str] = set()
 
-    def walk(parent_id: str | None, prefix: str) -> None:
+    def walk(parent_id: str | None, prefix: str, depth: int) -> None:
         for index, child in enumerate(children_of(plan, parent_id), start=1):
             if child.id in visiting or child.id in seen_global:
                 if child.id not in duplicate_ids:
@@ -50,26 +50,63 @@ def walk_active_tree(plan: Plan) -> TraversalWalk:
             visiting.add(child.id)
             seen_global.add(child.id)
             number = f"{prefix}{index}" if prefix else str(index)
-            rows.append((child.id, number))
-            walk(child.id, f"{number}.")
+            rows.append((child.id, number, depth))
+            walk(child.id, f"{number}.", depth + 1)
             visiting.remove(child.id)
 
-    walk(None, "")
+    walk(None, "", 0)
     return TraversalWalk(rows=rows, duplicate_ids=duplicate_ids)
+
+
+def serialize_plan_item(item: PlanItem, *, depth: int) -> dict[str, Any]:
+    """Serialize a plan item for persistence with tree depth after parent_id."""
+
+    base = item.to_dict()
+    payload: dict[str, Any] = {
+        "id": base["id"],
+        "parent_id": base["parent_id"],
+        "depth": depth,
+    }
+    for key, value in base.items():
+        if key not in payload:
+            payload[key] = value
+    return payload
 
 
 def serialized_plan_items(plan: Plan) -> list[dict[str, Any]]:
     """Serialize items: active tree order first, then inactive audit records."""
 
     walk = walk_active_tree(plan)
-    active_ids = {item_id for item_id, _ in walk.rows}
-    ordered = [plan.items[item_id].to_dict() for item_id, _ in walk.rows]
+    active_ids = {item_id for item_id, _, _ in walk.rows}
+    ordered = [
+        serialize_plan_item(plan.items[item_id], depth=depth)
+        for item_id, _, depth in walk.rows
+    ]
     inactive = sorted(
         (item for item in plan.items.values() if item.id not in active_ids),
         key=lambda item: item.id,
     )
-    ordered.extend(item.to_dict() for item in inactive)
+    ordered.extend(
+        serialize_plan_item(item, depth=item_depth(plan, item.id)) for item in inactive
+    )
     return ordered
+
+
+def validate_persisted_item_depths(plan: Plan, raw_items: list[dict[str, Any]]) -> None:
+    """Require each persisted item to carry depth matching its parent chain."""
+
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            raise ValueError("each plan item must be an object")
+        item_id = str(raw_item.get("id", ""))
+        if "depth" not in raw_item:
+            raise ValueError(f"plan item {item_id!r} missing required field: depth")
+        expected = item_depth(plan, item_id)
+        actual = int(raw_item["depth"])
+        if actual != expected:
+            raise ValueError(
+                f"plan item {item_id!r} depth {actual} does not match hierarchy depth {expected}"
+            )
 
 
 def clone_plan(plan: Plan) -> Plan:
@@ -136,7 +173,7 @@ def find_hierarchy_cycle(plan: Plan, item_id: str) -> list[str] | None:
 
 def display_traversal(plan: Plan) -> list[tuple[str, str]]:
     """Depth-first preorder traversal returning (item_id, display_number)."""
-    return list(walk_active_tree(plan).rows)
+    return [(item_id, number) for item_id, number, _ in walk_active_tree(plan).rows]
 
 
 def resolve_placement_index(

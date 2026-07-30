@@ -67,6 +67,7 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
     loaded_plan = store.load_plan("run-20260101T000001-000001")
     assert loaded_plan["revision"] == 0
     assert loaded_plan["items"][0]["title"] == "Root"
+    assert loaded_plan["items"][0]["depth"] == 0
     assert store.load_plan_model("run-20260101T000001-000001").output_goal == "Deliver the output."
     assert store.load_run("run-20260101T000001-000001")["digests"]["input"] == "input-a"
 

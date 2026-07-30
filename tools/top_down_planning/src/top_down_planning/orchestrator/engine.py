@@ -71,7 +71,7 @@ def _target_reached(run: dict[str, Any], until: str) -> bool:
             OUTPUT_VALIDATED,
         }
     if until == "completed":
-        return phase == OUTPUT_VALIDATED or status in {"completed", "failed"}
+        return phase == OUTPUT_VALIDATED or status == "completed"
     raise ValueError(f"unsupported until target: {until!r}")
 
 
@@ -113,9 +113,9 @@ class RunEngine:
                 return result
 
             status = str(run.get("status") or "")
-            if status in {"completed", "failed"}:
+            if status == "completed":
                 result = RunContinuationResult(
-                    ok=status != "failed",
+                    ok=True,
                     run_id=run_id,
                     phase=str(run.get("phase") or ""),
                     status=status,

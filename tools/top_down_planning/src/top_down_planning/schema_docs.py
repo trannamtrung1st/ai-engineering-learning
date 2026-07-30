@@ -901,6 +901,9 @@ precedence). The orchestrator exports the resolved absolute store root as
 so in-agent commands typically need only `--run <run-id>`. Run ids use
 `run-YYYYMMDDTHHMMSS-<6hex>` (UTC creation time plus random suffix).
 
+`plan.json` items include `depth` (0-based from the tree root, derived from
+`parent_id`). Depth is required on load and recomputed on save.
+
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
 The service captures content hashes and stores immutable snapshots under
 `artifacts/<snapshot-uuid>/<filename>` in the run store. Reusing an evidence ID

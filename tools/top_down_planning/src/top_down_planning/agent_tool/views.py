@@ -20,11 +20,12 @@ from top_down_planning.domain.validators import ValidationResult
 PlanView = Literal["tree", "ready", "issues"]
 
 
-def item_snapshot(item: PlanItem, display_number: str) -> dict[str, Any]:
+def item_snapshot(item: PlanItem, display_number: str, *, depth: int) -> dict[str, Any]:
     return {
         "id": item.id,
         "display_number": display_number,
         "parent_id": item.parent_id,
+        "depth": depth,
         "title": item.title,
         "outcome": item.outcome,
         "scope": item.scope.to_dict(),
@@ -42,7 +43,7 @@ def _visible_item_ids(
     depth: int | None,
 ) -> set[str]:
     if root_id is None:
-        visible = {item_id for item_id, _ in walk_active_tree(plan).rows}
+        visible = {item_id for item_id, _, _ in walk_active_tree(plan).rows}
     else:
         if root_id not in plan.items:
             return set()
@@ -78,7 +79,9 @@ def build_tree_view(
         if item_id not in visible:
             continue
         item = plan.items[item_id]
-        items.append(item_snapshot(item, display_number))
+        items.append(
+            item_snapshot(item, display_number, depth=item_depth(plan, item_id))
+        )
         budgets.append(compute_planning_budget(plan, item_id, limits).to_dict())
 
     return {
@@ -137,7 +140,13 @@ def build_changed_subtree_view(
     for item_id, display_number in display_traversal(plan):
         if item_id not in visible:
             continue
-        items.append(item_snapshot(plan.items[item_id], display_number))
+        items.append(
+            item_snapshot(
+                plan.items[item_id],
+                display_number,
+                depth=item_depth(plan, item_id),
+            )
+        )
         budgets.append(compute_planning_budget(plan, item_id, limits).to_dict())
 
     return {

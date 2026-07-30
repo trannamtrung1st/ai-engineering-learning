@@ -363,7 +363,7 @@ def handle_resume_command(args: Namespace) -> None:
         )
 
     phase = preconditions.phase
-    if phase == OUTPUT_VALIDATED or preconditions.status in {"completed", "failed"}:
+    if phase == OUTPUT_VALIDATED or preconditions.status == "completed":
         if phase == OUTPUT_VALIDATED and preconditions.status == "completed":
             message = "run already completed with final outcome"
         else:

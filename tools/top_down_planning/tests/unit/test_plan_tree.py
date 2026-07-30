@@ -11,7 +11,11 @@ from top_down_planning.domain.errors import (
 )
 from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits
 from top_down_planning.domain.mutations import apply_operations
-from top_down_planning.domain.plan_tree import children_of, display_traversal
+from top_down_planning.domain.plan_tree import (
+    children_of,
+    display_traversal,
+    serialized_plan_items,
+)
 
 
 def _sample_plan() -> Plan:
@@ -43,6 +47,36 @@ def _sample_plan() -> Plan:
             "item-second": second,
         },
     )
+
+
+def test_serialized_plan_items_include_depth() -> None:
+    plan = _sample_plan()
+
+    payloads = serialized_plan_items(plan)
+
+    assert [item["depth"] for item in payloads] == [0, 1, 1]
+    assert list(payloads[0].keys())[:3] == ["id", "parent_id", "depth"]
+    assert payloads[0]["id"] == "item-root"
+    assert payloads[1]["id"] == "item-first"
+    assert payloads[2]["id"] == "item-second"
+
+
+def test_plan_from_dict_requires_item_depth() -> None:
+    plan = _sample_plan()
+    payload = plan.to_dict()
+    del payload["items"][1]["depth"]
+
+    with pytest.raises(ValueError, match="missing required field: depth"):
+        Plan.from_dict(payload)
+
+
+def test_plan_from_dict_rejects_stale_item_depth() -> None:
+    plan = _sample_plan()
+    payload = plan.to_dict()
+    payload["items"][1]["depth"] = 9
+
+    with pytest.raises(ValueError, match="does not match hierarchy depth"):
+        Plan.from_dict(payload)
 
 
 def test_add_sibling_after_preserves_order_under_parent() -> None:

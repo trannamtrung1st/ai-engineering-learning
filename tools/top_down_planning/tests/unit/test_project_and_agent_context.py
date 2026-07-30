@@ -291,7 +291,13 @@ project:
     )
     store = FileRunStore(tmp_path / "runs")
     store.root.mkdir(parents=True)
-    plan_payload = {"revision": 0, "output_goal": "Goal.", "items": []}
+    plan_payload = {
+        "schema_version": 1,
+        "id": "plan-context-test",
+        "revision": 0,
+        "output_goal": "Goal.",
+        "items": [],
+    }
     store.create_run(
         "run-20260101T002301-002301",
         plan=plan_payload,

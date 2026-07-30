@@ -218,8 +218,13 @@ class CursorProvider:
         )
 
     def resume_primary_session(self, session_id: str, request: dict[str, Any]) -> None:
+        canonical_id = self._ensure_durable_session(
+            session_id,
+            role="primary",
+            kind="primary",
+        )
         self._queue_turn(
-            self.canonical_session_id(session_id),
+            canonical_id,
             prompt=format_request_prompt(request),
         )
 
@@ -239,8 +244,13 @@ class CursorProvider:
         )
 
     def send(self, session_id: str, request: dict[str, Any]) -> None:
+        canonical_id = self._ensure_durable_session(
+            session_id,
+            role="reviewer",
+            kind="reviewer",
+        )
         self._queue_turn(
-            self.canonical_session_id(session_id),
+            canonical_id,
             prompt=format_request_prompt(request),
         )
 
@@ -359,6 +369,33 @@ class CursorProvider:
                 session_id=session_id,
             )
         return session
+
+    def _ensure_durable_session(
+        self,
+        session_id: str,
+        *,
+        role: str,
+        kind: str,
+    ) -> str:
+        """Re-register a persisted Cursor session after in-memory teardown."""
+
+        canonical_id = self.canonical_session_id(session_id)
+        if canonical_id in self._sessions:
+            return canonical_id
+        if canonical_id.startswith("cursor-pending-"):
+            raise ProviderSessionError(
+                f"unknown provider session: {session_id}",
+                session_id=session_id,
+            )
+        self._register_session(
+            role=role,
+            kind=kind,
+            manifest={},
+            prompt="",
+            model=None,
+            resume_session_id=canonical_id,
+        )
+        return canonical_id
 
     def _new_pending_session_id(self) -> str:
         self._pending_counter += 1

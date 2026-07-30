@@ -175,6 +175,20 @@ def blocking_unresolved_finding_ids(findings: list[ReviewFinding]) -> list[str]:
     return unresolved
 
 
+def needs_primary_revision_resume(
+    loop: ReviewLoop,
+    *,
+    current_revision: int,
+) -> bool:
+    """True when a revision cycle started but the primary owner never ran."""
+
+    if loop.revision_cycles <= 0 or loop.status != "pending":
+        return False
+    if current_revision > loop.target_revision:
+        return False
+    return bool(blocking_unresolved_finding_ids(loop.findings))
+
+
 _WHOLE_SCOPE_KINDS = frozenset({"whole_plan", "whole_output"})
 
 
