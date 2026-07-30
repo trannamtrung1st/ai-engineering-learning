@@ -1,0 +1,464 @@
+"""Integration tests for the production-phase orchestrator and service."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from top_down_planning.agent_tool import ProductionAgentService, RequestError
+from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.orchestrator import ProductionPhaseOrchestrator, ProviderRunError
+from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
+from top_down_planning.persistence import FileRunStore
+from top_down_planning.provider import StubProvider
+
+
+def _done_events(*, signal: str | None = None) -> list[dict]:
+    events = [
+        {"type": "assistant", "text": "production turn"},
+        {"type": "done", "subtype": "success", "text": "ok", "is_error": False},
+    ]
+    if signal is not None:
+        events[-1]["signal"] = signal
+    return events
+
+
+def _batch_apply_request(
+    *,
+    plan_items: list[str],
+    dispositions: dict,
+    empty_output: bool = False,
+    empty_output_reason: str | None = None,
+) -> dict:
+    return {
+        "plan_items": plan_items,
+        "dispositions": dispositions,
+        "outputs": [],
+        "contributions": [],
+        "summary": "batch complete",
+        "empty_output": empty_output,
+        "empty_output_reason": empty_output_reason,
+    }
+
+
+def _create_run_at_plan_validated(
+    store: FileRunStore,
+    run_id: str = "run-production",
+    *,
+    limits: dict | None = None,
+) -> None:
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+    )
+    first = PlanItem(
+        id="item-first",
+        parent_id="item-root",
+        order_key="0000000000",
+        title="First",
+        outcome="First outcome.",
+    )
+    second = PlanItem(
+        id="item-second",
+        parent_id="item-root",
+        order_key="0000000100",
+        title="Second",
+        outcome="Second outcome.",
+        depends_on=["item-first"],
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the feature.",
+        items={
+            "item-root": root,
+            "item-first": first,
+            "item-second": second,
+        },
+    )
+    config = {
+        "run": {
+            "output_goal": "Deliver the feature.",
+            "input_refs": ["README.md"],
+        },
+        "planning": {
+            "stop_hint": "Stop when ready.",
+            "max_depth": 4,
+            "max_expansion_per_item": 7,
+        },
+        "limits": {
+            "production": {
+                "max_batches": 50,
+                "max_agent_turns_per_batch": 10,
+            }
+        },
+        "provider": {"name": "stub"},
+    }
+    if limits:
+        config["limits"]["production"].update(limits)
+
+    store.create_run(
+        run_id,
+        plan=plan,
+        resolved_config=config,
+        input_digest="input-a",
+        output_goal_digest="goal-b",
+        phase=PLAN_VALIDATED,
+    )
+    store.save_review(
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "reviewer_session_id": "stub-session-reviewer",
+            "target_revision": 0,
+            "scope": {"kind": "whole_plan"},
+            "status": "approved",
+            "findings": [],
+            "revision_cycles": 0,
+        },
+    )
+
+
+def _enter_production_phase(store: FileRunStore, run_id: str) -> None:
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["phase"] = PRODUCTION
+    store.save_run(run_id, run, expected_revision)
+
+
+def test_production_phase_completes_two_batches_with_all_items_terminal(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    provider = StubProvider()
+
+    provider.script_turn(
+        [
+            {
+                "type": "tool_call",
+                "tool": "production_apply",
+                "role": "producer",
+                "request": _batch_apply_request(
+                    plan_items=["item-first"],
+                    dispositions={"item-first": {"disposition": "completed"}},
+                ),
+            },
+            *_done_events(signal="batch_complete"),
+        ]
+    )
+    provider.script_turn(
+        [
+            {
+                "type": "tool_call",
+                "tool": "production_apply",
+                "role": "producer",
+                "request": _batch_apply_request(
+                    plan_items=["item-second"],
+                    dispositions={"item-second": {"disposition": "completed"}},
+                ),
+            },
+            *_done_events(signal="production_complete"),
+        ]
+    )
+
+    result = ProductionPhaseOrchestrator(store, "run-production", provider).run()
+
+    assert result.ok is True
+    assert result.phase == WHOLE_OUTPUT_REVIEW
+    assert result.outcome is None
+    assert result.batch_count == 2
+    assert result.session_id is not None
+
+    production = store.load_production("run-production")
+    assert production["dispositions"] == {
+        "item-first": "completed",
+        "item-second": "completed",
+    }
+    assert len(production["batches"]) == 2
+    assert production["output_revision"] == 2
+
+    run = store.load_run("run-production")
+    assert run["phase"] == WHOLE_OUTPUT_REVIEW
+    assert run["sessions"]["primary_producer_session_id"] == result.session_id
+
+
+def test_ready_set_blocks_item_with_unmet_dependency(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    _enter_production_phase(store, "run-production")
+    service = ProductionAgentService(store, "run-production")
+
+    with pytest.raises(RequestError, match="not in the ready set"):
+        service.apply(
+            _batch_apply_request(
+                plan_items=["item-second"],
+                dispositions={"item-second": {"disposition": "completed"}},
+            ),
+            role="producer",
+        )
+
+
+def test_not_applicable_requires_reason(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    _enter_production_phase(store, "run-production")
+    service = ProductionAgentService(store, "run-production")
+
+    with pytest.raises(RequestError, match="not_applicable requires reason"):
+        service.apply(
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "not_applicable"}},
+            ),
+            role="producer",
+        )
+
+
+def test_superseded_requires_replacement_ref(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    _enter_production_phase(store, "run-production")
+    service = ProductionAgentService(store, "run-production")
+
+    with pytest.raises(RequestError, match="superseded requires replacement_ref"):
+        service.apply(
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "superseded"}},
+            ),
+            role="producer",
+        )
+
+
+def test_blocked_requires_evidence(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    _enter_production_phase(store, "run-production")
+    service = ProductionAgentService(store, "run-production")
+
+    with pytest.raises(RequestError, match="blocked requires evidence"):
+        service.apply(
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "blocked"}},
+            ),
+            role="producer",
+        )
+
+    result = service.apply(
+        _batch_apply_request(
+            plan_items=["item-first"],
+            dispositions={
+                "item-first": {
+                    "disposition": "blocked",
+                    "evidence": "Upstream dependency unavailable.",
+                }
+            },
+        ),
+        role="producer",
+    )
+    assert result["ok"] is True
+
+
+def test_empty_output_batch_persists_justification(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    _enter_production_phase(store, "run-production")
+    service = ProductionAgentService(store, "run-production")
+
+    result = service.apply(
+        _batch_apply_request(
+            plan_items=["item-first"],
+            dispositions={
+                "item-first": {
+                    "disposition": "satisfied_without_change",
+                }
+            },
+            empty_output=True,
+            empty_output_reason="Existing output already satisfies this item.",
+        ),
+        role="producer",
+    )
+
+    assert result["ok"] is True
+    production = store.load_production("run-production")
+    batch = production["batches"][0]
+    assert batch["result"]["empty_output"] is True
+    assert (
+        batch["result"]["empty_output_reason"]
+        == "Existing output already satisfies this item."
+    )
+
+
+def test_max_batches_exhaustion_yields_blocked_not_accepted(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store, limits={"max_batches": 1})
+    provider = StubProvider()
+    provider.script_turn(
+        [
+            {
+                "type": "tool_call",
+                "tool": "production_apply",
+                "role": "producer",
+                "request": _batch_apply_request(
+                    plan_items=["item-first"],
+                    dispositions={"item-first": {"disposition": "completed"}},
+                ),
+            },
+            *_done_events(signal="batch_complete"),
+        ]
+    )
+
+    result = ProductionPhaseOrchestrator(store, "run-production", provider).run()
+
+    assert result.ok is False
+    assert result.outcome == "blocked"
+    assert result.reason is not None
+    assert "max_batches" in result.reason
+
+    run = store.load_run("run-production")
+    assert run["phase"] == PRODUCTION
+    assert run["status"] == "completed"
+    assert run["outcome"] == "blocked"
+
+
+def test_plan_apply_during_production_is_rejected(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    provider = StubProvider()
+    provider.script_turn(
+        [
+            {
+                "type": "tool_call",
+                "tool": "plan_apply",
+                "role": "producer",
+                "request": {
+                    "base_revision": 0,
+                    "operations": [
+                        {
+                            "op": "add_item",
+                            "temp_id": "item-x",
+                            "parent_id": "item-root",
+                            "placement": {"last_child": True},
+                            "item": {"title": "X"},
+                        }
+                    ],
+                },
+            },
+            *_done_events(signal="batch_complete"),
+        ]
+    )
+
+    with pytest.raises(ProviderRunError, match="plan mutations are not allowed"):
+        ProductionPhaseOrchestrator(store, "run-production", provider).run()
+
+
+def test_production_apply_rejects_plan_validated_phase(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    service = ProductionAgentService(store, "run-production")
+
+    with pytest.raises(RequestError, match="production phase"):
+        service.apply(
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "completed"}},
+            ),
+            role="producer",
+        )
+
+
+def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    root = PlanItem("item-root", None, "0000000000", "Root")
+    first = PlanItem("item-first", "item-root", "0000000000", "First")
+    plan = Plan(
+        id="plan-run-unapproved",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root, "item-first": first},
+    )
+    config = {
+        "run": {"output_goal": "Deliver.", "input_refs": []},
+        "planning": {"stop_hint": "Stop.", "max_depth": 4, "max_expansion_per_item": 7},
+        "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
+        "provider": {"name": "stub"},
+    }
+    store.create_run(
+        "run-unapproved",
+        plan=plan,
+        resolved_config=config,
+        input_digest="a",
+        output_goal_digest="b",
+        phase=PRODUCTION,
+    )
+    service = ProductionAgentService(store, "run-unapproved")
+
+    with pytest.raises(RequestError, match="approved whole-plan review"):
+        service.apply(
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "completed"}},
+            ),
+            role="producer",
+        )
+
+
+def test_production_apply_rejects_already_terminal_item(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    _enter_production_phase(store, "run-production")
+    service = ProductionAgentService(store, "run-production")
+    service.apply(
+        _batch_apply_request(
+            plan_items=["item-first"],
+            dispositions={"item-first": {"disposition": "completed"}},
+        ),
+        role="producer",
+    )
+
+    with pytest.raises(RequestError, match="already have terminal disposition"):
+        service.apply(
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "completed"}},
+            ),
+            role="producer",
+        )
+
+
+def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    root = PlanItem("item-root", None, "0000000000", "Root")
+    first = PlanItem("item-first", "item-root", "0000000000", "First")
+    plan = Plan(
+        id="plan-run-unapproved",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root, "item-first": first},
+    )
+    config = {
+        "run": {"output_goal": "Deliver.", "input_refs": []},
+        "planning": {"stop_hint": "Stop.", "max_depth": 4, "max_expansion_per_item": 7},
+        "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
+        "provider": {"name": "stub"},
+    }
+    store.create_run(
+        "run-unapproved",
+        plan=plan,
+        resolved_config=config,
+        input_digest="a",
+        output_goal_digest="b",
+        phase=PLAN_VALIDATED,
+    )
+    provider = StubProvider()
+
+    with pytest.raises(ProviderRunError, match="approved whole-plan review"):
+        ProductionPhaseOrchestrator(store, "run-unapproved", provider).run()

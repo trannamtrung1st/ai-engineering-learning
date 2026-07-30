@@ -19,6 +19,7 @@ from top_down_planning.persistence.yaml_util import dump_yaml, load_yaml
 
 _EMPTY_PRODUCTION: dict[str, Any] = {
     "revision": 0,
+    "output_revision": 0,
     "batches": [],
     "dispositions": {},
     "output_evidence": [],

@@ -33,10 +33,17 @@ from top_down_planning.domain.validators import (
 )
 from top_down_planning.orchestrator import (
     PlanningPhaseOrchestrator,
+    ProductionPhaseOrchestrator,
     ProviderRunError,
     WholePlanReviewOrchestrator,
 )
-from top_down_planning.orchestrator.phases import PLANNING, PLAN_VALIDATED, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.phases import (
+    PLANNING,
+    PLAN_VALIDATED,
+    PRODUCTION,
+    WHOLE_OUTPUT_REVIEW,
+    WHOLE_PLAN_REVIEW,
+)
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
 from top_down_planning.provider import create_provider
@@ -156,20 +163,65 @@ def handle_resume_command(args: Namespace) -> None:
         )
 
     phase = str(run.get("phase") or "")
-    if phase == PLAN_VALIDATED:
+    if phase == WHOLE_OUTPUT_REVIEW:
         payload = {
             "ok": True,
             "run_id": args.run,
             "phase": phase,
             "status": run.get("status"),
             "outcome": run.get("outcome"),
-            "message": "whole-plan review already completed",
+            "message": "production already completed",
         }
         if args.stream_json:
             emit_payload(payload)
         emit_message(
-            f"Run {args.run} already passed whole-plan review (phase={PLAN_VALIDATED}).",
+            f"Run {args.run} already completed production (phase={WHOLE_OUTPUT_REVIEW}).",
         )
+        return
+
+    if phase == PLAN_VALIDATED or phase == PRODUCTION:
+        config = store.load_resolved_config(args.run)
+        workspace = _run_workspace(run)
+        provider = create_provider(config, workspace=workspace)
+        try:
+            result = ProductionPhaseOrchestrator(store, args.run, provider).run()
+        except ProviderRunError as exc:
+            emit_error_message(
+                str(exc),
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="provider_run_error",
+            )
+
+        run = store.load_run(args.run)
+        payload = {
+            "ok": result.ok,
+            "run_id": args.run,
+            "phase": run.get("phase"),
+            "status": run.get("status"),
+            "outcome": run.get("outcome"),
+            "session_id": result.session_id,
+            "batch_count": result.batch_count,
+        }
+        if result.reason:
+            payload["reason"] = result.reason
+        exit_code = 0 if result.ok else 1
+        if args.stream_json:
+            emit_payload(payload, exit_code=exit_code)
+
+        if result.ok and result.phase == WHOLE_OUTPUT_REVIEW:
+            message = (
+                f"Run {args.run} completed production "
+                f"(phase={WHOLE_OUTPUT_REVIEW}, batches={result.batch_count})."
+            )
+        elif not result.ok:
+            message = (
+                f"Run {args.run} stopped during production: {result.reason} "
+                f"(outcome={result.outcome})."
+            )
+        else:
+            message = f"Run {args.run} phase={result.phase} status={result.status}."
+        emit_message(message, exit_code=exit_code)
         return
 
     if phase == WHOLE_PLAN_REVIEW:
