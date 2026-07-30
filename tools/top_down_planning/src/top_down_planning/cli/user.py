@@ -23,14 +23,20 @@ from top_down_planning.config import (
     resolve_config,
 )
 from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.reviews import find_whole_plan_approval
 from top_down_planning.domain.validators import (
     DigestBundle,
     ReviewState,
     ValidationMode,
+    build_plan_approval_validation_context,
     validate_plan,
 )
-from top_down_planning.orchestrator import PlanningPhaseOrchestrator, ProviderRunError
-from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator import (
+    PlanningPhaseOrchestrator,
+    ProviderRunError,
+    WholePlanReviewOrchestrator,
+)
+from top_down_planning.orchestrator.phases import PLANNING, PLAN_VALIDATED, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
 from top_down_planning.provider import create_provider
@@ -150,19 +156,66 @@ def handle_resume_command(args: Namespace) -> None:
         )
 
     phase = str(run.get("phase") or "")
-    if phase == WHOLE_PLAN_REVIEW:
+    if phase == PLAN_VALIDATED:
         payload = {
             "ok": True,
             "run_id": args.run,
             "phase": phase,
             "status": run.get("status"),
-            "message": "planning construction complete; whole-plan review not started",
+            "outcome": run.get("outcome"),
+            "message": "whole-plan review already completed",
         }
         if args.stream_json:
             emit_payload(payload)
         emit_message(
-            f"Run {args.run} completed planning construction (phase={WHOLE_PLAN_REVIEW}).",
+            f"Run {args.run} already passed whole-plan review (phase={PLAN_VALIDATED}).",
         )
+        return
+
+    if phase == WHOLE_PLAN_REVIEW:
+        config = store.load_resolved_config(args.run)
+        workspace = _run_workspace(run)
+        provider = create_provider(config, workspace=workspace)
+        try:
+            result = WholePlanReviewOrchestrator(store, args.run, provider).run()
+        except ProviderRunError as exc:
+            emit_error_message(
+                str(exc),
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="provider_run_error",
+            )
+
+        run = store.load_run(args.run)
+        payload = {
+            "ok": result.ok,
+            "run_id": args.run,
+            "phase": run.get("phase"),
+            "status": run.get("status"),
+            "outcome": run.get("outcome"),
+            "loop_id": result.loop_id,
+            "reviewer_session_id": result.reviewer_session_id,
+            "revision_cycles": result.revision_cycles,
+        }
+        if result.reason:
+            payload["reason"] = result.reason
+        exit_code = 0 if result.ok else 1
+        if args.stream_json:
+            emit_payload(payload, exit_code=exit_code)
+
+        if result.ok and result.phase == PLAN_VALIDATED:
+            message = (
+                f"Run {args.run} passed whole-plan review "
+                f"(phase={PLAN_VALIDATED}, loop={result.loop_id})."
+            )
+        elif not result.ok:
+            message = (
+                f"Run {args.run} stopped during whole-plan review: {result.reason} "
+                f"(outcome={result.outcome})."
+            )
+        else:
+            message = f"Run {args.run} phase={result.phase} status={result.status}."
+        emit_message(message, exit_code=exit_code)
         return
 
     if phase != PLANNING:
@@ -350,6 +403,8 @@ def handle_validate_command(args: Namespace) -> None:
 
     if validation.ok:
         emit_message(f"Validation passed ({mode} mode).", exit_code=0)
+        return
+
     lines = [f"Validation failed ({mode} mode):"]
     for issue in validation.issues:
         path = ".".join(issue.path) if issue.path else "-"
@@ -382,73 +437,19 @@ def _validation_context(
     run: dict[str, Any],
     plan: Plan,
 ) -> tuple[ValidationMode, ReviewState | None, DigestBundle | None]:
-    approval = _load_whole_plan_approval(store, run_id, plan.revision)
+    approval = find_whole_plan_approval(store.list_reviews(run_id), plan.revision)
     if approval is None:
         return "draft", None, None
 
-    digests = run.get("digests") or {}
     resolved_config = store.load_resolved_config(run_id)
-    digest_bundle = DigestBundle(
-        plan_revision=plan.revision,
-        expected_plan_digest=digests.get("plan"),
+    review_state, digest_bundle = build_plan_approval_validation_context(
+        run=run,
+        plan=plan,
+        approval=approval,
         actual_plan_digest=compute_plan_digest(plan),
-        input_digest=digests.get("input"),
-        expected_input_digest=digests.get("input"),
-        output_goal_digest=digests.get("output_goal"),
-        expected_output_goal_digest=digests.get("output_goal"),
-        config_digest=compute_config_digest(resolved_config),
-        expected_config_digest=digests.get("config"),
-        context_digest=digests.get("context"),
-        expected_context_digest=digests.get("context"),
-    )
-    review_state = ReviewState(
-        approved_revision=int(approval["target_revision"]),
-        unresolved_blocking_findings=_blocking_unresolved_findings(approval),
+        actual_config_digest=compute_config_digest(resolved_config),
     )
     return "approval", review_state, digest_bundle
-
-
-def _load_whole_plan_approval(
-    store: FileRunStore,
-    run_id: str,
-    plan_revision: int,
-) -> dict[str, Any] | None:
-    reviews_dir = store.run_dir(run_id) / "reviews"
-    if not reviews_dir.is_dir():
-        return None
-
-    for path in sorted(reviews_dir.glob("*.json")):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if payload.get("type") != "whole_plan":
-            continue
-        if payload.get("status") != "approved":
-            continue
-        target_revision = payload.get("target_revision")
-        if target_revision is None:
-            continue
-        if int(target_revision) != plan_revision:
-            continue
-        return payload
-    return None
-
-
-def _blocking_unresolved_findings(review: dict[str, Any]) -> list[str]:
-    findings = review.get("findings") or []
-    unresolved: list[str] = []
-    for finding in findings:
-        if not isinstance(finding, dict):
-            continue
-        if finding.get("importance") != "blocking":
-            continue
-        if finding.get("status") != "unresolved":
-            continue
-        finding_id = finding.get("id")
-        if finding_id is not None:
-            unresolved.append(str(finding_id))
-    return unresolved
 
 
 def _run_workspace(run: dict[str, Any]) -> Path | None:

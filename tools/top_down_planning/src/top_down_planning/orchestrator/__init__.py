@@ -18,6 +18,11 @@ from top_down_planning.orchestrator.planning import (
     PlanningPhaseResult,
     build_planner_context_manifest,
 )
+from top_down_planning.orchestrator.whole_plan_review import (
+    WholePlanReviewOrchestrator,
+    WholePlanReviewResult,
+    build_whole_plan_review_package,
+)
 
 __all__ = [
     "OUTPUT_VALIDATED",
@@ -31,5 +36,8 @@ __all__ = [
     "ProviderRunError",
     "WHOLE_OUTPUT_REVIEW",
     "WHOLE_PLAN_REVIEW",
+    "WholePlanReviewOrchestrator",
+    "WholePlanReviewResult",
     "build_planner_context_manifest",
+    "build_whole_plan_review_package",
 ]

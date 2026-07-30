@@ -78,6 +78,41 @@ class DigestBundle:
     expected_context_digest: str | None = None
 
 
+def build_plan_approval_validation_context(
+    *,
+    run: dict[str, Any],
+    plan: Plan,
+    approval: dict[str, Any],
+    actual_plan_digest: str,
+    actual_config_digest: str,
+) -> tuple[ReviewState, DigestBundle]:
+    """Build approval-mode review and digest bindings for the current plan revision."""
+
+    from top_down_planning.domain.reviews import blocking_unresolved_finding_ids_from_payload
+
+    digests = run.get("digests") or {}
+    review_state = ReviewState(
+        approved_revision=int(approval["target_revision"]),
+        unresolved_blocking_findings=blocking_unresolved_finding_ids_from_payload(
+            approval
+        ),
+    )
+    digest_bundle = DigestBundle(
+        plan_revision=plan.revision,
+        expected_plan_digest=digests.get("plan"),
+        actual_plan_digest=actual_plan_digest,
+        input_digest=digests.get("input"),
+        expected_input_digest=digests.get("input"),
+        output_goal_digest=digests.get("output_goal"),
+        expected_output_goal_digest=digests.get("output_goal"),
+        config_digest=actual_config_digest,
+        expected_config_digest=digests.get("config"),
+        context_digest=digests.get("context"),
+        expected_context_digest=digests.get("context"),
+    )
+    return review_state, digest_bundle
+
+
 def _issue(
     code: str,
     severity: ValidationSeverity,

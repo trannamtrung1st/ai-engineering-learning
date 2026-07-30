@@ -59,3 +59,12 @@ class RunStore(Protocol):
 
     def load_resolved_config(self, run_id: str) -> dict[str, Any]:
         """Load the resolved configuration snapshot for a run."""
+
+    def save_review(self, run_id: str, review: dict[str, Any]) -> None:
+        """Persist a review-loop record under reviews/."""
+
+    def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
+        """Load a single review-loop record."""
+
+    def list_reviews(self, run_id: str) -> list[dict[str, Any]]:
+        """Load all review-loop records for a run."""

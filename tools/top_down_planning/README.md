@@ -55,7 +55,9 @@ Configuration precedence: built-in defaults → YAML file → repeated `--set pa
 
 Run operational `status` values (proposal §15): `running`, `paused`, `completed`, `failed`. Quality `outcome` values: `accepted`, `rejected`, `blocked` (set only by orchestrator outcome resolution).
 
-`tdp run` creates the run store, starts the primary planner session, and drives planning construction until the planner signals `candidate_plan_ready` or a planning limit is hit. On success the run transitions to phase `whole_plan_review`. `tdp resume` continues an in-progress `planning` phase using the persisted `primary_planner_session_id`.
+`tdp run` creates the run store, starts the primary planner session, and drives planning construction until the planner signals `candidate_plan_ready` or a planning limit is hit. On success the run transitions to phase `whole_plan_review`. `tdp resume` continues an in-progress `planning` phase using the persisted `primary_planner_session_id`, or drives the mandatory whole-plan review loop when the run is in `whole_plan_review`.
+
+Whole-plan review (proposal §5.2, §11): the orchestrator starts a fresh reviewer session per loop, binds findings to the current plan revision, resumes the same primary planner for revisions after `changes_requested`, and requires the same reviewer to recheck before approval. After approval, deterministic `validate_plan(..., mode="approval")` must pass before the run advances to `plan_validated`. Revision cycles are capped by `limits.whole_plan_review.max_revision_cycles`; limit exhaustion yields `rejected` or `blocked`, never silent acceptance.
 
 ## Agent CLI
 
@@ -63,6 +65,7 @@ Run operational `status` values (proposal §15): `running`, `paused`, `completed
 tdp agent plan snapshot --run <run-id> --view tree
 tdp agent plan apply --run <run-id> --role planner --request request.json
 tdp agent plan check --run <run-id>
+tdp agent review respond --run <run-id> --role reviewer --request review.json
 tdp agent run status --run <run-id>
 ```
 

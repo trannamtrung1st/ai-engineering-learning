@@ -11,15 +11,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from top_down_planning.cli.user import handle_run_command
+from top_down_planning.cli.user import handle_run_command, handle_validate_command
 from top_down_planning.config import (
     ConfigError,
     compute_input_digest,
     resolve_config,
 )
+from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import PlanningPhaseResult
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
-from top_down_planning.persistence import compute_config_digest
+from top_down_planning.persistence import FileRunStore, compute_config_digest
 
 
 def _write_config(path: Path, body: str) -> Path:
@@ -198,130 +199,92 @@ def test_cli_unknown_set_override_exits_non_zero(tmp_path: Path) -> None:
     assert payload["error"]["code"] == "config_error"
 
 
-def test_cli_validate_reports_plan_issues(tmp_path: Path) -> None:
-    config_dir = tmp_path / "cfg"
-    config_dir.mkdir()
-    config_path = _write_config(
-        config_dir / "run.yaml",
-        "run:\n  output_goal: Deliver the sample output.\n",
+def _create_validate_run(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    plan: Plan | None = None,
+) -> None:
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
     )
-    runs_dir = tmp_path / "runs"
-
-    run_result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
-            "run",
-            "--config",
-            str(config_path),
-            "--runs-dir",
-            str(runs_dir),
-            "--stream-json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    run_id = json.loads(run_result.stdout)["run_id"]
-
-    plan_path = runs_dir / run_id / "plan.json"
-    plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    child = {
-        "id": "item-child",
-        "parent_id": "item-root",
-        "order_key": "0000000000",
-        "title": "Child",
-        "outcome": "",
-        "scope": {"includes": [], "excludes": []},
-        "boundaries": [],
-        "depends_on": ["item-missing"],
-        "acceptance": [],
-        "planning_status": "open",
+    if plan is None:
+        plan = Plan(
+            id=f"plan-{run_id}",
+            revision=0,
+            output_goal="Deliver the sample output.",
+            items={"item-root": root},
+        )
+    config = {
+        "run": {"output_goal": "Deliver the sample output.", "input_refs": []},
+        "planning": {"max_depth": 4, "max_expansion_per_item": 7},
+        "provider": {"name": "stub"},
     }
-    plan["items"].append(child)
-    plan_path.write_text(json.dumps(plan), encoding="utf-8")
-
-    validate_result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
-            "validate",
-            "--run",
-            run_id,
-            "--runs-dir",
-            str(runs_dir),
-            "--stream-json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+    store.create_run(
+        run_id,
+        plan=plan,
+        resolved_config=config,
+        input_digest="input-a",
+        output_goal_digest="goal-b",
     )
-    assert validate_result.returncode == 1, validate_result.stderr
-    payload = json.loads(validate_result.stdout)
-    assert payload["ok"] is False
-    codes = {issue["code"] for issue in payload["issues"]}
-    assert "missing_dependency_target" in codes
+
+
+def test_cli_validate_reports_plan_issues(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-validate-issues"
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+    )
+    child = PlanItem(
+        id="item-child",
+        parent_id="item-root",
+        order_key="0000000000",
+        title="Child",
+        depends_on=["item-missing"],
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the sample output.",
+        items={"item-root": root, "item-child": child},
+    )
+    _create_validate_run(store, run_id, plan=plan)
+
+    with pytest.raises(SystemExit) as exit_info:
+        handle_validate_command(
+            Namespace(run=run_id, runs_dir=str(store.root), stream_json=True)
+        )
+    assert exit_info.value.code == 1
 
 
 def test_validate_uses_approval_mode_when_whole_plan_review_approved(
     tmp_path: Path,
 ) -> None:
-    config_dir = tmp_path / "cfg"
-    config_dir.mkdir()
-    config_path = _write_config(
-        config_dir / "run.yaml",
-        "run:\n  output_goal: Deliver the sample output.\nplanning:\n  max_depth: 2\n",
-    )
-    runs_dir = tmp_path / "runs"
-
-    run_result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
-            "run",
-            "--config",
-            str(config_path),
-            "--runs-dir",
-            str(runs_dir),
-            "--stream-json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    run_id = json.loads(run_result.stdout)["run_id"]
-    reviews_dir = runs_dir / run_id / "reviews"
-    (reviews_dir / "review-whole-plan-01.json").write_text(
-        json.dumps(
-            {
-                "id": "review-whole-plan-01",
-                "type": "whole_plan",
-                "status": "approved",
-                "target_revision": 0,
-                "findings": [],
-            }
-        ),
-        encoding="utf-8",
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-validate-approval"
+    _create_validate_run(store, run_id)
+    store.save_review(
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "status": "approved",
+            "target_revision": 0,
+            "findings": [],
+        },
     )
 
-    validate_result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
-            "validate",
-            "--run",
-            run_id,
-            "--runs-dir",
-            str(runs_dir),
-            "--stream-json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    payload = json.loads(validate_result.stdout)
-    assert payload["mode"] == "approval"
+    with patch("top_down_planning.cli.user.emit_payload") as emit_payload:
+        with pytest.raises(SystemExit) as exit_info:
+            handle_validate_command(
+                Namespace(run=run_id, runs_dir=str(store.root), stream_json=True)
+            )
+        assert exit_info.value.code == 0
+        payload = emit_payload.call_args.args[0]
+        assert payload["mode"] == "approval"

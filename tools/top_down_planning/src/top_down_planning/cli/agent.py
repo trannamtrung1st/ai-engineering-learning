@@ -9,6 +9,7 @@ from top_down_planning.agent_tool import (
     AgentToolError,
     PlanAgentService,
     RequestError,
+    ReviewAgentService,
     RunAgentService,
     load_structured_request,
 )
@@ -61,6 +62,23 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         choices=["draft", "approval"],
         default="draft",
         help="Validation mode (default: draft).",
+    )
+
+    review_parser = agent_sub.add_parser("review", help="Review respond commands.")
+    review_sub = review_parser.add_subparsers(dest="review_command")
+
+    respond_parser = review_sub.add_parser(
+        "respond",
+        help="Submit review findings and a decision.",
+    )
+    _add_run_flags(respond_parser)
+    respond_parser.add_argument(
+        "--request",
+        help="JSON or YAML request file (default: stdin).",
+    )
+    respond_parser.add_argument(
+        "--role",
+        help="Agent role (required unless request.role is set).",
     )
 
     run_parser = agent_sub.add_parser("run", help="Run-level agent commands.")
@@ -127,6 +145,10 @@ def handle_agent_command(args: argparse.Namespace) -> None:
         _handle_plan_command(args)
         return
 
+    if args.agent_command == "review":
+        _handle_review_command(args)
+        return
+
     if args.agent_command == "run":
         if args.run_command == "status":
             _handle_run_status(args)
@@ -144,6 +166,13 @@ def _resolve_apply_role(args: argparse.Namespace, request: dict[str, Any]) -> st
     role = args.role if args.role is not None else request.get("role")
     if role is None or not str(role).strip():
         raise RequestError("apply requires --role or request.role")
+    return str(role).strip()
+
+
+def _resolve_respond_role(args: argparse.Namespace, request: dict[str, Any]) -> str:
+    role = args.role if args.role is not None else request.get("role")
+    if role is None or not str(role).strip():
+        raise RequestError("respond requires --role or request.role")
     return str(role).strip()
 
 
@@ -177,6 +206,33 @@ def _handle_plan_command(args: argparse.Namespace) -> None:
         else:
             emit_error(
                 AgentToolError(f"unknown plan command: {args.plan_command!r}"),
+                exit_code=2,
+            )
+    except AgentToolError as exc:
+        emit_error(exc)
+    except Exception as exc:
+        emit_error(exc)
+
+
+def _handle_review_command(args: argparse.Namespace) -> None:
+    if args.review_command is None:
+        emit_error(
+            AgentToolError("review command required: respond"),
+            exit_code=2,
+        )
+
+    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    service = ReviewAgentService(store, args.run)
+
+    try:
+        if args.review_command == "respond":
+            request = load_structured_request(request_path=args.request)
+            role = _resolve_respond_role(args, request)
+            payload = service.respond(request, role=role)
+            emit_response(payload)
+        else:
+            emit_error(
+                AgentToolError(f"unknown review command: {args.review_command!r}"),
                 exit_code=2,
             )
     except AgentToolError as exc:

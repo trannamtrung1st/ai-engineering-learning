@@ -58,10 +58,16 @@ class RevisionConflictError(AgentToolError):
 class RoleDeniedError(AgentToolError):
     code = "role_denied"
 
-    def __init__(self, role: str) -> None:
+    def __init__(
+        self,
+        role: str,
+        *,
+        action: str | None = None,
+    ) -> None:
         super().__init__(
-            f"role {role!r} is not allowed to mutate the plan",
-            action="Only the planner role may apply plan mutations.",
+            f"role {role!r} is not allowed to perform this operation",
+            action=action
+            or "Only the planner role may apply plan mutations.",
         )
         self.role = role
 

@@ -238,6 +238,33 @@ class FileRunStore:
             raise PersistenceError("resolved-config.yaml must contain a mapping")
         return payload
 
+    def reviews_dir(self, run_id: str) -> Path:
+        return self.run_dir(run_id) / "reviews"
+
+    def save_review(self, run_id: str, review: dict[str, Any]) -> None:
+        review_id = review.get("id")
+        if not review_id:
+            raise PersistenceError("review record requires id")
+        reviews_dir = self.reviews_dir(run_id)
+        if not reviews_dir.is_dir():
+            raise RunNotFoundError(run_id, "reviews/ missing")
+        atomic_write_json(reviews_dir / f"{review_id}.json", dict(review))
+
+    def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
+        path = self.reviews_dir(run_id) / f"{review_id}.json"
+        if not path.exists():
+            raise RunNotFoundError(run_id, f"review {review_id} missing")
+        return self._read_json(path)
+
+    def list_reviews(self, run_id: str) -> list[dict[str, Any]]:
+        reviews_dir = self.reviews_dir(run_id)
+        if not reviews_dir.is_dir():
+            return []
+        reviews: list[dict[str, Any]] = []
+        for path in sorted(reviews_dir.glob("*.json")):
+            reviews.append(self._read_json(path))
+        return reviews
+
     def _run_path(self, run_id: str) -> Path:
         path = self.run_dir(run_id) / "run.json"
         self._require_file(path, run_id)
