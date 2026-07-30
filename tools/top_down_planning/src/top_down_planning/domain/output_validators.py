@@ -6,15 +6,21 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from top_down_planning.domain.models import Plan
-from top_down_planning.domain.production import validate_production_checks
+from top_down_planning.domain.production import (
+    completion_claim_asserts_goal_met,
+    validate_production_checks,
+)
 from top_down_planning.domain.reviews import (
     blocking_unresolved_finding_ids_from_payload,
     find_whole_output_approval,
+    OUTPUT_REVIEW_TYPES,
+    build_is_review_blocked_fn,
 )
 from top_down_planning.domain.validators import (
     ValidationIssue,
     ValidationResult,
     severity_for_validation_mode,
+    validate_dependencies,
     validation_issue,
 )
 
@@ -38,6 +44,14 @@ class OutputDigestBundle:
     actual_output_digest: str | None = None
     expected_plan_digest: str | None = None
     actual_plan_digest: str | None = None
+    input_digest: str | None = None
+    expected_input_digest: str | None = None
+    output_goal_digest: str | None = None
+    expected_output_goal_digest: str | None = None
+    config_digest: str | None = None
+    expected_config_digest: str | None = None
+    context_digest: str | None = None
+    expected_context_digest: str | None = None
 
 
 def build_output_approval_validation_context(
@@ -46,6 +60,10 @@ def build_output_approval_validation_context(
     approval: dict[str, Any],
     actual_output_digest: str,
     actual_plan_digest: str,
+    actual_config_digest: str,
+    actual_input_digest: str,
+    actual_output_goal_digest: str,
+    actual_context_digest: str | None = None,
 ) -> tuple[OutputReviewState, OutputDigestBundle]:
     approved_digests = approval.get("approved_digests")
     expected_digests: dict[str, str] = (
@@ -65,6 +83,14 @@ def build_output_approval_validation_context(
         actual_output_digest=actual_output_digest,
         expected_plan_digest=expected_digests.get("plan"),
         actual_plan_digest=actual_plan_digest,
+        input_digest=actual_input_digest,
+        expected_input_digest=expected_digests.get("input"),
+        output_goal_digest=actual_output_goal_digest,
+        expected_output_goal_digest=expected_digests.get("output_goal"),
+        config_digest=actual_config_digest,
+        expected_config_digest=expected_digests.get("config"),
+        context_digest=actual_context_digest,
+        expected_context_digest=expected_digests.get("context"),
     )
     return review_state, digest_bundle
 
@@ -162,6 +188,34 @@ def validate_output_digest_hooks(
             )
         )
 
+    for label, actual, expected in (
+        ("input", digests.input_digest, digests.expected_input_digest),
+        ("output_goal", digests.output_goal_digest, digests.expected_output_goal_digest),
+        ("config", digests.config_digest, digests.expected_config_digest),
+        ("context", digests.context_digest, digests.expected_context_digest),
+    ):
+        if actual is None and expected is None:
+            continue
+        if actual is None or expected is None:
+            issues.append(
+                validation_issue(
+                    "digest_not_checked",
+                    severity_for_validation_mode(mode, "warning"),
+                    f"{label} digest was not fully provided for comparison",
+                    [label],
+                )
+            )
+            continue
+        if actual != expected:
+            issues.append(
+                validation_issue(
+                    "digest_mismatch",
+                    "error",
+                    f"{label} digest does not match the reviewed version",
+                    [label],
+                )
+            )
+
     return issues
 
 
@@ -197,6 +251,14 @@ def validate_output(
                     "completion claim is missing goal_assessment",
                 )
             )
+        elif not completion_claim_asserts_goal_met(completion_claim):
+            issues.append(
+                validation_issue(
+                    "goal_not_assessed_as_met",
+                    "error",
+                    "completion claim does not explicitly assess output goal as met",
+                )
+            )
 
         if reviews is not None:
             output_revision = int(production["output_revision"])
@@ -212,6 +274,19 @@ def validate_output(
                         ),
                     )
                 )
+
+        dispositions = dict(production.get("dispositions") or {})
+        is_review_blocked = build_is_review_blocked_fn(
+            reviews,
+            review_types=OUTPUT_REVIEW_TYPES,
+        )
+        issues.extend(
+            validate_dependencies(
+                plan,
+                dispositions,
+                is_review_blocked=is_review_blocked,
+            )
+        )
 
     if review_state is not None:
         issues.extend(validate_output_review_hooks(production, review_state, mode=mode))

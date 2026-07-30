@@ -9,7 +9,11 @@ from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS, TerminalDisposition
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.readiness import compute_ready_view, detect_deadlock, is_applicable_item
-from top_down_planning.domain.reviews import OUTPUT_REVIEW_TYPES, build_is_review_blocked_fn
+from top_down_planning.domain.reviews import (
+    OUTPUT_REVIEW_TYPES,
+    build_is_review_blocked_fn,
+    whole_output_revision_target_ids,
+)
 
 PRODUCTION_PHASE = "production"
 WHOLE_OUTPUT_REVIEW_PHASE = "whole_output_review"
@@ -188,6 +192,126 @@ def validate_disposition_record(record: ItemDispositionRecord) -> list[str]:
         issues.append("superseded requires replacement_ref")
     if record.disposition == "blocked" and not (record.evidence or "").strip():
         issues.append("blocked requires evidence")
+    return issues
+
+
+def completion_claim_asserts_goal_met(claim: dict[str, Any] | None) -> bool:
+    """Return whether a completion claim explicitly assesses the output goal as met."""
+
+    if not isinstance(claim, dict):
+        return False
+    if claim.get("goal_met") is not True:
+        return False
+    return bool(str(claim.get("goal_assessment") or "").strip())
+
+
+def build_production_review_snapshot(production: dict[str, Any]) -> dict[str, Any]:
+    """Bounded production artifact for reviewer packages (proposal §5.3, §16)."""
+
+    batches = [
+        batch
+        for batch in (production.get("batches") or [])
+        if isinstance(batch, dict)
+        and batch.get("evidence_status") != "invalidated_by_reconciliation"
+    ]
+    live_batch_ids = {
+        str(batch.get("id") or "")
+        for batch in batches
+        if batch.get("id")
+    }
+    output_evidence = [
+        entry
+        for entry in (production.get("output_evidence") or [])
+        if isinstance(entry, dict)
+        and str(entry.get("batch_id") or "") in live_batch_ids
+    ]
+
+    snapshot: dict[str, Any] = {
+        "production_revision": int(production["revision"]),
+        "output_revision": int(production["output_revision"]),
+        "batches": batches,
+        "dispositions": dict(production.get("dispositions") or {}),
+        "output_evidence": output_evidence,
+    }
+    completion_claim = production.get("completion_claim")
+    if isinstance(completion_claim, dict):
+        snapshot["completion_claim"] = dict(completion_claim)
+    return snapshot
+
+
+def build_production_digest_payload(production: dict[str, Any]) -> dict[str, Any]:
+    """Live output fields for digest binding (excludes invalidated reconciliation evidence)."""
+
+    snapshot = build_production_review_snapshot(production)
+    payload: dict[str, Any] = {
+        "batches": snapshot["batches"],
+        "dispositions": snapshot["dispositions"],
+        "output_evidence": snapshot["output_evidence"],
+    }
+    if "completion_claim" in snapshot:
+        payload["completion_claim"] = snapshot["completion_claim"]
+    return payload
+
+
+def validate_evidence_revision_request(
+    plan: Plan,
+    *,
+    plan_items: list[str],
+    dispositions: dict[str, ItemDispositionRecord],
+    current_dispositions: dict[str, TerminalDisposition],
+    revision_target_ids: set[str],
+    outputs: list[OutputEvidence],
+    empty_output: bool,
+    empty_output_reason: str | None,
+) -> list[str]:
+    """Validate a whole-output evidence revision batch for already-terminal items."""
+
+    issues: list[str] = []
+    if not plan_items:
+        issues.append("plan_items must not be empty")
+    if not revision_target_ids:
+        issues.append("no unresolved whole-output findings define revision targets")
+
+    seen: set[str] = set()
+    for item_id in plan_items:
+        if item_id in seen:
+            issues.append(f"duplicate plan item in batch: {item_id}")
+        seen.add(item_id)
+
+        if item_id not in plan.items:
+            issues.append(f"unknown plan item: {item_id}")
+            continue
+        if item_id not in revision_target_ids:
+            issues.append(
+                f"item {item_id} is not targeted by unresolved whole-output findings"
+            )
+        if item_id not in current_dispositions:
+            issues.append(f"item {item_id} has no disposition to revise")
+            continue
+        if is_applicable_item(plan, item_id, current_dispositions):
+            issues.append(
+                f"item {item_id} is not terminal; use a normal production apply"
+            )
+
+        if item_id not in dispositions:
+            issues.append(f"missing disposition for plan item: {item_id}")
+            continue
+        record = dispositions[item_id]
+        if record.disposition != current_dispositions[item_id]:
+            issues.append(
+                f"evidence revision cannot change disposition for item {item_id}"
+            )
+        issues.extend(validate_disposition_record(record))
+
+    for item_id, record in dispositions.items():
+        if item_id not in seen:
+            issues.append(f"disposition provided for item not in plan_items: {item_id}")
+
+    if empty_output and not (empty_output_reason or "").strip():
+        issues.append("empty_output requires empty_output_reason")
+    if not empty_output and not outputs:
+        issues.append("evidence revision requires outputs unless empty_output is true")
+
     return issues
 
 
@@ -384,6 +508,8 @@ def validate_production_checks(
     if isinstance(completion_claim, dict):
         if not str(completion_claim.get("goal_assessment") or "").strip():
             issues.append("completion claim is missing goal_assessment")
+        elif not completion_claim_asserts_goal_met(completion_claim):
+            issues.append("completion claim does not explicitly assess output goal as met")
 
     return issues
 

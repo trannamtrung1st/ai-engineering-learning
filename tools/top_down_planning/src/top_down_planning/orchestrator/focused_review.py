@@ -10,6 +10,7 @@ from top_down_planning.agent_tool.plan_service import PlanAgentService
 from top_down_planning.agent_tool.production_service import ProductionAgentService
 from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
+from top_down_planning.domain.production import build_production_review_snapshot
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
@@ -426,6 +427,7 @@ def build_focused_review_package(
     }
     if production is not None:
         package["output_revision"] = int(production["output_revision"])
+        package["production"] = build_production_review_snapshot(production)
     return package
 
 

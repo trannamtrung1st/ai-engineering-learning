@@ -8,6 +8,8 @@ from core_tools.persistence.digests import digest_json
 
 from top_down_planning.domain.models import Plan
 
+from top_down_planning.domain.production import build_production_digest_payload
+
 __all__ = [
     "compute_config_digest",
     "compute_context_digest",
@@ -34,12 +36,6 @@ def compute_context_digest(context: dict[str, Any]) -> str:
 
 
 def compute_output_digest(production: dict[str, Any]) -> str:
-    """Deterministic digest of production output state (excluding revision counters)."""
+    """Deterministic digest of live production output (excludes invalidated reconciliation evidence)."""
 
-    payload = {
-        "batches": production.get("batches") or [],
-        "dispositions": production.get("dispositions") or {},
-        "output_evidence": production.get("output_evidence") or [],
-        "completion_claim": production.get("completion_claim"),
-    }
-    return digest_json(payload)
+    return digest_json(build_production_digest_payload(production))

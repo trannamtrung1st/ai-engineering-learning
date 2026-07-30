@@ -463,7 +463,7 @@ def build_producer_context_manifest(
             ),
             "submit_completion": (
                 f"tdp agent production submit-completion --run {run_id} --role producer "
-                "--request <file>"
+                "--request <file>  # requires goal_met: true and goal_assessment"
             ),
             "report_blocked": (
                 f"tdp agent production report-blocked --run {run_id} --role producer "

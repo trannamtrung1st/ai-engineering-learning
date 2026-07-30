@@ -85,6 +85,7 @@ def _create_run_at_whole_output_review(
         "output_evidence": [],
         "completion_claim": {
             "goal_assessment": goal_assessment,
+            "goal_met": True,
             "summary": "All items complete.",
             "plan_revision": 0,
             "output_revision": 1,
@@ -213,9 +214,43 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
         [
             {
                 "type": "tool_call",
+                "tool": "production_apply",
+                "role": "producer",
+                "request": {
+                    "production_revision": 2,
+                    "evidence_revision": True,
+                    "plan_items": ["item-leaf"],
+                    "dispositions": {
+                        "item-leaf": {
+                            "disposition": "completed",
+                            "evidence": "Added artifact reference.",
+                        }
+                    },
+                    "outputs": [
+                        {
+                            "id": "output-leaf",
+                            "type": "artifact",
+                            "ref": "artifacts/leaf.txt",
+                        }
+                    ],
+                    "contributions": [
+                        {
+                            "item_id": "item-leaf",
+                            "output_refs": ["output-leaf"],
+                            "summary": "Revised evidence.",
+                        }
+                    ],
+                    "summary": "Addressed reviewer finding.",
+                },
+            },
+            {
+                "type": "tool_call",
                 "tool": "production_submit_completion",
                 "role": "producer",
-                "request": {"goal_assessment": "Output goal is fully met after revision."},
+                "request": {
+                    "goal_assessment": "Output goal is fully met after revision.",
+                    "goal_met": True,
+                },
             },
             *done_events(text="turn complete"),
         ]
@@ -228,7 +263,7 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
                 "role": "reviewer",
                 "request": _review_respond_request(
                     decision="approved",
-                    target_revision=1,
+                    target_revision=2,
                 ),
             },
             *done_events(text="turn complete"),

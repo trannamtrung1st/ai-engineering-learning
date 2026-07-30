@@ -19,6 +19,10 @@ class ReconciliationReport:
     newly_added: tuple[str, ...]
     evidence_preserved: tuple[str, ...]
 
+    @property
+    def invalidated_item_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(set(self.changed) | set(self.removed)))
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "amendment_id": self.amendment_id,
@@ -29,6 +33,7 @@ class ReconciliationReport:
             "removed": list(self.removed),
             "newly_added": list(self.newly_added),
             "evidence_preserved": list(self.evidence_preserved),
+            "invalidated_item_ids": list(self.invalidated_item_ids),
         }
 
     @classmethod
@@ -112,13 +117,25 @@ def apply_reconciliation(
     production: dict[str, Any],
     report: ReconciliationReport,
 ) -> dict[str, Any]:
-    """Attach reconciliation report and clear the pending amendment marker."""
+    """Attach reconciliation report, invalidate stale evidence, and clear pending amendment."""
 
     updated = dict(production)
     reports = list(updated.get("reconciliation_reports") or [])
     reports.append(report.to_dict())
     updated["reconciliation_reports"] = reports
     updated["pending_amendment_id"] = None
+
+    dispositions = dict(updated.get("dispositions") or {})
+    for item_id in report.removed:
+        dispositions.pop(item_id, None)
+    for item_id in report.changed:
+        dispositions.pop(item_id, None)
+    updated["dispositions"] = dispositions
+
+    if report.changed or report.removed:
+        updated["completion_claim"] = None
+        updated["blocker_report"] = None
+        updated = _invalidate_evidence_for_items(updated, report.invalidated_item_ids)
 
     requests = list(updated.get("amendment_requests") or [])
     patched_requests: list[dict[str, Any]] = []
@@ -134,6 +151,47 @@ def apply_reconciliation(
         completed["new_plan_revision"] = report.new_plan_revision
         patched_requests.append(completed)
     updated["amendment_requests"] = patched_requests
+    return updated
+
+
+def _invalidate_evidence_for_items(
+    production: dict[str, Any],
+    invalidated_item_ids: tuple[str, ...],
+) -> dict[str, Any]:
+    """Mark batch/evidence artifacts for changed/removed items and drop live output refs."""
+
+    if not invalidated_item_ids:
+        return production
+
+    invalidated_ids = set(invalidated_item_ids)
+    updated = dict(production)
+    invalidated_batch_ids: set[str] = set()
+    updated_batches: list[dict[str, Any]] = []
+
+    for batch_payload in updated.get("batches") or []:
+        if not isinstance(batch_payload, dict):
+            continue
+        plan_items = {str(item_id) for item_id in (batch_payload.get("plan_items") or [])}
+        overlap = sorted(plan_items & invalidated_ids)
+        if not overlap:
+            updated_batches.append(batch_payload)
+            continue
+        marked = dict(batch_payload)
+        marked["evidence_status"] = "invalidated_by_reconciliation"
+        marked["invalidated_item_ids"] = overlap
+        batch_id = str(marked.get("id") or "")
+        if batch_id:
+            invalidated_batch_ids.add(batch_id)
+        updated_batches.append(marked)
+
+    updated["batches"] = updated_batches
+    updated["output_evidence"] = [
+        entry
+        for entry in (updated.get("output_evidence") or [])
+        if isinstance(entry, dict)
+        and str(entry.get("batch_id") or "") not in invalidated_batch_ids
+    ]
+    updated["output_revision"] = int(updated.get("output_revision") or 0) + 1
     return updated
 
 

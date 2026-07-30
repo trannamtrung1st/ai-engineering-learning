@@ -568,7 +568,7 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
                 "type": "tool_call",
                 "tool": "production_submit_completion",
                 "role": "producer",
-                "request": {"goal_assessment": "Output goal is fully met."},
+                "request": {"goal_assessment": "Output goal is fully met.", "goal_met": True},
             },
             *done_events(signal="batch_complete", text="production turn"),
         ],

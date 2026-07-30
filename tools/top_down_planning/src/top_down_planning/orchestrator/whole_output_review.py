@@ -16,6 +16,7 @@ from top_down_planning.domain.outcome import (
     load_approvals_for_acceptance,
     resolve_quality_outcome,
 )
+from top_down_planning.domain.production import build_production_review_snapshot
 from top_down_planning.domain.reviews import ReviewLoop, find_whole_plan_approval
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
@@ -32,7 +33,6 @@ _WHOLE_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["whole_output_review"]
 
 _PRODUCTION_TOOL_HANDLERS: dict[str, str] = {
     "production_apply": "apply",
-    "production_request_amendment": "request_amendment",
     "production_submit_completion": "submit_completion",
     "production_report_blocked": "report_blocked",
 }
@@ -353,6 +353,17 @@ class WholeOutputReviewOrchestrator:
                 "loop_id": loop.id,
                 "target_revision": loop.target_revision,
                 "findings": [finding.to_dict() for finding in loop.findings],
+                "revision_instructions": {
+                    "apply_mode": "evidence_revision",
+                    "evidence_revision": True,
+                    "tool": "production_apply",
+                    "notes": (
+                        "Set evidence_revision: true on production apply for terminal "
+                        "plan_items targeted by unresolved blocking findings. Keep "
+                        "existing dispositions unchanged; attach new outputs or "
+                        "contributions. Then submit-completion with goal_met: true."
+                    ),
+                },
             },
         )
         self._consume_producer_turn(session_id)
@@ -389,8 +400,15 @@ class WholeOutputReviewOrchestrator:
         if tool == "plan_apply":
             raise ProviderRunError(
                 "plan mutations are not allowed during whole-output review; "
-                "use `tdp agent production request-amendment` when a material plan "
-                "defect is found"
+                "address reviewer findings with production apply (evidence_revision: true) "
+                "or report blocked"
+            )
+
+        if tool == "production_request_amendment":
+            raise ProviderRunError(
+                "plan amendment is not allowed during whole-output review; "
+                "address reviewer findings with production apply (evidence_revision: true) "
+                "or report blocked"
             )
 
         handler_name = _PRODUCTION_TOOL_HANDLERS.get(tool)
@@ -511,6 +529,7 @@ def build_whole_output_review_package(
         "scope": dict(loop.scope),
         "target_revision": loop.target_revision,
         "output_revision": int(production["output_revision"]),
+        "production": build_production_review_snapshot(production),
         "input_refs": list(run_section.get("input_refs") or []),
         "output_goal": str(run_section.get("output_goal") or ""),
         "boundaries": run_section.get("boundaries"),

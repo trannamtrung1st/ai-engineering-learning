@@ -20,6 +20,7 @@ from top_down_planning.domain.production import (
     ItemDispositionRecord,
     OutputEvidence,
     ProductionBatch,
+    WHOLE_OUTPUT_REVIEW_PHASE,
     all_applicable_items_processed,
     allows_production_mutations,
     disposition_map_from_records,
@@ -31,10 +32,15 @@ from top_down_planning.domain.production import (
     parse_disposition_records,
     ready_item_ids_for_plan,
     validate_batch_request,
+    validate_evidence_revision_request,
     validate_production_checks,
 )
 from top_down_planning.domain.readiness import is_applicable_item
-from top_down_planning.domain.reviews import OUTPUT_REVIEW_TYPES, find_whole_plan_approval
+from top_down_planning.domain.reviews import (
+    OUTPUT_REVIEW_TYPES,
+    find_whole_plan_approval,
+    whole_output_revision_target_ids,
+)
 from top_down_planning.domain.validators import validate_plan
 from top_down_planning.persistence.errors import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
@@ -130,41 +136,63 @@ class ProductionAgentService:
 
         current_dispositions = self._dispositions(production)
         reviews = self._store.list_reviews(self._run_id)
-        ready_ids = ready_item_ids_for_plan(
-            plan,
-            current_dispositions,
-            reviews=reviews,
-        )
-
-        already_terminal = [
-            item_id
-            for item_id in (str(item_id) for item_id in plan_items)
-            if not is_applicable_item(plan, item_id, current_dispositions)
-        ]
-        if already_terminal:
-            joined = ", ".join(already_terminal)
-            raise RequestError(f"plan_items already have terminal disposition: {joined}")
+        evidence_revision = bool(request.get("evidence_revision"))
+        plan_item_ids = [str(item_id) for item_id in plan_items]
 
         disposition_records = parse_disposition_records(request.get("dispositions") or {})
         empty_output = bool(request.get("empty_output"))
         empty_output_reason = request.get("empty_output_reason")
         if empty_output_reason is not None:
             empty_output_reason = str(empty_output_reason).strip() or None
-
-        issues = validate_batch_request(
-            plan,
-            plan_items=[str(item_id) for item_id in plan_items],
-            dispositions=disposition_records,
-            ready_item_ids=ready_ids,
-            empty_output=empty_output,
-            empty_output_reason=empty_output_reason,
-        )
-        if issues:
-            raise RequestError("; ".join(issues))
-
         outputs = _parse_outputs(request.get("outputs") or [])
         contributions = _parse_contributions(request.get("contributions") or [])
-        _validate_contributions(outputs, contributions, plan_items)
+        _validate_contributions(outputs, contributions, plan_item_ids)
+
+        if evidence_revision:
+            run = self._store.load_run(self._run_id)
+            phase = str(run.get("phase") or "")
+            if phase != WHOLE_OUTPUT_REVIEW_PHASE:
+                raise RequestError(
+                    "evidence_revision apply is only allowed during whole_output_review"
+                )
+            revision_targets = whole_output_revision_target_ids(reviews)
+            issues = validate_evidence_revision_request(
+                plan,
+                plan_items=plan_item_ids,
+                dispositions=disposition_records,
+                current_dispositions=current_dispositions,
+                revision_target_ids=revision_targets,
+                outputs=outputs,
+                empty_output=empty_output,
+                empty_output_reason=empty_output_reason,
+            )
+            if issues:
+                raise RequestError("; ".join(issues))
+        else:
+            ready_ids = ready_item_ids_for_plan(
+                plan,
+                current_dispositions,
+                reviews=reviews,
+            )
+            already_terminal = [
+                item_id
+                for item_id in plan_item_ids
+                if not is_applicable_item(plan, item_id, current_dispositions)
+            ]
+            if already_terminal:
+                joined = ", ".join(already_terminal)
+                raise RequestError(f"plan_items already have terminal disposition: {joined}")
+
+            issues = validate_batch_request(
+                plan,
+                plan_items=plan_item_ids,
+                dispositions=disposition_records,
+                ready_item_ids=ready_ids,
+                empty_output=empty_output,
+                empty_output_reason=empty_output_reason,
+            )
+            if issues:
+                raise RequestError("; ".join(issues))
 
         batch_id = str(request.get("batch_id") or next_batch_id(production.get("batches") or []))
         result = BatchResult(
@@ -186,6 +214,8 @@ class ProductionAgentService:
         )
 
         updated = self._merge_batch(production, batch, disposition_records, outputs)
+        if evidence_revision:
+            updated["completion_claim"] = None
         try:
             next_revision = self._store.save_production(
                 self._run_id,
@@ -254,6 +284,14 @@ class ProductionAgentService:
 
         plan = self._store.load_plan_model(self._run_id)
         self._require_production_context(plan)
+
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or "")
+        if phase == WHOLE_OUTPUT_REVIEW_PHASE:
+            raise RequestError(
+                "plan amendment is not allowed during whole-output review; "
+                "address reviewer findings via evidence revision or report blocked"
+            )
 
         evidence = _required_text(request.get("evidence"), field="evidence")
         affected_refs = _required_affected_refs(request.get("affected_refs"))
@@ -334,6 +372,8 @@ class ProductionAgentService:
             request.get("goal_assessment"),
             field="goal_assessment",
         )
+        if request.get("goal_met") is not True:
+            raise RequestError("submit-completion requires goal_met: true")
         summary = str(request.get("summary") or "").strip()
 
         plan = self._store.load_plan_model(self._run_id)
@@ -353,6 +393,7 @@ class ProductionAgentService:
         expected_revision = int(production["revision"])
         claim = {
             "goal_assessment": goal_assessment,
+            "goal_met": True,
             "summary": summary,
             "plan_revision": plan.revision,
             "output_revision": int(production["output_revision"]),

@@ -189,7 +189,7 @@ def production_batch_script(
                 "type": "tool_call",
                 "tool": "production_submit_completion",
                 "role": "producer",
-                "request": {"goal_assessment": goal_assessment},
+                "request": {"goal_assessment": goal_assessment, "goal_met": True},
             }
         )
     events.extend(done_events(signal="batch_complete", text="production turn"))

@@ -151,7 +151,7 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
                 "type": "tool_call",
                 "tool": "production_submit_completion",
                 "role": "producer",
-                "request": {"goal_assessment": "Output goal is fully met."},
+                "request": {"goal_assessment": "Output goal is fully met.", "goal_met": True},
             },
             *done_events(signal="batch_complete", text="production turn"),
         ]

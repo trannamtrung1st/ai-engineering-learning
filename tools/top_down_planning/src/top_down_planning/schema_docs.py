@@ -23,6 +23,7 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "expand-branch",
     "batch-result",
     "empty-output",
+    "evidence-revision",
     "review-respond",
     "focused-review-request",
     "amendment-request",
@@ -256,6 +257,16 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "description": "Required when empty_output is true.",
             },
+            "evidence_revision": {
+                "type": "boolean",
+                "description": (
+                    "During whole_output_review only: revise outputs for terminal "
+                    "plan_items targeted by unresolved blocking findings without "
+                    "changing dispositions."
+                ),
+            },
+            "intent": {"type": "string"},
+            "agent_turns": {"type": "integer", "minimum": 1},
         },
         "additionalProperties": False,
     },
@@ -335,10 +346,11 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "CompletionClaimRequest",
         "description": "Production completion claim for `tdp agent production submit-completion`.",
         "type": "object",
-        "required": ["goal_assessment"],
+        "required": ["goal_assessment", "goal_met"],
         "properties": {
             "role": {"type": "string"},
             "goal_assessment": {"type": "string", "minLength": 1},
+            "goal_met": {"type": "boolean", "const": True},
             "summary": {"type": "string"},
         },
         "additionalProperties": False,
@@ -447,6 +459,39 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "empty_output_reason": "Existing README already satisfies documentation requirements.",
         },
     },
+    "evidence-revision": {
+        "schema": "production-apply",
+        "description": (
+            "During whole_output_review, revise evidence for terminal items targeted "
+            "by unresolved blocking findings."
+        ),
+        "payload": {
+            "production_revision": 3,
+            "evidence_revision": True,
+            "plan_items": ["item-api"],
+            "dispositions": {
+                "item-api": {
+                    "disposition": "completed",
+                    "evidence": "Routes implemented; adding reviewer-requested artifact ref.",
+                }
+            },
+            "outputs": [
+                {
+                    "id": "output-api-v2",
+                    "type": "artifact",
+                    "ref": "src/api/routes.py",
+                }
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-api",
+                    "output_refs": ["output-api-v2"],
+                    "summary": "Added artifact reference requested by reviewer.",
+                }
+            ],
+            "summary": "Evidence revision for whole-output review finding.",
+        },
+    },
     "review-respond": {
         "schema": "review-respond",
         "description": "Reviewer requests plan changes with one blocking finding.",
@@ -491,6 +536,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "description": "Producer submits a completion claim after all applicable items are terminal.",
         "payload": {
             "goal_assessment": "Every applicable plan item has a terminal disposition or derived satisfaction.",
+            "goal_met": True,
             "summary": "Production batches complete; ready for whole-output review.",
         },
     },
@@ -556,8 +602,13 @@ and mandatory review gates.
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.
 2. Mandatory whole-plan review (`review respond`) must approve before production.
-3. Producer records batches with `production apply`, then `submit-completion`.
-4. Mandatory whole-output review must approve before `outcome: accepted`.
+3. Producer records batches with `production apply`, then `submit-completion` with
+   `goal_met: true` and a `goal_assessment` rationale.
+4. Mandatory whole-output review must approve before `outcome: accepted`. After
+   `changes_requested`, the producer must use `production apply` with
+   `evidence_revision: true` on terminal items targeted by unresolved blocking
+   findings (dispositions unchanged), then re-submit completion with `goal_met: true`.
+   Plan amendment is not available during whole-output review.
 5. Optional focused reviews use `review request` with bounded `scope.item_ids`.
 
 ## Discoverability
@@ -571,6 +622,10 @@ and mandatory review gates.
 Plan apply requires `base_revision` from `plan snapshot`. Production apply requires
 `production_revision` from `production snapshot`. Stale revisions return a conflict
 error with instructions to refresh the snapshot.
+
+Completion claims require `goal_met: true` plus non-empty `goal_assessment`. During
+`whole_output_review`, set `evidence_revision: true` on `production apply` when
+revising terminal items after reviewer `changes_requested`.
 
 Plan `snapshot` and `check` responses separate validation `issues` (errors with
 `code`, `message`, optional `path`) from `warnings` (human-readable strings).

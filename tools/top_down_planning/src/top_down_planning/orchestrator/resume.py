@@ -8,7 +8,10 @@ from typing import Any
 
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.domain.production import has_pending_amendment
-from top_down_planning.domain.reviews import find_whole_plan_approval
+from top_down_planning.domain.reviews import (
+    find_active_review_loop,
+    find_whole_plan_approval,
+)
 from top_down_planning.orchestrator.errors import OrchestratorError
 from top_down_planning.orchestrator.phases import (
     OUTPUT_VALIDATED,
@@ -19,7 +22,11 @@ from top_down_planning.orchestrator.phases import (
     WHOLE_OUTPUT_REVIEW,
     WHOLE_PLAN_REVIEW,
 )
-from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
+from top_down_planning.persistence.digests import (
+    compute_config_digest,
+    compute_output_digest,
+    compute_plan_digest,
+)
 from top_down_planning.persistence.interface import RunStore
 
 
@@ -57,7 +64,7 @@ def validate_resume_preconditions(store: RunStore, run_id: str) -> ResumePrecond
     _validate_digests(store, run_id, run)
     production = store.load_production(run_id)
     _validate_phase_binding(production, phase)
-    _validate_session_refs(run, production, phase)
+    _validate_session_refs(store, run_id, run, production, phase)
     _validate_plan_approval_binding(store, run_id, production, phase)
 
     return ResumePreconditions(
@@ -107,6 +114,15 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
                 code="digest_mismatch",
             )
 
+    production = store.load_production(run_id)
+    expected_output = compute_output_digest(production)
+    actual_output = stored.get("output")
+    if actual_output and actual_output != expected_output:
+        raise ResumeError(
+            "output digest mismatch; refusing to resume with divergent production.json",
+            code="digest_mismatch",
+        )
+
 
 def _validate_phase_binding(
     production: dict[str, Any],
@@ -120,6 +136,8 @@ def _validate_phase_binding(
 
 
 def _validate_session_refs(
+    store: RunStore,
+    run_id: str,
     run: dict[str, Any],
     production: dict[str, Any],
     phase: str,
@@ -147,6 +165,7 @@ def _validate_session_refs(
 
     if phase == WHOLE_PLAN_REVIEW:
         _require_session(planner_session_id, label="primary planner", phase=phase)
+        _validate_active_reviewer_session(store, run_id, "whole_plan", phase)
         return
 
     if phase == PRODUCTION:
@@ -155,7 +174,26 @@ def _validate_session_refs(
 
     if phase == WHOLE_OUTPUT_REVIEW:
         _require_session(producer_session_id, label="primary producer", phase=phase)
+        _validate_active_reviewer_session(store, run_id, "whole_output", phase)
         return
+
+
+def _validate_active_reviewer_session(
+    store: RunStore,
+    run_id: str,
+    loop_type: str,
+    phase: str,
+) -> None:
+    loop = find_active_review_loop(store.list_reviews(run_id), loop_type)
+    if loop is None:
+        return
+    session_id = loop.reviewer_session_id
+    if session_id is None or str(session_id).strip() == "":
+        raise ResumeError(
+            f"active {loop_type} review loop {loop.id} is missing reviewer_session_id; "
+            f"refusing to resume phase {phase!r}",
+            code="missing_session_ref",
+        )
 
 
 def _requires_amendment_sessions(production: dict[str, Any], phase: str) -> bool:

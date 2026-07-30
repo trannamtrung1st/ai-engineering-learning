@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from top_down_planning.domain.models import Plan, PlanningLimits
-from top_down_planning.domain.production import all_applicable_items_processed
+from top_down_planning.domain.production import (
+    all_applicable_items_processed,
+    completion_claim_asserts_goal_met,
+)
 from top_down_planning.domain.reviews import (
     blocking_unresolved_finding_ids_from_payload,
     find_whole_output_approval,
@@ -106,13 +109,16 @@ def evaluate_acceptance_invariant(
             actual_context_digest=actual_context_digest,
         )
 
+    dispositions = dict(production.get("dispositions") or {})
+
     plan_validation = validate_plan(
         plan,
         limits=limits,
         review_state=plan_review_state,
         digests=plan_digest_bundle,
-        mode="approval",
+        dispositions=dispositions,
         reviews=reviews,
+        mode="approval",
     )
 
     output_review_state: OutputReviewState | None = None
@@ -123,6 +129,10 @@ def evaluate_acceptance_invariant(
             approval=output_approval,
             actual_output_digest=actual_output_digest,
             actual_plan_digest=actual_plan_digest,
+            actual_config_digest=actual_config_digest,
+            actual_input_digest=actual_input_digest,
+            actual_output_goal_digest=actual_output_goal_digest,
+            actual_context_digest=actual_context_digest,
         )
 
     output_validation = validate_output(
@@ -135,9 +145,8 @@ def evaluate_acceptance_invariant(
     )
 
     completion_claim = production.get("completion_claim")
-    goal_assessed = (
-        isinstance(completion_claim, dict)
-        and bool(str(completion_claim.get("goal_assessment") or "").strip())
+    goal_assessed = completion_claim_asserts_goal_met(
+        completion_claim if isinstance(completion_claim, dict) else None
     )
 
     unresolved_findings = 0
@@ -164,6 +173,11 @@ def evaluate_acceptance_invariant(
 def resolve_quality_outcome(invariant: AcceptanceInvariant) -> QualityOutcome:
     if invariant.satisfied:
         return "accepted"
+    if (
+        not invariant.plan_deterministic_plan_validation_passed
+        or not invariant.output_deterministic_output_validation_passed
+    ):
+        return "blocked"
     return "rejected"
 
 

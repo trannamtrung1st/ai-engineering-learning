@@ -24,7 +24,10 @@ from top_down_planning.config import (
 )
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.production import has_pending_amendment
-from top_down_planning.agent_tool.validation_context import user_validate_mode_and_context
+from top_down_planning.agent_tool.validation_context import (
+    compute_plan_approval_actual_digests,
+    user_validate_mode_and_context,
+)
 from top_down_planning.domain.reviews import find_whole_output_approval
 from top_down_planning.domain.output_validators import (
     build_output_approval_validation_context,
@@ -552,11 +555,22 @@ def handle_validate_command(args: Namespace) -> None:
         output_review_state = None
         output_digest_bundle = None
         if output_approval is not None:
+            (
+                actual_plan_digest,
+                actual_config_digest,
+                actual_input_digest,
+                actual_output_goal_digest,
+                actual_context_digest,
+            ) = compute_plan_approval_actual_digests(store, args.run, run, plan)
             output_review_state, output_digest_bundle = build_output_approval_validation_context(
                 production=production,
                 approval=output_approval,
                 actual_output_digest=compute_output_digest(production),
-                actual_plan_digest=compute_plan_digest(plan),
+                actual_plan_digest=actual_plan_digest,
+                actual_config_digest=actual_config_digest,
+                actual_input_digest=actual_input_digest,
+                actual_output_goal_digest=actual_output_goal_digest,
+                actual_context_digest=actual_context_digest,
             )
         output_validation = validate_output(
             plan,

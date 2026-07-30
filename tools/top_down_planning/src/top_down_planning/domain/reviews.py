@@ -282,6 +282,39 @@ def blocking_unresolved_finding_ids_from_payload(review: dict[str, Any]) -> list
     return blocking_unresolved_finding_ids(findings)
 
 
+def find_active_review_loop(
+    reviews: list[dict[str, Any]],
+    loop_type: str,
+) -> ReviewLoop | None:
+    """Return the latest non-terminal review loop of ``loop_type``, if any."""
+
+    for payload in reversed(reviews):
+        if payload.get("type") != loop_type:
+            continue
+        loop = ReviewLoop.from_dict(payload)
+        if loop.status in {"approved", "blocked"}:
+            continue
+        return loop
+    return None
+
+
+def whole_output_revision_target_ids(reviews: list[dict[str, Any]]) -> set[str]:
+    """Plan item ids targeted by unresolved blocking findings in an active whole-output loop."""
+
+    loop = find_active_review_loop(reviews, "whole_output")
+    if loop is None:
+        return set()
+
+    targets: set[str] = set()
+    for finding in loop.findings:
+        if finding.importance != "blocking":
+            continue
+        if finding.status != "unresolved":
+            continue
+        targets.update(finding.target_refs)
+    return targets
+
+
 def find_whole_output_approval(
     reviews: list[dict[str, Any]],
     output_revision: int,

@@ -176,7 +176,7 @@ def test_submit_completion_rejected_when_items_remain_open(tmp_path: Path) -> No
 
     with pytest.raises(RequestError, match="every applicable item"):
         service.submit_completion(
-            {"goal_assessment": "Goal is met."},
+            {"goal_assessment": "Goal is met.", "goal_met": True},
             role="producer",
         )
 
@@ -203,7 +203,7 @@ def test_submit_completion_success_does_not_set_outcome(tmp_path: Path) -> None:
     )
 
     result = service.submit_completion(
-        {"goal_assessment": "Output goal is fully met."},
+        {"goal_assessment": "Output goal is fully met.", "goal_met": True},
         role="producer",
     )
 
@@ -325,7 +325,7 @@ def test_cli_production_workflow(tmp_path: Path) -> None:
 
     completion_path = tmp_path / "completion.json"
     completion_path.write_text(
-        json.dumps({"goal_assessment": "Delivered the feature."}),
+        json.dumps({"goal_assessment": "Delivered the feature.", "goal_met": True}),
         encoding="utf-8",
     )
     completion = run_cli(
