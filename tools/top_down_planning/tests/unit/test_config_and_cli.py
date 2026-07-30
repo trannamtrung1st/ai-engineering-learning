@@ -169,7 +169,7 @@ def _create_validate_run(
 
 def test_cli_validate_reports_plan_issues(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path / "runs")
-    run_id = "run-validate-issues"
+    run_id = "run-20260101T002002-002002"
     root = PlanItem(
         id="item-root",
         parent_id=None,
@@ -202,7 +202,7 @@ def test_validate_uses_approval_mode_when_whole_plan_review_approved(
     tmp_path: Path,
 ) -> None:
     store = FileRunStore(tmp_path / "runs")
-    run_id = "run-validate-approval"
+    run_id = "run-20260101T002001-002001"
     _create_validate_run(store, run_id)
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
@@ -329,7 +329,7 @@ def test_resume_rejects_changed_output_goal_file(tmp_path: Path) -> None:
     workspace, goal_file, config = _workspace_with_goal_file(tmp_path)
     goal_text = resolve_output_goal_text(config, base_dir=workspace)
     plan = Plan(
-        id="plan-run-goal-file",
+        id="plan-run-20260101T002201-002201",
         revision=0,
         output_goal=goal_text,
         items={
@@ -343,11 +343,11 @@ def test_resume_rejects_changed_output_goal_file(tmp_path: Path) -> None:
     )
     store = FileRunStore(tmp_path / "runs")
     store.create_run(
-        "run-goal-file",
+        "run-20260101T002201-002201",
         plan=plan,
         **create_run_kwargs(workspace, resolved_config=config),
     )
 
     goal_file.write_text("Changed goal content.", encoding="utf-8")
     with pytest.raises(ResumeError, match="output goal digest mismatch"):
-        validate_resume_preconditions(store, "run-goal-file")
+        validate_resume_preconditions(store, "run-20260101T002201-002201")

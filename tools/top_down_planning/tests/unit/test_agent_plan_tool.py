@@ -44,7 +44,7 @@ def _sample_plan(revision: int = 0) -> Plan:
     )
 
 
-def _create_run(store: FileRunStore, run_id: str = "run-001", *, revision: int = 0) -> None:
+def _create_run(store: FileRunStore, run_id: str = "run-20260101T000001-000001", *, revision: int = 0) -> None:
     plan = _sample_plan(revision=revision)
     config = {
         "run": {"output_goal": "Deliver the output.", "input_refs": []},
@@ -61,8 +61,8 @@ def test_apply_persists_multi_op_transaction(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
 
-    service = PlanAgentService(store, "run-001")
-    token = grant_capability(store, "run-001", role="planner", phase=PLANNING)
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+    token = grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING)
     result = service.apply(
         {
             "base_revision": 0,
@@ -89,20 +89,20 @@ def test_apply_persists_multi_op_transaction(tmp_path: Path) -> None:
     assert "item-new" in result["id_map"]
     new_id = result["id_map"]["item-new"]
 
-    saved = store.load_plan_model("run-001")
+    saved = store.load_plan_model("run-20260101T000001-000001")
     assert saved.revision == 1
     assert new_id in saved.items
     assert new_id in saved.items["item-child"].depends_on
 
-    events = store.load_events("run-001")
+    events = store.load_events("run-20260101T000001-000001")
     assert any(event["type"] == "plan_applied" for event in events)
 
 
 def test_stale_revision_apply_fails_with_snapshot_instruction(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    service = PlanAgentService(store, "run-001")
-    token = grant_capability(store, "run-001", role="planner", phase=PLANNING)
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+    token = grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING)
 
     with pytest.raises(RevisionConflictError) as exc_info:
         service.apply(
@@ -126,7 +126,7 @@ def test_stale_revision_apply_fails_with_snapshot_instruction(tmp_path: Path) ->
 def test_snapshot_ready_view_reflects_dependency_readiness(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    service = PlanAgentService(store, "run-001")
+    service = PlanAgentService(store, "run-20260101T000001-000001")
 
     ready = service.snapshot(view="ready")
     assert ready["ok"] is True
@@ -137,7 +137,7 @@ def test_snapshot_ready_view_reflects_dependency_readiness(tmp_path: Path) -> No
 def test_plan_check_matches_validator_modes(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    service = PlanAgentService(store, "run-001")
+    service = PlanAgentService(store, "run-20260101T000001-000001")
 
     draft = service.check(mode="draft")
     approval = service.check(mode="approval")
@@ -151,7 +151,7 @@ def test_plan_check_matches_validator_modes(tmp_path: Path) -> None:
 def test_apply_requires_capability_token(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    service = PlanAgentService(store, "run-001")
+    service = PlanAgentService(store, "run-20260101T000001-000001")
 
     with pytest.raises(CapabilityDeniedError, match="capability token"):
         service.apply(
@@ -171,8 +171,8 @@ def test_apply_requires_capability_token(tmp_path: Path) -> None:
 def test_producer_capability_denied_for_apply(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    service = PlanAgentService(store, "run-001")
-    token = grant_capability(store, "run-001", role="producer", phase=PLANNING)
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+    token = grant_capability(store, "run-20260101T000001-000001", role="producer", phase=PLANNING)
 
     with pytest.raises(CapabilityDeniedError):
         service.apply(
@@ -195,7 +195,7 @@ def test_cli_plan_commands_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     _create_run(store)
     set_capability_env(
         monkeypatch,
-        grant_capability(store, "run-001", role="planner", phase=PLANNING),
+        grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
     )
 
     request = {
@@ -219,7 +219,7 @@ def test_cli_plan_commands_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             "plan",
             "apply",
             "--run",
-            "run-001",
+            "run-20260101T000001-000001",
             "--runs-dir",
             str(tmp_path),
             "--request",
@@ -237,7 +237,7 @@ def test_cli_plan_commands_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             "plan",
             "snapshot",
             "--run",
-            "run-001",
+            "run-20260101T000001-000001",
             "--runs-dir",
             str(tmp_path),
             "--view",
@@ -256,7 +256,7 @@ def test_cli_plan_commands_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             "run",
             "status",
             "--run",
-            "run-001",
+            "run-20260101T000001-000001",
             "--runs-dir",
             str(tmp_path),
         ]
@@ -276,7 +276,7 @@ def test_cli_stale_revision_returns_actionable_error(
     _create_run(store)
     set_capability_env(
         monkeypatch,
-        grant_capability(store, "run-001", role="planner", phase=PLANNING),
+        grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
     )
 
     request_path = tmp_path / "stale.json"
@@ -302,7 +302,7 @@ def test_cli_stale_revision_returns_actionable_error(
             "plan",
             "apply",
             "--run",
-            "run-001",
+            "run-20260101T000001-000001",
             "--runs-dir",
             str(tmp_path),
             "--request",
@@ -341,7 +341,7 @@ def test_apply_returns_post_mutation_validation_issues_for_pre_existing_errors(
         items={"item-gate": gate, "item-worker": worker},
     )
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=plan,
         **create_run_kwargs(
             store.root,
@@ -353,8 +353,8 @@ def test_apply_returns_post_mutation_validation_issues_for_pre_existing_errors(
         production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
     )
 
-    service = PlanAgentService(store, "run-001")
-    token = grant_capability(store, "run-001", role="planner", phase=PLANNING)
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+    token = grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING)
     result = service.apply(
         {
             "base_revision": 0,
@@ -378,8 +378,8 @@ def test_apply_rejects_add_item_without_title(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
 
-    service = PlanAgentService(store, "run-001")
-    token = grant_capability(store, "run-001", role="planner", phase=PLANNING)
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+    token = grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING)
     with pytest.raises(OperationError, match="item title is required"):
         service.apply(
             {
@@ -396,8 +396,8 @@ def test_apply_rejects_add_item_without_title(tmp_path: Path) -> None:
             capability_token=token,
         )
 
-    assert store.load_plan("run-001")["revision"] == 0
-    events = store.load_events("run-001")
+    assert store.load_plan("run-20260101T000001-000001")["revision"] == 0
+    events = store.load_events("run-20260101T000001-000001")
     assert not any(event.get("type") == "plan_applied" for event in events)
 
 
@@ -421,7 +421,7 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
         items={"item-gate": gate, "item-worker": worker},
     )
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=plan,
         **create_run_kwargs(
             store.root,
@@ -434,7 +434,7 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
     )
     set_capability_env(
         monkeypatch,
-        grant_capability(store, "run-001", role="planner", phase=PLANNING),
+        grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
     )
 
     request_path = tmp_path / "apply.json"
@@ -460,7 +460,7 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
             "plan",
             "apply",
             "--run",
-            "run-001",
+            "run-20260101T000001-000001",
             "--runs-dir",
             str(tmp_path),
             "--request",
@@ -478,7 +478,7 @@ def test_snapshot_ready_excludes_review_blocked_items(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
     store.save_review(
-        "run-001",
+        "run-20260101T000001-000001",
         {
             "id": "review-focused-plan-01",
             "type": "focused_plan",
@@ -500,7 +500,7 @@ def test_snapshot_ready_excludes_review_blocked_items(tmp_path: Path) -> None:
         },
     )
 
-    service = PlanAgentService(store, "run-001")
+    service = PlanAgentService(store, "run-20260101T000001-000001")
     ready = service.snapshot(view="ready")
 
     assert ready["ok"] is True
@@ -526,7 +526,7 @@ def test_snapshot_tree_includes_scope_boundaries_acceptance(tmp_path: Path) -> N
         items={"item-root": root},
     )
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=plan,
         **create_run_kwargs(
             store.root,
@@ -537,7 +537,7 @@ def test_snapshot_tree_includes_scope_boundaries_acceptance(tmp_path: Path) -> N
         ),
     )
 
-    service = PlanAgentService(store, "run-001")
+    service = PlanAgentService(store, "run-20260101T000001-000001")
     snapshot = service.snapshot(view="tree")
 
     item = snapshot["items"][0]
@@ -551,7 +551,7 @@ def test_plan_check_approval_without_binding_surfaces_not_checked_warnings(
 ) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    service = PlanAgentService(store, "run-001")
+    service = PlanAgentService(store, "run-20260101T000001-000001")
 
     approval = service.check(mode="approval")
 
@@ -571,26 +571,26 @@ def test_plan_check_approval_mode_runs_review_and_digest_hooks(tmp_path: Path) -
     store = FileRunStore(tmp_path)
     _create_run(store)
     store.save_review(
-        "run-001",
+        "run-20260101T000001-000001",
         whole_plan_approval_record(
             store,
-            "run-001",
+            "run-20260101T000001-000001",
             reviewer_session_id="session-1",
         ),
     )
 
-    service = PlanAgentService(store, "run-001")
+    service = PlanAgentService(store, "run-20260101T000001-000001")
     draft = service.check(mode="draft")
     approval = service.check(mode="approval")
 
     assert draft["ok"] is True
     assert approval["ok"] is True
 
-    review = store.load_review("run-001", "review-whole-plan-01")
+    review = store.load_review("run-20260101T000001-000001", "review-whole-plan-01")
     review = dict(review)
     review["approved_digests"] = dict(review["approved_digests"])
     review["approved_digests"]["plan"] = "stale-plan-digest"
-    store.save_review("run-001", review)
+    store.save_review("run-20260101T000001-000001", review)
 
     approval_after_tamper = service.check(mode="approval")
     assert approval_after_tamper["ok"] is False

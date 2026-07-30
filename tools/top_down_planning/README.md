@@ -189,7 +189,7 @@ With `project.workspace: .` and `runtime.runs_dir: .tdp/runs`, a run launched fr
 
 ### Run store location
 
-The run store root is the directory that contains all run folders (`<runs-root>/<run-id>/`). Configure it with optional YAML:
+The run store root is the directory that contains all run folders (`<runs-root>/<run-id>/`). New runs receive lexicographically sortable ids in the form `run-YYYYMMDDTHHMMSS-<6hex>` (UTC timestamp plus random suffix), for example `run-20260730T145612-e453e4`. Configure the store root with optional YAML:
 
 ```yaml
 runtime:

@@ -19,11 +19,11 @@ from tests.helpers import create_run_kwargs, minimal_resolved_config
 CommitResult = Literal["ok", "conflict"]
 
 
-def _create_run(store: FileRunStore, run_id: str = "run-concurrent") -> None:
+def _create_run(store: FileRunStore, run_id: str = "run-20260101T000701-000701") -> None:
     workspace = store.root
     config = minimal_resolved_config()
     plan = Plan(
-        id="plan-run-concurrent",
+        id="plan-run-20260101T000701-000701",
         revision=0,
         output_goal="Goal.",
         items={
@@ -53,7 +53,7 @@ def test_concurrent_commit_with_same_revision_exactly_one_succeeds(tmp_path: Pat
     processes = [
         ctx.Process(
             target=commit_plan_worker,
-            args=(str(tmp_path), "run-concurrent", queue, load_barrier, commit_barrier),
+            args=(str(tmp_path), "run-20260101T000701-000701", queue, load_barrier, commit_barrier),
         )
         for _ in range(2)
     ]
@@ -67,13 +67,13 @@ def test_concurrent_commit_with_same_revision_exactly_one_succeeds(tmp_path: Pat
 
     results = [queue.get(timeout=30), queue.get(timeout=30)]
     assert sorted(results) == ["conflict", "ok"]
-    assert store.load_plan("run-concurrent")["revision"] == 1
+    assert store.load_plan("run-20260101T000701-000701")["revision"] == 1
 
 
 def test_reader_waits_for_writer_lock_before_recovering_txn(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    run_id = "run-concurrent"
+    run_id = "run-20260101T000701-000701"
     run_dir = store.run_dir(run_id)
 
     ctx = multiprocessing.get_context("fork")

@@ -37,7 +37,7 @@ def _batch_apply_request(
 
 def _create_run_at_plan_validated(
     store: FileRunStore,
-    run_id: str = "run-production",
+    run_id: str = "run-20260101T000201-000201",
     *,
     limits: dict | None = None,
 ) -> None:
@@ -154,7 +154,7 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
         ]
     )
 
-    result = ProductionPhaseOrchestrator(store, "run-production", provider).run()
+    result = ProductionPhaseOrchestrator(store, "run-20260101T000201-000201", provider).run()
 
     assert result.ok is True
     assert result.phase == WHOLE_OUTPUT_REVIEW
@@ -162,7 +162,7 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
     assert result.batch_count == 2
     assert result.session_id is not None
 
-    production = store.load_production("run-production")
+    production = store.load_production("run-20260101T000201-000201")
     assert production["dispositions"] == {
         "item-first": "completed",
         "item-second": "completed",
@@ -170,7 +170,7 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
     assert len(production["batches"]) == 2
     assert production["output_revision"] == 2
 
-    run = store.load_run("run-production")
+    run = store.load_run("run-20260101T000201-000201")
     assert run["phase"] == WHOLE_OUTPUT_REVIEW
     assert run["sessions"]["primary_producer_session_id"] == result.session_id
 
@@ -178,10 +178,10 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
 def test_ready_set_blocks_item_with_unmet_dependency(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)
-    _enter_production_phase(store, "run-production")
-    service = ProductionAgentService(store, "run-production")
+    _enter_production_phase(store, "run-20260101T000201-000201")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
 
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     with pytest.raises(RequestError, match="not in the ready set"):
         service.apply(
@@ -196,10 +196,10 @@ def test_ready_set_blocks_item_with_unmet_dependency(tmp_path: Path) -> None:
 def test_not_applicable_requires_reason(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)
-    _enter_production_phase(store, "run-production")
-    service = ProductionAgentService(store, "run-production")
+    _enter_production_phase(store, "run-20260101T000201-000201")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
 
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     with pytest.raises(RequestError, match="not_applicable requires reason"):
         service.apply(
@@ -214,10 +214,10 @@ def test_not_applicable_requires_reason(tmp_path: Path) -> None:
 def test_superseded_requires_replacement_ref(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)
-    _enter_production_phase(store, "run-production")
-    service = ProductionAgentService(store, "run-production")
+    _enter_production_phase(store, "run-20260101T000201-000201")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
 
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     with pytest.raises(RequestError, match="superseded requires replacement_ref"):
         service.apply(
@@ -232,10 +232,10 @@ def test_superseded_requires_replacement_ref(tmp_path: Path) -> None:
 def test_blocked_requires_evidence(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)
-    _enter_production_phase(store, "run-production")
-    service = ProductionAgentService(store, "run-production")
+    _enter_production_phase(store, "run-20260101T000201-000201")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
 
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     with pytest.raises(RequestError, match="blocked requires evidence"):
         service.apply(
@@ -264,10 +264,10 @@ def test_blocked_requires_evidence(tmp_path: Path) -> None:
 def test_empty_output_batch_persists_justification(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)
-    _enter_production_phase(store, "run-production")
-    service = ProductionAgentService(store, "run-production")
+    _enter_production_phase(store, "run-20260101T000201-000201")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
 
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     result = service.apply(
         _batch_apply_request(
@@ -284,7 +284,7 @@ def test_empty_output_batch_persists_justification(tmp_path: Path) -> None:
     )
 
     assert result["ok"] is True
-    production = store.load_production("run-production")
+    production = store.load_production("run-20260101T000201-000201")
     batch = production["batches"][0]
     assert batch["result"]["empty_output"] is True
     assert (
@@ -312,14 +312,14 @@ def test_max_batches_exhaustion_yields_blocked_not_accepted(tmp_path: Path) -> N
         ]
     )
 
-    result = ProductionPhaseOrchestrator(store, "run-production", provider).run()
+    result = ProductionPhaseOrchestrator(store, "run-20260101T000201-000201", provider).run()
 
     assert result.ok is False
     assert result.outcome == "blocked"
     assert result.reason is not None
     assert "max_batches" in result.reason
 
-    run = store.load_run("run-production")
+    run = store.load_run("run-20260101T000201-000201")
     assert run["phase"] == PRODUCTION
     assert run["status"] == "completed"
     assert run["outcome"] == "blocked"
@@ -353,15 +353,15 @@ def test_plan_apply_during_production_is_rejected(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ProviderRunError, match="plan mutations are not allowed"):
-        ProductionPhaseOrchestrator(store, "run-production", provider).run()
+        ProductionPhaseOrchestrator(store, "run-20260101T000201-000201", provider).run()
 
 
 def test_production_apply_rejects_plan_validated_phase(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)
-    service = ProductionAgentService(store, "run-production")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
 
-    token = grant_capability(store, "run-production", role="producer", phase=PLAN_VALIDATED)
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PLAN_VALIDATED)
 
     with pytest.raises(RequestError, match="whole-output review phases"):
         service.apply(
@@ -378,7 +378,7 @@ def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
     root = PlanItem("item-root", None, "0000000000", "Root")
     first = PlanItem("item-first", "item-root", "0000000000", "First")
     plan = Plan(
-        id="plan-run-unapproved",
+        id="plan-run-20260101T002101-002101",
         revision=0,
         output_goal="Deliver.",
         items={"item-root": root, "item-first": first},
@@ -390,13 +390,13 @@ def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
         "provider": {"name": "stub"},
     }
     store.create_run(
-        "run-unapproved",
+        "run-20260101T002101-002101",
         plan=plan,
         **create_run_kwargs(store.root, resolved_config=config),
         phase=PRODUCTION,
     )
-    service = ProductionAgentService(store, "run-unapproved")
-    token = grant_capability(store, "run-unapproved", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T002101-002101")
+    token = grant_capability(store, "run-20260101T002101-002101", role="producer", phase=PRODUCTION)
 
     with pytest.raises(RequestError, match="approved whole-plan review"):
         service.apply(
@@ -411,9 +411,9 @@ def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
 def test_production_apply_rejects_already_terminal_item(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)
-    _enter_production_phase(store, "run-production")
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    _enter_production_phase(store, "run-20260101T000201-000201")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
     service.apply(
         _batch_apply_request(
             plan_items=["item-first"],
@@ -438,7 +438,7 @@ def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
     root = PlanItem("item-root", None, "0000000000", "Root")
     first = PlanItem("item-first", "item-root", "0000000000", "First")
     plan = Plan(
-        id="plan-run-unapproved",
+        id="plan-run-20260101T002101-002101",
         revision=0,
         output_goal="Deliver.",
         items={"item-root": root, "item-first": first},
@@ -450,7 +450,7 @@ def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
         "provider": {"name": "stub"},
     }
     store.create_run(
-        "run-unapproved",
+        "run-20260101T002101-002101",
         plan=plan,
         **create_run_kwargs(store.root, resolved_config=config),
         phase=PLAN_VALIDATED,
@@ -458,23 +458,23 @@ def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
     provider = StubProvider()
 
     with pytest.raises(ProviderRunError, match="approved whole-plan review"):
-        ProductionPhaseOrchestrator(store, "run-unapproved", provider).run()
+        ProductionPhaseOrchestrator(store, "run-20260101T002101-002101", provider).run()
 
 
 def test_resume_preserves_batch_agent_turn_budget(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store, limits={"max_agent_turns_per_batch": 1})
-    run = store.load_run("run-production")
+    run = store.load_run("run-20260101T000201-000201")
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
     run["production_loop"] = {"current_batch_agent_turns": 1}
-    store.save_run("run-production", run, expected_revision)
+    store.save_run("run-20260101T000201-000201", run, expected_revision)
 
     provider = StubProvider()
     provider.script_turn(done_events(text="another production turn"))
 
-    result = ProductionPhaseOrchestrator(store, "run-production", provider).run()
+    result = ProductionPhaseOrchestrator(store, "run-20260101T000201-000201", provider).run()
 
     assert result.ok is False
     assert result.outcome == "blocked"

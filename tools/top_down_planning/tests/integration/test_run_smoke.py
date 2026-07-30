@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from top_down_planning.persistence.path_ids import RUN_ID_PATTERN
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
@@ -73,6 +74,7 @@ planning:
     assert run_payload["phase"] == WHOLE_PLAN_REVIEW
 
     run_id = run_payload["run_id"]
+    assert RUN_ID_PATTERN.fullmatch(run_id)
     status_result = run_cli(
         [
             "status",

@@ -19,7 +19,7 @@ from tests.helpers import create_run_kwargs, done_events, grant_capability
 
 def _create_run_at_whole_plan_review(
     store: FileRunStore,
-    run_id: str = "run-review",
+    run_id: str = "run-20260101T000301-000301",
     *,
     limits: dict | None = None,
     provider: StubProvider | None = None,
@@ -174,7 +174,7 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
         ]
     )
 
-    result = WholePlanReviewOrchestrator(store, "run-review", provider).run()
+    result = WholePlanReviewOrchestrator(store, "run-20260101T000301-000301", provider).run()
 
     assert result.ok is True
     assert result.phase == PLAN_VALIDATED
@@ -182,11 +182,11 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
     assert result.loop_id == "review-whole-plan-01"
     assert result.revision_cycles == 1
 
-    review = store.load_review("run-review", "review-whole-plan-01")
+    review = store.load_review("run-20260101T000301-000301", "review-whole-plan-01")
     assert review["status"] == "approved"
     assert review["target_revision"] == 1
 
-    run = store.load_run("run-review")
+    run = store.load_run("run-20260101T000301-000301")
     assert run["phase"] == PLAN_VALIDATED
     assert run["status"] == "running"
 
@@ -195,7 +195,7 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
     store = FileRunStore(tmp_path)
     _create_run_at_whole_plan_review(store)
     store.save_review(
-        "run-review",
+        "run-20260101T000301-000301",
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
@@ -208,10 +208,10 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
         },
     )
 
-    service = ReviewAgentService(store, "run-review")
+    service = ReviewAgentService(store, "run-20260101T000301-000301")
     token = grant_capability(
         store,
-        "run-review",
+        "run-20260101T000301-000301",
         role="reviewer",
         phase=WHOLE_PLAN_REVIEW,
         session_kind="reviewer",
@@ -241,7 +241,7 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_whole_plan_review(store)
     store.save_review(
-        "run-review",
+        "run-20260101T000301-000301",
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
@@ -254,19 +254,19 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
         },
     )
 
-    service = ReviewAgentService(store, "run-review")
+    service = ReviewAgentService(store, "run-20260101T000301-000301")
     token = grant_capability(
         store,
-        "run-review",
+        "run-20260101T000301-000301",
         role="reviewer",
         phase=WHOLE_PLAN_REVIEW,
         session_kind="reviewer",
         session_id="stub-session-reviewer",
         loop_id="review-whole-plan-01",
     )
-    plan = store.load_plan_model("run-review")
+    plan = store.load_plan_model("run-20260101T000301-000301")
     plan.revision = 1
-    store.save_plan_model("run-review", plan, 0)
+    store.save_plan_model("run-20260101T000301-000301", plan, 0)
 
     with pytest.raises(RequestError, match="does not match current plan revision"):
         service.respond(
@@ -329,14 +329,14 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
         ]
     )
 
-    result = WholePlanReviewOrchestrator(store, "run-review", provider).run()
+    result = WholePlanReviewOrchestrator(store, "run-20260101T000301-000301", provider).run()
 
     assert result.ok is False
     assert result.outcome == "rejected"
     assert result.reason is not None
     assert "max_revision_cycles" in result.reason
 
-    run = store.load_run("run-review")
+    run = store.load_run("run-20260101T000301-000301")
     assert run["phase"] == WHOLE_PLAN_REVIEW
     assert run["status"] == "completed"
     assert run["outcome"] == "rejected"
@@ -346,7 +346,7 @@ def test_unapproved_plan_cannot_leave_whole_plan_review_phase(tmp_path: Path) ->
     store = FileRunStore(tmp_path)
     _create_run_at_whole_plan_review(store)
 
-    run = store.load_run("run-review")
+    run = store.load_run("run-20260101T000301-000301")
     assert run["phase"] == WHOLE_PLAN_REVIEW
 
     provider = StubProvider()
@@ -374,11 +374,11 @@ def test_unapproved_plan_cannot_leave_whole_plan_review_phase(tmp_path: Path) ->
         ]
     )
 
-    result = WholePlanReviewOrchestrator(store, "run-review", provider).run()
+    result = WholePlanReviewOrchestrator(store, "run-20260101T000301-000301", provider).run()
 
     assert result.ok is False
     assert result.outcome == "blocked"
-    run = store.load_run("run-review")
+    run = store.load_run("run-20260101T000301-000301")
     assert run["phase"] == WHOLE_PLAN_REVIEW
     assert run["status"] == "completed"
 
@@ -395,7 +395,7 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
     list(provider.stream_events(reviewer_session_id))
 
     store.save_review(
-        "run-review",
+        "run-20260101T000301-000301",
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
@@ -417,14 +417,14 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
         },
     )
 
-    plan = store.load_plan_model("run-review")
+    plan = store.load_plan_model("run-20260101T000301-000301")
     plan.revision = 1
-    store.save_plan_model("run-review", plan, 0)
-    run = store.load_run("run-review")
+    store.save_plan_model("run-20260101T000301-000301", plan, 0)
+    run = store.load_run("run-20260101T000301-000301")
     expected_revision = int(run["revision"])
     run["revision"] = expected_revision + 1
     run["digests"]["plan"] = compute_plan_digest(plan)
-    store.save_run("run-review", run, expected_revision)
+    store.save_run("run-20260101T000301-000301", run, expected_revision)
 
     provider.script_turn(
         [
@@ -441,7 +441,7 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
         ]
     )
 
-    result = WholePlanReviewOrchestrator(store, "run-review", provider).run()
+    result = WholePlanReviewOrchestrator(store, "run-20260101T000301-000301", provider).run()
 
     assert result.ok is True
     assert result.phase == PLAN_VALIDATED
@@ -451,8 +451,8 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
 def test_non_reviewer_respond_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_whole_plan_review(store)
-    service = ReviewAgentService(store, "run-review")
-    token = grant_capability(store, "run-review", role="planner", phase=WHOLE_PLAN_REVIEW)
+    service = ReviewAgentService(store, "run-20260101T000301-000301")
+    token = grant_capability(store, "run-20260101T000301-000301", role="planner", phase=WHOLE_PLAN_REVIEW)
 
     with pytest.raises(CapabilityDeniedError):
         service.respond(

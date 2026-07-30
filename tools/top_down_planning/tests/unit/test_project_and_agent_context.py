@@ -227,7 +227,7 @@ project:
         (),
         {"output_goal": "Goal.", "revision": 0},
     )()
-    manifest = build_planner_context_manifest("run-1", run, config, plan)
+    manifest = build_planner_context_manifest("run-20260101T000002-000002", run, config, plan)
     assert manifest["agent_context"]["role"] == "planner"
     assert any(path.endswith("README.md") for path in manifest["agent_context"]["resources"])
 
@@ -253,14 +253,14 @@ project:
     store.root.mkdir(parents=True)
     plan_payload = {"revision": 0, "output_goal": "Goal.", "items": []}
     store.create_run(
-        "run-context",
+        "run-20260101T002301-002301",
         plan=plan_payload,
         **create_run_kwargs(workspace, resolved_config=config),
     )
 
     readme.write_text("beta", encoding="utf-8")
     with pytest.raises(ResumeError, match="context digest mismatch"):
-        validate_resume_preconditions(store, "run-context")
+        validate_resume_preconditions(store, "run-20260101T002301-002301")
 
 
 def test_stub_provider_records_selected_model() -> None:

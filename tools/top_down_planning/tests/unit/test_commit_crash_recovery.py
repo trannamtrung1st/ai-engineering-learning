@@ -18,11 +18,11 @@ from top_down_planning.persistence.commit import CommitSpec
 from tests.helpers import create_run_kwargs, minimal_resolved_config
 
 
-def _create_run(store: FileRunStore, run_id: str = "run-crash") -> None:
+def _create_run(store: FileRunStore, run_id: str = "run-20260101T000601-000601") -> None:
     workspace = store.root
     config = minimal_resolved_config()
     plan = Plan(
-        id="plan-run-crash",
+        id="plan-run-20260101T000601-000601",
         revision=0,
         output_goal="Goal.",
         items={
@@ -121,109 +121,109 @@ def _crash_before_appending_events() -> Any:
 def test_crash_during_replace_restores_prior_state(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    run_before = store.load_run("run-crash")
-    plan_before = store.load_plan("run-crash")
+    run_before = store.load_run("run-20260101T000601-000601")
+    plan_before = store.load_plan("run-20260101T000601-000601")
 
     with patch.object(Path, "replace", _crash_after_dest_replace_count(1)):
         with pytest.raises(OSError, match="simulated crash"):
-            _multi_file_commit(store, "run-crash")
+            _multi_file_commit(store, "run-20260101T000601-000601")
 
-    txn_dir = _find_txn_dir(store, "run-crash")
+    txn_dir = _find_txn_dir(store, "run-20260101T000601-000601")
     assert txn_dir is not None
     journal = json.loads((txn_dir / "journal.json").read_text(encoding="utf-8"))
     assert journal["status"] == "replacing"
     assert journal["replaced"] == []
 
     recovered = FileRunStore(tmp_path)
-    run_after = recovered.load_run("run-crash")
-    plan_after = recovered.load_plan("run-crash")
+    run_after = recovered.load_run("run-20260101T000601-000601")
+    plan_after = recovered.load_plan("run-20260101T000601-000601")
     assert run_after["revision"] == run_before["revision"]
     assert plan_after["revision"] == plan_before["revision"]
-    assert not _find_txn_dir(recovered, "run-crash")
+    assert not _find_txn_dir(recovered, "run-20260101T000601-000601")
 
 
 def test_crash_after_all_replaces_finishes_events_on_recovery(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    events_before = store.load_events("run-crash")
+    events_before = store.load_events("run-20260101T000601-000601")
 
     with patch("top_down_planning.persistence.file_store.atomic_write_json", _crash_before_appending_events()):
         with pytest.raises(OSError, match="simulated crash"):
-            _multi_file_commit(store, "run-crash")
+            _multi_file_commit(store, "run-20260101T000601-000601")
 
-    txn_dir = _find_txn_dir(store, "run-crash")
+    txn_dir = _find_txn_dir(store, "run-20260101T000601-000601")
     assert txn_dir is not None
     journal = json.loads((txn_dir / "journal.json").read_text(encoding="utf-8"))
     assert journal["status"] == "appending_events"
     assert set(journal["replaced"]) == {"run.json", "plan.json"}
 
     recovered = FileRunStore(tmp_path)
-    run_after = recovered.load_run("run-crash")
-    plan_after = recovered.load_plan("run-crash")
+    run_after = recovered.load_run("run-20260101T000601-000601")
+    plan_after = recovered.load_plan("run-20260101T000601-000601")
     assert run_after["revision"] == 1
     assert plan_after["revision"] == 1
-    events_after = recovered.load_events("run-crash")
+    events_after = recovered.load_events("run-20260101T000601-000601")
     assert len(events_after) == len(events_before) + 1
     assert events_after[-1]["type"] == "test_commit"
     assert events_after[-1]["txn_id"] == journal["txn_id"]
-    assert not _find_txn_dir(recovered, "run-crash")
+    assert not _find_txn_dir(recovered, "run-20260101T000601-000601")
 
 
 def test_load_events_recovers_pending_event_append_without_canonical_reads(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    events_before = store.load_events("run-crash")
+    events_before = store.load_events("run-20260101T000601-000601")
 
     with patch("top_down_planning.persistence.file_store.atomic_write_json", _crash_before_appending_events()):
         with pytest.raises(OSError, match="simulated crash"):
-            _multi_file_commit(store, "run-crash")
+            _multi_file_commit(store, "run-20260101T000601-000601")
 
-    txn_dir = _find_txn_dir(store, "run-crash")
+    txn_dir = _find_txn_dir(store, "run-20260101T000601-000601")
     assert txn_dir is not None
     journal = json.loads((txn_dir / "journal.json").read_text(encoding="utf-8"))
     assert journal["status"] == "appending_events"
 
     recovered = FileRunStore(tmp_path)
-    events_after = recovered.load_events("run-crash")
+    events_after = recovered.load_events("run-20260101T000601-000601")
     assert len(events_after) == len(events_before) + 1
     assert events_after[-1]["type"] == "test_commit"
     assert events_after[-1]["txn_id"] == journal["txn_id"]
-    assert not _find_txn_dir(recovered, "run-crash")
+    assert not _find_txn_dir(recovered, "run-20260101T000601-000601")
 
 
 def test_crash_before_replace_does_not_record_replaced(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    run_before = store.load_run("run-crash")
-    plan_before = store.load_plan("run-crash")
+    run_before = store.load_run("run-20260101T000601-000601")
+    plan_before = store.load_plan("run-20260101T000601-000601")
 
     with patch.object(Path, "replace", _crash_before_dest_replace_count(2)):
         with pytest.raises(OSError, match="simulated crash"):
-            _multi_file_commit(store, "run-crash")
+            _multi_file_commit(store, "run-20260101T000601-000601")
 
-    txn_dir = _find_txn_dir(store, "run-crash")
+    txn_dir = _find_txn_dir(store, "run-20260101T000601-000601")
     assert txn_dir is not None
     journal = json.loads((txn_dir / "journal.json").read_text(encoding="utf-8"))
     assert journal["status"] == "replacing"
     assert journal["replaced"] == ["run.json"]
 
     recovered = FileRunStore(tmp_path)
-    run_after = recovered.load_run("run-crash")
-    plan_after = recovered.load_plan("run-crash")
+    run_after = recovered.load_run("run-20260101T000601-000601")
+    plan_after = recovered.load_plan("run-20260101T000601-000601")
     assert run_after["revision"] == run_before["revision"]
     assert plan_after["revision"] == plan_before["revision"]
-    events_after = recovered.load_events("run-crash")
+    events_after = recovered.load_events("run-20260101T000601-000601")
     assert not any(event.get("type") == "test_commit" for event in events_after)
-    assert not _find_txn_dir(recovered, "run-crash")
+    assert not _find_txn_dir(recovered, "run-20260101T000601-000601")
 
 
 def test_false_replaced_journal_without_digest_mismatch_rolls_back(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    run_before = store.load_run("run-crash")
-    plan_before = store.load_plan("run-crash")
+    run_before = store.load_run("run-20260101T000601-000601")
+    plan_before = store.load_plan("run-20260101T000601-000601")
 
-    txn_dir = store.run_dir("run-crash") / ".txn-false-replaced"
+    txn_dir = store.run_dir("run-20260101T000601-000601") / ".txn-false-replaced"
     txn_dir.mkdir()
     backups_dir = txn_dir / "backups"
     backups_dir.mkdir()
@@ -233,32 +233,32 @@ def test_false_replaced_journal_without_digest_mismatch_rolls_back(tmp_path: Pat
         json.dumps(staged_plan, sort_keys=True),
         encoding="utf-8",
     )
-    shutil.copy2(store.run_dir("run-crash") / "plan.json", backups_dir / "plan.json")
+    shutil.copy2(store.run_dir("run-20260101T000601-000601") / "plan.json", backups_dir / "plan.json")
     journal = {
         "txn_id": "false-replaced",
         "status": "replacing",
         "files": [{"kind": "plan", "name": "plan.json", "digest": "deadbeef"}],
-        "events": [{"type": "test_commit", "run_id": "run-crash", "txn_id": "false-replaced"}],
+        "events": [{"type": "test_commit", "run_id": "run-20260101T000601-000601", "txn_id": "false-replaced"}],
         "backups": ["plan.json"],
         "replaced": ["plan.json"],
     }
     (txn_dir / "journal.json").write_text(json.dumps(journal), encoding="utf-8")
 
     recovered = FileRunStore(tmp_path)
-    assert recovered.load_plan("run-crash")["revision"] == plan_before["revision"]
-    assert recovered.load_run("run-crash")["revision"] == run_before["revision"]
-    events_after = recovered.load_events("run-crash")
+    assert recovered.load_plan("run-20260101T000601-000601")["revision"] == plan_before["revision"]
+    assert recovered.load_run("run-20260101T000601-000601")["revision"] == run_before["revision"]
+    events_after = recovered.load_events("run-20260101T000601-000601")
     assert not any(event.get("type") == "test_commit" for event in events_after)
-    assert not _find_txn_dir(recovered, "run-crash")
+    assert not _find_txn_dir(recovered, "run-20260101T000601-000601")
 
 
 def test_prepared_journal_discarded_without_mutating_destinations(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    run_before = store.load_run("run-crash")
-    plan_before = store.load_plan("run-crash")
+    run_before = store.load_run("run-20260101T000601-000601")
+    plan_before = store.load_plan("run-20260101T000601-000601")
 
-    txn_dir = store.run_dir("run-crash") / ".txn-manual"
+    txn_dir = store.run_dir("run-20260101T000601-000601") / ".txn-manual"
     txn_dir.mkdir()
     staging = txn_dir
     atomic_payload = dict(plan_before)
@@ -285,6 +285,6 @@ def test_prepared_journal_discarded_without_mutating_destinations(tmp_path: Path
     (staging / "journal.json").write_text(json.dumps(journal), encoding="utf-8")
 
     recovered = FileRunStore(tmp_path)
-    assert recovered.load_plan("run-crash")["revision"] == plan_before["revision"]
-    assert recovered.load_run("run-crash")["revision"] == run_before["revision"]
-    assert not _find_txn_dir(recovered, "run-crash")
+    assert recovered.load_plan("run-20260101T000601-000601")["revision"] == plan_before["revision"]
+    assert recovered.load_run("run-20260101T000601-000601")["revision"] == run_before["revision"]
+    assert not _find_txn_dir(recovered, "run-20260101T000601-000601")

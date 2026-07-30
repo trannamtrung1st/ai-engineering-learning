@@ -56,7 +56,7 @@ def _planning_config(*, limits: dict | None = None, review: dict | None = None) 
 
 def _create_planning_run(
     store: FileRunStore,
-    run_id: str = "run-focused-plan",
+    run_id: str = "run-20260101T000401-000401",
     *,
     limits: dict | None = None,
     review: dict | None = None,
@@ -202,16 +202,16 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
         ]
     )
 
-    result = PlanningPhaseOrchestrator(store, "run-focused-plan", provider).run()
+    result = PlanningPhaseOrchestrator(store, "run-20260101T000401-000401", provider).run()
 
     assert result.ok is True
     assert result.phase == "whole_plan_review"
 
-    review = store.load_review("run-focused-plan", "review-focused-plan-01")
+    review = store.load_review("run-20260101T000401-000401", "review-focused-plan-01")
     assert review["status"] == "approved"
     assert review["target_revision"] == 1
 
-    run = store.load_run("run-focused-plan")
+    run = store.load_run("run-20260101T000401-000401")
     assert run["phase"] == "whole_plan_review"
     assert run["status"] == "running"
 
@@ -219,8 +219,8 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
 def test_focused_plan_scope_violation_on_request_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_planning_run(store)
-    service = ReviewAgentService(store, "run-focused-plan")
-    token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
+    service = ReviewAgentService(store, "run-20260101T000401-000401")
+    token = grant_capability(store, "run-20260101T000401-000401", role="planner", phase=PLANNING)
 
     with pytest.raises(RequestError, match="whole scope kind"):
         service.request(
@@ -235,20 +235,20 @@ def test_focused_plan_scope_violation_on_request_is_rejected(tmp_path: Path) -> 
 def test_focused_plan_finding_outside_scope_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_planning_run(store)
-    service = ReviewAgentService(store, "run-focused-plan")
-    planner_token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
+    service = ReviewAgentService(store, "run-20260101T000401-000401")
+    planner_token = grant_capability(store, "run-20260101T000401-000401", role="planner", phase=PLANNING)
 
     created = service.request(_focused_plan_request(["item-api"]), capability_token=planner_token)
     store.save_review(
-        "run-focused-plan",
+        "run-20260101T000401-000401",
         {
-            **store.load_review("run-focused-plan", created["loop_id"]),
+            **store.load_review("run-20260101T000401-000401", created["loop_id"]),
             "reviewer_session_id": "stub-session-reviewer",
         },
     )
     reviewer_token = grant_capability(
         store,
-        "run-focused-plan",
+        "run-20260101T000401-000401",
         role="reviewer",
         phase=PLANNING,
         session_kind="reviewer",
@@ -284,8 +284,8 @@ def test_disabled_focused_plan_review_request_is_rejected(tmp_path: Path) -> Non
             "focused_plan": {"enabled": False},
         },
     )
-    service = ReviewAgentService(store, "run-focused-plan")
-    token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
+    service = ReviewAgentService(store, "run-20260101T000401-000401")
+    token = grant_capability(store, "run-20260101T000401-000401", role="planner", phase=PLANNING)
 
     with pytest.raises(RequestError, match="disabled in config"):
         service.request(_focused_plan_request(["item-api"]), capability_token=token)
@@ -294,14 +294,14 @@ def test_disabled_focused_plan_review_request_is_rejected(tmp_path: Path) -> Non
 def test_focused_plan_loop_limit_is_enforced(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_planning_run(store, limits={"max_loops": 1})
-    service = ReviewAgentService(store, "run-focused-plan")
-    token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
+    service = ReviewAgentService(store, "run-20260101T000401-000401")
+    token = grant_capability(store, "run-20260101T000401-000401", role="planner", phase=PLANNING)
 
     created = service.request(_focused_plan_request(["item-api"]), capability_token=token)
     store.save_review(
-        "run-focused-plan",
+        "run-20260101T000401-000401",
         {
-            **store.load_review("run-focused-plan", created["loop_id"]),
+            **store.load_review("run-20260101T000401-000401", created["loop_id"]),
             "status": "approved",
         },
     )
@@ -312,14 +312,14 @@ def test_focused_plan_loop_limit_is_enforced(tmp_path: Path) -> None:
 def test_overlapping_active_focused_plan_request_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_planning_run(store)
-    service = ReviewAgentService(store, "run-focused-plan")
-    token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
+    service = ReviewAgentService(store, "run-20260101T000401-000401")
+    token = grant_capability(store, "run-20260101T000401-000401", role="planner", phase=PLANNING)
 
     created = service.request(_focused_plan_request(["item-api"]), capability_token=token)
     with pytest.raises(RequestError, match="overlapping scope"):
         service.request(_focused_plan_request(["item-api"]), capability_token=token)
 
-    review = store.load_review("run-focused-plan", created["loop_id"])
+    review = store.load_review("run-20260101T000401-000401", created["loop_id"])
     assert review["status"] == "pending"
 
 
@@ -328,24 +328,24 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
     _create_planning_run(store, limits={"max_revision_cycles_per_loop": 1})
     provider = StubProvider()
 
-    created = ReviewAgentService(store, "run-focused-plan").request(
+    created = ReviewAgentService(store, "run-20260101T000401-000401").request(
         _focused_plan_request(["item-api"]),
-        capability_token=grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING),
+        capability_token=grant_capability(store, "run-20260101T000401-000401", role="planner", phase=PLANNING),
     )
     loop_id = created["loop_id"]
 
     provider.script_turn([*done_events(text="planner start")])
     planner_session_id = provider.start_primary_session(
         "planner",
-        {"run_id": "run-focused-plan", "phase": PLANNING},
+        {"run_id": "run-20260101T000401-000401", "phase": PLANNING},
     )
     list(provider.stream_events(planner_session_id))
-    run = store.load_run("run-focused-plan")
+    run = store.load_run("run-20260101T000401-000401")
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
     run["sessions"] = {"primary_planner_session_id": planner_session_id}
-    store.save_run("run-focused-plan", run, expected_revision)
+    store.save_run("run-20260101T000401-000401", run, expected_revision)
 
     provider.script_turn(
         [
@@ -418,18 +418,18 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
         ]
     )
 
-    result = FocusedReviewOrchestrator(store, "run-focused-plan", provider).run(loop_id)
+    result = FocusedReviewOrchestrator(store, "run-20260101T000401-000401", provider).run(loop_id)
 
     assert result.ok is False
-    review = store.load_review("run-focused-plan", loop_id)
+    review = store.load_review("run-20260101T000401-000401", loop_id)
     assert review["status"] == "blocked"
-    run = store.load_run("run-focused-plan")
+    run = store.load_run("run-20260101T000401-000401")
     assert run["phase"] == PLANNING
 
 
 def _create_production_run(
     store: FileRunStore,
-    run_id: str = "run-focused-output",
+    run_id: str = "run-20260101T000501-000501",
     *,
     limits: dict | None = None,
     review: dict | None = None,
@@ -581,11 +581,11 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
         ],
     )
 
-    result = ProductionPhaseOrchestrator(store, "run-focused-output", provider).run()
+    result = ProductionPhaseOrchestrator(store, "run-20260101T000501-000501", provider).run()
 
     assert result.ok is True
     assert result.phase == "whole_output_review"
-    run = store.load_run("run-focused-output")
+    run = store.load_run("run-20260101T000501-000501")
     assert run["phase"] == "whole_output_review"
 
 
@@ -597,7 +597,7 @@ def test_blocking_focused_output_findings_prevent_production_apply(
     producer_session_id = _create_production_run(store, provider=provider)
 
     store.save_review(
-        "run-focused-output",
+        "run-20260101T000501-000501",
         {
             "id": "review-focused-output-01",
             "type": "focused_output",
@@ -641,4 +641,4 @@ def test_blocking_focused_output_findings_prevent_production_apply(
     )
 
     with pytest.raises(ProviderRunError, match="focused output findings"):
-        ProductionPhaseOrchestrator(store, "run-focused-output", provider).run()
+        ProductionPhaseOrchestrator(store, "run-20260101T000501-000501", provider).run()

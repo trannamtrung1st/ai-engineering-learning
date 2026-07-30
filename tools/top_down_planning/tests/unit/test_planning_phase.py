@@ -18,7 +18,7 @@ from tests.helpers import done_events, grant_capability, create_run_kwargs, mini
 
 def _create_run(
     store: FileRunStore,
-    run_id: str = "run-planning",
+    run_id: str = "run-20260101T000101-000101",
     *,
     limits: dict | None = None,
 ) -> None:
@@ -97,7 +97,7 @@ def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) 
         ]
     )
 
-    result = PlanningPhaseOrchestrator(store, "run-planning", provider).run()
+    result = PlanningPhaseOrchestrator(store, "run-20260101T000101-000101", provider).run()
 
     assert result.ok is True
     assert result.phase == WHOLE_PLAN_REVIEW
@@ -106,15 +106,15 @@ def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) 
     assert result.agent_turns == 1
     assert result.items_added == 2
 
-    plan = store.load_plan_model("run-planning")
+    plan = store.load_plan_model("run-20260101T000101-000101")
     assert len(plan.items) == 3
 
-    run = store.load_run("run-planning")
+    run = store.load_run("run-20260101T000101-000101")
     assert run["sessions"]["primary_planner_session_id"] == result.session_id
     assert run["phase"] == WHOLE_PLAN_REVIEW
     assert run["outcome"] is None
 
-    events = store.load_events("run-planning")
+    events = store.load_events("run-20260101T000101-000101")
     assert any(event["type"] == "planner_session_started" for event in events)
     assert any(event["type"] == "planning_candidate_ready" for event in events)
 
@@ -125,14 +125,14 @@ def test_planning_turn_limit_yields_blocked_not_accepted(tmp_path: Path) -> None
     provider = StubProvider()
     provider.script_turn(done_events(signal="continue", text="planning turn"))
 
-    result = PlanningPhaseOrchestrator(store, "run-planning", provider).run()
+    result = PlanningPhaseOrchestrator(store, "run-20260101T000101-000101", provider).run()
 
     assert result.ok is False
     assert result.outcome == "blocked"
     assert result.reason is not None
     assert "max_agent_turns" in result.reason
 
-    run = store.load_run("run-planning")
+    run = store.load_run("run-20260101T000101-000101")
     assert run["outcome"] == "blocked"
     assert run["status"] == "completed"
     assert run["phase"] == PLANNING
@@ -143,15 +143,15 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
     _create_run(store)
     provider = StubProvider()
 
-    run = store.load_run("run-planning")
-    config = store.load_resolved_config("run-planning")
+    run = store.load_run("run-20260101T000101-000101")
+    config = store.load_resolved_config("run-20260101T000101-000101")
     from top_down_planning.orchestrator.planning import build_planner_context_manifest
 
-    plan = store.load_plan_model("run-planning")
+    plan = store.load_plan_model("run-20260101T000101-000101")
     provider.script_turn(done_events(signal="continue", text="planning turn"))
     session_id = provider.start_primary_session(
         "planner",
-        build_planner_context_manifest("run-planning", run, config, plan),
+        build_planner_context_manifest("run-20260101T000101-000101", run, config, plan),
     )
     list(provider.stream_events(session_id))
 
@@ -159,10 +159,10 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
     run["revision"] = expected_revision + 1
     run["sessions"] = {"primary_planner_session_id": session_id}
     run["planning"] = {"agent_turns": 1, "items_added": 0}
-    store.save_run("run-planning", run, expected_revision)
+    store.save_run("run-20260101T000101-000101", run, expected_revision)
 
     provider.script_turn(done_events(signal="candidate_plan_ready", text="planning turn"))
-    result = PlanningPhaseOrchestrator(store, "run-planning", provider).run()
+    result = PlanningPhaseOrchestrator(store, "run-20260101T000101-000101", provider).run()
 
     assert result.ok is True
     assert result.phase == WHOLE_PLAN_REVIEW
@@ -174,8 +174,8 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
 def test_non_planner_apply_during_planning_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    service = PlanAgentService(store, "run-planning")
-    token = grant_capability(store, "run-planning", role="producer", phase=PLANNING)
+    service = PlanAgentService(store, "run-20260101T000101-000101")
+    token = grant_capability(store, "run-20260101T000101-000101", role="producer", phase=PLANNING)
 
     with pytest.raises(CapabilityDeniedError):
         service.apply(
@@ -201,7 +201,7 @@ def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -
     provider = StubProvider()
     provider.script_turn(done_events(signal="candidate_plan_ready", text="planning turn"))
 
-    service = PlanAgentService(store, "run-planning")
+    service = PlanAgentService(store, "run-20260101T000101-000101")
     service.apply(
         {
             "base_revision": 0,
@@ -215,18 +215,18 @@ def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -
                 }
             ],
         },
-        capability_token=grant_capability(store, "run-planning", role="planner", phase=PLANNING),
+        capability_token=grant_capability(store, "run-20260101T000101-000101", role="planner", phase=PLANNING),
     )
 
-    run = store.load_run("run-planning")
+    run = store.load_run("run-20260101T000101-000101")
     sessions = dict(run.get("sessions") or {})
     sessions["primary_planner_session_id"] = None
     run = dict(run)
     run["sessions"] = sessions
     expected = int(run["revision"])
     run["revision"] = expected + 1
-    store.save_run("run-planning", run, expected)
+    store.save_run("run-20260101T000101-000101", run, expected)
 
-    result = PlanningPhaseOrchestrator(store, "run-planning", provider).run()
+    result = PlanningPhaseOrchestrator(store, "run-20260101T000101-000101", provider).run()
     assert result.ok is True
-    assert len(store.load_plan_model("run-planning").items) == 2
+    assert len(store.load_plan_model("run-20260101T000101-000101").items) == 2

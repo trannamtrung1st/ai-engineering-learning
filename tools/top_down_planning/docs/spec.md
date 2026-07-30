@@ -1205,6 +1205,8 @@ runs/<run-id>/
   events.jsonl
 ```
 
+Run ids use `run-YYYYMMDDTHHMMSS-<6hex>` (UTC creation time plus random suffix) so run folders sort chronologically by name.
+
 Responsibilities:
 
 - `resolved-config.yaml`: fully resolved configuration after overrides (includes observability for operator visibility).

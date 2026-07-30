@@ -194,7 +194,7 @@ runtime:
     with pytest.raises(SystemExit) as exc:
         handle_status_command(
             Namespace(
-                run="run-abc",
+                run="run-20260101T099901-099901",
                 runs_dir=None,
                 config=str(config_path),
                 stream_json=False,
@@ -225,7 +225,7 @@ runtime:
     with pytest.raises(SystemExit) as exc:
         handle_status_command(
             Namespace(
-                run="run-missing",
+                run="run-20260101T099902-099902",
                 runs_dir=None,
                 config=str(config_path),
                 stream_json=False,

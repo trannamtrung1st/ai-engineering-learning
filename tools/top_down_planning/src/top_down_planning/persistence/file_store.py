@@ -29,7 +29,7 @@ from core_tools.persistence import (
 from top_down_planning.persistence.capabilities import new_capability_record
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
-from top_down_planning.persistence.path_ids import validate_store_id
+from top_down_planning.persistence.path_ids import validate_run_id, validate_store_id
 
 _EMPTY_PRODUCTION: dict[str, Any] = {
     "revision": 0,
@@ -102,7 +102,7 @@ class FileRunStore:
         return self._root
 
     def run_dir(self, run_id: str) -> Path:
-        validated = validate_store_id(run_id, label="run_id")
+        validated = validate_run_id(run_id)
         return self._assert_contained(self._root / validated)
 
     def create_run(
@@ -119,7 +119,7 @@ class FileRunStore:
         workspace: str,
         invocation: dict[str, Any],
     ) -> dict[str, Any]:
-        validated_run_id = validate_store_id(run_id, label="run_id")
+        validated_run_id = validate_run_id(run_id)
         if not input_digest or not output_goal_digest or not context_digest:
             raise PersistenceError(
                 "input_digest, output_goal_digest, and context_digest are required"
@@ -191,7 +191,7 @@ class FileRunStore:
 
     @contextmanager
     def _with_run_commit_lock(self, run_id: str) -> Iterator[str]:
-        validated_run_id = validate_store_id(run_id, label="run_id")
+        validated_run_id = validate_run_id(run_id)
         run_dir = self.run_dir(validated_run_id)
         if not run_dir.is_dir():
             raise RunNotFoundError(validated_run_id, "run directory missing", runs_root=self._root)

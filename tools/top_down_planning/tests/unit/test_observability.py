@@ -53,7 +53,7 @@ def test_map_audit_event_maps_planner_session_started_with_phase_and_role() -> N
     mapped = map_audit_event(
         {
             "type": "planner_session_started",
-            "run_id": "run-001",
+            "run_id": "run-20260101T000001-000001",
             "session_id": "planner-1",
             "role": "planner",
             "phase": "planning",
@@ -65,14 +65,14 @@ def test_map_audit_event_maps_planner_session_started_with_phase_and_role() -> N
     assert mapped.session_id == "planner-1"
     assert mapped.fields["phase"] == "planning"
     assert mapped.fields["role"] == "planner"
-    assert mapped.fields["run_id"] == "run-001"
+    assert mapped.fields["run_id"] == "run-20260101T000001-000001"
 
 
 def test_map_audit_event_requires_role_and_phase_for_session_start() -> None:
     assert map_audit_event(
         {
             "type": "planner_session_started",
-            "run_id": "run-001",
+            "run_id": "run-20260101T000001-000001",
             "session_id": "planner-1",
         }
     ) is None
@@ -86,14 +86,14 @@ def test_session_lifecycle_event_builds_start_and_end() -> None:
         role="planner",
         phase="planning",
         session_id="planner-1",
-        run_id="run-001",
+        run_id="run-20260101T000001-000001",
     )
     ended = session_lifecycle_event(
         category="session:end",
         role="planner",
         phase="planning",
         session_id="planner-1",
-        run_id="run-001",
+        run_id="run-20260101T000001-000001",
         kind="primary",
     )
     assert started.category == "session:start"
@@ -267,10 +267,10 @@ def test_stdout_stderr_separation_for_stream_json(tmp_path: Path) -> None:
     with patch("core_tools.observability.console.sys.stderr", stderr):
         context = build_observability_context(
             options=ObservabilityOptions(color="never"),
-            run_id="run-test",
-            run_dir=tmp_path / "run-test",
+            run_id="run-20260101T001001-001001",
+            run_dir=tmp_path / "run-20260101T001001-001001",
         )
-        context.emit(ConsoleEvent(category="done", message="finished", run_id="run-test"))
+        context.emit(ConsoleEvent(category="done", message="finished", run_id="run-20260101T001001-001001"))
         context.close()
     assert "finished" in stderr.getvalue()
 
@@ -280,20 +280,20 @@ def test_jsonl_log_format_writes_valid_json_to_stderr() -> None:
     with patch("top_down_planning.observability.sys.stderr", stderr):
         context = build_observability_context(
             options=ObservabilityOptions(log_format="jsonl", color="never"),
-            run_id="run-jsonl",
+            run_id="run-20260101T001002-001002",
         )
         context.emit(
             ConsoleEvent(
                 category="state",
                 message="phase transition",
                 fields={"phase": "planning"},
-                run_id="run-jsonl",
+                run_id="run-20260101T001002-001002",
             )
         )
         context.close()
     payload = json.loads(stderr.getvalue().strip())
     assert payload["category"] == "state"
-    assert payload["run_id"] == "run-jsonl"
+    assert payload["run_id"] == "run-20260101T001002-001002"
 
 
 def test_secret_redaction_in_console_output() -> None:
@@ -302,14 +302,14 @@ def test_secret_redaction_in_console_output() -> None:
     with patch("core_tools.observability.console.sys.stderr", stderr):
         context = build_observability_context(
             options=ObservabilityOptions(color="never", log_level="trace"),
-            run_id="run-secret",
+            run_id="run-20260101T001003-001003",
         )
         context.emit(
             ConsoleEvent(
                 category="tool:start",
                 message="plan_apply @r0 1 ops",
                 fields={"token": token},
-                run_id="run-secret",
+                run_id="run-20260101T001003-001003",
             )
         )
         context.close()

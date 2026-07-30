@@ -43,7 +43,7 @@ def _batch_apply_request(
 
 def _create_production_run(
     store: FileRunStore,
-    run_id: str = "run-production",
+    run_id: str = "run-20260101T000201-000201",
 ) -> None:
     root = PlanItem(
         id="item-root",
@@ -106,8 +106,8 @@ def _create_production_run(
 def test_apply_requires_production_revision(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     with pytest.raises(RequestError, match="production_revision"):
         service.apply(
@@ -122,8 +122,8 @@ def test_apply_requires_production_revision(tmp_path: Path) -> None:
 def test_producer_can_record_batch_via_service(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     result = service.apply(
         _batch_apply_request(
@@ -135,15 +135,15 @@ def test_producer_can_record_batch_via_service(tmp_path: Path) -> None:
 
     assert result["ok"] is True
     assert result["production_revision"] == 1
-    production = store.load_production("run-production")
+    production = store.load_production("run-20260101T000201-000201")
     assert production["dispositions"]["item-first"] == "completed"
 
 
 def test_stale_production_revision_apply_fails(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     with pytest.raises(RevisionConflictError) as exc_info:
         service.apply(
@@ -162,10 +162,10 @@ def test_stale_production_revision_apply_fails(tmp_path: Path) -> None:
 def test_reviewer_capability_denied_for_production_apply(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    service = ProductionAgentService(store, "run-production")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
     token = grant_capability(
         store,
-        "run-production",
+        "run-20260101T000201-000201",
         role="reviewer",
         phase=PRODUCTION,
         session_kind="reviewer",
@@ -184,8 +184,8 @@ def test_reviewer_capability_denied_for_production_apply(tmp_path: Path) -> None
 def test_submit_completion_rejected_when_items_remain_open(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     with pytest.raises(RequestError, match="every applicable item"):
         service.submit_completion(
@@ -197,8 +197,8 @@ def test_submit_completion_rejected_when_items_remain_open(tmp_path: Path) -> No
 def test_submit_completion_success_does_not_set_outcome(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     service.apply(
         _batch_apply_request(
@@ -223,17 +223,17 @@ def test_submit_completion_success_does_not_set_outcome(tmp_path: Path) -> None:
 
     assert result["ok"] is True
     assert result["run_outcome"] is None
-    run = store.load_run("run-production")
+    run = store.load_run("run-20260101T000201-000201")
     assert run["outcome"] is None
-    production = store.load_production("run-production")
+    production = store.load_production("run-20260101T000201-000201")
     assert production["completion_claim"]["goal_assessment"] == "Output goal is fully met."
 
 
 def test_request_amendment_persists_pending_request(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     result = service.request_amendment(
         {
@@ -246,7 +246,7 @@ def test_request_amendment_persists_pending_request(tmp_path: Path) -> None:
 
     assert result["ok"] is True
     assert result["signal"] == "amendment_requested"
-    production = store.load_production("run-production")
+    production = store.load_production("run-20260101T000201-000201")
     assert production["pending_amendment_id"] == "amendment-01"
     assert production["amendment_requests"][0]["status"] == "pending"
 
@@ -254,8 +254,8 @@ def test_request_amendment_persists_pending_request(tmp_path: Path) -> None:
 def test_report_blocked_persists_blocker_without_outcome(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     result = service.report_blocked(
         {
@@ -268,14 +268,14 @@ def test_report_blocked_persists_blocker_without_outcome(tmp_path: Path) -> None
 
     assert result["ok"] is True
     assert result["run_outcome"] is None
-    production = store.load_production("run-production")
+    production = store.load_production("run-20260101T000201-000201")
     assert production["blocker_report"]["evidence"] == "Upstream service unavailable."
 
 
 def test_production_check_reports_open_items(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    service = ProductionAgentService(store, "run-production")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
 
     result = service.check()
 
@@ -289,7 +289,7 @@ def test_cli_production_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     _create_production_run(store)
     set_capability_env(
         monkeypatch,
-        grant_capability(store, "run-production", role="producer", phase=PRODUCTION),
+        grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION),
     )
 
     first_request = _batch_apply_request(
@@ -305,7 +305,7 @@ def test_cli_production_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             "production",
             "apply",
             "--run",
-            "run-production",
+            "run-20260101T000201-000201",
             "--runs-dir",
             str(tmp_path),
             "--request",
@@ -330,7 +330,7 @@ def test_cli_production_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             "production",
             "apply",
             "--run",
-            "run-production",
+            "run-20260101T000201-000201",
             "--runs-dir",
             str(tmp_path),
             "--request",
@@ -350,7 +350,7 @@ def test_cli_production_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             "production",
             "submit-completion",
             "--run",
-            "run-production",
+            "run-20260101T000201-000201",
             "--runs-dir",
             str(tmp_path),
             "--request",
@@ -373,7 +373,7 @@ def test_cli_reviewer_denied_for_production_apply(
         monkeypatch,
         grant_capability(
             store,
-            "run-production",
+            "run-20260101T000201-000201",
             role="reviewer",
             phase=PRODUCTION,
             session_kind="reviewer",
@@ -397,7 +397,7 @@ def test_cli_reviewer_denied_for_production_apply(
             "production",
             "apply",
             "--run",
-            "run-production",
+            "run-20260101T000201-000201",
             "--runs-dir",
             str(tmp_path),
             "--request",
@@ -414,7 +414,7 @@ def test_production_ready_snapshot_excludes_review_blocked_items(tmp_path: Path)
     store = FileRunStore(tmp_path)
     _create_production_run(store)
     store.save_review(
-        "run-production",
+        "run-20260101T000201-000201",
         {
             "id": "review-focused-output-01",
             "type": "focused_output",
@@ -436,7 +436,7 @@ def test_production_ready_snapshot_excludes_review_blocked_items(tmp_path: Path)
         },
     )
 
-    service = ProductionAgentService(store, "run-production")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
     ready = service.snapshot(view="ready")
 
     assert ready["ok"] is True
@@ -449,7 +449,7 @@ def test_production_ready_snapshot_includes_plan_validation_fields(tmp_path: Pat
     store = FileRunStore(tmp_path)
     _create_production_run(store)
 
-    service = ProductionAgentService(store, "run-production")
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
     ready = service.snapshot(view="ready")
 
     assert "ok" in ready
@@ -463,12 +463,12 @@ def test_cli_production_snapshot_exits_nonzero_when_plan_validation_fails(
 ) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    plan_payload = store.load_plan("run-production")
+    plan_payload = store.load_plan("run-20260101T000201-000201")
     expected_revision = int(plan_payload["revision"])
     plan_payload = dict(plan_payload)
     plan_payload["schema_version"] = 99
     plan_payload["revision"] = expected_revision + 1
-    store.save_plan("run-production", plan_payload, expected_revision)
+    store.save_plan("run-20260101T000201-000201", plan_payload, expected_revision)
 
     result = run_cli(
         [
@@ -476,7 +476,7 @@ def test_cli_production_snapshot_exits_nonzero_when_plan_validation_fails(
             "production",
             "snapshot",
             "--run",
-            "run-production",
+            "run-20260101T000201-000201",
             "--runs-dir",
             str(tmp_path),
             "--view",
@@ -495,8 +495,8 @@ def test_duplicate_evidence_id_across_batches_is_rejected(tmp_path: Path) -> Non
     _create_production_run(store)
     artifact = tmp_path / "leaf.txt"
     artifact.write_text("first", encoding="utf-8")
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     first_request = _batch_apply_request(
         plan_items=["item-first"],
@@ -520,8 +520,8 @@ def test_artifact_snapshots_use_unique_directories(tmp_path: Path) -> None:
     _create_production_run(store)
     artifact = tmp_path / "leaf.txt"
     artifact.write_text("content", encoding="utf-8")
-    service = ProductionAgentService(store, "run-production")
-    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    token = grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION)
 
     request = _batch_apply_request(
         plan_items=["item-first"],
@@ -538,7 +538,7 @@ def test_artifact_snapshots_use_unique_directories(tmp_path: Path) -> None:
     request2["outputs"] = [{"id": "output-b", "type": "artifact", "ref": "leaf.txt"}]
     service.apply(request2, capability_token=token)
 
-    production = store.load_production("run-production")
+    production = store.load_production("run-20260101T000201-000201")
     evidence = production["output_evidence"]
     snapshot_refs = [entry["snapshot_ref"] for entry in evidence]
     assert len(snapshot_refs) == 2

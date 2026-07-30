@@ -819,7 +819,8 @@ refresh before responding when the plan may have changed.
 Run status:
   tdp agent run status --run <run-id>
 
-Run store: agent commands use --runs-dir, $TDP_RUNS_DIR, or ./runs. The orchestrator
+Run store: agent commands use --runs-dir, $TDP_RUNS_DIR, or ./runs. Run ids use
+run-YYYYMMDDTHHMMSS-<6hex> (UTC creation time plus random suffix). The orchestrator
 exports the resolved absolute store root as TDP_RUNS_DIR and a session-scoped
 TDP_CAPABILITY_TOKEN to provider subprocesses. Mutating commands require the token;
 authorization is bound to run phase and session role, not a self-declared flag.
@@ -873,7 +874,8 @@ do not pass `--role` on the CLI.
 Agent commands locate runs via `--runs-dir`, `$TDP_RUNS_DIR`, or `./runs` (in that
 precedence). The orchestrator exports the resolved absolute store root as
 `TDP_RUNS_DIR` and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses,
-so in-agent commands typically need only `--run <run-id>`.
+so in-agent commands typically need only `--run <run-id>`. Run ids use
+`run-YYYYMMDDTHHMMSS-<6hex>` (UTC creation time plus random suffix).
 
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
 The service captures content hashes and stores immutable snapshots under

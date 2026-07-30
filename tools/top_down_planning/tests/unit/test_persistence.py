@@ -40,7 +40,7 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
     config = {"limits": {"planning": {"max_agent_turns": 5}}}
 
     run = store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=plan,
         resolved_config=config,
         input_digest="input-a",
@@ -50,7 +50,7 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
         invocation=minimal_invocation(store.root),
     )
 
-    run_dir = tmp_path / "run-001"
+    run_dir = tmp_path / "run-20260101T000001-000001"
     assert run["revision"] == 0
     assert run["status"] == "running"
     assert run["workspace"] == str(store.root)
@@ -64,18 +64,18 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
     assert (run_dir / "events.jsonl").exists()
     assert (run_dir / "invocation.json").exists()
 
-    loaded_plan = store.load_plan("run-001")
+    loaded_plan = store.load_plan("run-20260101T000001-000001")
     assert loaded_plan["revision"] == 0
     assert loaded_plan["items"][0]["title"] == "Root"
-    assert store.load_plan_model("run-001").output_goal == "Deliver the output."
-    assert store.load_run("run-001")["digests"]["input"] == "input-a"
+    assert store.load_plan_model("run-20260101T000001-000001").output_goal == "Deliver the output."
+    assert store.load_run("run-20260101T000001-000001")["digests"]["input"] == "input-a"
 
 
 def test_load_resolved_config_round_trip(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     config = {"planning": {"max_depth": 5, "max_expansion_per_item": 3}}
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=_sample_plan(),
         resolved_config=config,
         input_digest="input-a",
@@ -85,7 +85,7 @@ def test_load_resolved_config_round_trip(tmp_path: Path) -> None:
         invocation=minimal_invocation(store.root),
     )
 
-    assert store.load_resolved_config("run-001") == config
+    assert store.load_resolved_config("run-20260101T000001-000001") == config
 
 
 def test_create_run_persists_invocation_metadata(tmp_path: Path) -> None:
@@ -96,7 +96,7 @@ def test_create_run_persists_invocation_metadata(tmp_path: Path) -> None:
         "command": "run",
     }
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=_sample_plan(),
         resolved_config={"run": {"output_goal": "Goal."}},
         input_digest="input-a",
@@ -105,9 +105,9 @@ def test_create_run_persists_invocation_metadata(tmp_path: Path) -> None:
         workspace=str(store.root),
         invocation=invocation,
     )
-    assert store.load_invocation("run-001") == invocation
-    store.save_invocation("run-001", {"command": "resume", "observability": {"log_level": "quiet"}})
-    updated = store.load_invocation("run-001")
+    assert store.load_invocation("run-20260101T000001-000001") == invocation
+    store.save_invocation("run-20260101T000001-000001", {"command": "resume", "observability": {"log_level": "quiet"}})
+    updated = store.load_invocation("run-20260101T000001-000001")
     assert updated["command"] == "resume"
 
 
@@ -115,7 +115,7 @@ def test_create_run_requires_digests(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     with pytest.raises(PersistenceError, match="context_digest are required"):
         store.create_run(
-            "run-001",
+            "run-20260101T000001-000001",
             plan=_sample_plan(),
             resolved_config={},
             input_digest="",
@@ -130,7 +130,7 @@ def test_create_run_requires_invocation(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     with pytest.raises(PersistenceError, match="invocation metadata is required"):
         store.create_run(
-            "run-001",
+            "run-20260101T000001-000001",
             plan=_sample_plan(),
             resolved_config={},
             input_digest="input-a",
@@ -145,7 +145,7 @@ def test_create_run_requires_workspace(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     with pytest.raises(PersistenceError, match="workspace is required"):
         store.create_run(
-            "run-001",
+            "run-20260101T000001-000001",
             plan=_sample_plan(),
             resolved_config={},
             input_digest="input-a",
@@ -160,7 +160,7 @@ def test_save_plan_revision_conflict(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     plan = _sample_plan()
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=plan,
         resolved_config={},
         input_digest="input-a",
@@ -172,19 +172,19 @@ def test_save_plan_revision_conflict(tmp_path: Path) -> None:
 
     updated = plan.to_dict()
     updated["revision"] = 1
-    store.save_plan("run-001", updated, expected_revision=0)
+    store.save_plan("run-20260101T000001-000001", updated, expected_revision=0)
 
     stale = plan.to_dict()
     stale["revision"] = 2
     with pytest.raises(StoreRevisionConflictError):
-        store.save_plan("run-001", stale, expected_revision=0)
+        store.save_plan("run-20260101T000001-000001", stale, expected_revision=0)
 
 
 def test_save_plan_requires_explicit_revision(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     plan = _sample_plan()
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=plan,
         resolved_config={},
         input_digest="input-a",
@@ -197,14 +197,14 @@ def test_save_plan_requires_explicit_revision(tmp_path: Path) -> None:
     payload = plan.to_dict()
     del payload["revision"]
     with pytest.raises(PersistenceError, match="explicit revision"):
-        store.save_plan("run-001", payload, expected_revision=0)
+        store.save_plan("run-20260101T000001-000001", payload, expected_revision=0)
 
 
 def test_save_plan_model_round_trip(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     plan = _sample_plan()
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=plan,
         resolved_config={},
         input_digest="input-a",
@@ -215,8 +215,8 @@ def test_save_plan_model_round_trip(tmp_path: Path) -> None:
     )
 
     updated = _sample_plan(revision=1)
-    store.save_plan_model("run-001", updated, expected_revision=0)
-    assert store.load_plan_model("run-001").revision == 1
+    store.save_plan_model("run-20260101T000001-000001", updated, expected_revision=0)
+    assert store.load_plan_model("run-20260101T000001-000001").revision == 1
 
 
 def test_reload_after_new_store_instance(tmp_path: Path) -> None:
@@ -225,7 +225,7 @@ def test_reload_after_new_store_instance(tmp_path: Path) -> None:
 
     store = FileRunStore(tmp_path)
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=plan,
         resolved_config=config,
         input_digest="input-a",
@@ -237,17 +237,17 @@ def test_reload_after_new_store_instance(tmp_path: Path) -> None:
 
     updated = plan.to_dict()
     updated["revision"] = 1
-    store.save_plan("run-001", updated, expected_revision=0)
+    store.save_plan("run-20260101T000001-000001", updated, expected_revision=0)
 
     reloaded = FileRunStore(tmp_path)
-    assert reloaded.load_plan("run-001")["revision"] == 1
-    assert reloaded.load_run("run-001")["revision"] == 0
+    assert reloaded.load_plan("run-20260101T000001-000001")["revision"] == 1
+    assert reloaded.load_run("run-20260101T000001-000001")["revision"] == 0
 
 
 def test_append_event_is_append_only(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=_sample_plan(),
         resolved_config={},
         input_digest="input-a",
@@ -257,10 +257,10 @@ def test_append_event_is_append_only(tmp_path: Path) -> None:
         invocation=minimal_invocation(store.root),
     )
 
-    store.append_event("run-001", {"type": "phase_changed", "phase": "production"})
-    store.append_event("run-001", {"type": "plan_updated", "revision": 1})
+    store.append_event("run-20260101T000001-000001", {"type": "phase_changed", "phase": "production"})
+    store.append_event("run-20260101T000001-000001", {"type": "plan_updated", "revision": 1})
 
-    events = store.load_events("run-001")
+    events = store.load_events("run-20260101T000001-000001")
     assert len(events) == 3
     assert events[0]["type"] == "run_created"
     assert events[1]["type"] == "phase_changed"
@@ -303,7 +303,7 @@ def test_digest_helpers_are_stable() -> None:
 def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     store.create_run(
-        "run-001",
+        "run-20260101T000001-000001",
         plan=_sample_plan(),
         resolved_config={},
         input_digest="input-a",
@@ -314,7 +314,7 @@ def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
     )
     with pytest.raises(PersistenceError, match="already exists"):
         store.create_run(
-            "run-001",
+            "run-20260101T000001-000001",
             plan=_sample_plan(),
             resolved_config={},
             input_digest="input-a",

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -22,6 +21,7 @@ from top_down_planning.cli.common import (
     run_startup_diagnostics_payload,
     store_diagnostics_payload,
 )
+from top_down_planning.persistence.path_ids import new_run_id
 from top_down_planning.config import (
     ConfigError,
     compute_context_digest_from_config,
@@ -193,7 +193,7 @@ def handle_run_command(args: Namespace) -> None:
             code="config_error",
         )
 
-    run_id = f"run-{uuid.uuid4().hex[:12]}"
+    run_id = new_run_id()
     cwd = Path.cwd().resolve()
     workspace = resolve_workspace(resolved, cwd=cwd)
     try:

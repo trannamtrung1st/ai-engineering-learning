@@ -43,7 +43,7 @@ def _review_respond_request(*, decision: str, target_revision: int) -> dict:
 def _create_run_in_production_with_sessions(
     store: FileRunStore,
     provider: StubProvider,
-    run_id: str = "run-amendment",
+    run_id: str = "run-20260101T001901-001901",
     *,
     amendment_limits: dict | None = None,
 ) -> tuple[str, str]:
@@ -147,14 +147,14 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
         store,
         provider,
     )
-    service = ProductionAgentService(store, "run-amendment")
+    service = ProductionAgentService(store, "run-20260101T001901-001901")
 
     service.apply(
         _batch_apply_request(
             plan_items=["item-first"],
             dispositions={"item-first": {"disposition": "completed"}},
         ),
-        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
     service.request_amendment(
         {
@@ -162,7 +162,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             "affected_refs": ["item-root"],
             "summary": "Need API subtree.",
         },
-        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
 
     provider.script_turn(
@@ -205,13 +205,13 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
         ]
     )
 
-    amendment_result = PlanAmendmentOrchestrator(store, "run-amendment", provider).run()
+    amendment_result = PlanAmendmentOrchestrator(store, "run-20260101T001901-001901", provider).run()
 
     assert amendment_result.ok is True
     assert amendment_result.planner_session_id == planner_session_id
     assert amendment_result.producer_session_id == producer_session_id
 
-    plan = store.load_plan_model("run-amendment")
+    plan = store.load_plan_model("run-20260101T001901-001901")
     new_item_ids = sorted(
         item_id
         for item_id in plan.items
@@ -220,7 +220,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
     assert len(new_item_ids) == 1
     new_item_id = new_item_ids[0]
 
-    production = store.load_production("run-amendment")
+    production = store.load_production("run-20260101T001901-001901")
     service.apply(
         _batch_apply_request(
             plan_items=["item-second", new_item_id],
@@ -230,14 +230,14 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             },
             production_revision=int(production["revision"]),
         ),
-        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
     service.submit_completion(
         {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
 
-    production = store.load_production("run-amendment")
+    production = store.load_production("run-20260101T001901-001901")
     assert production["pending_amendment_id"] is None
     assert production["dispositions"]["item-first"] == "completed"
     assert production["dispositions"]["item-second"] == "completed"
@@ -253,7 +253,7 @@ def test_apply_rejected_while_amendment_pending(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_in_production_with_sessions(store, provider)
-    service = ProductionAgentService(store, "run-amendment")
+    service = ProductionAgentService(store, "run-20260101T001901-001901")
 
     service.request_amendment(
         {
@@ -261,7 +261,7 @@ def test_apply_rejected_while_amendment_pending(tmp_path: Path) -> None:
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
         },
-        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
 
     with pytest.raises(RequestError, match="paused while a plan amendment is pending"):
@@ -271,7 +271,7 @@ def test_apply_rejected_while_amendment_pending(tmp_path: Path) -> None:
                 dispositions={"item-first": {"disposition": "completed"}},
                 production_revision=1,
             ),
-            capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+            capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
         )
 
 
@@ -283,7 +283,7 @@ def test_amendment_max_requests_is_enforced(tmp_path: Path) -> None:
         provider,
         amendment_limits={"max_requests": 1},
     )
-    service = ProductionAgentService(store, "run-amendment")
+    service = ProductionAgentService(store, "run-20260101T001901-001901")
 
     service.request_amendment(
         {
@@ -291,15 +291,15 @@ def test_amendment_max_requests_is_enforced(tmp_path: Path) -> None:
             "affected_refs": ["item-root"],
             "summary": "First amendment.",
         },
-        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
 
-    production = store.load_production("run-amendment")
+    production = store.load_production("run-20260101T001901-001901")
     production = dict(production)
     production["pending_amendment_id"] = None
     production["amendment_requests"][0]["status"] = "completed"
     production["revision"] = int(production["revision"]) + 1
-    store.save_production("run-amendment", production, int(production["revision"]) - 1)
+    store.save_production("run-20260101T001901-001901", production, int(production["revision"]) - 1)
 
     with pytest.raises(RequestError, match="amendment limit exceeded"):
         service.request_amendment(
@@ -308,7 +308,7 @@ def test_amendment_max_requests_is_enforced(tmp_path: Path) -> None:
                 "affected_refs": ["item-root"],
                 "summary": "Second amendment.",
             },
-            capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+            capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
         )
 
 
@@ -332,14 +332,14 @@ def test_plan_apply_during_production_still_rejected(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ProviderRunError, match="plan mutations are not allowed"):
-        ProductionPhaseOrchestrator(store, "run-amendment", provider).run()
+        ProductionPhaseOrchestrator(store, "run-20260101T001901-001901", provider).run()
 
 
 def test_submit_completion_rejected_while_amendment_pending(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_in_production_with_sessions(store, provider)
-    service = ProductionAgentService(store, "run-amendment")
+    service = ProductionAgentService(store, "run-20260101T001901-001901")
 
     service.request_amendment(
         {
@@ -347,13 +347,13 @@ def test_submit_completion_rejected_while_amendment_pending(tmp_path: Path) -> N
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
         },
-        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
 
     with pytest.raises(RequestError, match="paused while a plan amendment is pending"):
         service.submit_completion(
             {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-            capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+            capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
         )
 
 
@@ -361,31 +361,31 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_in_production_with_sessions(store, provider)
-    service = ProductionAgentService(store, "run-amendment")
+    service = ProductionAgentService(store, "run-20260101T001901-001901")
     service.request_amendment(
         {
             "evidence": "Missing branch.",
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
         },
-        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
 
-    run = store.load_run("run-amendment")
+    run = store.load_run("run-20260101T001901-001901")
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
     run["phase"] = "whole_plan_review"
     run["status"] = "paused"
-    store.save_run("run-amendment", run, expected_revision)
+    store.save_run("run-20260101T001901-001901", run, expected_revision)
 
-    production = store.load_production("run-amendment")
+    production = store.load_production("run-20260101T001901-001901")
     requests = list(production["amendment_requests"])
-    requests[0]["prior_plan_snapshot"] = store.load_plan_model("run-amendment").to_dict()
+    requests[0]["prior_plan_snapshot"] = store.load_plan_model("run-20260101T001901-001901").to_dict()
     production = dict(production)
     production["amendment_requests"] = requests
     production["revision"] = int(production["revision"]) + 1
-    store.save_production("run-amendment", production, int(production["revision"]) - 1)
+    store.save_production("run-20260101T001901-001901", production, int(production["revision"]) - 1)
 
     provider.script_turn(
         [
@@ -402,11 +402,11 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
         ]
     )
 
-    result = PlanAmendmentOrchestrator(store, "run-amendment", provider).run()
+    result = PlanAmendmentOrchestrator(store, "run-20260101T001901-001901", provider).run()
 
     assert result.ok is True
     assert result.phase == PRODUCTION
-    production = store.load_production("run-amendment")
+    production = store.load_production("run-20260101T001901-001901")
     assert production["pending_amendment_id"] is None
     assert production["reconciliation_reports"]
 
@@ -415,23 +415,23 @@ def test_resume_amendment_requires_prior_plan_snapshot(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_in_production_with_sessions(store, provider)
-    service = ProductionAgentService(store, "run-amendment")
+    service = ProductionAgentService(store, "run-20260101T001901-001901")
     service.request_amendment(
         {
             "evidence": "Missing branch.",
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
         },
-        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
+        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
 
-    run = store.load_run("run-amendment")
+    run = store.load_run("run-20260101T001901-001901")
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
     run["phase"] = "plan_amendment"
     run["status"] = "paused"
-    store.save_run("run-amendment", run, expected_revision)
+    store.save_run("run-20260101T001901-001901", run, expected_revision)
 
     with pytest.raises(ProviderRunError, match="prior_plan_snapshot"):
-        PlanAmendmentOrchestrator(store, "run-amendment", provider).run()
+        PlanAmendmentOrchestrator(store, "run-20260101T001901-001901", provider).run()

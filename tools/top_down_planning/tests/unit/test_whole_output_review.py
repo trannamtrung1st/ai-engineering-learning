@@ -19,7 +19,7 @@ from tests.helpers import create_run_kwargs, done_events, grant_capability, whol
 
 def _create_run_at_whole_output_review(
     store: FileRunStore,
-    run_id: str = "run-output-review",
+    run_id: str = "run-20260101T000801-000801",
     *,
     limits: dict | None = None,
     provider: StubProvider | None = None,
@@ -166,14 +166,14 @@ def test_whole_output_review_approve_reaches_accepted(tmp_path: Path) -> None:
         ]
     )
 
-    result = WholeOutputReviewOrchestrator(store, "run-output-review", provider).run()
+    result = WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()
 
     assert result.ok is True
     assert result.phase == OUTPUT_VALIDATED
     assert result.outcome == "accepted"
     assert result.loop_id == "review-whole-output-01"
 
-    run = store.load_run("run-output-review")
+    run = store.load_run("run-20260101T000801-000801")
     assert run["status"] == "completed"
     assert run["outcome"] == "accepted"
 
@@ -271,7 +271,7 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
         ]
     )
 
-    result = WholeOutputReviewOrchestrator(store, "run-output-review", provider).run()
+    result = WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()
 
     assert result.ok is True
     assert result.outcome == "accepted"
@@ -299,7 +299,7 @@ def test_missing_goal_assessment_blocks_acceptance(tmp_path: Path) -> None:
         ]
     )
 
-    result = WholeOutputReviewOrchestrator(store, "run-output-review", provider).run()
+    result = WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()
 
     assert result.ok is False
     assert result.outcome == "blocked"
@@ -360,7 +360,7 @@ def test_revision_cycle_limit_yields_rejected_not_accepted(tmp_path: Path) -> No
         ]
     )
 
-    result = WholeOutputReviewOrchestrator(store, "run-output-review", provider).run()
+    result = WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()
 
     assert result.ok is False
     assert result.outcome == "rejected"
@@ -374,9 +374,9 @@ def test_provider_exception_does_not_set_outcome(tmp_path: Path) -> None:
 
     provider.script_turn([{"type": "error", "text": "provider crashed"}])
     with pytest.raises(ProviderRunError, match="provider crashed"):
-        WholeOutputReviewOrchestrator(store, "run-output-review", provider).run()
+        WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()
 
-    run = store.load_run("run-output-review")
+    run = store.load_run("run-20260101T000801-000801")
     assert run["phase"] == WHOLE_OUTPUT_REVIEW
     assert run["outcome"] is None
     assert run["status"] == "running"
@@ -386,7 +386,7 @@ def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> Non
     store = FileRunStore(tmp_path)
     _create_run_at_whole_output_review(store)
     store.save_review(
-        "run-output-review",
+        "run-20260101T000801-000801",
         {
             "id": "review-whole-output-01",
             "type": "whole_output",
@@ -399,10 +399,10 @@ def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> Non
         },
     )
 
-    service = ReviewAgentService(store, "run-output-review")
+    service = ReviewAgentService(store, "run-20260101T000801-000801")
     token = grant_capability(
         store,
-        "run-output-review",
+        "run-20260101T000801-000801",
         role="reviewer",
         phase=WHOLE_OUTPUT_REVIEW,
         session_kind="reviewer",
