@@ -282,7 +282,10 @@ def assert_acceptance_invariant_for_run(store: FileRunStore, run_id: str) -> Non
             config,
             base_dir=run_workspace(run),
         ),
-        actual_output_goal_digest=compute_output_goal_digest(config),
+        actual_output_goal_digest=compute_output_goal_digest(
+            config,
+            base_dir=run_workspace(run),
+        ),
         actual_context_digest=(run.get("digests") or {}).get("context"),
     )
 

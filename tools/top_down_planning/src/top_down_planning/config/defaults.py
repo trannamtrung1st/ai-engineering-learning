@@ -8,7 +8,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "version": 1,
     "run": {
         "input_refs": [],
-        "output_goal": "",
         "boundaries": [],
         "acceptance": [],
     },
@@ -70,6 +69,7 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "run.workspace",
         "run.input_refs",
         "run.output_goal",
+        "run.output_goal_file",
         "run.boundaries",
         "run.acceptance",
         "planning.stop_hint",

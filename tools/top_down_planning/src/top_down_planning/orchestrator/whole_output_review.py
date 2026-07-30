@@ -161,7 +161,10 @@ class WholeOutputReviewOrchestrator:
                 config,
                 base_dir=run_workspace(run),
             ),
-            actual_output_goal_digest=compute_output_goal_digest(config),
+            actual_output_goal_digest=compute_output_goal_digest(
+                config,
+                base_dir=run_workspace(run),
+            ),
             actual_context_digest=(run.get("digests") or {}).get("context"),
         )
 
@@ -279,6 +282,7 @@ class WholeOutputReviewOrchestrator:
             self._run_id,
             self._store.load_run(self._run_id),
             self._store.load_resolved_config(self._run_id),
+            self._store.load_plan_model(self._run_id),
             self._store.load_production(self._run_id),
             loop,
         )
@@ -512,6 +516,7 @@ def build_whole_output_review_package(
     run_id: str,
     run: dict[str, Any],
     config: dict[str, Any],
+    plan: Any,
     production: dict[str, Any],
     loop: ReviewLoop,
 ) -> dict[str, Any]:
@@ -530,7 +535,7 @@ def build_whole_output_review_package(
         "output_revision": int(production["output_revision"]),
         "production": build_production_review_snapshot(production),
         "input_refs": list(run_section.get("input_refs") or []),
-        "output_goal": str(run_section.get("output_goal") or ""),
+        "output_goal": plan.output_goal,
         "boundaries": run_section.get("boundaries"),
         "acceptance": run_section.get("acceptance"),
         "digests": digests,

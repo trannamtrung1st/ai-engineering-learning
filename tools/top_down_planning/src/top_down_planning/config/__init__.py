@@ -12,6 +12,7 @@ from top_down_planning.config.resolve import (
     compute_input_digest,
     compute_output_goal_digest,
     resolve_config,
+    resolve_output_goal_text,
 )
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "compute_input_digest",
     "compute_output_goal_digest",
     "resolve_config",
+    "resolve_output_goal_text",
     "resolve_path",
     "resolve_workspace",
 ]

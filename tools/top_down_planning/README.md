@@ -79,9 +79,12 @@ Config files may live anywhere. Relative paths in YAML resolve against the **pro
 - `run.workspace` (defaults to process cwd when omitted)
 - `runtime.runs_dir`
 - `run.input_refs`
+- `run.output_goal_file` (mutually exclusive with inline `run.output_goal`)
 - any other configured filesystem path
 
 Absolute paths are used directly. Launch `tdp` from the intended working directory (for example the repository root).
+
+Use either `run.output_goal` (inline text) or `run.output_goal_file` (path to a UTF-8 file), not both. File-backed goals resolve against `run.workspace` (or process cwd). At run start the file contents are loaded into `plan.output_goal`; the path stays in resolved config. Resume re-reads the file and rejects digest mismatches if the content changed.
 
 Example from a repository root:
 
@@ -123,7 +126,7 @@ To resume or inspect from a new shell, provide enough information to locate the 
 
 Run operational `status` values (proposal §15): `running`, `paused`, `completed`, `failed`. Quality `outcome` values: `accepted`, `rejected`, `blocked` (set only by orchestrator outcome resolution).
 
-`tdp run` creates the run store, starts the primary planner session, and drives planning construction until the planner signals `candidate_plan_ready` or a planning limit is hit. On success the run transitions to phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing: config/plan/input/output-goal/output digests must match the materialized store, missing primary session refs block resume (no silent new sessions), active whole-plan and whole-output review loops require a persisted `reviewer_session_id`, and production/output review require whole-plan approval for the current plan revision. Resume then continues `planning` with the persisted `primary_planner_session_id`, drives the mandatory whole-plan review loop in `whole_plan_review`, drives production in `plan_validated` or `production`, and drives whole-output review in `whole_output_review`.
+`tdp run` creates the run store, starts the primary planner session, and drives planning construction until the planner signals `candidate_plan_ready` or a planning limit is hit. On success the run transitions to phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing: config/plan/input/output-goal/output digests must match the materialized store (for `run.output_goal_file`, the output-goal digest binds file contents and resume re-reads the file), missing primary session refs block resume (no silent new sessions), active whole-plan and whole-output review loops require a persisted `reviewer_session_id`, and production/output review require whole-plan approval for the current plan revision. Resume then continues `planning` with the persisted `primary_planner_session_id`, drives the mandatory whole-plan review loop in `whole_plan_review`, drives production in `plan_validated` or `production`, and drives whole-output review in `whole_output_review`.
 
 Whole-plan review (proposal §5.2, §11): the orchestrator starts a fresh reviewer session per loop, binds findings to the current plan revision, resumes the same primary planner for revisions after `changes_requested`, and requires the same reviewer to recheck before approval. After approval, deterministic `validate_plan(..., mode="approval")` must pass before the run advances to `plan_validated`. Revision cycles are capped by `limits.whole_plan_review.max_revision_cycles`; limit exhaustion yields `rejected` or `blocked`, never silent acceptance.
 

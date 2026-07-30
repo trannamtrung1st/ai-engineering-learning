@@ -128,7 +128,10 @@ class WholePlanReviewOrchestrator:
                 config,
                 base_dir=run_workspace(run),
             ),
-            actual_output_goal_digest=compute_output_goal_digest(config),
+            actual_output_goal_digest=compute_output_goal_digest(
+                config,
+                base_dir=run_workspace(run),
+            ),
             actual_context_digest=(run.get("digests") or {}).get("context"),
         )
         validation = validate_plan(
@@ -418,7 +421,7 @@ def build_whole_plan_review_package(
         "plan_revision": plan.revision,
         "plan": build_plan_review_snapshot(plan, limits=limits),
         "input_refs": list(run_section.get("input_refs") or []),
-        "output_goal": str(run_section.get("output_goal") or ""),
+        "output_goal": plan.output_goal,
         "boundaries": run_section.get("boundaries"),
         "acceptance": run_section.get("acceptance"),
         "digests": digests,

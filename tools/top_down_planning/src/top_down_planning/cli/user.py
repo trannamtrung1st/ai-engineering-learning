@@ -27,6 +27,7 @@ from top_down_planning.config import (
     compute_input_digest,
     compute_output_goal_digest,
     resolve_config,
+    resolve_output_goal_text,
     resolve_workspace,
 )
 from top_down_planning.domain.models import Plan, PlanItem
@@ -123,21 +124,22 @@ def handle_run_command(args: Namespace) -> None:
             code="config_error",
         )
 
-    output_goal = str((resolved.get("run") or {}).get("output_goal") or "").strip()
-    if not output_goal:
+    run_id = f"run-{uuid.uuid4().hex[:12]}"
+    cwd = Path.cwd().resolve()
+    workspace = resolve_workspace(resolved, cwd=cwd)
+    try:
+        output_goal = resolve_output_goal_text(resolved, base_dir=workspace)
+    except ConfigError as exc:
         emit_error_message(
-            "resolved config requires run.output_goal",
+            str(exc),
             exit_code=2,
             stream_json=args.stream_json,
             code="config_error",
         )
 
-    run_id = f"run-{uuid.uuid4().hex[:12]}"
-    cwd = Path.cwd().resolve()
-    workspace = resolve_workspace(resolved, cwd=cwd)
     input_digest = compute_input_digest(resolved, base_dir=workspace)
-    output_goal_digest = compute_output_goal_digest(resolved)
-    plan = _initial_plan(run_id, resolved)
+    output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
+    plan = _initial_plan(run_id, resolved, output_goal=output_goal)
 
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
     if resolved_runs.source == "default":
@@ -731,9 +733,8 @@ def handle_validate_command(args: Namespace) -> None:
     emit_message("\n".join(lines), exit_code=exit_code)
 
 
-def _initial_plan(run_id: str, config: dict[str, Any]) -> Plan:
+def _initial_plan(run_id: str, config: dict[str, Any], *, output_goal: str) -> Plan:
     run_section = config.get("run") or {}
-    output_goal = str(run_section.get("output_goal") or "")
     input_refs = list(run_section.get("input_refs") or [])
     root = PlanItem(
         id="item-root",

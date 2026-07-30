@@ -16,11 +16,13 @@ from core_tools.config.errors import ConfigError
 from core_tools.persistence.digests import digest_text
 
 from top_down_planning.config.defaults import ALLOWED_OVERRIDE_PATHS, DEFAULT_CONFIG
+from top_down_planning.config.paths import resolve_path
 
 __all__ = [
     "compute_input_digest",
     "compute_output_goal_digest",
     "resolve_config",
+    "resolve_output_goal_text",
 ]
 
 
@@ -75,6 +77,53 @@ def compute_input_digest(config: dict[str, Any], *, base_dir: Path) -> str:
     return compute_input_refs_digest(refs, base_dir=base_dir)
 
 
-def compute_output_goal_digest(config: dict[str, Any]) -> str:
-    goal = str((config.get("run") or {}).get("output_goal") or "")
-    return digest_text(goal)
+def resolve_output_goal_text(config: dict[str, Any], *, base_dir: Path) -> str:
+    """Load inline or file-backed output goal text (mutually exclusive)."""
+
+    run_section = config.get("run")
+    if not isinstance(run_section, dict):
+        raise ConfigError(
+            "resolved config requires run.output_goal or run.output_goal_file",
+            path="run.output_goal",
+        )
+
+    inline = str(run_section.get("output_goal") or "").strip()
+    file_ref = str(run_section.get("output_goal_file") or "").strip()
+
+    if inline and file_ref:
+        raise ConfigError(
+            "use either run.output_goal or run.output_goal_file, not both",
+            path="run.output_goal",
+        )
+    if not inline and not file_ref:
+        raise ConfigError(
+            "resolved config requires run.output_goal or run.output_goal_file",
+            path="run.output_goal",
+        )
+
+    if file_ref:
+        goal_path = resolve_path(file_ref, cwd=base_dir)
+        if not goal_path.is_file():
+            raise ConfigError(
+                f"output goal file not found: {goal_path}",
+                path="run.output_goal_file",
+            )
+        try:
+            text = goal_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ConfigError(
+                f"failed to read output goal file: {goal_path}",
+                path="run.output_goal_file",
+            ) from exc
+        if not text.strip():
+            raise ConfigError(
+                f"output goal file is empty: {goal_path}",
+                path="run.output_goal_file",
+            )
+        return text
+
+    return inline
+
+
+def compute_output_goal_digest(config: dict[str, Any], *, base_dir: Path) -> str:
+    return digest_text(resolve_output_goal_text(config, base_dir=base_dir))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from argparse import Namespace
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -12,9 +13,14 @@ from top_down_planning.cli.user import handle_validate_command
 from top_down_planning.config import (
     ConfigError,
     compute_input_digest,
+    compute_output_goal_digest,
     resolve_config,
+    resolve_output_goal_text,
+    resolve_workspace,
 )
+from core_tools.persistence.digests import digest_text
 from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.orchestrator import ResumeError, validate_resume_preconditions
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_config_digest
 from tests.conftest import run_cli
@@ -212,3 +218,141 @@ def test_validate_uses_approval_mode_when_whole_plan_review_approved(
         assert exit_info.value.code == 0
         payload = emit_payload.call_args.args[0]
         assert payload["plan"]["mode"] == "approval"
+
+
+def _workspace_with_goal_file(tmp_path: Path) -> tuple[Path, Path, dict[str, Any]]:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    goal_file = workspace / "goals" / "output-goal.md"
+    goal_file.parent.mkdir(parents=True)
+    goal_file.write_text("Deliver from file.\n", encoding="utf-8")
+    config = {
+        "run": {
+            "output_goal_file": "goals/output-goal.md",
+            "input_refs": [],
+        }
+    }
+    return workspace, goal_file, config
+
+
+def test_resolve_output_goal_text_from_file(tmp_path: Path) -> None:
+    workspace, goal_file, config = _workspace_with_goal_file(tmp_path)
+    assert resolve_output_goal_text(config, base_dir=workspace) == "Deliver from file.\n"
+    assert compute_output_goal_digest(config, base_dir=workspace) == digest_text(
+        "Deliver from file.\n"
+    )
+
+
+def test_resolve_output_goal_text_absolute_path(tmp_path: Path) -> None:
+    workspace, goal_file, config = _workspace_with_goal_file(tmp_path)
+    config["run"]["output_goal_file"] = str(goal_file.resolve())
+    assert resolve_output_goal_text(config, base_dir=workspace) == "Deliver from file.\n"
+
+
+def test_resolve_output_goal_text_rejects_both_sources(tmp_path: Path) -> None:
+    workspace, _, config = _workspace_with_goal_file(tmp_path)
+    config["run"]["output_goal"] = "Inline goal."
+    with pytest.raises(ConfigError, match="not both"):
+        resolve_output_goal_text(config, base_dir=workspace)
+
+
+def test_resolve_output_goal_text_requires_one_source(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config = {"run": {"input_refs": []}}
+    with pytest.raises(ConfigError, match="requires run.output_goal"):
+        resolve_output_goal_text(config, base_dir=workspace)
+
+
+def test_resolve_output_goal_text_rejects_missing_file(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config = {"run": {"output_goal_file": "missing.md", "input_refs": []}}
+    with pytest.raises(ConfigError, match="not found"):
+        resolve_output_goal_text(config, base_dir=workspace)
+
+
+def test_resolve_output_goal_text_rejects_empty_file(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    goal_file = workspace / "empty.md"
+    goal_file.write_text("   \n", encoding="utf-8")
+    config = {"run": {"output_goal_file": "empty.md", "input_refs": []}}
+    with pytest.raises(ConfigError, match="empty"):
+        resolve_output_goal_text(config, base_dir=workspace)
+
+
+def test_output_goal_file_resolves_from_workspace_not_config_dir(tmp_path: Path) -> None:
+    workspace = tmp_path / "repo"
+    config_dir = workspace / "temp" / "configs"
+    config_dir.mkdir(parents=True)
+    goal_file = workspace / "goals" / "output-goal.md"
+    goal_file.parent.mkdir(parents=True)
+    goal_file.write_text("Workspace-relative goal.", encoding="utf-8")
+    config_path = write_config(
+        config_dir / "run.yaml",
+        """
+run:
+  workspace: .
+  output_goal_file: goals/output-goal.md
+""",
+    )
+    resolved = resolve_config(config_path)
+    base_dir = resolve_workspace(resolved, cwd=workspace)
+    assert resolve_output_goal_text(resolved, base_dir=base_dir) == (
+        "Workspace-relative goal."
+    )
+
+
+def test_file_backed_goal_leaves_no_inline_output_goal_in_resolved_config(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "repo"
+    config_dir = workspace / "configs"
+    config_dir.mkdir(parents=True)
+    goal_file = workspace / "goal.md"
+    goal_file.write_text("Goal from file.", encoding="utf-8")
+    config_path = write_config(
+        config_dir / "run.yaml",
+        """
+run:
+  workspace: .
+  output_goal_file: goal.md
+""",
+    )
+    resolved = resolve_config(config_path)
+    run_section = resolved["run"]
+    assert "output_goal" not in run_section
+    assert run_section["output_goal_file"] == "goal.md"
+    assert resolve_output_goal_text(resolved, base_dir=workspace) == "Goal from file."
+
+
+def test_resume_rejects_changed_output_goal_file(tmp_path: Path) -> None:
+    workspace, goal_file, config = _workspace_with_goal_file(tmp_path)
+    goal_text = resolve_output_goal_text(config, base_dir=workspace)
+    plan = Plan(
+        id="plan-run-goal-file",
+        revision=0,
+        output_goal=goal_text,
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+            )
+        },
+    )
+    store = FileRunStore(tmp_path / "runs")
+    store.create_run(
+        "run-goal-file",
+        plan=plan,
+        resolved_config=config,
+        input_digest=compute_input_digest(config, base_dir=workspace),
+        output_goal_digest=compute_output_goal_digest(config, base_dir=workspace),
+        workspace=str(workspace),
+    )
+
+    goal_file.write_text("Changed goal content.", encoding="utf-8")
+    with pytest.raises(ResumeError, match="output goal digest mismatch"):
+        validate_resume_preconditions(store, "run-goal-file")

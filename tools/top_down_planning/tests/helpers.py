@@ -25,7 +25,7 @@ def run_digests_for_config(
 
     return (
         compute_input_digest(config, base_dir=store_root),
-        compute_output_goal_digest(config),
+        compute_output_goal_digest(config, base_dir=store_root),
     )
 
 

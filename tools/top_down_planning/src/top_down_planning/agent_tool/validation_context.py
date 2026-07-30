@@ -33,7 +33,7 @@ def compute_plan_approval_actual_digests(
         compute_plan_digest(plan),
         compute_config_digest(config),
         compute_input_digest(config, base_dir=base_dir),
-        compute_output_goal_digest(config),
+        compute_output_goal_digest(config, base_dir=base_dir),
         run_digests.get("context"),
     )
 

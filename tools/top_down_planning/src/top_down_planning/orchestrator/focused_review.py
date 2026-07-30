@@ -156,11 +156,7 @@ class FocusedReviewOrchestrator:
             self._store.load_run(self._run_id),
             self._store.load_resolved_config(self._run_id),
             loop,
-            plan=(
-                self._store.load_plan_model(self._run_id)
-                if loop.type == "focused_plan"
-                else None
-            ),
+            plan=self._store.load_plan_model(self._run_id),
             production=(
                 self._store.load_production(self._run_id)
                 if loop.type == "focused_output"
@@ -399,7 +395,7 @@ def build_focused_review_package(
     config: dict[str, Any],
     loop: ReviewLoop,
     *,
-    plan: Any | None = None,
+    plan: Any,
     production: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Package a bounded focused review for a fresh reviewer session."""
@@ -433,13 +429,13 @@ def build_focused_review_package(
         "scope": dict(loop.scope),
         "target_revision": loop.target_revision,
         "input_refs": list(run_section.get("input_refs") or []),
-        "output_goal": str(run_section.get("output_goal") or ""),
+        "output_goal": plan.output_goal,
         "boundaries": run_section.get("boundaries"),
         "acceptance": run_section.get("acceptance"),
         "digests": digests,
         "tool_instructions": tool_instructions,
     }
-    if plan is not None:
+    if loop.type == "focused_plan":
         limits = planning_limits_from_config(config)
         package["plan_revision"] = plan.revision
         package["plan"] = build_plan_review_snapshot(plan, limits=limits)

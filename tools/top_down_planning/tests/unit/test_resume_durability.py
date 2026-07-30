@@ -73,7 +73,7 @@ def _create_planning_run(
         plan=plan,
         resolved_config=config,
         input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config),
+        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
         workspace=str(store.root),
     )
 
@@ -81,7 +81,7 @@ def _create_planning_run(
     provider.script_turn(done_events(signal="continue", text="planning turn"))
     session_id = provider.start_primary_session(
         "planner",
-        build_planner_context_manifest(run_id, run, config),
+        build_planner_context_manifest(run_id, run, config, plan),
     )
     list(provider.stream_events(session_id))
 
@@ -153,7 +153,7 @@ def _create_production_run(
         plan=plan,
         resolved_config=config,
         input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config),
+        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
         phase=PRODUCTION,
         workspace=str(store.root),
     )
@@ -167,6 +167,7 @@ def _create_production_run(
             run_id,
             run,
             config,
+            plan,
             plan_revision=0,
             production=store.load_production(run_id),
         ),
@@ -441,7 +442,7 @@ def test_resume_cli_stream_json_for_completed_run(tmp_path: Path) -> None:
         plan=plan,
         resolved_config=config,
         input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config),
+        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
         phase="output_validated",
         workspace=str(store.root),
     )
@@ -484,7 +485,7 @@ def test_resume_completed_rejected_whole_plan_review_does_not_restart(
         plan=plan,
         resolved_config=config,
         input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config),
+        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
         phase=WHOLE_PLAN_REVIEW,
         workspace=str(store.root),
     )
@@ -561,7 +562,7 @@ def test_resume_plan_validated_allows_missing_producer_session(tmp_path: Path) -
         plan=plan,
         resolved_config=config,
         input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config),
+        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
         phase=PLAN_VALIDATED,
         workspace=str(store.root),
     )
@@ -618,7 +619,7 @@ def test_resume_plan_amendment_without_pending_request_fails(tmp_path: Path) -> 
         plan=plan,
         resolved_config=config,
         input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config),
+        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
         phase="plan_amendment",
         workspace=str(store.root),
     )

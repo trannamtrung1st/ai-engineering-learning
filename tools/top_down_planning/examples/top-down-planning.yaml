@@ -4,7 +4,8 @@
 #   tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
 #
 # Path resolution:
-#   Relative paths in the YAML resolve against the process working directory.
+#   Relative paths (run.workspace, runtime.runs_dir, run.input_refs,
+#   run.output_goal_file) resolve against the process working directory.
 #
 # Stub provider is for scripted tests only (provider.name=stub + script_turn()).
 # Agent discoverability:
@@ -24,6 +25,8 @@ run:
   input_refs:
     - tools/top_down_planning/README.md
   output_goal: "Produce the requested project output while preserving the declared scope and satisfying the approved plan."
+  # Alternatively, use a file-backed goal (mutually exclusive with output_goal):
+  # output_goal_file: tools/top_down_planning/examples/output-goal.md
   boundaries: []
   acceptance: []
 

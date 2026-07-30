@@ -67,6 +67,7 @@ class PlanningPhaseOrchestrator:
                 self._run_id,
                 run,
                 config,
+                self._store.load_plan_model(self._run_id),
             )
             session_id = self._provider.start_primary_session("planner", manifest)
             run = _persist_session_id(self._store, self._run_id, session_id)
@@ -310,6 +311,7 @@ def build_planner_context_manifest(
     run_id: str,
     run: dict[str, Any],
     config: dict[str, Any],
+    plan: Any,
 ) -> dict[str, Any]:
     """Package planner prompt context and tool usage instructions."""
 
@@ -323,7 +325,7 @@ def build_planner_context_manifest(
         "run_id": run_id,
         "phase": PLANNING,
         "input_refs": list(run_section.get("input_refs") or []),
-        "output_goal": str(run_section.get("output_goal") or ""),
+        "output_goal": plan.output_goal,
         "stop_hint": planning.get("stop_hint", DEFAULT_CONFIG["planning"]["stop_hint"]),
         "planning_limits": {
             "max_depth": limits.max_depth,

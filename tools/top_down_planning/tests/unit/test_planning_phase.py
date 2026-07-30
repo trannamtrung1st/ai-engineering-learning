@@ -149,10 +149,11 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
     config = store.load_resolved_config("run-planning")
     from top_down_planning.orchestrator.planning import build_planner_context_manifest
 
+    plan = store.load_plan_model("run-planning")
     provider.script_turn(done_events(signal="continue", text="planning turn"))
     session_id = provider.start_primary_session(
         "planner",
-        build_planner_context_manifest("run-planning", run, config),
+        build_planner_context_manifest("run-planning", run, config, plan),
     )
     list(provider.stream_events(session_id))
 

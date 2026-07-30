@@ -197,9 +197,10 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "run": {
                 "type": "object",
                 "description": (
-                    "Run inputs and goals. Relative paths in input_refs resolve "
-                    "against the process working directory (or run.workspace when "
-                    "set)."
+                    "Run inputs and goals. Relative paths in input_refs and "
+                    "output_goal_file resolve against the process working "
+                    "directory (or run.workspace when set). Use either "
+                    "output_goal (inline) or output_goal_file (path), not both."
                 ),
                 "properties": {
                     "workspace": {
@@ -211,7 +212,21 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                         ),
                     },
                     "input_refs": {"type": "array", "items": {"type": "string"}},
-                    "output_goal": {"type": "string"},
+                    "output_goal": {
+                        "type": "string",
+                        "description": (
+                            "Inline output goal text. Mutually exclusive with "
+                            "output_goal_file."
+                        ),
+                    },
+                    "output_goal_file": {
+                        "type": "string",
+                        "description": (
+                            "Path to a UTF-8 file containing the output goal. "
+                            "Resolved against run.workspace (or process cwd). "
+                            "Mutually exclusive with output_goal."
+                        ),
+                    },
                     "boundaries": {"type": "array", "items": {"type": "string"}},
                     "acceptance": {"type": "array", "items": {"type": "string"}},
                 },

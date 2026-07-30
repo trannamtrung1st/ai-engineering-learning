@@ -106,14 +106,6 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
             code="digest_mismatch",
         )
 
-    expected_goal = compute_output_goal_digest(config)
-    actual_goal = stored.get("output_goal")
-    if actual_goal != expected_goal:
-        raise ResumeError(
-            "output goal digest mismatch; refusing to resume with changed goal",
-            code="digest_mismatch",
-        )
-
     try:
         base_dir = run_workspace(run)
     except ValueError as exc:
@@ -121,6 +113,15 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
             str(exc),
             code="missing_workspace",
         ) from exc
+
+    expected_goal = compute_output_goal_digest(config, base_dir=base_dir)
+    actual_goal = stored.get("output_goal")
+    if actual_goal != expected_goal:
+        raise ResumeError(
+            "output goal digest mismatch; refusing to resume with changed goal",
+            code="digest_mismatch",
+        )
+
     expected_input = compute_input_digest(config, base_dir=base_dir)
     actual_input = stored.get("input")
     if actual_input != expected_input:
