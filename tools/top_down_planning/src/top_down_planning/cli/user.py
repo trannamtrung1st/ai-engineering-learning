@@ -29,8 +29,11 @@ from top_down_planning.domain.validators import (
     ValidationMode,
     validate_plan,
 )
+from top_down_planning.orchestrator import PlanningPhaseOrchestrator, ProviderRunError
+from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
+from top_down_planning.provider import create_provider
 
 
 def handle_run_command(args: Namespace) -> None:
@@ -76,24 +79,54 @@ def handle_run_command(args: Namespace) -> None:
         resolved_config=resolved,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        workspace=str(base_dir),
     )
 
+    provider = create_provider(resolved, workspace=base_dir)
+    try:
+        result = PlanningPhaseOrchestrator(store, run_id, provider).run()
+    except ProviderRunError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="provider_run_error",
+        )
+
+    run_record = store.load_run(run_id)
     payload = {
-        "ok": True,
+        "ok": result.ok,
         "run_id": run_id,
         "revision": run_record["revision"],
         "phase": run_record["phase"],
+        "status": run_record.get("status"),
+        "outcome": run_record.get("outcome"),
         "config_digest": run_record["digests"]["config"],
-        "next_phase": "planning orchestration not implemented",
+        "session_id": result.session_id,
+        "agent_turns": result.agent_turns,
+        "expansion_iterations": result.expansion_iterations,
     }
+    if result.reason:
+        payload["reason"] = result.reason
+
+    exit_code = 0 if result.ok else 1
     if args.stream_json:
-        emit_payload(payload, exit_code=2)
-    message = (
-        f"Created run {run_id} (phase={run_record['phase']}, "
-        f"config_digest={run_record['digests']['config']}).\n"
-        "Planning orchestration is not implemented yet."
-    )
-    emit_message(message, exit_code=2)
+        emit_payload(payload, exit_code=exit_code)
+
+    if result.ok and result.phase == WHOLE_PLAN_REVIEW:
+        message = (
+            f"Run {run_id} completed planning construction "
+            f"(phase={WHOLE_PLAN_REVIEW}, session={result.session_id}, "
+            f"turns={result.agent_turns})."
+        )
+    elif not result.ok:
+        message = (
+            f"Run {run_id} stopped during planning: {result.reason} "
+            f"(outcome={result.outcome})."
+        )
+    else:
+        message = f"Run {run_id} phase={result.phase} status={result.status}."
+    emit_message(message, exit_code=exit_code)
 
 
 def handle_resume_command(args: Namespace) -> None:
@@ -116,24 +149,68 @@ def handle_resume_command(args: Namespace) -> None:
             code="run_not_found",
         )
 
+    phase = str(run.get("phase") or "")
+    if phase == WHOLE_PLAN_REVIEW:
+        payload = {
+            "ok": True,
+            "run_id": args.run,
+            "phase": phase,
+            "status": run.get("status"),
+            "message": "planning construction complete; whole-plan review not started",
+        }
+        if args.stream_json:
+            emit_payload(payload)
+        emit_message(
+            f"Run {args.run} completed planning construction (phase={WHOLE_PLAN_REVIEW}).",
+        )
+        return
+
+    if phase != PLANNING:
+        emit_error_message(
+            f"resume for phase {phase!r} is not implemented yet",
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="not_implemented",
+        )
+
+    config = store.load_resolved_config(args.run)
+    workspace = _run_workspace(run)
+    provider = create_provider(config, workspace=workspace)
+    try:
+        result = PlanningPhaseOrchestrator(store, args.run, provider).run()
+    except ProviderRunError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="provider_run_error",
+        )
+
+    run = store.load_run(args.run)
     payload = {
-        "ok": False,
+        "ok": result.ok,
         "run_id": args.run,
         "phase": run.get("phase"),
         "status": run.get("status"),
-        "error": {
-            "code": "not_implemented",
-            "message": "orchestration resume is not implemented yet",
-        },
+        "outcome": run.get("outcome"),
+        "session_id": result.session_id,
     }
+    if result.reason:
+        payload["reason"] = result.reason
+    exit_code = 0 if result.ok else 1
     if args.stream_json:
-        emit_payload(payload, exit_code=2)
-    emit_error_message(
-        f"Run {args.run} loaded; orchestration resume is not implemented yet.",
-        exit_code=2,
-        stream_json=False,
-        code="not_implemented",
-    )
+        emit_payload(payload, exit_code=exit_code)
+    if result.ok:
+        emit_message(
+            f"Resumed run {args.run} to phase {run.get('phase')} "
+            f"(session={result.session_id}).",
+            exit_code=exit_code,
+        )
+    else:
+        emit_message(
+            f"Resumed run {args.run} stopped: {result.reason} (outcome={result.outcome}).",
+            exit_code=exit_code,
+        )
 
 
 def handle_status_command(args: Namespace) -> None:
@@ -372,3 +449,10 @@ def _blocking_unresolved_findings(review: dict[str, Any]) -> list[str]:
         if finding_id is not None:
             unresolved.append(str(finding_id))
     return unresolved
+
+
+def _run_workspace(run: dict[str, Any]) -> Path | None:
+    workspace = run.get("workspace")
+    if workspace is None:
+        return None
+    return Path(str(workspace))

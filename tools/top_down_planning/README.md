@@ -30,9 +30,9 @@ provider:
 ```
 
 - `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json`). Session ids are the provider chat ids returned from the CLI stream (persist via `get_session_reference`).
-- `stub` — deterministic scripted turns for tests; requires `script_turn()` before each turn.
+- `stub` — deterministic scripted turns for tests; call `script_turn()` before each provider turn.
 
-Tests and orchestrator integration use `provider.name=stub` by default. Live Cursor is optional (smoke test skips when the CLI is missing).
+Use `provider.name=stub` in tests and local orchestration runs. Production runs default to `cursor`.
 
 ## Import boundaries
 
@@ -55,7 +55,7 @@ Configuration precedence: built-in defaults → YAML file → repeated `--set pa
 
 Run operational `status` values (proposal §15): `running`, `paused`, `completed`, `failed`. Quality `outcome` values: `accepted`, `rejected`, `blocked` (set only by orchestrator outcome resolution).
 
-`tdp run` creates the run store artifacts then exits before planning orchestration is wired. `tdp resume` loads the run and exits until resume orchestration is wired.
+`tdp run` creates the run store, starts the primary planner session, and drives planning construction until the planner signals `candidate_plan_ready` or a planning limit is hit. On success the run transitions to phase `whole_plan_review`. `tdp resume` continues an in-progress `planning` phase using the persisted `primary_planner_session_id`.
 
 ## Agent CLI
 

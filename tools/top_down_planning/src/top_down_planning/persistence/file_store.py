@@ -38,9 +38,10 @@ def new_run_record(
     plan_digest: str,
     context_digest: str | None = None,
     phase: str = "planning",
+    workspace: str | None = None,
 ) -> dict[str, Any]:
     now = _utc_now()
-    return {
+    record = {
         "id": run_id,
         "revision": 0,
         "status": "running",
@@ -57,9 +58,16 @@ def new_run_record(
             "primary_planner_session_id": None,
             "primary_producer_session_id": None,
         },
+        "planning": {
+            "agent_turns": 0,
+            "expansion_iterations": 0,
+        },
         "created_at": now,
         "updated_at": now,
     }
+    if workspace is not None:
+        record["workspace"] = workspace
+    return record
 
 
 def _require_revision_field(payload: dict[str, Any], label: str) -> int:
@@ -97,6 +105,7 @@ class FileRunStore:
         context_digest: str | None = None,
         phase: str = "planning",
         production: dict[str, Any] | None = None,
+        workspace: str | None = None,
     ) -> dict[str, Any]:
         if not input_digest or not output_goal_digest:
             raise PersistenceError("input_digest and output_goal_digest are required")
@@ -116,6 +125,7 @@ class FileRunStore:
             plan_digest=plan_digest,
             context_digest=context_digest,
             phase=phase,
+            workspace=workspace,
         )
 
         run_path.mkdir(parents=True)

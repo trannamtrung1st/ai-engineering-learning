@@ -5,15 +5,20 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from argparse import Namespace
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from top_down_planning.cli.user import handle_run_command
 from top_down_planning.config import (
     ConfigError,
     compute_input_digest,
     resolve_config,
 )
+from top_down_planning.orchestrator import PlanningPhaseResult
+from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import compute_config_digest
 
 
@@ -104,27 +109,36 @@ def test_cli_run_persists_resolved_config_and_status_reads_run(tmp_path: Path) -
     )
     runs_dir = tmp_path / "runs"
 
-    run_result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
-            "run",
-            "--config",
-            str(config_path),
-            "--set",
-            "planning.max_depth=5",
-            "--runs-dir",
-            str(runs_dir),
-            "--stream-json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+    mock_result = PlanningPhaseResult(
+        ok=True,
+        phase=WHOLE_PLAN_REVIEW,
+        status="running",
+        outcome=None,
+        session_id="stub-session-1",
+        agent_turns=1,
+        expansion_iterations=0,
     )
-    assert run_result.returncode == 2, run_result.stderr
-    run_payload = json.loads(run_result.stdout)
-    run_id = run_payload["run_id"]
+    with (
+        patch("top_down_planning.cli.user.create_provider", return_value=MagicMock()),
+        patch(
+            "top_down_planning.cli.user.PlanningPhaseOrchestrator"
+        ) as mock_orchestrator,
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        mock_orchestrator.return_value.run.return_value = mock_result
+        handle_run_command(
+            Namespace(
+                config=str(config_path),
+                set=["planning.max_depth=5", "provider.name=stub"],
+                runs_dir=str(runs_dir),
+                stream_json=True,
+            )
+        )
+    assert exit_info.value.code == 0
+
+    run_dirs = list(runs_dir.iterdir())
+    assert len(run_dirs) == 1
+    run_id = run_dirs[0].name
 
     status_result = subprocess.run(
         [
