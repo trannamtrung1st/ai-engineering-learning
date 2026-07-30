@@ -53,10 +53,10 @@ def test_dependency_cycle_returns_full_path() -> None:
 
     issue = dependency_cycle_issue(plan)
     assert issue is not None
-    assert issue.issue == "dependency_cycle"
+    assert issue.code == "dependency_cycle"
     assert issue.path == ["item-first", "item-second", "item-first"]
     assert issue.to_dict() == {
-        "issue": "dependency_cycle",
+        "code": "dependency_cycle",
         "path": ["item-first", "item-second", "item-first"],
     }
 

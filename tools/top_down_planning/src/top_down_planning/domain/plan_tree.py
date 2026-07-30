@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.domain.errors import InvalidMutationError, UnknownItemError
@@ -26,11 +27,43 @@ def active_children_of(plan: Plan, parent_id: str | None) -> list[PlanItem]:
     return siblings
 
 
+@dataclass(frozen=True)
+class TraversalWalk:
+    rows: list[tuple[str, str]]
+    duplicate_ids: list[str]
+
+
+def walk_active_tree(plan: Plan) -> TraversalWalk:
+    """Depth-first preorder walk; tolerates corrupt trees without infinite recursion."""
+
+    rows: list[tuple[str, str]] = []
+    duplicate_ids: list[str] = []
+    seen_global: set[str] = set()
+    visiting: set[str] = set()
+
+    def walk(parent_id: str | None, prefix: str) -> None:
+        for index, child in enumerate(children_of(plan, parent_id), start=1):
+            if child.id in visiting or child.id in seen_global:
+                if child.id not in duplicate_ids:
+                    duplicate_ids.append(child.id)
+                continue
+            visiting.add(child.id)
+            seen_global.add(child.id)
+            number = f"{prefix}{index}" if prefix else str(index)
+            rows.append((child.id, number))
+            walk(child.id, f"{number}.")
+            visiting.remove(child.id)
+
+    walk(None, "")
+    return TraversalWalk(rows=rows, duplicate_ids=duplicate_ids)
+
+
 def serialized_plan_items(plan: Plan) -> list[dict[str, Any]]:
     """Serialize items: active tree order first, then inactive audit records."""
 
-    active_ids = {item_id for item_id, _ in display_traversal(plan)}
-    ordered = [plan.items[item_id].to_dict() for item_id, _ in display_traversal(plan)]
+    walk = walk_active_tree(plan)
+    active_ids = {item_id for item_id, _ in walk.rows}
+    ordered = [plan.items[item_id].to_dict() for item_id, _ in walk.rows]
     inactive = sorted(
         (item for item in plan.items.values() if item.id not in active_ids),
         key=lambda item: item.id,
@@ -45,10 +78,17 @@ def clone_plan(plan: Plan) -> Plan:
 
 def item_depth(plan: Plan, item_id: str) -> int:
     depth = 0
+    seen: set[str] = {item_id}
     current = plan.items.get(item_id)
     while current is not None and current.parent_id is not None:
+        parent_id = current.parent_id
+        if parent_id in seen:
+            break
+        seen.add(parent_id)
         depth += 1
-        current = plan.items.get(current.parent_id)
+        current = plan.items.get(parent_id)
+        if current is None:
+            break
     return depth
 
 
@@ -59,29 +99,44 @@ def children_of(plan: Plan, parent_id: str | None) -> list[PlanItem]:
 
 def descendants_of(plan: Plan, item_id: str) -> set[str]:
     found: set[str] = set()
+    visiting: set[str] = set()
 
     def walk(node_id: str) -> None:
+        if node_id in visiting:
+            return
+        visiting.add(node_id)
         for child in active_children_of(plan, node_id):
             found.add(child.id)
             walk(child.id)
+        visiting.remove(node_id)
 
     walk(item_id)
     return found
 
 
+def find_hierarchy_cycle(plan: Plan, item_id: str) -> list[str] | None:
+    if item_id not in plan.items:
+        return None
+
+    path = [item_id]
+    seen = {item_id}
+    current = plan.items[item_id]
+    while current.parent_id is not None:
+        parent_id = current.parent_id
+        if parent_id in seen:
+            cycle_start = path.index(parent_id)
+            return path[cycle_start:] + [parent_id]
+        if parent_id not in plan.items:
+            return None
+        path.append(parent_id)
+        seen.add(parent_id)
+        current = plan.items[parent_id]
+    return None
+
+
 def display_traversal(plan: Plan) -> list[tuple[str, str]]:
     """Depth-first preorder traversal returning (item_id, display_number)."""
-
-    rows: list[tuple[str, str]] = []
-
-    def walk(parent_id: str | None, prefix: str) -> None:
-        for index, child in enumerate(children_of(plan, parent_id), start=1):
-            number = f"{prefix}{index}" if prefix else str(index)
-            rows.append((child.id, number))
-            walk(child.id, f"{number}.")
-
-    walk(None, "")
-    return rows
+    return list(walk_active_tree(plan).rows)
 
 
 def resolve_placement_index(

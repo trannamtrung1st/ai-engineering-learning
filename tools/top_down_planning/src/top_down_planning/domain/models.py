@@ -158,7 +158,6 @@ class ApplyResult:
     id_map: dict[str, str] = field(default_factory=dict)
     changed_item_ids: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    issues: list[str] = field(default_factory=list)
     budgets: list[PlanningBudget] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -167,6 +166,5 @@ class ApplyResult:
             "id_map": dict(self.id_map),
             "changed_item_ids": list(self.changed_item_ids),
             "warnings": list(self.warnings),
-            "issues": list(self.issues),
             "budgets": [budget.to_dict() for budget in self.budgets],
         }

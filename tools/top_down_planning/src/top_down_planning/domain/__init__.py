@@ -35,7 +35,11 @@ from top_down_planning.domain.models import (
     Scope,
 )
 from top_down_planning.domain.mutations import apply_operations
-from top_down_planning.domain.plan_tree import display_traversal
+from top_down_planning.domain.plan_tree import (
+    display_traversal,
+    find_hierarchy_cycle,
+    walk_active_tree,
+)
 from top_down_planning.domain.readiness import (
     DeadlockReport,
     ReadyView,
@@ -47,10 +51,18 @@ from top_down_planning.domain.readiness import (
     is_terminal_item,
     resolve_satisfaction,
 )
+from top_down_planning.domain.validators import (
+    DigestBundle,
+    ReviewState,
+    ValidationIssue,
+    ValidationResult,
+    validate_plan,
+)
 
 __all__ = [
     "ApplyResult",
     "DeadlockReport",
+    "DigestBundle",
     "DependencyCycleError",
     "DependencyCycleIssue",
     "DispositionMap",
@@ -61,6 +73,7 @@ __all__ = [
     "PlanningBudget",
     "PlanningLimits",
     "ReadyView",
+    "ReviewState",
     "RevisionConflictError",
     "SATISFIED_DISPOSITIONS",
     "SatisfactionResult",
@@ -68,6 +81,8 @@ __all__ = [
     "TERMINAL_DISPOSITIONS",
     "TerminalDisposition",
     "UnknownItemError",
+    "ValidationIssue",
+    "ValidationResult",
     "active_dependencies",
     "active_dependency_edges",
     "apply_operations",
@@ -76,10 +91,13 @@ __all__ = [
     "detect_deadlock",
     "display_traversal",
     "find_dependency_cycle",
+    "find_hierarchy_cycle",
     "is_applicable_item",
     "is_dependency_satisfied",
     "is_satisfied_disposition",
     "is_terminal_disposition",
     "is_terminal_item",
     "resolve_satisfaction",
+    "validate_plan",
+    "walk_active_tree",
 ]

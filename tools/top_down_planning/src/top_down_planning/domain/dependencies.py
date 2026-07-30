@@ -12,11 +12,11 @@ from top_down_planning.domain.plan_tree import is_active_item
 
 @dataclass(frozen=True)
 class DependencyCycleIssue:
-    issue: Literal["dependency_cycle"]
+    code: Literal["dependency_cycle"]
     path: list[str]
 
     def to_dict(self) -> dict[str, Any]:
-        return {"issue": self.issue, "path": list(self.path)}
+        return {"code": self.code, "path": list(self.path)}
 
 
 def active_dependency_edges(plan: Plan) -> dict[str, list[str]]:
@@ -67,7 +67,7 @@ def dependency_cycle_issue(plan: Plan) -> DependencyCycleIssue | None:
     cycle = find_dependency_cycle(plan)
     if cycle is None:
         return None
-    return DependencyCycleIssue(issue="dependency_cycle", path=cycle)
+    return DependencyCycleIssue(code="dependency_cycle", path=cycle)
 
 
 def assert_no_dependency_cycles(plan: Plan) -> None:
