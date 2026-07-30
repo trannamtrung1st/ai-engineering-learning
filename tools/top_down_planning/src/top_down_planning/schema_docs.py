@@ -196,7 +196,20 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "version": {"type": "integer"},
             "run": {
                 "type": "object",
+                "description": (
+                    "Run inputs and goals. Relative paths in input_refs resolve "
+                    "against the process working directory (or run.workspace when "
+                    "set)."
+                ),
                 "properties": {
+                    "workspace": {
+                        "type": "string",
+                        "description": (
+                            "Provider workspace root. Relative paths resolve "
+                            "against the process working directory. Defaults to "
+                            "the process working directory when omitted."
+                        ),
+                    },
                     "input_refs": {"type": "array", "items": {"type": "string"}},
                     "output_goal": {"type": "string"},
                     "boundaries": {"type": "array", "items": {"type": "string"}},

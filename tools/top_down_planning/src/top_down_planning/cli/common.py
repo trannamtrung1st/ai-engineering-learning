@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from top_down_planning.config import ConfigError, resolve_config
+from top_down_planning.config.paths import resolve_path
 from top_down_planning.persistence import FileRunStore
 
 RunsDirSource = Literal["cli", "environment", "config", "default"]
@@ -69,10 +70,8 @@ def resolve_runs_dir(
         return ResolvedRunsDir(Path(env_value).resolve(), "environment")
 
     if config_value is not None and str(config_value).strip():
-        configured = Path(str(config_value).strip())
-        if configured.is_absolute():
-            return ResolvedRunsDir(configured.resolve(), "config")
-        return ResolvedRunsDir((base / configured).resolve(), "config")
+        configured = resolve_path(str(config_value).strip(), cwd=base)
+        return ResolvedRunsDir(configured, "config")
 
     return ResolvedRunsDir((base / "runs").resolve(), "default")
 
@@ -145,6 +144,35 @@ def store_diagnostics_payload(
     if run_id is not None:
         payload["run_path"] = str(resolved.path / run_id)
     return payload
+
+
+def run_startup_diagnostics_payload(
+    *,
+    cwd: Path,
+    config_path: Path,
+    workspace: Path,
+    resolved_runs: ResolvedRunsDir,
+    run_id: str | None = None,
+) -> dict[str, str]:
+    """Path diagnostics printed once at ``tdp run`` startup."""
+
+    payload = {
+        "working_directory": str(cwd),
+        "config_file": str(config_path),
+        "workspace": str(workspace),
+        **store_diagnostics_payload(resolved_runs, run_id=run_id),
+    }
+    return payload
+
+
+def format_run_startup_diagnostics(payload: Mapping[str, str]) -> str:
+    return (
+        f"Working directory: {payload['working_directory']}\n"
+        f"Config file: {payload['config_file']}\n"
+        f"Workspace: {payload['workspace']}\n"
+        f"Runs root: {payload['runs_root']}\n"
+        f"Runs root source: {payload['runs_root_source']}"
+    )
 
 
 def emit_payload(payload: dict[str, Any], *, exit_code: int = 0) -> None:

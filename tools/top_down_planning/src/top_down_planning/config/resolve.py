@@ -69,7 +69,7 @@ def resolve_config(
 
 
 def compute_input_digest(config: dict[str, Any], *, base_dir: Path) -> str:
-    """Digest input references relative to the config file directory."""
+    """Digest input references relative to the resolved workspace directory."""
 
     refs = list((config.get("run") or {}).get("input_refs") or [])
     return compute_input_refs_digest(refs, base_dir=base_dir)

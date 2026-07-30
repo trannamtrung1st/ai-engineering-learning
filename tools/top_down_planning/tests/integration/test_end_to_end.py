@@ -438,7 +438,7 @@ def test_example_config_and_stub_instructions_are_present(tmp_path: Path) -> Non
 
     readme_text = readme.read_text(encoding="utf-8")
     assert "provider.name=stub" in readme_text
-    assert "examples/top-down-planning.yaml" in readme_text
+    assert "tools/top_down_planning/examples/top-down-planning.yaml" in readme_text
 
     from top_down_planning.config import resolve_config
 

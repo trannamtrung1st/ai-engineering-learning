@@ -12,4 +12,4 @@ def run_workspace(run: dict[str, Any]) -> Path:
     workspace = run.get("workspace")
     if workspace is None or not str(workspace).strip():
         raise ValueError("run workspace is required")
-    return Path(str(workspace))
+    return Path(str(workspace)).resolve()

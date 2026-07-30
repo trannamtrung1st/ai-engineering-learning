@@ -46,7 +46,13 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     run_parser = subparsers.add_parser("run", help="Start a new planning run.")
-    run_parser.add_argument("--config", help="YAML configuration file.")
+    run_parser.add_argument(
+        "--config",
+        help=(
+            "YAML configuration file. Config location does not affect path "
+            "resolution; relative paths resolve from the process working directory."
+        ),
+    )
     run_parser.add_argument(
         "--set",
         action="append",
@@ -60,7 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument("--run", help="Run id.")
     resume_parser.add_argument(
         "--config",
-        help="YAML configuration file (uses runtime.runs_dir when locating the store).",
+        help=(
+            "YAML configuration file. Uses runtime.runs_dir (resolved from process "
+            "cwd) when locating the store."
+        ),
     )
     _add_operational_flags(resume_parser)
 
@@ -68,7 +77,10 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser.add_argument("--run", help="Run id.")
     status_parser.add_argument(
         "--config",
-        help="YAML configuration file (uses runtime.runs_dir when locating the store).",
+        help=(
+            "YAML configuration file. Uses runtime.runs_dir (resolved from process "
+            "cwd) when locating the store."
+        ),
     )
     _add_operational_flags(status_parser)
 
@@ -76,7 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("--run", help="Run id.")
     inspect_parser.add_argument(
         "--config",
-        help="YAML configuration file (uses runtime.runs_dir when locating the store).",
+        help=(
+            "YAML configuration file. Uses runtime.runs_dir (resolved from process "
+            "cwd) when locating the store."
+        ),
     )
     inspect_parser.add_argument(
         "--view",
@@ -91,7 +106,10 @@ def build_parser() -> argparse.ArgumentParser:
     validate_parser.add_argument("--run", help="Run id.")
     validate_parser.add_argument(
         "--config",
-        help="YAML configuration file (uses runtime.runs_dir when locating the store).",
+        help=(
+            "YAML configuration file. Uses runtime.runs_dir (resolved from process "
+            "cwd) when locating the store."
+        ),
     )
     _add_operational_flags(validate_parser)
 

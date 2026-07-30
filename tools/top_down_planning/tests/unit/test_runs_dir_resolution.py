@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -262,18 +261,22 @@ runtime:
 
 
 def test_create_provider_receives_tdp_runs_dir_env(tmp_path: Path) -> None:
-    from core_tools.provider.cursor import CursorProvider
+    from top_down_planning.cli.common import ResolvedRunsDir
+    from top_down_planning.cli.user import _create_provider_for_run
 
     config = {"provider": {"name": "cursor", "skip_probe": True}}
     runs_path = tmp_path / "runs-store"
-    provider = CursorProvider(
+    resolved_runs = ResolvedRunsDir(runs_path.resolve(), "config")
+
+    with patch("top_down_planning.cli.user.create_provider") as create_provider:
+        _create_provider_for_run(
+            config,
+            workspace=tmp_path,
+            resolved_runs=resolved_runs,
+        )
+
+    create_provider.assert_called_once_with(
         config,
         workspace=tmp_path,
-        skip_probe=True,
-        extra_env={"TDP_RUNS_DIR": str(runs_path.resolve()), "CUSTOM_FLAG": "1"},
+        extra_env={"TDP_RUNS_DIR": str(runs_path.resolve())},
     )
-
-    assert provider._subprocess_env is not None  # noqa: SLF001
-    assert provider._subprocess_env["TDP_RUNS_DIR"] == str(runs_path.resolve())  # noqa: SLF001
-    assert provider._subprocess_env["CUSTOM_FLAG"] == "1"  # noqa: SLF001
-    assert os.environ.get("PATH") == provider._subprocess_env.get("PATH")  # noqa: SLF001

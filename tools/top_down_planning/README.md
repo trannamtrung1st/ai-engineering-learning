@@ -9,14 +9,15 @@ Specification: [`temp/final-top-down-planning-tool-proposal.md`](../../temp/fina
 ```bash
 cd tools/top_down_planning
 python -m pip install -e ../core_tools -e ".[dev]"
+cd ../..
 
 tdp agent help
 tdp agent schema plan-transaction
 tdp agent example expand-branch
 
-tdp run --config examples/top-down-planning.yaml
-tdp status --run <run-id>
-tdp resume --run <run-id>
+tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp status --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
 ```
 
 The default provider is `cursor` (requires the Cursor CLI on PATH). For deterministic
@@ -61,15 +62,40 @@ Production runs default to `cursor`. Use `provider.name=stub` only in unit/integ
 ## User CLI (proposal §20)
 
 ```bash
-tdp run --config examples/top-down-planning.yaml
-tdp run --config examples/top-down-planning.yaml --set planning.max_depth=5
-tdp status --run <run-id>
-tdp inspect --run <run-id> --view tree
-tdp validate --run <run-id>
-tdp resume --run <run-id>
+tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp run --config tools/top_down_planning/examples/top-down-planning.yaml --set planning.max_depth=5
+tdp status --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp inspect --run <run-id> --view tree --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp validate --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
 ```
 
 Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides. Unknown paths in YAML or `--set` are rejected. Resolved configuration is materialized to `<runs-root>/<run-id>/resolved-config.yaml` and included in the run config digest.
+
+### Path resolution
+
+Config files may live anywhere. Relative paths in YAML resolve against the **process working directory**:
+
+- `run.workspace` (defaults to process cwd when omitted)
+- `runtime.runs_dir`
+- `run.input_refs`
+- any other configured filesystem path
+
+Absolute paths are used directly. Launch `tdp` from the intended working directory (for example the repository root).
+
+Example from a repository root:
+
+```bash
+cd /path/to/repo
+
+tdp run --config temp/tdp-configs/tdp-docs.yaml
+
+tdp resume --run <run-id> --config temp/tdp-configs/tdp-docs.yaml
+```
+
+With `run.workspace: .` and `runtime.runs_dir: temp/tdp-configs/runs`, a run launched from `/path/to/repo` uses workspace `/path/to/repo` and runs root `/path/to/repo/temp/tdp-configs/runs` even when the config file is stored under `temp/tdp-configs/`.
+
+`tdp run` prints startup diagnostics: working directory, config file, workspace, runs root, and runs root source.
 
 ### Run store location
 

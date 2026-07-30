@@ -15,9 +15,11 @@ from top_down_planning.cli.common import (
     emit_error_message,
     emit_message,
     emit_payload,
+    format_run_startup_diagnostics,
     open_run_store,
     provider_extra_env,
     resolve_runs_dir_from_args,
+    run_startup_diagnostics_payload,
     store_diagnostics_payload,
 )
 from top_down_planning.config import (
@@ -25,6 +27,7 @@ from top_down_planning.config import (
     compute_input_digest,
     compute_output_goal_digest,
     resolve_config,
+    resolve_workspace,
 )
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.production import has_pending_amendment
@@ -130,8 +133,9 @@ def handle_run_command(args: Namespace) -> None:
         )
 
     run_id = f"run-{uuid.uuid4().hex[:12]}"
-    base_dir = config_path.parent
-    input_digest = compute_input_digest(resolved, base_dir=base_dir)
+    cwd = Path.cwd().resolve()
+    workspace = resolve_workspace(resolved, cwd=cwd)
+    input_digest = compute_input_digest(resolved, base_dir=workspace)
     output_goal_digest = compute_output_goal_digest(resolved)
     plan = _initial_plan(run_id, resolved)
 
@@ -153,7 +157,7 @@ def handle_run_command(args: Namespace) -> None:
         resolved_config=resolved,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
-        workspace=str(base_dir),
+        workspace=str(workspace),
         store={
             "resolved_root": str(resolved_runs.path),
             "resolution_source": resolved_runs.source,
@@ -162,7 +166,7 @@ def handle_run_command(args: Namespace) -> None:
 
     provider = _create_provider_for_run(
         resolved,
-        workspace=base_dir,
+        workspace=workspace,
         resolved_runs=resolved_runs,
     )
     try:
@@ -171,7 +175,13 @@ def handle_run_command(args: Namespace) -> None:
         _handle_provider_run_error(store, run_id, exc, stream_json=args.stream_json)
 
     run_record = store.load_run(run_id)
-    diagnostics = store_diagnostics_payload(resolved_runs, run_id=run_id)
+    diagnostics = run_startup_diagnostics_payload(
+        cwd=cwd,
+        config_path=config_path,
+        workspace=workspace,
+        resolved_runs=resolved_runs,
+        run_id=run_id,
+    )
     payload = {
         "ok": result.ok,
         "run_id": run_id,
@@ -207,8 +217,7 @@ def handle_run_command(args: Namespace) -> None:
         message = f"Run {run_id} phase={result.phase} status={result.status}."
     message = (
         f"{message}\n"
-        f"Runs root: {resolved_runs.path}\n"
-        f"Resolved from: {resolved_runs.source}\n"
+        f"{format_run_startup_diagnostics(diagnostics)}\n"
         f"Run path: {resolved_runs.path / run_id}"
     )
     emit_message(message, exit_code=exit_code)
@@ -527,6 +536,7 @@ def handle_status_command(args: Namespace) -> None:
         )
 
     diagnostics = store_diagnostics_payload(resolved_runs, run_id=args.run)
+    workspace = str(run.get("workspace") or "")
     payload = {
         "ok": True,
         "run": {
@@ -537,6 +547,7 @@ def handle_status_command(args: Namespace) -> None:
             "outcome": run.get("outcome"),
             "plan_revision": plan.get("revision"),
             "digests": dict(run.get("digests") or {}),
+            "workspace": workspace,
         },
         **diagnostics,
     }
@@ -550,6 +561,7 @@ def handle_status_command(args: Namespace) -> None:
         f"  outcome: {run.get('outcome')}",
         f"  revision: {run['revision']}",
         f"  plan_revision: {plan.get('revision')}",
+        f"  workspace: {workspace}",
         f"  runs_root: {resolved_runs.path}",
         f"  runs_root_source: {resolved_runs.source}",
         f"  run_path: {resolved_runs.path / args.run}",

@@ -87,19 +87,21 @@ def test_override_values_parse_yaml_types(tmp_path: Path) -> None:
 
 
 def test_input_digest_uses_file_content_when_ref_exists(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    readme = workspace / "README.md"
+    readme.write_text("alpha", encoding="utf-8")
     config_dir = tmp_path / "cfg"
     config_dir.mkdir()
-    readme = config_dir / "README.md"
-    readme.write_text("alpha", encoding="utf-8")
     config_path = write_config(
         config_dir / "base.yaml",
         "run:\n  output_goal: Goal.\n  input_refs:\n    - README.md\n",
     )
     resolved = resolve_config(config_path)
-    digest_once = compute_input_digest(resolved, base_dir=config_dir)
+    digest_once = compute_input_digest(resolved, base_dir=workspace)
 
     readme.write_text("beta", encoding="utf-8")
-    digest_twice = compute_input_digest(resolved, base_dir=config_dir)
+    digest_twice = compute_input_digest(resolved, base_dir=workspace)
     assert digest_once != digest_twice
 
 

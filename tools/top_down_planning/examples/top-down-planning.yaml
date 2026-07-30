@@ -1,7 +1,10 @@
 # Example Top Down Planning configuration (proposal §14).
 #
-# User CLI:
-#   tdp run --config examples/top-down-planning.yaml
+# From the repository root:
+#   tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
+#
+# Path resolution:
+#   Relative paths in the YAML resolve against the process working directory.
 #
 # Stub provider is for scripted tests only (provider.name=stub + script_turn()).
 # Agent discoverability:
@@ -10,8 +13,6 @@
 #   tdp agent example expand-branch
 #
 # Run store (optional):
-#   runtime.runs_dir sets the root directory for all runs. Relative paths resolve
-#   against the process working directory, not the config file directory.
 #   Precedence: --runs-dir > $TDP_RUNS_DIR > runtime.runs_dir > ./runs
 version: 1
 
@@ -19,8 +20,9 @@ runtime:
   runs_dir: .tdp/runs
 
 run:
+  workspace: .
   input_refs:
-    - README.md
+    - tools/top_down_planning/README.md
   output_goal: "Produce the requested project output while preserving the declared scope and satisfying the approved plan."
   boundaries: []
   acceptance: []
