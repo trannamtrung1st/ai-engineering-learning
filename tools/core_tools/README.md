@@ -10,7 +10,7 @@ Cross-product infrastructure shared by agent orchestration tools in this monorep
 | `core_tools.config` | Deep merge, YAML config load, `--set` override parsing, workspace paths, resource/skill loading, allowlist validation |
 | `core_tools.persistence` | Atomic file writes, content digests, minimal YAML helpers, optimistic revision helpers, cross-platform advisory file locks (`fcntl` on Unix, `msvcrt` on Windows) |
 | `core_tools.cli` | Structured CLI output, request loading, runs-dir resolution |
-| `core_tools.observability` | Structured `ConsoleEvent` model, `EventSink` protocol, redaction, colorized stderr console renderer (category blocks: `[category]` prefix on the first line only, optional timestamp prefix; all lines in a block share category styling), JSONL sinks, agent text sentence streaming (`AgentTextStreamController`) |
+| `core_tools.observability` | Structured `ConsoleEvent` model, `EventSink` protocol, redaction, colorized stderr console renderer (discrete category blocks vs incremental `thinking`/`response` deltas; explicit `\n` in agent text breaks lines within a block), JSONL sinks (thinking/response aggregated per block), agent text delta streaming (`AgentTextStreamController`) |
 | `core_tools.schema` | Minimal JSON Schema validation for published contracts |
 
 ## What stays in product packages

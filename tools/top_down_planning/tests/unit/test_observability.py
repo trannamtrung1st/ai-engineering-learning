@@ -49,7 +49,7 @@ def test_map_audit_event_maps_planning_candidate_ready() -> None:
     assert mapped.fields["plan_revision"] == 2
 
 
-def test_provider_bridge_streams_thinking_sentences_not_empty_lines() -> None:
+def test_provider_bridge_streams_thinking_deltas_not_empty_lines() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(sink=collector)
     bridge = ProviderToConsoleBridge(context)
@@ -58,10 +58,10 @@ def test_provider_bridge_streams_thinking_sentences_not_empty_lines() -> None:
         bridge.handle({"type": "thinking", "text": chunk})
 
     thinking = [event.message for event in collector.events if event.category == "thinking"]
-    assert thinking == ["Let me inspect the config."]
+    assert thinking == ["Let me inspect the config.", " I'll read the schema next"]
     bridge.handle(_normalized_tool_call(tool="read", request={"path": "schema.md"}))
     thinking = [event.message for event in collector.events if event.category == "thinking"]
-    assert thinking == ["Let me inspect the config.", "I'll read the schema next"]
+    assert thinking == ["Let me inspect the config.", " I'll read the schema next"]
 
 
 def test_provider_bridge_ignores_empty_thinking_events() -> None:
@@ -96,7 +96,7 @@ def test_provider_bridge_streams_cumulative_thinking_chunks() -> None:
     bridge.handle({"type": "thinking", "text": "Hello world. Done."})
 
     thinking = [event.message for event in collector.events if event.category == "thinking"]
-    assert thinking == ["Hello world.", "Done."]
+    assert thinking == ["Hello", " world.", " Done."]
 
 
 def test_provider_bridge_emits_tool_start_summary_only() -> None:

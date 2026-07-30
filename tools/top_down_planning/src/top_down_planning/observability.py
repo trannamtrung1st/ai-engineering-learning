@@ -163,24 +163,22 @@ class ProviderToConsoleBridge:
         session_id = event.get("session_id")
         session = str(session_id) if session_id else None
         if event_type == "thinking":
-            self._emit_sentences(
+            self._emit_delta(
                 "thinking",
                 self._agent_text.ingest_thinking(str(event.get("text") or "")),
                 session_id=session,
             )
             return
         if event_type == "assistant":
-            flushed_thinking, response = self._agent_text.ingest_response(
-                str(event.get("text") or "")
+            self._emit_delta(
+                "response",
+                self._agent_text.ingest_response(str(event.get("text") or "")),
+                session_id=session,
             )
-            self._emit_sentences("thinking", flushed_thinking, session_id=session)
-            self._emit_sentences("response", response, session_id=session)
             return
         if event_type == "tool_call":
             if is_tool_call_start(event):
-                flushed_thinking, flushed_response = self._agent_text.flush_for_tool_call()
-                self._emit_sentences("thinking", flushed_thinking, session_id=session)
-                self._emit_sentences("response", flushed_response, session_id=session)
+                self._agent_text.reset_turn_buffers()
                 self._emit_tool_event("tool:start", event, session_id=session)
             elif is_tool_call_end(event):
                 self._emit_tool_event("tool:end", event, session_id=session)
@@ -207,9 +205,7 @@ class ProviderToConsoleBridge:
             )
             return
         if event_type == "done":
-            flushed_thinking, flushed_response = self._agent_text.flush_for_done()
-            self._emit_sentences("thinking", flushed_thinking, session_id=session)
-            self._emit_sentences("response", flushed_response, session_id=session)
+            self._agent_text.reset_turn_buffers()
             self._seen_tool_starts.clear()
             self._seen_tool_ends.clear()
             if event.get("is_error"):
@@ -222,21 +218,22 @@ class ProviderToConsoleBridge:
                 )
             return
 
-    def _emit_sentences(
+    def _emit_delta(
         self,
         category: str,
-        sentences: list[str],
+        delta: str,
         *,
         session_id: str | None,
     ) -> None:
-        for sentence in sentences:
-            self._context.emit(
-                ConsoleEvent(
-                    category=category,
-                    message=sentence,
-                    session_id=session_id,
-                )
+        if not delta:
+            return
+        self._context.emit(
+            ConsoleEvent(
+                category=category,
+                message=delta,
+                session_id=session_id,
             )
+        )
 
     def _emit_tool_event(
         self,

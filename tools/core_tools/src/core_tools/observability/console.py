@@ -1,9 +1,12 @@
 """Colorized stderr console renderer.
 
-Category blocks group consecutive events with the same category (and
-multi-line bodies). The ``[category]`` prefix is printed on the first line of
-each block; an optional ``[timestamp]`` precedes it when enabled. Continuation
-lines omit the prefix but keep the category style when color is enabled.
+Discrete events print ``[category]`` once per block (optional ``[timestamp]`` when
+enabled). Multi-line discrete messages omit the prefix on continuation lines.
+
+``thinking`` and ``response`` events are incremental text deltas: characters are
+written without trailing newlines until the category changes or a discrete event
+interrupts the stream. Explicit ``\\n`` in agent text produces line breaks within
+the block.
 """
 
 from __future__ import annotations
@@ -70,7 +73,8 @@ class ColorizedConsoleSink:
             force_terminal=self._use_color,
             color_system="standard" if self._use_color else None,
         )
-        self._last_category: str | None = None
+        self._streaming_line_open = False
+        self._streaming_block_category: str | None = None
 
     def emit(self, event: ConsoleEvent) -> None:
         safe = redact_event(
@@ -78,17 +82,14 @@ class ColorizedConsoleSink:
             policy=self._policy,
             output_level=self._log_level,  # type: ignore[arg-type]
         )
+        if safe.category in _STREAMING_CATEGORIES:
+            self._emit_stream_delta(safe)
+            return
+
+        self._end_streaming_line()
         tag = category_tag(safe.category)
         body = _format_message(safe)
-        if safe.category in _STREAMING_CATEGORIES:
-            show_prefix = safe.category != self._last_category
-        else:
-            show_prefix = True
-        prefix = (
-            _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
-            if show_prefix
-            else ""
-        )
+        prefix = _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
         lines = body.splitlines() or [""]
         style = _CATEGORY_STYLES.get(safe.category, "")
 
@@ -99,7 +100,39 @@ class ColorizedConsoleSink:
                 text.stylize(style)
             self._console.print(text, soft_wrap=True)
 
-        self._last_category = safe.category
+    def _emit_stream_delta(self, event: ConsoleEvent) -> None:
+        if not event.message:
+            return
+
+        if (
+            self._streaming_block_category is not None
+            and self._streaming_block_category != event.category
+        ):
+            self._end_streaming_line()
+
+        tag = category_tag(event.category)
+        show_prefix = self._streaming_block_category != event.category
+        style = _CATEGORY_STYLES.get(event.category, "")
+
+        if show_prefix:
+            prefix = _build_prefix(event.ts, tag, show_timestamps=self._show_timestamps)
+            prefix_text = Text(prefix)
+            if self._use_color and style:
+                prefix_text.stylize(style)
+            self._console.print(prefix_text, end="", soft_wrap=True)
+        delta_text = Text(event.message)
+        if self._use_color and style:
+            delta_text.stylize(style)
+        self._console.print(delta_text, end="", soft_wrap=True)
+
+        self._streaming_line_open = True
+        self._streaming_block_category = event.category
+
+    def _end_streaming_line(self) -> None:
+        if self._streaming_line_open:
+            self._stream.write("\n")
+            self._streaming_line_open = False
+        self._streaming_block_category = None
 
 
 def _build_prefix(ts: datetime, tag: str, *, show_timestamps: bool) -> str:

@@ -79,17 +79,17 @@ tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-pla
 | `--color auto\|always\|never` | from config / `auto` | Color mode (`--no-color` ⇒ `never`) |
 | `--log-level quiet\|normal\|verbose\|trace` | from config / `normal` | Verbosity |
 | `--log-format console\|jsonl` | from config / `console` | Human console vs JSONL on stderr |
-| `--agent-text` / `--no-agent-text` | from config / on | Show thinking/response text (streamed sentence-by-sentence) |
+| `--agent-text` / `--no-agent-text` | from config / on | Show thinking/response text (streamed incrementally) |
 | `--timestamps` / `--no-timestamps` | from config / off | Category prefix on the first line of each event; optional timestamp when enabled (streaming `thinking`/`response` blocks share one prefix) |
 | `--agent-transcript` / `--no-agent-transcript` | from config / off | Persist redacted provider transcript |
 
 Observability can be set in YAML under `observability` (same file as orchestration config). Precedence for presentation settings: built-in defaults → YAML → `--set` → explicitly supplied dedicated CLI flag (omitted flags do not override YAML). Changing observability or `runtime.runs_dir` does not invalidate resume; semantic config digests exclude those fields.
 
-Provider thinking and response text is normalized from Cursor `stream-json` (`text` field or `message.content`), deduplicated when cumulative, and printed one complete sentence at a time. Empty thinking chunks are dropped. Remaining text flushes before tool calls and turn completion.
+Provider thinking and response text is normalized from Cursor `stream-json` (`text` field or `message.content`), deduplicated when cumulative, and printed incrementally as new characters arrive. Empty thinking chunks are dropped. Explicit `\n` in agent text breaks lines within a thinking/response block; multiple sentences without newlines stay on one line until another category interrupts.
 
 Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools are summarized from the nested `tool_call` payload; structured Top Down Planning agent tools summarize from `tool` and `request` (for example `plan_apply @r0 3 ops`). `tool_call` events with `subtype: started` or `completed` reach the console bridge; `tool_result` events and duplicate lifecycle events for the same `call_id` are dropped.
 
-Console output prints `[category]` once per category block (optional `[timestamp]` when `show_timestamps` is enabled). Multi-line messages and consecutive events with the same category omit the prefix on continuation lines but keep category styling until the category changes.
+Console output prints `[category]` once per discrete event block (optional `[timestamp]` when `show_timestamps` is enabled). `thinking` and `response` stream incrementally with one prefix per block; explicit `\n` in agent text breaks lines within the block.
 
 `events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens, secrets, and oversized payloads are redacted at every log level.
 

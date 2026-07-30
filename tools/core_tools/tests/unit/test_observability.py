@@ -43,10 +43,9 @@ def test_consecutive_streaming_category_events_share_prefix() -> None:
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never")
     sink.emit(ConsoleEvent(category="thinking", message="First sentence."))
-    sink.emit(ConsoleEvent(category="thinking", message="Second sentence."))
+    sink.emit(ConsoleEvent(category="thinking", message=" Second sentence."))
     lines = stderr.getvalue().splitlines()
-    assert lines[0].startswith("[thinking] First sentence.")
-    assert lines[1] == "Second sentence."
+    assert lines == ["[thinking] First sentence. Second sentence."]
 
 
 def test_show_timestamps_prefix_when_enabled() -> None:
@@ -93,7 +92,7 @@ def test_multiline_and_continuation_lines_share_category_style() -> None:
         )
     )
     sink.emit(ConsoleEvent(category="thinking", message="First sentence."))
-    sink.emit(ConsoleEvent(category="thinking", message="Second sentence."))
+    sink.emit(ConsoleEvent(category="thinking", message=" Second sentence."))
     output = stderr.getvalue()
     # Rich dim style for thinking and blue for session:start.
     assert "\x1b[2m" in output
@@ -139,6 +138,20 @@ def test_filtered_sink_respects_quiet_and_no_agent_text() -> None:
     sink.emit(ConsoleEvent(category="response", message="hello"))
     sink.emit(ConsoleEvent(category="error", message="boom"))
     assert [event.category for event in collector.events] == ["error"]
+
+
+def test_jsonl_sink_aggregates_thinking_and_response_deltas(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    sink = JsonlEventSink(path)
+    sink.emit(ConsoleEvent(category="thinking", message="Hello"))
+    sink.emit(ConsoleEvent(category="thinking", message=" world."))
+    sink.emit(ConsoleEvent(category="tool:start", message="read README.md"))
+    sink.close()
+    lines = path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    thinking = json.loads(lines[0])
+    assert thinking["category"] == "thinking"
+    assert thinking["message"] == "Hello world."
 
 
 def test_jsonl_sink_writes_valid_redacted_json(tmp_path) -> None:
