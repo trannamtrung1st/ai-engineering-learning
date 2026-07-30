@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,7 @@ def create_provider(
     workspace: Path | None = None,
     runner: ProcessRunner | None = None,
     extra_env: Mapping[str, str] | None = None,
+    on_provider_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> Provider:
     """Create a provider adapter from resolved configuration."""
 
@@ -25,7 +26,7 @@ def create_provider(
     name = str(provider_cfg["name"]).strip().lower()
 
     if name == "stub":
-        return StubProvider()
+        return StubProvider(on_provider_event=on_provider_event)
 
     if name == "cursor":
         return CursorProvider(
@@ -33,6 +34,7 @@ def create_provider(
             workspace=workspace,
             runner=runner,
             extra_env=extra_env,
+            on_provider_event=on_provider_event,
         )
 
     raise ProviderError(f"unknown provider.name: {name}")

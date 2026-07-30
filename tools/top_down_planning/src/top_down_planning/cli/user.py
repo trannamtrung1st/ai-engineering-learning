@@ -52,8 +52,15 @@ from top_down_planning.orchestrator.phases import (
     WHOLE_OUTPUT_REVIEW,
 )
 from top_down_planning.workspace import run_workspace
+from top_down_planning.observability import (
+    ObservabilityContext,
+    ObservabilityOptions,
+    build_observability_context,
+    wrap_store_with_observability,
+)
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
 from top_down_planning.persistence.digests import compute_output_digest
+from core_tools.observability import ConsoleEvent
 from core_tools.provider import create_provider
 
 
@@ -81,31 +88,63 @@ def _open_run_store_for_command(
         )
 
 
+def _observability_options_from_args(
+    args: Namespace,
+    *,
+    resolved_config: dict[str, Any] | None = None,
+) -> ObservabilityOptions:
+    config = resolved_config or {}
+    observability_cfg = config.get("observability") or {}
+    color = "never" if getattr(args, "no_color", False) else getattr(args, "color", "auto")
+    log_level = getattr(args, "log_level", None) or observability_cfg.get("log_level", "normal")
+    agent_transcript = bool(
+        getattr(args, "agent_transcript", False)
+        or observability_cfg.get("agent_transcript", False)
+    )
+    return ObservabilityOptions(
+        log_level=log_level,
+        log_format=getattr(args, "log_format", "console"),
+        color=color,
+        show_timestamps=getattr(args, "timestamps", True),
+        no_agent_text=getattr(args, "no_agent_text", False),
+        agent_transcript=agent_transcript,
+    )
+
+
 def _create_provider_for_run(
     config: dict[str, Any],
     *,
     workspace: Path,
     resolved_runs: Any,
+    on_provider_event: Any | None = None,
 ) -> Any:
     return create_provider(
         config,
         workspace=workspace,
         extra_env=provider_extra_env(resolved_runs),
+        on_provider_event=on_provider_event,
     )
 
 
 def _build_run_engine(
     store: FileRunStore,
     resolved_runs: Any,
+    *,
+    observability: ObservabilityContext,
 ) -> RunEngine:
     def create_provider(config: dict[str, Any], workspace: Path) -> Any:
         return _create_provider_for_run(
             config,
             workspace=workspace,
             resolved_runs=resolved_runs,
+            on_provider_event=observability.provider_callback(),
         )
 
-    return RunEngine(store, create_provider=create_provider)
+    return RunEngine(
+        wrap_store_with_observability(store, observability),
+        create_provider=create_provider,
+        observability=observability,
+    )
 
 
 def handle_run_command(args: Namespace) -> None:
@@ -179,17 +218,30 @@ def handle_run_command(args: Namespace) -> None:
         resolved_runs=resolved_runs,
         run_id=run_id,
     )
-    if not args.stream_json:
-        print(
-            "Starting run (blocking on provider until the target milestone).\n"
-            f"{format_run_startup_diagnostics(diagnostics)}\n"
-            f"Run path: {resolved_runs.path / run_id}",
-            flush=True,
-        )
-
+    observability = build_observability_context(
+        options=_observability_options_from_args(args, resolved_config=resolved),
+        run_id=run_id,
+        run_dir=resolved_runs.path / run_id,
+    )
     until = getattr(args, "until", "plan") or "plan"
-    engine = _build_run_engine(store, resolved_runs)
-    continuation = engine.continue_run(run_id, until=until)
+    observability.emit(
+        ConsoleEvent(
+            category="session:start",
+            message=(
+                "Starting run (blocking on provider until the target milestone).\n"
+                f"{format_run_startup_diagnostics(diagnostics)}\n"
+                f"Run path: {resolved_runs.path / run_id}"
+            ),
+            fields={"until": until},
+            run_id=run_id,
+        )
+    )
+
+    try:
+        engine = _build_run_engine(store, resolved_runs, observability=observability)
+        continuation = engine.continue_run(run_id, until=until)
+    finally:
+        observability.close()
 
     run_record = store.load_run(run_id)
     last_step = continuation.steps[-1].details if continuation.steps else {}
@@ -296,15 +348,34 @@ def handle_resume_command(args: Namespace) -> None:
         return
 
     until = getattr(args, "until", None)
-    engine = _build_run_engine(store, resolved_runs)
-    if until:
-        continuation = engine.continue_run(args.run, until=until)
-    else:
-        continuation = engine.continue_run(
-            args.run,
-            until="completed",
-            single_step=True,
+    try:
+        resolved = store.load_resolved_config(args.run)
+    except RunNotFoundError:
+        resolved = None
+    observability = build_observability_context(
+        options=_observability_options_from_args(args, resolved_config=resolved),
+        run_id=args.run,
+        run_dir=resolved_runs.path / args.run,
+    )
+    observability.emit(
+        ConsoleEvent(
+            category="session:resume",
+            message=f"Resuming run {args.run}",
+            run_id=args.run,
         )
+    )
+    try:
+        engine = _build_run_engine(store, resolved_runs, observability=observability)
+        if until:
+            continuation = engine.continue_run(args.run, until=until)
+        else:
+            continuation = engine.continue_run(
+                args.run,
+                until="completed",
+                single_step=True,
+            )
+    finally:
+        observability.close()
 
     run = store.load_run(args.run)
     payload = {

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from core_tools.observability import ConsoleEvent
 from top_down_planning.domain.production import has_pending_amendment
+from top_down_planning.observability import ObservabilityContext
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.failure import mark_run_failed
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
@@ -75,9 +78,11 @@ class RunEngine:
         store: RunStore,
         *,
         create_provider: ProviderFactory,
+        observability: ObservabilityContext | None = None,
     ) -> None:
         self._store = store
         self._create_provider = create_provider
+        self._observability = observability
 
     def continue_run(
         self,
@@ -86,11 +91,12 @@ class RunEngine:
         until: str = "plan",
         single_step: bool = False,
     ) -> RunContinuationResult:
+        started_at = time.monotonic()
         steps: list[RunStepResult] = []
         while True:
             run = self._store.load_run(run_id)
             if not single_step and _target_reached(run, until):
-                return RunContinuationResult(
+                result = RunContinuationResult(
                     ok=True,
                     run_id=run_id,
                     phase=str(run.get("phase") or ""),
@@ -98,10 +104,12 @@ class RunEngine:
                     outcome=run.get("outcome"),
                     steps=steps,
                 )
+                self._emit_done(result, started_at=started_at)
+                return result
 
             status = str(run.get("status") or "")
             if status in {"completed", "failed"}:
-                return RunContinuationResult(
+                result = RunContinuationResult(
                     ok=status != "failed",
                     run_id=run_id,
                     phase=str(run.get("phase") or ""),
@@ -110,11 +118,13 @@ class RunEngine:
                     steps=steps,
                     reason="run already terminated",
                 )
+                self._emit_done(result, started_at=started_at)
+                return result
 
             try:
                 preconditions = validate_resume_preconditions(self._store, run_id)
             except ResumeError as exc:
-                return RunContinuationResult(
+                result = RunContinuationResult(
                     ok=False,
                     run_id=run_id,
                     phase=str(run.get("phase") or ""),
@@ -123,6 +133,8 @@ class RunEngine:
                     steps=steps,
                     reason=exc.message,
                 )
+                self._emit_done(result, started_at=started_at)
+                return result
 
             production = self._store.load_production(run_id)
             phase = preconditions.phase
@@ -201,7 +213,7 @@ class RunEngine:
                         reason=result.reason,
                     )
                 else:
-                    return RunContinuationResult(
+                    result = RunContinuationResult(
                         ok=False,
                         run_id=run_id,
                         phase=phase,
@@ -210,9 +222,11 @@ class RunEngine:
                         steps=steps,
                         reason=f"cannot continue unsupported phase: {phase!r}",
                     )
+                    self._emit_done(result, started_at=started_at)
+                    return result
             except ProviderRunError as exc:
                 mark_run_failed(self._store, run_id, message=str(exc))
-                return RunContinuationResult(
+                result = RunContinuationResult(
                     ok=False,
                     run_id=run_id,
                     phase=phase,
@@ -221,12 +235,14 @@ class RunEngine:
                     steps=steps,
                     reason=str(exc),
                 )
+                self._emit_done(result, started_at=started_at)
+                return result
             finally:
                 provider.terminate_all_sessions()
 
             steps.append(step)
             if not step.ok:
-                return RunContinuationResult(
+                result = RunContinuationResult(
                     ok=False,
                     run_id=run_id,
                     phase=step.phase,
@@ -235,9 +251,11 @@ class RunEngine:
                     steps=steps,
                     reason=step.reason,
                 )
+                self._emit_done(result, started_at=started_at)
+                return result
             if single_step:
                 run = self._store.load_run(run_id)
-                return RunContinuationResult(
+                result = RunContinuationResult(
                     ok=True,
                     run_id=run_id,
                     phase=str(run.get("phase") or ""),
@@ -245,3 +263,30 @@ class RunEngine:
                     outcome=run.get("outcome"),
                     steps=steps,
                 )
+                self._emit_done(result, started_at=started_at)
+                return result
+
+    def _emit(self, event: ConsoleEvent) -> None:
+        if self._observability is not None:
+            self._observability.emit(event)
+
+    def _emit_done(self, result: RunContinuationResult, *, started_at: float) -> None:
+        duration_ms = int((time.monotonic() - started_at) * 1000)
+        self._emit(
+            ConsoleEvent(
+                category="done",
+                message=(
+                    f"run {'completed' if result.ok else 'stopped'} "
+                    f"(phase={result.phase}, status={result.status})"
+                ),
+                fields={
+                    "ok": result.ok,
+                    "phase": result.phase,
+                    "status": result.status,
+                    "outcome": result.outcome,
+                    "duration_ms": duration_ms,
+                    "reason": result.reason,
+                },
+                run_id=result.run_id,
+            )
+        )

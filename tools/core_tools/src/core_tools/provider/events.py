@@ -9,13 +9,16 @@ ProviderEventType = Literal[
     "system",
     "user",
     "assistant",
+    "thinking",
     "tool_call",
     "tool_result",
     "error",
     "done",
+    "retry",
 ]
 
 _ASSISTANT_TYPES = frozenset({"assistant"})
+_THINKING_TYPES = frozenset({"thinking"})
 _DONE_TYPES = frozenset({"result"})
 _ERROR_TYPES = frozenset({"error"})
 
@@ -56,6 +59,11 @@ def normalize_cursor_event(raw: dict[str, Any]) -> dict[str, Any] | None:
         normalized["text"] = _extract_text(raw.get("message"))
         return normalized
 
+    if event_type in _THINKING_TYPES:
+        normalized["type"] = "thinking"
+        normalized["text"] = _extract_text(raw.get("message")) or _extract_text(raw)
+        return normalized
+
     if event_type in _DONE_TYPES:
         normalized["type"] = "done"
         normalized["subtype"] = raw.get("subtype")
@@ -72,12 +80,49 @@ def normalize_cursor_event(raw: dict[str, Any]) -> dict[str, Any] | None:
         normalized["text"] = _extract_text(raw.get("message")) or json.dumps(
             raw, sort_keys=True
         )
+        _enrich_tool_event(normalized, raw)
         return normalized
 
     return None
 
 
+def _enrich_tool_event(normalized: dict[str, Any], raw: dict[str, Any]) -> None:
+    tool = raw.get("tool") or raw.get("tool_name") or raw.get("name")
+    if tool is not None:
+        normalized["tool"] = str(tool)
+
+    call_id = (
+        raw.get("call_id")
+        or raw.get("tool_call_id")
+        or raw.get("id")
+        or _nested_call_id(raw)
+    )
+    if call_id is not None:
+        normalized["call_id"] = str(call_id)
+
+    request = raw.get("request") or raw.get("arguments") or raw.get("input")
+    if isinstance(request, dict):
+        normalized["request"] = request
+    elif request is not None:
+        normalized["request"] = {"value": request}
+
+    if normalized.get("type") == "tool_result":
+        normalized["ok"] = not bool(raw.get("is_error"))
+        if raw.get("duration_ms") is not None:
+            normalized["duration_ms"] = int(raw["duration_ms"])
+
+
+def _nested_call_id(raw: dict[str, Any]) -> str | None:
+    for key in ("tool_call", "call"):
+        nested = raw.get(key)
+        if isinstance(nested, dict) and nested.get("id"):
+            return str(nested["id"])
+    return None
+
+
 def _extract_text(message: Any) -> str | None:
+    if isinstance(message, str):
+        return message
     if not isinstance(message, dict):
         return None
     content = message.get("content")

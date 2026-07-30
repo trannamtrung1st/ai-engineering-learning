@@ -41,7 +41,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "name": "cursor",
         "skip_probe": False,
     },
-        "limits": {
+    "observability": {
+        "log_level": "normal",
+        "agent_transcript": False,
+    },
+    "limits": {
         "planning": {
             "max_items_added": 20,
             "max_agent_turns": 40,
@@ -122,5 +126,7 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "limits.amendment.max_requests",
         "limits.amendment.max_revision_cycles_per_request",
         "limits.provider.max_retries_per_call",
+        "observability.log_level",
+        "observability.agent_transcript",
     }
 )

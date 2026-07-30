@@ -10,6 +10,7 @@ Cross-product infrastructure shared by agent orchestration tools in this monorep
 | `core_tools.config` | Deep merge, YAML config load, `--set` override parsing, workspace paths, resource/skill loading, allowlist validation |
 | `core_tools.persistence` | Atomic file writes, content digests, minimal YAML helpers, optimistic revision helpers |
 | `core_tools.cli` | Structured CLI output, request loading, runs-dir resolution |
+| `core_tools.observability` | Structured `ConsoleEvent` model, `EventSink` protocol, redaction, colorized stderr console renderer, JSONL sinks |
 | `core_tools.schema` | Minimal JSON Schema validation for published contracts |
 
 ## What stays in product packages

@@ -26,6 +26,7 @@ from core_tools.provider.events import (
 from core_tools.provider.process_cleanup import terminate_process_tree
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
+ProviderEventCallback = Callable[[dict[str, Any]], None]
 
 
 def default_process_runner(
@@ -167,6 +168,7 @@ class CursorProvider:
         binary: str | None = None,
         skip_probe: bool = False,
         extra_env: Mapping[str, str] | None = None,
+        on_provider_event: ProviderEventCallback | None = None,
     ) -> None:
         self._config = config
         provider_cfg = config.get("provider") or {}
@@ -184,6 +186,7 @@ class CursorProvider:
             self._probe_binary()
         self._sessions: dict[str, _CursorSession] = {}
         self._active_turn_proc: subprocess.Popen[str] | None = None
+        self._on_provider_event = on_provider_event
 
     def start_primary_session(
         self,
@@ -376,6 +379,15 @@ class CursorProvider:
                 return self._collect_events_once(argv)
             except ProviderTurnError as exc:
                 last_error = exc
+                if attempt < max_retries:
+                    self._emit_provider_event(
+                        {
+                            "type": "retry",
+                            "text": str(exc),
+                            "attempt": attempt + 1,
+                            "max_retries": max_retries,
+                        }
+                    )
                 if attempt >= max_retries:
                     raise
         if last_error is not None:
@@ -402,9 +414,14 @@ class CursorProvider:
                 provider_session_id = str(raw["session_id"])
             normalized = normalize_cursor_event(raw)
             if normalized is not None:
+                self._emit_provider_event(normalized)
                 events.append(normalized)
 
         return events, provider_session_id
+
+    def _emit_provider_event(self, event: dict[str, Any]) -> None:
+        if self._on_provider_event is not None:
+            self._on_provider_event(event)
 
     @staticmethod
     def _build_subprocess_env(

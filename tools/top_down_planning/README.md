@@ -56,6 +56,35 @@ Per-role model selection uses `agent_context.<role>.model`, falling back to `age
 
 Production runs default to `cursor`. Use `provider.name=stub` only in unit/integration tests.
 
+## Console observability
+
+`tdp run` and `tdp resume` always stream progress logs to **stderr** (including with `--stream-json`). Final structured command payloads remain on **stdout**. The reusable observability layer lives in `core_tools.observability`; TDP wires it through CLI flags, provider event callbacks, and an observing run-store decorator that mirrors `events.jsonl` audit records to the console.
+
+```bash
+tdp run --config tools/top_down_planning/examples/top-down-planning.yaml \
+  --log-level verbose --color auto
+
+tdp run --config tools/top_down_planning/examples/top-down-planning.yaml \
+  --stream-json | jq .    # progress on stderr; JSON payload on stdout
+
+tdp run --config tools/top_down_planning/examples/top-down-planning.yaml \
+  --log-format jsonl --no-color
+
+tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml \
+  --agent-transcript   # optional agent-transcript.jsonl under the run dir
+```
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--color auto\|always\|never` | `auto` | Color mode (`--no-color` ⇒ `never`) |
+| `--log-level quiet\|normal\|verbose\|trace` | `normal` | Verbosity |
+| `--log-format console\|jsonl` | `console` | Human console vs JSONL on stderr |
+| `--no-agent-text` | off | Hide thinking/response text |
+| `--timestamps` / `--no-timestamps` | on | Timestamp prefix |
+| `--agent-transcript` | off | Persist redacted provider transcript |
+
+`events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens, secrets, and oversized payloads are redacted at every log level.
+
 ## Import boundaries
 
 - `domain` must not import `cli`, `persistence`, `orchestrator`, or `core_tools`.

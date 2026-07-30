@@ -24,9 +24,43 @@ def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
         help="Emit structured JSON instead of human-readable output.",
     )
     parser.add_argument(
+        "--color",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="Console color mode (default: auto).",
+    )
+    parser.add_argument(
         "--no-color",
         action="store_true",
-        help="Disable color output (reserved for future renderer use).",
+        help="Disable color output (sets --color never).",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["quiet", "normal", "verbose", "trace"],
+        default="normal",
+        help="Console observability verbosity (default: normal).",
+    )
+    parser.add_argument(
+        "--log-format",
+        choices=["console", "jsonl"],
+        default="console",
+        help="Console observability output format (default: console).",
+    )
+    parser.add_argument(
+        "--no-agent-text",
+        action="store_true",
+        help="Hide agent thinking and response text from console output.",
+    )
+    parser.add_argument(
+        "--timestamps",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include timestamps in console output (default: on).",
+    )
+    parser.add_argument(
+        "--agent-transcript",
+        action="store_true",
+        help="Persist redacted agent transcript to agent-transcript.jsonl.",
     )
 
 

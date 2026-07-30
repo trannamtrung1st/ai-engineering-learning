@@ -190,6 +190,82 @@ def test_normalize_cursor_event_maps_result_to_done() -> None:
     assert normalized["text"] == "ok"
 
 
+def test_normalize_cursor_event_enriches_tool_call() -> None:
+    normalized = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "session_id": "chat-1",
+            "tool": "plan_apply",
+            "call_id": "call-12",
+            "request": {"base_revision": 0, "operations": [{}, {}, {}]},
+        }
+    )
+    assert normalized is not None
+    assert normalized["tool"] == "plan_apply"
+    assert normalized["call_id"] == "call-12"
+    assert normalized["request"]["base_revision"] == 0
+
+
+def test_stub_emits_events_before_stream_events_drain() -> None:
+    seen: list[str] = []
+    provider = StubProvider(
+        on_provider_event=lambda event: seen.append(str(event.get("type")))
+    )
+    provider.script_turn(
+        [
+            {"type": "assistant", "text": "hello"},
+            {"type": "done", "subtype": "success", "text": "ok", "is_error": False},
+        ]
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    assert seen == ["assistant", "done"]
+    drained: list[str] = []
+    for event in provider.stream_events(session_id):
+        drained.append(str(event.get("type")))
+    assert drained == ["assistant", "done"]
+
+
+def test_cursor_provider_emits_events_during_collection(tmp_path: Path) -> None:
+    seen: list[str] = []
+    stream_lines = [
+        json.dumps(
+            {
+                "type": "assistant",
+                "session_id": "chat-live",
+                "message": {"content": "working"},
+            }
+        ),
+        json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": "chat-live",
+                "is_error": False,
+                "result": "ok",
+            }
+        ),
+    ]
+
+    def runner(argv: list[str], cwd: Path):
+        for line in stream_lines:
+            yield line
+
+    config = {"provider": {"name": "cursor"}, "limits": {"provider": {"max_retries_per_call": 0}}}
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        config,
+        workspace=tmp_path,
+        runner=runner,
+        binary=str(agent_path),
+        skip_probe=True,
+        on_provider_event=lambda event: seen.append(str(event.get("type"))),
+    )
+    session_id = provider.start_primary_session("planner", {"goal": "build"})
+    assert session_id == "chat-live"
+    assert seen == ["assistant", "done"]
+
+
 def test_resolve_agent_binary_missing_raises() -> None:
     with pytest.raises(ProviderBinaryNotFoundError):
         resolve_agent_binary("/nonexistent/agent-binary")
@@ -240,6 +316,42 @@ def test_cursor_provider_retries_transient_turn_errors(tmp_path: Path) -> None:
     session_id = provider.start_primary_session("planner", {"goal": "build"})
     assert session_id == "chat-retry"
     assert attempts["count"] == 2
+
+
+def test_cursor_provider_emits_retry_events(tmp_path: Path) -> None:
+    seen: list[str] = []
+    attempts = {"count": 0}
+
+    def flaky_runner(argv: list[str], cwd: Path):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise ProviderTurnError("transient failure")
+        yield json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": "chat-retry-emit",
+                "is_error": False,
+                "result": "ok",
+            }
+        )
+
+    config = {
+        "provider": {"name": "cursor"},
+        "limits": {"provider": {"max_retries_per_call": 2}},
+    }
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        config,
+        workspace=tmp_path,
+        runner=flaky_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+        on_provider_event=lambda event: seen.append(str(event.get("type"))),
+    )
+    provider.start_primary_session("planner", {"goal": "build"})
+    assert "retry" in seen
 
 
 @pytest.mark.skipif(

@@ -279,4 +279,5 @@ def test_create_provider_receives_tdp_runs_dir_env(tmp_path: Path) -> None:
         config,
         workspace=tmp_path,
         extra_env={"TDP_RUNS_DIR": str(runs_path.resolve())},
+        on_provider_event=None,
     )

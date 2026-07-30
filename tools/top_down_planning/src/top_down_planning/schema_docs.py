@@ -306,6 +306,17 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                 },
                 "additionalProperties": False,
             },
+            "observability": {
+                "type": "object",
+                "properties": {
+                    "log_level": {
+                        "type": "string",
+                        "enum": ["quiet", "normal", "verbose", "trace"],
+                    },
+                    "agent_transcript": {"type": "boolean"},
+                },
+                "additionalProperties": False,
+            },
             "limits": {
                 "type": "object",
                 "properties": {

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import copy
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
 from core_tools.provider.errors import ProviderSessionError, ProviderTurnError
 from core_tools.provider.events import format_manifest_prompt, format_request_prompt
+
+ProviderEventCallback = Callable[[dict[str, Any]], None]
 
 
 @dataclass
@@ -25,12 +27,17 @@ class _StubSession:
 class StubProvider:
     """Scriptable provider with queueable turn responses."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        on_provider_event: ProviderEventCallback | None = None,
+    ) -> None:
         self._sessions: dict[str, _StubSession] = {}
         self._default_scripts: list[list[dict[str, Any]]] = []
         self._session_scripts: dict[str, list[list[dict[str, Any]]]] = {}
         self._counter = 0
         self._capability_token: str | None = None
+        self._on_provider_event = on_provider_event
 
     def script_turn(self, events: list[dict[str, Any]]) -> None:
         """Queue scripted normalized events for the next turn on any session."""
@@ -136,7 +143,12 @@ class StubProvider:
         for event in scripted:
             normalized = copy.deepcopy(event)
             normalized.setdefault("session_id", session_id)
+            self._emit_provider_event(normalized)
             session.pending_events.append(normalized)
+
+    def _emit_provider_event(self, event: dict[str, Any]) -> None:
+        if self._on_provider_event is not None:
+            self._on_provider_event(event)
 
     def _resolve_script(self, session_id: str) -> list[dict[str, Any]]:
         session_scripts = self._session_scripts.get(session_id)
