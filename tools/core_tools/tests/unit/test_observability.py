@@ -24,7 +24,7 @@ class _CollectSink:
         self.events.append(event)
 
 
-def test_multiline_message_prefixes_first_line_only() -> None:
+def test_category_block_prefix_on_first_line_only() -> None:
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=False)
     sink.emit(
@@ -39,18 +39,28 @@ def test_multiline_message_prefixes_first_line_only() -> None:
     assert lines[2] == "Config file: /tmp/config.yaml"
 
 
-def test_consecutive_same_category_events_share_prefix() -> None:
+def test_consecutive_streaming_category_events_share_prefix() -> None:
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=False)
     sink.emit(ConsoleEvent(category="thinking", message="First sentence."))
     sink.emit(ConsoleEvent(category="thinking", message="Second sentence."))
-    sink.emit(ConsoleEvent(category="tool:start", message="grep foo"))
-    sink.emit(ConsoleEvent(category="tool:start", message="read bar"))
     lines = stderr.getvalue().splitlines()
     assert lines[0].startswith("[thinking] First sentence.")
     assert lines[1] == "Second sentence."
-    assert lines[2].startswith("[tool:start] grep foo")
-    assert lines[3] == "read bar"
+
+
+def test_discrete_category_events_always_show_prefix() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=False)
+    sink.emit(ConsoleEvent(category="tool:start", message="grep foo"))
+    sink.emit(ConsoleEvent(category="tool:start", message="read bar"))
+    sink.emit(ConsoleEvent(category="tool:end", message="grep foo"))
+    sink.emit(ConsoleEvent(category="tool:end", message="read bar"))
+    lines = stderr.getvalue().splitlines()
+    assert lines[0].startswith("[tool:start] grep foo")
+    assert lines[1].startswith("[tool:start] read bar")
+    assert lines[2].startswith("[tool:end] grep foo")
+    assert lines[3].startswith("[tool:end] read bar")
 
 
 def test_category_change_resets_prefix_after_continuous_block() -> None:
@@ -63,6 +73,26 @@ def test_category_change_resets_prefix_after_continuous_block() -> None:
     assert lines[0].startswith("[thinking] Planning.")
     assert lines[1].startswith("[tool:start] read README.md")
     assert lines[2].startswith("[thinking] Continuing.")
+
+
+def test_multiline_and_continuation_lines_share_category_style() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="always", show_timestamps=False)
+    sink.emit(
+        ConsoleEvent(
+            category="session:start",
+            message="Starting run.\nWorking directory: /tmp",
+        )
+    )
+    sink.emit(ConsoleEvent(category="thinking", message="First sentence."))
+    sink.emit(ConsoleEvent(category="thinking", message="Second sentence."))
+    output = stderr.getvalue()
+    # Rich dim style for thinking and blue for session:start.
+    assert "\x1b[2m" in output
+    assert "\x1b[34m" in output
+    lines = output.splitlines()
+    assert all("\x1b[34m" in line for line in lines[:2])
+    assert all("\x1b[2m" in line for line in lines[2:])
 
 
 def test_color_disabled_for_no_color_and_dumb_term() -> None:

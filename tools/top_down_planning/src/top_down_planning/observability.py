@@ -18,7 +18,7 @@ from core_tools.observability import (
     LogLevel,
     NullSink,
 )
-from core_tools.provider.events import is_tool_call_start
+from core_tools.provider.events import is_tool_call_end, is_tool_call_start
 from top_down_planning.persistence.interface import RunStore
 
 
@@ -126,6 +126,7 @@ def build_observability_context(
                         "thinking",
                         "response",
                         "tool:start",
+                        "tool:end",
                         "retry",
                         "error",
                     }
@@ -155,6 +156,7 @@ class ProviderToConsoleBridge:
         self._context = context
         self._agent_text = AgentTextStreamController()
         self._seen_tool_starts: set[str] = set()
+        self._seen_tool_ends: set[str] = set()
 
     def handle(self, event: dict[str, Any]) -> None:
         event_type = str(event.get("type") or "")
@@ -175,25 +177,13 @@ class ProviderToConsoleBridge:
             self._emit_sentences("response", response, session_id=session)
             return
         if event_type == "tool_call":
-            if not is_tool_call_start(event):
-                return
-            flushed_thinking, flushed_response = self._agent_text.flush_for_tool_call()
-            self._emit_sentences("thinking", flushed_thinking, session_id=session)
-            self._emit_sentences("response", flushed_response, session_id=session)
-            summary = str(event.get("summary") or "")
-            if not summary:
-                return
-            key = _tool_start_key(event, summary)
-            if key in self._seen_tool_starts:
-                return
-            self._seen_tool_starts.add(key)
-            self._context.emit(
-                ConsoleEvent(
-                    category="tool:start",
-                    message=summary,
-                    session_id=session,
-                )
-            )
+            if is_tool_call_start(event):
+                flushed_thinking, flushed_response = self._agent_text.flush_for_tool_call()
+                self._emit_sentences("thinking", flushed_thinking, session_id=session)
+                self._emit_sentences("response", flushed_response, session_id=session)
+                self._emit_tool_event("tool:start", event, session_id=session)
+            elif is_tool_call_end(event):
+                self._emit_tool_event("tool:end", event, session_id=session)
             return
         if event_type == "retry":
             self._context.emit(
@@ -221,6 +211,7 @@ class ProviderToConsoleBridge:
             self._emit_sentences("thinking", flushed_thinking, session_id=session)
             self._emit_sentences("response", flushed_response, session_id=session)
             self._seen_tool_starts.clear()
+            self._seen_tool_ends.clear()
             if event.get("is_error"):
                 self._context.emit(
                     ConsoleEvent(
@@ -247,8 +238,31 @@ class ProviderToConsoleBridge:
                 )
             )
 
+    def _emit_tool_event(
+        self,
+        category: str,
+        event: dict[str, Any],
+        *,
+        session_id: str | None,
+    ) -> None:
+        summary = str(event.get("summary") or "")
+        if not summary:
+            return
+        key = _tool_call_key(event, summary)
+        seen = self._seen_tool_starts if category == "tool:start" else self._seen_tool_ends
+        if key in seen:
+            return
+        seen.add(key)
+        self._context.emit(
+            ConsoleEvent(
+                category=category,
+                message=summary,
+                session_id=session_id,
+            )
+        )
 
-def _tool_start_key(event: dict[str, Any], summary: str) -> str:
+
+def _tool_call_key(event: dict[str, Any], summary: str) -> str:
     call_id = event.get("call_id")
     if call_id:
         return f"call:{call_id}"

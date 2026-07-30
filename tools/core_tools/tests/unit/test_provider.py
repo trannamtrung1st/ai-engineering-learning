@@ -18,7 +18,7 @@ from core_tools.provider import (
     normalize_cursor_event,
     resolve_agent_binary,
 )
-from core_tools.provider.events import format_tool_call_summary, is_tool_call_start
+from core_tools.provider.events import format_tool_call_summary, is_tool_call_end, is_tool_call_start
 
 
 def test_stub_start_send_stream_round_trip() -> None:
@@ -271,17 +271,24 @@ def test_normalize_cursor_event_dedupes_call_id_from_fc_id() -> None:
     assert format_tool_call_summary(normalized) == "grep plan_apply"
 
 
-def test_normalize_cursor_event_drops_completed_tool_call() -> None:
-    assert normalize_cursor_event(
+def test_normalize_cursor_event_normalizes_completed_tool_call() -> None:
+    normalized = normalize_cursor_event(
         {
             "type": "tool_call",
             "subtype": "completed",
             "session_id": "chat-1",
+            "call_id": "call_42",
             "tool_call": {
                 "readToolCall": {"args": {"path": "README.md"}},
             },
         }
-    ) is None
+    )
+    assert normalized is not None
+    assert normalized["subtype"] == "completed"
+    assert normalized["call_id"] == "call_42"
+    assert normalized["summary"] == "read README.md"
+    assert is_tool_call_end(normalized) is True
+    assert is_tool_call_start(normalized) is False
 
 
 def test_normalize_cursor_event_drops_tool_result() -> None:

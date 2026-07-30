@@ -1,4 +1,10 @@
-"""Colorized stderr console renderer."""
+"""Colorized stderr console renderer.
+
+Category blocks group consecutive events with the same category (and
+multi-line bodies). The ``[timestamp] [category]`` prefix is printed on the
+first line of each block only; continuation lines omit the prefix but keep the
+category style when color is enabled.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +19,8 @@ from core_tools.observability.color import ColorMode, resolve_color_mode
 from core_tools.observability.events import ConsoleEvent, category_tag
 from core_tools.observability.redaction import RedactionPolicy, redact_event
 
+_STREAMING_CATEGORIES = frozenset({"thinking", "response"})
+
 _CATEGORY_STYLES: dict[str, str] = {
     "phase:start": "cyan",
     "phase:end": "cyan",
@@ -22,6 +30,7 @@ _CATEGORY_STYLES: dict[str, str] = {
     "thinking": "dim",
     "response": "",
     "tool:start": "yellow",
+    "tool:end": "green",
     "review": "magenta",
     "state": "cyan",
     "artifact": "cyan",
@@ -33,7 +42,7 @@ _CATEGORY_STYLES: dict[str, str] = {
 
 
 class ColorizedConsoleSink:
-    """Render ConsoleEvents to stderr with Rich color."""
+    """Render ``ConsoleEvent`` values to stderr with optional Rich styling."""
 
     def __init__(
         self,
@@ -58,6 +67,8 @@ class ColorizedConsoleSink:
             file=self._stream,
             no_color=not self._use_color,
             highlight=False,
+            force_terminal=self._use_color,
+            color_system="standard" if self._use_color else None,
         )
         self._last_category: str | None = None
 
@@ -69,29 +80,24 @@ class ColorizedConsoleSink:
         )
         tag = category_tag(safe.category)
         body = _format_message(safe)
-        show_prefix = safe.category != self._last_category
+        if safe.category in _STREAMING_CATEGORIES:
+            show_prefix = safe.category != self._last_category
+        else:
+            show_prefix = True
         prefix = (
             _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
             if show_prefix
             else ""
         )
         lines = body.splitlines() or [""]
+        style = _CATEGORY_STYLES.get(safe.category, "")
 
-        if self._use_color:
-            style = _CATEGORY_STYLES.get(safe.category, "") if show_prefix else ""
-            first = f"{prefix}{lines[0]}"
-            text = Text(first)
-            if style:
+        for index, line in enumerate(lines):
+            content = f"{prefix}{line}" if index == 0 else line
+            text = Text(content)
+            if self._use_color and style:
                 text.stylize(style)
             self._console.print(text, soft_wrap=True)
-            for line in lines[1:]:
-                self._console.print(line, soft_wrap=True)
-        else:
-            output = f"{prefix}{lines[0]}"
-            if len(lines) > 1:
-                output += "\n" + "\n".join(lines[1:])
-            self._stream.write(output + "\n")
-            self._stream.flush()
 
         self._last_category = safe.category
 

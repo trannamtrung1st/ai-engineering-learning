@@ -114,7 +114,7 @@ def test_provider_bridge_emits_tool_start_summary_only() -> None:
     assert collector.events[0].fields == {}
 
 
-def test_provider_bridge_ignores_completed_tool_calls() -> None:
+def test_provider_bridge_emits_tool_end_for_completed_tool_calls() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(sink=collector)
     bridge = ProviderToConsoleBridge(context)
@@ -122,6 +122,7 @@ def test_provider_bridge_ignores_completed_tool_calls() -> None:
         {
             "type": "tool_call",
             "subtype": "started",
+            "call_id": "call-1",
             "tool_call": {"readToolCall": {"args": {"path": "src/app.ts"}}},
         }
     )
@@ -129,14 +130,17 @@ def test_provider_bridge_ignores_completed_tool_calls() -> None:
         {
             "type": "tool_call",
             "subtype": "completed",
+            "call_id": "call-1",
             "tool_call": {"readToolCall": {"args": {"path": "src/app.ts"}}},
         }
     )
     assert started is not None
-    assert completed is None
+    assert completed is not None
     bridge.handle(started)
-    assert [event.category for event in collector.events] == ["tool:start"]
+    bridge.handle(completed)
+    assert [event.category for event in collector.events] == ["tool:start", "tool:end"]
     assert collector.events[0].message == "read src/app.ts"
+    assert collector.events[1].message == "read src/app.ts"
 
 
 def test_provider_bridge_dedupes_duplicate_tool_call_start() -> None:

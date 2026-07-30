@@ -1022,9 +1022,9 @@ Observability and other presentation settings may be set in YAML under `observab
 
 Agent thinking/response console output uses `core_tools.observability.AgentTextStreamController`: Cursor `stream-json` text is read from `text` or `message.content`, cumulative chunks are deduplicated, complete sentences are emitted as they arrive, and any trailing fragment flushes before tool calls or turn completion. Empty thinking events are not normalized or printed.
 
-Tool invocations print as `[tool:start]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools are summarized from the nested `tool_call` payload; structured Top Down Planning agent tools summarize from `tool` and `request` (for example `plan_apply @r0 3 ops`). Only `tool_call` events with `subtype: started` reach the console bridge; completed tool calls, tool results, and duplicate starts for the same `call_id` are dropped.
+Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools are summarized from the nested `tool_call` payload; structured Top Down Planning agent tools summarize from `tool` and `request` (for example `plan_apply @r0 3 ops`). `tool_call` events with `subtype: started` or `completed` reach the console bridge; `tool_result` events and duplicate lifecycle events for the same `call_id` are dropped.
 
-Console output prints `[timestamp] [category]` once per category block. Multi-line messages and consecutive events with the same category share that prefix; continuation lines are plain text with no prefix or styling until the category changes.
+Console output prints `[timestamp] [category]` once per category block. Multi-line messages and consecutive events with the same category omit the prefix on continuation lines but keep category styling until the category changes.
 
 `tdp run` and `tdp resume` treat Ctrl+C as a cooperative cancel: `RunEngine` calls `terminate_all_sessions()`, emits a `session:cancel` observability event, returns without marking the run failed, and the CLI exits with code 130. With `--stream-json`, the final stdout payload includes `"cancelled": true` and `"reason": "cancelled by user"`.
 

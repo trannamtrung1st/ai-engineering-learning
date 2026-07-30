@@ -69,6 +69,15 @@ def is_tool_call_start(event: dict[str, Any]) -> bool:
     )
 
 
+def is_tool_call_end(event: dict[str, Any]) -> bool:
+    """Return True when a normalized tool_call event completes a tool invocation."""
+
+    return (
+        str(event.get("type") or "") == "tool_call"
+        and str(event.get("subtype") or "") == "completed"
+    )
+
+
 def format_tool_call_summary(event: dict[str, Any]) -> str:
     """Return a concise human-readable summary for a tool invocation."""
 
@@ -143,7 +152,7 @@ def normalize_cursor_event(raw: dict[str, Any]) -> dict[str, Any] | None:
 
     if event_type == "tool_call":
         _enrich_tool_event(normalized, raw)
-        if not is_tool_call_start(normalized):
+        if str(normalized.get("subtype") or "") not in {"started", "completed"}:
             return None
         return normalized
 
