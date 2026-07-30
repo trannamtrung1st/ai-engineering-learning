@@ -41,8 +41,10 @@ from top_down_planning.orchestrator import (
     PlanAmendmentOrchestrator,
     ProductionPhaseOrchestrator,
     ProviderRunError,
+    ResumeError,
     WholeOutputReviewOrchestrator,
     WholePlanReviewOrchestrator,
+    validate_resume_preconditions,
 )
 from top_down_planning.orchestrator.phases import (
     OUTPUT_VALIDATED,
@@ -174,7 +176,17 @@ def handle_resume_command(args: Namespace) -> None:
             code="run_not_found",
         )
 
-    phase = str(run.get("phase") or "")
+    try:
+        preconditions = validate_resume_preconditions(store, args.run)
+    except ResumeError as exc:
+        emit_error_message(
+            exc.message,
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=exc.code,
+        )
+
+    phase = preconditions.phase
     production = store.load_production(args.run)
     if has_pending_amendment(production) and phase != PRODUCTION:
         config = store.load_resolved_config(args.run)
@@ -377,52 +389,53 @@ def handle_resume_command(args: Namespace) -> None:
         emit_message(message, exit_code=exit_code)
         return
 
-    if phase != PLANNING:
-        emit_error_message(
-            f"resume for phase {phase!r} is not implemented yet",
-            exit_code=2,
-            stream_json=args.stream_json,
-            code="not_implemented",
-        )
+    if phase == PLANNING:
+        config = store.load_resolved_config(args.run)
+        workspace = _run_workspace(run)
+        provider = create_provider(config, workspace=workspace)
+        try:
+            result = PlanningPhaseOrchestrator(store, args.run, provider).run()
+        except ProviderRunError as exc:
+            emit_error_message(
+                str(exc),
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="provider_run_error",
+            )
 
-    config = store.load_resolved_config(args.run)
-    workspace = _run_workspace(run)
-    provider = create_provider(config, workspace=workspace)
-    try:
-        result = PlanningPhaseOrchestrator(store, args.run, provider).run()
-    except ProviderRunError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="provider_run_error",
-        )
+        run = store.load_run(args.run)
+        payload = {
+            "ok": result.ok,
+            "run_id": args.run,
+            "phase": run.get("phase"),
+            "status": run.get("status"),
+            "outcome": run.get("outcome"),
+            "session_id": result.session_id,
+        }
+        if result.reason:
+            payload["reason"] = result.reason
+        exit_code = 0 if result.ok else 1
+        if args.stream_json:
+            emit_payload(payload, exit_code=exit_code)
+        if result.ok:
+            emit_message(
+                f"Resumed run {args.run} to phase {run.get('phase')} "
+                f"(session={result.session_id}).",
+                exit_code=exit_code,
+            )
+        else:
+            emit_message(
+                f"Resumed run {args.run} stopped: {result.reason} (outcome={result.outcome}).",
+                exit_code=exit_code,
+            )
+        return
 
-    run = store.load_run(args.run)
-    payload = {
-        "ok": result.ok,
-        "run_id": args.run,
-        "phase": run.get("phase"),
-        "status": run.get("status"),
-        "outcome": run.get("outcome"),
-        "session_id": result.session_id,
-    }
-    if result.reason:
-        payload["reason"] = result.reason
-    exit_code = 0 if result.ok else 1
-    if args.stream_json:
-        emit_payload(payload, exit_code=exit_code)
-    if result.ok:
-        emit_message(
-            f"Resumed run {args.run} to phase {run.get('phase')} "
-            f"(session={result.session_id}).",
-            exit_code=exit_code,
-        )
-    else:
-        emit_message(
-            f"Resumed run {args.run} stopped: {result.reason} (outcome={result.outcome}).",
-            exit_code=exit_code,
-        )
+    emit_error_message(
+        f"cannot resume unsupported phase: {phase!r}",
+        exit_code=2,
+        stream_json=args.stream_json,
+        code="unsupported_phase",
+    )
 
 
 def handle_status_command(args: Namespace) -> None:

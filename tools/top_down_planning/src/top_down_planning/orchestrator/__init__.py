@@ -33,6 +33,7 @@ from top_down_planning.orchestrator.whole_output_review import (
     WholeOutputReviewResult,
     build_whole_output_review_package,
 )
+from top_down_planning.orchestrator.resume import ResumeError, ResumePreconditions, validate_resume_preconditions
 from top_down_planning.orchestrator.whole_plan_review import (
     WholePlanReviewOrchestrator,
     WholePlanReviewResult,
@@ -54,6 +55,8 @@ __all__ = [
     "ProductionPhaseOrchestrator",
     "ProductionPhaseResult",
     "ProviderRunError",
+    "ResumeError",
+    "ResumePreconditions",
     "WHOLE_OUTPUT_REVIEW",
     "WHOLE_PLAN_REVIEW",
     "WholeOutputReviewOrchestrator",
@@ -64,4 +67,5 @@ __all__ = [
     "build_producer_context_manifest",
     "build_whole_output_review_package",
     "build_whole_plan_review_package",
+    "validate_resume_preconditions",
 ]
