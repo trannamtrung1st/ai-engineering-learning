@@ -23,29 +23,27 @@ from tests.helpers import write_config
 
 def _repo_layout(tmp_path: Path) -> dict[str, Path]:
     repo = tmp_path / "repo"
-    config_dir = repo / "temp" / "tdp-configs"
+    config_dir = repo / "configs"
     tools_dir = repo / "tools" / "top_down_planning"
-    plans_dir = repo / "temp" / "plans" / "tdp-docs"
     config_dir.mkdir(parents=True)
     tools_dir.mkdir(parents=True)
-    plans_dir.mkdir(parents=True)
 
     readme = tools_dir / "README.md"
     readme.write_text("tool readme", encoding="utf-8")
-    task = plans_dir / "task.md"
+    task = config_dir / "task.md"
     task.write_text("task brief", encoding="utf-8")
 
     config_path = write_config(
-        config_dir / "tdp-docs.yaml",
+        config_dir / "my-project.yaml",
         """
 runtime:
-  runs_dir: temp/tdp-configs/runs
+  runs_dir: .tdp/runs
 project:
   workspace: .
 run:
   input_refs:
     - tools/top_down_planning/README.md
-    - temp/plans/tdp-docs/task.md
+    - configs/task.md
   output_goal: Deliver docs.
 provider:
   name: stub
@@ -121,15 +119,15 @@ def test_config_parent_does_not_affect_resolved_paths(
         environ={},
     )
 
-    assert config_path.resolve() == repo / "temp" / "tdp-configs" / "tdp-docs.yaml"
+    assert config_path.resolve() == repo / "configs" / "my-project.yaml"
     assert workspace == repo.resolve()
-    assert runs.path == (repo / "temp" / "tdp-configs" / "runs").resolve()
+    assert runs.path == (repo / ".tdp" / "runs").resolve()
     assert runs.source == "config"
 
     digest = compute_input_digest(resolved, base_dir=workspace)
     assert digest
     assert (workspace / "tools" / "top_down_planning" / "README.md").is_file()
-    assert (workspace / "temp" / "plans" / "tdp-docs" / "task.md").is_file()
+    assert (workspace / "configs" / "task.md").is_file()
 
     config_parent_digest = compute_input_digest(
         resolved,
@@ -145,7 +143,7 @@ def test_run_uses_cwd_workspace_not_config_parent(
     layout = _repo_layout(tmp_path)
     repo = layout["repo"]
     config_path = layout["config_path"]
-    runs_root = repo / "temp" / "tdp-configs" / "runs"
+    runs_root = repo / ".tdp" / "runs"
     monkeypatch.chdir(repo)
 
     with patch("top_down_planning.cli.user.create_provider") as create_provider:
@@ -253,7 +251,7 @@ def test_resume_with_config_uses_cwd_runs_dir(
     layout = _repo_layout(tmp_path)
     repo = layout["repo"]
     config_path = layout["config_path"]
-    runs_root = repo / "temp" / "tdp-configs" / "runs"
+    runs_root = repo / ".tdp" / "runs"
     monkeypatch.chdir(repo)
 
     with patch("top_down_planning.cli.user.create_provider") as create_provider:
@@ -356,17 +354,3 @@ def test_resolve_path_absolute_unchanged(tmp_path: Path) -> None:
     absolute.mkdir()
     assert resolve_path(absolute, cwd=tmp_path / "other") == absolute.resolve()
 
-
-def test_command_md_does_not_instruct_copying_config() -> None:
-    command_md = (
-        Path(__file__).resolve().parents[4]
-        / "temp"
-        / "tdp-configs"
-        / "COMMAND.md"
-    )
-    if not command_md.is_file():
-        pytest.skip("COMMAND.md fixture not present")
-    text = command_md.read_text(encoding="utf-8")
-    assert "copy the config" not in text.lower()
-    assert "cp temp/tdp-configs/tdp-docs.yaml" not in text
-    assert "tdp run --config temp/tdp-configs/tdp-docs.yaml" in text

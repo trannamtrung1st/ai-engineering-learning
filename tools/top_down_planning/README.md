@@ -51,7 +51,7 @@ provider:
 
 Per-role model selection uses `agent_context.<role>.model`, falling back to `agent_context.default.model`. `model: auto` means no explicit Cursor `--model` argument.
 
-- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json --trust --approve-mcps --force`). `--force` is required so non-interactive turns can run shell/`tdp agent …` tools; without it those calls are rejected. Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today.
+- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json --trust --approve-mcps --force`). `--force` is required so non-interactive turns can run shell/`tdp agent …` tools; without it those calls are rejected. Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today. After each phase step, `RunEngine` calls `terminate_all_sessions()` so in-flight CLI process trees are stopped and background agent subprocesses are not left running.
 - `stub` — deterministic scripted turns for **tests only**; call `script_turn()` before each provider turn.
 
 Production runs default to `cursor`. Use `provider.name=stub` only in unit/integration tests.
@@ -122,15 +122,27 @@ agent_context:
 
 Example from a repository root:
 
+```yaml
+# configs/my-project.yaml
+runtime:
+  runs_dir: .tdp/runs
+project:
+  workspace: .
+run:
+  input_refs:
+    - configs/task.md
+  output_goal: Deliver the requested output.
+```
+
 ```bash
 cd /path/to/repo
 
-tdp run --config temp/tdp-configs/tdp-docs.yaml
+tdp run --config configs/my-project.yaml
 
-tdp resume --run <run-id> --config temp/tdp-configs/tdp-docs.yaml
+tdp resume --run <run-id> --config configs/my-project.yaml
 ```
 
-With `project.workspace: .` and `runtime.runs_dir: temp/tdp-configs/runs`, a run launched from `/path/to/repo` uses workspace `/path/to/repo` and runs root `/path/to/repo/temp/tdp-configs/runs` even when the config file is stored under `temp/tdp-configs/`.
+With `project.workspace: .` and `runtime.runs_dir: .tdp/runs`, a run launched from `/path/to/repo` uses workspace `/path/to/repo` and runs root `/path/to/repo/.tdp/runs` even when the config file is stored under `configs/`. Config location does not affect workspace or input path resolution.
 
 `tdp run` prints startup diagnostics **before** the first provider turn blocks (unless `--stream-json`): working directory, config file, workspace, runs root, runs root source, and run path. The same diagnostics are repeated in the final status line when planning construction returns.
 

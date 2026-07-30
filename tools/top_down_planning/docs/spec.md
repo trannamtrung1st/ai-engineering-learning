@@ -1059,6 +1059,7 @@ stream_events(session_id)
 get_capabilities()
 get_session_reference(session_id)
 terminate_session(session_id)
+terminate_all_sessions()
 ```
 
 The provider adapter is responsible for:
@@ -1070,6 +1071,7 @@ The provider adapter is responsible for:
 - Working-directory behavior.
 - Native project context integration.
 - Provider-specific rules, skills, and instruction discovery.
+- Terminating in-flight provider subprocesses when orchestration no longer needs them. `terminate_all_sessions()` is called by the run engine after each phase step; the Cursor adapter kills the active CLI process tree so background agent subprocesses are not left running.
 
 The provider should run in the project workspace so existing project context remains naturally available. Explicit context configured by the Top Down Planning tool supplements provider-native context rather than replacing it.
 

@@ -45,3 +45,6 @@ class Provider(Protocol):
 
     def terminate_session(self, session_id: str) -> None:
         """Terminate a provider session when orchestration no longer needs it."""
+
+    def terminate_all_sessions(self) -> None:
+        """Stop in-flight turns and drop tracked provider sessions."""

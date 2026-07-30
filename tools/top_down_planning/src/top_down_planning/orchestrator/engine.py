@@ -221,6 +221,8 @@ class RunEngine:
                     steps=steps,
                     reason=str(exc),
                 )
+            finally:
+                provider.terminate_all_sessions()
 
             steps.append(step)
             if not step.ok:

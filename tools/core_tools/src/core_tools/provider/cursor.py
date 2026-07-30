@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -22,6 +23,7 @@ from core_tools.provider.events import (
     format_request_prompt,
     normalize_cursor_event,
 )
+from core_tools.provider.process_cleanup import terminate_process_tree
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
 
@@ -31,6 +33,7 @@ def default_process_runner(
     cwd: Path,
     *,
     env: Mapping[str, str] | None = None,
+    active_proc: list[subprocess.Popen[str] | None] | None = None,
 ) -> Iterator[str]:
     """Run the Cursor CLI and yield stdout lines."""
 
@@ -42,25 +45,36 @@ def default_process_runner(
     }
     if env is not None:
         popen_kwargs["env"] = dict(env)
+    if sys.platform != "win32":
+        popen_kwargs["start_new_session"] = True
 
     try:
         proc = subprocess.Popen(argv, **popen_kwargs)
     except OSError as exc:
         raise ProviderTurnError(f"failed to start Cursor CLI: {exc}") from exc
 
+    if active_proc is not None:
+        active_proc[0] = proc
+
     if proc.stdout is None:
+        if active_proc is not None:
+            active_proc[0] = None
         raise ProviderTurnError("Cursor CLI stdout pipe was not available")
 
-    for line in proc.stdout:
-        stripped = line.strip()
-        if stripped:
-            yield stripped
+    try:
+        for line in proc.stdout:
+            stripped = line.strip()
+            if stripped:
+                yield stripped
 
-    stderr = proc.stderr.read() if proc.stderr is not None else ""
-    return_code = proc.wait()
-    if return_code != 0:
-        detail = stderr.strip() or f"exit code {return_code}"
-        raise ProviderTurnError(f"Cursor CLI failed: {detail}")
+        stderr = proc.stderr.read() if proc.stderr is not None else ""
+        return_code = proc.wait()
+        if return_code != 0:
+            detail = stderr.strip() or f"exit code {return_code}"
+            raise ProviderTurnError(f"Cursor CLI failed: {detail}")
+    finally:
+        if active_proc is not None:
+            active_proc[0] = None
 
 
 def resolve_agent_binary(configured: str | None) -> str:
@@ -169,6 +183,7 @@ class CursorProvider:
         if not self._skip_probe:
             self._probe_binary()
         self._sessions: dict[str, _CursorSession] = {}
+        self._active_turn_proc: subprocess.Popen[str] | None = None
 
     def start_primary_session(
         self,
@@ -243,6 +258,12 @@ class CursorProvider:
 
     def terminate_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
+
+    def terminate_all_sessions(self) -> None:
+        """Stop in-flight turns and drop tracked provider sessions."""
+
+        self._terminate_active_turn()
+        self._sessions.clear()
 
     def set_capability_token(self, token: str | None) -> None:
         if token:
@@ -393,13 +414,36 @@ class CursorProvider:
             return None
         return {**os.environ, **dict(extra_env)}
 
+    def _terminate_active_turn(self) -> None:
+        proc = self._active_turn_proc
+        if proc is None:
+            return
+        self._active_turn_proc = None
+        terminate_process_tree(proc)
+
     def _wrap_runner(self, runner: ProcessRunner) -> ProcessRunner:
-        if self._subprocess_env is None:
-            return runner
+        active_proc: list[subprocess.Popen[str] | None] = [None]
 
         def wrapped(argv: list[str], cwd: Path) -> Iterator[str]:
-            if runner is default_process_runner:
-                return default_process_runner(argv, cwd, env=self._subprocess_env)
-            return runner(argv, cwd)
+            self._active_turn_proc = None
+            try:
+                if runner is default_process_runner:
+                    stream = default_process_runner(
+                        argv,
+                        cwd,
+                        env=self._subprocess_env,
+                        active_proc=active_proc,
+                    )
+                else:
+                    stream = runner(argv, cwd)
+                for line in stream:
+                    if active_proc[0] is not None:
+                        self._active_turn_proc = active_proc[0]
+                    yield line
+            finally:
+                self._active_turn_proc = None
+                proc = active_proc[0]
+                if proc is not None and proc.poll() is None:
+                    terminate_process_tree(proc)
 
         return wrapped
