@@ -14,6 +14,11 @@ from top_down_planning.orchestrator.phases import (
     WHOLE_OUTPUT_REVIEW,
     WHOLE_PLAN_REVIEW,
 )
+from top_down_planning.orchestrator.focused_review import (
+    FocusedReviewOrchestrator,
+    FocusedReviewResult,
+    build_focused_review_package,
+)
 from top_down_planning.orchestrator.plan_amendment import (
     PlanAmendmentOrchestrator,
     PlanAmendmentResult,
@@ -42,6 +47,8 @@ from top_down_planning.orchestrator.whole_plan_review import (
 
 __all__ = [
     "OUTPUT_VALIDATED",
+    "FocusedReviewOrchestrator",
+    "FocusedReviewResult",
     "OrchestratorError",
     "PLANNING",
     "PLANNING_CONSTRUCTION_PHASES",
@@ -63,6 +70,7 @@ __all__ = [
     "WholeOutputReviewResult",
     "WholePlanReviewOrchestrator",
     "WholePlanReviewResult",
+    "build_focused_review_package",
     "build_planner_context_manifest",
     "build_producer_context_manifest",
     "build_whole_output_review_package",

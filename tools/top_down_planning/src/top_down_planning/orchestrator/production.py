@@ -7,11 +7,13 @@ from typing import Any
 
 from top_down_planning.agent_tool.errors import AgentToolError
 from top_down_planning.agent_tool.production_service import ProductionAgentService
+from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.production import all_applicable_items_processed, has_pending_amendment, latest_reconciliation_report
 from top_down_planning.domain.readiness import detect_deadlock
-from top_down_planning.domain.reviews import find_whole_plan_approval
+from top_down_planning.domain.reviews import blocking_focused_findings_for_items, find_whole_plan_approval
 from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import (
     PLAN_VALIDATED,
     PRODUCTION,
@@ -56,6 +58,8 @@ class ProductionPhaseOrchestrator:
         self._run_id = run_id
         self._provider = provider
         self._production_service = ProductionAgentService(store, run_id)
+        self._review_service = ReviewAgentService(store, run_id)
+        self._pending_focused_loop_id: str | None = None
 
     def run(self) -> ProductionPhaseResult:
         run = self._store.load_run(self._run_id)
@@ -144,6 +148,8 @@ class ProductionPhaseOrchestrator:
                 )
 
             turn_signal, agent_turns = self._consume_provider_turn(session_id)
+            if self._pending_focused_loop_id is not None:
+                self._run_pending_focused_review()
             batch_agent_turns += agent_turns
 
             if turn_signal == _BATCH_COMPLETE_SIGNAL:
@@ -188,6 +194,9 @@ class ProductionPhaseOrchestrator:
 
     def _handle_tool_call(self, event: dict[str, Any]) -> None:
         tool = str(event.get("tool") or "")
+        if tool == "review_request":
+            self._handle_review_request(event)
+            return
         if tool == "plan_apply":
             raise ProviderRunError(
                 "plan mutations are not allowed during production; "
@@ -203,6 +212,16 @@ class ProductionPhaseOrchestrator:
         if not isinstance(request, dict):
             raise ProviderRunError(f"{tool} tool_call requires a request object")
 
+        if tool == "production_apply":
+            plan_items = request.get("plan_items") or []
+            if isinstance(plan_items, list):
+                self._assert_no_blocking_focused_output_findings(
+                    [str(item_id) for item_id in plan_items]
+                )
+
+        if tool == "production_submit_completion":
+            self._assert_no_blocking_focused_output_findings_for_plan()
+
         role = event.get("role")
         if role is None or str(role).strip() != "producer":
             raise ProviderRunError(f"{tool} tool_call requires role=producer")
@@ -212,6 +231,53 @@ class ProductionPhaseOrchestrator:
             handler(request, role=str(role).strip())
         except AgentToolError as exc:
             raise ProviderRunError(str(exc)) from exc
+
+    def _handle_review_request(self, event: dict[str, Any]) -> None:
+        request = event.get("request")
+        if not isinstance(request, dict):
+            raise ProviderRunError("review_request tool_call requires a request object")
+
+        role = event.get("role")
+        if role is None or str(role).strip() != "producer":
+            raise ProviderRunError("review_request tool_call requires role=producer")
+
+        try:
+            created = self._review_service.request(request, role=str(role).strip())
+        except AgentToolError as exc:
+            raise ProviderRunError(str(exc)) from exc
+
+        self._pending_focused_loop_id = str(created["loop_id"])
+
+    def _run_pending_focused_review(self) -> None:
+        loop_id = self._pending_focused_loop_id
+        if loop_id is None:
+            return
+        self._pending_focused_loop_id = None
+        result = FocusedReviewOrchestrator(
+            self._store,
+            self._run_id,
+            self._provider,
+        ).run(loop_id)
+        if not result.ok:
+            raise ProviderRunError(
+                result.reason or "focused output review did not complete successfully"
+            )
+
+    def _assert_no_blocking_focused_output_findings(self, item_ids: list[str]) -> None:
+        blocked = blocking_focused_findings_for_items(
+            self._store.list_reviews(self._run_id),
+            "focused_output",
+            item_ids,
+        )
+        if blocked:
+            joined = ", ".join(blocked)
+            raise ProviderRunError(
+                f"production blocked by unresolved focused output findings: {joined}"
+            )
+
+    def _assert_no_blocking_focused_output_findings_for_plan(self) -> None:
+        plan = self._store.load_plan_model(self._run_id)
+        self._assert_no_blocking_focused_output_findings(list(plan.items.keys()))
 
     def _has_completion_claim(self) -> bool:
         production = self._store.load_production(self._run_id)
@@ -399,6 +465,9 @@ def build_producer_context_manifest(
             "report_blocked": (
                 f"tdp agent production report-blocked --run {run_id} --role producer "
                 "--request <file>"
+            ),
+            "request_review": (
+                f"tdp agent review request --run {run_id} --role producer --request <file>"
             ),
             "batch_complete_signal": _BATCH_COMPLETE_SIGNAL,
         },

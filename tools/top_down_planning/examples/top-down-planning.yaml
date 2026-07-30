@@ -36,11 +36,17 @@ limits:
   planning:
     max_expansion_iterations: 20
     max_agent_turns: 40
+  focused_plan_review:
+    max_loops: 5
+    max_revision_cycles_per_loop: 3
   whole_plan_review:
     max_revision_cycles: 5
   production:
     max_batches: 50
     max_agent_turns_per_batch: 10
+  focused_output_review:
+    max_loops: 8
+    max_revision_cycles_per_loop: 3
   whole_output_review:
     max_revision_cycles: 5
   amendment:

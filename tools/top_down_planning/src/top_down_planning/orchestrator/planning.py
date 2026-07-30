@@ -6,9 +6,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
+from top_down_planning.agent_tool.errors import AgentToolError
 from top_down_planning.agent_tool.plan_service import PlanAgentService
+from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
+from top_down_planning.domain.reviews import blocking_focused_findings_for_items
 from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
@@ -43,6 +47,8 @@ class PlanningPhaseOrchestrator:
         self._run_id = run_id
         self._provider = provider
         self._plan_service = PlanAgentService(store, run_id)
+        self._review_service = ReviewAgentService(store, run_id)
+        self._pending_focused_loop_id: str | None = None
 
     def run(self) -> PlanningPhaseResult:
         run = self._store.load_run(self._run_id)
@@ -76,6 +82,8 @@ class PlanningPhaseOrchestrator:
 
         while True:
             turn_signal = self._consume_provider_turn(session_id)
+            if self._pending_focused_loop_id is not None:
+                self._run_pending_focused_review()
             run = self._store.load_run(self._run_id)
             metrics = _planning_metrics(run)
             metrics["agent_turns"] += 1
@@ -86,6 +94,19 @@ class PlanningPhaseOrchestrator:
             )
 
             if turn_signal == _CANDIDATE_READY_SIGNAL:
+                if self._has_blocking_focused_plan_findings():
+                    self._provider.resume_primary_session(
+                        session_id,
+                        {
+                            "action": "continue",
+                            "phase": PLANNING,
+                            "blocked_reason": (
+                                "candidate_plan_ready ignored: unresolved blocking "
+                                "focused plan review findings remain in scope"
+                            ),
+                        },
+                    )
+                    continue
                 return self._complete_planning(session_id, metrics)
 
             if metrics["agent_turns"] >= loop_limits["max_agent_turns"]:
@@ -134,6 +155,9 @@ class PlanningPhaseOrchestrator:
 
     def _handle_tool_call(self, event: dict[str, Any]) -> None:
         tool = str(event.get("tool") or "")
+        if tool == "review_request":
+            self._handle_review_request(event)
+            return
         if tool != "plan_apply":
             return
 
@@ -165,6 +189,47 @@ class PlanningPhaseOrchestrator:
                     expansion_iterations=metrics["expansion_iterations"],
                     added_items=expansion_added,
                 )
+
+    def _handle_review_request(self, event: dict[str, Any]) -> None:
+        request = event.get("request")
+        if not isinstance(request, dict):
+            raise ProviderRunError("review_request tool_call requires a request object")
+
+        role = event.get("role")
+        if role is None or str(role).strip() != "planner":
+            raise ProviderRunError("review_request tool_call requires role=planner")
+
+        try:
+            created = self._review_service.request(request, role=str(role).strip())
+        except AgentToolError as exc:
+            raise ProviderRunError(str(exc)) from exc
+
+        self._pending_focused_loop_id = str(created["loop_id"])
+
+    def _run_pending_focused_review(self) -> None:
+        loop_id = self._pending_focused_loop_id
+        if loop_id is None:
+            return
+        self._pending_focused_loop_id = None
+        result = FocusedReviewOrchestrator(
+            self._store,
+            self._run_id,
+            self._provider,
+        ).run(loop_id)
+        if not result.ok:
+            raise ProviderRunError(
+                result.reason or "focused plan review did not complete successfully"
+            )
+
+    def _has_blocking_focused_plan_findings(self) -> bool:
+        plan = self._store.load_plan_model(self._run_id)
+        item_ids = list(plan.items.keys())
+        blocked = blocking_focused_findings_for_items(
+            self._store.list_reviews(self._run_id),
+            "focused_plan",
+            item_ids,
+        )
+        return bool(blocked)
 
     def _complete_planning(
         self,
@@ -273,6 +338,9 @@ def build_planner_context_manifest(
                 f"tdp agent plan apply --run {run_id} --role planner --request <file>"
             ),
             "check": f"tdp agent plan check --run {run_id}",
+            "request_review": (
+                f"tdp agent review request --run {run_id} --role planner --request <file>"
+            ),
             "completion_signal": _CANDIDATE_READY_SIGNAL,
         },
     }

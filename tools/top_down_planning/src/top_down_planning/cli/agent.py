@@ -145,7 +145,10 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         help="Agent role (required unless request.role is set).",
     )
 
-    review_parser = agent_sub.add_parser("review", help="Review respond commands.")
+    review_parser = agent_sub.add_parser(
+        "review",
+        help="Review request and respond commands.",
+    )
     review_sub = review_parser.add_subparsers(dest="review_command")
 
     respond_parser = review_sub.add_parser(
@@ -158,6 +161,20 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         help="JSON or YAML request file (default: stdin).",
     )
     respond_parser.add_argument(
+        "--role",
+        help="Agent role (required unless request.role is set).",
+    )
+
+    request_parser = review_sub.add_parser(
+        "request",
+        help="Request an optional focused plan or output review.",
+    )
+    _add_run_flags(request_parser)
+    request_parser.add_argument(
+        "--request",
+        help="JSON or YAML request file (default: stdin).",
+    )
+    request_parser.add_argument(
         "--role",
         help="Agent role (required unless request.role is set).",
     )
@@ -334,7 +351,7 @@ def _handle_production_command(args: argparse.Namespace) -> None:
 def _handle_review_command(args: argparse.Namespace) -> None:
     if args.review_command is None:
         emit_error(
-            AgentToolError("review command required: respond"),
+            AgentToolError("review command required: request or respond"),
             exit_code=2,
         )
 
@@ -346,6 +363,11 @@ def _handle_review_command(args: argparse.Namespace) -> None:
             request = load_structured_request(request_path=args.request)
             role = _resolve_respond_role(args, request)
             payload = service.respond(request, role=role)
+            emit_response(payload)
+        elif args.review_command == "request":
+            request = load_structured_request(request_path=args.request)
+            role = _resolve_respond_role(args, request)
+            payload = service.request(request, role=role)
             emit_response(payload)
         else:
             emit_error(

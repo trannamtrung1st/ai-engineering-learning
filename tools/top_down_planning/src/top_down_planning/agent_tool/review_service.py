@@ -1,17 +1,25 @@
-"""Agent review respond service (proposal §8, §11)."""
+"""Agent review request/respond service (proposal §8, §11)."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from top_down_planning.agent_tool.errors import RequestError, RoleDeniedError
+from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     apply_review_response,
+    find_overlapping_active_focused_loop,
+    focused_loop_count,
     parse_findings,
     validate_decision,
+    validate_findings_within_scope,
+    validate_focused_scope,
 )
 from top_down_planning.persistence.interface import RunStore
+
+_FOCUSED_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_plan_review"]
+_FOCUSED_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_output_review"]
 
 
 class ReviewAgentService:
@@ -20,6 +28,97 @@ class ReviewAgentService:
     def __init__(self, store: RunStore, run_id: str) -> None:
         self._store = store
         self._run_id = run_id
+
+    def request(
+        self,
+        request: dict[str, Any],
+        *,
+        role: str,
+    ) -> dict[str, Any]:
+        normalized_role = str(role).strip()
+        review_type = str(request.get("type") or "").strip()
+        if review_type not in {"focused_plan", "focused_output"}:
+            raise RequestError(
+                "request.type must be focused_plan or focused_output"
+            )
+
+        if review_type == "focused_plan" and normalized_role != "planner":
+            raise RoleDeniedError(
+                normalized_role,
+                action="Only the planner role may request focused plan reviews.",
+            )
+        if review_type == "focused_output" and normalized_role != "producer":
+            raise RoleDeniedError(
+                normalized_role,
+                action="Only the producer role may request focused output reviews.",
+            )
+
+        config = self._store.load_resolved_config(self._run_id)
+        review_config = (config.get("review") or {}).get(
+            "focused_plan" if review_type == "focused_plan" else "focused_output"
+        ) or {}
+        if review_config.get("enabled") is not True:
+            raise RequestError(f"{review_type} reviews are disabled in config")
+
+        try:
+            scope = validate_focused_scope(request.get("scope"), review_type)
+        except ValueError as exc:
+            raise RequestError(str(exc)) from exc
+
+        reviews = self._store.list_reviews(self._run_id)
+        overlapping = find_overlapping_active_focused_loop(
+            reviews,
+            review_type,
+            scope["item_ids"],
+        )
+        if overlapping is not None:
+            raise RequestError(
+                f"active {review_type} review {overlapping} already covers overlapping scope"
+            )
+
+        loop_count = focused_loop_count(reviews, review_type)
+        max_loops = _focused_max_loops(config, review_type)
+        if loop_count >= max_loops:
+            raise RequestError(
+                f"{review_type} review exceeded max_loops ({max_loops})"
+            )
+
+        if review_type == "focused_output":
+            target_revision = int(self._store.load_production(self._run_id)["output_revision"])
+        else:
+            target_revision = int(self._store.load_plan(self._run_id)["revision"])
+
+        loop_id = _next_focused_loop_id(reviews, review_type)
+        loop = ReviewLoop(
+            id=loop_id,
+            type=review_type,  # type: ignore[arg-type]
+            reviewer_session_id=None,
+            target_revision=target_revision,
+            scope=scope,
+            status="pending",
+        )
+        self._store.save_review(self._run_id, loop.to_dict())
+        self._store.append_event(
+            self._run_id,
+            {
+                "type": "focused_review_requested",
+                "run_id": self._run_id,
+                "loop_id": loop_id,
+                "review_type": review_type,
+                "scope": scope,
+                "target_revision": target_revision,
+                "requested_by": normalized_role,
+            },
+        )
+
+        return {
+            "ok": True,
+            "loop_id": loop_id,
+            "type": review_type,
+            "scope": scope,
+            "target_revision": target_revision,
+            "status": loop.status,
+        }
 
     def respond(
         self,
@@ -56,7 +155,13 @@ class ReviewAgentService:
         if loop.status in {"approved", "blocked"}:
             raise RequestError(f"review loop {loop_id} is already terminal: {loop.status}")
 
-        if loop.type == "whole_output":
+        if loop.type in {"focused_plan", "focused_output"}:
+            try:
+                validate_findings_within_scope(findings, loop.scope)
+            except ValueError as exc:
+                raise RequestError(str(exc)) from exc
+
+        if loop.type == "whole_output" or loop.type == "focused_output":
             current_revision = int(self._store.load_production(self._run_id)["output_revision"])
             revision_label = "output"
         else:
@@ -99,3 +204,30 @@ class ReviewAgentService:
             "status": updated.status,
             "findings": [finding.to_dict() for finding in updated.findings],
         }
+
+
+def _focused_max_loops(config: dict[str, Any], review_type: str) -> int:
+    if review_type == "focused_plan":
+        review_limits = (config.get("limits") or {}).get("focused_plan_review") or {}
+        return int(
+            review_limits.get("max_loops", _FOCUSED_PLAN_LIMIT_DEFAULTS["max_loops"])
+        )
+    review_limits = (config.get("limits") or {}).get("focused_output_review") or {}
+    return int(
+        review_limits.get("max_loops", _FOCUSED_OUTPUT_LIMIT_DEFAULTS["max_loops"])
+    )
+
+
+def _next_focused_loop_id(reviews: list[dict[str, Any]], review_type: str) -> str:
+    prefix = (
+        "review-focused-plan"
+        if review_type == "focused_plan"
+        else "review-focused-output"
+    )
+    existing = [
+        payload.get("id")
+        for payload in reviews
+        if payload.get("type") == review_type and payload.get("id")
+    ]
+    index = len(existing) + 1
+    return f"{prefix}-{index:02d}"
