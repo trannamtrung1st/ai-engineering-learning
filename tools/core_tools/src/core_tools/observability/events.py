@@ -11,6 +11,8 @@ LogLevel = Literal["quiet", "normal", "verbose", "trace"]
 EventCategory = Literal[
     "phase:start",
     "phase:end",
+    "run:start",
+    "run:resume",
     "session:start",
     "session:end",
     "session:resume",
@@ -31,6 +33,8 @@ EventCategory = Literal[
 CATEGORY_TAGS: dict[str, str] = {
     "phase:start": "phase:start",
     "phase:end": "phase:end",
+    "run:start": "run:start",
+    "run:resume": "run:resume",
     "session:start": "session:start",
     "session:end": "session:end",
     "session:resume": "session:resume",
@@ -52,6 +56,8 @@ CATEGORY_TAGS: dict[str, str] = {
 CATEGORY_MIN_LEVEL: dict[str, LogLevel] = {
     "phase:start": "normal",
     "phase:end": "normal",
+    "run:start": "normal",
+    "run:resume": "normal",
     "session:start": "normal",
     "session:end": "normal",
     "session:resume": "normal",

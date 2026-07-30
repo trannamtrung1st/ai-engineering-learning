@@ -27,7 +27,7 @@ from top_down_planning.orchestrator.capability import (
     rotate_session_capability,
 )
 from top_down_planning.orchestrator.reviewer_session import (
-    begin_reviewer_review,
+    allocate_reviewer_session,
     build_reviewer_tool_instructions,
     deliver_reviewer_turn,
     resume_reviewer_session_with_package,
@@ -44,6 +44,7 @@ from top_down_planning.orchestrator.session_events import (
     emit_reviewer_session_resumed,
     emit_reviewer_session_started,
     sync_persisted_session_id,
+    sync_reviewer_loop_session_id,
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence.digests import (
@@ -361,13 +362,10 @@ class WholeOutputReviewOrchestrator:
         role_context = resolve_role_session_context(config, run, "reviewer")
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
-        session_id, self._capability_token = begin_reviewer_review(
+        session_id = allocate_reviewer_session(
             self._provider,
-            self._store,
-            self._run_id,
+            run_id=self._run_id,
             loop_id=loop.id,
-            review_package=package,
-            phase=phase,
             model=role_context.model,
         )
         emit_reviewer_session_started(
@@ -388,6 +386,15 @@ class WholeOutputReviewOrchestrator:
             approved_digests=loop.approved_digests,
         )
         self._persist_loop(updated)
+        self._capability_token = deliver_reviewer_turn(
+            self._provider,
+            self._store,
+            self._run_id,
+            session_id=session_id,
+            loop_id=loop.id,
+            phase=phase,
+            request=package,
+        )
         return session_id, self._capability_token
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
@@ -396,22 +403,13 @@ class WholeOutputReviewOrchestrator:
             session_id,
             allowed_signals=_NO_COMPLETION_SIGNALS,
         )
-        resolved = self._provider.canonical_session_id(session_id)
-        if resolved != session_id:
-            loop = self._reload_loop(loop_id)
-            self._persist_loop(
-                ReviewLoop(
-                    id=loop.id,
-                    type=loop.type,
-                    reviewer_session_id=resolved,
-                    target_revision=loop.target_revision,
-                    scope=loop.scope,
-                    status=loop.status,
-                    findings=loop.findings,
-                    revision_cycles=loop.revision_cycles,
-                    approved_digests=loop.approved_digests,
-                )
-            )
+        sync_reviewer_loop_session_id(
+            self._provider,
+            self._store,
+            self._run_id,
+            loop_id,
+            session_id,
+        )
         return review_decision_from_store(self._store, self._run_id, loop_id)
 
     def _resume_producer_with_findings(self, loop: ReviewLoop) -> None:
@@ -508,6 +506,12 @@ class WholeOutputReviewOrchestrator:
         self._persist_loop(updated)
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
+        emit_reviewer_session_resumed(
+            self._append_event,
+            phase=phase,
+            session_id=session_id,
+            loop_id=loop.id,
+        )
         self._capability_token = deliver_reviewer_turn(
             self._provider,
             self._store,

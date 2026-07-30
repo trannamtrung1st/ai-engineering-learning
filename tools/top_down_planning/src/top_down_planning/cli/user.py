@@ -254,7 +254,7 @@ def handle_run_command(args: Namespace) -> None:
     until = invocation.until or "plan"
     observability.emit(
         ConsoleEvent(
-            category="session:start",
+            category="run:start",
             message=(
                 "Starting run (blocking on provider until the target milestone).\n"
                 f"{format_run_startup_diagnostics(diagnostics)}\n"
@@ -404,7 +404,7 @@ def handle_resume_command(args: Namespace) -> None:
     )
     observability.emit(
         ConsoleEvent(
-            category="session:resume",
+            category="run:resume",
             message=f"Resuming run {args.run}",
             run_id=args.run,
         )

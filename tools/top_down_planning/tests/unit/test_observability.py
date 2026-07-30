@@ -49,6 +49,14 @@ def test_map_audit_event_maps_planning_candidate_ready() -> None:
     assert mapped.fields["plan_revision"] == 2
 
 
+def test_map_audit_event_maps_run_created_to_run_start() -> None:
+    mapped = map_audit_event({"type": "run_created", "run_id": "run-20260101T000001-000001"})
+    assert mapped is not None
+    assert mapped.category == "run:start"
+    assert mapped.message == "run created"
+    assert mapped.run_id == "run-20260101T000001-000001"
+
+
 def test_map_audit_event_maps_planner_session_started_with_phase_and_role() -> None:
     mapped = map_audit_event(
         {

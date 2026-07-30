@@ -21,7 +21,7 @@ from top_down_planning.orchestrator.capability import (
     rotate_session_capability,
 )
 from top_down_planning.orchestrator.reviewer_session import (
-    begin_reviewer_review,
+    allocate_reviewer_session,
     build_reviewer_tool_instructions,
     deliver_reviewer_turn,
     resume_reviewer_session_with_package,
@@ -232,13 +232,10 @@ class FocusedReviewOrchestrator:
         )
         role_context = resolve_role_session_context(config, run, "reviewer")
         phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-        session_id, capability_token = begin_reviewer_review(
+        session_id = allocate_reviewer_session(
             self._provider,
-            self._store,
-            self._run_id,
+            run_id=self._run_id,
             loop_id=loop.id,
-            review_package=package,
-            phase=phase,
             model=role_context.model,
         )
         emit_reviewer_session_started(
@@ -260,6 +257,15 @@ class FocusedReviewOrchestrator:
             revision_cycles=loop.revision_cycles,
         )
         self._persist_loop(updated)
+        capability_token = deliver_reviewer_turn(
+            self._provider,
+            self._store,
+            self._run_id,
+            session_id=session_id,
+            loop_id=loop.id,
+            phase=phase,
+            request=package,
+        )
         return session_id, capability_token
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:

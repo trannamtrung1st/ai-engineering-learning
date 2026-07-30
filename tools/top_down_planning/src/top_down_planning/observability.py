@@ -359,7 +359,7 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         )
 
     mapping: dict[str, tuple[str, str]] = {
-        "run_created": ("session:start", "run created"),
+        "run_created": ("run:start", "run created"),
         "production_phase_started": ("phase:start", "production phase started"),
         "production_completed": ("phase:end", "production completed"),
         "production_failed": ("error", "production failed"),
@@ -387,10 +387,12 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         return None
     category, message = mapped
     session_id = fields.get("session_id")
+    run_id = fields.get("run_id")
     return ConsoleEvent(
         category=category,
         message=message,
         fields=fields,
+        run_id=str(run_id) if isinstance(run_id, str) else None,
         session_id=str(session_id) if isinstance(session_id, str) else None,
     )
 

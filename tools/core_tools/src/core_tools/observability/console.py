@@ -27,6 +27,8 @@ _STREAMING_CATEGORIES = frozenset({"thinking", "response"})
 _CATEGORY_STYLES: dict[str, str] = {
     "phase:start": "cyan",
     "phase:end": "cyan",
+    "run:start": "blue",
+    "run:resume": "blue",
     "session:start": "blue",
     "session:end": "blue",
     "session:resume": "blue",

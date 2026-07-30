@@ -43,12 +43,12 @@ def test_category_block_prefix_on_first_line_only() -> None:
     sink = ColorizedConsoleSink(stream=stderr, color="never")
     sink.emit(
         ConsoleEvent(
-            category="session:start",
+            category="run:start",
             message="Starting run.\nWorking directory: /tmp\nConfig file: /tmp/config.yaml",
         )
     )
     lines = stderr.getvalue().splitlines()
-    assert lines[0].startswith("[session:start] Starting run.")
+    assert lines[0].startswith("[run:start] Starting run.")
     assert lines[1] == "Working directory: /tmp"
     assert lines[2] == "Config file: /tmp/config.yaml"
 
@@ -101,14 +101,14 @@ def test_multiline_and_continuation_lines_share_category_style() -> None:
     sink = ColorizedConsoleSink(stream=stderr, color="always")
     sink.emit(
         ConsoleEvent(
-            category="session:start",
+            category="run:start",
             message="Starting run.\nWorking directory: /tmp",
         )
     )
     sink.emit(ConsoleEvent(category="thinking", message="First sentence."))
     sink.emit(ConsoleEvent(category="thinking", message=" Second sentence."))
     output = stderr.getvalue()
-    # Rich dim style for thinking and blue for session:start.
+    # Rich dim style for thinking and blue for run:start.
     assert "\x1b[2m" in output
     assert "\x1b[34m" in output
     lines = output.splitlines()
