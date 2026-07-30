@@ -2,20 +2,26 @@
 
 from __future__ import annotations
 
-import json
-import os
-import sys
 from argparse import Namespace
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from top_down_planning.config import ConfigError, resolve_config
-from top_down_planning.config.paths import resolve_path
+from core_tools.cli import (
+    ResolvedRunsDir,
+    RunsDirSource,
+    emit_error_message,
+    emit_message,
+    emit_payload,
+    resolve_runs_dir as _resolve_runs_dir,
+)
+
+from top_down_planning.config import resolve_config
 from top_down_planning.persistence import FileRunStore
 
-RunsDirSource = Literal["cli", "environment", "config", "default"]
+RUNS_DIR_ENV_VAR = "TDP_RUNS_DIR"
+
+RunsDirSource = RunsDirSource
 
 RUNS_DIR_HELP = (
     "Run store root directory (precedence: --runs-dir > $TDP_RUNS_DIR > "
@@ -26,12 +32,6 @@ AGENT_RUNS_DIR_HELP = (
     "Run store root directory (precedence: --runs-dir > $TDP_RUNS_DIR > ./runs). "
     "Orchestrator subprocesses receive TDP_RUNS_DIR automatically."
 )
-
-
-@dataclass(frozen=True)
-class ResolvedRunsDir:
-    path: Path
-    source: RunsDirSource
 
 
 def runs_dir_config_value(config: dict[str, Any]) -> str | None:
@@ -59,21 +59,14 @@ def resolve_runs_dir(
     explicit CLI --runs-dir > TDP_RUNS_DIR > runtime.runs_dir > <cwd>/runs.
     """
 
-    base = (cwd or Path.cwd()).resolve()
-    env = environ if environ is not None else os.environ
-
-    if explicit is not None and str(explicit).strip():
-        return ResolvedRunsDir(Path(explicit).resolve(), "cli")
-
-    env_value = str(env.get("TDP_RUNS_DIR", "")).strip()
-    if env_value:
-        return ResolvedRunsDir(Path(env_value).resolve(), "environment")
-
-    if config_value is not None and str(config_value).strip():
-        configured = resolve_path(str(config_value).strip(), cwd=base)
-        return ResolvedRunsDir(configured, "config")
-
-    return ResolvedRunsDir((base / "runs").resolve(), "default")
+    return _resolve_runs_dir(
+        explicit=explicit,
+        config_value=config_value,
+        cwd=cwd,
+        environ=environ,
+        env_var=RUNS_DIR_ENV_VAR,
+        default_relative="runs",
+    )
 
 
 def load_config_for_runs_dir(args: Namespace) -> dict[str, Any] | None:
@@ -129,7 +122,7 @@ def open_run_store(
 def provider_extra_env(resolved: ResolvedRunsDir) -> dict[str, str]:
     """Environment variables exported to provider subprocesses."""
 
-    return {"TDP_RUNS_DIR": str(resolved.path)}
+    return {RUNS_DIR_ENV_VAR: str(resolved.path)}
 
 
 def store_diagnostics_payload(
@@ -175,38 +168,23 @@ def format_run_startup_diagnostics(payload: Mapping[str, str]) -> str:
     )
 
 
-def emit_payload(payload: dict[str, Any], *, exit_code: int = 0) -> None:
-    json.dump(payload, sys.stdout, indent=2, sort_keys=True)
-    sys.stdout.write("\n")
-    raise SystemExit(exit_code)
-
-
-def emit_message(message: str, *, exit_code: int = 0, stream_json: bool = False) -> None:
-    if stream_json:
-        emit_payload({"ok": exit_code == 0, "message": message}, exit_code=exit_code)
-    sys.stdout.write(message)
-    if not message.endswith("\n"):
-        sys.stdout.write("\n")
-    raise SystemExit(exit_code)
-
-
-def emit_error_message(
-    message: str,
-    *,
-    exit_code: int = 1,
-    stream_json: bool = False,
-    code: str = "error",
-) -> None:
-    if stream_json:
-        emit_payload(
-            {
-                "ok": False,
-                "error": {
-                    "code": code,
-                    "message": message,
-                },
-            },
-            exit_code=exit_code,
-        )
-    print(message, file=sys.stderr)
-    raise SystemExit(exit_code)
+__all__ = [
+    "AGENT_RUNS_DIR_HELP",
+    "RUNS_DIR_ENV_VAR",
+    "RUNS_DIR_HELP",
+    "ResolvedRunsDir",
+    "RunsDirSource",
+    "RunsStoreNotFoundError",
+    "emit_error_message",
+    "emit_message",
+    "emit_payload",
+    "format_run_startup_diagnostics",
+    "load_config_for_runs_dir",
+    "open_run_store",
+    "provider_extra_env",
+    "resolve_runs_dir",
+    "resolve_runs_dir_from_args",
+    "run_startup_diagnostics_payload",
+    "runs_dir_config_value",
+    "store_diagnostics_payload",
+]

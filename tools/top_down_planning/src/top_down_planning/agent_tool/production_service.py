@@ -42,7 +42,7 @@ from top_down_planning.domain.reviews import (
     whole_output_revision_target_ids,
 )
 from top_down_planning.domain.validators import validate_plan
-from top_down_planning.persistence.errors import StoreRevisionConflictError
+from core_tools.persistence import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
 
 _PRODUCTION_SNAPSHOT_ACTION = (

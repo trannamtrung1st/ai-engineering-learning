@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from top_down_planning.persistence.errors import RunNotFoundError
+from core_tools.persistence import RunNotFoundError
 from top_down_planning.persistence.interface import RunStore
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed"})

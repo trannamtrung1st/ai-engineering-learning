@@ -7,8 +7,10 @@ Cross-product infrastructure shared by agent orchestration tools in this monorep
 | Module | Contents |
 | --- | --- |
 | `core_tools.provider` | Provider protocol, stub/Cursor adapters, stream normalization, session references |
-| `core_tools.config` | Deep merge, YAML config load, `--set` override parsing (generic; no product schema) |
-| `core_tools.persistence` | Atomic file writes, content digests, minimal YAML helpers |
+| `core_tools.config` | Deep merge, YAML config load, `--set` override parsing, workspace paths, resource/skill loading, allowlist validation |
+| `core_tools.persistence` | Atomic file writes, content digests, minimal YAML helpers, optimistic revision helpers |
+| `core_tools.cli` | Structured CLI output, request loading, runs-dir resolution |
+| `core_tools.schema` | Minimal JSON Schema validation for published contracts |
 
 ## What stays in product packages
 
@@ -17,7 +19,7 @@ Product packages (e.g. `top_down_planning`, a future todos tool) own:
 - Domain models and business rules (plan trees, readiness, dispositions, outcomes)
 - Orchestrator lifecycle (planning, review loops, amendment, production)
 - Agent tool surfaces and product CLIs (`tdp`, etc.)
-- Run-store layout, revision binding, and product config schemas (`DEFAULT_CONFIG`, allowed override paths)
+- Run-store layout and product config schemas (`DEFAULT_CONFIG`, allowed override paths, role/phase merge policies)
 
 ## Consumers
 

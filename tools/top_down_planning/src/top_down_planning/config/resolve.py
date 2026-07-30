@@ -11,6 +11,9 @@ from core_tools.config import (
     compute_input_refs_digest,
     deep_merge,
     load_yaml_config,
+    reject_unknown_config_paths,
+    resolve_workspace,
+    resolve_workspace_path,
 )
 from core_tools.config.errors import ConfigError
 
@@ -19,7 +22,6 @@ from top_down_planning.config.defaults import (
     ALLOWED_OVERRIDE_PATHS,
     DEFAULT_CONFIG,
 )
-from top_down_planning.config.paths import resolve_workspace
 
 __all__ = [
     "compute_input_digest",
@@ -28,26 +30,6 @@ __all__ = [
     "resolve_config",
     "resolve_output_goal_text",
 ]
-
-
-def _collect_leaf_paths(value: Any, prefix: str = "") -> set[str]:
-    if isinstance(value, dict):
-        paths: set[str] = set()
-        for key, child in value.items():
-            path = f"{prefix}.{key}" if prefix else key
-            paths |= _collect_leaf_paths(child, path)
-        return paths
-    return {prefix} if prefix else set()
-
-
-def _reject_unknown_config_paths(
-    config: dict[str, Any],
-    *,
-    allowed_paths: frozenset[str],
-) -> None:
-    unknown = sorted(_collect_leaf_paths(config) - allowed_paths)
-    if unknown:
-        raise ConfigError(f"unknown config path: {unknown[0]}", path=unknown[0])
 
 
 def _validate_agent_context_roles(config: dict[str, Any]) -> None:
@@ -102,7 +84,7 @@ def resolve_config(
     if config_path is not None:
         yaml_config = load_yaml_config(config_path)
         _validate_agent_context_roles(yaml_config)
-        _reject_unknown_config_paths(yaml_config, allowed_paths=ALLOWED_OVERRIDE_PATHS)
+        reject_unknown_config_paths(yaml_config, allowed_paths=ALLOWED_OVERRIDE_PATHS)
         resolved = deep_merge(resolved, yaml_config)
     if overrides:
         resolved = apply_cli_overrides(
@@ -111,7 +93,7 @@ def resolve_config(
             allowed_paths=ALLOWED_OVERRIDE_PATHS,
         )
     _validate_agent_context_roles(resolved)
-    _reject_unknown_config_paths(resolved, allowed_paths=ALLOWED_OVERRIDE_PATHS)
+    reject_unknown_config_paths(resolved, allowed_paths=ALLOWED_OVERRIDE_PATHS)
     return finalize_resolved_config(resolved, cwd=cwd or Path.cwd())
 
 
@@ -124,8 +106,6 @@ def compute_input_digest(config: dict[str, Any], *, base_dir: Path) -> str:
 
 def resolve_output_goal_text(config: dict[str, Any], *, base_dir: Path) -> str:
     """Load inline or file-backed output goal text (mutually exclusive)."""
-
-    from top_down_planning.config.paths import resolve_workspace_path
 
     run_section = config.get("run")
     if not isinstance(run_section, dict):

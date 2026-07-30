@@ -1,8 +1,9 @@
-"""Persistence-layer errors (proposal §18)."""
+"""Optimistic revision helpers for file-backed stores."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from core_tools.persistence.errors import PersistenceError
 
@@ -38,4 +39,12 @@ class RunNotFoundError(PersistenceError):
         super().__init__(message)
 
 
-__all__ = ["PersistenceError", "RunNotFoundError", "StoreRevisionConflictError"]
+def require_revision_field(payload: dict[str, Any], label: str) -> int:
+    if "revision" not in payload:
+        raise PersistenceError(f"{label} payload must include an explicit revision")
+    return int(payload["revision"])
+
+
+def assert_next_revision(expected_revision: int, next_revision: int) -> None:
+    if next_revision != expected_revision + 1:
+        raise StoreRevisionConflictError(expected_revision + 1, next_revision)

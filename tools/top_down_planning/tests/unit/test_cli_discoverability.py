@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from core_tools.schema import validate_against_schema
 from top_down_planning import schema_docs
 from tests.conftest import run_cli
 
@@ -94,7 +95,7 @@ def test_examples_validate_against_schemas() -> None:
 
 
 def test_default_config_validates_against_config_schema() -> None:
-    issues = schema_docs.validate_against_schema(
+    issues = validate_against_schema(
         schema_docs.default_config_example(),
         schema_docs.show_schema("config"),
     )
@@ -103,7 +104,7 @@ def test_default_config_validates_against_config_schema() -> None:
 
 def test_completion_claim_schema_rejects_goal_met_false() -> None:
     schema = schema_docs.show_schema("completion-claim")
-    issues = schema_docs.validate_against_schema(
+    issues = validate_against_schema(
         {"goal_assessment": "Not met.", "goal_met": False},
         schema,
     )
@@ -113,7 +114,7 @@ def test_completion_claim_schema_rejects_goal_met_false() -> None:
 
 def test_focused_review_request_schema_rejects_type_kind_mismatch() -> None:
     schema = schema_docs.show_schema("focused-review-request")
-    issues = schema_docs.validate_against_schema(
+    issues = validate_against_schema(
         {
             "type": "focused_plan",
             "scope": {"kind": "focused_output", "item_ids": ["item-api"]},

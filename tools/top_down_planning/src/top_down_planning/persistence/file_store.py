@@ -9,17 +9,17 @@ from typing import Any
 
 from top_down_planning.domain.models import Plan
 from core_tools.persistence import (
+    PersistenceError,
+    RunNotFoundError,
+    StoreRevisionConflictError,
+    assert_next_revision,
     atomic_write_json,
     atomic_write_text,
     dump_yaml,
     load_yaml,
+    require_revision_field,
 )
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
-from top_down_planning.persistence.errors import (
-    PersistenceError,
-    RunNotFoundError,
-    StoreRevisionConflictError,
-)
 
 _EMPTY_PRODUCTION: dict[str, Any] = {
     "revision": 0,
@@ -83,17 +83,6 @@ def new_run_record(
     if store is not None:
         record["store"] = dict(store)
     return record
-
-
-def _require_revision_field(payload: dict[str, Any], label: str) -> int:
-    if "revision" not in payload:
-        raise PersistenceError(f"{label} payload must include an explicit revision")
-    return int(payload["revision"])
-
-
-def _assert_next_revision(expected_revision: int, next_revision: int) -> None:
-    if next_revision != expected_revision + 1:
-        raise StoreRevisionConflictError(expected_revision + 1, next_revision)
 
 
 class FileRunStore:
@@ -181,8 +170,8 @@ class FileRunStore:
         if current_revision != expected_revision:
             raise StoreRevisionConflictError(expected_revision, current_revision)
 
-        next_revision = _require_revision_field(run, "run")
-        _assert_next_revision(expected_revision, next_revision)
+        next_revision = require_revision_field(run, "run")
+        assert_next_revision(expected_revision, next_revision)
 
         payload = dict(run)
         payload["revision"] = next_revision
@@ -201,8 +190,8 @@ class FileRunStore:
         if current_revision != expected_revision:
             raise StoreRevisionConflictError(expected_revision, current_revision)
 
-        next_revision = _require_revision_field(plan, "plan")
-        _assert_next_revision(expected_revision, next_revision)
+        next_revision = require_revision_field(plan, "plan")
+        assert_next_revision(expected_revision, next_revision)
 
         payload = dict(plan)
         payload["revision"] = next_revision
@@ -222,8 +211,8 @@ class FileRunStore:
         if current_revision != expected_revision:
             raise StoreRevisionConflictError(expected_revision, current_revision)
 
-        next_revision = _require_revision_field(production, "production")
-        _assert_next_revision(expected_revision, next_revision)
+        next_revision = require_revision_field(production, "production")
+        assert_next_revision(expected_revision, next_revision)
 
         payload = dict(production)
         payload["revision"] = next_revision

@@ -32,7 +32,7 @@ from top_down_planning.domain.models import Plan
 from top_down_planning.domain.mutations import apply_operations
 from top_down_planning.domain.validators import ValidationMode, validate_plan
 from top_down_planning.persistence.digests import compute_plan_digest
-from top_down_planning.persistence.errors import StoreRevisionConflictError
+from core_tools.persistence import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
 
 

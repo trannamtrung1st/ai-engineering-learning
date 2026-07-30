@@ -44,7 +44,11 @@ def is_path_within_workspace(path: Path, *, workspace: Path) -> bool:
         return False
 
 
-def _configured_workspace_value(config: dict[str, Any], section: str, key: str) -> str | None:
+def _configured_workspace_value(
+    config: dict[str, Any],
+    section: str,
+    key: str,
+) -> str | None:
     block = config.get(section)
     if not isinstance(block, dict):
         return None
@@ -55,15 +59,21 @@ def _configured_workspace_value(config: dict[str, Any], section: str, key: str) 
     return stripped or None
 
 
-def resolve_workspace(config: dict[str, Any], *, cwd: Path) -> Path:
+def resolve_workspace(
+    config: dict[str, Any],
+    *,
+    cwd: Path,
+    section: str = "project",
+    key: str = "workspace",
+) -> Path:
     """
-    Resolve the canonical project workspace from ``project.workspace``.
+    Resolve the canonical project workspace from a configured section/key.
 
     Relative values resolve against ``cwd``. Omitted or empty values default to
     ``cwd``.
     """
 
-    configured = _configured_workspace_value(config, "project", "workspace")
+    configured = _configured_workspace_value(config, section, key)
     if configured is None:
         return cwd.resolve()
     return resolve_path(configured, cwd=cwd)

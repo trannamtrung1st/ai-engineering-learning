@@ -1,31 +1,31 @@
 """Configuration loading and CLI override resolution (proposal §14)."""
 
-from core_tools.config import ConfigError
+from core_tools.config import (
+    ConfigError,
+    PathResolutionContext,
+    SkillEntry,
+    assert_path_within_workspace,
+    is_path_within_workspace,
+    load_skills,
+    resolve_expanded_path_list,
+    resolve_path,
+    resolve_workspace,
+    resolve_workspace_path,
+)
 
 from top_down_planning.config.context import (
     AgentRole,
     EffectiveRoleContext,
-    SkillEntry,
     build_agent_context_manifest_payload,
     build_context_digest_payload,
     compute_context_digest_from_config,
-    load_skills,
     resolve_effective_role_context,
-    resolve_expanded_path_list,
     resolve_provider_model,
 )
 from top_down_planning.config.defaults import (
     ALLOWED_AGENT_CONTEXT_ROLES,
     ALLOWED_OVERRIDE_PATHS,
     DEFAULT_CONFIG,
-)
-from top_down_planning.config.paths import (
-    PathResolutionContext,
-    assert_path_within_workspace,
-    is_path_within_workspace,
-    resolve_path,
-    resolve_workspace,
-    resolve_workspace_path,
 )
 from top_down_planning.config.resolve import (
     compute_input_digest,

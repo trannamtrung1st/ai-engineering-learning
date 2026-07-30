@@ -43,8 +43,10 @@ def test_core_tools_does_not_import_top_down_planning() -> None:
 
 def test_core_tools_imports_without_top_down_planning() -> None:
     import core_tools  # noqa: F401
+    import core_tools.cli  # noqa: F401
     import core_tools.config  # noqa: F401
     import core_tools.persistence  # noqa: F401
     import core_tools.provider  # noqa: F401
+    import core_tools.schema  # noqa: F401
 
     assert core_tools.__version__ == "0.1.0"

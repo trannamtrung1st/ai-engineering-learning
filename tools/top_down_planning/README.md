@@ -31,7 +31,7 @@ tests — not as an interactive `tdp run` quickstart.
 | Core domain | `domain/` | Pure models and rules: plan tree, dependencies, validation, production state, outcomes. No CLI, provider, or persistence concerns. |
 | Orchestrator | `orchestrator/` | Lifecycle transitions: plan → review → validate → produce → amend → review output → resolve outcome. |
 | Agent tool | `agent_tool/` | Structured agent protocol: atomic domain operations with schema validation and revision checks. |
-| Shared infra | [`core_tools`](../core_tools) | Provider adapters, generic config merge/overrides, atomic writes, content digests, YAML helpers. |
+| Shared infra | [`core_tools`](../core_tools) | Provider adapters; config merge/overrides, workspace paths, resource/skill loading, allowlist validation; atomic writes and digests; revision helpers; CLI emit/request/runs-dir resolution; minimal JSON Schema validation. |
 | Persistence | `persistence/` | `RunStore` interface and `FileRunStore` for canonical snapshots, events, and session references. |
 | CLI | `cli/` | User-facing (`tdp run`, `tdp resume`, …) and agent-facing (`tdp agent …`) command wiring. |
 | Config | `config/` | TDP schema (`DEFAULT_CONFIG`, allowed override paths) and `resolve_config`. |
