@@ -39,7 +39,7 @@ class RunStore(Protocol):
         """Load the current production snapshot."""
 
     def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
-        """Apply a single logical transaction across run artifacts."""
+        """Apply a journaled commit across run artifacts with crash recovery."""
 
     def load_events(self, run_id: str) -> list[dict[str, Any]]:
         """Load all persisted audit events for a run."""
@@ -63,25 +63,32 @@ class RunStore(Protocol):
         role: str,
         phase: str,
         allowed_ops: frozenset[str],
-        session_id: str | None = None,
+        session_id: str,
         session_kind: str = "primary",
-    ) -> tuple[str, dict[str, Any]]:
+        loop_id: str | None = None,
+    ) -> tuple[str, dict[str, Any], str]:
         """Create a session capability token for agent mutations."""
 
     def load_capability(self, run_id: str, capability_id: str) -> dict[str, Any]:
         """Load a capability record."""
 
+    def list_capabilities(self, run_id: str) -> list[dict[str, Any]]:
+        """Load all capability records for a run."""
+
     def revoke_capability(self, run_id: str, capability_id: str) -> None:
         """Revoke a capability token."""
 
-    def artifact_path(self, run_id: str, artifact_id: str, filename: str) -> Any:
-        """Return a contained artifact path under the run store."""
+    def revoke_capabilities_for_session(self, run_id: str, session_id: str) -> None:
+        """Revoke all live capabilities bound to a provider session."""
+
+    def artifact_path(self, run_id: str, snapshot_id: str, filename: str) -> Any:
+        """Return a contained artifact snapshot path under the run store."""
 
     def write_artifact_bytes(
         self,
         run_id: str,
-        artifact_id: str,
+        snapshot_id: str,
         filename: str,
         data: bytes,
     ) -> str:
-        """Write artifact bytes into the run store and return the relative ref."""
+        """Write artifact bytes under an immutable snapshot id and return the relative ref."""

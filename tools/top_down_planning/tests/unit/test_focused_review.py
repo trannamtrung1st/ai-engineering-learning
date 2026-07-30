@@ -238,13 +238,6 @@ def test_focused_plan_finding_outside_scope_is_rejected(tmp_path: Path) -> None:
     _create_planning_run(store)
     service = ReviewAgentService(store, "run-focused-plan")
     planner_token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
-    reviewer_token = grant_capability(
-        store,
-        "run-focused-plan",
-        role="reviewer",
-        phase=PLANNING,
-        session_kind="reviewer",
-    )
 
     created = service.request(_focused_plan_request(["item-api"]), capability_token=planner_token)
     store.save_review(
@@ -253,6 +246,15 @@ def test_focused_plan_finding_outside_scope_is_rejected(tmp_path: Path) -> None:
             **store.load_review("run-focused-plan", created["loop_id"]),
             "reviewer_session_id": "stub-session-reviewer",
         },
+    )
+    reviewer_token = grant_capability(
+        store,
+        "run-focused-plan",
+        role="reviewer",
+        phase=PLANNING,
+        session_kind="reviewer",
+        session_id="stub-session-reviewer",
+        loop_id=created["loop_id"],
     )
 
     with pytest.raises(RequestError, match="outside declared scope"):

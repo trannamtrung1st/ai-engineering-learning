@@ -19,6 +19,8 @@ from top_down_planning.orchestrator.agent_context import (
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
+    revoke_capabilities_for_phase,
+    rotate_session_capability,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
@@ -202,6 +204,19 @@ class ProductionPhaseOrchestrator:
                 self._producer_resume_request(),
             )
 
+            run = self._store.load_run(self._run_id)
+            phase = str(run.get("phase") or PRODUCTION)
+            self._capability_token = rotate_session_capability(
+                self._store,
+                self._run_id,
+                current_token=self._capability_token,
+                role="producer",
+                phase=phase,
+                session_id=session_id,
+                session_kind="primary",
+            )
+            bind_provider_capability(self._provider, self._capability_token)
+
     def _consume_provider_turn(self, session_id: str) -> tuple[str | None, int]:
         signal: str | None = None
         agent_turns = 0
@@ -354,6 +369,7 @@ class ProductionPhaseOrchestrator:
         run = self._store.load_run(self._run_id)
         production = self._store.load_production(self._run_id)
         expected_revision = int(run["revision"])
+        revoke_capabilities_for_phase(self._store, self._run_id, PRODUCTION)
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = WHOLE_OUTPUT_REVIEW
@@ -376,6 +392,7 @@ class ProductionPhaseOrchestrator:
         *,
         session_id: str | None,
     ) -> ProductionPhaseResult:
+        revoke_capabilities_for_phase(self._store, self._run_id, PRODUCTION)
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
         run = dict(run)

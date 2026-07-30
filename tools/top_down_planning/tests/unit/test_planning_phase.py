@@ -222,6 +222,15 @@ def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -
         capability_token=grant_capability(store, "run-planning", role="planner", phase=PLANNING),
     )
 
+    run = store.load_run("run-planning")
+    sessions = dict(run.get("sessions") or {})
+    sessions["primary_planner_session_id"] = None
+    run = dict(run)
+    run["sessions"] = sessions
+    expected = int(run["revision"])
+    run["revision"] = expected + 1
+    store.save_run("run-planning", run, expected)
+
     result = PlanningPhaseOrchestrator(store, "run-planning", provider).run()
     assert result.ok is True
     assert len(store.load_plan_model("run-planning").items) == 2

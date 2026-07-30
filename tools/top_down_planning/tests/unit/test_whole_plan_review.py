@@ -220,6 +220,8 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
         role="reviewer",
         phase=WHOLE_PLAN_REVIEW,
         session_kind="reviewer",
+        session_id="stub-session-reviewer",
+        loop_id="review-whole-plan-01",
     )
     with pytest.raises(RequestError, match="blocking findings"):
         service.respond(
@@ -264,6 +266,8 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
         role="reviewer",
         phase=WHOLE_PLAN_REVIEW,
         session_kind="reviewer",
+        session_id="stub-session-reviewer",
+        loop_id="review-whole-plan-01",
     )
     plan = store.load_plan_model("run-review")
     plan.revision = 1

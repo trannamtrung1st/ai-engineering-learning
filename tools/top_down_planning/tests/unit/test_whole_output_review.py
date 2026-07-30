@@ -411,6 +411,8 @@ def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> Non
         role="reviewer",
         phase=WHOLE_OUTPUT_REVIEW,
         session_kind="reviewer",
+        session_id="stub-session-reviewer",
+        loop_id="review-whole-output-01",
     )
     with pytest.raises(RequestError, match="does not match current output revision"):
         service.respond(

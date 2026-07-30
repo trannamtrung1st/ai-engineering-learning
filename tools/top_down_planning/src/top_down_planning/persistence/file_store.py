@@ -1,4 +1,4 @@
-"""File-backed run store with transactional commits and path containment."""
+"""File-backed run store with journaled commits and path containment."""
 
 from __future__ import annotations
 
@@ -265,9 +265,16 @@ class FileRunStore:
         txn_id = uuid.uuid4().hex
         staging_dir = self._assert_contained(run_dir / f".txn-{txn_id}")
         journal_path = staging_dir / "journal.json"
+        backups_dir = staging_dir / "backups"
         staging_dir.mkdir()
+        backups_dir.mkdir()
         staged_files: list[dict[str, str]] = []
 
+        journal_events = [dict(event) for event in spec.events]
+        for event in journal_events:
+            event["txn_id"] = txn_id
+
+        committed = False
         try:
             if run_payload is not None:
                 staged_path = staging_dir / "run.json"
@@ -296,14 +303,18 @@ class FileRunStore:
                     }
                 )
 
-            atomic_write_json(
-                journal_path,
-                {
-                    "txn_id": txn_id,
-                    "files": staged_files,
-                    "events": [dict(event) for event in spec.events],
-                },
-            )
+            journal: dict[str, Any] = {
+                "txn_id": txn_id,
+                "status": "prepared",
+                "files": staged_files,
+                "events": journal_events,
+                "backups": [],
+                "replaced": [],
+            }
+            atomic_write_json(journal_path, journal)
+
+            journal["status"] = "replacing"
+            atomic_write_json(journal_path, journal)
 
             for entry in staged_files:
                 staged_path = staging_dir / entry["name"]
@@ -314,17 +325,31 @@ class FileRunStore:
                 else:
                     dest = run_dir / entry["name"]
                 self._assert_contained(dest)
+                if dest.exists():
+                    backup_path = backups_dir / entry["name"]
+                    shutil.copy2(dest, backup_path)
+                    journal["backups"].append(entry["name"])
+                    atomic_write_json(journal_path, journal)
+                journal["replaced"].append(entry["name"])
+                atomic_write_json(journal_path, journal)
                 staged_path.replace(dest)
 
-            if spec.events:
+            journal["status"] = "appending_events"
+            atomic_write_json(journal_path, journal)
+
+            if journal_events:
                 events_path = self._events_path(validated_run_id)
                 with events_path.open("a", encoding="utf-8") as handle:
-                    for event in spec.events:
+                    for event in journal_events:
                         payload = dict(event)
                         payload.setdefault("ts", _utc_now())
                         handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+            journal["status"] = "committed"
+            atomic_write_json(journal_path, journal)
+            committed = True
         finally:
-            if staging_dir.exists():
+            if committed and staging_dir.exists():
                 shutil.rmtree(staging_dir)
 
         result: dict[str, Any] = {"ok": True}
@@ -417,21 +442,23 @@ class FileRunStore:
         role: str,
         phase: str,
         allowed_ops: frozenset[str],
-        session_id: str | None = None,
+        session_id: str,
         session_kind: str = "primary",
-    ) -> tuple[str, dict[str, Any]]:
-        capability_id, record = new_capability_record(
+        loop_id: str | None = None,
+    ) -> tuple[str, dict[str, Any], str]:
+        capability_id, record, raw_secret = new_capability_record(
             run_id=run_id,
             role=role,
             phase=phase,
             allowed_ops=allowed_ops,
             session_id=session_id,
             session_kind=session_kind,
+            loop_id=loop_id,
         )
         capabilities_dir = self.capabilities_dir(run_id)
         capabilities_dir.mkdir(parents=True, exist_ok=True)
         atomic_write_json(capabilities_dir / f"{capability_id}.json", record)
-        return capability_id, record
+        return capability_id, record, raw_secret
 
     def load_capability(self, run_id: str, capability_id: str) -> dict[str, Any]:
         validated_id = validate_store_id(capability_id, label="capability_id")
@@ -444,30 +471,54 @@ class FileRunStore:
             )
         return self._read_json(path)
 
+    def list_capabilities(self, run_id: str) -> list[dict[str, Any]]:
+        capabilities_dir = self.capabilities_dir(run_id)
+        if not capabilities_dir.is_dir():
+            return []
+        records: list[dict[str, Any]] = []
+        for path in sorted(capabilities_dir.glob("*.json")):
+            records.append(self._read_json(path))
+        return records
+
     def revoke_capability(self, run_id: str, capability_id: str) -> None:
         record = self.load_capability(run_id, capability_id)
         record["revoked"] = True
         validated_id = validate_store_id(capability_id, label="capability_id")
         atomic_write_json(self.capabilities_dir(run_id) / f"{validated_id}.json", record)
 
-    def artifact_path(self, run_id: str, artifact_id: str, filename: str) -> Path:
-        validated_artifact_id = validate_store_id(artifact_id, label="artifact_id")
+    def revoke_capabilities_for_session(self, run_id: str, session_id: str) -> None:
+        normalized_session_id = str(session_id).strip()
+        for record in self.list_capabilities(run_id):
+            if record.get("revoked") is True:
+                continue
+            if str(record.get("session_id") or "").strip() != normalized_session_id:
+                continue
+            capability_id = str(record.get("id") or "")
+            if capability_id:
+                self.revoke_capability(run_id, capability_id)
+
+    def artifact_path(self, run_id: str, snapshot_id: str, filename: str) -> Path:
+        validated_snapshot_id = validate_store_id(snapshot_id, label="snapshot_id")
         validated_filename = validate_store_id(filename, label="artifact_filename")
         return self._assert_contained(
-            self.artifacts_dir(run_id) / validated_artifact_id / validated_filename
+            self.artifacts_dir(run_id) / validated_snapshot_id / validated_filename
         )
 
     def write_artifact_bytes(
         self,
         run_id: str,
-        artifact_id: str,
+        snapshot_id: str,
         filename: str,
         data: bytes,
     ) -> str:
-        path = self.artifact_path(run_id, artifact_id, filename)
+        path = self.artifact_path(run_id, snapshot_id, filename)
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_bytes(path, data)
-        return str(Path("artifacts") / validate_store_id(artifact_id, label="artifact_id") / validate_store_id(filename, label="artifact_filename"))
+        return str(
+            Path("artifacts")
+            / validate_store_id(snapshot_id, label="snapshot_id")
+            / validate_store_id(filename, label="artifact_filename")
+        )
 
     def save_review(self, run_id: str, review: dict[str, Any]) -> None:
         review_id = review.get("id")
@@ -500,8 +551,111 @@ class FileRunStore:
         if not run_dir.is_dir():
             return
         for staging_dir in sorted(run_dir.glob(".txn-*")):
-            if staging_dir.is_dir():
+            if not staging_dir.is_dir():
+                continue
+            self._recover_transaction_dir(run_id, run_dir, staging_dir)
+
+    def _recover_transaction_dir(
+        self,
+        run_id: str,
+        run_dir: Path,
+        staging_dir: Path,
+    ) -> None:
+        journal_path = staging_dir / "journal.json"
+        if not journal_path.is_file():
+            shutil.rmtree(staging_dir)
+            return
+
+        journal = self._read_json(journal_path)
+        status = str(journal.get("status") or "prepared")
+        txn_id = str(journal.get("txn_id") or "")
+        staged_files = list(journal.get("files") or [])
+        journal_events = list(journal.get("events") or [])
+        backups_dir = staging_dir / "backups"
+        replaced = list(journal.get("replaced") or [])
+
+        if status in {"prepared", "replacing"}:
+            all_names = {str(entry.get("name") or "") for entry in staged_files}
+            replaced_names = {str(name) for name in replaced}
+            if (
+                status == "replacing"
+                and all_names
+                and replaced_names >= all_names
+            ):
+                if txn_id and journal_events:
+                    self._ensure_events_appended(run_id, txn_id, journal_events)
                 shutil.rmtree(staging_dir)
+                return
+            self._rollback_replaced_files(
+                run_dir,
+                staged_files,
+                replaced,
+                backups_dir,
+            )
+            shutil.rmtree(staging_dir)
+            return
+
+        if status == "appending_events":
+            if txn_id and journal_events:
+                self._ensure_events_appended(run_id, txn_id, journal_events)
+            shutil.rmtree(staging_dir)
+            return
+
+        if status == "committed":
+            shutil.rmtree(staging_dir)
+            return
+
+        shutil.rmtree(staging_dir)
+
+    def _rollback_replaced_files(
+        self,
+        run_dir: Path,
+        staged_files: list[dict[str, Any]],
+        replaced: list[str],
+        backups_dir: Path,
+    ) -> None:
+        entry_by_name = {str(entry.get("name") or ""): entry for entry in staged_files}
+        for name in replaced:
+            entry = entry_by_name.get(name)
+            if entry is None:
+                continue
+            if entry.get("kind") == "review":
+                review_id = str(entry.get("review_id") or "")
+                dest = self._assert_contained(run_dir / "reviews" / f"{review_id}.json")
+            else:
+                dest = self._assert_contained(run_dir / name)
+            backup_path = backups_dir / name
+            if backup_path.is_file():
+                shutil.copy2(backup_path, dest)
+            elif dest.exists():
+                dest.unlink()
+
+    def _ensure_events_appended(
+        self,
+        run_id: str,
+        txn_id: str,
+        journal_events: list[dict[str, Any]],
+    ) -> None:
+        events_path = self._events_path(run_id)
+        existing_txn_ids: set[str] = set()
+        if events_path.is_file():
+            for line in events_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                payload = json.loads(line)
+                event_txn_id = payload.get("txn_id")
+                if event_txn_id is not None:
+                    existing_txn_ids.add(str(event_txn_id))
+
+        if txn_id in existing_txn_ids:
+            return
+
+        with events_path.open("a", encoding="utf-8") as handle:
+            for event in journal_events:
+                payload = dict(event)
+                payload.setdefault("txn_id", txn_id)
+                payload.setdefault("ts", _utc_now())
+                handle.write(json.dumps(payload, sort_keys=True) + "\n")
 
     def _assert_contained(self, path: Path) -> Path:
         resolved = path.resolve()

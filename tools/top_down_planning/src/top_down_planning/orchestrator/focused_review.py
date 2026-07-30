@@ -22,6 +22,8 @@ from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     bind_reviewer_capability,
     issue_session_capability,
+    revoke_capabilities_for_loop,
+    rotate_session_capability,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
@@ -90,11 +92,25 @@ class FocusedReviewOrchestrator:
                         self._provider,
                         session_id=session_id,
                         phase=phase,
+                        loop_id=loop.id,
                     )
                 decision = self._consume_reviewer_turn(session_id, loop.id)
                 loop = self._reload_loop(loop.id)
                 if decision is None:
                     raise ProviderRunError("reviewer turn completed without a decision")
+                if loop.status == "pending":
+                    phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
+                    self._capability_token = rotate_session_capability(
+                        self._store,
+                        self._run_id,
+                        current_token=self._capability_token,
+                        role="reviewer",
+                        phase=phase,
+                        session_id=session_id,
+                        session_kind="reviewer",
+                        loop_id=loop.id,
+                    )
+                    bind_provider_capability(self._provider, self._capability_token)
             else:
                 decision = loop.status
 
@@ -208,6 +224,7 @@ class FocusedReviewOrchestrator:
             phase=phase,
             session_id=session_id,
             session_kind="reviewer",
+            loop_id=loop.id,
         )
         bind_provider_capability(self._provider, self._capability_token)
         self._append_event(
@@ -409,6 +426,7 @@ class FocusedReviewOrchestrator:
         ok: bool,
         reason: str | None = None,
     ) -> FocusedReviewResult:
+        revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
         if ok:
             self._append_event(
                 "focused_review_approved",

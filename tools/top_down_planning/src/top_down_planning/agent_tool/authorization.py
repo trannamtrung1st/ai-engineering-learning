@@ -10,6 +10,7 @@ from top_down_planning.persistence.capabilities import (
     CAPABILITY_ENV_VAR,
     MUTATING_OPS,
     parse_capability_token,
+    verify_capability_secret,
 )
 from top_down_planning.persistence.interface import RunStore
 
@@ -25,12 +26,26 @@ def resolve_capability_token(explicit: str | None = None) -> str | None:
     return str(env_value).strip()
 
 
+def _expected_session_id_for_role(run: dict[str, Any], role: str) -> str | None:
+    sessions = run.get("sessions") or {}
+    if role == "planner":
+        value = sessions.get("primary_planner_session_id")
+    elif role == "producer":
+        value = sessions.get("primary_producer_session_id")
+    else:
+        return None
+    if value is None:
+        return None
+    return str(value).strip() or None
+
+
 def authorize_mutation(
     store: RunStore,
     run_id: str,
     *,
     operation: str,
     capability_token: str | None = None,
+    loop_id: str | None = None,
 ) -> str:
     """Authorize a mutating agent operation and return the bound role."""
 
@@ -56,7 +71,11 @@ def authorize_mutation(
     record = store.load_capability(run_id, token_id)
     if record.get("revoked") is True:
         raise CapabilityDeniedError("capability token has been revoked", operation=operation)
-    if str(record.get("secret") or "") != secret:
+
+    secret_hash = str(record.get("secret_hash") or "")
+    if not secret_hash:
+        raise CapabilityDeniedError("capability token is invalid", operation=operation)
+    if not verify_capability_secret(secret, secret_hash):
         raise CapabilityDeniedError("capability token is invalid", operation=operation)
 
     run = store.load_run(run_id)
@@ -81,4 +100,45 @@ def authorize_mutation(
             "Capability record is missing role.",
             operation=operation,
         )
+
+    record_session_id = str(record.get("session_id") or "").strip()
+    if not record_session_id:
+        raise CapabilityDeniedError(
+            "capability token is not bound to a session",
+            operation=operation,
+        )
+
+    if role == "reviewer":
+        record_loop_id = str(record.get("loop_id") or "").strip()
+        if not record_loop_id:
+            raise CapabilityDeniedError(
+                "reviewer capability is not bound to a review loop",
+                operation=operation,
+            )
+        loop = store.load_review(run_id, record_loop_id)
+        reviewer_session_id = str(loop.get("reviewer_session_id") or "").strip()
+        if not reviewer_session_id or reviewer_session_id != record_session_id:
+            raise CapabilityDeniedError(
+                "capability token session does not match the review loop reviewer session",
+                operation=operation,
+            )
+        if operation == "review_respond":
+            if loop_id is None or not str(loop_id).strip():
+                raise CapabilityDeniedError(
+                    "review_respond requires a loop_id bound to the capability",
+                    operation=operation,
+                )
+            if str(loop_id).strip() != record_loop_id:
+                raise CapabilityDeniedError(
+                    "capability token is not authorized for this review loop",
+                    operation=operation,
+                )
+    else:
+        expected_session_id = _expected_session_id_for_role(run, role)
+        if expected_session_id is None or expected_session_id != record_session_id:
+            raise CapabilityDeniedError(
+                "capability token session does not match the active provider session",
+                operation=operation,
+            )
+
     return role

@@ -1,4 +1,4 @@
-"""Transactional commit contract for run-store mutations."""
+"""Journaled commit contract for run-store mutations."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 
 @dataclass
 class CommitSpec:
-    """Single logical store transaction."""
+    """Atomic multi-file mutation spec for a journaled store commit."""
 
     events: list[dict[str, Any]] = field(default_factory=list)
     run: dict[str, Any] | None = None

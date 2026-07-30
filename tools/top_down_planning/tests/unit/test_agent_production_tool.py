@@ -493,3 +493,60 @@ def test_cli_production_snapshot_exits_nonzero_when_plan_validation_fails(
     payload = result.json()
     assert payload["ok"] is False
     assert any(issue["code"] == "invalid_schema_version" for issue in payload["issues"])
+
+
+def test_duplicate_evidence_id_across_batches_is_rejected(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+    artifact = tmp_path / "leaf.txt"
+    artifact.write_text("first", encoding="utf-8")
+    service = ProductionAgentService(store, "run-production")
+    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+
+    first_request = _batch_apply_request(
+        plan_items=["item-first"],
+        dispositions={"item-first": {"disposition": "completed"}},
+    )
+    first_request["outputs"] = [{"id": "output-leaf", "type": "artifact", "ref": "leaf.txt"}]
+    service.apply(first_request, capability_token=token)
+
+    second_request = _batch_apply_request(
+        plan_items=["item-second"],
+        dispositions={"item-second": {"disposition": "completed"}},
+        production_revision=1,
+    )
+    second_request["outputs"] = [{"id": "output-leaf", "type": "artifact", "ref": "leaf.txt"}]
+    with pytest.raises(RequestError, match="duplicate output id across run history"):
+        service.apply(second_request, capability_token=token)
+
+
+def test_artifact_snapshots_use_unique_directories(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+    artifact = tmp_path / "leaf.txt"
+    artifact.write_text("content", encoding="utf-8")
+    service = ProductionAgentService(store, "run-production")
+    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+
+    request = _batch_apply_request(
+        plan_items=["item-first"],
+        dispositions={"item-first": {"disposition": "completed"}},
+    )
+    request["outputs"] = [{"id": "output-a", "type": "artifact", "ref": "leaf.txt"}]
+    service.apply(request, capability_token=token)
+
+    request2 = _batch_apply_request(
+        plan_items=["item-second"],
+        dispositions={"item-second": {"disposition": "completed"}},
+        production_revision=1,
+    )
+    request2["outputs"] = [{"id": "output-b", "type": "artifact", "ref": "leaf.txt"}]
+    service.apply(request2, capability_token=token)
+
+    production = store.load_production("run-production")
+    evidence = production["output_evidence"]
+    snapshot_refs = [entry["snapshot_ref"] for entry in evidence]
+    assert len(snapshot_refs) == 2
+    assert snapshot_refs[0] != snapshot_refs[1]
+    assert all(ref.startswith("artifacts/") for ref in snapshot_refs)
+    assert "output-a" not in snapshot_refs[0] or snapshot_refs[0].split("/")[1] != "output-a"

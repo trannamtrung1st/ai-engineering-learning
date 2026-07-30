@@ -205,9 +205,11 @@ This gives the reviewer enough continuity to judge whether the original issues w
 
 Mutating agent commands are authorized by session capability tokens, not self-declared CLI flags. When the orchestrator starts or resumes a provider session, it:
 
-1. Creates a capability record under `capabilities/` in the run store.
-2. Exports `TDP_CAPABILITY_TOKEN` to the provider subprocess.
-3. Enforces phase and operation checks in the agent tool layer before any mutation.
+1. Creates a capability record under `capabilities/` in the run store (persisting only a `secret_hash`, never the raw secret).
+2. Binds the capability to the provider `session_id` and, for reviewers, the review `loop_id`.
+3. Exports `TDP_CAPABILITY_TOKEN` to the provider subprocess.
+4. Revokes prior tokens when re-issuing for the same session, at turn boundaries, when a review loop becomes terminal, and when leaving a phase.
+5. Enforces phase, operation, session, and loop checks in the agent tool layer before any mutation.
 
 Role boundaries protect lifecycle integrity:
 
@@ -768,7 +770,7 @@ batch_result:
 
 Contribution records are descriptive, not a strict accounting model. Several items may contribute to one output, one item may contribute to several outputs, and an item may be satisfied without an output reference.
 
-On `production apply`, the service resolves each output `ref` against the project workspace, captures `sha256`, `size`, `media_type`, and `captured_at`, and snapshots the file under `artifacts/` in the run store. Resume and output validation verify that stored snapshots still match their recorded hashes.
+On `production apply`, the service resolves each output `ref` against the project workspace, captures `sha256`, `size`, `media_type`, and `captured_at`, and snapshots the file under `artifacts/<snapshot-uuid>/<filename>` in the run store. Evidence IDs are unique across the full `output_evidence` history; revisions must use new IDs. Resume and output validation verify that stored snapshots still match their recorded hashes.
 
 The tool must also support intentional empty output or no git changes:
 
@@ -1157,7 +1159,7 @@ runs/<run-id>/
   capabilities/
     <capability-id>.json
   artifacts/
-    <evidence-id>/
+    <snapshot-uuid>/
       <filename>
   reviews/
     <review-loop-id>.json
@@ -1170,12 +1172,12 @@ Responsibilities:
 - `run.json`: run status, outcome, phase, digests, and provider session references.
 - `plan.json`: canonical current plan and revision.
 - `production.json`: batches, item dispositions, output evidence, and output revision.
-- `capabilities/`: session capability tokens and revocation state.
-- `artifacts/`: content snapshots for output evidence hashes.
+- `capabilities/`: session capability token hashes, session/loop binding, and revocation state.
+- `artifacts/`: immutable content snapshots for output evidence hashes (UUID paths).
 - `reviews/`: review-loop records and stable findings.
-- `events.jsonl`: append-only audit trail for diagnostics and recovery.
+- `events.jsonl`: append-only audit trail; commit events carry `txn_id` for idempotent recovery.
 
-Multi-file mutations use `RunStore.commit()` so plan, production, run digests, and events advance in one logical transaction. `create_run` stages under `.creating-<run-id>/` and renames atomically on success.
+Multi-file mutations use `RunStore.commit()` with a journaled staging directory: per-file backups before replace, rollback of partial replaces on recovery, and completion of pending event appends when all file replacements finished before a crash. `create_run` stages under `.creating-<run-id>/` and renames atomically on success.
 
 Storage should be behind an interface so the implementation may later move from files to another backend without changing orchestration semantics.
 

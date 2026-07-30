@@ -166,11 +166,11 @@ Resolution precedence:
 
 `tdp run` creates the store root when needed. Read-only commands (`status`, `inspect`, `validate`, `tdp agent …`) do not create a missing store.
 
-When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR` and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses. Mutating `tdp agent …` commands require the capability token; authorization is bound to run phase and role, not a self-declared `--role` flag.
+When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR` and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses. Mutating `tdp agent …` commands require the capability token; authorization is bound to run phase, role, provider session, and (for reviewers) review loop — not a self-declared `--role` flag. Capability records store only a hash of the secret; tokens are revoked when turns, loops, or phases end.
 
 `tdp run` supports `--until plan|validated|completed` (default `plan`). `tdp resume` advances one phase step by default, or loops to `--until` when set. Both use the central `RunEngine` continuation loop.
 
-Persistence uses transactional `RunStore.commit()` for multi-file mutations. Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files into the run store.
+Persistence uses journaled `RunStore.commit()` for multi-file mutations: staged writes, per-file backups, and recovery that rolls back partial replaces or finishes pending event appends after a crash. Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files under immutable UUID paths in the run store. Evidence IDs are unique across the full run history.
 
 `tdp run` creates the run store and drives the run until the requested milestone or a limit/failure. On the default `plan` target, success means phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing.
 
@@ -182,7 +182,7 @@ Production (proposal §10): after `plan_validated`, `tdp resume` starts the prim
 
 Plan amendment (proposal §10.4): when production exposes a material plan defect, the producer requests amendment with evidence and affected plan refs. The orchestrator pauses production (`status: paused`, phase `plan_amendment`), resumes the same primary planner to revise the plan, runs mandatory whole-plan review on the amended revision, reconciles production evidence against the prior plan snapshot (clearing dispositions for changed/removed items, marking overlapping batches `invalidated_by_reconciliation`, dropping related `output_evidence`, and recording `invalidated_item_ids` on the reconciliation report), then resumes the same primary producer with the reconciliation report. Output digests bind live evidence only — invalidated batches remain in the audit history but are excluded from digest and reviewer snapshots. Amendment limits use `limits.amendment.max_requests` and `limits.amendment.max_revision_cycles_per_request`. Production batches, completion claims, and blocker reports are rejected while an amendment is pending. `tdp resume` routes in-flight amendments through `PlanAmendmentOrchestrator` when `pending_amendment_id` is set and the run is in `plan_amendment`, `whole_plan_review`, or `plan_validated`; production-phase resume with a pending amendment is handled inside `ProductionPhaseOrchestrator`.
 
-Whole-output review (proposal §5.3, §12.2, §15, §21): after production completion, `tdp resume` starts a fresh reviewer session bound to the current `output_revision`, resumes the same primary producer for revisions after `changes_requested` with instructions to use `production apply` and `evidence_revision: true` on terminal items targeted by unresolved blocking findings (dispositions unchanged), then re-submit completion with `goal_met: true`. Deterministic output validation plus the acceptance invariant must pass before the orchestrator sets `outcome: accepted`. Revision cycles are capped by `limits.whole_output_review.max_revision_cycles`. Deterministic validation failures after reviewer approval yield `blocked`; limit exhaustion yields `rejected`. Provider/orchestrator operational failures set `status: failed` without a quality outcome — `failed` is operational only and is not conflated with `rejected`.
+Whole-output review (proposal §5.3, §12.2, §15, §21): after production completion, `tdp resume` starts a fresh reviewer session bound to the current `output_revision`, resumes the same primary producer for revisions after `changes_requested` with instructions to use `production apply`, `evidence_revision: true`, and new evidence IDs on terminal items targeted by unresolved blocking findings (dispositions unchanged), then re-submit completion with `goal_met: true`. Deterministic output validation plus the acceptance invariant must pass before the orchestrator sets `outcome: accepted`. Revision cycles are capped by `limits.whole_output_review.max_revision_cycles`. Deterministic validation failures after reviewer approval yield `blocked`; limit exhaustion yields `rejected`. Provider/orchestrator operational failures set `status: failed` without a quality outcome — `failed` is operational only and is not conflated with `rejected`.
 
 `tdp validate` runs deterministic plan validation and, when a completion claim or whole-output review exists, output validation as well.
 
@@ -207,7 +207,7 @@ tdp agent review respond --run <run-id> --request review.json
 tdp agent run status --run <run-id>
 ```
 
-Production apply requires `production_revision` from the latest snapshot. `submit-completion` requires `goal_met: true` plus `goal_assessment` and records a completion claim only; the orchestrator advances to whole-output review after a valid claim and sets final `outcome` only after whole-output review. During `whole_output_review`, use `evidence_revision: true` on `production apply` to revise terminal items targeted by unresolved blocking findings (see `tdp agent example evidence-revision`).
+Production apply requires `production_revision` from the latest snapshot. `submit-completion` requires `goal_met: true` plus `goal_assessment` and records a completion claim only; the orchestrator advances to whole-output review after a valid claim and sets final `outcome` only after whole-output review. During `whole_output_review`, use `evidence_revision: true` on `production apply` to revise terminal items targeted by unresolved blocking findings with **new** evidence IDs (see `tdp agent example evidence-revision`).
 
 Agent plan `snapshot`/`check`/`apply` and production `snapshot` (tree/ready) share the same
 plan validation contract: structured `issues` for errors, string `warnings` for
@@ -215,8 +215,8 @@ non-blocking findings, and `ok` when validation has no error-severity issues.
 Production-specific batch checks use `production check`. Tree snapshots include
 `scope`, `boundaries`, and `acceptance` on each item. `plan apply` also sets
 `applied: true` when the mutation batch was persisted (exit code still reflects
-`ok`, not whether the batch was saved). Mutations commit plan, run digests, and
-events in one store transaction.
+`ok`, not whether the batch was saved). Plan apply commits plan, run digests, and
+events through a journaled store commit with crash recovery.
 
 `tdp agent plan snapshot`, `plan apply`, and `plan check` exit 0 only when
 `ok` is true. `production snapshot` and `production check` follow the same rule.

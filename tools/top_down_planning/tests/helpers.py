@@ -136,6 +136,8 @@ def grant_capability(
     role: str,
     phase: str | None = None,
     session_kind: str = "primary",
+    session_id: str | None = None,
+    loop_id: str | None = None,
 ) -> str:
     """Issue a session capability token and return its serialized value."""
 
@@ -143,12 +145,56 @@ def grant_capability(
 
     if phase is None:
         phase = PLANNING if role == "planner" else PRODUCTION
+
+    run = store.load_run(run_id)
+    sessions = dict(run.get("sessions") or {})
+
+    if role == "planner":
+        if session_id is not None:
+            resolved_session_id = session_id
+        else:
+            resolved_session_id = sessions.get("primary_planner_session_id") or "test-planner-session"
+        if sessions.get("primary_planner_session_id") is None:
+            sessions["primary_planner_session_id"] = resolved_session_id
+            run = dict(run)
+            run["sessions"] = sessions
+            expected = int(run["revision"])
+            run["revision"] = expected + 1
+            store.save_run(run_id, run, expected)
+    elif role == "producer":
+        if session_id is not None:
+            resolved_session_id = session_id
+        else:
+            resolved_session_id = sessions.get("primary_producer_session_id") or "test-producer-session"
+        if sessions.get("primary_producer_session_id") is None:
+            sessions["primary_producer_session_id"] = resolved_session_id
+            run = dict(run)
+            run["sessions"] = sessions
+            expected = int(run["revision"])
+            run["revision"] = expected + 1
+            store.save_run(run_id, run, expected)
+    else:
+        resolved_session_id = session_id or "test-reviewer-session"
+
+    resolved_loop_id: str | None = None
+    if session_kind == "reviewer" or role == "reviewer":
+        resolved_loop_id = loop_id or "review-test-loop"
+        try:
+            loop = dict(store.load_review(run_id, resolved_loop_id))
+            if loop.get("reviewer_session_id") != resolved_session_id:
+                loop["reviewer_session_id"] = resolved_session_id
+                store.save_review(run_id, loop)
+        except Exception:
+            pass
+
     return issue_session_capability(
         store,
         run_id,
         role=role,
         phase=phase,
+        session_id=resolved_session_id,
         session_kind=session_kind,
+        loop_id=resolved_loop_id,
     )
 
 

@@ -411,7 +411,9 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "Production batch request for `tdp agent production apply`. "
             "Output evidence is content-bound at apply time: agents supply only "
             "`id`, `type`, and workspace `ref`; the service captures sha256, "
-            "size, media_type, captured_at, and an artifacts/ snapshot."
+            "size, media_type, captured_at, and an immutable snapshot under "
+            "artifacts/<snapshot-uuid>/<filename>. Evidence IDs are unique "
+            "across the full run history."
         ),
         "type": "object",
         "required": ["production_revision", "plan_items", "dispositions"],
@@ -783,8 +785,10 @@ and mandatory review gates.
 
 The orchestrator binds one primary planner, producer, or reviewer session per phase.
 Mutating `tdp agent` commands require the session capability token exported as
-`TDP_CAPABILITY_TOKEN`. The token encodes the allowed role and phase; agents do
-not pass `--role` on the CLI.
+`TDP_CAPABILITY_TOKEN`. Authorization checks phase, allowed operations, the bound
+provider session, and (for reviewers) the review loop. Capability records store
+only a `secret_hash`; tokens are revoked when turns, loops, or phases end. Agents
+do not pass `--role` on the CLI.
 
 - planner — mutate the plan during planning or amendment
 - producer — record production batches, completion claims, blockers, amendment requests
@@ -800,8 +804,9 @@ not pass `--role` on the CLI.
    `goal_met: true` and a `goal_assessment` rationale.
 4. Mandatory whole-output review must approve before `outcome: accepted`. After
    `changes_requested`, the producer must use `production apply` with
-   `evidence_revision: true` on terminal items targeted by unresolved blocking
-   findings (dispositions unchanged), then re-submit completion with `goal_met: true`.
+   `evidence_revision: true` and **new** output evidence IDs on terminal items
+   targeted by unresolved blocking findings (dispositions unchanged), then
+   re-submit completion with `goal_met: true`.
    Plan amendment is not available during whole-output review.
 5. Optional focused reviews use `review request` with bounded `scope.item_ids`.
    Focused plan reviewers receive the same embedded plan snapshot guidance as
@@ -815,8 +820,9 @@ precedence). The orchestrator exports the resolved absolute store root as
 so in-agent commands typically need only `--run <run-id>`.
 
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
-The service captures content hashes and snapshots artifacts under `artifacts/` in
-the run store.
+The service captures content hashes and stores immutable snapshots under
+`artifacts/<snapshot-uuid>/<filename>` in the run store. Reusing an evidence ID
+across batches is rejected.
 
 ## Discoverability
 
@@ -831,8 +837,8 @@ Plan apply requires `base_revision` from `plan snapshot`. Production apply requi
 error with instructions to refresh the snapshot.
 
 Completion claims require `goal_met: true` plus non-empty `goal_assessment`. During
-`whole_output_review`, set `evidence_revision: true` on `production apply` when
-revising terminal items after reviewer `changes_requested`.
+`whole_output_review`, set `evidence_revision: true` on `production apply` with new
+output evidence IDs when revising terminal items after reviewer `changes_requested`.
 
 Plan `snapshot` and `check` responses separate validation `issues` (errors with
 `code`, `message`, optional `path`) from `warnings` (human-readable strings).

@@ -26,6 +26,9 @@ from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     bind_reviewer_capability,
     issue_session_capability,
+    revoke_capabilities_for_loop,
+    revoke_capabilities_for_phase,
+    rotate_session_capability,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
@@ -105,11 +108,26 @@ class WholeOutputReviewOrchestrator:
                         self._provider,
                         session_id=session_id,
                         phase=phase,
+                        loop_id=loop.id,
                     )
                 decision = self._consume_reviewer_turn(session_id, loop.id)
                 loop = self._reload_loop(loop.id)
                 if decision is None:
                     raise ProviderRunError("reviewer turn completed without a decision")
+                if loop.status == "pending":
+                    run = self._store.load_run(self._run_id)
+                    phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
+                    self._capability_token = rotate_session_capability(
+                        self._store,
+                        self._run_id,
+                        current_token=self._capability_token,
+                        role="reviewer",
+                        phase=phase,
+                        session_id=session_id,
+                        session_kind="reviewer",
+                        loop_id=loop.id,
+                    )
+                    bind_provider_capability(self._provider, self._capability_token)
             else:
                 decision = loop.status
 
@@ -117,6 +135,7 @@ class WholeOutputReviewOrchestrator:
                 return self._complete_with_approval(loop)
 
             if decision == "blocked":
+                revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
                 return self._terminate("blocked", "whole-output reviewer blocked the run")
 
             if decision != "changes_requested":
@@ -208,6 +227,8 @@ class WholeOutputReviewOrchestrator:
             )
 
         expected_revision = int(run["revision"])
+        revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
+        revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_OUTPUT_REVIEW)
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = OUTPUT_VALIDATED
@@ -234,6 +255,7 @@ class WholeOutputReviewOrchestrator:
         outcome: str,
         message: str,
     ) -> WholeOutputReviewResult:
+        revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_OUTPUT_REVIEW)
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
         run = dict(run)
@@ -334,6 +356,7 @@ class WholeOutputReviewOrchestrator:
             phase=phase,
             session_id=session_id,
             session_kind="reviewer",
+            loop_id=loop.id,
         )
         bind_provider_capability(self._provider, self._capability_token)
         self._append_event(

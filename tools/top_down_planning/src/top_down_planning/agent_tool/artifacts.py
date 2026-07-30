@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -25,7 +26,6 @@ def capture_output_artifact(
     run_id: str,
     *,
     workspace: Path,
-    evidence_id: str,
     ref: str,
 ) -> dict[str, str | int]:
     """Resolve, hash, and snapshot a workspace artifact into the run store."""
@@ -40,9 +40,10 @@ def capture_output_artifact(
     data = artifact_path.read_bytes()
     sha256 = hashlib.sha256(data).hexdigest()
     filename = artifact_path.name
+    snapshot_id = uuid.uuid4().hex
     snapshot_ref = store.write_artifact_bytes(
         run_id,
-        evidence_id,
+        snapshot_id,
         filename,
         data,
     )
@@ -71,8 +72,8 @@ def verify_evidence_snapshot(
     parts = Path(snapshot_ref).parts
     if len(parts) != 3 or parts[0] != "artifacts":
         raise RequestError(f"invalid evidence snapshot_ref: {snapshot_ref!r}")
-    _prefix, artifact_id, filename = parts
-    path = store.artifact_path(run_id, artifact_id, filename)
+    _prefix, snapshot_id, filename = parts
+    path = store.artifact_path(run_id, snapshot_id, filename)
     if not path.is_file():
         raise RequestError(f"evidence snapshot missing: {snapshot_ref}")
     actual = hashlib.sha256(path.read_bytes()).hexdigest()

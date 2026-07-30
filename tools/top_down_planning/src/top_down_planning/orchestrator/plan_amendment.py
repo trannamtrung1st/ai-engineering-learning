@@ -15,6 +15,8 @@ from top_down_planning.domain.reviews import find_whole_plan_approval
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
+    revoke_capabilities_for_phase,
+    rotate_session_capability,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import (
@@ -137,6 +139,18 @@ class PlanAmendmentOrchestrator:
                     planner_session_id,
                     amendment,
                 )
+                run = self._store.load_run(self._run_id)
+                phase = str(run.get("phase") or PLAN_AMENDMENT)
+                self._capability_token = rotate_session_capability(
+                    self._store,
+                    self._run_id,
+                    current_token=self._capability_token,
+                    role="planner",
+                    phase=phase,
+                    session_id=planner_session_id,
+                    session_kind="primary",
+                )
+                bind_provider_capability(self._provider, self._capability_token)
 
             run = self._transition_to_whole_plan_review()
 
@@ -224,6 +238,7 @@ class PlanAmendmentOrchestrator:
 
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
+        revoke_capabilities_for_phase(self._store, self._run_id, str(run.get("phase") or ""))
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = PLAN_AMENDMENT
@@ -235,6 +250,7 @@ class PlanAmendmentOrchestrator:
     def _transition_to_whole_plan_review(self) -> dict[str, Any]:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
+        revoke_capabilities_for_phase(self._store, self._run_id, PLAN_AMENDMENT)
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = WHOLE_PLAN_REVIEW
@@ -252,6 +268,7 @@ class PlanAmendmentOrchestrator:
     def _resume_production_phase(self, plan_revision: int) -> dict[str, Any]:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
+        revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_PLAN_REVIEW)
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = PRODUCTION

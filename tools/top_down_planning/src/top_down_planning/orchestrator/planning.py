@@ -14,6 +14,8 @@ from top_down_planning.domain.reviews import blocking_focused_findings_for_items
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
+    revoke_capabilities_for_phase,
+    rotate_session_capability,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.agent_context import (
@@ -156,6 +158,19 @@ class PlanningPhaseOrchestrator:
                     ),
                 )
 
+            run = self._store.load_run(self._run_id)
+            phase = str(run.get("phase") or PLANNING)
+            self._capability_token = rotate_session_capability(
+                self._store,
+                self._run_id,
+                current_token=self._capability_token,
+                role="planner",
+                phase=phase,
+                session_id=session_id,
+                session_kind="primary",
+            )
+            bind_provider_capability(self._provider, self._capability_token)
+
             self._provider.resume_primary_session(
                 session_id,
                 {"action": "continue", "phase": PLANNING},
@@ -260,6 +275,7 @@ class PlanningPhaseOrchestrator:
     ) -> PlanningPhaseResult:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
+        revoke_capabilities_for_phase(self._store, self._run_id, PLANNING)
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = WHOLE_PLAN_REVIEW
@@ -281,6 +297,7 @@ class PlanningPhaseOrchestrator:
         limit: str,
         message: str,
     ) -> PlanningPhaseResult:
+        revoke_capabilities_for_phase(self._store, self._run_id, PLANNING)
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
         run = dict(run)

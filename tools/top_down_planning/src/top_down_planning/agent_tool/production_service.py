@@ -587,6 +587,12 @@ def _parse_outputs(store: RunStore, run_id: str, raw_outputs: Any) -> list[Outpu
         raise RequestError("outputs must be a list")
     run = store.load_run(run_id)
     workspace = Path(str(run.get("workspace") or "")).resolve()
+    production = store.load_production(run_id)
+    existing_ids = {
+        str(entry.get("id") or "")
+        for entry in (production.get("output_evidence") or [])
+        if entry.get("id")
+    }
     outputs: list[OutputEvidence] = []
     seen_ids: set[str] = set()
     for item in raw_outputs:
@@ -596,11 +602,15 @@ def _parse_outputs(store: RunStore, run_id: str, raw_outputs: Any) -> list[Outpu
         ref = str(item.get("ref") or "")
         if not evidence_id or not ref:
             raise RequestError("each output requires id and ref")
+        if evidence_id in existing_ids:
+            raise RequestError(f"duplicate output id across run history: {evidence_id}")
+        if evidence_id in seen_ids:
+            raise RequestError(f"duplicate output id: {evidence_id}")
+        seen_ids.add(evidence_id)
         captured = capture_output_artifact(
             store,  # type: ignore[arg-type]
             run_id,
             workspace=workspace,
-            evidence_id=evidence_id,
             ref=ref,
         )
         output = OutputEvidence(
@@ -613,9 +623,6 @@ def _parse_outputs(store: RunStore, run_id: str, raw_outputs: Any) -> list[Outpu
             captured_at=str(captured["captured_at"]),
             snapshot_ref=str(captured["snapshot_ref"]),
         )
-        if output.id in seen_ids:
-            raise RequestError(f"duplicate output id: {output.id}")
-        seen_ids.add(output.id)
         outputs.append(output)
     return outputs
 

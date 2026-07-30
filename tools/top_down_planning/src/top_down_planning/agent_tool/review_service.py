@@ -130,17 +130,18 @@ class ReviewAgentService:
         *,
         capability_token: str | None = None,
     ) -> dict[str, Any]:
+        loop_id = request.get("loop_id")
+        if loop_id is None or not str(loop_id).strip():
+            raise RequestError("respond requires loop_id")
+        loop_id = str(loop_id).strip()
+
         authorize_mutation(
             self._store,
             self._run_id,
             operation="review_respond",
             capability_token=capability_token,
+            loop_id=loop_id,
         )
-
-        loop_id = request.get("loop_id")
-        if loop_id is None or not str(loop_id).strip():
-            raise RequestError("respond requires loop_id")
-        loop_id = str(loop_id).strip()
 
         if "target_revision" not in request:
             raise RequestError("respond requires target_revision")
