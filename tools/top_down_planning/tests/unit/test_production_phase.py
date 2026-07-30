@@ -1,4 +1,4 @@
-"""Integration tests for the production-phase orchestrator and service."""
+"""Unit tests for the production-phase orchestrator and service."""
 
 from __future__ import annotations
 
@@ -12,16 +12,7 @@ from top_down_planning.orchestrator import ProductionPhaseOrchestrator, Provider
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.provider import StubProvider
-
-
-def _done_events(*, signal: str | None = None) -> list[dict]:
-    events = [
-        {"type": "assistant", "text": "production turn"},
-        {"type": "done", "subtype": "success", "text": "ok", "is_error": False},
-    ]
-    if signal is not None:
-        events[-1]["signal"] = signal
-    return events
+from tests.helpers import done_events
 
 
 def _batch_apply_request(
@@ -152,7 +143,7 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
                     dispositions={"item-first": {"disposition": "completed"}},
                 ),
             },
-            *_done_events(signal="batch_complete"),
+            *done_events(signal="batch_complete", text="production turn"),
         ]
     )
     provider.script_turn(
@@ -173,7 +164,7 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
                 "role": "producer",
                 "request": {"goal_assessment": "Output goal is fully met."},
             },
-            *_done_events(signal="batch_complete"),
+            *done_events(signal="batch_complete", text="production turn"),
         ]
     )
 
@@ -321,7 +312,7 @@ def test_max_batches_exhaustion_yields_blocked_not_accepted(tmp_path: Path) -> N
                     dispositions={"item-first": {"disposition": "completed"}},
                 ),
             },
-            *_done_events(signal="batch_complete"),
+            *done_events(signal="batch_complete", text="production turn"),
         ]
     )
 
@@ -361,7 +352,7 @@ def test_plan_apply_during_production_is_rejected(tmp_path: Path) -> None:
                     ],
                 },
             },
-            *_done_events(signal="batch_complete"),
+            *done_events(signal="batch_complete", text="production turn"),
         ]
     )
 

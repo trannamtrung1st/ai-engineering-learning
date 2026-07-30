@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +12,7 @@ from top_down_planning.agent_tool.errors import RoleDeniedError
 from top_down_planning.cli.main import main
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import FileRunStore
+from tests.conftest import run_cli
 
 
 def _sample_plan(revision: int = 0) -> Plan:
@@ -180,7 +179,7 @@ def test_producer_role_denied_for_apply(tmp_path: Path) -> None:
         )
 
 
-def test_cli_apply_and_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_plan_commands_smoke(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
 
@@ -199,11 +198,8 @@ def test_cli_apply_and_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     request_path = tmp_path / "apply.json"
     request_path.write_text(json.dumps(request), encoding="utf-8")
 
-    apply = subprocess.run(
+    apply = run_cli(
         [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
             "agent",
             "plan",
             "apply",
@@ -215,21 +211,15 @@ def test_cli_apply_and_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
             str(request_path),
             "--role",
             "planner",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+        ]
     )
-    assert apply.returncode == 0, apply.stderr
-    apply_payload = json.loads(apply.stdout)
+    assert apply.exit_code == 0, apply.stderr
+    apply_payload = apply.json()
     assert apply_payload["ok"] is True
     assert apply_payload["revision"] == 1
 
-    snapshot = subprocess.run(
+    snapshot = run_cli(
         [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
             "agent",
             "plan",
             "snapshot",
@@ -239,16 +229,30 @@ def test_cli_apply_and_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
             str(tmp_path),
             "--view",
             "ready",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+        ]
     )
-    assert snapshot.returncode == 0, snapshot.stderr
-    snapshot_payload = json.loads(snapshot.stdout)
+    assert snapshot.exit_code == 0, snapshot.stderr
+    snapshot_payload = snapshot.json()
     assert snapshot_payload["view"] == "ready"
     assert "planning_budget" not in snapshot_payload
     assert "ready_item_ids" in snapshot_payload
+
+    status = run_cli(
+        [
+            "agent",
+            "run",
+            "status",
+            "--run",
+            "run-001",
+            "--runs-dir",
+            str(tmp_path),
+        ]
+    )
+    assert status.exit_code == 0, status.stderr
+    status_payload = status.json()
+    assert status_payload["ok"] is True
+    assert status_payload["run"]["phase"] == "planning"
+    assert status_payload["run"]["plan_revision"] == 1
 
 
 def test_cli_stale_revision_returns_actionable_error(tmp_path: Path) -> None:
@@ -272,11 +276,8 @@ def test_cli_stale_revision_returns_actionable_error(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
+    result = run_cli(
         [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
             "agent",
             "plan",
             "apply",
@@ -288,44 +289,13 @@ def test_cli_stale_revision_returns_actionable_error(tmp_path: Path) -> None:
             str(request_path),
             "--role",
             "planner",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+        ]
     )
-    assert result.returncode == 1
-    payload = json.loads(result.stdout)
+    assert result.exit_code == 1
+    payload = result.json()
     assert payload["ok"] is False
     assert payload["error"]["code"] == "revision_conflict"
     assert "snapshot" in payload["error"]["action"].lower()
-
-
-def test_cli_run_status(tmp_path: Path) -> None:
-    store = FileRunStore(tmp_path)
-    _create_run(store)
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
-            "agent",
-            "run",
-            "status",
-            "--run",
-            "run-001",
-            "--runs-dir",
-            str(tmp_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-    assert payload["ok"] is True
-    assert payload["run"]["phase"] == "planning"
-    assert payload["run"]["plan_revision"] == 0
 
 
 def test_main_help_still_works() -> None:

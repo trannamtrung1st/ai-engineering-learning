@@ -108,7 +108,7 @@ def test_build_agent_argv_shape_with_fake_runner(tmp_path: Path) -> None:
     assert argv[-1] == "Plan the work"
 
 
-def test_cursor_provider_uses_fake_runner_without_subprocess(tmp_path: Path) -> None:
+def test_cursor_provider_uses_injected_runner(tmp_path: Path) -> None:
     stream_lines = [
         json.dumps(
             {

@@ -167,13 +167,6 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
     status_parser = run_sub.add_parser("status", help="Return minimal run status.")
     _add_run_flags(status_parser)
 
-    for stub_name in ("help", "readme", "schema", "example"):
-        stub_parser = agent_sub.add_parser(
-            stub_name,
-            help=f"Agent {stub_name} (not implemented).",
-        )
-        stub_parser.add_argument("name", nargs="?", help="Optional schema/example name.")
-
 
 def _add_run_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--run", required=True, help="Run id.")
@@ -210,18 +203,6 @@ def emit_error(exc: Exception, *, exit_code: int = 1) -> None:
 
 
 def handle_agent_command(args: argparse.Namespace) -> None:
-    if args.agent_command in {"help", "readme", "schema", "example"}:
-        emit_response(
-            {
-                "ok": False,
-                "error": {
-                    "code": "not_implemented",
-                    "message": f"agent {args.agent_command} is not implemented yet",
-                },
-            },
-            exit_code=2,
-        )
-
     if args.agent_command == "plan":
         _handle_plan_command(args)
         return

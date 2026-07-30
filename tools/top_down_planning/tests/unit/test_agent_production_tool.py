@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +16,7 @@ from top_down_planning.agent_tool.errors import RoleDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.persistence import FileRunStore
+from tests.conftest import run_cli
 
 
 def _batch_apply_request(
@@ -279,7 +278,7 @@ def test_production_check_reports_open_items(tmp_path: Path) -> None:
     assert any("remain without terminal disposition" in issue for issue in result["issues"])
 
 
-def test_cli_production_apply_and_submit_completion(tmp_path: Path) -> None:
+def test_cli_production_workflow(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
 
@@ -290,11 +289,8 @@ def test_cli_production_apply_and_submit_completion(tmp_path: Path) -> None:
     first_path = tmp_path / "batch-first.json"
     first_path.write_text(json.dumps(first_request), encoding="utf-8")
 
-    first_apply = subprocess.run(
+    first_apply = run_cli(
         [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
             "agent",
             "production",
             "apply",
@@ -306,13 +302,10 @@ def test_cli_production_apply_and_submit_completion(tmp_path: Path) -> None:
             str(first_path),
             "--role",
             "producer",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+        ]
     )
-    assert first_apply.returncode == 0, first_apply.stderr
-    first_payload = json.loads(first_apply.stdout)
+    assert first_apply.exit_code == 0, first_apply.stderr
+    first_payload = first_apply.json()
     assert first_payload["ok"] is True
 
     second_request = _batch_apply_request(
@@ -323,11 +316,8 @@ def test_cli_production_apply_and_submit_completion(tmp_path: Path) -> None:
     second_path = tmp_path / "batch-second.json"
     second_path.write_text(json.dumps(second_request), encoding="utf-8")
 
-    second_apply = subprocess.run(
+    second_apply = run_cli(
         [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
             "agent",
             "production",
             "apply",
@@ -339,23 +329,17 @@ def test_cli_production_apply_and_submit_completion(tmp_path: Path) -> None:
             str(second_path),
             "--role",
             "producer",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+        ]
     )
-    assert second_apply.returncode == 0, second_apply.stderr
+    assert second_apply.exit_code == 0, second_apply.stderr
 
     completion_path = tmp_path / "completion.json"
     completion_path.write_text(
         json.dumps({"goal_assessment": "Delivered the feature."}),
         encoding="utf-8",
     )
-    completion = subprocess.run(
+    completion = run_cli(
         [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
             "agent",
             "production",
             "submit-completion",
@@ -367,13 +351,10 @@ def test_cli_production_apply_and_submit_completion(tmp_path: Path) -> None:
             str(completion_path),
             "--role",
             "producer",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+        ]
     )
-    assert completion.returncode == 0, completion.stderr
-    completion_payload = json.loads(completion.stdout)
+    assert completion.exit_code == 0, completion.stderr
+    completion_payload = completion.json()
     assert completion_payload["ok"] is True
     assert completion_payload["run_outcome"] is None
 
@@ -393,11 +374,8 @@ def test_cli_reviewer_denied_for_production_apply(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
+    result = run_cli(
         [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
             "agent",
             "production",
             "apply",
@@ -409,12 +387,9 @@ def test_cli_reviewer_denied_for_production_apply(tmp_path: Path) -> None:
             str(request_path),
             "--role",
             "reviewer",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+        ]
     )
-    assert result.returncode == 1
-    payload = json.loads(result.stdout)
+    assert result.exit_code == 1
+    payload = result.json()
     assert payload["ok"] is False
     assert payload["error"]["code"] == "role_denied"

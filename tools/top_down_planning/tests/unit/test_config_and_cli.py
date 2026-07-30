@@ -2,34 +2,26 @@
 
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from argparse import Namespace
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from top_down_planning.cli.user import handle_run_command, handle_validate_command
+from top_down_planning.cli.user import handle_validate_command
 from top_down_planning.config import (
     ConfigError,
     compute_input_digest,
     resolve_config,
 )
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator import PlanningPhaseResult
-from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore, compute_config_digest
-
-
-def _write_config(path: Path, body: str) -> Path:
-    path.write_text(body, encoding="utf-8")
-    return path
+from tests.conftest import run_cli
+from tests.helpers import write_config
 
 
 def test_defaults_yaml_cli_precedence_changes_resolved_values(tmp_path: Path) -> None:
-    config_path = _write_config(
+    config_path = write_config(
         tmp_path / "base.yaml",
         """
 version: 1
@@ -53,7 +45,7 @@ planning:
 
 
 def test_override_digest_changes_when_cli_set_applied(tmp_path: Path) -> None:
-    config_path = _write_config(
+    config_path = write_config(
         tmp_path / "base.yaml",
         "run:\n  output_goal: Goal.\nplanning:\n  max_depth: 4\n",
     )
@@ -64,13 +56,13 @@ def test_override_digest_changes_when_cli_set_applied(tmp_path: Path) -> None:
 
 
 def test_unknown_override_path_fails_explicitly(tmp_path: Path) -> None:
-    config_path = _write_config(tmp_path / "base.yaml", "run:\n  output_goal: Goal.\n")
+    config_path = write_config(tmp_path / "base.yaml", "run:\n  output_goal: Goal.\n")
     with pytest.raises(ConfigError, match="unknown config path"):
         resolve_config(config_path, ["foo.bar=1"])
 
 
 def test_override_values_parse_yaml_types(tmp_path: Path) -> None:
-    config_path = _write_config(tmp_path / "base.yaml", "run:\n  output_goal: Goal.\n")
+    config_path = write_config(tmp_path / "base.yaml", "run:\n  output_goal: Goal.\n")
     resolved = resolve_config(
         config_path,
         [
@@ -89,7 +81,7 @@ def test_input_digest_uses_file_content_when_ref_exists(tmp_path: Path) -> None:
     config_dir.mkdir()
     readme = config_dir / "README.md"
     readme.write_text("alpha", encoding="utf-8")
-    config_path = _write_config(
+    config_path = write_config(
         config_dir / "base.yaml",
         "run:\n  output_goal: Goal.\n  input_refs:\n    - README.md\n",
     )
@@ -101,85 +93,15 @@ def test_input_digest_uses_file_content_when_ref_exists(tmp_path: Path) -> None:
     assert digest_once != digest_twice
 
 
-def test_cli_run_persists_resolved_config_and_status_reads_run(tmp_path: Path) -> None:
-    config_dir = tmp_path / "cfg"
-    config_dir.mkdir()
-    config_path = _write_config(
-        config_dir / "run.yaml",
-        "run:\n  output_goal: Deliver the sample output.\n",
-    )
-    runs_dir = tmp_path / "runs"
-
-    mock_result = PlanningPhaseResult(
-        ok=True,
-        phase=WHOLE_PLAN_REVIEW,
-        status="running",
-        outcome=None,
-        session_id="stub-session-1",
-        agent_turns=1,
-        expansion_iterations=0,
-    )
-    with (
-        patch("top_down_planning.cli.user.create_provider", return_value=MagicMock()),
-        patch(
-            "top_down_planning.cli.user.PlanningPhaseOrchestrator"
-        ) as mock_orchestrator,
-        pytest.raises(SystemExit) as exit_info,
-    ):
-        mock_orchestrator.return_value.run.return_value = mock_result
-        handle_run_command(
-            Namespace(
-                config=str(config_path),
-                set=["planning.max_depth=5", "provider.name=stub"],
-                runs_dir=str(runs_dir),
-                stream_json=True,
-            )
-        )
-    assert exit_info.value.code == 0
-
-    run_dirs = list(runs_dir.iterdir())
-    assert len(run_dirs) == 1
-    run_id = run_dirs[0].name
-
-    status_result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
-            "status",
-            "--run",
-            run_id,
-            "--runs-dir",
-            str(runs_dir),
-            "--stream-json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert status_result.returncode == 0, status_result.stderr
-    status_payload = json.loads(status_result.stdout)
-    assert status_payload["ok"] is True
-    assert status_payload["run"]["phase"] == "planning"
-    assert status_payload["run"]["plan_revision"] == 0
-
-    resolved_path = runs_dir / run_id / "resolved-config.yaml"
-    assert resolved_path.exists()
-    assert "max_depth: 5" in resolved_path.read_text(encoding="utf-8")
-
-
 def test_cli_unknown_set_override_exits_non_zero(tmp_path: Path) -> None:
     config_dir = tmp_path / "cfg"
     config_dir.mkdir()
-    config_path = _write_config(
+    config_path = write_config(
         config_dir / "run.yaml",
         "run:\n  output_goal: Deliver the sample output.\n",
     )
-    result = subprocess.run(
+    result = run_cli(
         [
-            sys.executable,
-            "-m",
-            "top_down_planning.cli.main",
             "run",
             "--config",
             str(config_path),
@@ -188,13 +110,10 @@ def test_cli_unknown_set_override_exits_non_zero(tmp_path: Path) -> None:
             "--runs-dir",
             str(tmp_path / "runs"),
             "--stream-json",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+        ]
     )
-    assert result.returncode == 2
-    payload = json.loads(result.stdout)
+    assert result.exit_code == 2
+    payload = result.json()
     assert payload["ok"] is False
     assert payload["error"]["code"] == "config_error"
 

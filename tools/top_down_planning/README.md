@@ -59,7 +59,7 @@ Run operational `status` values (proposal §15): `running`, `paused`, `completed
 
 Whole-plan review (proposal §5.2, §11): the orchestrator starts a fresh reviewer session per loop, binds findings to the current plan revision, resumes the same primary planner for revisions after `changes_requested`, and requires the same reviewer to recheck before approval. After approval, deterministic `validate_plan(..., mode="approval")` must pass before the run advances to `plan_validated`. Revision cycles are capped by `limits.whole_plan_review.max_revision_cycles`; limit exhaustion yields `rejected` or `blocked`, never silent acceptance.
 
-Production (proposal §10): after `plan_validated`, `tdp resume` starts the primary producer session, transitions to `production`, and records agent-selected batches via `tdp agent production apply` until every applicable item has a terminal disposition. The producer then submits a completion claim via `tdp agent production submit-completion` before the run advances to `whole_output_review`. Batch limits use `limits.production.max_batches` and `limits.production.max_agent_turns_per_batch`. Plan mutations are rejected during production; producers may request a controlled amendment via `tdp agent production request-amendment` (orchestration pause/resume is handled in todo 13).
+Production (proposal §10): after `plan_validated`, `tdp resume` starts the primary producer session, transitions to `production`, and records agent-selected batches via `tdp agent production apply` until every applicable item has a terminal disposition. The producer then submits a completion claim via `tdp agent production submit-completion` before the run advances to `whole_output_review`. Batch limits use `limits.production.max_batches` and `limits.production.max_agent_turns_per_batch`. Plan mutations are rejected during production; producers may request a controlled amendment via `tdp agent production request-amendment`.
 
 ## Agent CLI
 
@@ -77,7 +77,7 @@ tdp agent review respond --run <run-id> --role reviewer --request review.json
 tdp agent run status --run <run-id>
 ```
 
-Production apply requires `production_revision` from the latest snapshot. `submit-completion` records a completion claim only; the orchestrator advances to whole-output review after a valid claim and sets final `outcome` only after whole-output review (todo 12).
+Production apply requires `production_revision` from the latest snapshot. `submit-completion` records a completion claim only; the orchestrator advances to whole-output review after a valid claim and sets final `outcome` only after whole-output review.
 
 ## Development
 
@@ -85,5 +85,7 @@ Production apply requires `production_revision` from the latest snapshot. `submi
 cd tools/top_down_planning
 python -m pip install -e ".[dev]"
 tdp --help
-pytest
+pytest                  # unit tests (default; excludes integration)
+pytest -m integration   # multi-layer smoke test
+pytest -m ""            # full suite
 ```

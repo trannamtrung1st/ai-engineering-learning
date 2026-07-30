@@ -1,4 +1,4 @@
-"""Integration tests for the planning-phase orchestrator."""
+"""Unit tests for the planning-phase orchestrator."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from top_down_planning.orchestrator import PlanningPhaseOrchestrator, ProviderRu
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.provider import StubProvider
+from tests.helpers import done_events
 
 
 def _create_run(
@@ -62,16 +63,6 @@ def _create_run(
     )
 
 
-def _done_events(*, signal: str | None = None) -> list[dict]:
-    events = [
-        {"type": "assistant", "text": "planning turn"},
-        {"type": "done", "subtype": "success", "text": "ok", "is_error": False},
-    ]
-    if signal is not None:
-        events[-1]["signal"] = signal
-    return events
-
-
 def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
@@ -103,7 +94,7 @@ def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) 
                     ],
                 },
             },
-            *_done_events(signal="candidate_plan_ready"),
+            *done_events(signal="candidate_plan_ready", text="planning turn"),
         ]
     )
 
@@ -133,7 +124,7 @@ def test_planning_turn_limit_yields_blocked_not_accepted(tmp_path: Path) -> None
     store = FileRunStore(tmp_path)
     _create_run(store, limits={"max_agent_turns": 1})
     provider = StubProvider()
-    provider.script_turn(_done_events(signal="continue"))
+    provider.script_turn(done_events(signal="continue", text="planning turn"))
 
     result = PlanningPhaseOrchestrator(store, "run-planning", provider).run()
 
@@ -157,7 +148,7 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
     config = store.load_resolved_config("run-planning")
     from top_down_planning.orchestrator.planning import build_planner_context_manifest
 
-    provider.script_turn(_done_events(signal="continue"))
+    provider.script_turn(done_events(signal="continue", text="planning turn"))
     session_id = provider.start_primary_session(
         "planner",
         build_planner_context_manifest("run-planning", run, config),
@@ -170,7 +161,7 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
     run["planning"] = {"agent_turns": 1, "expansion_iterations": 0}
     store.save_run("run-planning", run, expected_revision)
 
-    provider.script_turn(_done_events(signal="candidate_plan_ready"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="planning turn"))
     result = PlanningPhaseOrchestrator(store, "run-planning", provider).run()
 
     assert result.ok is True
@@ -203,7 +194,7 @@ def test_non_planner_apply_during_planning_is_rejected(tmp_path: Path) -> None:
                     ],
                 },
             },
-            *_done_events(signal="candidate_plan_ready"),
+            *done_events(signal="candidate_plan_ready", text="planning turn"),
         ]
     )
 
@@ -211,11 +202,11 @@ def test_non_planner_apply_during_planning_is_rejected(tmp_path: Path) -> None:
         PlanningPhaseOrchestrator(store, "run-planning", provider).run()
 
 
-def test_direct_service_apply_still_works_alongside_orchestrator(tmp_path: Path) -> None:
+def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
     provider = StubProvider()
-    provider.script_turn(_done_events(signal="candidate_plan_ready"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="planning turn"))
 
     service = PlanAgentService(store, "run-planning")
     service.apply(

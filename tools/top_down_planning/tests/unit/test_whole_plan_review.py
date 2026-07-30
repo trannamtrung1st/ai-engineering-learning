@@ -13,16 +13,7 @@ from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REV
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.provider import StubProvider
-
-
-def _done_events(*, signal: str | None = None) -> list[dict]:
-    events = [
-        {"type": "assistant", "text": "turn complete"},
-        {"type": "done", "subtype": "success", "text": "ok", "is_error": False},
-    ]
-    if signal is not None:
-        events[-1]["signal"] = signal
-    return events
+from tests.helpers import done_events
 
 
 def _create_run_at_whole_plan_review(
@@ -82,7 +73,7 @@ def _create_run_at_whole_plan_review(
     )
     session_id = None
     if provider is not None:
-        provider.script_turn(_done_events())
+        provider.script_turn(done_events(text="turn complete"))
         session_id = provider.start_primary_session(
             "planner",
             {"run_id": run_id, "phase": WHOLE_PLAN_REVIEW},
@@ -140,7 +131,7 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
                     ],
                 ),
             },
-            *_done_events(),
+            *done_events(text="turn complete"),
         ]
     )
     provider.script_turn(
@@ -166,7 +157,7 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
                     ],
                 },
             },
-            *_done_events(),
+            *done_events(text="turn complete"),
         ]
     )
     provider.script_turn(
@@ -180,7 +171,7 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
                     target_revision=1,
                 ),
             },
-            *_done_events(),
+            *done_events(text="turn complete"),
         ]
     )
 
@@ -292,10 +283,10 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                     ],
                 ),
             },
-            *_done_events(),
+            *done_events(text="turn complete"),
         ]
     )
-    provider.script_turn([*_done_events()])
+    provider.script_turn([*done_events(text="turn complete")])
     provider.script_turn(
         [
             {
@@ -317,7 +308,7 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                     ],
                 ),
             },
-            *_done_events(),
+            *done_events(text="turn complete"),
         ]
     )
 
@@ -362,7 +353,7 @@ def test_unapproved_plan_cannot_leave_whole_plan_review_phase(tmp_path: Path) ->
                     ],
                 ),
             },
-            *_done_events(),
+            *done_events(text="turn complete"),
         ]
     )
 
@@ -380,7 +371,7 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
     provider = StubProvider()
     _create_run_at_whole_plan_review(store, provider=provider)
 
-    provider.script_turn(_done_events())
+    provider.script_turn(done_events(text="turn complete"))
     reviewer_session_id = provider.start_reviewer_session(
         {"loop_id": "review-whole-plan-01", "phase": WHOLE_PLAN_REVIEW},
     )
@@ -429,7 +420,7 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
                     target_revision=1,
                 ),
             },
-            *_done_events(),
+            *done_events(text="turn complete"),
         ]
     )
 
@@ -452,7 +443,7 @@ def test_non_reviewer_respond_is_rejected(tmp_path: Path) -> None:
                 "role": "planner",
                 "request": _review_respond_request(decision="approved"),
             },
-            *_done_events(),
+            *done_events(text="turn complete"),
         ]
     )
 
