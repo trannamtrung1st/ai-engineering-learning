@@ -7,14 +7,15 @@ from typing import Any, Literal
 
 from top_down_planning.domain.dependencies import dependency_cycle_issue
 from top_down_planning.domain.dispositions import DispositionMap, SATISFIED_DISPOSITIONS
-from top_down_planning.domain.models import Plan, PlanningLimits
+from top_down_planning.domain.models import Plan, PlanningLimits, PLAN_SCHEMA_VERSION
 from top_down_planning.domain.plan_tree import (
     compute_planning_budget,
     find_hierarchy_cycle,
     is_active_item,
     walk_active_tree,
 )
-from top_down_planning.domain.readiness import detect_deadlock, resolve_satisfaction
+from top_down_planning.domain.readiness import ReviewBlockedFn, detect_deadlock, resolve_satisfaction
+from top_down_planning.domain.reviews import build_is_review_blocked_fn
 
 ValidationSeverity = Literal["error", "warning"]
 ValidationMode = Literal["draft", "approval"]
@@ -172,6 +173,19 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
             )
         )
 
+    if plan.schema_version != PLAN_SCHEMA_VERSION:
+        issues.append(
+            _issue(
+                "invalid_schema_version",
+                "error",
+                (
+                    f"plan schema_version {plan.schema_version} is not supported; "
+                    f"expected {PLAN_SCHEMA_VERSION}"
+                ),
+                ["plan", "schema_version"],
+            )
+        )
+
     seen_ids: dict[str, str] = {}
     for item_id, item in plan.items.items():
         if item.id != item_id:
@@ -319,6 +333,8 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
 def validate_dependencies(
     plan: Plan,
     dispositions: DispositionMap | None = None,
+    *,
+    is_review_blocked: ReviewBlockedFn | None = None,
 ) -> list[ValidationIssue]:
     dispositions = dispositions or {}
     issues: list[ValidationIssue] = []
@@ -403,8 +419,26 @@ def validate_dependencies(
                     )
                 )
 
-    if dispositions:
-        deadlock = detect_deadlock(plan, dispositions)
+    has_hierarchy_cycle = any(
+        find_hierarchy_cycle(plan, item_id) is not None for item_id in plan.items
+    )
+    has_missing_parent = any(
+        item.parent_id is not None and item.parent_id not in plan.items
+        for item in plan.items.values()
+        if is_active_item(item)
+    )
+    has_duplicate_ids = bool(walk_active_tree(plan).duplicate_ids)
+    if (
+        cycle_issue is None
+        and not has_hierarchy_cycle
+        and not has_missing_parent
+        and not has_duplicate_ids
+    ):
+        deadlock = detect_deadlock(
+            plan,
+            dispositions,
+            is_review_blocked=is_review_blocked,
+        )
         if deadlock is not None and deadlock.cause != "cycle":
             issues.append(
                 _issue(
@@ -561,14 +595,23 @@ def validate_plan(
     review_state: ReviewState | None = None,
     digests: DigestBundle | None = None,
     dispositions: DispositionMap | None = None,
+    reviews: list[dict[str, Any]] | None = None,
+    review_types: frozenset[str] | None = None,
     mode: ValidationMode = "draft",
 ) -> ValidationResult:
     effective_limits = limits or PlanningLimits()
     issues: list[ValidationIssue] = []
+    is_review_blocked = build_is_review_blocked_fn(reviews, review_types=review_types)
 
     issues.extend(validate_ids_and_fields(plan))
     issues.extend(validate_hierarchy(plan))
-    issues.extend(validate_dependencies(plan, dispositions))
+    issues.extend(
+        validate_dependencies(
+            plan,
+            dispositions,
+            is_review_blocked=is_review_blocked,
+        )
+    )
     issues.extend(validate_soft_limits(plan, effective_limits, mode))
 
     if review_state is not None:

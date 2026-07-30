@@ -25,7 +25,9 @@ from top_down_planning.domain.plan_tree import (
     insert_item_at,
     is_active_item,
     move_item_subtree,
+    recompact_active_sibling_order_keys,
 )
+from top_down_planning.domain.reviews import item_referenced_in_reviews
 
 Operation = dict[str, Any]
 
@@ -82,6 +84,10 @@ def _item_payload_from_op(op: Operation) -> dict[str, Any]:
 
 
 def _build_item(item_id: str, parent_id: str | None, order_key: str, payload: dict[str, Any]) -> PlanItem:
+    if payload.get("planning_status") not in (None, "open"):
+        raise InvalidMutationError(
+            "new items must use planning_status open; use supersede_item or remove_item"
+        )
     return PlanItem(
         id=item_id,
         parent_id=parent_id,
@@ -92,7 +98,7 @@ def _build_item(item_id: str, parent_id: str | None, order_key: str, payload: di
         boundaries=list(payload.get("boundaries") or []),
         depends_on=list(payload.get("depends_on") or []),
         acceptance=list(payload.get("acceptance") or []),
-        planning_status=payload.get("planning_status", "open"),
+        planning_status="open",
     )
 
 
@@ -133,12 +139,25 @@ def _apply_add_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: 
         changed.add(parent_id)
 
 
+_UPDATE_ITEM_PATCH_FIELDS = frozenset(
+    {"title", "outcome", "scope", "boundaries", "acceptance", "planning_status"}
+)
+
+
 def _apply_update_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
     item = _require_active_item(plan, item_id)
     patch = op.get("patch")
     if not patch:
         raise InvalidMutationError("update_item requires a patch payload")
+
+    unknown_fields = sorted(set(patch) - _UPDATE_ITEM_PATCH_FIELDS)
+    if unknown_fields:
+        joined = ", ".join(unknown_fields)
+        raise InvalidMutationError(
+            f"update_item patch contains unsupported fields: {joined}"
+        )
+
     if "planning_status" in patch:
         raise InvalidMutationError("update_item cannot change planning_status; use supersede_item or remove_item")
 
@@ -210,16 +229,32 @@ def _apply_supersede_item(plan: Plan, op: Operation, id_map: dict[str, str], cha
     changed.update({item_id, replacement_id})
 
 
-def _apply_remove_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
+def _apply_remove_item(
+    plan: Plan,
+    op: Operation,
+    id_map: dict[str, str],
+    changed: set[str],
+    *,
+    reviews: list[dict[str, Any]] | None = None,
+) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
     item = _require_active_item(plan, item_id)
     if children_of(plan, item_id):
         raise InvalidMutationError("remove_item requires the item to have no children")
     if _inbound_dependency_users(plan, item_id):
         raise InvalidMutationError("remove_item requires no inbound dependency references")
+    if reviews is None:
+        raise InvalidMutationError(
+            "remove_item requires review history context; pass reviews from the run store"
+        )
+    if item_referenced_in_reviews(reviews, item_id):
+        raise InvalidMutationError(
+            "remove_item is not allowed for items with review history; use supersede_item"
+        )
 
     parent_id = item.parent_id
     item.planning_status = "removed"
+    recompact_active_sibling_order_keys(plan, parent_id)
     changed.add(item_id)
     if parent_id is not None:
         changed.add(parent_id)
@@ -271,7 +306,6 @@ _APPLY_HANDLERS = {
     "update_item": _apply_update_item,
     "move_subtree": _apply_move_subtree,
     "supersede_item": _apply_supersede_item,
-    "remove_item": _apply_remove_item,
     "add_dependency": _apply_add_dependency,
     "remove_dependency": _apply_remove_dependency,
     "replace_dependencies": _apply_replace_dependencies,
@@ -284,6 +318,7 @@ def apply_operations(
     operations: list[Operation],
     *,
     limits: PlanningLimits | None = None,
+    reviews: list[dict[str, Any]] | None = None,
 ) -> ApplyResult:
     """Apply a list of plan operations atomically against base_revision."""
 
@@ -297,6 +332,9 @@ def apply_operations(
 
     for op in operations:
         op_name = op.get("op")
+        if op_name == "remove_item":
+            _apply_remove_item(working, op, id_map, changed, reviews=reviews)
+            continue
         handler = _APPLY_HANDLERS.get(op_name)
         if handler is None:
             raise InvalidMutationError(f"unsupported operation: {op_name!r}")

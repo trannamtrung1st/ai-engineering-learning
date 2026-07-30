@@ -76,7 +76,7 @@ Run operational `status` values (proposal §15): `running`, `paused`, `completed
 
 Whole-plan review (proposal §5.2, §11): the orchestrator starts a fresh reviewer session per loop, binds findings to the current plan revision, resumes the same primary planner for revisions after `changes_requested`, and requires the same reviewer to recheck before approval. After approval, deterministic `validate_plan(..., mode="approval")` must pass before the run advances to `plan_validated`. Revision cycles are capped by `limits.whole_plan_review.max_revision_cycles`; limit exhaustion yields `rejected` or `blocked`, never silent acceptance.
 
-Focused reviews (proposal §4.3, §5.1): during `planning` or `production`, the primary planner or producer may request optional `focused_plan` or `focused_output` reviews via `tdp agent review request` with bounded `scope.item_ids`. Each request starts a fresh reviewer session; the same reviewer rechecks within the loop. Focused approval does not substitute for mandatory whole-plan or whole-output gates. Limits use `review.focused_plan.enabled`, `review.focused_output.enabled`, and `limits.focused_plan_review` / `limits.focused_output_review`. Unresolved blocking findings in an active focused loop block `candidate_plan_ready`, `production_apply`, and `submit-completion` for overlapping items.
+Focused reviews (proposal §4.3, §5.1): during `planning` or `production`, the primary planner or producer may request optional `focused_plan` or `focused_output` reviews via `tdp agent review request` with bounded `scope.item_ids`. Each request starts a fresh reviewer session; the same reviewer rechecks within the loop. Focused approval does not substitute for mandatory whole-plan or whole-output gates. Limits use `review.focused_plan.enabled`, `review.focused_output.enabled`, and `limits.focused_plan_review` / `limits.focused_output_review`. Unresolved blocking findings in an active focused loop block `candidate_plan_ready`, `production_apply`, and `submit-completion` for overlapping items. Plan `ready` snapshots block on `focused_plan` / `whole_plan` findings; production `ready` snapshots block on `focused_output` / `whole_output` findings.
 
 Production (proposal §10): after `plan_validated`, `tdp resume` starts the primary producer session, transitions to `production`, and records agent-selected batches via `tdp agent production apply` until every applicable item has a terminal disposition. The producer then submits a completion claim via `tdp agent production submit-completion` before the run advances to `whole_output_review`. Batch limits use `limits.production.max_batches` and `limits.production.max_agent_turns_per_batch`. Plan mutations are rejected during production; producers may request a controlled amendment via `tdp agent production request-amendment`.
 
@@ -108,6 +108,24 @@ tdp agent run status --run <run-id>
 ```
 
 Production apply requires `production_revision` from the latest snapshot. `submit-completion` records a completion claim only; the orchestrator advances to whole-output review after a valid claim and sets final `outcome` only after whole-output review.
+
+Agent plan `snapshot`/`check`/`apply` and production `snapshot` (tree/ready) share the same
+plan validation contract: structured `issues` for errors, string `warnings` for
+non-blocking findings, and `ok` when validation has no error-severity issues.
+Production-specific batch checks use `production check`. Tree snapshots include
+`scope`, `boundaries`, and `acceptance` on each item. `plan apply` also sets
+`applied: true` when the mutation batch was persisted (exit code still reflects
+`ok`, not whether the batch was saved). Plan apply persists `plan.json`,
+`run.json` digests, and `events.jsonl` as separate atomic writes — not one
+cross-file transaction.
+
+`tdp agent plan snapshot`, `plan apply`, and `plan check` exit 0 only when
+`ok` is true. `production snapshot` and `production check` follow the same rule.
+`plan apply` may return `applied: true` with exit 1 when post-apply validation
+reports errors. `production apply` returns `ok: true` when the batch was
+persisted; use `production snapshot` or `production check` for plan validation.
+
+When planning dependencies, prefer the narrowest meaningful plan item as the dependency target (e.g. depend on a leaf API item rather than its parent epic) so readiness and production batching stay precise.
 
 ## Development
 

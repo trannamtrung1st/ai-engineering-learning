@@ -8,6 +8,9 @@ from typing import Any, Literal
 PlanningStatus = Literal["open", "superseded", "removed"]
 
 
+PLAN_SCHEMA_VERSION = 1
+
+
 @dataclass
 class Scope:
     includes: list[str] = field(default_factory=list)
@@ -86,11 +89,13 @@ class Plan:
     constraints: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     acceptance: list[str] = field(default_factory=list)
+    schema_version: int = PLAN_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
         from top_down_planning.domain.plan_tree import serialized_plan_items
 
         return {
+            "schema_version": self.schema_version,
             "id": self.id,
             "revision": self.revision,
             "input_refs": list(self.input_refs),
@@ -105,6 +110,9 @@ class Plan:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Plan:
+        if "schema_version" not in data:
+            raise ValueError("plan schema_version is required")
+
         items_list = data.get("items") or []
         items = {item["id"]: PlanItem.from_dict(item) for item in items_list}
         return cls(
@@ -118,6 +126,7 @@ class Plan:
             constraints=list(data.get("constraints") or []),
             assumptions=list(data.get("assumptions") or []),
             acceptance=list(data.get("acceptance") or []),
+            schema_version=int(data["schema_version"]),
         )
 
 

@@ -393,3 +393,83 @@ def test_cli_reviewer_denied_for_production_apply(tmp_path: Path) -> None:
     payload = result.json()
     assert payload["ok"] is False
     assert payload["error"]["code"] == "role_denied"
+
+
+def test_production_ready_snapshot_excludes_review_blocked_items(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+    store.save_review(
+        "run-production",
+        {
+            "id": "review-focused-output-01",
+            "type": "focused_output",
+            "reviewer_session_id": "stub-session-reviewer",
+            "target_revision": 0,
+            "scope": {"kind": "focused_output", "item_ids": ["item-second"]},
+            "status": "changes_requested",
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "importance": "blocking",
+                    "target_refs": ["item-second"],
+                    "issue": "Output incomplete.",
+                    "required_change": "Add evidence.",
+                    "status": "unresolved",
+                }
+            ],
+            "revision_cycles": 0,
+        },
+    )
+
+    service = ProductionAgentService(store, "run-production")
+    ready = service.snapshot(view="ready")
+
+    assert ready["ok"] is True
+    assert "item-first" in ready["ready_item_ids"]
+    assert "item-second" not in ready["ready_item_ids"]
+    assert ready["not_ready"]["item-second"]["reason"] == "review_blocked"
+
+
+def test_production_ready_snapshot_includes_plan_validation_fields(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+
+    service = ProductionAgentService(store, "run-production")
+    ready = service.snapshot(view="ready")
+
+    assert "ok" in ready
+    assert "issues" in ready
+    assert "warnings" in ready
+    assert ready["ok"] is True
+
+
+def test_cli_production_snapshot_exits_nonzero_when_plan_validation_fails(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+    plan_payload = store.load_plan("run-production")
+    expected_revision = int(plan_payload["revision"])
+    plan_payload = dict(plan_payload)
+    plan_payload["schema_version"] = 99
+    plan_payload["revision"] = expected_revision + 1
+    store.save_plan("run-production", plan_payload, expected_revision)
+
+    result = run_cli(
+        [
+            "agent",
+            "production",
+            "snapshot",
+            "--run",
+            "run-production",
+            "--runs-dir",
+            str(tmp_path),
+            "--view",
+            "ready",
+        ]
+    )
+
+    assert result.exit_code == 1
+    payload = result.json()
+    assert payload["ok"] is False
+    assert any(issue["code"] == "invalid_schema_version" for issue in payload["issues"])

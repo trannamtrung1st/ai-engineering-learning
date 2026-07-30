@@ -14,7 +14,8 @@ from top_down_planning.domain.plan_tree import (
     walk_active_tree,
 )
 from top_down_planning.domain.readiness import compute_ready_view
-from top_down_planning.domain.validators import ValidationMode, ValidationResult, validate_plan
+from top_down_planning.domain.reviews import build_is_review_blocked_fn
+from top_down_planning.domain.validators import ValidationResult
 
 PlanView = Literal["tree", "ready", "issues"]
 
@@ -26,6 +27,9 @@ def item_snapshot(item: PlanItem, display_number: str) -> dict[str, Any]:
         "parent_id": item.parent_id,
         "title": item.title,
         "outcome": item.outcome,
+        "scope": item.scope.to_dict(),
+        "boundaries": list(item.boundaries),
+        "acceptance": list(item.acceptance),
         "depends_on": list(item.depends_on),
         "planning_status": item.planning_status,
     }
@@ -88,28 +92,20 @@ def build_tree_view(
 def build_ready_view(
     plan: Plan,
     dispositions: DispositionMap | None = None,
+    *,
+    reviews: list[dict[str, Any]] | None = None,
+    review_types: frozenset[str] | None = None,
 ) -> dict[str, Any]:
-    ready = compute_ready_view(plan, dispositions)
+    is_review_blocked = build_is_review_blocked_fn(reviews, review_types=review_types)
+    ready = compute_ready_view(
+        plan,
+        dispositions,
+        is_review_blocked=is_review_blocked,
+    )
     return {
         "view": "ready",
         "revision": plan.revision,
         **ready.to_dict(),
-    }
-
-
-def build_issues_view(
-    plan: Plan,
-    *,
-    limits: PlanningLimits,
-    mode: ValidationMode = "draft",
-    dispositions: DispositionMap | None = None,
-) -> dict[str, Any]:
-    validation = validate_plan(plan, limits=limits, dispositions=dispositions, mode=mode)
-    return {
-        "view": "issues",
-        "revision": plan.revision,
-        "mode": mode,
-        **validation.to_dict(),
     }
 
 
@@ -143,9 +139,25 @@ def ready_item_changes(
     before: Plan,
     after: Plan,
     dispositions: DispositionMap | None = None,
+    *,
+    reviews: list[dict[str, Any]] | None = None,
+    review_types: frozenset[str] | None = None,
 ) -> dict[str, list[str]]:
-    before_ready = set(compute_ready_view(before, dispositions).ready_item_ids)
-    after_ready = set(compute_ready_view(after, dispositions).ready_item_ids)
+    is_review_blocked = build_is_review_blocked_fn(reviews, review_types=review_types)
+    before_ready = set(
+        compute_ready_view(
+            before,
+            dispositions,
+            is_review_blocked=is_review_blocked,
+        ).ready_item_ids
+    )
+    after_ready = set(
+        compute_ready_view(
+            after,
+            dispositions,
+            is_review_blocked=is_review_blocked,
+        ).ready_item_ids
+    )
     return {
         "newly_ready": sorted(after_ready - before_ready),
         "no_longer_ready": sorted(before_ready - after_ready),
@@ -157,4 +169,12 @@ def validation_warnings(validation: ValidationResult) -> list[str]:
         issue.message
         for issue in validation.issues
         if issue.severity == "warning"
+    ]
+
+
+def validation_issues(validation: ValidationResult) -> list[dict[str, Any]]:
+    return [
+        issue.to_dict()
+        for issue in validation.issues
+        if issue.severity == "error"
     ]

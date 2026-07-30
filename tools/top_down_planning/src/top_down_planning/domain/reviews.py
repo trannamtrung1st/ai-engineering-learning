@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
+
+_ACTIVE_REVIEW_BLOCKING_STATUSES = frozenset({"changes_requested", "blocked"})
+PLAN_REVIEW_TYPES = frozenset({"focused_plan", "whole_plan"})
+OUTPUT_REVIEW_TYPES = frozenset({"focused_output", "whole_output"})
 
 ReviewLoopType = Literal["whole_plan", "whole_output", "focused_plan", "focused_output"]
 ReviewDecision = Literal["approved", "changes_requested", "blocked"]
@@ -87,6 +92,65 @@ class ReviewLoop:
             findings=findings,
             revision_cycles=int(payload.get("revision_cycles") or 0),
         )
+
+
+def is_item_blocked_by_unresolved_review_findings(
+    reviews: list[dict[str, Any]],
+    item_id: str,
+    *,
+    review_types: frozenset[str] | None = None,
+) -> bool:
+    """Return whether unresolved blocking findings target ``item_id``."""
+
+    allowed_types = review_types or PLAN_REVIEW_TYPES
+    for payload in reviews:
+        if payload.get("type") not in allowed_types:
+            continue
+        loop = ReviewLoop.from_dict(payload)
+        if loop.status not in _ACTIVE_REVIEW_BLOCKING_STATUSES:
+            continue
+        for finding in loop.findings:
+            if finding.importance != "blocking":
+                continue
+            if finding.status != "unresolved":
+                continue
+            if item_id in finding.target_refs:
+                return True
+    return False
+
+
+def build_is_review_blocked_fn(
+    reviews: list[dict[str, Any]] | None,
+    *,
+    review_types: frozenset[str] | None = None,
+) -> Callable[[str], bool]:
+    if not reviews:
+        return lambda _item_id: False
+
+    allowed_types = review_types or PLAN_REVIEW_TYPES
+
+    def is_review_blocked(item_id: str) -> bool:
+        return is_item_blocked_by_unresolved_review_findings(
+            reviews,
+            item_id,
+            review_types=allowed_types,
+        )
+
+    return is_review_blocked
+
+
+def item_referenced_in_reviews(reviews: list[dict[str, Any]], item_id: str) -> bool:
+    """Return whether an item appears in any review scope or finding target."""
+
+    for payload in reviews:
+        loop = ReviewLoop.from_dict(payload)
+        scope_items = {str(ref) for ref in (loop.scope.get("item_ids") or [])}
+        if item_id in scope_items:
+            return True
+        for finding in loop.findings:
+            if item_id in finding.target_refs:
+                return True
+    return False
 
 
 def blocking_unresolved_finding_ids(findings: list[ReviewFinding]) -> list[str]:

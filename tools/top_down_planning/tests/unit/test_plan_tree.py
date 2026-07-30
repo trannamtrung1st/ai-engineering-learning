@@ -272,3 +272,96 @@ def test_dependency_cycle_rejects_transaction() -> None:
                 }
             ],
         )
+
+
+def test_add_item_rejects_non_open_planning_status() -> None:
+    plan = _sample_plan()
+
+    with pytest.raises(InvalidMutationError, match="planning_status open"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "add_item",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {"title": "Bad", "planning_status": "removed"},
+                }
+            ],
+        )
+
+
+def test_update_item_rejects_unknown_patch_fields() -> None:
+    plan = _sample_plan()
+
+    with pytest.raises(InvalidMutationError, match="unsupported fields"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-first",
+                    "patch": {"depends_on": ["item-root"]},
+                }
+            ],
+        )
+
+
+def test_remove_item_recompacts_sibling_order_keys() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[{"op": "remove_item", "item_id": "item-first"}],
+        reviews=[],
+    )
+
+    assert result.plan.items["item-first"].planning_status == "removed"
+    assert result.plan.items["item-second"].order_key == "0000000000"
+
+
+def test_remove_item_requires_review_history_context() -> None:
+    plan = _sample_plan()
+
+    with pytest.raises(InvalidMutationError, match="requires review history context"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[{"op": "remove_item", "item_id": "item-first"}],
+        )
+
+
+def test_remove_item_rejects_items_with_review_history() -> None:
+    plan = _sample_plan()
+    reviews = [
+        {
+            "id": "review-focused-plan-01",
+            "type": "focused_plan",
+            "reviewer_session_id": "session-1",
+            "target_revision": 1,
+            "scope": {"kind": "focused_plan", "item_ids": ["item-first"]},
+            "status": "approved",
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "importance": "blocking",
+                    "target_refs": ["item-first"],
+                    "issue": "Too vague.",
+                    "required_change": "Add detail.",
+                    "status": "resolved",
+                }
+            ],
+            "revision_cycles": 0,
+        }
+    ]
+
+    with pytest.raises(InvalidMutationError, match="review history"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[{"op": "remove_item", "item_id": "item-first"}],
+            reviews=reviews,
+        )

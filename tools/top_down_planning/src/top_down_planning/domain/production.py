@@ -9,6 +9,7 @@ from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS, TerminalDisposition
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.readiness import compute_ready_view, detect_deadlock, is_applicable_item
+from top_down_planning.domain.reviews import OUTPUT_REVIEW_TYPES, build_is_review_blocked_fn
 
 PRODUCTION_PHASE = "production"
 WHOLE_OUTPUT_REVIEW_PHASE = "whole_output_review"
@@ -284,8 +285,20 @@ def _optional_str(value: Any) -> str | None:
 def ready_item_ids_for_plan(
     plan: Plan,
     dispositions: dict[str, TerminalDisposition],
+    *,
+    reviews: list[dict[str, Any]] | None = None,
 ) -> set[str]:
-    return set(compute_ready_view(plan, dispositions).ready_item_ids)
+    is_review_blocked = build_is_review_blocked_fn(
+        reviews,
+        review_types=OUTPUT_REVIEW_TYPES,
+    )
+    return set(
+        compute_ready_view(
+            plan,
+            dispositions,
+            is_review_blocked=is_review_blocked,
+        ).ready_item_ids
+    )
 
 
 def collect_batch_disposition_records(
@@ -309,12 +322,18 @@ def collect_batch_disposition_records(
 def validate_production_checks(
     plan: Plan,
     production: dict[str, Any],
+    *,
+    reviews: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     """Deterministic output-oriented checks available before whole-output review."""
 
     issues: list[str] = []
     dispositions = dict(production.get("dispositions") or {})
     disposition_records = collect_batch_disposition_records(production)
+    is_review_blocked = build_is_review_blocked_fn(
+        reviews,
+        review_types=OUTPUT_REVIEW_TYPES,
+    )
 
     if not all_applicable_items_processed(plan, dispositions):
         open_items = [
@@ -326,7 +345,11 @@ def validate_production_checks(
             f"{len(open_items)} applicable item(s) remain without terminal disposition"
         )
 
-    deadlock = detect_deadlock(plan, dispositions)
+    deadlock = detect_deadlock(
+        plan,
+        dispositions,
+        is_review_blocked=is_review_blocked,
+    )
     if deadlock is not None:
         issues.append(deadlock.explanation)
 

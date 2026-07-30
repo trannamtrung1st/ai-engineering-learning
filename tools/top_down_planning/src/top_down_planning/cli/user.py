@@ -24,18 +24,13 @@ from top_down_planning.config import (
 )
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.production import has_pending_amendment
-from top_down_planning.domain.reviews import find_whole_output_approval, find_whole_plan_approval
+from top_down_planning.agent_tool.validation_context import user_validate_mode_and_context
+from top_down_planning.domain.reviews import find_whole_output_approval
 from top_down_planning.domain.output_validators import (
     build_output_approval_validation_context,
     validate_output,
 )
-from top_down_planning.domain.validators import (
-    DigestBundle,
-    ReviewState,
-    ValidationMode,
-    build_plan_approval_validation_context,
-    validate_plan,
-)
+from top_down_planning.domain.validators import validate_plan
 from top_down_planning.orchestrator import (
     PlanningPhaseOrchestrator,
     PlanAmendmentOrchestrator,
@@ -554,7 +549,12 @@ def handle_validate_command(args: Namespace) -> None:
     limits = planning_limits_from_config(config)
     dispositions = dict(production.get("dispositions") or {})
     phase = str(run.get("phase") or "")
-    mode, review_state, digest_bundle = _validation_context(store, args.run, run, plan)
+    mode, review_state, digest_bundle = user_validate_mode_and_context(
+        store,
+        args.run,
+        run,
+        plan,
+    )
 
     plan_validation = validate_plan(
         plan,
@@ -563,6 +563,7 @@ def handle_validate_command(args: Namespace) -> None:
         mode=mode,
         review_state=review_state,
         digests=digest_bundle,
+        reviews=store.list_reviews(args.run),
     )
 
     output_validation = None
@@ -648,27 +649,6 @@ def _initial_plan(run_id: str, config: dict[str, Any]) -> Plan:
         input_refs=input_refs,
         items={"item-root": root},
     )
-
-
-def _validation_context(
-    store: FileRunStore,
-    run_id: str,
-    run: dict[str, Any],
-    plan: Plan,
-) -> tuple[ValidationMode, ReviewState | None, DigestBundle | None]:
-    approval = find_whole_plan_approval(store.list_reviews(run_id), plan.revision)
-    if approval is None:
-        return "draft", None, None
-
-    resolved_config = store.load_resolved_config(run_id)
-    review_state, digest_bundle = build_plan_approval_validation_context(
-        run=run,
-        plan=plan,
-        approval=approval,
-        actual_plan_digest=compute_plan_digest(plan),
-        actual_config_digest=compute_config_digest(resolved_config),
-    )
-    return "approval", review_state, digest_bundle
 
 
 def _run_workspace(run: dict[str, Any]) -> Path | None:

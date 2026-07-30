@@ -10,7 +10,7 @@ import pytest
 from top_down_planning.agent_tool import PlanAgentService, RequestError, RevisionConflictError
 from top_down_planning.agent_tool.errors import RoleDeniedError
 from top_down_planning.cli.main import main
-from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 
@@ -302,3 +302,238 @@ def test_main_help_still_works() -> None:
     with pytest.raises(SystemExit) as exc_info:
         main(["--help"])
     assert exc_info.value.code == 0
+
+
+def test_apply_returns_post_mutation_validation_issues(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    gate = PlanItem("item-gate", None, "0000000000", "Gate")
+    worker = PlanItem(
+        "item-worker",
+        None,
+        "0000000100",
+        "Worker",
+        depends_on=["item-gate"],
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={"item-gate": gate, "item-worker": worker},
+    )
+    store.create_run(
+        "run-001",
+        plan=plan,
+        resolved_config={"planning": {"max_depth": 4, "max_expansion_per_item": 7}},
+        input_digest="input-a",
+        output_goal_digest="goal-b",
+        production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
+    )
+
+    service = PlanAgentService(store, "run-001")
+    result = service.apply(
+        {
+            "base_revision": 0,
+            "operations": [
+                {
+                    "op": "update_item",
+                    "item_id": "item-worker",
+                    "patch": {"title": "Worker updated"},
+                }
+            ],
+        },
+        role="planner",
+    )
+
+    assert result["ok"] is False
+    assert result["applied"] is True
+    assert any(issue["code"] == "dependency_deadlock" for issue in result["issues"])
+
+
+def test_cli_plan_apply_exits_nonzero_when_validation_fails(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    gate = PlanItem("item-gate", None, "0000000000", "Gate")
+    worker = PlanItem(
+        "item-worker",
+        None,
+        "0000000100",
+        "Worker",
+        depends_on=["item-gate"],
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={"item-gate": gate, "item-worker": worker},
+    )
+    store.create_run(
+        "run-001",
+        plan=plan,
+        resolved_config={"planning": {"max_depth": 4, "max_expansion_per_item": 7}},
+        input_digest="input-a",
+        output_goal_digest="goal-b",
+        production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
+    )
+
+    request_path = tmp_path / "apply.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "base_revision": 0,
+                "operations": [
+                    {
+                        "op": "update_item",
+                        "item_id": "item-worker",
+                        "patch": {"title": "Worker updated"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli(
+        [
+            "agent",
+            "plan",
+            "apply",
+            "--run",
+            "run-001",
+            "--runs-dir",
+            str(tmp_path),
+            "--request",
+            str(request_path),
+            "--role",
+            "planner",
+        ]
+    )
+
+    assert result.exit_code == 1
+    payload = result.json()
+    assert payload["applied"] is True
+    assert payload["ok"] is False
+
+
+def test_snapshot_ready_excludes_review_blocked_items(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    store.save_review(
+        "run-001",
+        {
+            "id": "review-focused-plan-01",
+            "type": "focused_plan",
+            "reviewer_session_id": "session-1",
+            "target_revision": 0,
+            "scope": {"kind": "focused_plan", "item_ids": ["item-child"]},
+            "status": "changes_requested",
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "importance": "blocking",
+                    "target_refs": ["item-child"],
+                    "issue": "Needs more detail.",
+                    "required_change": "Expand acceptance.",
+                    "status": "unresolved",
+                }
+            ],
+            "revision_cycles": 0,
+        },
+    )
+
+    service = PlanAgentService(store, "run-001")
+    ready = service.snapshot(view="ready")
+
+    assert ready["ok"] is True
+    assert "item-child" not in ready["ready_item_ids"]
+    assert ready["not_ready"]["item-child"]["reason"] == "review_blocked"
+
+
+def test_snapshot_tree_includes_scope_boundaries_acceptance(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+        scope=Scope(includes=["auth"], excludes=["billing"]),
+        boundaries=["No external APIs"],
+        acceptance=["Login works"],
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={"item-root": root},
+    )
+    store.create_run(
+        "run-001",
+        plan=plan,
+        resolved_config={"planning": {"max_depth": 4, "max_expansion_per_item": 7}},
+        input_digest="input-a",
+        output_goal_digest="goal-b",
+    )
+
+    service = PlanAgentService(store, "run-001")
+    snapshot = service.snapshot(view="tree")
+
+    item = snapshot["items"][0]
+    assert item["scope"] == {"includes": ["auth"], "excludes": ["billing"]}
+    assert item["boundaries"] == ["No external APIs"]
+    assert item["acceptance"] == ["Login works"]
+
+
+def test_plan_check_approval_without_binding_surfaces_not_checked_warnings(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    service = PlanAgentService(store, "run-001")
+
+    approval = service.check(mode="approval")
+
+    assert approval["ok"] is True
+    assert any(
+        "approved revision was not provided" in warning
+        for warning in approval["warnings"]
+    )
+    assert any(
+        "digest was not fully provided" in warning for warning in approval["warnings"]
+    )
+
+
+def test_plan_check_approval_mode_runs_review_and_digest_hooks(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    store.save_review(
+        "run-001",
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "reviewer_session_id": "session-1",
+            "target_revision": 0,
+            "scope": {"kind": "whole_plan"},
+            "status": "approved",
+            "findings": [],
+            "revision_cycles": 0,
+        },
+    )
+
+    service = PlanAgentService(store, "run-001")
+    draft = service.check(mode="draft")
+    approval = service.check(mode="approval")
+
+    assert draft["ok"] is True
+    assert approval["ok"] is True
+
+    run = store.load_run("run-001")
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["digests"] = dict(run["digests"])
+    run["digests"]["plan"] = "stale-plan-digest"
+    store.save_run("run-001", run, expected_revision)
+
+    approval_after_tamper = service.check(mode="approval")
+    assert approval_after_tamper["ok"] is False
+    assert any(
+        issue["code"] == "digest_mismatch" for issue in approval_after_tamper["issues"]
+    )

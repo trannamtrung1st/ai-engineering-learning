@@ -11,13 +11,14 @@ from top_down_planning.agent_tool.errors import (
     RevisionConflictError,
 )
 from top_down_planning.agent_tool.roles import assert_plan_mutations_allowed
+from top_down_planning.agent_tool.validation_context import plan_approval_validation_context
 from top_down_planning.agent_tool.views import (
     PlanView,
     build_changed_subtree_view,
-    build_issues_view,
     build_ready_view,
     build_tree_view,
     ready_item_changes,
+    validation_issues,
     validation_warnings,
 )
 from top_down_planning.domain.dispositions import DispositionMap
@@ -53,21 +54,36 @@ class PlanAgentService:
         plan = self._store.load_plan_model(self._run_id)
         limits = self._planning_limits()
         dispositions = self._dispositions()
+        reviews = self._store.list_reviews(self._run_id)
+        review_state, digests = plan_approval_validation_context(
+            self._store,
+            self._run_id,
+            plan,
+            mode,
+        )
+        validation = validate_plan(
+            plan,
+            limits=limits,
+            dispositions=dispositions,
+            review_state=review_state,
+            digests=digests,
+            reviews=reviews,
+            mode=mode,
+        )
 
         if view == "tree":
             payload = build_tree_view(plan, limits=limits, root_id=root_id, depth=depth)
         elif view == "ready":
-            payload = build_ready_view(plan, dispositions)
+            payload = build_ready_view(plan, dispositions, reviews=reviews)
         else:
-            payload = build_issues_view(
-                plan,
-                limits=limits,
-                mode=mode,
-                dispositions=dispositions,
-            )
+            payload = {
+                "view": "issues",
+                "revision": plan.revision,
+                "mode": mode,
+            }
 
-        validation = validate_plan(plan, limits=limits, dispositions=dispositions, mode="draft")
-        payload["ok"] = True
+        payload["ok"] = validation.ok
+        payload["issues"] = validation_issues(validation)
         payload["warnings"] = validation_warnings(validation)
         return payload
 
@@ -95,9 +111,16 @@ class PlanAgentService:
         plan = self._store.load_plan_model(self._run_id)
         limits = self._planning_limits()
         dispositions = self._dispositions()
+        reviews = self._store.list_reviews(self._run_id)
 
         try:
-            result = apply_operations(plan, base_revision, operations, limits=limits)
+            result = apply_operations(
+                plan,
+                base_revision,
+                operations,
+                limits=limits,
+                reviews=reviews,
+            )
         except DomainRevisionConflictError as exc:
             raise RevisionConflictError(
                 str(exc),
@@ -141,11 +164,13 @@ class PlanAgentService:
             result.plan,
             limits=limits,
             dispositions=dispositions,
+            reviews=reviews,
             mode="draft",
         )
 
         return {
-            "ok": True,
+            "ok": validation.ok,
+            "applied": True,
             "revision": result.revision,
             "id_map": dict(result.id_map),
             "changed_item_ids": list(result.changed_item_ids),
@@ -155,25 +180,42 @@ class PlanAgentService:
                 limits=limits,
             ),
             "warnings": list(result.warnings) + validation_warnings(validation),
+            "issues": validation_issues(validation),
             "planning_budget": [budget.to_dict() for budget in result.budgets],
-            "ready_changes": ready_item_changes(before_plan, result.plan, dispositions),
+            "ready_changes": ready_item_changes(
+                before_plan,
+                result.plan,
+                dispositions,
+                reviews=reviews,
+            ),
         }
 
     def check(self, *, mode: ValidationMode = "draft") -> dict[str, Any]:
         plan = self._store.load_plan_model(self._run_id)
         limits = self._planning_limits()
         dispositions = self._dispositions()
+        reviews = self._store.list_reviews(self._run_id)
+        review_state, digests = plan_approval_validation_context(
+            self._store,
+            self._run_id,
+            plan,
+            mode,
+        )
         validation = validate_plan(
             plan,
             limits=limits,
             dispositions=dispositions,
+            review_state=review_state,
+            digests=digests,
+            reviews=reviews,
             mode=mode,
         )
         return {
             "ok": validation.ok,
             "mode": mode,
             "revision": plan.revision,
-            "issues": [issue.to_dict() for issue in validation.issues],
+            "issues": validation_issues(validation),
+            "warnings": validation_warnings(validation),
         }
 
     def _planning_limits(self):

@@ -572,6 +572,29 @@ Plan apply requires `base_revision` from `plan snapshot`. Production apply requi
 `production_revision` from `production snapshot`. Stale revisions return a conflict
 error with instructions to refresh the snapshot.
 
+Plan `snapshot` and `check` responses separate validation `issues` (errors with
+`code`, `message`, optional `path`) from `warnings` (human-readable strings).
+`apply` returns the same split plus mutation budget warnings and sets
+`applied: true` when the batch was persisted. `ok` is true only when validation
+has no error-severity issues (inspect `issues` after apply even when
+`applied: true`). Production `snapshot` uses the same plan validation shape;
+use `production check` for batch/disposition-specific checks. Tree item
+snapshots include `scope`, `boundaries`, and `acceptance` alongside core
+planning fields. Plan `ready` views exclude items blocked by unresolved
+`focused_plan` / `whole_plan` findings; production `ready` views exclude items
+blocked by unresolved `focused_output` / `whole_output` findings. Plans carry
+`schema_version` (currently 1). `check --mode approval` always runs
+approval-mode soft limits; digest and whole-plan review hooks compare against a
+stored approval when one exists for the current revision, otherwise surface
+`*_not_checked` warnings. Prefer dependency edges on the narrowest meaningful
+plan item when a more specific descendant already captures the prerequisite.
+
+`plan snapshot`, `plan apply`, and `plan check` exit 0 only when `ok` is true.
+`production snapshot` and `production check` follow the same rule. `plan apply`
+may return `applied: true` with exit 1 when post-apply validation reports
+errors. `production apply` returns `ok: true` when the batch was persisted;
+use `production snapshot` or `production check` for plan validation.
+
 ## Further reading
 
 Package README: tools/top_down_planning/README.md

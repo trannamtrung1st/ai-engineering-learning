@@ -357,12 +357,12 @@ def _handle_plan_command(args: argparse.Namespace) -> None:
                 depth=args.depth,
                 mode=args.mode,
             )
-            emit_response(payload)
+            emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.plan_command == "apply":
             request = load_structured_request(request_path=args.request)
             role = _resolve_apply_role(args, request)
             payload = service.apply(request, role=role)
-            emit_response(payload)
+            emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.plan_command == "check":
             payload = service.check(mode=args.mode)
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
@@ -393,7 +393,7 @@ def _handle_production_command(args: argparse.Namespace) -> None:
     try:
         if args.production_command == "snapshot":
             payload = service.snapshot(view=args.view)
-            emit_response(payload)
+            emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "apply":
             request = load_structured_request(request_path=args.request)
             role = _resolve_apply_role(args, request)

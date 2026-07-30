@@ -215,6 +215,13 @@ def move_item_subtree(
     insert_item_at(plan, item, new_parent_id, placement)
 
 
+def recompact_active_sibling_order_keys(plan: Plan, parent_id: str | None) -> None:
+    """Renumber active sibling order_keys after a removal leaves a gap."""
+
+    for index, child in enumerate(children_of(plan, parent_id)):
+        child.order_key = f"{index:010d}"
+
+
 def compute_planning_budget(
     plan: Plan,
     item_id: str,

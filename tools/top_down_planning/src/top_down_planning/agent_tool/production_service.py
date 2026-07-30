@@ -7,7 +7,12 @@ from typing import Any
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.errors import RequestError, RevisionConflictError
 from top_down_planning.agent_tool.roles import assert_production_mutations_allowed
-from top_down_planning.agent_tool.views import build_ready_view, build_tree_view
+from top_down_planning.agent_tool.views import (
+    build_ready_view,
+    build_tree_view,
+    validation_issues,
+    validation_warnings,
+)
 from top_down_planning.domain.dispositions import DispositionMap
 from top_down_planning.domain.production import (
     BatchResult,
@@ -29,7 +34,8 @@ from top_down_planning.domain.production import (
     validate_production_checks,
 )
 from top_down_planning.domain.readiness import is_applicable_item
-from top_down_planning.domain.reviews import find_whole_plan_approval
+from top_down_planning.domain.reviews import OUTPUT_REVIEW_TYPES, find_whole_plan_approval
+from top_down_planning.domain.validators import validate_plan
 from top_down_planning.persistence.errors import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
 
@@ -49,16 +55,32 @@ class ProductionAgentService:
         plan = self._store.load_plan_model(self._run_id)
         production = self._store.load_production(self._run_id)
         dispositions = self._dispositions(production)
+        reviews = self._store.list_reviews(self._run_id)
+
+        limits = planning_limits_from_config(self._store.load_resolved_config(self._run_id))
+        validation = validate_plan(
+            plan,
+            limits=limits,
+            dispositions=dispositions,
+            reviews=reviews,
+            review_types=OUTPUT_REVIEW_TYPES,
+        )
 
         if view == "tree":
-            limits = planning_limits_from_config(self._store.load_resolved_config(self._run_id))
             payload = build_tree_view(plan, limits=limits)
         elif view == "ready":
-            payload = build_ready_view(plan, dispositions)
+            payload = build_ready_view(
+                plan,
+                dispositions,
+                reviews=reviews,
+                review_types=OUTPUT_REVIEW_TYPES,
+            )
         else:
             raise RequestError(f"unsupported production snapshot view: {view!r}")
 
-        payload["ok"] = True
+        payload["ok"] = validation.ok
+        payload["issues"] = validation_issues(validation)
+        payload["warnings"] = validation_warnings(validation)
         payload["production_revision"] = int(production["revision"])
         payload["output_revision"] = int(production["output_revision"])
         payload["batch_count"] = len(production["batches"])
@@ -107,7 +129,12 @@ class ProductionAgentService:
             )
 
         current_dispositions = self._dispositions(production)
-        ready_ids = ready_item_ids_for_plan(plan, current_dispositions)
+        reviews = self._store.list_reviews(self._run_id)
+        ready_ids = ready_item_ids_for_plan(
+            plan,
+            current_dispositions,
+            reviews=reviews,
+        )
 
         already_terminal = [
             item_id
@@ -202,7 +229,8 @@ class ProductionAgentService:
         plan = self._store.load_plan_model(self._run_id)
         production = self._store.load_production(self._run_id)
         dispositions = self._dispositions(production)
-        issues = validate_production_checks(plan, production)
+        reviews = self._store.list_reviews(self._run_id)
+        issues = validate_production_checks(plan, production, reviews=reviews)
         return {
             "ok": not issues,
             "revision": plan.revision,
