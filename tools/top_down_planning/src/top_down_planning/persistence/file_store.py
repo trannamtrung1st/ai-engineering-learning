@@ -23,6 +23,9 @@ _EMPTY_PRODUCTION: dict[str, Any] = {
     "batches": [],
     "dispositions": {},
     "output_evidence": [],
+    "amendment_requests": [],
+    "completion_claim": None,
+    "blocker_report": None,
 }
 
 

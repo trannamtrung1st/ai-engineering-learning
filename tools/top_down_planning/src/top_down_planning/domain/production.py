@@ -7,7 +7,7 @@ from typing import Any
 
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS, TerminalDisposition
 from top_down_planning.domain.models import Plan
-from top_down_planning.domain.readiness import compute_ready_view, is_applicable_item
+from top_down_planning.domain.readiness import compute_ready_view, detect_deadlock, is_applicable_item
 
 PRODUCTION_PHASE = "production"
 
@@ -280,3 +280,85 @@ def ready_item_ids_for_plan(
     dispositions: dict[str, TerminalDisposition],
 ) -> set[str]:
     return set(compute_ready_view(plan, dispositions).ready_item_ids)
+
+
+def collect_batch_disposition_records(
+    production: dict[str, Any],
+) -> dict[str, ItemDispositionRecord]:
+    records: dict[str, ItemDispositionRecord] = {}
+    for batch_payload in production.get("batches") or []:
+        if not isinstance(batch_payload, dict):
+            continue
+        result_payload = batch_payload.get("result")
+        if not isinstance(result_payload, dict):
+            continue
+        try:
+            batch_records = parse_disposition_records(result_payload.get("dispositions") or {})
+        except ValueError:
+            continue
+        records.update(batch_records)
+    return records
+
+
+def validate_production_checks(
+    plan: Plan,
+    production: dict[str, Any],
+) -> list[str]:
+    """Deterministic output-oriented checks available before whole-output review."""
+
+    issues: list[str] = []
+    dispositions = dict(production.get("dispositions") or {})
+    disposition_records = collect_batch_disposition_records(production)
+
+    if not all_applicable_items_processed(plan, dispositions):
+        open_items = [
+            item_id
+            for item_id in plan.items
+            if is_applicable_item(plan, item_id, dispositions)
+        ]
+        issues.append(
+            f"{len(open_items)} applicable item(s) remain without terminal disposition"
+        )
+
+    deadlock = detect_deadlock(plan, dispositions)
+    if deadlock is not None:
+        issues.append(deadlock.explanation)
+
+    for item_id, disposition in dispositions.items():
+        record = disposition_records.get(item_id)
+        if disposition == "blocked":
+            evidence = record.evidence if record is not None else None
+            if not (evidence or "").strip():
+                issues.append(f"blocked item {item_id} is missing evidence")
+        if disposition == "superseded":
+            replacement_ref = record.replacement_ref if record is not None else None
+            if not (replacement_ref or "").strip():
+                issues.append(f"superseded item {item_id} is missing replacement_ref")
+        if disposition == "not_applicable":
+            reason = record.reason if record is not None else None
+            if not (reason or "").strip():
+                issues.append(f"not_applicable item {item_id} is missing reason")
+
+    for batch_payload in production.get("batches") or []:
+        if not isinstance(batch_payload, dict):
+            continue
+        result_payload = batch_payload.get("result")
+        if not isinstance(result_payload, dict):
+            continue
+        if bool(result_payload.get("empty_output")) and not (
+            str(result_payload.get("empty_output_reason") or "").strip()
+        ):
+            batch_id = str(batch_payload.get("id") or "unknown")
+            issues.append(f"batch {batch_id} declares empty_output without reason")
+
+    completion_claim = production.get("completion_claim")
+    if isinstance(completion_claim, dict):
+        if not str(completion_claim.get("goal_assessment") or "").strip():
+            issues.append("completion claim is missing goal_assessment")
+
+    return issues
+
+
+def next_amendment_id(existing_requests: list[dict[str, Any]]) -> str:
+    index = len(existing_requests) + 1
+    return f"amendment-{index:02d}"

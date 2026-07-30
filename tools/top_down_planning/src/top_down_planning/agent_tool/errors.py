@@ -38,10 +38,12 @@ class RevisionConflictError(AgentToolError):
         *,
         expected: int | None = None,
         actual: int | None = None,
+        action: str | None = None,
     ) -> None:
         super().__init__(
             message,
-            action="Call `tdp agent plan snapshot` and retry with the current revision.",
+            action=action
+            or "Call `tdp agent plan snapshot` and retry with the current revision.",
         )
         self.expected = expected
         self.actual = actual

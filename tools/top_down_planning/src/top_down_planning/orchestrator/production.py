@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from top_down_planning.agent_tool.errors import RequestError
+from top_down_planning.agent_tool.errors import AgentToolError
 from top_down_planning.agent_tool.production_service import ProductionAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.production import all_applicable_items_processed
@@ -22,7 +22,13 @@ from top_down_planning.provider.interface import Provider
 
 _PRODUCTION_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["production"]
 _BATCH_COMPLETE_SIGNAL = "batch_complete"
-_PRODUCTION_COMPLETE_SIGNAL = "production_complete"
+
+_PRODUCTION_TOOL_HANDLERS: dict[str, str] = {
+    "production_apply": "apply",
+    "production_request_amendment": "request_amendment",
+    "production_submit_completion": "submit_completion",
+    "production_report_blocked": "report_blocked",
+}
 
 
 @dataclass(frozen=True)
@@ -89,7 +95,10 @@ class ProductionPhaseOrchestrator:
 
         batch_agent_turns = 0
         while True:
-            if self._all_items_processed():
+            if self._has_blocker_report():
+                return self._terminate_from_blocker_report(session_id)
+
+            if self._has_completion_claim():
                 return self._complete_production(session_id)
 
             deadlock = self._detect_deadlock()
@@ -117,15 +126,6 @@ class ProductionPhaseOrchestrator:
             if turn_signal == _BATCH_COMPLETE_SIGNAL:
                 batch_agent_turns = 0
                 continue
-
-            if turn_signal == _PRODUCTION_COMPLETE_SIGNAL:
-                if not self._all_items_processed():
-                    return self._terminate(
-                        "blocked",
-                        "producer signaled production_complete before all items were terminal",
-                        session_id=session_id,
-                    )
-                return self._complete_production(session_id)
 
             if batch_agent_turns > loop_limits["max_agent_turns_per_batch"]:
                 return self._terminate(
@@ -172,24 +172,43 @@ class ProductionPhaseOrchestrator:
         if tool == "plan_apply":
             raise ProviderRunError(
                 "plan mutations are not allowed during production; "
-                "use request_amendment when a material plan defect is found"
+                "use `tdp agent production request-amendment` when a material plan "
+                "defect is found"
             )
 
-        if tool != "production_apply":
+        handler_name = _PRODUCTION_TOOL_HANDLERS.get(tool)
+        if handler_name is None:
             return
 
         request = event.get("request")
         if not isinstance(request, dict):
-            raise ProviderRunError("production_apply tool_call requires a request object")
+            raise ProviderRunError(f"{tool} tool_call requires a request object")
 
         role = event.get("role")
         if role is None or str(role).strip() != "producer":
-            raise ProviderRunError("production_apply tool_call requires role=producer")
+            raise ProviderRunError(f"{tool} tool_call requires role=producer")
 
+        handler = getattr(self._production_service, handler_name)
         try:
-            self._production_service.apply(request, role=role)
-        except RequestError as exc:
+            handler(request, role=str(role).strip())
+        except AgentToolError as exc:
             raise ProviderRunError(str(exc)) from exc
+
+    def _has_completion_claim(self) -> bool:
+        production = self._store.load_production(self._run_id)
+        claim = production.get("completion_claim")
+        return isinstance(claim, dict)
+
+    def _has_blocker_report(self) -> bool:
+        production = self._store.load_production(self._run_id)
+        report = production.get("blocker_report")
+        return isinstance(report, dict)
+
+    def _terminate_from_blocker_report(self, session_id: str) -> ProductionPhaseResult:
+        production = self._store.load_production(self._run_id)
+        report = production.get("blocker_report") or {}
+        evidence = str(report.get("evidence") or "producer reported blocked")
+        return self._terminate("blocked", evidence, session_id=session_id)
 
     def _enter_production_phase(self) -> dict[str, Any]:
         run = self._store.load_run(self._run_id)
@@ -326,8 +345,19 @@ def build_producer_context_manifest(
                 "--request <file>"
             ),
             "check": f"tdp agent production check --run {run_id}",
+            "request_amendment": (
+                f"tdp agent production request-amendment --run {run_id} --role producer "
+                "--request <file>"
+            ),
+            "submit_completion": (
+                f"tdp agent production submit-completion --run {run_id} --role producer "
+                "--request <file>"
+            ),
+            "report_blocked": (
+                f"tdp agent production report-blocked --run {run_id} --role producer "
+                "--request <file>"
+            ),
             "batch_complete_signal": _BATCH_COMPLETE_SIGNAL,
-            "production_complete_signal": _PRODUCTION_COMPLETE_SIGNAL,
         },
     }
 

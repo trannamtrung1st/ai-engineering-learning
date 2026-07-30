@@ -8,6 +8,7 @@ from typing import Any
 from top_down_planning.agent_tool import (
     AgentToolError,
     PlanAgentService,
+    ProductionAgentService,
     RequestError,
     ReviewAgentService,
     RunAgentService,
@@ -62,6 +63,86 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         choices=["draft", "approval"],
         default="draft",
         help="Validation mode (default: draft).",
+    )
+
+    production_parser = agent_sub.add_parser(
+        "production",
+        help="Production snapshot/apply/check commands.",
+    )
+    production_sub = production_parser.add_subparsers(dest="production_command")
+
+    production_snapshot_parser = production_sub.add_parser(
+        "snapshot",
+        help="Return a bounded production view.",
+    )
+    _add_run_flags(production_snapshot_parser)
+    production_snapshot_parser.add_argument(
+        "--view",
+        choices=["tree", "ready"],
+        default="ready",
+        help="Snapshot view (default: ready).",
+    )
+
+    production_apply_parser = production_sub.add_parser(
+        "apply",
+        help="Record an atomic production batch.",
+    )
+    _add_run_flags(production_apply_parser)
+    production_apply_parser.add_argument(
+        "--request",
+        help="JSON or YAML request file (default: stdin).",
+    )
+    production_apply_parser.add_argument(
+        "--role",
+        help="Agent role (required unless request.role is set).",
+    )
+
+    production_check_parser = production_sub.add_parser(
+        "check",
+        help="Run deterministic production validation.",
+    )
+    _add_run_flags(production_check_parser)
+
+    production_amendment_parser = production_sub.add_parser(
+        "request-amendment",
+        help="Record a controlled plan amendment request.",
+    )
+    _add_run_flags(production_amendment_parser)
+    production_amendment_parser.add_argument(
+        "--request",
+        help="JSON or YAML request file (default: stdin).",
+    )
+    production_amendment_parser.add_argument(
+        "--role",
+        help="Agent role (required unless request.role is set).",
+    )
+
+    production_completion_parser = production_sub.add_parser(
+        "submit-completion",
+        help="Record a production completion claim.",
+    )
+    _add_run_flags(production_completion_parser)
+    production_completion_parser.add_argument(
+        "--request",
+        help="JSON or YAML request file (default: stdin).",
+    )
+    production_completion_parser.add_argument(
+        "--role",
+        help="Agent role (required unless request.role is set).",
+    )
+
+    production_blocked_parser = production_sub.add_parser(
+        "report-blocked",
+        help="Record a production blocker with evidence.",
+    )
+    _add_run_flags(production_blocked_parser)
+    production_blocked_parser.add_argument(
+        "--request",
+        help="JSON or YAML request file (default: stdin).",
+    )
+    production_blocked_parser.add_argument(
+        "--role",
+        help="Agent role (required unless request.role is set).",
     )
 
     review_parser = agent_sub.add_parser("review", help="Review respond commands.")
@@ -145,6 +226,10 @@ def handle_agent_command(args: argparse.Namespace) -> None:
         _handle_plan_command(args)
         return
 
+    if args.agent_command == "production":
+        _handle_production_command(args)
+        return
+
     if args.agent_command == "review":
         _handle_review_command(args)
         return
@@ -206,6 +291,57 @@ def _handle_plan_command(args: argparse.Namespace) -> None:
         else:
             emit_error(
                 AgentToolError(f"unknown plan command: {args.plan_command!r}"),
+                exit_code=2,
+            )
+    except AgentToolError as exc:
+        emit_error(exc)
+    except Exception as exc:
+        emit_error(exc)
+
+
+def _handle_production_command(args: argparse.Namespace) -> None:
+    if args.production_command is None:
+        emit_error(
+            AgentToolError(
+                "production command required: snapshot, apply, check, "
+                "request-amendment, submit-completion, or report-blocked"
+            ),
+            exit_code=2,
+        )
+
+    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    service = ProductionAgentService(store, args.run)
+
+    try:
+        if args.production_command == "snapshot":
+            payload = service.snapshot(view=args.view)
+            emit_response(payload)
+        elif args.production_command == "apply":
+            request = load_structured_request(request_path=args.request)
+            role = _resolve_apply_role(args, request)
+            payload = service.apply(request, role=role)
+            emit_response(payload)
+        elif args.production_command == "check":
+            payload = service.check()
+            emit_response(payload, exit_code=0 if payload["ok"] else 1)
+        elif args.production_command == "request-amendment":
+            request = load_structured_request(request_path=args.request)
+            role = _resolve_apply_role(args, request)
+            payload = service.request_amendment(request, role=role)
+            emit_response(payload)
+        elif args.production_command == "submit-completion":
+            request = load_structured_request(request_path=args.request)
+            role = _resolve_apply_role(args, request)
+            payload = service.submit_completion(request, role=role)
+            emit_response(payload)
+        elif args.production_command == "report-blocked":
+            request = load_structured_request(request_path=args.request)
+            role = _resolve_apply_role(args, request)
+            payload = service.report_blocked(request, role=role)
+            emit_response(payload)
+        else:
+            emit_error(
+                AgentToolError(f"unknown production command: {args.production_command!r}"),
                 exit_code=2,
             )
     except AgentToolError as exc:

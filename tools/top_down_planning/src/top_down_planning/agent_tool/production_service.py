@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
-from top_down_planning.agent_tool.errors import RequestError
+from top_down_planning.agent_tool.errors import RequestError, RevisionConflictError
+from top_down_planning.agent_tool.roles import assert_production_mutations_allowed
 from top_down_planning.agent_tool.views import build_ready_view, build_tree_view
 from top_down_planning.domain.dispositions import DispositionMap
 from top_down_planning.domain.production import (
@@ -17,15 +18,21 @@ from top_down_planning.domain.production import (
     all_applicable_items_processed,
     disposition_map_from_records,
     is_production_phase,
+    next_amendment_id,
     next_batch_id,
     parse_disposition_records,
     ready_item_ids_for_plan,
     validate_batch_request,
+    validate_production_checks,
 )
-from top_down_planning.domain.readiness import detect_deadlock, is_applicable_item
+from top_down_planning.domain.readiness import is_applicable_item
 from top_down_planning.domain.reviews import find_whole_plan_approval
 from top_down_planning.persistence.errors import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
+
+_PRODUCTION_SNAPSHOT_ACTION = (
+    "Call `tdp agent production snapshot` and retry with the current revision."
+)
 
 
 class ProductionAgentService:
@@ -49,9 +56,9 @@ class ProductionAgentService:
             raise RequestError(f"unsupported production snapshot view: {view!r}")
 
         payload["ok"] = True
-        payload["production_revision"] = int(production.get("revision") or 0)
-        payload["output_revision"] = int(production.get("output_revision") or 0)
-        payload["batch_count"] = len(production.get("batches") or [])
+        payload["production_revision"] = int(production["revision"])
+        payload["output_revision"] = int(production["output_revision"])
+        payload["batch_count"] = len(production["batches"])
         payload["dispositions"] = dict(dispositions)
         return payload
 
@@ -62,23 +69,13 @@ class ProductionAgentService:
         role: str,
     ) -> dict[str, Any]:
         normalized_role = str(role).strip()
-        if normalized_role != "producer":
-            raise RequestError("only the producer role may record production batches")
-
-        run = self._store.load_run(self._run_id)
-        phase = str(run.get("phase") or "")
-        if not is_production_phase(phase):
-            raise RequestError(
-                f"production apply is only allowed in production phase (current: {phase!r})"
-            )
+        assert_production_mutations_allowed(normalized_role)
 
         plan = self._store.load_plan_model(self._run_id)
-        if find_whole_plan_approval(self._store.list_reviews(self._run_id), plan.revision) is None:
-            raise RequestError(
-                "production apply requires an approved whole-plan review "
-                "for the current plan revision"
-            )
+        self._require_production_context(plan)
 
+        if "production_revision" not in request:
+            raise RequestError("apply requires production_revision")
         if "plan_items" not in request:
             raise RequestError("apply requires plan_items")
 
@@ -87,6 +84,19 @@ class ProductionAgentService:
             raise RequestError("plan_items must be a non-empty list")
 
         production = self._store.load_production(self._run_id)
+        expected_revision = int(request["production_revision"])
+        current_revision = int(production["revision"])
+        if expected_revision != current_revision:
+            raise RevisionConflictError(
+                (
+                    f"production revision conflict: expected {expected_revision}, "
+                    f"current {current_revision}"
+                ),
+                expected=expected_revision,
+                actual=current_revision,
+                action=_PRODUCTION_SNAPSHOT_ACTION,
+            )
+
         current_dispositions = self._dispositions(production)
         ready_ids = ready_item_ids_for_plan(plan, current_dispositions)
 
@@ -139,16 +149,20 @@ class ProductionAgentService:
             result=result,
         )
 
-        expected_revision = int(production["revision"])
         updated = self._merge_batch(production, batch, disposition_records, outputs)
         try:
             next_revision = self._store.save_production(
                 self._run_id,
                 updated,
-                expected_revision,
+                current_revision,
             )
         except StoreRevisionConflictError as exc:
-            raise RequestError(str(exc)) from exc
+            raise RevisionConflictError(
+                str(exc),
+                expected=exc.expected,
+                actual=exc.actual,
+                action=_PRODUCTION_SNAPSHOT_ACTION,
+            ) from exc
 
         self._store.append_event(
             self._run_id,
@@ -179,16 +193,216 @@ class ProductionAgentService:
         plan = self._store.load_plan_model(self._run_id)
         production = self._store.load_production(self._run_id)
         dispositions = self._dispositions(production)
-        deadlock = detect_deadlock(plan, dispositions)
+        issues = validate_production_checks(plan, production)
         return {
-            "ok": deadlock is None,
+            "ok": not issues,
             "revision": plan.revision,
-            "production_revision": int(production.get("revision") or 0),
+            "production_revision": int(production["revision"]),
+            "output_revision": int(production["output_revision"]),
             "all_applicable_items_processed": all_applicable_items_processed(
                 plan,
                 dispositions,
             ),
-            "deadlock": deadlock.to_dict() if deadlock is not None else None,
+            "issues": issues,
+        }
+
+    def request_amendment(
+        self,
+        request: dict[str, Any],
+        *,
+        role: str,
+    ) -> dict[str, Any]:
+        normalized_role = str(role).strip()
+        assert_production_mutations_allowed(normalized_role)
+
+        plan = self._store.load_plan_model(self._run_id)
+        self._require_production_context(plan)
+
+        evidence = _required_text(request.get("evidence"), field="evidence")
+        affected_refs = _required_affected_refs(request.get("affected_refs"))
+        summary = str(request.get("summary") or "").strip()
+
+        production = self._store.load_production(self._run_id)
+        expected_revision = int(production["revision"])
+        requests = list(production.get("amendment_requests") or [])
+        amendment_id = str(request.get("id") or next_amendment_id(requests))
+        amendment = {
+            "id": amendment_id,
+            "status": "pending",
+            "evidence": evidence,
+            "affected_refs": affected_refs,
+            "summary": summary,
+            "plan_revision": plan.revision,
+            "output_revision": int(production["output_revision"]),
+        }
+
+        updated = dict(production)
+        updated["revision"] = expected_revision + 1
+        updated["amendment_requests"] = [*requests, amendment]
+        updated["pending_amendment_id"] = amendment_id
+
+        try:
+            next_revision = self._store.save_production(
+                self._run_id,
+                updated,
+                expected_revision,
+            )
+        except StoreRevisionConflictError as exc:
+            raise RevisionConflictError(
+                str(exc),
+                expected=exc.expected,
+                actual=exc.actual,
+                action=_PRODUCTION_SNAPSHOT_ACTION,
+            ) from exc
+
+        self._store.append_event(
+            self._run_id,
+            {
+                "type": "production_amendment_requested",
+                "run_id": self._run_id,
+                "amendment_id": amendment_id,
+                "affected_refs": affected_refs,
+                "production_revision": next_revision,
+            },
+        )
+
+        return {
+            "ok": True,
+            "amendment_id": amendment_id,
+            "status": "pending",
+            "production_revision": next_revision,
+            "signal": "amendment_requested",
+        }
+
+    def submit_completion(
+        self,
+        request: dict[str, Any],
+        *,
+        role: str,
+    ) -> dict[str, Any]:
+        normalized_role = str(role).strip()
+        assert_production_mutations_allowed(normalized_role)
+
+        goal_assessment = _required_text(
+            request.get("goal_assessment"),
+            field="goal_assessment",
+        )
+        summary = str(request.get("summary") or "").strip()
+
+        plan = self._store.load_plan_model(self._run_id)
+        self._require_production_context(plan)
+        production = self._store.load_production(self._run_id)
+        dispositions = self._dispositions(production)
+        if not all_applicable_items_processed(plan, dispositions):
+            raise RequestError(
+                "submit-completion requires every applicable item to have a "
+                "terminal disposition or derived satisfaction"
+            )
+
+        expected_revision = int(production["revision"])
+        claim = {
+            "goal_assessment": goal_assessment,
+            "summary": summary,
+            "plan_revision": plan.revision,
+            "output_revision": int(production["output_revision"]),
+            "all_applicable_items_processed": True,
+        }
+
+        updated = dict(production)
+        updated["revision"] = expected_revision + 1
+        updated["completion_claim"] = claim
+
+        try:
+            next_revision = self._store.save_production(
+                self._run_id,
+                updated,
+                expected_revision,
+            )
+        except StoreRevisionConflictError as exc:
+            raise RevisionConflictError(
+                str(exc),
+                expected=exc.expected,
+                actual=exc.actual,
+                action=_PRODUCTION_SNAPSHOT_ACTION,
+            ) from exc
+
+        self._store.append_event(
+            self._run_id,
+            {
+                "type": "production_completion_claimed",
+                "run_id": self._run_id,
+                "production_revision": next_revision,
+                "output_revision": claim["output_revision"],
+            },
+        )
+
+        run = self._store.load_run(self._run_id)
+        return {
+            "ok": True,
+            "production_revision": next_revision,
+            "completion_claim": claim,
+            "run_outcome": run.get("outcome"),
+        }
+
+    def report_blocked(
+        self,
+        request: dict[str, Any],
+        *,
+        role: str,
+    ) -> dict[str, Any]:
+        normalized_role = str(role).strip()
+        assert_production_mutations_allowed(normalized_role)
+
+        evidence = _required_text(request.get("evidence"), field="evidence")
+        affected_refs = _parse_affected_refs(request.get("affected_refs"))
+        summary = str(request.get("summary") or "").strip()
+
+        plan = self._store.load_plan_model(self._run_id)
+        self._require_production_context(plan)
+        production = self._store.load_production(self._run_id)
+        expected_revision = int(production["revision"])
+        report = {
+            "evidence": evidence,
+            "affected_refs": affected_refs,
+            "summary": summary,
+            "plan_revision": plan.revision,
+            "output_revision": int(production["output_revision"]),
+        }
+
+        updated = dict(production)
+        updated["revision"] = expected_revision + 1
+        updated["blocker_report"] = report
+
+        try:
+            next_revision = self._store.save_production(
+                self._run_id,
+                updated,
+                expected_revision,
+            )
+        except StoreRevisionConflictError as exc:
+            raise RevisionConflictError(
+                str(exc),
+                expected=exc.expected,
+                actual=exc.actual,
+                action=_PRODUCTION_SNAPSHOT_ACTION,
+            ) from exc
+
+        self._store.append_event(
+            self._run_id,
+            {
+                "type": "production_blocked_reported",
+                "run_id": self._run_id,
+                "affected_refs": affected_refs,
+                "production_revision": next_revision,
+            },
+        )
+
+        run = self._store.load_run(self._run_id)
+        return {
+            "ok": True,
+            "production_revision": next_revision,
+            "blocker_report": report,
+            "run_outcome": run.get("outcome"),
         }
 
     def _merge_batch(
@@ -223,6 +437,19 @@ class ProductionAgentService:
         updated["output_evidence"] = evidence
         updated["output_revision"] = int(updated.get("output_revision") or 0) + 1
         return updated
+
+    def _require_production_context(self, plan) -> None:
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or "")
+        if not is_production_phase(phase):
+            raise RequestError(
+                f"production commands are only allowed in production phase (current: {phase!r})"
+            )
+        if find_whole_plan_approval(self._store.list_reviews(self._run_id), plan.revision) is None:
+            raise RequestError(
+                "production commands require an approved whole-plan review "
+                "for the current plan revision"
+            )
 
     def _dispositions(self, production: dict[str, Any]) -> DispositionMap:
         raw = production.get("dispositions") or {}
@@ -273,6 +500,30 @@ def _validate_contributions(
                 raise RequestError(
                     f"contribution references unknown output id: {output_ref}"
                 )
+
+
+def _parse_affected_refs(raw_refs: Any) -> list[str]:
+    if raw_refs is None:
+        return []
+    if not isinstance(raw_refs, list):
+        raise RequestError("affected_refs must be a list")
+    return [str(item_id) for item_id in raw_refs]
+
+
+def _required_affected_refs(raw_refs: Any) -> list[str]:
+    affected_refs = _parse_affected_refs(raw_refs)
+    if not affected_refs:
+        raise RequestError("affected_refs must be a non-empty list")
+    return affected_refs
+
+
+def _required_text(value: Any, *, field: str) -> str:
+    if value is None:
+        raise RequestError(f"{field} is required")
+    text = str(value).strip()
+    if not text:
+        raise RequestError(f"{field} is required")
+    return text
 
 
 def _optional_text(value: Any) -> str | None:

@@ -30,8 +30,10 @@ def _batch_apply_request(
     dispositions: dict,
     empty_output: bool = False,
     empty_output_reason: str | None = None,
+    production_revision: int = 0,
 ) -> dict:
     return {
+        "production_revision": production_revision,
         "plan_items": plan_items,
         "dispositions": dispositions,
         "outputs": [],
@@ -162,9 +164,16 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
                 "request": _batch_apply_request(
                     plan_items=["item-second"],
                     dispositions={"item-second": {"disposition": "completed"}},
+                    production_revision=1,
                 ),
             },
-            *_done_events(signal="production_complete"),
+            {
+                "type": "tool_call",
+                "tool": "production_submit_completion",
+                "role": "producer",
+                "request": {"goal_assessment": "Output goal is fully met."},
+            },
+            *_done_events(signal="batch_complete"),
         ]
     )
 
@@ -429,6 +438,7 @@ def test_production_apply_rejects_already_terminal_item(tmp_path: Path) -> None:
             _batch_apply_request(
                 plan_items=["item-first"],
                 dispositions={"item-first": {"disposition": "completed"}},
+                production_revision=1,
             ),
             role="producer",
         )
