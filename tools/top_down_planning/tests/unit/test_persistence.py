@@ -65,6 +65,20 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
     assert store.load_run("run-001")["digests"]["input"] == "input-a"
 
 
+def test_load_resolved_config_round_trip(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    config = {"planning": {"max_depth": 5, "max_expansion_per_item": 3}}
+    store.create_run(
+        "run-001",
+        plan=_sample_plan(),
+        resolved_config=config,
+        input_digest="input-a",
+        output_goal_digest="goal-b",
+    )
+
+    assert store.load_resolved_config("run-001") == config
+
+
 def test_create_run_requires_digests(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     with pytest.raises(PersistenceError, match="input_digest and output_goal_digest"):

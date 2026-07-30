@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from top_down_planning import __version__
+from top_down_planning.cli.agent import add_agent_subparsers, handle_agent_command
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,15 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_parser.add_argument("--run", help="Run id.")
 
-    agent_parser = subparsers.add_parser(
-        "agent",
-        help="Agent-facing structured tool commands.",
-    )
-    agent_parser.add_argument(
-        "agent_command",
-        nargs="?",
-        help="Agent subcommand (help, plan, production, review, run, …).",
-    )
+    add_agent_subparsers(subparsers)
 
     return parser
 
@@ -71,6 +64,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command is None:
         parser.print_help()
+        return
+
+    if args.command == "agent":
+        handle_agent_command(args)
         return
 
     print(f"tdp {args.command}: not implemented yet.", file=sys.stderr)

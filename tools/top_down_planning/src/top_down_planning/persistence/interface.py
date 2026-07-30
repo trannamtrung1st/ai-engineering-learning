@@ -55,3 +55,6 @@ class RunStore(Protocol):
 
     def load_events(self, run_id: str) -> list[dict[str, Any]]:
         """Load all persisted audit events for a run."""
+
+    def load_resolved_config(self, run_id: str) -> dict[str, Any]:
+        """Load the resolved configuration snapshot for a run."""

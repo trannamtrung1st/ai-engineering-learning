@@ -15,7 +15,7 @@ from top_down_planning.persistence.errors import (
     RunNotFoundError,
     StoreRevisionConflictError,
 )
-from top_down_planning.persistence.yaml_util import dump_yaml
+from top_down_planning.persistence.yaml_util import dump_yaml, load_yaml
 
 _EMPTY_PRODUCTION: dict[str, Any] = {
     "revision": 0,
@@ -218,6 +218,15 @@ class FileRunStore:
                 continue
             events.append(json.loads(line))
         return events
+
+    def load_resolved_config(self, run_id: str) -> dict[str, Any]:
+        path = self.run_dir(run_id) / "resolved-config.yaml"
+        if not path.exists():
+            raise RunNotFoundError(run_id, "resolved-config.yaml missing")
+        payload = load_yaml(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise PersistenceError("resolved-config.yaml must contain a mapping")
+        return payload
 
     def _run_path(self, run_id: str) -> Path:
         path = self.run_dir(run_id) / "run.json"

@@ -3,3 +3,25 @@
 Exposes atomic domain operations to agents with schema validation, revision
 checks, and concise response shaping.
 """
+
+from top_down_planning.agent_tool.errors import (
+    AgentToolError,
+    OperationError,
+    RequestError,
+    RevisionConflictError,
+    RoleDeniedError,
+)
+from top_down_planning.agent_tool.plan_service import PlanAgentService
+from top_down_planning.agent_tool.request import load_structured_request
+from top_down_planning.agent_tool.run_service import RunAgentService
+
+__all__ = [
+    "AgentToolError",
+    "OperationError",
+    "PlanAgentService",
+    "RequestError",
+    "RevisionConflictError",
+    "RoleDeniedError",
+    "RunAgentService",
+    "load_structured_request",
+]
