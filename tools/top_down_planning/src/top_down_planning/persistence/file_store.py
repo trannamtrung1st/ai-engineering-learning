@@ -55,10 +55,9 @@ def new_run_record(
     context_digest: str,
     phase: str = "planning",
     workspace: str,
-    store: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = _utc_now()
-    record = {
+    return {
         "id": run_id,
         "revision": 0,
         "status": "running",
@@ -86,9 +85,6 @@ def new_run_record(
         "updated_at": now,
         "workspace": workspace,
     }
-    if store is not None:
-        record["store"] = dict(store)
-    return record
 
 
 class FileRunStore:
@@ -117,7 +113,7 @@ class FileRunStore:
         phase: str = "planning",
         production: dict[str, Any] | None = None,
         workspace: str,
-        store: dict[str, Any] | None = None,
+        invocation: dict[str, Any],
     ) -> dict[str, Any]:
         validated_run_id = validate_store_id(run_id, label="run_id")
         if not input_digest or not output_goal_digest or not context_digest:
@@ -126,6 +122,8 @@ class FileRunStore:
             )
         if not workspace or not str(workspace).strip():
             raise PersistenceError("workspace is required")
+        if not isinstance(invocation, dict):
+            raise PersistenceError("invocation metadata is required")
 
         final_run_dir = self.run_dir(validated_run_id)
         if final_run_dir.exists():
@@ -147,7 +145,6 @@ class FileRunStore:
             context_digest=context_digest,
             phase=phase,
             workspace=workspace,
-            store=store,
         )
 
         try:
@@ -165,6 +162,7 @@ class FileRunStore:
                 staging_dir / "production.json",
                 production if production is not None else dict(_EMPTY_PRODUCTION),
             )
+            atomic_write_json(staging_dir / "invocation.json", invocation)
             (staging_dir / "events.jsonl").write_text("", encoding="utf-8")
             staging_dir.rename(final_run_dir)
         except Exception:
@@ -425,6 +423,24 @@ class FileRunStore:
         if not isinstance(payload, dict):
             raise PersistenceError("resolved-config.yaml must contain a mapping")
         return payload
+
+    def save_invocation(self, run_id: str, invocation: dict[str, Any]) -> None:
+        """Persist CLI invocation metadata (presentation/store bootstrap; not digested)."""
+
+        path = self.run_dir(run_id) / "invocation.json"
+        if not path.parent.is_dir():
+            raise RunNotFoundError(run_id, "run directory missing", runs_root=self._root)
+        atomic_write_json(path, invocation)
+
+    def load_invocation(self, run_id: str) -> dict[str, Any]:
+        path = self.run_dir(run_id) / "invocation.json"
+        if not path.exists():
+            raise RunNotFoundError(
+                run_id,
+                "invocation.json missing",
+                runs_root=self._root,
+            )
+        return self._read_json(path)
 
     def reviews_dir(self, run_id: str) -> Path:
         return self._assert_contained(self.run_dir(run_id) / "reviews")

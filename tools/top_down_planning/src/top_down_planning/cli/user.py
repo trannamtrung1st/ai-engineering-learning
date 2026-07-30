@@ -52,9 +52,12 @@ from top_down_planning.orchestrator.phases import (
     WHOLE_OUTPUT_REVIEW,
 )
 from top_down_planning.workspace import run_workspace
+from top_down_planning.invocation import (
+    invocation_options_from_args,
+    invocation_to_dict,
+)
 from top_down_planning.observability import (
     ObservabilityContext,
-    ObservabilityOptions,
     build_observability_context,
     wrap_store_with_observability,
 )
@@ -86,29 +89,6 @@ def _open_run_store_for_command(
             stream_json=args.stream_json,
             code="runs_store_not_found",
         )
-
-
-def _observability_options_from_args(
-    args: Namespace,
-    *,
-    resolved_config: dict[str, Any] | None = None,
-) -> ObservabilityOptions:
-    config = resolved_config or {}
-    observability_cfg = config.get("observability") or {}
-    color = "never" if getattr(args, "no_color", False) else getattr(args, "color", "auto")
-    log_level = getattr(args, "log_level", None) or observability_cfg.get("log_level", "normal")
-    agent_transcript = bool(
-        getattr(args, "agent_transcript", False)
-        or observability_cfg.get("agent_transcript", False)
-    )
-    return ObservabilityOptions(
-        log_level=log_level,
-        log_format=getattr(args, "log_format", "console"),
-        color=color,
-        show_timestamps=getattr(args, "timestamps", True),
-        no_agent_text=getattr(args, "no_agent_text", False),
-        agent_transcript=agent_transcript,
-    )
 
 
 def _create_provider_for_run(
@@ -197,6 +177,11 @@ def handle_run_command(args: Namespace) -> None:
 
     store = FileRunStore(resolved_runs.path)
     store.root.mkdir(parents=True, exist_ok=True)
+    invocation = invocation_options_from_args(
+        args,
+        resolved_config=resolved,
+        resolved_runs=resolved_runs,
+    )
     store.create_run(
         run_id,
         plan=plan,
@@ -205,10 +190,7 @@ def handle_run_command(args: Namespace) -> None:
         output_goal_digest=output_goal_digest,
         context_digest=context_digest,
         workspace=str(workspace),
-        store={
-            "resolved_root": str(resolved_runs.path),
-            "resolution_source": resolved_runs.source,
-        },
+        invocation=invocation_to_dict(invocation),
     )
 
     diagnostics = run_startup_diagnostics_payload(
@@ -219,11 +201,11 @@ def handle_run_command(args: Namespace) -> None:
         run_id=run_id,
     )
     observability = build_observability_context(
-        options=_observability_options_from_args(args, resolved_config=resolved),
+        options=invocation.observability,
         run_id=run_id,
         run_dir=resolved_runs.path / run_id,
     )
-    until = getattr(args, "until", "plan") or "plan"
+    until = invocation.until or "plan"
     observability.emit(
         ConsoleEvent(
             category="session:start",
@@ -352,8 +334,14 @@ def handle_resume_command(args: Namespace) -> None:
         resolved = store.load_resolved_config(args.run)
     except RunNotFoundError:
         resolved = None
+    invocation = invocation_options_from_args(
+        args,
+        resolved_config=resolved,
+        resolved_runs=resolved_runs,
+    )
+    store.save_invocation(args.run, invocation_to_dict(invocation))
     observability = build_observability_context(
-        options=_observability_options_from_args(args, resolved_config=resolved),
+        options=invocation.observability,
         run_id=args.run,
         run_dir=resolved_runs.path / args.run,
     )

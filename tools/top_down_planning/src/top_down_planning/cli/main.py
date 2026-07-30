@@ -26,8 +26,8 @@ def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--color",
         choices=["auto", "always", "never"],
-        default="auto",
-        help="Console color mode (default: auto).",
+        default=None,
+        help="Console color mode (default: from config or auto).",
     )
     parser.add_argument(
         "--no-color",
@@ -37,29 +37,31 @@ def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--log-level",
         choices=["quiet", "normal", "verbose", "trace"],
-        default="normal",
-        help="Console observability verbosity (default: normal).",
+        default=None,
+        help="Console observability verbosity (default: from config or normal).",
     )
     parser.add_argument(
         "--log-format",
         choices=["console", "jsonl"],
-        default="console",
-        help="Console observability output format (default: console).",
+        default=None,
+        help="Console observability output format (default: from config or console).",
     )
     parser.add_argument(
-        "--no-agent-text",
-        action="store_true",
-        help="Hide agent thinking and response text from console output.",
+        "--agent-text",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Show agent thinking and response text (default: from config or on).",
     )
     parser.add_argument(
         "--timestamps",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Include timestamps in console output (default: on).",
+        default=None,
+        help="Include timestamps in console output (default: from config or on).",
     )
     parser.add_argument(
         "--agent-transcript",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Persist redacted agent transcript to agent-transcript.jsonl.",
     )
 

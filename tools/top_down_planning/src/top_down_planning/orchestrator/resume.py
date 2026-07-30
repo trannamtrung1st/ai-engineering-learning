@@ -100,7 +100,7 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
     actual_config = stored.get("config")
     if actual_config != expected_config:
         raise ResumeError(
-            "resolved config digest mismatch; refusing to resume with changed configuration",
+            "semantic config digest mismatch; refusing to resume with changed configuration",
             code="digest_mismatch",
         )
 

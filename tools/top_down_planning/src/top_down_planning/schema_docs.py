@@ -313,6 +313,16 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                         "type": "string",
                         "enum": ["quiet", "normal", "verbose", "trace"],
                     },
+                    "log_format": {
+                        "type": "string",
+                        "enum": ["console", "jsonl"],
+                    },
+                    "color": {
+                        "type": "string",
+                        "enum": ["auto", "always", "never"],
+                    },
+                    "show_agent_text": {"type": "boolean"},
+                    "show_timestamps": {"type": "boolean"},
                     "agent_transcript": {"type": "boolean"},
                 },
                 "additionalProperties": False,

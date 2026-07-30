@@ -35,6 +35,7 @@ from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
 from tests.helpers import (
+    create_run_kwargs,
     done_events,
     grant_capability,
     minimal_resolved_config,
@@ -94,15 +95,10 @@ def _create_planning_run(
         provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
-    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=bound,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest=context_digest,
-        workspace=str(store.root),
+        **create_run_kwargs(store.root, resolved_config=bound),
     )
 
     run = store.load_run(run_id)
@@ -171,12 +167,8 @@ def _create_production_run(
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=bound,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest=context_digest,
+        **create_run_kwargs(store.root, resolved_config=bound),
         phase=PRODUCTION,
-        workspace=str(store.root),
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
@@ -215,7 +207,7 @@ def test_resume_rejects_config_digest_mismatch(tmp_path: Path) -> None:
 
     config_path.write_text(dump_yaml(config) + "\n", encoding="utf-8")
 
-    with pytest.raises(ResumeError, match="config digest mismatch"):
+    with pytest.raises(ResumeError, match="semantic config digest mismatch"):
         validate_resume_preconditions(store, "run-resume-planning")
 
 
@@ -448,12 +440,8 @@ def test_resume_cli_stream_json_for_completed_run(tmp_path: Path) -> None:
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=bound,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest=context_digest,
+        **create_run_kwargs(store.root, resolved_config=bound),
         phase="output_validated",
-        workspace=str(store.root),
     )
     run = store.load_run(run_id)
     expected_revision = int(run["revision"])
@@ -493,12 +481,8 @@ def test_resume_completed_rejected_whole_plan_review_does_not_restart(
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=bound,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest=context_digest,
+        **create_run_kwargs(store.root, resolved_config=bound),
         phase=WHOLE_PLAN_REVIEW,
-        workspace=str(store.root),
     )
     store.save_review(
         run_id,
@@ -572,12 +556,8 @@ def test_resume_plan_validated_allows_missing_producer_session(tmp_path: Path) -
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=bound,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest=context_digest,
+        **create_run_kwargs(store.root, resolved_config=bound),
         phase=PLAN_VALIDATED,
-        workspace=str(store.root),
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
@@ -636,12 +616,8 @@ def test_resume_plan_amendment_without_pending_request_fails(tmp_path: Path) -> 
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=bound,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest=context_digest,
+        **create_run_kwargs(store.root, resolved_config=bound),
         phase="plan_amendment",
-        workspace=str(store.root),
     )
 
     with pytest.raises(ResumeError, match="without a pending amendment request"):

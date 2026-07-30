@@ -15,8 +15,8 @@ from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import (
+    create_run_kwargs,
     grant_capability,
-    run_digests_for_config,
     set_capability_env,
     whole_plan_approval_record,
 )
@@ -50,15 +50,10 @@ def _create_run(store: FileRunStore, run_id: str = "run-001", *, revision: int =
         "run": {"output_goal": "Deliver the output.", "input_refs": []},
         "planning": {"max_depth": 4, "max_expansion_per_item": 7},
     }
-    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest="0" * 64,
-        workspace=str(store.root),
+        **create_run_kwargs(store.root, resolved_config=config),
     )
 
 
@@ -346,12 +341,14 @@ def test_apply_returns_post_mutation_validation_issues(tmp_path: Path) -> None:
     store.create_run(
         "run-001",
         plan=plan,
-        resolved_config={"planning": {"max_depth": 4, "max_expansion_per_item": 7}},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        **create_run_kwargs(
+            store.root,
+            resolved_config={
+                "run": {"output_goal": "Deliver the output.", "input_refs": []},
+                "planning": {"max_depth": 4, "max_expansion_per_item": 7},
+            },
+        ),
         production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
-        workspace=str(store.root),
     )
 
     service = PlanAgentService(store, "run-001")
@@ -397,12 +394,14 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
     store.create_run(
         "run-001",
         plan=plan,
-        resolved_config={"planning": {"max_depth": 4, "max_expansion_per_item": 7}},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        **create_run_kwargs(
+            store.root,
+            resolved_config={
+                "run": {"output_goal": "Deliver the output.", "input_refs": []},
+                "planning": {"max_depth": 4, "max_expansion_per_item": 7},
+            },
+        ),
         production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
-        workspace=str(store.root),
     )
     set_capability_env(
         monkeypatch,
@@ -500,11 +499,13 @@ def test_snapshot_tree_includes_scope_boundaries_acceptance(tmp_path: Path) -> N
     store.create_run(
         "run-001",
         plan=plan,
-        resolved_config={"planning": {"max_depth": 4, "max_expansion_per_item": 7}},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_digest="0" * 64,
-        workspace=str(store.root),
+        **create_run_kwargs(
+            store.root,
+            resolved_config={
+                "run": {"output_goal": "Deliver the output.", "input_refs": []},
+                "planning": {"max_depth": 4, "max_expansion_per_item": 7},
+            },
+        ),
     )
 
     service = PlanAgentService(store, "run-001")

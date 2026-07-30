@@ -14,7 +14,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
+from tests.helpers import create_run_kwargs, done_events, grant_capability, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -94,17 +94,12 @@ def _create_run_at_whole_output_review(
         },
     }
 
-    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest="0" * 64,
+        **create_run_kwargs(store.root, resolved_config=config),
         phase=WHOLE_OUTPUT_REVIEW,
         production=production,
-        workspace=str(store.root),
     )
     store.save_review(
         run_id,

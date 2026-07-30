@@ -76,12 +76,14 @@ tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-pla
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
-| `--color auto\|always\|never` | `auto` | Color mode (`--no-color` ⇒ `never`) |
-| `--log-level quiet\|normal\|verbose\|trace` | `normal` | Verbosity |
-| `--log-format console\|jsonl` | `console` | Human console vs JSONL on stderr |
-| `--no-agent-text` | off | Hide thinking/response text |
-| `--timestamps` / `--no-timestamps` | on | Timestamp prefix |
-| `--agent-transcript` | off | Persist redacted provider transcript |
+| `--color auto\|always\|never` | from config / `auto` | Color mode (`--no-color` ⇒ `never`) |
+| `--log-level quiet\|normal\|verbose\|trace` | from config / `normal` | Verbosity |
+| `--log-format console\|jsonl` | from config / `console` | Human console vs JSONL on stderr |
+| `--agent-text` / `--no-agent-text` | from config / on | Show thinking/response text |
+| `--timestamps` / `--no-timestamps` | from config / on | Timestamp prefix |
+| `--agent-transcript` / `--no-agent-transcript` | from config / off | Persist redacted provider transcript |
+
+Observability can be set in YAML under `observability` (same file as orchestration config). Precedence for presentation settings: built-in defaults → YAML → `--set` → explicitly supplied dedicated CLI flag (omitted flags do not override YAML). Changing observability or `runtime.runs_dir` does not invalidate resume; semantic config digests exclude those fields.
 
 `events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens, secrets, and oversized payloads are redacted at every log level.
 
@@ -102,7 +104,7 @@ tdp validate --run <run-id> --config tools/top_down_planning/examples/top-down-p
 tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
 ```
 
-Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides. Unknown paths in YAML or `--set` are rejected. Resolved configuration is materialized to `<runs-root>/<run-id>/resolved-config.yaml` and included in the run config digest.
+Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides → dedicated CLI flags when explicitly supplied. Unknown paths in YAML or `--set` are rejected. Resolved configuration is materialized to `<runs-root>/<run-id>/resolved-config.yaml`. Semantic config digests (for resume compatibility) exclude `observability` and `runtime.runs_dir`; CLI invocation metadata is persisted separately in `invocation.json`.
 
 ### Path resolution
 
@@ -199,7 +201,7 @@ When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR` and a
 
 `tdp run` supports `--until plan|validated|completed` (default `plan`). `tdp resume` advances one phase step by default, or loops to `--until` when set. Both use the central `RunEngine` continuation loop.
 
-Persistence uses journaled `RunStore.commit()` for multi-file mutations: staged writes, per-file backups, and recovery that rolls back partial replaces or finishes pending event appends after a crash. Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files under immutable UUID paths in the run store. Evidence IDs are unique across the full run history.
+Persistence uses journaled `RunStore.commit()` for multi-file mutations: staged writes, per-file backups, and recovery that rolls back partial replaces or finishes pending event appends after a crash. Each run directory includes `invocation.json` (latest CLI invocation metadata, not part of semantic config digests). Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files under immutable UUID paths in the run store. Evidence IDs are unique across the full run history.
 
 `tdp run` creates the run store and drives the run until the requested milestone or a limit/failure. On the default `plan` target, success means phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing.
 

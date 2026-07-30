@@ -14,7 +14,7 @@ from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REV
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, grant_capability, run_digests_for_config
+from tests.helpers import create_run_kwargs, done_events, grant_capability
 
 
 def _create_run_at_whole_plan_review(
@@ -64,16 +64,11 @@ def _create_run_at_whole_plan_review(
     if limits:
         config["limits"]["whole_plan_review"].update(limits)
 
-    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest="0" * 64,
+        **create_run_kwargs(store.root, resolved_config=config),
         phase=WHOLE_PLAN_REVIEW,
-        workspace=str(store.root),
     )
     session_id = None
     if provider is not None:

@@ -12,7 +12,7 @@ from top_down_planning.orchestrator import ProductionPhaseOrchestrator, Provider
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
+from tests.helpers import create_run_kwargs, done_events, grant_capability, whole_plan_approval_record
 
 
 def _batch_apply_request(
@@ -93,16 +93,11 @@ def _create_run_at_plan_validated(
     if limits:
         config["limits"]["production"].update(limits)
 
-    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest="0" * 64,
+        **create_run_kwargs(store.root, resolved_config=config),
         phase=PLAN_VALIDATED,
-        workspace=str(store.root),
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
@@ -397,12 +392,8 @@ def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
     store.create_run(
         "run-unapproved",
         plan=plan,
-        resolved_config=config,
-        input_digest="a",
-        output_goal_digest="b",
-        context_digest="0" * 64,
+        **create_run_kwargs(store.root, resolved_config=config),
         phase=PRODUCTION,
-        workspace=str(store.root),
     )
     service = ProductionAgentService(store, "run-unapproved")
     token = grant_capability(store, "run-unapproved", role="producer", phase=PRODUCTION)
@@ -461,12 +452,8 @@ def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
     store.create_run(
         "run-unapproved",
         plan=plan,
-        resolved_config=config,
-        input_digest="a",
-        output_goal_digest="b",
-        context_digest="0" * 64,
+        **create_run_kwargs(store.root, resolved_config=config),
         phase=PLAN_VALIDATED,
-        workspace=str(store.root),
     )
     provider = StubProvider()
 

@@ -43,6 +43,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "observability": {
         "log_level": "normal",
+        "log_format": "console",
+        "color": "auto",
+        "show_agent_text": True,
+        "show_timestamps": True,
         "agent_transcript": False,
     },
     "limits": {
@@ -127,6 +131,10 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "limits.amendment.max_revision_cycles_per_request",
         "limits.provider.max_retries_per_call",
         "observability.log_level",
+        "observability.log_format",
+        "observability.color",
+        "observability.show_agent_text",
+        "observability.show_timestamps",
         "observability.agent_transcript",
     }
 )

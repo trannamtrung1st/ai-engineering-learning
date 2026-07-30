@@ -18,8 +18,8 @@ from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import (
+    create_run_kwargs,
     grant_capability,
-    run_digests_for_config,
     set_capability_env,
     whole_plan_approval_record,
 )
@@ -94,16 +94,11 @@ def _create_production_run(
         },
         "provider": {"name": "stub"},
     }
-    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest="0" * 64,
+        **create_run_kwargs(store.root, resolved_config=config),
         phase=PRODUCTION,
-        workspace=str(store.root),
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
 

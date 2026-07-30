@@ -55,6 +55,24 @@ def run_digests_for_config(
     )
 
 
+def minimal_invocation(
+    workspace: Path,
+    *,
+    source: str = "test",
+    command: str | None = None,
+    until: str | None = None,
+) -> dict[str, Any]:
+    """Minimal invocation metadata for test runs."""
+
+    return {
+        "observability": copy.deepcopy(DEFAULT_CONFIG["observability"]),
+        "runs_dir": {"path": str(workspace.resolve()), "source": source},
+        "stream_json": False,
+        "until": until,
+        "command": command,
+    }
+
+
 def create_run_kwargs(
     workspace: Path,
     *,
@@ -76,6 +94,7 @@ def create_run_kwargs(
         "output_goal_digest": output_goal_digest,
         "context_digest": context_digest,
         "workspace": str(workspace.resolve()),
+        "invocation": minimal_invocation(workspace),
     }
 
 

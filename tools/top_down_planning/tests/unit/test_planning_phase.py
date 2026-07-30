@@ -13,7 +13,7 @@ from top_down_planning.orchestrator import PlanningPhaseOrchestrator, ProviderRu
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, grant_capability
+from tests.helpers import done_events, grant_capability, create_run_kwargs, minimal_resolved_config
 
 
 def _create_run(
@@ -58,11 +58,7 @@ def _create_run(
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_digest="0" * 64,
-        workspace=str(store.root),
+        **create_run_kwargs(store.root, resolved_config=config),
     )
 
 

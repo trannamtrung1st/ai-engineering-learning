@@ -24,7 +24,7 @@ from top_down_planning.orchestrator import ResumeError, validate_resume_precondi
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_config_digest
 from tests.conftest import run_cli
-from tests.helpers import run_digests_for_config, whole_plan_approval_record, write_config
+from tests.helpers import create_run_kwargs, run_digests_for_config, whole_plan_approval_record, write_config
 
 
 def test_defaults_yaml_cli_precedence_changes_resolved_values(tmp_path: Path) -> None:
@@ -160,15 +160,10 @@ def _create_validate_run(
         "planning": {"max_depth": 4, "max_expansion_per_item": 7},
         "provider": {"name": "stub"},
     }
-    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest="0" * 64,
-        workspace=str(store.root),
+        **create_run_kwargs(store.root, resolved_config=config),
     )
 
 
@@ -350,11 +345,7 @@ def test_resume_rejects_changed_output_goal_file(tmp_path: Path) -> None:
     store.create_run(
         "run-goal-file",
         plan=plan,
-        resolved_config=config,
-        input_digest=compute_input_digest(config, base_dir=workspace),
-        output_goal_digest=compute_output_goal_digest(config, base_dir=workspace),
-        context_digest="0" * 64,
-        workspace=str(workspace),
+        **create_run_kwargs(workspace, resolved_config=config),
     )
 
     goal_file.write_text("Changed goal content.", encoding="utf-8")

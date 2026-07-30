@@ -24,7 +24,7 @@ from top_down_planning.orchestrator import (
     validate_resume_preconditions,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import write_config
+from tests.helpers import create_run_kwargs, write_config
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -252,17 +252,10 @@ project:
     store = FileRunStore(tmp_path / "runs")
     store.root.mkdir(parents=True)
     plan_payload = {"revision": 0, "output_goal": "Goal.", "items": []}
-    input_digest = compute_input_digest(config, base_dir=workspace)
-    output_goal_digest = compute_output_goal_digest(config, base_dir=workspace)
-    context_digest = compute_context_digest_from_config(config, workspace=workspace)
     store.create_run(
         "run-context",
         plan=plan_payload,
-        resolved_config=config,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest=context_digest,
-        workspace=str(workspace),
+        **create_run_kwargs(workspace, resolved_config=config),
     )
 
     readme.write_text("beta", encoding="utf-8")

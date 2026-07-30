@@ -23,6 +23,7 @@ class RunStore(Protocol):
         phase: str = "planning",
         production: dict[str, Any] | None = None,
         workspace: str,
+        invocation: dict[str, Any],
     ) -> dict[str, Any]:
         """Create a new run directory and initial artifacts."""
 

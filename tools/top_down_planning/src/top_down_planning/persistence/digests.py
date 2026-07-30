@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from core_tools.persistence.digests import digest_json
@@ -15,7 +16,24 @@ __all__ = [
     "compute_context_digest",
     "compute_output_digest",
     "compute_plan_digest",
+    "semantic_config_projection",
 ]
+
+_INVOCATION_ONLY_CONFIG_KEYS = frozenset({"observability"})
+
+
+def semantic_config_projection(config: dict[str, Any]) -> dict[str, Any]:
+    """Return config copy with invocation/presentation fields excluded from digests."""
+
+    projected = copy.deepcopy(config)
+    for key in _INVOCATION_ONLY_CONFIG_KEYS:
+        projected.pop(key, None)
+    runtime = projected.get("runtime")
+    if isinstance(runtime, dict):
+        runtime.pop("runs_dir", None)
+        if not runtime:
+            projected.pop("runtime", None)
+    return projected
 
 
 def compute_plan_digest(plan: Plan | dict[str, Any]) -> str:
@@ -28,7 +46,7 @@ def compute_plan_digest(plan: Plan | dict[str, Any]) -> str:
 
 
 def compute_config_digest(config: dict[str, Any]) -> str:
-    return digest_json(config)
+    return digest_json(semantic_config_projection(config))
 
 
 def compute_context_digest(context: dict[str, Any]) -> str:

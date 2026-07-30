@@ -16,6 +16,7 @@ from top_down_planning.persistence import (
     compute_config_digest,
     compute_plan_digest,
 )
+from tests.helpers import minimal_invocation
 
 
 def _sample_plan(revision: int = 0) -> Plan:
@@ -46,6 +47,7 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
         output_goal_digest="goal-b",
         context_digest="0" * 64,
         workspace=str(store.root),
+        invocation=minimal_invocation(store.root),
     )
 
     run_dir = tmp_path / "run-001"
@@ -60,6 +62,7 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
     assert (run_dir / "production.json").exists()
     assert (run_dir / "reviews").is_dir()
     assert (run_dir / "events.jsonl").exists()
+    assert (run_dir / "invocation.json").exists()
 
     loaded_plan = store.load_plan("run-001")
     assert loaded_plan["revision"] == 0
@@ -79,9 +82,33 @@ def test_load_resolved_config_round_trip(tmp_path: Path) -> None:
         output_goal_digest="goal-b",
         context_digest="0" * 64,
         workspace=str(store.root),
+        invocation=minimal_invocation(store.root),
     )
 
     assert store.load_resolved_config("run-001") == config
+
+
+def test_create_run_persists_invocation_metadata(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    invocation = {
+        "observability": {"log_level": "verbose", "agent_transcript": True},
+        "runs_dir": {"path": str(tmp_path), "source": "config"},
+        "command": "run",
+    }
+    store.create_run(
+        "run-001",
+        plan=_sample_plan(),
+        resolved_config={"run": {"output_goal": "Goal."}},
+        input_digest="input-a",
+        output_goal_digest="goal-b",
+        context_digest="0" * 64,
+        workspace=str(store.root),
+        invocation=invocation,
+    )
+    assert store.load_invocation("run-001") == invocation
+    store.save_invocation("run-001", {"command": "resume", "observability": {"log_level": "quiet"}})
+    updated = store.load_invocation("run-001")
+    assert updated["command"] == "resume"
 
 
 def test_create_run_requires_digests(tmp_path: Path) -> None:
@@ -95,6 +122,22 @@ def test_create_run_requires_digests(tmp_path: Path) -> None:
             output_goal_digest="goal-b",
             context_digest="0" * 64,
             workspace=str(store.root),
+            invocation=minimal_invocation(store.root),
+        )
+
+
+def test_create_run_requires_invocation(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    with pytest.raises(PersistenceError, match="invocation metadata is required"):
+        store.create_run(
+            "run-001",
+            plan=_sample_plan(),
+            resolved_config={},
+            input_digest="input-a",
+            output_goal_digest="goal-b",
+            context_digest="0" * 64,
+            workspace=str(store.root),
+            invocation=None,
         )
 
 
@@ -109,6 +152,7 @@ def test_create_run_requires_workspace(tmp_path: Path) -> None:
             output_goal_digest="goal-b",
             context_digest="0" * 64,
             workspace="",
+            invocation=minimal_invocation(store.root),
         )
 
 
@@ -123,6 +167,7 @@ def test_save_plan_revision_conflict(tmp_path: Path) -> None:
         output_goal_digest="goal-b",
         context_digest="0" * 64,
         workspace=str(store.root),
+        invocation=minimal_invocation(store.root),
     )
 
     updated = plan.to_dict()
@@ -146,6 +191,7 @@ def test_save_plan_requires_explicit_revision(tmp_path: Path) -> None:
         output_goal_digest="goal-b",
         context_digest="0" * 64,
         workspace=str(store.root),
+        invocation=minimal_invocation(store.root),
     )
 
     payload = plan.to_dict()
@@ -165,6 +211,7 @@ def test_save_plan_model_round_trip(tmp_path: Path) -> None:
         output_goal_digest="goal-b",
         context_digest="0" * 64,
         workspace=str(store.root),
+        invocation=minimal_invocation(store.root),
     )
 
     updated = _sample_plan(revision=1)
@@ -185,6 +232,7 @@ def test_reload_after_new_store_instance(tmp_path: Path) -> None:
         output_goal_digest="goal-b",
         context_digest="0" * 64,
         workspace=str(store.root),
+        invocation=minimal_invocation(store.root),
     )
 
     updated = plan.to_dict()
@@ -206,6 +254,7 @@ def test_append_event_is_append_only(tmp_path: Path) -> None:
         output_goal_digest="goal-b",
         context_digest="0" * 64,
         workspace=str(store.root),
+        invocation=minimal_invocation(store.root),
     )
 
     store.append_event("run-001", {"type": "phase_changed", "phase": "production"})
@@ -261,6 +310,7 @@ def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
         output_goal_digest="goal-b",
         context_digest="0" * 64,
         workspace=str(store.root),
+        invocation=minimal_invocation(store.root),
     )
     with pytest.raises(PersistenceError, match="already exists"):
         store.create_run(
@@ -271,4 +321,5 @@ def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
             output_goal_digest="goal-b",
             context_digest="0" * 64,
             workspace=str(store.root),
+            invocation=minimal_invocation(store.root),
         )

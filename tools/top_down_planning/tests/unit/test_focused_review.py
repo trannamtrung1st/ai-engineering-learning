@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestra
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
+from tests.helpers import create_run_kwargs, done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
 
 
 def _planning_config(*, limits: dict | None = None, review: dict | None = None) -> dict:
@@ -84,11 +84,10 @@ def _create_planning_run(
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=_planning_config(limits=limits, review=review),
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_digest="0" * 64,
-        workspace=str(store.root),
+        **create_run_kwargs(
+            store.root,
+            resolved_config=_planning_config(limits=limits, review=review),
+        ),
     )
 
 
@@ -486,16 +485,11 @@ def _create_production_run(
     if review:
         config["review"].update(review)
 
-    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest="0" * 64,
+        **create_run_kwargs(store.root, resolved_config=config),
         phase=PRODUCTION,
-        workspace=str(store.root),
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
     run = store.load_run(run_id)

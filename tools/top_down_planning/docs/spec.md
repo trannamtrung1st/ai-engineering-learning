@@ -962,6 +962,14 @@ review:
 provider:
   name: cursor
 
+observability:
+  log_level: normal
+  log_format: console
+  color: auto
+  show_agent_text: true
+  show_timestamps: true
+  agent_transcript: false
+
 limits:
   planning:
     max_items_added: 20
@@ -993,22 +1001,31 @@ Override semantics:
 - Values are parsed as YAML values, not always strings.
 - Repeated overrides apply in order; later values win.
 - Unknown paths fail explicitly rather than creating hidden configuration.
-- Override results are materialized into the resolved run configuration and included in its digest.
+- Override results are materialized into the resolved run configuration. Semantic config digests exclude `observability` and `runtime.runs_dir`; presentation settings live in `invocation.json`.
 
 Precedence:
 
 ```text
-built-in defaults < YAML configuration < CLI --set overrides
+built-in defaults < YAML configuration < CLI --set overrides < dedicated CLI flags when explicitly supplied
 ```
 
-Dedicated flags should remain limited to operational concerns, for example:
+Observability and other presentation settings may be set in YAML under `observability` or overridden with dedicated flags (`--log-level`, `--color`, `--timestamps`, `--agent-text`, `--agent-transcript`, `--log-format`). Omitted flags do not override YAML.
+
+Dedicated operational flags include:
 
 ```text
 --config
 --set
 --resume
 --stream-json
+--runs-dir
 --no-color
+--log-level
+--log-format
+--color
+--timestamps / --no-timestamps
+--agent-text / --no-agent-text
+--agent-transcript / --no-agent-transcript
 ```
 
 ---
@@ -1153,6 +1170,7 @@ A minimal run store may contain:
 ```text
 runs/<run-id>/
   resolved-config.yaml
+  invocation.json
   run.json
   plan.json
   production.json
@@ -1168,7 +1186,8 @@ runs/<run-id>/
 
 Responsibilities:
 
-- `resolved-config.yaml`: fully resolved configuration after overrides.
+- `resolved-config.yaml`: fully resolved configuration after overrides (includes observability for operator visibility).
+- `invocation.json`: CLI invocation metadata for the latest `run`/`resume` process (observability snapshot, runs-dir resolution, `stream_json`, `until`). Not included in semantic config digests.
 - `run.json`: run status, outcome, phase, digests, and provider session references.
 - `plan.json`: canonical current plan and revision.
 - `production.json`: batches, item dispositions, output evidence, and output revision.

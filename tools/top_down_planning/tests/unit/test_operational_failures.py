@@ -14,9 +14,8 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import mark_run_failed
 from top_down_planning.orchestrator.engine import RunContinuationResult
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
-from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import minimal_resolved_config, run_digests_for_config
+from tests.helpers import create_run_kwargs, minimal_resolved_config
 
 
 def _create_planning_run(store: FileRunStore, run_id: str = "run-failed") -> None:
@@ -38,19 +37,11 @@ def _create_planning_run(store: FileRunStore, run_id: str = "run-failed") -> Non
         provider={"name": "stub"},
     )
     config["project"]["workspace"] = str(store.root)
-    input_digest, output_goal_digest, context_digest = run_digests_for_config(
-        store.root,
-        config,
-    )
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=input_digest,
-        output_goal_digest=output_goal_digest,
-        context_digest=context_digest,
+        **create_run_kwargs(store.root, resolved_config=config),
         phase=WHOLE_PLAN_REVIEW,
-        workspace=str(store.root),
     )
 
 

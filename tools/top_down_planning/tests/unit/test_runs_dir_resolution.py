@@ -168,9 +168,10 @@ runtime:
     assert payload["runs_root"] == str(runs_root.resolve())
     assert payload["runs_root_source"] == "config"
     assert (runs_root / run_id / "run.json").exists()
-    run_record = FileRunStore(runs_root).load_run(run_id)
-    assert run_record["store"]["resolved_root"] == str(runs_root.resolve())
-    assert run_record["store"]["resolution_source"] == "config"
+    run_store = FileRunStore(runs_root)
+    invocation = run_store.load_invocation(run_id)
+    assert invocation["runs_dir"]["path"] == str(runs_root.resolve())
+    assert invocation["runs_dir"]["source"] == "config"
 
 
 def test_read_only_status_does_not_create_missing_store(
@@ -244,8 +245,12 @@ def test_environment_overrides_default_without_yaml_field(tmp_path: Path, monkey
 
 
 def test_store_metadata_does_not_affect_config_digest(tmp_path: Path) -> None:
-    config_path = write_config(
-        tmp_path / "base.yaml",
+    no_runtime = write_config(
+        tmp_path / "no-runtime.yaml",
+        "run:\n  output_goal: Goal.\n",
+    )
+    with_runtime = write_config(
+        tmp_path / "with-runtime.yaml",
         """
 run:
   output_goal: Goal.
@@ -253,11 +258,9 @@ runtime:
   runs_dir: .tdp/runs
 """,
     )
-    resolved = resolve_config(config_path)
-    digest_with_runtime = compute_config_digest(resolved)
-    assert resolved["runtime"]["runs_dir"] == ".tdp/runs"
-    assert "store" not in resolved
-    assert compute_config_digest(resolved) == digest_with_runtime
+    assert compute_config_digest(resolve_config(no_runtime)) == compute_config_digest(
+        resolve_config(with_runtime)
+    )
 
 
 def test_create_provider_receives_tdp_runs_dir_env(tmp_path: Path) -> None:
