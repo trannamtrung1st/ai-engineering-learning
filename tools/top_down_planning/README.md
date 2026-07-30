@@ -69,7 +69,7 @@ tdp validate --run <run-id>
 tdp resume --run <run-id>
 ```
 
-Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides. Unknown `--set` paths are rejected. Resolved configuration is materialized to `runs/<run-id>/resolved-config.yaml` and included in the run config digest.
+Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides. Unknown paths in YAML or `--set` are rejected. Resolved configuration is materialized to `runs/<run-id>/resolved-config.yaml` and included in the run config digest.
 
 Run operational `status` values (proposal §15): `running`, `paused`, `completed`, `failed`. Quality `outcome` values: `accepted`, `rejected`, `blocked` (set only by orchestrator outcome resolution).
 

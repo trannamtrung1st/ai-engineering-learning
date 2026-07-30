@@ -62,6 +62,15 @@ def test_unknown_override_path_fails_explicitly(tmp_path: Path) -> None:
         resolve_config(config_path, ["foo.bar=1"])
 
 
+def test_unknown_yaml_key_fails_explicitly(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "typo.yaml",
+        "run:\n  output_goal: Goal.\nplannig:\n  max_depth: 3\n",
+    )
+    with pytest.raises(ConfigError, match="unknown config path"):
+        resolve_config(config_path)
+
+
 def test_override_values_parse_yaml_types(tmp_path: Path) -> None:
     config_path = write_config(tmp_path / "base.yaml", "run:\n  output_goal: Goal.\n")
     resolved = resolve_config(

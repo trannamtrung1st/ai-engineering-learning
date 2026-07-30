@@ -462,6 +462,71 @@ def test_resume_cli_stream_json_for_completed_run(tmp_path: Path) -> None:
     assert payload["message"] == "run already completed with final outcome"
 
 
+def test_resume_completed_rejected_whole_plan_review_does_not_restart(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-rejected-review"
+    root = PlanItem("item-root", None, "0000000000", "Root")
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root},
+    )
+    config = {
+        "run": {"output_goal": "Deliver.", "input_refs": []},
+        "planning": {"stop_hint": "Stop.", "max_depth": 4, "max_expansion_per_item": 7},
+        "provider": {"name": "stub"},
+    }
+    store.create_run(
+        run_id,
+        plan=plan,
+        resolved_config=config,
+        input_digest=compute_input_digest(config, base_dir=store.root),
+        output_goal_digest=compute_output_goal_digest(config),
+        phase=WHOLE_PLAN_REVIEW,
+        workspace=str(store.root),
+    )
+    store.save_review(
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "status": "blocked",
+            "target_revision": 0,
+            "scope": {"kind": "whole_plan"},
+            "findings": [],
+            "revision_cycles": 0,
+        },
+    )
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "completed"
+    run["outcome"] = "rejected"
+    store.save_run(run_id, run, expected_revision)
+
+    preconditions = validate_resume_preconditions(store, run_id)
+    assert preconditions.status == "completed"
+    assert preconditions.outcome == "rejected"
+    assert preconditions.phase == WHOLE_PLAN_REVIEW
+
+    result = run_cli(["resume", "--run", run_id, "--runs-dir", str(tmp_path), "--stream-json"])
+    payload = result.json()
+
+    assert result.exit_code == 0
+    assert payload["ok"] is True
+    assert payload["phase"] == WHOLE_PLAN_REVIEW
+    assert payload["outcome"] == "rejected"
+    assert "already terminated" in payload["message"]
+
+    reviews = store.list_reviews(run_id)
+    assert len(reviews) == 1
+    assert reviews[0]["status"] == "blocked"
+
+
 def test_resume_production_without_plan_approval_fails(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()

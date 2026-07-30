@@ -106,7 +106,7 @@ class PlanAmendmentOrchestrator:
                 )
                 if signal == _AMENDMENT_REVISION_READY_SIGNAL:
                     break
-                if revision_cycles > max_revision_cycles:
+                if revision_cycles >= max_revision_cycles:
                     return self._terminate(
                         "blocked",
                         (

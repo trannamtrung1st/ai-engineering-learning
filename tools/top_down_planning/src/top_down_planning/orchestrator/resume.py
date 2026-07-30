@@ -53,12 +53,22 @@ def validate_resume_preconditions(store: RunStore, run_id: str) -> ResumePrecond
     status = str(run.get("status") or "running")
     outcome = run.get("outcome")
 
+    terminal_outcome = outcome if isinstance(outcome, str) else None
+
+    if status in {"completed", "failed"}:
+        return ResumePreconditions(
+            run_id=run_id,
+            phase=phase,
+            status=status,
+            outcome=terminal_outcome,
+        )
+
     if phase == OUTPUT_VALIDATED:
         return ResumePreconditions(
             run_id=run_id,
             phase=phase,
             status=status,
-            outcome=outcome if isinstance(outcome, str) else None,
+            outcome=terminal_outcome,
         )
 
     _validate_digests(store, run_id, run)
@@ -82,7 +92,7 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
 
     expected_config = compute_config_digest(config)
     actual_config = stored.get("config")
-    if actual_config and actual_config != expected_config:
+    if actual_config != expected_config:
         raise ResumeError(
             "resolved config digest mismatch; refusing to resume with changed configuration",
             code="digest_mismatch",
@@ -90,7 +100,7 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
 
     expected_plan = compute_plan_digest(plan)
     actual_plan = stored.get("plan")
-    if actual_plan and actual_plan != expected_plan:
+    if actual_plan != expected_plan:
         raise ResumeError(
             "plan digest mismatch; refusing to resume with divergent plan.json",
             code="digest_mismatch",
@@ -98,7 +108,7 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
 
     expected_goal = compute_output_goal_digest(config)
     actual_goal = stored.get("output_goal")
-    if actual_goal and actual_goal != expected_goal:
+    if actual_goal != expected_goal:
         raise ResumeError(
             "output goal digest mismatch; refusing to resume with changed goal",
             code="digest_mismatch",
@@ -111,18 +121,18 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
             str(exc),
             code="missing_workspace",
         ) from exc
-    if stored.get("input"):
-        expected_input = compute_input_digest(config, base_dir=base_dir)
-        if stored["input"] != expected_input:
-            raise ResumeError(
-                "input digest mismatch; refusing to resume with changed input refs",
-                code="digest_mismatch",
-            )
+    expected_input = compute_input_digest(config, base_dir=base_dir)
+    actual_input = stored.get("input")
+    if actual_input != expected_input:
+        raise ResumeError(
+            "input digest mismatch; refusing to resume with changed input refs",
+            code="digest_mismatch",
+        )
 
     production = store.load_production(run_id)
     expected_output = compute_output_digest(production)
     actual_output = stored.get("output")
-    if actual_output and actual_output != expected_output:
+    if actual_output is not None and actual_output != expected_output:
         raise ResumeError(
             "output digest mismatch; refusing to resume with divergent production.json",
             code="digest_mismatch",

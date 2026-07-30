@@ -116,7 +116,7 @@ class WholeOutputReviewOrchestrator:
                 )
             )
 
-            if revision_cycles > max_revision_cycles:
+            if revision_cycles >= max_revision_cycles:
                 return self._terminate(
                     "rejected",
                     (

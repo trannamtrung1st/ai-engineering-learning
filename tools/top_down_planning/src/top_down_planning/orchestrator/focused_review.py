@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.errors import AgentToolError
+from top_down_planning.agent_tool.views import build_plan_review_snapshot
 from top_down_planning.agent_tool.plan_service import PlanAgentService
 from top_down_planning.agent_tool.production_service import ProductionAgentService
 from top_down_planning.agent_tool.review_service import ReviewAgentService
@@ -104,7 +106,7 @@ class FocusedReviewOrchestrator:
                 )
             )
 
-            if revision_cycles > max_revision_cycles:
+            if revision_cycles >= max_revision_cycles:
                 loop = self._persist_loop(
                     ReviewLoop(
                         id=loop.id,
@@ -154,6 +156,11 @@ class FocusedReviewOrchestrator:
             self._store.load_run(self._run_id),
             self._store.load_resolved_config(self._run_id),
             loop,
+            plan=(
+                self._store.load_plan_model(self._run_id)
+                if loop.type == "focused_plan"
+                else None
+            ),
             production=(
                 self._store.load_production(self._run_id)
                 if loop.type == "focused_output"
@@ -392,6 +399,7 @@ def build_focused_review_package(
     config: dict[str, Any],
     loop: ReviewLoop,
     *,
+    plan: Any | None = None,
     production: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Package a bounded focused review for a fresh reviewer session."""
@@ -400,6 +408,21 @@ def build_focused_review_package(
     digests = dict(run.get("digests") or {})
     phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
     revision_label = "plan" if loop.type == "focused_plan" else "output"
+
+    tool_instructions: dict[str, str] = {
+        "role": "Only the reviewer role may submit review responses.",
+        "respond": (
+            f"tdp agent review respond --run {run_id} --role reviewer "
+            "--request <file>"
+        ),
+        "scope_rule": (
+            "Findings must reference only item ids declared in scope.item_ids."
+        ),
+    }
+    if loop.type == "focused_plan":
+        tool_instructions["plan_snapshot"] = (
+            f"tdp agent plan snapshot --run {run_id} --view tree"
+        )
 
     package: dict[str, Any] = {
         "run_id": run_id,
@@ -414,17 +437,12 @@ def build_focused_review_package(
         "boundaries": run_section.get("boundaries"),
         "acceptance": run_section.get("acceptance"),
         "digests": digests,
-        "tool_instructions": {
-            "role": "Only the reviewer role may submit review responses.",
-            "respond": (
-                f"tdp agent review respond --run {run_id} --role reviewer "
-                "--request <file>"
-            ),
-            "scope_rule": (
-                "Findings must reference only item ids declared in scope.item_ids."
-            ),
-        },
+        "tool_instructions": tool_instructions,
     }
+    if plan is not None:
+        limits = planning_limits_from_config(config)
+        package["plan_revision"] = plan.revision
+        package["plan"] = build_plan_review_snapshot(plan, limits=limits)
     if production is not None:
         package["output_revision"] = int(production["output_revision"])
         package["production"] = build_production_review_snapshot(production)

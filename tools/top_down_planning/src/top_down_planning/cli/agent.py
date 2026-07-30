@@ -399,7 +399,7 @@ def _handle_production_command(args: argparse.Namespace) -> None:
             request = load_structured_request(request_path=args.request)
             role = _resolve_apply_role(args, request)
             payload = service.apply(request, role=role)
-            emit_response(payload)
+            emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "check":
             payload = service.check()
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
@@ -407,17 +407,17 @@ def _handle_production_command(args: argparse.Namespace) -> None:
             request = load_structured_request(request_path=args.request)
             role = _resolve_role(args, request, "request-amendment")
             payload = service.request_amendment(request, role=role)
-            emit_response(payload)
+            emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "submit-completion":
             request = load_structured_request(request_path=args.request)
             role = _resolve_role(args, request, "submit-completion")
             payload = service.submit_completion(request, role=role)
-            emit_response(payload)
+            emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "report-blocked":
             request = load_structured_request(request_path=args.request)
             role = _resolve_role(args, request, "report-blocked")
             payload = service.report_blocked(request, role=role)
-            emit_response(payload)
+            emit_response(payload, exit_code=0 if payload["ok"] else 1)
         else:
             emit_error(
                 AgentToolError(f"unknown production command: {args.production_command!r}"),

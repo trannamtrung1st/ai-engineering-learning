@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
+from top_down_planning.agent_tool.views import build_plan_review_snapshot
 from top_down_planning.agent_tool.plan_service import PlanAgentService
 from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
@@ -100,7 +101,7 @@ class WholePlanReviewOrchestrator:
                 )
             )
 
-            if revision_cycles > max_revision_cycles:
+            if revision_cycles >= max_revision_cycles:
                 return self._terminate(
                     "rejected",
                     (
@@ -227,6 +228,7 @@ class WholePlanReviewOrchestrator:
             self._run_id,
             self._store.load_run(self._run_id),
             self._store.load_resolved_config(self._run_id),
+            self._store.load_plan_model(self._run_id),
             loop,
         )
         session_id = self._provider.start_reviewer_session(package)
@@ -397,12 +399,14 @@ def build_whole_plan_review_package(
     run_id: str,
     run: dict[str, Any],
     config: dict[str, Any],
+    plan: Any,
     loop: ReviewLoop,
 ) -> dict[str, Any]:
     """Package a bounded whole-plan review for a fresh reviewer session."""
 
     run_section = config.get("run") or {}
     digests = dict(run.get("digests") or {})
+    limits = planning_limits_from_config(config)
     return {
         "run_id": run_id,
         "phase": WHOLE_PLAN_REVIEW,
@@ -411,6 +415,8 @@ def build_whole_plan_review_package(
         "purpose": "Mandatory whole-plan review before production",
         "scope": dict(loop.scope),
         "target_revision": loop.target_revision,
+        "plan_revision": plan.revision,
+        "plan": build_plan_review_snapshot(plan, limits=limits),
         "input_refs": list(run_section.get("input_refs") or []),
         "output_goal": str(run_section.get("output_goal") or ""),
         "boundaries": run_section.get("boundaries"),
@@ -418,6 +424,9 @@ def build_whole_plan_review_package(
         "digests": digests,
         "tool_instructions": {
             "role": "Only the reviewer role may submit review responses.",
+            "plan_snapshot": (
+                f"tdp agent plan snapshot --run {run_id} --view tree"
+            ),
             "respond": (
                 f"tdp agent review respond --run {run_id} --role reviewer "
                 "--request <file>"

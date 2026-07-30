@@ -225,21 +225,35 @@ def handle_resume_command(args: Namespace) -> None:
         emit_message(message, exit_code=exit_code)
         return
 
-    if phase == OUTPUT_VALIDATED:
+    if phase == OUTPUT_VALIDATED or preconditions.status in {"completed", "failed"}:
+        if phase == OUTPUT_VALIDATED and preconditions.status == "completed":
+            message = "run already completed with final outcome"
+        else:
+            message = (
+                f"run already terminated "
+                f"(status={preconditions.status}, outcome={preconditions.outcome})"
+            )
         payload = {
             "ok": True,
             "run_id": args.run,
             "phase": phase,
-            "status": run.get("status"),
-            "outcome": run.get("outcome"),
-            "message": "run already completed with final outcome",
+            "status": preconditions.status,
+            "outcome": preconditions.outcome,
+            "message": message,
         }
         if args.stream_json:
             emit_payload(payload)
-        emit_message(
-            f"Run {args.run} already completed "
-            f"(phase={OUTPUT_VALIDATED}, outcome={run.get('outcome')}).",
-        )
+        if phase == OUTPUT_VALIDATED and preconditions.status == "completed":
+            emit_message(
+                f"Run {args.run} already completed "
+                f"(phase={OUTPUT_VALIDATED}, outcome={run.get('outcome')}).",
+            )
+        else:
+            emit_message(
+                f"Run {args.run} already terminated "
+                f"(phase={phase}, status={preconditions.status}, "
+                f"outcome={preconditions.outcome}).",
+            )
         return
 
     if phase == WHOLE_OUTPUT_REVIEW:

@@ -266,3 +266,56 @@ def test_output_digest_ignores_invalidated_reconciliation_evidence() -> None:
     }
 
     assert compute_output_digest(reconciled) == compute_output_digest(live_only)
+
+
+def test_sibling_insert_renumbers_without_marking_survivors_changed() -> None:
+    root = PlanItem("item-root", None, "0000000000", "Root")
+    first = PlanItem("item-first", "item-root", "0000000000", "First", outcome="A.")
+    second = PlanItem("item-second", "item-root", "0000000100", "Second", outcome="B.")
+    prior_plan = Plan(
+        id="plan-test",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": root,
+            "item-first": first,
+            "item-second": second,
+        },
+    )
+    inserted = PlanItem("item-inserted", "item-root", "0000000050", "Inserted", outcome="New.")
+    renumbered_second = PlanItem(
+        "item-second",
+        "item-root",
+        "0000000200",
+        "Second",
+        outcome="B.",
+    )
+    new_plan = Plan(
+        id="plan-test",
+        revision=1,
+        output_goal="Goal.",
+        items={
+            "item-root": root,
+            "item-first": first,
+            "item-inserted": inserted,
+            "item-second": renumbered_second,
+        },
+    )
+
+    report = build_reconciliation_report(
+        amendment_id="amendment-01",
+        prior_plan=prior_plan,
+        new_plan=new_plan,
+        production={
+            "dispositions": {
+                "item-first": "completed",
+                "item-second": "completed",
+            },
+            "batches": [],
+        },
+    )
+
+    assert report.unchanged == ("item-first", "item-root", "item-second")
+    assert report.changed == ()
+    assert report.newly_added == ("item-inserted",)
+    assert report.evidence_preserved == ("item-first", "item-second")

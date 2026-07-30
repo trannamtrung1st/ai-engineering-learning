@@ -686,6 +686,10 @@ Review:
   tdp agent review request --run <run-id> --role planner|producer --request <file>
   tdp agent review respond --run <run-id> --role reviewer --request <file>
 
+Whole-plan and focused_plan reviewers receive an embedded plan snapshot in the
+review package; call `tdp agent plan snapshot --run <run-id> --view tree` to
+refresh before responding when the plan may have changed.
+
 Run status:
   tdp agent run status --run <run-id>
 
@@ -712,6 +716,8 @@ and mandatory review gates.
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.
 2. Mandatory whole-plan review (`review respond`) must approve before production.
+   Review packages include an embedded plan tree; refresh with
+   `plan snapshot --view tree` when revising after `changes_requested`.
 3. Producer records batches with `production apply`, then `submit-completion` with
    `goal_met: true` and a `goal_assessment` rationale.
 4. Mandatory whole-output review must approve before `outcome: accepted`. After
@@ -720,6 +726,8 @@ and mandatory review gates.
    findings (dispositions unchanged), then re-submit completion with `goal_met: true`.
    Plan amendment is not available during whole-output review.
 5. Optional focused reviews use `review request` with bounded `scope.item_ids`.
+   Focused plan reviewers receive the same embedded plan snapshot guidance as
+   whole-plan review.
 
 ## Discoverability
 

@@ -175,6 +175,8 @@ def resolve_quality_outcome(invariant: AcceptanceInvariant) -> QualityOutcome:
     if (
         not invariant.plan_deterministic_plan_validation_passed
         or not invariant.output_deterministic_output_validation_passed
+        or not invariant.plan_whole_plan_review_approved_current_revision
+        or not invariant.output_whole_output_review_approved_current_revision
     ):
         return "blocked"
     return "rejected"

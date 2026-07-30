@@ -57,7 +57,6 @@ class ReconciliationReport:
 def _item_signature(item: PlanItem) -> tuple[Any, ...]:
     return (
         item.parent_id,
-        item.order_key,
         item.title,
         item.outcome,
         tuple(item.acceptance or ()),

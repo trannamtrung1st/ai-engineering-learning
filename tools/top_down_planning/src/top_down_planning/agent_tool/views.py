@@ -89,6 +89,18 @@ def build_tree_view(
     }
 
 
+def build_plan_review_snapshot(
+    plan: Plan,
+    *,
+    limits: PlanningLimits,
+) -> dict[str, Any]:
+    """Bounded plan artifact for reviewer packages (proposal §4.3, §5.2)."""
+
+    snapshot = build_tree_view(plan, limits=limits)
+    snapshot["output_goal"] = plan.output_goal
+    return snapshot
+
+
 def build_ready_view(
     plan: Plan,
     dispositions: DispositionMap | None = None,
