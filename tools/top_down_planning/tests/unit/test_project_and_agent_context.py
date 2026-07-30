@@ -21,6 +21,7 @@ from top_down_planning.config import (
 from top_down_planning.orchestrator import (
     ResumeError,
     build_planner_context_manifest,
+    build_producer_context_manifest,
     validate_resume_preconditions,
 )
 from top_down_planning.persistence import FileRunStore
@@ -230,6 +231,45 @@ project:
     manifest = build_planner_context_manifest("run-20260101T000002-000002", run, config, plan)
     assert manifest["agent_context"]["role"] == "planner"
     assert any(path.endswith("README.md") for path in manifest["agent_context"]["resources"])
+    protocol = " ".join(manifest["protocol_instructions"])
+    assert "plan-tree decomposition" in protocol
+    assert "tdp agent plan" in protocol
+    assert "host planning modes" in protocol
+    assert manifest["tool_instructions"]["completion_signal"] == "candidate_plan_ready"
+
+
+def test_producer_manifest_includes_protocol_instructions(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    config = resolve_config(
+        write_config(
+            tmp_path / "base.yaml",
+            """
+run:
+  output_goal: Goal.
+""",
+        ),
+        cwd=workspace,
+    )
+    run = {
+        "digests": {},
+        "workspace": str(workspace),
+    }
+    plan = type(
+        "PlanStub",
+        (),
+        {"output_goal": "Goal.", "revision": 1},
+    )()
+    manifest = build_producer_context_manifest(
+        "run-20260101T000003-000003",
+        run,
+        config,
+        plan,
+        plan_revision=1,
+    )
+    protocol = " ".join(manifest["protocol_instructions"])
+    assert "tdp agent production" in protocol
+    assert "host planning modes" in protocol
+    assert manifest["tool_instructions"]["batch_complete_signal"] == "batch_complete"
 
 
 def test_context_digest_persisted_and_blocks_resume_on_change(tmp_path: Path) -> None:

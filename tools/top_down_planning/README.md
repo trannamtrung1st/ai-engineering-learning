@@ -209,6 +209,8 @@ Resolution precedence:
 
 When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR` and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses **before** any turn where the agent may run mutating `tdp agent …` commands. Reviewer sessions allocate a provider session id first, bind the capability token, then deliver the review package on the next turn. Mutating commands require the capability token; authorization is bound to run phase, role, provider session, and (for reviewers) review loop — not a self-declared `--role` flag. Capability records store only a hash of the secret; tokens are revoked when turns, loops, or phases end.
 
+Planner, producer, and reviewer packages include `protocol_instructions` (role behavior rules) and `tool_instructions` (`tdp agent` command templates). The provider adapter surfaces `protocol_instructions` at the top of the prompt so agents do not substitute host IDE planning artifacts for persisted `tdp agent` mutations.
+
 Agents mutate run state only through `tdp agent …` shell commands (which persist to the run store). The orchestrator does not intercept provider tool events for plan/production/review mutations. After each provider turn it observes store changes (pending focused reviews, applied batches, review decisions) and resolves phase completion from explicit signal tokens (`candidate_plan_ready`, `batch_complete`, `amendment_revision_ready`, etc.) in assistant text or `done.signal` metadata.
 
 `tdp run` supports `--until plan|validated|completed` (default `plan`). `tdp resume` advances one phase step by default, or loops to `--until` when set. Both use the central `RunEngine` continuation loop.

@@ -859,6 +859,22 @@ do not pass `--role` on the CLI.
 - producer — record production batches, completion claims, blockers, amendment requests
 - reviewer — submit review findings and decisions
 
+## Provider session packages
+
+Fresh planner and producer sessions receive a context manifest. Reviewer sessions
+receive a review package on the first turn (and on cold resume). Each package may
+include:
+
+- `protocol_instructions` — role behavior rules surfaced at the top of the
+  provider prompt (for example: mutate run state only through `tdp agent` commands;
+  do not use host planning modes or planning-only artifacts)
+- `tool_instructions` — concrete `tdp agent` command templates for the active role
+- `agent_context` — resolved role resources and optional skill bundles
+
+The provider adapter formats these payloads for the agent. Follow
+`protocol_instructions` and `tool_instructions`; host IDE planning artifacts are
+not consumed by the orchestrator.
+
 ## Workflow
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.

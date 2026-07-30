@@ -20,6 +20,11 @@ from top_down_planning.orchestrator.agent_context import (
     resolve_role_session_context,
 )
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.planner_session import (
+    PLANNER_CANDIDATE_READY_SIGNAL,
+    build_planner_protocol_instructions,
+    build_planner_tool_instructions,
+)
 from top_down_planning.orchestrator.provider_turns import (
     consume_provider_turn,
     run_pending_focused_review,
@@ -35,8 +40,7 @@ from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
 _PLANNING_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["planning"]
-_CANDIDATE_READY_SIGNAL = "candidate_plan_ready"
-_COMPLETION_SIGNALS = frozenset({_CANDIDATE_READY_SIGNAL})
+_COMPLETION_SIGNALS = frozenset({PLANNER_CANDIDATE_READY_SIGNAL})
 
 
 @dataclass(frozen=True)
@@ -170,7 +174,7 @@ class PlanningPhaseOrchestrator:
                 metrics,
             )
 
-            if turn_signal == _CANDIDATE_READY_SIGNAL:
+            if turn_signal == PLANNER_CANDIDATE_READY_SIGNAL:
                 if self._has_blocking_focused_plan_findings():
                     emit_primary_session_resumed(
                         self._append_event,
@@ -350,19 +354,8 @@ def build_planner_context_manifest(
         },
         "loop_limits": loop_limits,
         "digests": digests,
-        "tool_instructions": {
-            "authorization": (
-                "Mutating commands require the session capability token exported "
-                "as TDP_CAPABILITY_TOKEN."
-            ),
-            "snapshot": f"tdp agent plan snapshot --run {run_id} --view tree",
-            "apply": f"tdp agent plan apply --run {run_id} --request <file>",
-            "check": f"tdp agent plan check --run {run_id}",
-            "request_review": (
-                f"tdp agent review request --run {run_id} --request <file>"
-            ),
-            "completion_signal": _CANDIDATE_READY_SIGNAL,
-        },
+        "protocol_instructions": build_planner_protocol_instructions(),
+        "tool_instructions": build_planner_tool_instructions(run_id),
         },
         config=config,
         run=run,

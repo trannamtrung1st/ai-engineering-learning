@@ -9,6 +9,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.reviewer_session import (
     build_reviewer_allocation_request,
+    build_reviewer_protocol_instructions,
     build_reviewer_tool_instructions,
     begin_reviewer_review,
     deliver_reviewer_turn,
@@ -51,6 +52,12 @@ def test_allocation_request_is_minimal() -> None:
     )
     assert payload["action"] == "reviewer_session_allocate"
     assert "plan" not in payload
+
+
+def test_reviewer_protocol_discourages_host_planning_artifacts() -> None:
+    protocol = " ".join(build_reviewer_protocol_instructions())
+    assert "review respond" in protocol
+    assert "host planning modes" in protocol
 
 
 def test_tool_instructions_discourage_uv_run() -> None:

@@ -27,6 +27,7 @@ from top_down_planning.orchestrator.capability import (
 )
 from top_down_planning.orchestrator.reviewer_session import (
     allocate_reviewer_session,
+    build_reviewer_protocol_instructions,
     build_reviewer_tool_instructions,
     deliver_reviewer_turn,
     resume_reviewer_session_with_package,
@@ -518,6 +519,7 @@ def build_whole_plan_review_package(
         "boundaries": run_section.get("boundaries"),
         "acceptance": run_section.get("acceptance"),
         "digests": digests,
+        "protocol_instructions": build_reviewer_protocol_instructions(),
         "tool_instructions": {
             **build_reviewer_tool_instructions(
                 run_id,

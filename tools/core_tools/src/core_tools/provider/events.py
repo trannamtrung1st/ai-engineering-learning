@@ -47,17 +47,63 @@ _TOOL_DETAIL_KEYS = (
 _TOOL_SUMMARY_MAX_LEN = 120
 
 
+def _format_protocol_instructions(protocol: Any) -> str | None:
+    if isinstance(protocol, str):
+        stripped = protocol.strip()
+        return stripped or None
+    if isinstance(protocol, list):
+        lines = "\n".join(
+            f"- {str(item).strip()}" for item in protocol if str(item).strip()
+        )
+        return lines or None
+    return None
+
+
+def _resolve_prompt_role(payload: dict[str, Any], *, role: str | None = None) -> str | None:
+    if role is not None and str(role).strip():
+        return str(role).strip()
+    agent_context = payload.get("agent_context")
+    if isinstance(agent_context, dict):
+        candidate = agent_context.get("role")
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
+
+
+def format_provider_payload_prompt(
+    payload: dict[str, Any],
+    *,
+    role: str | None = None,
+    body_label: str,
+) -> str:
+    """Serialize a provider payload with optional role and protocol sections."""
+
+    parts: list[str] = []
+    resolved_role = _resolve_prompt_role(payload, role=role)
+    if resolved_role:
+        parts.append(f"Role: {resolved_role}")
+    protocol = _format_protocol_instructions(payload.get("protocol_instructions"))
+    if protocol:
+        parts.append(f"\nProtocol:\n{protocol}")
+    body = json.dumps(payload, indent=2, sort_keys=True)
+    parts.append(f"\n{body_label}:\n{body}")
+    return "\n".join(parts)
+
+
 def format_manifest_prompt(role: str, manifest: dict[str, Any]) -> str:
     """Serialize a context manifest into a provider prompt."""
 
-    payload = json.dumps(manifest, indent=2, sort_keys=True)
-    return f"Role: {role}\n\nContext manifest:\n{payload}"
+    return format_provider_payload_prompt(
+        manifest,
+        role=role,
+        body_label="Context manifest",
+    )
 
 
 def format_request_prompt(request: dict[str, Any]) -> str:
     """Serialize a follow-up request into a provider prompt."""
 
-    return json.dumps(request, indent=2, sort_keys=True)
+    return format_provider_payload_prompt(request, body_label="Request")
 
 
 def is_tool_call_start(event: dict[str, Any]) -> bool:

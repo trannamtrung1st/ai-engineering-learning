@@ -30,6 +30,28 @@ def build_reviewer_allocation_request(*, run_id: str, loop_id: str) -> dict[str,
     }
 
 
+def build_reviewer_protocol_instructions() -> list[str]:
+    """Provider-agnostic reviewer behavior instructions for review packages."""
+
+    return [
+        (
+            "You are the TDP reviewer. Inspect the delivered review package and "
+            "submit a structured decision through tdp agent review respond in "
+            "tool_instructions."
+        ),
+        (
+            "Do not use host planning modes or planning-only tools. The "
+            "orchestrator persists review outcomes only from review respond "
+            "payloads."
+        ),
+        (
+            "Assistant prose or host plan artifacts alone do not advance the "
+            "run. Invoke `tdp` directly for mutating commands; do not wrap "
+            "with `uv run`."
+        ),
+    ]
+
+
 def build_reviewer_tool_instructions(
     run_id: str,
     **extra: str,
@@ -154,6 +176,7 @@ __all__ = [
     "allocate_reviewer_session",
     "begin_reviewer_review",
     "build_reviewer_allocation_request",
+    "build_reviewer_protocol_instructions",
     "build_reviewer_tool_instructions",
     "deliver_reviewer_turn",
     "resume_reviewer_session_with_package",

@@ -10,6 +10,11 @@ from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.production import all_applicable_items_processed, has_pending_amendment, latest_reconciliation_report
 from top_down_planning.domain.readiness import detect_deadlock
 from top_down_planning.domain.reviews import find_whole_plan_approval
+from top_down_planning.orchestrator.producer_session import (
+    PRODUCER_BATCH_COMPLETE_SIGNAL,
+    build_producer_protocol_instructions,
+    build_producer_tool_instructions,
+)
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     resolve_role_session_context,
@@ -40,8 +45,7 @@ from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
 _PRODUCTION_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["production"]
-_BATCH_COMPLETE_SIGNAL = "batch_complete"
-_COMPLETION_SIGNALS = frozenset({_BATCH_COMPLETE_SIGNAL})
+_COMPLETION_SIGNALS = frozenset({PRODUCER_BATCH_COMPLETE_SIGNAL})
 
 
 @dataclass(frozen=True)
@@ -213,7 +217,7 @@ class ProductionPhaseOrchestrator:
             batch_agent_turns += agent_turns
             _persist_batch_agent_turns(self._store, self._run_id, batch_agent_turns)
 
-            if turn_signal == _BATCH_COMPLETE_SIGNAL:
+            if turn_signal == PRODUCER_BATCH_COMPLETE_SIGNAL:
                 batch_agent_turns = 0
                 _persist_batch_agent_turns(self._store, self._run_id, 0)
                 continue
@@ -425,32 +429,8 @@ def build_producer_context_manifest(
         "approved_plan_revision": plan_revision,
         "loop_limits": limits,
         "digests": digests,
-        "tool_instructions": {
-            "authorization": (
-                "Mutating commands require the session capability token exported "
-                "as TDP_CAPABILITY_TOKEN."
-            ),
-            "snapshot": f"tdp agent production snapshot --run {run_id} --view ready",
-            "apply": (
-                f"tdp agent production apply --run {run_id} --request <file>"
-            ),
-            "check": f"tdp agent production check --run {run_id}",
-            "request_amendment": (
-                f"tdp agent production request-amendment --run {run_id} "
-                "--request <file>"
-            ),
-            "submit_completion": (
-                f"tdp agent production submit-completion --run {run_id} "
-                "--request <file>  # requires goal_met: true and goal_assessment"
-            ),
-            "report_blocked": (
-                f"tdp agent production report-blocked --run {run_id} --request <file>"
-            ),
-            "request_review": (
-                f"tdp agent review request --run {run_id} --request <file>"
-            ),
-            "batch_complete_signal": _BATCH_COMPLETE_SIGNAL,
-        },
+        "protocol_instructions": build_producer_protocol_instructions(),
+        "tool_instructions": build_producer_tool_instructions(run_id),
         },
         config=config,
         run=run,
