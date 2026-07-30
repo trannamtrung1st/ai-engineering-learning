@@ -151,9 +151,18 @@ def dump_yaml(value: Any, indent: int = 0) -> str:
         lines: list[str] = []
         for key, item in sorted(value.items()):
             rendered_key = _yaml_key(str(key))
-            if isinstance(item, (dict, list)):
-                lines.append(f"{prefix}{rendered_key}:")
-                lines.append(dump_yaml(item, indent + 2))
+            if isinstance(item, dict):
+                if not item:
+                    lines.append(f"{prefix}{rendered_key}: {{}}")
+                else:
+                    lines.append(f"{prefix}{rendered_key}:")
+                    lines.append(dump_yaml(item, indent + 2))
+            elif isinstance(item, list):
+                if not item:
+                    lines.append(f"{prefix}{rendered_key}: []")
+                else:
+                    lines.append(f"{prefix}{rendered_key}:")
+                    lines.append(dump_yaml(item, indent + 2))
             else:
                 lines.append(f"{prefix}{rendered_key}: {_yaml_scalar(item)}")
         return "\n".join(lines)

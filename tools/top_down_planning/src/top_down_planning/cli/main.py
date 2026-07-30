@@ -3,10 +3,33 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from top_down_planning import __version__
 from top_down_planning.cli.agent import add_agent_subparsers, handle_agent_command
+from top_down_planning.cli.user import (
+    handle_inspect_command,
+    handle_resume_command,
+    handle_run_command,
+    handle_status_command,
+    handle_validate_command,
+)
+
+
+def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--runs-dir",
+        help="Run store root directory (default: $TDP_RUNS_DIR or ./runs).",
+    )
+    parser.add_argument(
+        "--stream-json",
+        action="store_true",
+        help="Emit structured JSON instead of human-readable output.",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable color output (reserved for future renderer use).",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,12 +56,15 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH=VALUE",
         help="Resolved-config override (repeatable; proposal §14).",
     )
+    _add_operational_flags(run_parser)
 
     resume_parser = subparsers.add_parser("resume", help="Resume an interrupted run.")
     resume_parser.add_argument("--run", help="Run id.")
+    _add_operational_flags(resume_parser)
 
     status_parser = subparsers.add_parser("status", help="Show run status.")
     status_parser.add_argument("--run", help="Run id.")
+    _add_operational_flags(status_parser)
 
     inspect_parser = subparsers.add_parser("inspect", help="Inspect run artifacts.")
     inspect_parser.add_argument("--run", help="Run id.")
@@ -46,12 +72,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--view",
         help="Inspection view (e.g. tree, ready).",
     )
+    _add_operational_flags(inspect_parser)
 
     validate_parser = subparsers.add_parser(
         "validate",
         help="Run deterministic validators.",
     )
     validate_parser.add_argument("--run", help="Run id.")
+    _add_operational_flags(validate_parser)
 
     add_agent_subparsers(subparsers)
 
@@ -70,8 +98,27 @@ def main(argv: list[str] | None = None) -> None:
         handle_agent_command(args)
         return
 
-    print(f"tdp {args.command}: not implemented yet.", file=sys.stderr)
-    raise SystemExit(2)
+    if args.command == "run":
+        handle_run_command(args)
+        return
+
+    if args.command == "resume":
+        handle_resume_command(args)
+        return
+
+    if args.command == "status":
+        handle_status_command(args)
+        return
+
+    if args.command == "inspect":
+        handle_inspect_command(args)
+        return
+
+    if args.command == "validate":
+        handle_validate_command(args)
+        return
+
+    parser.error(f"unknown command: {args.command!r}")
 
 
 if __name__ == "__main__":

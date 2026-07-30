@@ -22,6 +22,32 @@ Specification: [`temp/final-top-down-planning-tool-proposal.md`](../../temp/fina
 - `orchestrator` may depend on `domain` and interfaces; not on provider CLI parsing.
 - Project-specific extensions stay outside the core package (proposal §19).
 
+## User CLI (proposal §20)
+
+```bash
+tdp run --config examples/top-down-planning.yaml
+tdp run --config examples/top-down-planning.yaml --set planning.max_depth=5
+tdp status --run <run-id>
+tdp inspect --run <run-id> --view tree
+tdp validate --run <run-id>
+tdp resume --run <run-id>
+```
+
+Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides. Unknown `--set` paths are rejected. Resolved configuration is materialized to `runs/<run-id>/resolved-config.yaml` and included in the run config digest.
+
+Run operational `status` values (proposal §15): `running`, `paused`, `completed`, `failed`. Quality `outcome` values: `accepted`, `rejected`, `blocked` (set only by orchestrator outcome resolution).
+
+`tdp run` creates the run store artifacts then exits before planning orchestration is wired. `tdp resume` loads the run and exits until resume orchestration is wired.
+
+## Agent CLI
+
+```bash
+tdp agent plan snapshot --run <run-id> --view tree
+tdp agent plan apply --run <run-id> --role planner --request request.json
+tdp agent plan check --run <run-id>
+tdp agent run status --run <run-id>
+```
+
 ## Development
 
 ```bash

@@ -49,6 +49,7 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
 
     run_dir = tmp_path / "run-001"
     assert run["revision"] == 0
+    assert run["status"] == "running"
     assert run["digests"]["config"] == compute_config_digest(config)
     assert run["digests"]["plan"] == compute_plan_digest(plan)
     assert (run_dir / "resolved-config.yaml").exists()

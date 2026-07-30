@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import sys
-from pathlib import Path
 from typing import Any
 
 from top_down_planning.agent_tool import (
@@ -16,6 +12,7 @@ from top_down_planning.agent_tool import (
     RunAgentService,
     load_structured_request,
 )
+from top_down_planning.cli.common import emit_payload, resolve_runs_dir
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
 
 
@@ -87,19 +84,8 @@ def _add_run_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def resolve_runs_dir(explicit: str | None = None) -> Path:
-    if explicit:
-        return Path(explicit).resolve()
-    env = os.environ.get("TDP_RUNS_DIR", "").strip()
-    if env:
-        return Path(env).resolve()
-    return Path.cwd() / "runs"
-
-
 def emit_response(payload: dict[str, Any], *, exit_code: int = 0) -> None:
-    json.dump(payload, sys.stdout, indent=2, sort_keys=True)
-    sys.stdout.write("\n")
-    raise SystemExit(exit_code)
+    emit_payload(payload, exit_code=exit_code)
 
 
 def emit_error(exc: Exception, *, exit_code: int = 1) -> None:

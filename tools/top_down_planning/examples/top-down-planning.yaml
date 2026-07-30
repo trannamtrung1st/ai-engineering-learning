@@ -1,0 +1,45 @@
+# Example Top Down Planning configuration (proposal §14).
+version: 1
+
+run:
+  input_refs:
+    - README.md
+  output_goal: >
+    Produce the requested project output while preserving the declared scope
+    and satisfying the approved plan.
+
+planning:
+  stop_hint: >
+    Stop when each item has one coherent outcome, clear boundaries,
+    material dependencies, and acceptance expectations.
+  max_depth: 4
+  max_expansion_per_item: 7
+
+review:
+  focused_plan:
+    enabled: true
+  whole_plan:
+    required: true
+  focused_output:
+    enabled: true
+  whole_output:
+    required: true
+
+provider:
+  name: cursor
+  use_native_project_context: true
+
+limits:
+  planning:
+    max_expansion_iterations: 20
+    max_agent_turns: 40
+  whole_plan_review:
+    max_revision_cycles: 5
+  production:
+    max_batches: 50
+    max_agent_turns_per_batch: 10
+  whole_output_review:
+    max_revision_cycles: 5
+  amendment:
+    max_requests: 3
+    max_revision_cycles_per_request: 3

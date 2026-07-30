@@ -43,7 +43,7 @@ def new_run_record(
     return {
         "id": run_id,
         "revision": 0,
-        "status": "active",
+        "status": "running",
         "phase": phase,
         "outcome": None,
         "digests": {

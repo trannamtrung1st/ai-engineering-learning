@@ -123,6 +123,8 @@ class Plan:
 
 @dataclass
 class PlanningLimits:
+    """Soft planning limits; defaults match ``config.defaults.DEFAULT_CONFIG.planning``."""
+
     max_depth: int = 4
     max_expansion_per_item: int = 7
 
