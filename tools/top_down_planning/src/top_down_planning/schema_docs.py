@@ -834,9 +834,12 @@ Revision fields (base_revision, production_revision) must match the latest snaps
 
 AGENT_README_TEXT = """# Top Down Planning — agent protocol
 
-`tdp` orchestrates planning and production with structured agent tools. Agents interact
-only through `tdp agent` commands; the orchestrator owns lifecycle transitions, limits,
-and mandatory review gates.
+`tdp` orchestrates planning and production. Agents interact only through `tdp agent`
+shell commands; those commands persist mutations to the run store. The orchestrator
+observes store changes after each provider turn, runs pending review loops, and
+advances phases when agents emit explicit completion signals (`candidate_plan_ready`,
+`batch_complete`, `amendment_revision_ready`, etc.) as the final assistant line or
+`done.signal` metadata.
 
 ## Session roles and authorization
 

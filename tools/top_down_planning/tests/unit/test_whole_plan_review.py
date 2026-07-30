@@ -14,7 +14,7 @@ from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REV
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, grant_capability
+from tests.helpers import apply_plan, create_run_kwargs, done_events, grant_capability, respond_review
 
 
 def _create_run_at_whole_plan_review(
@@ -110,71 +110,66 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
     provider = StubProvider()
     _create_run_at_whole_plan_review(store, provider=provider)
 
+    run_id = "run-20260101T000301-000301"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="changes_requested",
-                    findings=[
-                        {
-                            "id": "finding-01",
-                            "importance": "blocking",
-                            "target_refs": ["item-api"],
-                            "issue": "API outcome is too vague.",
-                            "required_change": "Add concrete acceptance criteria.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="changes_requested",
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "importance": "blocking",
+                        "target_refs": ["item-api"],
+                        "issue": "API outcome is too vague.",
+                        "required_change": "Add concrete acceptance criteria.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "plan_apply",
-                "role": "planner",
-                "request": {
-                    "base_revision": 0,
-                    "operations": [
-                        {
-                            "op": "update_item",
-                            "item_id": "item-api",
-                            "patch": {
-                                "outcome": "REST API endpoints exist.",
-                                "acceptance": [
-                                    "GET /health returns 200.",
-                                    "POST /items creates a record.",
-                                ],
-                            },
-                        }
-                    ],
-                },
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-api",
+                    "patch": {
+                        "outcome": "REST API endpoints exist.",
+                        "acceptance": [
+                            "GET /health returns 200.",
+                            "POST /items creates a record.",
+                        ],
+                    },
+                }
+            ],
+            phase=WHOLE_PLAN_REVIEW,
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="approved",
-                    target_revision=1,
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="approved",
+                target_revision=1,
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+        ),
     )
 
-    result = WholePlanReviewOrchestrator(store, "run-20260101T000301-000301", provider).run()
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == PLAN_VALIDATED
@@ -280,56 +275,55 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
     provider = StubProvider()
     _create_run_at_whole_plan_review(store, limits={"max_revision_cycles": 1}, provider=provider)
 
+    run_id = "run-20260101T000301-000301"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="changes_requested",
-                    findings=[
-                        {
-                            "id": "finding-01",
-                            "importance": "blocking",
-                            "target_refs": ["item-api"],
-                            "issue": "Needs work.",
-                            "required_change": "Improve acceptance.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="changes_requested",
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "importance": "blocking",
+                        "target_refs": ["item-api"],
+                        "issue": "Needs work.",
+                        "required_change": "Improve acceptance.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+        ),
     )
-    provider.script_turn([*done_events(text="turn complete")])
+    provider.script_turn(done_events(text="turn complete"))
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="changes_requested",
-                    target_revision=0,
-                    findings=[
-                        {
-                            "id": "finding-01",
-                            "importance": "blocking",
-                            "target_refs": ["item-api"],
-                            "issue": "Still needs work.",
-                            "required_change": "Improve acceptance.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="changes_requested",
+                target_revision=0,
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "importance": "blocking",
+                        "target_refs": ["item-api"],
+                        "issue": "Still needs work.",
+                        "required_change": "Improve acceptance.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+        ),
     )
 
-    result = WholePlanReviewOrchestrator(store, "run-20260101T000301-000301", provider).run()
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is False
     assert result.outcome == "rejected"
@@ -350,31 +344,31 @@ def test_unapproved_plan_cannot_leave_whole_plan_review_phase(tmp_path: Path) ->
     assert run["phase"] == WHOLE_PLAN_REVIEW
 
     provider = StubProvider()
+    run_id = "run-20260101T000301-000301"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="blocked",
-                    findings=[
-                        {
-                            "id": "finding-01",
-                            "importance": "blocking",
-                            "target_refs": ["item-root"],
-                            "issue": "Plan is not viable.",
-                            "required_change": "Rework the plan.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="blocked",
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "importance": "blocking",
+                        "target_refs": ["item-root"],
+                        "issue": "Plan is not viable.",
+                        "required_change": "Rework the plan.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+        ),
     )
 
-    result = WholePlanReviewOrchestrator(store, "run-20260101T000301-000301", provider).run()
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is False
     assert result.outcome == "blocked"
@@ -426,22 +420,22 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
     run["digests"]["plan"] = compute_plan_digest(plan)
     store.save_run("run-20260101T000301-000301", run, expected_revision)
 
+    run_id = "run-20260101T000301-000301"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="approved",
-                    target_revision=1,
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="approved",
+                target_revision=1,
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+        ),
     )
 
-    result = WholePlanReviewOrchestrator(store, "run-20260101T000301-000301", provider).run()
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == PLAN_VALIDATED

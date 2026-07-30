@@ -5,13 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from top_down_planning.agent_tool.errors import AgentToolError
 from top_down_planning.agent_tool.production_service import ProductionAgentService
-from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.production import all_applicable_items_processed, has_pending_amendment, latest_reconciliation_report
 from top_down_planning.domain.readiness import detect_deadlock
-from top_down_planning.domain.reviews import blocking_focused_findings_for_items, find_whole_plan_approval
+from top_down_planning.domain.reviews import find_whole_plan_approval
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     resolve_role_session_context,
@@ -23,11 +21,14 @@ from top_down_planning.orchestrator.capability import (
     rotate_session_capability,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
-from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import (
     PLAN_VALIDATED,
     PRODUCTION,
     WHOLE_OUTPUT_REVIEW,
+)
+from top_down_planning.orchestrator.provider_turns import (
+    consume_provider_turn,
+    run_pending_focused_review,
 )
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
@@ -35,13 +36,7 @@ from core_tools.provider import Provider
 
 _PRODUCTION_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["production"]
 _BATCH_COMPLETE_SIGNAL = "batch_complete"
-
-_PRODUCTION_TOOL_HANDLERS: dict[str, str] = {
-    "production_apply": "apply",
-    "production_request_amendment": "request_amendment",
-    "production_submit_completion": "submit_completion",
-    "production_report_blocked": "report_blocked",
-}
+_COMPLETION_SIGNALS = frozenset({_BATCH_COMPLETE_SIGNAL})
 
 
 @dataclass(frozen=True)
@@ -68,9 +63,7 @@ class ProductionPhaseOrchestrator:
         self._run_id = run_id
         self._provider = provider
         self._production_service = ProductionAgentService(store, run_id)
-        self._review_service = ReviewAgentService(store, run_id)
         self._capability_token: str | None = None
-        self._pending_focused_loop_id: str | None = None
 
     def run(self) -> ProductionPhaseResult:
         run = self._store.load_run(self._run_id)
@@ -181,9 +174,25 @@ class ProductionPhaseOrchestrator:
                     session_id=session_id,
                 )
 
-            turn_signal, agent_turns = self._consume_provider_turn(session_id)
-            if self._pending_focused_loop_id is not None:
-                self._run_pending_focused_review()
+            run_pending_focused_review(
+                self._store,
+                self._run_id,
+                self._provider,
+                review_type="focused_output",
+            )
+
+            turn_signal = consume_provider_turn(
+                self._provider,
+                session_id,
+                allowed_signals=_COMPLETION_SIGNALS,
+            )
+            run_pending_focused_review(
+                self._store,
+                self._run_id,
+                self._provider,
+                review_type="focused_output",
+            )
+            agent_turns = 1
             batch_agent_turns += agent_turns
             _persist_batch_agent_turns(self._store, self._run_id, batch_agent_turns)
 
@@ -219,109 +228,6 @@ class ProductionPhaseOrchestrator:
                 session_kind="primary",
             )
             bind_provider_capability(self._provider, self._capability_token)
-
-    def _consume_provider_turn(self, session_id: str) -> tuple[str | None, int]:
-        signal: str | None = None
-        agent_turns = 0
-        for event in self._provider.stream_events(session_id):
-            event_type = str(event.get("type") or "")
-            if event_type == "error":
-                text = event.get("text") or "provider error"
-                raise ProviderRunError(str(text))
-            if event_type == "tool_call":
-                self._handle_tool_call(event)
-                continue
-            if event_type == "done":
-                if event.get("is_error"):
-                    text = event.get("text") or "provider turn failed"
-                    raise ProviderRunError(str(text))
-                signal = event.get("signal")
-                if signal is not None:
-                    signal = str(signal)
-                agent_turns += 1
-        return signal, agent_turns
-
-    def _handle_tool_call(self, event: dict[str, Any]) -> None:
-        tool = str(event.get("tool") or "")
-        if tool == "review_request":
-            self._handle_review_request(event)
-            return
-        if tool == "plan_apply":
-            raise ProviderRunError(
-                "plan mutations are not allowed during production; "
-                "use `tdp agent production request-amendment` when a material plan "
-                "defect is found"
-            )
-
-        handler_name = _PRODUCTION_TOOL_HANDLERS.get(tool)
-        if handler_name is None:
-            return
-
-        request = event.get("request")
-        if not isinstance(request, dict):
-            raise ProviderRunError(f"{tool} tool_call requires a request object")
-
-        if tool == "production_apply":
-            plan_items = request.get("plan_items") or []
-            if isinstance(plan_items, list):
-                self._assert_no_blocking_focused_output_findings(
-                    [str(item_id) for item_id in plan_items]
-                )
-
-        if tool == "production_submit_completion":
-            self._assert_no_blocking_focused_output_findings_for_plan()
-
-        handler = getattr(self._production_service, handler_name)
-        try:
-            handler(request, capability_token=self._capability_token)
-        except AgentToolError as exc:
-            raise ProviderRunError(str(exc)) from exc
-
-    def _handle_review_request(self, event: dict[str, Any]) -> None:
-        request = event.get("request")
-        if not isinstance(request, dict):
-            raise ProviderRunError("review_request tool_call requires a request object")
-
-        try:
-            created = self._review_service.request(
-                request,
-                capability_token=self._capability_token,
-            )
-        except AgentToolError as exc:
-            raise ProviderRunError(str(exc)) from exc
-
-        self._pending_focused_loop_id = str(created["loop_id"])
-
-    def _run_pending_focused_review(self) -> None:
-        loop_id = self._pending_focused_loop_id
-        if loop_id is None:
-            return
-        self._pending_focused_loop_id = None
-        result = FocusedReviewOrchestrator(
-            self._store,
-            self._run_id,
-            self._provider,
-        ).run(loop_id)
-        if not result.ok:
-            raise ProviderRunError(
-                result.reason or "focused output review did not complete successfully"
-            )
-
-    def _assert_no_blocking_focused_output_findings(self, item_ids: list[str]) -> None:
-        blocked = blocking_focused_findings_for_items(
-            self._store.list_reviews(self._run_id),
-            "focused_output",
-            item_ids,
-        )
-        if blocked:
-            joined = ", ".join(blocked)
-            raise ProviderRunError(
-                f"production blocked by unresolved focused output findings: {joined}"
-            )
-
-    def _assert_no_blocking_focused_output_findings_for_plan(self) -> None:
-        plan = self._store.load_plan_model(self._run_id)
-        self._assert_no_blocking_focused_output_findings(list(plan.items.keys()))
 
     def _has_completion_claim(self) -> bool:
         production = self._store.load_production(self._run_id)

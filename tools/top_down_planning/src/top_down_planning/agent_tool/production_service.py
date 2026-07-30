@@ -16,7 +16,7 @@ from top_down_planning.agent_tool.views import (
     validation_issues,
     validation_warnings,
 )
-from top_down_planning.domain.dispositions import DispositionMap
+from top_down_planning.domain.reviews import blocking_focused_findings_for_items
 from top_down_planning.domain.production import (
     BatchResult,
     Contribution,
@@ -146,6 +146,16 @@ class ProductionAgentService:
         reviews = self._store.list_reviews(self._run_id)
         evidence_revision = bool(request.get("evidence_revision"))
         plan_item_ids = [str(item_id) for item_id in plan_items]
+        blocked = blocking_focused_findings_for_items(
+            reviews,
+            "focused_output",
+            plan_item_ids,
+        )
+        if blocked:
+            joined = ", ".join(blocked)
+            raise RequestError(
+                f"production blocked by unresolved focused output findings: {joined}"
+            )
 
         disposition_records = parse_disposition_records(request.get("dispositions") or {})
         empty_output = bool(request.get("empty_output"))
@@ -406,6 +416,17 @@ class ProductionAgentService:
             raise RequestError(
                 "submit-completion requires every applicable item to have a "
                 "terminal disposition or derived satisfaction"
+            )
+
+        blocked = blocking_focused_findings_for_items(
+            self._store.list_reviews(self._run_id),
+            "focused_output",
+            list(plan.items.keys()),
+        )
+        if blocked:
+            joined = ", ".join(blocked)
+            raise RequestError(
+                f"production blocked by unresolved focused output findings: {joined}"
             )
 
         expected_revision = int(production["revision"])

@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import done_events, plan_apply_turn
+from tests.helpers import apply_plan, apply_production, done_events, request_amendment
 from tests.integration.e2e_helpers import (
     E2EStubProvider,
     assert_acceptance_invariant_for_run,
@@ -69,7 +69,7 @@ def test_happy_path_lifecycle_reaches_accepted(
     runs_dir = tmp_path / "runs"
     store = FileRunStore(runs_dir)
 
-    patch_provider.script_turn(planning_single_leaf_script())
+    patch_provider.script_turn(*planning_single_leaf_script(store))
     run_result = run_cli(
         [
             "run",
@@ -86,15 +86,15 @@ def test_happy_path_lifecycle_reaches_accepted(
     assert run_payload["phase"] == WHOLE_PLAN_REVIEW
     run_id = run_payload["run_id"]
 
-    patch_provider.script_turn(
-        whole_plan_review_script(store, run_id, decision="approved")
-    )
+    patch_provider.script_turn(*whole_plan_review_script(store, run_id, decision="approved"))
     plan_review_payload = _resume(run_id, runs_dir)
     assert plan_review_payload["phase"] == PLAN_VALIDATED
 
     leaf_id = root_child_item_ids(store, run_id)[0]
     patch_provider.script_turn(
-        production_batch_script(
+        *production_batch_script(
+            store,
+            run_id,
             plan_items=[leaf_id],
             dispositions={leaf_id: {"disposition": "completed"}},
             submit_completion=True,
@@ -104,9 +104,7 @@ def test_happy_path_lifecycle_reaches_accepted(
     assert production_payload["phase"] == WHOLE_OUTPUT_REVIEW
 
     production = store.load_production(run_id)
-    patch_provider.script_turn(
-        whole_output_review_script(store, run_id, decision="approved")
-    )
+    patch_provider.script_turn(*whole_output_review_script(store, run_id, decision="approved"))
     output_payload = _resume(run_id, runs_dir)
     assert output_payload["ok"] is True
     assert output_payload["phase"] == OUTPUT_VALIDATED
@@ -124,7 +122,7 @@ def test_whole_plan_blocked_does_not_accept(
     runs_dir = tmp_path / "runs"
     store = FileRunStore(runs_dir)
 
-    patch_provider.script_turn(planning_single_leaf_script())
+    patch_provider.script_turn(*planning_single_leaf_script(store))
     run_result = run_cli(
         [
             "run",
@@ -138,7 +136,7 @@ def test_whole_plan_blocked_does_not_accept(
     run_id = run_result.json()["run_id"]
 
     patch_provider.script_turn(
-        whole_plan_review_script(store, run_id, decision="blocked")
+        *whole_plan_review_script(store, run_id, decision="blocked")
     )
     resume_result = run_cli(
         [
@@ -165,7 +163,7 @@ def test_amendment_mid_production_finishes_accepted(
     runs_dir = tmp_path / "runs"
     store = FileRunStore(runs_dir)
 
-    patch_provider.script_turn(planning_two_item_script())
+    patch_provider.script_turn(*planning_two_item_script(store))
     run_id = run_cli(
         [
             "run",
@@ -177,9 +175,7 @@ def test_amendment_mid_production_finishes_accepted(
         ]
     ).json()["run_id"]
 
-    patch_provider.script_turn(
-        whole_plan_review_script(store, run_id, decision="approved")
-    )
+    patch_provider.script_turn(*whole_plan_review_script(store, run_id, decision="approved"))
     _resume(run_id, runs_dir)
 
     first_id, second_id = root_child_item_ids(store, run_id)
@@ -191,24 +187,38 @@ def test_amendment_mid_production_finishes_accepted(
             if item_id not in {first_id, second_id}
         )
         production = store.load_production(run_id)
-        return production_batch_script(
-            plan_items=[second_id, new_item_id],
-            dispositions={
-                second_id: {"disposition": "completed"},
-                new_item_id: {"disposition": "completed"},
+        apply_production(
+            store,
+            run_id,
+            {
+                "production_revision": int(production["revision"]),
+                "plan_items": [second_id, new_item_id],
+                "dispositions": {
+                    second_id: {"disposition": "completed"},
+                    new_item_id: {"disposition": "completed"},
+                },
+                "outputs": [],
+                "contributions": [],
+                "summary": "batch complete",
             },
-            production_revision=int(production["revision"]),
-            submit_completion=True,
-        )
+            handler="apply",
+        )()
+        apply_production(
+            store,
+            run_id,
+            {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+            handler="submit_completion",
+        )()
+        return done_events(signal="batch_complete", text="production turn")
 
     patch_provider.set_fallback_builder(remaining_production_turn)
     patch_provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "production_apply",
-                "role": "producer",
-                "request": {
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=lambda: (
+            apply_production(
+                store,
+                run_id,
+                {
                     "production_revision": 0,
                     "plan_items": [first_id],
                     "dispositions": {first_id: {"disposition": "completed"}},
@@ -216,22 +226,24 @@ def test_amendment_mid_production_finishes_accepted(
                     "contributions": [],
                     "summary": "batch complete",
                 },
-            },
-            {
-                "type": "tool_call",
-                "tool": "production_request_amendment",
-                "role": "producer",
-                "request": {
+                handler="apply",
+            )(),
+            request_amendment(
+                store,
+                run_id,
+                {
                     "evidence": "Missing API branch in approved plan.",
                     "affected_refs": ["item-root"],
                     "summary": "Need API subtree.",
                 },
-            },
-            *done_events(signal="batch_complete", text="production turn"),
-        ]
+            )(),
+        ),
     )
     patch_provider.script_turn(
-        plan_apply_turn(
+        done_events(signal="amendment_revision_ready", text="amendment turn"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
             base_revision=current_plan_revision(store, run_id),
             operations=[
                 {
@@ -246,12 +258,13 @@ def test_amendment_mid_production_finishes_accepted(
                     },
                 }
             ],
-            signal="amendment_revision_ready",
-        )
+        ),
     )
     amended_revision = current_plan_revision(store, run_id) + 1
     patch_provider.script_turn(
-        review_respond_script(
+        *review_respond_script(
+            store,
+            run_id,
             decision="approved",
             loop_id="review-whole-plan-02",
             target_revision=amended_revision,
@@ -261,9 +274,7 @@ def test_amendment_mid_production_finishes_accepted(
     assert amendment_resume["ok"] is True
     assert amendment_resume["phase"] == WHOLE_OUTPUT_REVIEW
 
-    patch_provider.script_turn(
-        whole_output_review_script(store, run_id, decision="approved")
-    )
+    patch_provider.script_turn(*whole_output_review_script(store, run_id, decision="approved"))
     output_payload = _resume(run_id, runs_dir)
     assert output_payload["outcome"] == "accepted"
 
@@ -284,7 +295,7 @@ def test_checkpoint_resume_from_whole_plan_review_reaches_accepted(
     runs_dir = tmp_path / "runs"
     store = FileRunStore(runs_dir)
 
-    patch_provider.script_turn(planning_single_leaf_script())
+    patch_provider.script_turn(*planning_single_leaf_script(store))
     run_payload = run_cli(
         [
             "run",
@@ -311,14 +322,14 @@ def test_checkpoint_resume_from_whole_plan_review_reaches_accepted(
     assert status_before["run"]["phase"] == WHOLE_PLAN_REVIEW
     assert status_before["run"]["outcome"] is None
 
-    patch_provider.script_turn(
-        whole_plan_review_script(store, run_id, decision="approved")
-    )
+    patch_provider.script_turn(*whole_plan_review_script(store, run_id, decision="approved"))
     _resume(run_id, runs_dir)
 
     leaf_id = root_child_item_ids(store, run_id)[0]
     patch_provider.script_turn(
-        production_batch_script(
+        *production_batch_script(
+            store,
+            run_id,
             plan_items=[leaf_id],
             dispositions={leaf_id: {"disposition": "completed"}},
             submit_completion=True,
@@ -327,9 +338,7 @@ def test_checkpoint_resume_from_whole_plan_review_reaches_accepted(
     _resume(run_id, runs_dir)
 
     production = store.load_production(run_id)
-    patch_provider.script_turn(
-        whole_output_review_script(store, run_id, decision="approved")
-    )
+    patch_provider.script_turn(*whole_output_review_script(store, run_id, decision="approved"))
     output_payload = _resume(run_id, runs_dir)
     assert output_payload["outcome"] == "accepted"
     assert_acceptance_invariant_for_run(store, run_id)
@@ -338,10 +347,11 @@ def test_checkpoint_resume_from_whole_plan_review_reaches_accepted(
 @pytest.mark.integration
 def test_capability_guardrails_reject_missing_token(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
+    store = FileRunStore(runs_dir)
     config_path = write_e2e_config(tmp_path / "run.yaml")
 
     provider = StubProvider()
-    provider.script_turn(planning_single_leaf_script())
+    provider.script_turn(*planning_single_leaf_script(store))
     with patch("top_down_planning.cli.user.create_provider", return_value=provider):
         run_id = run_cli(
             [
@@ -425,9 +435,9 @@ def test_example_config_and_stub_instructions_are_present(tmp_path: Path) -> Non
     resolved = resolve_config(example_config, ["provider.name=stub", "run.input_refs=[]"])
     assert resolved["provider"]["name"] == "stub"
 
-    provider = StubProvider()
-    provider.script_turn(planning_single_leaf_script())
     runs_dir = tmp_path / "runs"
+    store = FileRunStore(runs_dir)
+    provider.script_turn(*planning_single_leaf_script(store))
     with patch("top_down_planning.cli.user.create_provider", return_value=provider):
         result = run_cli(
             [

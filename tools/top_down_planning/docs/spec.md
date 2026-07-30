@@ -52,11 +52,13 @@ Within that review/revision loop, the same reviewer session remains active. It r
 
 A later, separate review loop always starts a new reviewer session and does not inherit unrelated reviewer history.
 
-### 2.4 Structured interaction through tools
+### 2.4 Agent CLI and run-store observation
 
-Agents should use structured tool operations for plan state, production state, review findings, amendment requests, and completion records. Agents should not directly rewrite orchestration files.
+Agents mutate orchestration state through `tdp agent` shell commands, not by editing persistence files directly. Each command validates the request, checks capability authorization, and persists atomic changes to the run store.
 
-The actual output may still be created through normal provider capabilities, such as editing project files or producing text. The orchestration records around that output must be updated through the tool.
+The orchestrator does not intercept provider tool events for agent mutations. After each provider turn it reads store changes (pending focused reviews, applied plan/production batches, review decisions) and resolves phase completion from explicit signal tokens in assistant text or `done.signal` metadata.
+
+The actual output may still be created through normal provider capabilities, such as editing project files or producing text. Orchestration records around that output must be updated through `tdp agent` commands.
 
 Plan items are units of reasoning, coverage, decision, and control. They are not required to map one-to-one to files, changes, or other deliverables. Production may combine many plan items into one output, use one plan item across several outputs, or satisfy an item without producing an artifact.
 
@@ -1022,7 +1024,7 @@ Observability and other presentation settings may be set in YAML under `observab
 
 Agent thinking/response console output uses `core_tools.observability.AgentTextStreamController`: Cursor `stream-json` text is read from `text` or `message.content`, cumulative chunks are deduplicated, newly appended text is emitted incrementally as it arrives, and dedupe buffers reset before tool calls or turn completion. Empty thinking events are not normalized or printed. Multiple sentences stay on one console line until the agent emits an explicit newline or another category interrupts the stream.
 
-Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools are summarized from the nested `tool_call` payload; structured Top Down Planning agent tools summarize from `tool` and `request` (for example `plan_apply @r0 3 ops`). `tool_call` events with `subtype: started` or `completed` reach the console bridge; `tool_result` events and duplicate lifecycle events for the same `call_id` are dropped.
+Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools (including shell `tdp agent …` invocations) are summarized from the nested `tool_call` payload. `tool_call` events with `subtype: started` or `completed` reach the console bridge; `tool_result` events and duplicate lifecycle events for the same `call_id` are dropped.
 
 Console output prints `[category]` once per discrete event block (optional `[timestamp]` when `show_timestamps` is enabled). Multi-line discrete messages omit the prefix on continuation lines. `thinking` and `response` events are incremental deltas: the prefix appears once per block, further deltas omit it, and text is written without trailing newlines until the category changes. Explicit `\n` characters in agent text produce line breaks within the block.
 

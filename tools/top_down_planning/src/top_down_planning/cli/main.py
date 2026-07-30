@@ -71,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="tdp",
         description=(
             "Top Down Planning — orchestrate high-level planning and production "
-            "with structured agent tools."
+            "via provider sessions and the tdp agent CLI."
         ),
     )
     parser.add_argument(

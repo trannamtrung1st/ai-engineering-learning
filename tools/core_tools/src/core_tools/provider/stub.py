@@ -22,6 +22,7 @@ class _StubSession:
     model: str | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
     pending_events: deque[dict[str, Any]] = field(default_factory=deque)
+    pending_hook: Callable[[], None] | None = None
 
 
 class StubProvider:
@@ -34,21 +35,37 @@ class StubProvider:
     ) -> None:
         self._sessions: dict[str, _StubSession] = {}
         self._default_scripts: list[list[dict[str, Any]]] = []
+        self._script_hooks: list[Callable[[], None] | None] = []
         self._session_scripts: dict[str, list[list[dict[str, Any]]]] = {}
+        self._session_script_hooks: dict[str, list[Callable[[], None] | None]] = {}
         self._counter = 0
         self._capability_token: str | None = None
         self._on_provider_event = on_provider_event
 
-    def script_turn(self, events: list[dict[str, Any]]) -> None:
+    def script_turn(
+        self,
+        events: list[dict[str, Any]],
+        *,
+        mutate_store: Callable[[], None] | None = None,
+    ) -> None:
         """Queue scripted normalized events for the next turn on any session."""
 
         self._default_scripts.append(copy.deepcopy(events))
+        self._script_hooks.append(mutate_store)
 
-    def script_session_turn(self, session_id: str, events: list[dict[str, Any]]) -> None:
+    def script_session_turn(
+        self,
+        session_id: str,
+        events: list[dict[str, Any]],
+        *,
+        mutate_store: Callable[[], None] | None = None,
+    ) -> None:
         """Queue scripted events for the next turn on a specific session."""
 
         scripts = self._session_scripts.setdefault(session_id, [])
         scripts.append(copy.deepcopy(events))
+        hooks = self._session_script_hooks.setdefault(session_id, [])
+        hooks.append(mutate_store)
 
     def start_primary_session(
         self,
@@ -93,6 +110,10 @@ class StubProvider:
 
     def stream_events(self, session_id: str) -> Iterator[dict[str, Any]]:
         session = self._require_session(session_id)
+        if session.pending_hook is not None:
+            hook = session.pending_hook
+            session.pending_hook = None
+            hook()
         while session.pending_events:
             yield session.pending_events.popleft()
 
@@ -163,10 +184,20 @@ class StubProvider:
             self._on_provider_event(event)
 
     def _resolve_script(self, session_id: str) -> list[dict[str, Any]]:
+        session = self._require_session(session_id)
         session_scripts = self._session_scripts.get(session_id)
         if session_scripts:
+            hook = None
+            session_hooks = self._session_script_hooks.get(session_id)
+            if session_hooks:
+                hook = session_hooks.pop(0)
+            session.pending_hook = hook
             return session_scripts.pop(0)
         if self._default_scripts:
+            hook = None
+            if self._script_hooks:
+                hook = self._script_hooks.pop(0)
+            session.pending_hook = hook
             return self._default_scripts.pop(0)
         raise ProviderTurnError(
             f"no scripted provider turn configured for session {session_id}",

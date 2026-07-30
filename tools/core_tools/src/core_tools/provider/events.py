@@ -132,6 +132,8 @@ def normalize_cursor_event(raw: dict[str, Any]) -> dict[str, Any] | None:
         normalized["subtype"] = raw.get("subtype")
         normalized["text"] = raw.get("result")
         normalized["is_error"] = bool(raw.get("is_error"))
+        if raw.get("signal") is not None:
+            normalized["signal"] = raw["signal"]
         return normalized
 
     if event_type in _ERROR_TYPES:

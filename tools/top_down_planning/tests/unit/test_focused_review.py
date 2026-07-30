@@ -11,13 +11,22 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import (
     PlanningPhaseOrchestrator,
     ProductionPhaseOrchestrator,
-    ProviderRunError,
 )
 from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
+from tests.helpers import (
+    apply_plan,
+    apply_production,
+    create_run_kwargs,
+    done_events,
+    grant_capability,
+    request_focused_review,
+    respond_review,
+    run_digests_for_config,
+    whole_plan_approval_record,
+)
 
 
 def _planning_config(*, limits: dict | None = None, review: dict | None = None) -> dict:
@@ -123,86 +132,74 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
     _create_planning_run(store)
     provider = StubProvider()
 
+    run_id = "run-20260101T000401-000401"
+    provider.script_turn(done_events(text="planner session start"))
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_request",
-                "role": "planner",
-                "request": _focused_plan_request(["item-api"]),
-            },
-            *done_events(text="after review request"),
-        ]
+        done_events(text="after review request"),
+        mutate_store=request_focused_review(
+            store,
+            run_id,
+            _focused_plan_request(["item-api"]),
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    loop_id="review-focused-plan-01",
-                    decision="changes_requested",
-                    findings=[
-                        {
-                            "id": "finding-01",
-                            "importance": "blocking",
-                            "target_refs": ["item-api"],
-                            "issue": "API outcome is too vague.",
-                            "required_change": "Add concrete acceptance criteria.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="reviewer turn"),
-        ]
+        done_events(text="reviewer turn"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                loop_id="review-focused-plan-01",
+                decision="changes_requested",
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "importance": "blocking",
+                        "target_refs": ["item-api"],
+                        "issue": "API outcome is too vague.",
+                        "required_change": "Add concrete acceptance criteria.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=PLANNING,
+            loop_id="review-focused-plan-01",
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "plan_apply",
-                "role": "planner",
-                "request": {
-                    "base_revision": 0,
-                    "operations": [
-                        {
-                            "op": "update_item",
-                            "item_id": "item-api",
-                            "patch": {
-                                "outcome": "REST API endpoints exist.",
-                                "acceptance": ["GET /health returns 200."],
-                            },
-                        }
-                    ],
-                },
-            },
-            *done_events(text="planner revision"),
-        ]
+        done_events(text="planner revision"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-api",
+                    "patch": {
+                        "outcome": "REST API endpoints exist.",
+                        "acceptance": ["GET /health returns 200."],
+                    },
+                }
+            ],
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    loop_id="review-focused-plan-01",
-                    decision="approved",
-                    target_revision=1,
-                ),
-            },
-            *done_events(text="reviewer approve"),
-        ]
+        done_events(text="reviewer approve"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                loop_id="review-focused-plan-01",
+                decision="approved",
+                target_revision=1,
+            ),
+            phase=PLANNING,
+            loop_id="review-focused-plan-01",
+        ),
     )
-    provider.script_turn(
-        [
-            *done_events(signal="candidate_plan_ready", text="planning turn"),
-        ]
-    )
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="planning turn"))
 
-    result = PlanningPhaseOrchestrator(store, "run-20260101T000401-000401", provider).run()
+    result = PlanningPhaseOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == "whole_plan_review"
@@ -348,74 +345,67 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
     store.save_run("run-20260101T000401-000401", run, expected_revision)
 
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    loop_id=loop_id,
-                    decision="changes_requested",
-                    findings=[
-                        {
-                            "id": "finding-01",
-                            "importance": "blocking",
-                            "target_refs": ["item-api"],
-                            "issue": "Needs work.",
-                            "required_change": "Improve acceptance.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="reviewer turn"),
-        ]
+        done_events(text="reviewer turn"),
+        mutate_store=respond_review(
+            store,
+            "run-20260101T000401-000401",
+            _review_respond_request(
+                loop_id=loop_id,
+                decision="changes_requested",
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "importance": "blocking",
+                        "target_refs": ["item-api"],
+                        "issue": "Needs work.",
+                        "required_change": "Improve acceptance.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=PLANNING,
+            loop_id=loop_id,
+        ),
     )
     provider.script_session_turn(
         planner_session_id,
-        [
-            {
-                "type": "tool_call",
-                "tool": "plan_apply",
-                "role": "planner",
-                "request": {
-                    "base_revision": 0,
-                    "operations": [
-                        {
-                            "op": "update_item",
-                            "item_id": "item-api",
-                            "patch": {"outcome": "REST API endpoints exist."},
-                        }
-                    ],
-                },
-            },
-            *done_events(text="planner revision"),
-        ],
+        done_events(text="planner revision"),
+        mutate_store=apply_plan(
+            store,
+            "run-20260101T000401-000401",
+            base_revision=0,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-api",
+                    "patch": {"outcome": "REST API endpoints exist."},
+                }
+            ],
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    loop_id=loop_id,
-                    decision="changes_requested",
-                    target_revision=1,
-                    findings=[
-                        {
-                            "id": "finding-02",
-                            "importance": "blocking",
-                            "target_refs": ["item-api"],
-                            "issue": "Still needs work.",
-                            "required_change": "Improve again.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="reviewer turn"),
-        ]
+        done_events(text="reviewer turn"),
+        mutate_store=respond_review(
+            store,
+            "run-20260101T000401-000401",
+            _review_respond_request(
+                loop_id=loop_id,
+                decision="changes_requested",
+                target_revision=1,
+                findings=[
+                    {
+                        "id": "finding-02",
+                        "importance": "blocking",
+                        "target_refs": ["item-api"],
+                        "issue": "Still needs work.",
+                        "required_change": "Improve again.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=PLANNING,
+            loop_id=loop_id,
+        ),
     )
 
     result = FocusedReviewOrchestrator(store, "run-20260101T000401-000401", provider).run(loop_id)
@@ -516,72 +506,67 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     producer_session_id = _create_production_run(store, provider=provider)
+    run_id = "run-20260101T000501-000501"
     provider.script_session_turn(
         producer_session_id,
-        [
+        done_events(text="after review request"),
+        mutate_store=request_focused_review(
+            store,
+            run_id,
             {
-                "type": "tool_call",
-                "tool": "review_request",
-                "role": "producer",
-                "request": {
-                    "type": "focused_output",
-                    "scope": {
-                        "kind": "focused_output",
-                        "item_ids": ["item-first"],
-                    },
+                "type": "focused_output",
+                "scope": {
+                    "kind": "focused_output",
+                    "item_ids": ["item-first"],
                 },
             },
-            *done_events(text="after review request"),
-        ],
+            role="producer",
+            phase=PRODUCTION,
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    loop_id="review-focused-output-01",
-                    decision="approved",
-                ),
-            },
-            *done_events(text="reviewer approve"),
-        ],
+        done_events(text="reviewer approve"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                loop_id="review-focused-output-01",
+                decision="approved",
+            ),
+            phase=PRODUCTION,
+            loop_id="review-focused-output-01",
+        ),
     )
     provider.script_session_turn(
         producer_session_id,
-        [
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=apply_production(
+            store,
+            run_id,
             {
-                "type": "tool_call",
-                "tool": "production_apply",
-                "role": "producer",
-                "request": {
-                    "production_revision": 0,
-                    "plan_items": ["item-first"],
-                    "dispositions": {"item-first": {"disposition": "completed"}},
-                    "outputs": [],
-                    "contributions": [],
-                    "summary": "batch complete",
-                    "empty_output": False,
-                },
+                "production_revision": 0,
+                "plan_items": ["item-first"],
+                "dispositions": {"item-first": {"disposition": "completed"}},
+                "outputs": [],
+                "contributions": [],
+                "summary": "batch complete",
+                "empty_output": False,
             },
-            *done_events(signal="batch_complete", text="production turn"),
-        ],
+            handler="apply",
+        ),
     )
     provider.script_session_turn(
         producer_session_id,
-        [
-            {
-                "type": "tool_call",
-                "tool": "production_submit_completion",
-                "role": "producer",
-                "request": {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-            },
-            *done_events(signal="batch_complete", text="production turn"),
-        ],
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=apply_production(
+            store,
+            run_id,
+            {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+            handler="submit_completion",
+        ),
     )
 
-    result = ProductionPhaseOrchestrator(store, "run-20260101T000501-000501", provider).run()
+    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == "whole_output_review"
@@ -621,24 +606,22 @@ def test_blocking_focused_output_findings_prevent_production_apply(
 
     provider.script_session_turn(
         producer_session_id,
-        [
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=apply_production(
+            store,
+            "run-20260101T000501-000501",
             {
-                "type": "tool_call",
-                "tool": "production_apply",
-                "role": "producer",
-                "request": {
-                    "production_revision": 0,
-                    "plan_items": ["item-first"],
-                    "dispositions": {"item-first": {"disposition": "completed"}},
-                    "outputs": [],
-                    "contributions": [],
-                    "summary": "batch complete",
-                    "empty_output": False,
-                },
+                "production_revision": 0,
+                "plan_items": ["item-first"],
+                "dispositions": {"item-first": {"disposition": "completed"}},
+                "outputs": [],
+                "contributions": [],
+                "summary": "batch complete",
+                "empty_output": False,
             },
-            *done_events(signal="batch_complete", text="production turn"),
-        ],
+            handler="apply",
+        ),
     )
 
-    with pytest.raises(ProviderRunError, match="focused output findings"):
+    with pytest.raises(RequestError, match="focused output findings"):
         ProductionPhaseOrchestrator(store, "run-20260101T000501-000501", provider).run()

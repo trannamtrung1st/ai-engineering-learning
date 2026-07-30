@@ -7,12 +7,13 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.agent_tool import ProductionAgentService, RequestError
+from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import ProductionPhaseOrchestrator, ProviderRunError
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, grant_capability, whole_plan_approval_record
+from tests.helpers import apply_plan, apply_production, create_run_kwargs, done_events, grant_capability, whole_plan_approval_record
 
 
 def _batch_apply_request(
@@ -118,43 +119,43 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
     _create_run_at_plan_validated(store)
     provider = StubProvider()
 
+    run_id = "run-20260101T000201-000201"
+    provider.script_turn(done_events(text="producer session start"))
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "production_apply",
-                "role": "producer",
-                "request": _batch_apply_request(
-                    plan_items=["item-first"],
-                    dispositions={"item-first": {"disposition": "completed"}},
-                ),
-            },
-            *done_events(signal="batch_complete", text="production turn"),
-        ]
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=apply_production(
+            store,
+            run_id,
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "completed"}},
+            ),
+            handler="apply",
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "production_apply",
-                "role": "producer",
-                "request": _batch_apply_request(
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=lambda: (
+            apply_production(
+                store,
+                run_id,
+                _batch_apply_request(
                     plan_items=["item-second"],
                     dispositions={"item-second": {"disposition": "completed"}},
                     production_revision=1,
                 ),
-            },
-            {
-                "type": "tool_call",
-                "tool": "production_submit_completion",
-                "role": "producer",
-                "request": {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-            },
-            *done_events(signal="batch_complete", text="production turn"),
-        ]
+                handler="apply",
+            )(),
+            apply_production(
+                store,
+                run_id,
+                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                handler="submit_completion",
+            )(),
+        ),
     )
 
-    result = ProductionPhaseOrchestrator(store, "run-20260101T000201-000201", provider).run()
+    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == WHOLE_OUTPUT_REVIEW
@@ -297,22 +298,22 @@ def test_max_batches_exhaustion_yields_blocked_not_accepted(tmp_path: Path) -> N
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store, limits={"max_batches": 1})
     provider = StubProvider()
+    run_id = "run-20260101T000201-000201"
+    provider.script_turn(done_events(text="producer session start"))
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "production_apply",
-                "role": "producer",
-                "request": _batch_apply_request(
-                    plan_items=["item-first"],
-                    dispositions={"item-first": {"disposition": "completed"}},
-                ),
-            },
-            *done_events(signal="batch_complete", text="production turn"),
-        ]
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=apply_production(
+            store,
+            run_id,
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "completed"}},
+            ),
+            handler="apply",
+        ),
     )
 
-    result = ProductionPhaseOrchestrator(store, "run-20260101T000201-000201", provider).run()
+    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
 
     assert result.ok is False
     assert result.outcome == "blocked"
@@ -329,31 +330,30 @@ def test_plan_apply_during_production_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)
     provider = StubProvider()
+    run_id = "run-20260101T000201-000201"
+    provider.script_turn(done_events(text="producer session start"))
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "plan_apply",
-                "role": "producer",
-                "request": {
-                    "base_revision": 0,
-                    "operations": [
-                        {
-                            "op": "add_item",
-                            "temp_id": "item-x",
-                            "parent_id": "item-root",
-                            "placement": {"last_child": True},
-                            "item": {"title": "X"},
-                        }
-                    ],
-                },
-            },
-            *done_events(signal="batch_complete", text="production turn"),
-        ]
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "add_item",
+                    "temp_id": "item-x",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {"title": "X"},
+                }
+            ],
+            role="producer",
+            phase=PRODUCTION,
+        ),
     )
 
-    with pytest.raises(ProviderRunError, match="plan mutations are not allowed"):
-        ProductionPhaseOrchestrator(store, "run-20260101T000201-000201", provider).run()
+    with pytest.raises(CapabilityDeniedError, match="plan_apply"):
+        ProductionPhaseOrchestrator(store, run_id, provider).run()
 
 
 def test_production_apply_rejects_plan_validated_phase(tmp_path: Path) -> None:

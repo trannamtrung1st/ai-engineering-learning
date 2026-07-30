@@ -6,11 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
-from top_down_planning.agent_tool.errors import AgentToolError
 from top_down_planning.agent_tool.views import build_plan_review_snapshot
-from top_down_planning.agent_tool.plan_service import PlanAgentService
-from top_down_planning.agent_tool.production_service import ProductionAgentService
-from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.production import build_production_review_snapshot
 from top_down_planning.domain.reviews import ReviewLoop
@@ -27,6 +23,10 @@ from top_down_planning.orchestrator.capability import (
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
+from top_down_planning.orchestrator.provider_turns import (
+    consume_provider_turn,
+    review_decision_from_store,
+)
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
@@ -34,13 +34,7 @@ from core_tools.provider import Provider
 _FOCUSED_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_plan_review"]
 _FOCUSED_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_output_review"]
 
-_PRODUCTION_TOOL_HANDLERS: dict[str, str] = {
-    "production_apply": "apply",
-    "production_request_amendment": "request_amendment",
-    "production_submit_completion": "submit_completion",
-    "production_report_blocked": "report_blocked",
-}
-
+_NO_COMPLETION_SIGNALS = frozenset[str]()
 
 @dataclass(frozen=True)
 class FocusedReviewResult:
@@ -64,9 +58,6 @@ class FocusedReviewOrchestrator:
         self._store = store
         self._run_id = run_id
         self._provider = provider
-        self._plan_service = PlanAgentService(store, run_id)
-        self._production_service = ProductionAgentService(store, run_id)
-        self._review_service = ReviewAgentService(store, run_id)
         self._capability_token: str | None = None
 
     def run(self, loop_id: str) -> FocusedReviewResult:
@@ -239,39 +230,12 @@ class FocusedReviewOrchestrator:
         return session_id
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
-        decision: str | None = None
-        for event in self._provider.stream_events(session_id):
-            event_type = str(event.get("type") or "")
-            if event_type == "error":
-                text = event.get("text") or "provider error"
-                raise ProviderRunError(str(text))
-            if event_type == "tool_call":
-                self._handle_review_tool_call(event, loop_id)
-                loop = self._reload_loop(loop_id)
-                if loop.status != "pending":
-                    decision = loop.status
-                continue
-            if event_type == "done":
-                if event.get("is_error"):
-                    text = event.get("text") or "reviewer turn failed"
-                    raise ProviderRunError(str(text))
-        return decision
-
-    def _handle_review_tool_call(self, event: dict[str, Any], loop_id: str) -> None:
-        tool = str(event.get("tool") or "")
-        if tool != "review_respond":
-            return
-
-        request = event.get("request")
-        if not isinstance(request, dict):
-            raise ProviderRunError("review_respond tool_call requires a request object")
-
-        request = dict(request)
-        request.setdefault("loop_id", loop_id)
-        self._review_service.respond(
-            request,
-            capability_token=self._capability_token,
+        consume_provider_turn(
+            self._provider,
+            session_id,
+            allowed_signals=_NO_COMPLETION_SIGNALS,
         )
+        return review_decision_from_store(self._store, self._run_id, loop_id)
 
     def _resume_primary_with_findings(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
@@ -314,63 +278,12 @@ class FocusedReviewOrchestrator:
             self._sync_output_digest()
 
     def _consume_primary_turn(self, session_id: str, review_type: str) -> None:
-        for event in self._provider.stream_events(session_id):
-            event_type = str(event.get("type") or "")
-            if event_type == "error":
-                text = event.get("text") or "provider error"
-                raise ProviderRunError(str(text))
-            if event_type == "tool_call":
-                self._handle_primary_tool_call(event, review_type)
-                continue
-            if event_type == "done":
-                if event.get("is_error"):
-                    text = event.get("text") or "primary revision turn failed"
-                    raise ProviderRunError(str(text))
-                return
-
-    def _handle_primary_tool_call(self, event: dict[str, Any], review_type: str) -> None:
-        tool = str(event.get("tool") or "")
-        if review_type == "focused_plan":
-            if tool == "plan_apply":
-                request = event.get("request")
-                if not isinstance(request, dict):
-                    raise ProviderRunError("plan_apply tool_call requires a request object")
-                self._plan_service.apply(
-                    request,
-                    capability_token=self._capability_token,
-                )
-                return
-            if tool == "review_request":
-                raise ProviderRunError(
-                    "review_request is not allowed while addressing focused review findings; "
-                    "complete the current focused review revision first"
-                )
-            return
-
-        if tool == "plan_apply":
-            raise ProviderRunError(
-                "plan mutations are not allowed during focused output review; "
-                "use `tdp agent production request-amendment` when a material plan "
-                "defect is found"
-            )
-
-        handler_name = _PRODUCTION_TOOL_HANDLERS.get(tool)
-        if handler_name is not None:
-            request = event.get("request")
-            if not isinstance(request, dict):
-                raise ProviderRunError(f"{tool} tool_call requires a request object")
-            handler = getattr(self._production_service, handler_name)
-            try:
-                handler(request, capability_token=self._capability_token)
-            except AgentToolError as exc:
-                raise ProviderRunError(str(exc)) from exc
-            return
-
-        if tool == "review_request":
-            raise ProviderRunError(
-                "review_request is not allowed while addressing focused review findings; "
-                "complete the current focused review revision first"
-            )
+        del review_type
+        consume_provider_turn(
+            self._provider,
+            session_id,
+            allowed_signals=_NO_COMPLETION_SIGNALS,
+        )
 
     def _sync_output_digest(self) -> None:
         run = self._store.load_run(self._run_id)

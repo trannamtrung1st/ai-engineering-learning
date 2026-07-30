@@ -13,7 +13,7 @@ from top_down_planning.orchestrator import PlanningPhaseOrchestrator, ProviderRu
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, grant_capability, create_run_kwargs, minimal_resolved_config
+from tests.helpers import apply_plan, done_events, grant_capability, create_run_kwargs, minimal_resolved_config
 
 
 def _create_run(
@@ -67,43 +67,40 @@ def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) 
     _create_run(store)
     provider = StubProvider()
 
+    run_id = "run-20260101T000101-000101"
+    provider.script_turn(done_events(text="planner session start"))
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "plan_apply",
-                "role": "planner",
-                "request": {
-                    "base_revision": 0,
-                    "operations": [
-                        {
-                            "op": "add_item",
-                            "temp_id": "item-api",
-                            "parent_id": "item-root",
-                            "placement": {"last_child": True},
-                            "item": {"title": "API", "outcome": "API exists."},
-                        },
-                        {
-                            "op": "add_item",
-                            "temp_id": "item-ui",
-                            "parent_id": "item-root",
-                            "placement": {"last_child": True},
-                            "item": {"title": "UI", "outcome": "UI exists."},
-                        },
-                    ],
+        done_events(signal="candidate_plan_ready", text="planning turn"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "add_item",
+                    "temp_id": "item-api",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {"title": "API", "outcome": "API exists."},
                 },
-            },
-            *done_events(signal="candidate_plan_ready", text="planning turn"),
-        ]
+                {
+                    "op": "add_item",
+                    "temp_id": "item-ui",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {"title": "UI", "outcome": "UI exists."},
+                },
+            ],
+        ),
     )
 
-    result = PlanningPhaseOrchestrator(store, "run-20260101T000101-000101", provider).run()
+    result = PlanningPhaseOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == WHOLE_PLAN_REVIEW
     assert result.outcome is None
     assert result.session_id is not None
-    assert result.agent_turns == 1
+    assert result.agent_turns == 2
     assert result.items_added == 2
 
     plan = store.load_plan_model("run-20260101T000101-000101")

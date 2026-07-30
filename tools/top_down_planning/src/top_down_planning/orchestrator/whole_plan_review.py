@@ -7,8 +7,6 @@ from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.views import build_plan_review_snapshot
-from top_down_planning.agent_tool.plan_service import PlanAgentService
-from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import ReviewLoop
@@ -30,12 +28,17 @@ from top_down_planning.orchestrator.capability import (
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.provider_turns import (
+    consume_provider_turn,
+    review_decision_from_store,
+)
 from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
 _WHOLE_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["whole_plan_review"]
+_NO_COMPLETION_SIGNALS = frozenset[str]()
 
 
 @dataclass(frozen=True)
@@ -62,8 +65,6 @@ class WholePlanReviewOrchestrator:
         self._store = store
         self._run_id = run_id
         self._provider = provider
-        self._plan_service = PlanAgentService(store, run_id)
-        self._review_service = ReviewAgentService(store, run_id)
         self._capability_token: str | None = None
 
     def run(self) -> WholePlanReviewResult:
@@ -317,39 +318,12 @@ class WholePlanReviewOrchestrator:
         return session_id
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
-        decision: str | None = None
-        for event in self._provider.stream_events(session_id):
-            event_type = str(event.get("type") or "")
-            if event_type == "error":
-                text = event.get("text") or "provider error"
-                raise ProviderRunError(str(text))
-            if event_type == "tool_call":
-                self._handle_review_tool_call(event, loop_id)
-                loop = self._reload_loop(loop_id)
-                if loop.status != "pending":
-                    decision = loop.status
-                continue
-            if event_type == "done":
-                if event.get("is_error"):
-                    text = event.get("text") or "reviewer turn failed"
-                    raise ProviderRunError(str(text))
-        return decision
-
-    def _handle_review_tool_call(self, event: dict[str, Any], loop_id: str) -> None:
-        tool = str(event.get("tool") or "")
-        if tool != "review_respond":
-            return
-
-        request = event.get("request")
-        if not isinstance(request, dict):
-            raise ProviderRunError("review_respond tool_call requires a request object")
-
-        request = dict(request)
-        request.setdefault("loop_id", loop_id)
-        self._review_service.respond(
-            request,
-            capability_token=self._capability_token,
+        consume_provider_turn(
+            self._provider,
+            session_id,
+            allowed_signals=_NO_COMPLETION_SIGNALS,
         )
+        return review_decision_from_store(self._store, self._run_id, loop_id)
 
     def _resume_planner_with_findings(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
@@ -382,30 +356,11 @@ class WholePlanReviewOrchestrator:
         self._consume_planner_turn(session_id)
 
     def _consume_planner_turn(self, session_id: str) -> None:
-        for event in self._provider.stream_events(session_id):
-            event_type = str(event.get("type") or "")
-            if event_type == "error":
-                text = event.get("text") or "provider error"
-                raise ProviderRunError(str(text))
-            if event_type == "tool_call":
-                self._handle_plan_tool_call(event)
-                continue
-            if event_type == "done":
-                if event.get("is_error"):
-                    text = event.get("text") or "planner revision turn failed"
-                    raise ProviderRunError(str(text))
-                return
-
-    def _handle_plan_tool_call(self, event: dict[str, Any]) -> None:
-        tool = str(event.get("tool") or "")
-        if tool != "plan_apply":
-            return
-
-        request = event.get("request")
-        if not isinstance(request, dict):
-            raise ProviderRunError("plan_apply tool_call requires a request object")
-
-        self._plan_service.apply(request, capability_token=self._capability_token)
+        consume_provider_turn(
+            self._provider,
+            session_id,
+            allowed_signals=_NO_COMPLETION_SIGNALS,
+        )
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])

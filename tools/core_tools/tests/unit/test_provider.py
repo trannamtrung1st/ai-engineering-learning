@@ -323,6 +323,21 @@ def test_normalize_cursor_event_passes_through_done() -> None:
     assert normalized["signal"] == "candidate_plan_ready"
 
 
+def test_normalize_cursor_event_passes_through_result_signal() -> None:
+    normalized = normalize_cursor_event(
+        {
+            "type": "result",
+            "subtype": "success",
+            "result": "candidate_plan_ready",
+            "is_error": False,
+            "signal": "candidate_plan_ready",
+        }
+    )
+    assert normalized is not None
+    assert normalized["type"] == "done"
+    assert normalized["signal"] == "candidate_plan_ready"
+
+
 def test_format_tool_call_summary_formats_cursor_grep() -> None:
     normalized = normalize_cursor_event(
         {

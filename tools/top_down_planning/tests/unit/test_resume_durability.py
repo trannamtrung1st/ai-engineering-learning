@@ -35,11 +35,13 @@ from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
 from tests.helpers import (
+    apply_plan,
+    apply_production,
     create_run_kwargs,
     done_events,
     grant_capability,
     minimal_resolved_config,
-    plan_apply_turn,
+    respond_review,
     whole_plan_approval_record,
 )
 
@@ -269,8 +271,13 @@ def test_interrupt_planning_resume_keeps_same_session(tmp_path: Path) -> None:
     provider = StubProvider()
     session_id = _create_planning_run(store, provider)
 
+    run_id = "run-20260101T001101-001101"
     provider.script_turn(
-        plan_apply_turn(
+        done_events(signal="candidate_plan_ready", text="planning turn"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
             operations=[
                 {
                     "op": "add_item",
@@ -280,10 +287,10 @@ def test_interrupt_planning_resume_keeps_same_session(tmp_path: Path) -> None:
                     "item": {"title": "API", "outcome": "API exists."},
                 }
             ],
-        )
+        ),
     )
 
-    result = PlanningPhaseOrchestrator(store, "run-20260101T001101-001101", provider).run()
+    result = PlanningPhaseOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == WHOLE_PLAN_REVIEW
@@ -320,13 +327,14 @@ def test_interrupt_production_resume_keeps_same_session(tmp_path: Path) -> None:
     assert run["sessions"]["primary_producer_session_id"] == session_id
     validate_resume_preconditions(store, "run-20260101T001201-001201")
 
+    run_id = "run-20260101T001201-001201"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "production_apply",
-                "role": "producer",
-                "request": {
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=lambda: (
+            apply_production(
+                store,
+                run_id,
+                {
                     "production_revision": 1,
                     "plan_items": ["item-second"],
                     "dispositions": {"item-second": {"disposition": "completed"}},
@@ -334,18 +342,18 @@ def test_interrupt_production_resume_keeps_same_session(tmp_path: Path) -> None:
                     "contributions": [],
                     "summary": "batch complete",
                 },
-            },
-            {
-                "type": "tool_call",
-                "tool": "production_submit_completion",
-                "role": "producer",
-                "request": {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-            },
-            *done_events(signal="batch_complete", text="production turn"),
-        ]
+                handler="apply",
+            )(),
+            apply_production(
+                store,
+                run_id,
+                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                handler="submit_completion",
+            )(),
+        ),
     )
 
-    result = ProductionPhaseOrchestrator(store, "run-20260101T001201-001201", provider).run()
+    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == WHOLE_OUTPUT_REVIEW
@@ -367,24 +375,24 @@ def test_interrupt_whole_plan_review_resume_keeps_loop_and_reviewer_session(
     run["phase"] = WHOLE_PLAN_REVIEW
     store.save_run("run-20260101T001101-001101", run, expected_revision)
 
+    run_id = "run-20260101T001101-001101"
     provider.script_turn(
-        [
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
             {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": {
-                    "loop_id": "review-whole-plan-01",
-                    "target_revision": 0,
-                    "decision": "approved",
-                    "findings": [],
-                },
+                "loop_id": "review-whole-plan-01",
+                "target_revision": 0,
+                "decision": "approved",
+                "findings": [],
             },
-            *done_events(text="turn complete"),
-        ]
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+        ),
     )
 
-    result = WholePlanReviewOrchestrator(store, "run-20260101T001101-001101", provider).run()
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == PLAN_VALIDATED

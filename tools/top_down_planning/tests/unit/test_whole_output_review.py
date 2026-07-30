@@ -14,7 +14,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, grant_capability, whole_plan_approval_record
+from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, respond_review, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -154,19 +154,19 @@ def test_whole_output_review_approve_reaches_accepted(tmp_path: Path) -> None:
     provider = StubProvider()
     _create_run_at_whole_output_review(store, provider=provider)
 
+    run_id = "run-20260101T000801-000801"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(decision="approved"),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(decision="approved"),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id="review-whole-output-01",
+        ),
     )
 
-    result = WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == OUTPUT_VALIDATED
@@ -188,36 +188,36 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
     artifacts_dir.mkdir()
     (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
 
+    run_id = "run-20260101T000801-000801"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="changes_requested",
-                    findings=[
-                        {
-                            "id": "finding-01",
-                            "importance": "blocking",
-                            "target_refs": ["item-leaf"],
-                            "issue": "Output evidence is missing.",
-                            "required_change": "Add artifact reference.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="changes_requested",
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "importance": "blocking",
+                        "target_refs": ["item-leaf"],
+                        "issue": "Output evidence is missing.",
+                        "required_change": "Add artifact reference.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id="review-whole-output-01",
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "production_apply",
-                "role": "producer",
-                "request": {
+        done_events(text="turn complete"),
+        mutate_store=lambda: (
+            apply_production(
+                store,
+                run_id,
+                {
                     "production_revision": 2,
                     "evidence_revision": True,
                     "plan_items": ["item-leaf"],
@@ -243,35 +243,36 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
                     ],
                     "summary": "Addressed reviewer finding.",
                 },
-            },
-            {
-                "type": "tool_call",
-                "tool": "production_submit_completion",
-                "role": "producer",
-                "request": {
+                handler="apply",
+                phase=WHOLE_OUTPUT_REVIEW,
+            )(),
+            apply_production(
+                store,
+                run_id,
+                {
                     "goal_assessment": "Output goal is fully met after revision.",
                     "goal_met": True,
                 },
-            },
-            *done_events(text="turn complete"),
-        ]
+                handler="submit_completion",
+                phase=WHOLE_OUTPUT_REVIEW,
+            )(),
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="approved",
-                    target_revision=2,
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="approved",
+                target_revision=2,
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id="review-whole-output-01",
+        ),
     )
 
-    result = WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.outcome == "accepted"
@@ -287,21 +288,19 @@ def test_missing_goal_assessment_blocks_acceptance(tmp_path: Path) -> None:
         goal_assessment="",
     )
 
+    run_id = "run-20260101T000801-000801"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(decision="approved"),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(decision="approved"),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id="review-whole-output-01",
+        ),
     )
 
-    result = WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()
-
-    assert result.ok is False
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
     assert result.outcome == "blocked"
     assert result.reason is not None
     assert "validation" in result.reason
@@ -312,55 +311,54 @@ def test_revision_cycle_limit_yields_rejected_not_accepted(tmp_path: Path) -> No
     provider = StubProvider()
     _create_run_at_whole_output_review(store, limits={"max_revision_cycles": 1}, provider=provider)
 
+    run_id = "run-20260101T000801-000801"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="changes_requested",
-                    findings=[
-                        {
-                            "id": "finding-01",
-                            "importance": "blocking",
-                            "target_refs": ["item-leaf"],
-                            "issue": "Needs work.",
-                            "required_change": "Improve output.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="changes_requested",
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "importance": "blocking",
+                        "target_refs": ["item-leaf"],
+                        "issue": "Needs work.",
+                        "required_change": "Improve output.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id="review-whole-output-01",
+        ),
     )
-    provider.script_turn([*done_events(text="turn complete")])
+    provider.script_turn(done_events(text="turn complete"))
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="changes_requested",
-                    findings=[
-                        {
-                            "id": "finding-02",
-                            "importance": "blocking",
-                            "target_refs": ["item-leaf"],
-                            "issue": "Still needs work.",
-                            "required_change": "Improve again.",
-                            "status": "unresolved",
-                        }
-                    ],
-                ),
-            },
-            *done_events(text="turn complete"),
-        ]
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="changes_requested",
+                findings=[
+                    {
+                        "id": "finding-02",
+                        "importance": "blocking",
+                        "target_refs": ["item-leaf"],
+                        "issue": "Still needs work.",
+                        "required_change": "Improve again.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id="review-whole-output-01",
+        ),
     )
 
-    result = WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is False
     assert result.outcome == "rejected"

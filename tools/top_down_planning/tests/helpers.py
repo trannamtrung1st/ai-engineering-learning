@@ -236,6 +236,137 @@ def done_events(*, signal: str | None = None, text: str = "ok") -> list[dict]:
     return events
 
 
+def apply_plan(
+    store: Any,
+    run_id: str,
+    *,
+    base_revision: int,
+    operations: list[dict],
+    role: str = "planner",
+    phase: str | None = None,
+) -> Any:
+    from top_down_planning.agent_tool import PlanAgentService
+
+    resolved_phase = phase or (PLANNING if role == "planner" else PRODUCTION)
+
+    def mutate() -> None:
+        token = grant_capability(store, run_id, role=role, phase=resolved_phase)
+        PlanAgentService(store, run_id).apply(
+            {"base_revision": base_revision, "operations": operations},
+            capability_token=token,
+        )
+
+    return mutate
+
+
+def request_focused_review(
+    store: Any,
+    run_id: str,
+    request: dict[str, Any],
+    *,
+    role: str = "planner",
+    phase: str = PLANNING,
+) -> Any:
+    from top_down_planning.agent_tool import ReviewAgentService
+
+    def mutate() -> None:
+        token = grant_capability(store, run_id, role=role, phase=phase)
+        ReviewAgentService(store, run_id).request(request, capability_token=token)
+
+    return mutate
+
+
+def respond_review(
+    store: Any,
+    run_id: str,
+    request: dict[str, Any],
+    *,
+    role: str = "reviewer",
+    phase: str = PLANNING,
+    loop_id: str | None = None,
+    session_id: str | None = None,
+) -> Any:
+    from top_down_planning.agent_tool import ReviewAgentService
+
+    resolved_loop_id = loop_id or str(request.get("loop_id") or "")
+
+    def mutate() -> None:
+        resolved_session_id = session_id
+        if resolved_session_id is None and resolved_loop_id:
+            try:
+                loop = store.load_review(run_id, resolved_loop_id)
+                loop_session = loop.get("reviewer_session_id")
+                if isinstance(loop_session, str) and loop_session:
+                    resolved_session_id = loop_session
+            except Exception:
+                pass
+        token = grant_capability(
+            store,
+            run_id,
+            role=role,
+            phase=phase,
+            loop_id=resolved_loop_id,
+            session_id=resolved_session_id,
+        )
+        ReviewAgentService(store, run_id).respond(request, capability_token=token)
+
+    return mutate
+
+
+def apply_production(
+    store: Any,
+    run_id: str,
+    request: dict[str, Any],
+    *,
+    handler: str,
+    role: str = "producer",
+    phase: str = PRODUCTION,
+) -> Any:
+    from top_down_planning.agent_tool import ProductionAgentService
+
+    def mutate() -> None:
+        token = grant_capability(store, run_id, role=role, phase=phase)
+        ProductionAgentService(store, run_id).__getattribute__(handler)(
+            request,
+            capability_token=token,
+        )
+
+    return mutate
+
+
+def only_run_id(store: Any) -> str:
+    """Return the sole run directory id under a test store root."""
+
+    run_dirs = sorted(
+        path.name
+        for path in store.root.iterdir()
+        if path.is_dir() and path.name.startswith("run-")
+    )
+    if len(run_dirs) != 1:
+        raise AssertionError(f"expected exactly one run in store, found {run_dirs}")
+    return run_dirs[0]
+
+
+def request_amendment(
+    store: Any,
+    run_id: str,
+    request: dict[str, Any],
+    *,
+    role: str = "producer",
+    phase: str = PRODUCTION,
+) -> Any:
+    from top_down_planning.agent_tool import ProductionAgentService
+
+    def mutate() -> None:
+        token = grant_capability(store, run_id, role=role, phase=phase)
+        ProductionAgentService(store, run_id).request_amendment(
+            request,
+            capability_token=token,
+        )
+
+    return mutate
+
+
 def plan_apply_turn(
     *,
     base_revision: int = 0,
@@ -243,14 +374,8 @@ def plan_apply_turn(
     signal: str = "candidate_plan_ready",
     assistant_text: str = "planning turn",
 ) -> list[dict]:
-    return [
-        {
-            "type": "tool_call",
-            "tool": "plan_apply",
-            "request": {
-                "base_revision": base_revision,
-                "operations": operations,
-            },
-        },
-        *done_events(signal=signal, text=assistant_text),
-    ]
+    """Return provider events for a planning turn that signals completion only."""
+
+    del base_revision, operations
+    return done_events(signal=signal, text=assistant_text)
+

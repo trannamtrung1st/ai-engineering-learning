@@ -32,7 +32,7 @@ tests — not as an interactive `tdp run` quickstart.
 | --- | --- | --- |
 | Core domain | `domain/` | Pure models and rules: plan tree, dependencies, validation, production state, outcomes. No CLI, provider, or persistence concerns. |
 | Orchestrator | `orchestrator/` | Lifecycle transitions: plan → review → validate → produce → amend → review output → resolve outcome. |
-| Agent tool | `agent_tool/` | Structured agent protocol: atomic domain operations with schema validation and revision checks. |
+| Agent tool | `agent_tool/` | `tdp agent` CLI service layer: atomic domain operations with schema validation and revision checks. |
 | Shared infra | [`core_tools`](../core_tools) | Provider adapters; config merge/overrides, workspace paths, resource/skill loading, allowlist validation; atomic writes and digests; revision helpers; CLI emit/request/runs-dir resolution; minimal JSON Schema validation. |
 | Persistence | `persistence/` | `RunStore` interface and `FileRunStore` for canonical snapshots, events, and session references. |
 | CLI | `cli/` | User-facing (`tdp run`, `tdp resume`, …) and agent-facing (`tdp agent …`) command wiring. |
@@ -87,7 +87,7 @@ Observability can be set in YAML under `observability` (same file as orchestrati
 
 Provider thinking and response text is normalized from Cursor `stream-json` (`text` field or `message.content`), deduplicated when cumulative, and printed incrementally as new characters arrive. Empty thinking chunks are dropped. Explicit `\n` in agent text breaks lines within a thinking/response block; multiple sentences without newlines stay on one line until another category interrupts.
 
-Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools are summarized from the nested `tool_call` payload; structured Top Down Planning agent tools summarize from `tool` and `request` (for example `plan_apply @r0 3 ops`). `tool_call` events with `subtype: started` or `completed` reach the console bridge; `tool_result` events and duplicate lifecycle events for the same `call_id` are dropped.
+Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools (including shell `tdp agent …` invocations) are summarized from the nested `tool_call` payload. `tool_call` events with `subtype: started` or `completed` reach the console bridge; `tool_result` events and duplicate lifecycle events for the same `call_id` are dropped.
 
 Console output prints `[category]` once per discrete event block (optional `[timestamp]` when `show_timestamps` is enabled). `thinking` and `response` stream incrementally with one prefix per block; explicit `\n` in agent text breaks lines within the block.
 
@@ -208,6 +208,8 @@ Resolution precedence:
 `tdp run` creates the store root when needed. Read-only commands (`status`, `inspect`, `validate`, `tdp agent …`) do not create a missing store.
 
 When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR` and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses. Mutating `tdp agent …` commands require the capability token; authorization is bound to run phase, role, provider session, and (for reviewers) review loop — not a self-declared `--role` flag. Capability records store only a hash of the secret; tokens are revoked when turns, loops, or phases end.
+
+Agents mutate run state only through `tdp agent …` shell commands (which persist to the run store). The orchestrator does not intercept provider tool events for plan/production/review mutations. After each provider turn it observes store changes (pending focused reviews, applied batches, review decisions) and resolves phase completion from explicit signal tokens (`candidate_plan_ready`, `batch_complete`, `amendment_revision_ready`, etc.) in assistant text or `done.signal` metadata.
 
 `tdp run` supports `--until plan|validated|completed` (default `plan`). `tdp resume` advances one phase step by default, or loops to `--until` when set. Both use the central `RunEngine` continuation loop.
 

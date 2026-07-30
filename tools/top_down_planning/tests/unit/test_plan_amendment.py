@@ -7,12 +7,13 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.agent_tool import ProductionAgentService, RequestError
+from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import PlanAmendmentOrchestrator, ProductionPhaseOrchestrator, ProviderRunError
-from top_down_planning.orchestrator.phases import PRODUCTION
+from top_down_planning.orchestrator.phases import PLAN_AMENDMENT, PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
+from tests.helpers import apply_plan, create_run_kwargs, done_events, grant_capability, respond_review, whole_plan_approval_record
 
 
 def _batch_apply_request(
@@ -165,47 +166,43 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
         capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
     )
 
+    run_id = "run-20260101T001901-001901"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "plan_apply",
-                "role": "planner",
-                "request": {
-                    "base_revision": 0,
-                    "operations": [
-                        {
-                            "op": "add_item",
-                            "temp_id": "item-third",
-                            "parent_id": "item-root",
-                            "placement": {"last_child": True},
-                            "item": {
-                                "title": "Third",
-                                "outcome": "Third outcome.",
-                            },
-                        }
-                    ],
-                },
-            },
-            *done_events(signal="amendment_revision_ready", text="amendment turn"),
-        ]
+        done_events(signal="amendment_revision_ready", text="amendment turn"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "add_item",
+                    "temp_id": "item-third",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {
+                        "title": "Third",
+                        "outcome": "Third outcome.",
+                    },
+                }
+            ],
+            phase=PLAN_AMENDMENT,
+        ),
     )
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="approved",
-                    target_revision=1,
-                ),
-            },
-            *done_events(text="review turn"),
-        ]
+        done_events(text="review turn"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="approved",
+                target_revision=1,
+            ),
+            phase="whole_plan_review",
+            loop_id="review-whole-plan-02",
+        ),
     )
 
-    amendment_result = PlanAmendmentOrchestrator(store, "run-20260101T001901-001901", provider).run()
+    amendment_result = PlanAmendmentOrchestrator(store, run_id, provider).run()
 
     assert amendment_result.ok is True
     assert amendment_result.planner_session_id == planner_session_id
@@ -316,23 +313,21 @@ def test_plan_apply_during_production_still_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_in_production_with_sessions(store, provider)
+    run_id = "run-20260101T001901-001901"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "plan_apply",
-                "role": "producer",
-                "request": {
-                    "base_revision": 0,
-                    "operations": [],
-                },
-            },
-            *done_events(signal="batch_complete", text="production turn"),
-        ]
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[],
+            role="producer",
+            phase=PRODUCTION,
+        ),
     )
 
-    with pytest.raises(ProviderRunError, match="plan mutations are not allowed"):
-        ProductionPhaseOrchestrator(store, "run-20260101T001901-001901", provider).run()
+    with pytest.raises(CapabilityDeniedError, match="plan_apply"):
+        ProductionPhaseOrchestrator(store, run_id, provider).run()
 
 
 def test_submit_completion_rejected_while_amendment_pending(tmp_path: Path) -> None:
@@ -387,22 +382,22 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
     production["revision"] = int(production["revision"]) + 1
     store.save_production("run-20260101T001901-001901", production, int(production["revision"]) - 1)
 
+    run_id = "run-20260101T001901-001901"
     provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "reviewer",
-                "request": _review_respond_request(
-                    decision="approved",
-                    target_revision=0,
-                ),
-            },
-            *done_events(text="review turn"),
-        ]
+        done_events(text="review turn"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            _review_respond_request(
+                decision="approved",
+                target_revision=0,
+            ),
+            phase="whole_plan_review",
+            loop_id="review-whole-plan-02",
+        ),
     )
 
-    result = PlanAmendmentOrchestrator(store, "run-20260101T001901-001901", provider).run()
+    result = PlanAmendmentOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == PRODUCTION

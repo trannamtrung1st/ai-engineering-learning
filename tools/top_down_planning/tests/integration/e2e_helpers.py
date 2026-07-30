@@ -13,6 +13,7 @@ from top_down_planning.domain.outcome import (
     evaluate_acceptance_invariant,
     load_approvals_for_acceptance,
 )
+from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW, WHOLE_OUTPUT_REVIEW
 from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import (
@@ -21,7 +22,15 @@ from top_down_planning.persistence.digests import (
     compute_plan_digest,
 )
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, plan_apply_turn, write_config
+from tests.helpers import (
+    apply_plan,
+    apply_production,
+    done_events,
+    only_run_id,
+    request_amendment,
+    respond_review,
+    write_config,
+)
 
 ScriptBuilder = Callable[[str], list[dict[str, Any]]]
 
@@ -88,94 +97,104 @@ limits:
     return write_config(path, body)
 
 
-def planning_single_leaf_script() -> list[dict[str, Any]]:
+def planning_single_leaf_script(store: FileRunStore) -> tuple[list[dict[str, Any]], Callable[[], None]]:
     """Add one actionable leaf and signal candidate plan ready."""
 
-    return plan_apply_turn(
-        operations=[
-            {
-                "op": "add_item",
-                "temp_id": "item-task",
-                "parent_id": "item-root",
-                "placement": {"last_child": True},
-                "item": {
-                    "title": "Deliver feature",
-                    "outcome": "Feature is delivered and verifiable.",
-                    "acceptance": ["Feature behavior is testable."],
-                },
-            }
-        ],
-    )
+    operations = [
+        {
+            "op": "add_item",
+            "temp_id": "item-task",
+            "parent_id": "item-root",
+            "placement": {"last_child": True},
+            "item": {
+                "title": "Deliver feature",
+                "outcome": "Feature is delivered and verifiable.",
+                "acceptance": ["Feature behavior is testable."],
+            },
+        }
+    ]
+
+    def mutate() -> None:
+        run_id = only_run_id(store)
+        apply_plan(store, run_id, base_revision=0, operations=operations)()
+
+    return done_events(signal="candidate_plan_ready", text="planning turn"), mutate
 
 
-def planning_two_item_script() -> list[dict[str, Any]]:
+def planning_two_item_script(store: FileRunStore) -> tuple[list[dict[str, Any]], Callable[[], None]]:
     """Add two sibling leaves for amendment scenarios."""
 
-    return plan_apply_turn(
-        operations=[
-            {
-                "op": "add_item",
-                "temp_id": "item-first",
-                "parent_id": "item-root",
-                "placement": {"last_child": True},
-                "item": {
-                    "title": "First",
-                    "outcome": "First outcome.",
-                    "acceptance": ["First is verifiable."],
-                },
+    operations = [
+        {
+            "op": "add_item",
+            "temp_id": "item-first",
+            "parent_id": "item-root",
+            "placement": {"last_child": True},
+            "item": {
+                "title": "First",
+                "outcome": "First outcome.",
+                "acceptance": ["First is verifiable."],
             },
-            {
-                "op": "add_item",
-                "temp_id": "item-second",
-                "parent_id": "item-root",
-                "placement": {"last_child": True},
-                "item": {
-                    "title": "Second",
-                    "outcome": "Second outcome.",
-                    "acceptance": ["Second is verifiable."],
-                },
+        },
+        {
+            "op": "add_item",
+            "temp_id": "item-second",
+            "parent_id": "item-root",
+            "placement": {"last_child": True},
+            "item": {
+                "title": "Second",
+                "outcome": "Second outcome.",
+                "acceptance": ["Second is verifiable."],
             },
-        ],
-    )
+        },
+    ]
+
+    def mutate() -> None:
+        run_id = only_run_id(store)
+        apply_plan(store, run_id, base_revision=0, operations=operations)()
+
+    return done_events(signal="candidate_plan_ready", text="planning turn"), mutate
 
 
 def review_respond_script(
+    store: FileRunStore,
+    run_id: str,
     *,
     decision: str,
     loop_id: str,
     target_revision: int = 0,
     findings: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    return [
+    phase: str = WHOLE_PLAN_REVIEW,
+) -> tuple[list[dict[str, Any]], Callable[[], None]]:
+    return done_events(text="review turn"), respond_review(
+        store,
+        run_id,
         {
-            "type": "tool_call",
-            "tool": "review_respond",
-            "role": "reviewer",
-            "request": {
-                "loop_id": loop_id,
-                "target_revision": target_revision,
-                "decision": decision,
-                "findings": findings or [],
-            },
+            "loop_id": loop_id,
+            "target_revision": target_revision,
+            "decision": decision,
+            "findings": findings or [],
         },
-        *done_events(text="review turn"),
-    ]
+        phase=phase,
+        loop_id=loop_id,
+    )
 
 
 def production_batch_script(
+    store: FileRunStore,
+    run_id: str,
     *,
     plan_items: list[str],
     dispositions: dict[str, dict[str, Any]],
     production_revision: int = 0,
     submit_completion: bool = False,
     goal_assessment: str = "Output goal is fully met.",
-) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = [
-        {
-            "type": "tool_call",
-            "tool": "production_apply",
-            "role": "producer",
-            "request": {
+) -> tuple[list[dict[str, Any]], Callable[[], None]]:
+    def mutate() -> None:
+        apply_production(
+            store,
+            run_id,
+            {
                 "production_revision": production_revision,
                 "plan_items": plan_items,
                 "dispositions": dispositions,
@@ -183,19 +202,17 @@ def production_batch_script(
                 "contributions": [],
                 "summary": "batch complete",
             },
-        },
-    ]
-    if submit_completion:
-        events.append(
-            {
-                "type": "tool_call",
-                "tool": "production_submit_completion",
-                "role": "producer",
-                "request": {"goal_assessment": goal_assessment, "goal_met": True},
-            }
-        )
-    events.extend(done_events(signal="batch_complete", text="production turn"))
-    return events
+            handler="apply",
+        )()
+        if submit_completion:
+            apply_production(
+                store,
+                run_id,
+                {"goal_assessment": goal_assessment, "goal_met": True},
+                handler="submit_completion",
+            )()
+
+    return done_events(signal="batch_complete", text="production turn"), mutate
 
 
 def root_child_item_ids(store: FileRunStore, run_id: str) -> list[str]:
@@ -218,11 +235,14 @@ def whole_plan_review_script(
     *,
     decision: str,
     loop_id: str = "review-whole-plan-01",
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], Callable[[], None]]:
     return review_respond_script(
+        store,
+        run_id,
         decision=decision,
         loop_id=loop_id,
         target_revision=current_plan_revision(store, run_id),
+        phase=WHOLE_PLAN_REVIEW,
     )
 
 
@@ -232,12 +252,15 @@ def whole_output_review_script(
     *,
     decision: str,
     loop_id: str = "review-whole-output-01",
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], Callable[[], None]]:
     production = store.load_production(run_id)
     return review_respond_script(
+        store,
+        run_id,
         decision=decision,
         loop_id=loop_id,
         target_revision=int(production["output_revision"]),
+        phase=WHOLE_OUTPUT_REVIEW,
     )
 
 

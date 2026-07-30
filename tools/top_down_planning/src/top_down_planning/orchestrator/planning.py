@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
-from top_down_planning.agent_tool.errors import AgentToolError
-from top_down_planning.agent_tool.plan_service import PlanAgentService
-from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import blocking_focused_findings_for_items
 from top_down_planning.orchestrator.capability import (
@@ -22,14 +19,19 @@ from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     resolve_role_session_context,
 )
-from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.provider_turns import (
+    consume_provider_turn,
+    run_pending_focused_review,
+    sync_planning_items_added,
+)
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
 _PLANNING_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["planning"]
 _CANDIDATE_READY_SIGNAL = "candidate_plan_ready"
+_COMPLETION_SIGNALS = frozenset({_CANDIDATE_READY_SIGNAL})
 
 
 @dataclass(frozen=True)
@@ -56,10 +58,7 @@ class PlanningPhaseOrchestrator:
         self._store = store
         self._run_id = run_id
         self._provider = provider
-        self._plan_service = PlanAgentService(store, run_id)
-        self._review_service = ReviewAgentService(store, run_id)
         self._capability_token: str | None = None
-        self._pending_focused_loop_id: str | None = None
 
     def run(self) -> PlanningPhaseResult:
         run = self._store.load_run(self._run_id)
@@ -112,9 +111,38 @@ class PlanningPhaseOrchestrator:
         bind_provider_capability(self._provider, self._capability_token)
 
         while True:
-            turn_signal = self._consume_provider_turn(session_id)
-            if self._pending_focused_loop_id is not None:
-                self._run_pending_focused_review()
+            run_pending_focused_review(
+                self._store,
+                self._run_id,
+                self._provider,
+                review_type="focused_plan",
+            )
+
+            plan_item_ids_before = set(
+                self._store.load_plan_model(self._run_id).items.keys()
+            )
+            turn_signal = consume_provider_turn(
+                self._provider,
+                session_id,
+                allowed_signals=_COMPLETION_SIGNALS,
+            )
+            run_pending_focused_review(
+                self._store,
+                self._run_id,
+                self._provider,
+                review_type="focused_plan",
+            )
+            sync_planning_items_added(
+                self._store,
+                self._run_id,
+                before_item_ids=plan_item_ids_before,
+                persist_metrics=lambda run_id, metrics: _persist_planning_metrics(
+                    self._store,
+                    run_id,
+                    metrics,
+                ),
+                append_event=self._append_event,
+            )
             run = self._store.load_run(self._run_id)
             metrics = _planning_metrics(run)
             metrics["agent_turns"] += 1
@@ -176,88 +204,6 @@ class PlanningPhaseOrchestrator:
             self._provider.resume_primary_session(
                 session_id,
                 {"action": "continue", "phase": PLANNING},
-            )
-
-    def _consume_provider_turn(self, session_id: str) -> str | None:
-        signal: str | None = None
-        for event in self._provider.stream_events(session_id):
-            event_type = str(event.get("type") or "")
-            if event_type == "error":
-                text = event.get("text") or "provider error"
-                raise ProviderRunError(str(text))
-            if event_type == "tool_call":
-                self._handle_tool_call(event)
-                continue
-            if event_type == "done":
-                if event.get("is_error"):
-                    text = event.get("text") or "provider turn failed"
-                    raise ProviderRunError(str(text))
-                signal = event.get("signal")
-                if signal is not None:
-                    signal = str(signal)
-        return signal
-
-    def _handle_tool_call(self, event: dict[str, Any]) -> None:
-        tool = str(event.get("tool") or "")
-        if tool == "review_request":
-            self._handle_review_request(event)
-            return
-        if tool != "plan_apply":
-            return
-
-        request = event.get("request")
-        if not isinstance(request, dict):
-            raise ProviderRunError("plan_apply tool_call requires a request object")
-
-        operations = request.get("operations") or []
-        before_revision = self._store.load_plan(self._run_id)["revision"]
-        self._plan_service.apply(request, capability_token=self._capability_token)
-        after_revision = self._store.load_plan(self._run_id)["revision"]
-        if after_revision != before_revision:
-            expansion_added = _count_add_item_operations(operations)
-            if expansion_added:
-                run = self._store.load_run(self._run_id)
-                metrics = _planning_metrics(run)
-                metrics["items_added"] += expansion_added
-                _persist_planning_metrics(
-                    self._store,
-                    self._run_id,
-                    metrics,
-                )
-                self._append_event(
-                    "planning_expansion_recorded",
-                    items_added=metrics["items_added"],
-                    added_items=expansion_added,
-                )
-
-    def _handle_review_request(self, event: dict[str, Any]) -> None:
-        request = event.get("request")
-        if not isinstance(request, dict):
-            raise ProviderRunError("review_request tool_call requires a request object")
-
-        try:
-            created = self._review_service.request(
-                request,
-                capability_token=self._capability_token,
-            )
-        except AgentToolError as exc:
-            raise ProviderRunError(str(exc)) from exc
-
-        self._pending_focused_loop_id = str(created["loop_id"])
-
-    def _run_pending_focused_review(self) -> None:
-        loop_id = self._pending_focused_loop_id
-        if loop_id is None:
-            return
-        self._pending_focused_loop_id = None
-        result = FocusedReviewOrchestrator(
-            self._store,
-            self._run_id,
-            self._provider,
-        ).run(loop_id)
-        if not result.ok:
-            raise ProviderRunError(
-                result.reason or "focused plan review did not complete successfully"
             )
 
     def _has_blocking_focused_plan_findings(self) -> bool:
@@ -462,13 +408,3 @@ def _persist_planning_metrics(
     run["digests"]["plan"] = compute_plan_digest(plan)
     store.save_run(run_id, run, expected_revision)
     return store.load_run(run_id)
-
-
-def _count_add_item_operations(operations: list[Any]) -> int:
-    count = 0
-    for operation in operations:
-        if not isinstance(operation, dict):
-            continue
-        if str(operation.get("op") or "") == "add_item":
-            count += 1
-    return count

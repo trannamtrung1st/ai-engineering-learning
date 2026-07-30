@@ -27,7 +27,7 @@ from top_down_planning import schema_docs
 def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
     agent_parser = subparsers.add_parser(
         "agent",
-        help="Agent-facing structured tool commands.",
+        help="Agent-facing tdp agent CLI commands.",
     )
     agent_sub = agent_parser.add_subparsers(dest="agent_command")
 
