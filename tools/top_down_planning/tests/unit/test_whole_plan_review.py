@@ -12,7 +12,7 @@ from top_down_planning.orchestrator import ProviderRunError, WholePlanReviewOrch
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
-from top_down_planning.provider import StubProvider
+from core_tools.provider import StubProvider
 from tests.helpers import done_events
 
 

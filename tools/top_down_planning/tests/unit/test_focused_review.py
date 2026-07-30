@@ -16,7 +16,7 @@ from top_down_planning.orchestrator import (
 from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.provider import StubProvider
+from core_tools.provider import StubProvider
 from tests.helpers import done_events
 
 

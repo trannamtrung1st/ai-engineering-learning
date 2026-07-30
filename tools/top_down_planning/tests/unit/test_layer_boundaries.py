@@ -8,9 +8,9 @@ from pathlib import Path
 FORBIDDEN_DOMAIN_IMPORT_ROOTS = frozenset(
     {
         "top_down_planning.cli",
-        "top_down_planning.provider",
         "top_down_planning.persistence",
         "top_down_planning.orchestrator",
+        "core_tools",
     }
 )
 

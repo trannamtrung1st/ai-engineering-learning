@@ -24,7 +24,7 @@ from top_down_planning.persistence.digests import (
     compute_plan_digest,
 )
 from top_down_planning.persistence.interface import RunStore
-from top_down_planning.provider.interface import Provider
+from core_tools.provider import Provider
 
 _WHOLE_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["whole_output_review"]
 

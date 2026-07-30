@@ -8,8 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.config import resolve_config
-from top_down_planning.provider import (
+from core_tools.provider import (
     CursorProvider,
     ProviderBinaryNotFoundError,
     ProviderTurnError,
@@ -77,13 +76,13 @@ def test_stub_resume_primary_session_keeps_same_session_id() -> None:
 
 
 def test_create_provider_selects_stub_from_config(tmp_path: Path) -> None:
-    config = resolve_config(None, ["provider.name=stub"])
+    config = {"provider": {"name": "stub"}}
     provider = create_provider(config, workspace=tmp_path)
     assert isinstance(provider, StubProvider)
 
 
 def test_build_agent_argv_shape_with_fake_runner(tmp_path: Path) -> None:
-    config = resolve_config(None, ["provider.model=composer-2.5"])
+    config = {"provider": {"model": "composer-2.5"}}
     argv = build_agent_argv(
         config,
         binary="/fake/agent",
@@ -144,7 +143,7 @@ def test_cursor_provider_uses_injected_runner(tmp_path: Path) -> None:
         for line in stream_lines:
             yield line
 
-    config = resolve_config(None)
+    config = {"provider": {"name": "cursor"}}
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
     provider = CursorProvider(

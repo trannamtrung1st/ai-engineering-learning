@@ -8,8 +8,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from top_down_planning.provider.errors import ProviderSessionError, ProviderTurnError
-from top_down_planning.provider.events import format_manifest_prompt, format_request_prompt
+from core_tools.provider.errors import ProviderSessionError, ProviderTurnError
+from core_tools.provider.events import format_manifest_prompt, format_request_prompt
 
 
 @dataclass

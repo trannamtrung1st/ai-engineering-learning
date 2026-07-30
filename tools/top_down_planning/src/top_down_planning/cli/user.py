@@ -60,7 +60,7 @@ from top_down_planning.persistence.digests import (
     compute_output_digest,
     compute_plan_digest,
 )
-from top_down_planning.provider import create_provider
+from core_tools.provider import create_provider
 
 
 def handle_run_command(args: Namespace) -> None:

@@ -18,7 +18,7 @@ from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
-from top_down_planning.provider.interface import Provider
+from core_tools.provider import Provider
 
 _WHOLE_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["whole_plan_review"]
 

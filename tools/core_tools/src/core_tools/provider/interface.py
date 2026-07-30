@@ -1,4 +1,4 @@
-"""Provider contract for session lifecycle and messaging (proposal §16)."""
+"""Provider contract for session lifecycle and messaging."""
 
 from __future__ import annotations
 

@@ -22,7 +22,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.orchestrator.whole_plan_review import WholePlanReviewOrchestrator
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
-from top_down_planning.provider.interface import Provider
+from core_tools.provider import Provider
 
 _AMENDMENT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["amendment"]
 _AMENDMENT_REVISION_READY_SIGNAL = "amendment_revision_ready"

@@ -10,7 +10,7 @@ Use the stub provider for local runs and tests without the Cursor CLI:
 
 ```bash
 cd tools/top_down_planning
-python -m pip install -e ".[dev]"
+python -m pip install -e ../core_tools -e ".[dev]"
 
 tdp agent help
 tdp agent schema plan-transaction
@@ -28,14 +28,14 @@ tdp resume --run <run-id>
 | Core domain | `domain/` | Pure models and rules: plan tree, dependencies, validation, production state, outcomes. No CLI, provider, or persistence concerns. |
 | Orchestrator | `orchestrator/` | Lifecycle transitions: plan → review → validate → produce → amend → review output → resolve outcome. |
 | Agent tool | `agent_tool/` | Structured agent protocol: atomic domain operations with schema validation and revision checks. |
-| Provider | `provider/` | Provider interface and adapters (Cursor CLI first). Session start/resume, streaming, capabilities. |
-| Persistence | `persistence/` | `RunStore` interface and backends for canonical snapshots, events, and session references. |
+| Shared infra | [`core_tools`](../core_tools) | Provider adapters, generic config merge/overrides, atomic writes, content digests, YAML helpers. |
+| Persistence | `persistence/` | `RunStore` interface and `FileRunStore` for canonical snapshots, events, and session references. |
 | CLI | `cli/` | User-facing (`tdp run`, `tdp resume`, …) and agent-facing (`tdp agent …`) command wiring. |
-| Config | `config/` | YAML configuration loading and `--set` override resolution. |
+| Config | `config/` | TDP schema (`DEFAULT_CONFIG`, allowed override paths) and `resolve_config`. |
 
 ## Provider (proposal §16)
 
-Resolved configuration selects the provider adapter:
+Provider adapters live in `core_tools.provider`. Resolved configuration selects the adapter:
 
 ```yaml
 provider:
@@ -53,8 +53,8 @@ Use `provider.name=stub` in tests and local orchestration runs. Production runs 
 
 ## Import boundaries
 
-- `domain` must not import `cli`, `provider`, `persistence`, or `orchestrator`.
-- `orchestrator` may depend on `domain` and interfaces; not on provider CLI parsing.
+- `domain` must not import `cli`, `persistence`, `orchestrator`, or `core_tools`.
+- Shared provider/config/persistence primitives live in [`core_tools`](../core_tools); TDP imports them at orchestrator, CLI, and persistence boundaries.
 - Project-specific extensions stay outside the core package (proposal §19).
 
 ## User CLI (proposal §20)
@@ -113,7 +113,7 @@ Production apply requires `production_revision` from the latest snapshot. `submi
 
 ```bash
 cd tools/top_down_planning
-python -m pip install -e ".[dev]"
+python -m pip install -e ../core_tools -e ".[dev]"
 tdp --help
 pytest                  # unit tests (default; excludes integration)
 pytest -m integration   # stub-provider e2e and smoke tests

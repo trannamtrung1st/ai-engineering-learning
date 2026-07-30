@@ -28,7 +28,7 @@ from top_down_planning.orchestrator.planning import build_planner_context_manife
 from top_down_planning.orchestrator.production import build_producer_context_manifest
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.provider import StubProvider
+from core_tools.provider import StubProvider
 from tests.conftest import run_cli
 from tests.helpers import done_events, plan_apply_turn
 
@@ -201,7 +201,7 @@ def test_resume_rejects_config_digest_mismatch(tmp_path: Path) -> None:
     config = store.load_resolved_config("run-resume-planning")
     config["planning"]["max_depth"] = 9
     config_path = tmp_path / "run-resume-planning" / "resolved-config.yaml"
-    from top_down_planning.persistence.yaml_util import dump_yaml
+    from core_tools.persistence import dump_yaml
 
     config_path.write_text(dump_yaml(config) + "\n", encoding="utf-8")
 

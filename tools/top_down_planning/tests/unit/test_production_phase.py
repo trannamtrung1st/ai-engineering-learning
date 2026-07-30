@@ -11,7 +11,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import ProductionPhaseOrchestrator, ProviderRunError
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.provider import StubProvider
+from core_tools.provider import StubProvider
 from tests.helpers import done_events
 
 

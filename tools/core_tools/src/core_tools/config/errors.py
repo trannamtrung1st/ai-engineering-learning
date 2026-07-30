@@ -1,4 +1,4 @@
-"""Configuration resolution errors (proposal §14)."""
+"""Configuration resolution errors."""
 
 from __future__ import annotations
 

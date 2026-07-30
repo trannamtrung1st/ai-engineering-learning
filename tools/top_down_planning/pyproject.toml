@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Generic agent orchestration for top-down planning and production"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "core-tools @ file:../core_tools",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -18,6 +20,9 @@ dev = [
 
 [project.scripts]
 tdp = "top_down_planning.cli.main:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

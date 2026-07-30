@@ -12,7 +12,7 @@ from top_down_planning.orchestrator import ProviderRunError, WholeOutputReviewOr
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
-from top_down_planning.provider import StubProvider
+from core_tools.provider import StubProvider
 from tests.helpers import done_events
 
 

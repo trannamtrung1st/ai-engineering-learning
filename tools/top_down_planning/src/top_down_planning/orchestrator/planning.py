@@ -16,7 +16,7 @@ from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestra
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
-from top_down_planning.provider.interface import Provider
+from core_tools.provider import Provider
 
 _PLANNING_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["planning"]
 _CANDIDATE_READY_SIGNAL = "candidate_plan_ready"

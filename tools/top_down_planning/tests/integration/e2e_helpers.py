@@ -18,7 +18,7 @@ from top_down_planning.persistence.digests import (
     compute_output_digest,
     compute_plan_digest,
 )
-from top_down_planning.provider import StubProvider
+from core_tools.provider import StubProvider
 from tests.helpers import done_events, plan_apply_turn, write_config
 
 ScriptBuilder = Callable[[str], list[dict[str, Any]]]

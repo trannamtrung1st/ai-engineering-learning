@@ -14,8 +14,10 @@ class ProviderError(Exception):
 class ProviderBinaryNotFoundError(ProviderError):
     """Cursor CLI binary is missing from PATH or configured path."""
 
+
 class ProviderSessionError(ProviderError):
     """Session does not exist or is in an invalid state."""
+
 
 class ProviderTurnError(ProviderError):
     """A provider turn failed during execution or parsing."""

@@ -15,7 +15,7 @@ from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
-from top_down_planning.provider.interface import Provider
+from core_tools.provider import Provider
 
 _FOCUSED_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_plan_review"]
 _FOCUSED_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_output_review"]

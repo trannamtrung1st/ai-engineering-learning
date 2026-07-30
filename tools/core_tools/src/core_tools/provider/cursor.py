@@ -11,12 +11,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from top_down_planning.provider.errors import (
+from core_tools.provider.errors import (
     ProviderBinaryNotFoundError,
     ProviderSessionError,
     ProviderTurnError,
 )
-from top_down_planning.provider.events import (
+from core_tools.provider.events import (
     format_manifest_prompt,
     format_request_prompt,
     normalize_cursor_event,

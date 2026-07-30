@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from top_down_planning.provider.cursor import CursorProvider, ProcessRunner
-from top_down_planning.provider.errors import ProviderError
-from top_down_planning.provider.interface import Provider
-from top_down_planning.provider.stub import StubProvider
+from core_tools.provider.cursor import CursorProvider, ProcessRunner
+from core_tools.provider.errors import ProviderError
+from core_tools.provider.interface import Provider
+from core_tools.provider.stub import StubProvider
 
 
 def create_provider(

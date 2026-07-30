@@ -21,7 +21,7 @@ from top_down_planning.orchestrator.phases import (
 )
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
-from top_down_planning.provider.interface import Provider
+from core_tools.provider import Provider
 
 _PRODUCTION_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["production"]
 _BATCH_COMPLETE_SIGNAL = "batch_complete"

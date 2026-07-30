@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.agent_tool.errors import RequestError
-from top_down_planning.persistence.yaml_util import load_yaml
+from core_tools.persistence import load_yaml
 
 
 def load_structured_request(

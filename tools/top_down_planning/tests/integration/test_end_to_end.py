@@ -15,7 +15,7 @@ from top_down_planning.orchestrator.phases import (
     WHOLE_PLAN_REVIEW,
 )
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.provider import StubProvider
+from core_tools.provider import StubProvider
 from tests.conftest import run_cli
 from tests.helpers import done_events, plan_apply_turn
 from tests.integration.e2e_helpers import (

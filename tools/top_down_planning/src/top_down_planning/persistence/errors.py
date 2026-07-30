@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-
-class PersistenceError(Exception):
-    """Unrecoverable persistence failure."""
+from core_tools.persistence.errors import PersistenceError
 
 
 class StoreRevisionConflictError(PersistenceError):
@@ -27,3 +25,6 @@ class RunNotFoundError(PersistenceError):
         if detail:
             message = f"{message} ({detail})"
         super().__init__(message)
+
+
+__all__ = ["PersistenceError", "RunNotFoundError", "StoreRevisionConflictError"]

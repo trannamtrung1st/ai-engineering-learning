@@ -1,30 +1,19 @@
-"""Stable SHA-256 digests for resume and review binding (proposal §18)."""
+"""TDP-specific digests for plan, config, and production binding."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-from pathlib import Path
 from typing import Any
+
+from core_tools.persistence.digests import digest_json
 
 from top_down_planning.domain.models import Plan
 
-
-def digest_text(text: str) -> str:
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-
-
-def digest_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def digest_file(path: Path) -> str:
-    return digest_bytes(path.read_bytes())
-
-
-def _canonical_json(payload: Any) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+__all__ = [
+    "compute_config_digest",
+    "compute_context_digest",
+    "compute_output_digest",
+    "compute_plan_digest",
+]
 
 
 def compute_plan_digest(plan: Plan | dict[str, Any]) -> str:
@@ -33,15 +22,15 @@ def compute_plan_digest(plan: Plan | dict[str, Any]) -> str:
         payload = plan.to_dict()
     else:
         payload = plan
-    return digest_text(_canonical_json(payload))
+    return digest_json(payload)
 
 
 def compute_config_digest(config: dict[str, Any]) -> str:
-    return digest_text(_canonical_json(config))
+    return digest_json(config)
 
 
 def compute_context_digest(context: dict[str, Any]) -> str:
-    return digest_text(_canonical_json(context))
+    return digest_json(context)
 
 
 def compute_output_digest(production: dict[str, Any]) -> str:
@@ -53,4 +42,4 @@ def compute_output_digest(production: dict[str, Any]) -> str:
         "output_evidence": production.get("output_evidence") or [],
         "completion_claim": production.get("completion_claim"),
     }
-    return digest_text(_canonical_json(payload))
+    return digest_json(payload)
