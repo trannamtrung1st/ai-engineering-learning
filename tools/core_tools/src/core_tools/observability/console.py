@@ -1,9 +1,9 @@
 """Colorized stderr console renderer.
 
 Category blocks group consecutive events with the same category (and
-multi-line bodies). The ``[timestamp] [category]`` prefix is printed on the
-first line of each block only; continuation lines omit the prefix but keep the
-category style when color is enabled.
+multi-line bodies). The ``[category]`` prefix is printed on the first line of
+each block; an optional ``[timestamp]`` precedes it when enabled. Continuation
+lines omit the prefix but keep the category style when color is enabled.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ class ColorizedConsoleSink:
         *,
         stream: TextIO | None = None,
         color: ColorMode = "auto",
-        show_timestamps: bool = True,
+        show_timestamps: bool = False,
         log_level: str = "normal",
         policy: RedactionPolicy | None = None,
         environ: dict[str, str] | None = None,

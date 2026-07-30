@@ -43,7 +43,7 @@ class ObservabilityOptions:
     log_level: LogLevel = "normal"
     log_format: str = "console"
     color: str = "auto"
-    show_timestamps: bool = True
+    show_timestamps: bool = False
     no_agent_text: bool = False
     agent_transcript: bool = False
 

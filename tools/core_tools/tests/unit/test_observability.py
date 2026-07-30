@@ -26,7 +26,7 @@ class _CollectSink:
 
 def test_category_block_prefix_on_first_line_only() -> None:
     stderr = io.StringIO()
-    sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=False)
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
     sink.emit(
         ConsoleEvent(
             category="session:start",
@@ -41,7 +41,7 @@ def test_category_block_prefix_on_first_line_only() -> None:
 
 def test_consecutive_streaming_category_events_share_prefix() -> None:
     stderr = io.StringIO()
-    sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=False)
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
     sink.emit(ConsoleEvent(category="thinking", message="First sentence."))
     sink.emit(ConsoleEvent(category="thinking", message="Second sentence."))
     lines = stderr.getvalue().splitlines()
@@ -49,9 +49,17 @@ def test_consecutive_streaming_category_events_share_prefix() -> None:
     assert lines[1] == "Second sentence."
 
 
+def test_show_timestamps_prefix_when_enabled() -> None:
+    stderr = io.StringIO()
+    ts = datetime(2026, 7, 30, 14, 30, 45, tzinfo=UTC)
+    sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=True)
+    sink.emit(ConsoleEvent(category="done", message="finished", ts=ts))
+    assert stderr.getvalue().startswith("[14:30:45] [done] finished")
+
+
 def test_discrete_category_events_always_show_prefix() -> None:
     stderr = io.StringIO()
-    sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=False)
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
     sink.emit(ConsoleEvent(category="tool:start", message="grep foo"))
     sink.emit(ConsoleEvent(category="tool:start", message="read bar"))
     sink.emit(ConsoleEvent(category="tool:end", message="grep foo"))
@@ -65,7 +73,7 @@ def test_discrete_category_events_always_show_prefix() -> None:
 
 def test_category_change_resets_prefix_after_continuous_block() -> None:
     stderr = io.StringIO()
-    sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=False)
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
     sink.emit(ConsoleEvent(category="thinking", message="Planning."))
     sink.emit(ConsoleEvent(category="tool:start", message="read README.md"))
     sink.emit(ConsoleEvent(category="thinking", message="Continuing."))
@@ -77,7 +85,7 @@ def test_category_change_resets_prefix_after_continuous_block() -> None:
 
 def test_multiline_and_continuation_lines_share_category_style() -> None:
     stderr = io.StringIO()
-    sink = ColorizedConsoleSink(stream=stderr, color="always", show_timestamps=False)
+    sink = ColorizedConsoleSink(stream=stderr, color="always")
     sink.emit(
         ConsoleEvent(
             category="session:start",
@@ -151,7 +159,7 @@ def test_jsonl_sink_writes_valid_redacted_json(tmp_path) -> None:
 
 def test_console_sink_writes_to_stderr_not_stdout() -> None:
     stderr = io.StringIO()
-    sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=False)
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
     sink.emit(ConsoleEvent(category="done", message="finished"))
     output = stderr.getvalue()
     assert "[done]" in output

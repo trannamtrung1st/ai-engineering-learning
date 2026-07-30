@@ -46,7 +46,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "log_format": "console",
         "color": "auto",
         "show_agent_text": True,
-        "show_timestamps": True,
+        "show_timestamps": False,
         "agent_transcript": False,
     },
     "limits": {

@@ -72,7 +72,6 @@ observability:
   log_format: console
   color: auto
   show_agent_text: true
-  show_timestamps: true
   agent_transcript: false
 
 provider:

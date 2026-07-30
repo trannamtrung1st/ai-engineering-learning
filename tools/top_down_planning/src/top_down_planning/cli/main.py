@@ -56,7 +56,7 @@ def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
         "--timestamps",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Include timestamps in console output (default: from config or on).",
+        help="Include timestamps in console output (default: from config or off).",
     )
     parser.add_argument(
         "--agent-transcript",

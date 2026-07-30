@@ -976,7 +976,7 @@ observability:
   log_format: console
   color: auto
   show_agent_text: true
-  show_timestamps: true
+  show_timestamps: false
   agent_transcript: false
 
 limits:
@@ -1024,7 +1024,7 @@ Agent thinking/response console output uses `core_tools.observability.AgentTextS
 
 Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary from the normalized provider event (`summary` field). Cursor native tools are summarized from the nested `tool_call` payload; structured Top Down Planning agent tools summarize from `tool` and `request` (for example `plan_apply @r0 3 ops`). `tool_call` events with `subtype: started` or `completed` reach the console bridge; `tool_result` events and duplicate lifecycle events for the same `call_id` are dropped.
 
-Console output prints `[timestamp] [category]` once per category block. Multi-line messages and consecutive events with the same category omit the prefix on continuation lines but keep category styling until the category changes.
+Console output prints `[category]` once per category block (optional `[timestamp]` when `show_timestamps` is enabled). Multi-line messages and consecutive events with the same category omit the prefix on continuation lines but keep category styling until the category changes.
 
 `tdp run` and `tdp resume` treat Ctrl+C as a cooperative cancel: `RunEngine` calls `terminate_all_sessions()`, emits a `session:cancel` observability event, returns without marking the run failed, and the CLI exits with code 130. With `--stream-json`, the final stdout payload includes `"cancelled": true` and `"reason": "cancelled by user"`.
 

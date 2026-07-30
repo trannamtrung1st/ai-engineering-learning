@@ -53,7 +53,7 @@ def observability_options_from_args_and_config(
     if timestamps_arg is not None:
         show_timestamps = timestamps_arg
     else:
-        show_timestamps = observability_cfg.get("show_timestamps", True)
+        show_timestamps = observability_cfg["show_timestamps"]
 
     agent_text_arg = getattr(args, "agent_text", None)
     if agent_text_arg is not None:

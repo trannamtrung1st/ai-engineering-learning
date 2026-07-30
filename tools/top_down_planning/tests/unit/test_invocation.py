@@ -36,6 +36,17 @@ observability:
     assert options.log_level == "verbose"
 
 
+def test_observability_defaults_show_timestamps_off(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "obs.yaml",
+        "run:\n  output_goal: Goal.\n",
+    )
+    resolved = resolve_config(config_path)
+    args = _parse(["run", "--config", str(config_path)])
+    options = observability_options_from_args_and_config(args, resolved_config=resolved)
+    assert options.show_timestamps is False
+
+
 def test_explicit_no_timestamps_overrides_yaml_true(tmp_path: Path) -> None:
     config_path = write_config(
         tmp_path / "obs.yaml",
