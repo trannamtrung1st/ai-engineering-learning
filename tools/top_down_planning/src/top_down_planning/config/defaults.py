@@ -27,6 +27,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "provider": {
         "name": "cursor",
         "use_native_project_context": True,
+        "skip_probe": False,
     },
     "limits": {
         "planning": {
@@ -76,6 +77,8 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "provider.name",
         "provider.use_native_project_context",
         "provider.model",
+        "provider.binary",
+        "provider.skip_probe",
         "limits.planning.max_expansion_iterations",
         "limits.planning.max_agent_turns",
         "limits.focused_plan_review.max_loops",

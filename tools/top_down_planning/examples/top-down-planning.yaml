@@ -28,6 +28,9 @@ review:
 provider:
   name: cursor
   use_native_project_context: true
+  # model: composer-2.5
+  # binary: /path/to/agent
+  # skip_probe: false
 
 limits:
   planning:

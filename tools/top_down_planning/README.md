@@ -16,6 +16,24 @@ Specification: [`temp/final-top-down-planning-tool-proposal.md`](../../temp/fina
 | CLI | `cli/` | User-facing (`tdp run`, `tdp resume`, …) and agent-facing (`tdp agent …`) command wiring. |
 | Config | `config/` | YAML configuration loading and `--set` override resolution. |
 
+## Provider (proposal §16)
+
+Resolved configuration selects the provider adapter:
+
+```yaml
+provider:
+  name: cursor          # cursor | stub
+  use_native_project_context: true
+  model: composer-2.5   # optional Cursor model
+  binary: /path/to/agent  # optional; otherwise agent or cursor-agent on PATH
+  skip_probe: false     # skip CLI version probe when true
+```
+
+- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json`). Session ids are the provider chat ids returned from the CLI stream (persist via `get_session_reference`).
+- `stub` — deterministic scripted turns for tests; requires `script_turn()` before each turn.
+
+Tests and orchestrator integration use `provider.name=stub` by default. Live Cursor is optional (smoke test skips when the CLI is missing).
+
 ## Import boundaries
 
 - `domain` must not import `cli`, `provider`, `persistence`, or `orchestrator`.
