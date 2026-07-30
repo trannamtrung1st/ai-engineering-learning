@@ -90,13 +90,14 @@ def test_build_agent_argv_shape_with_fake_runner(tmp_path: Path) -> None:
         prompt="Plan the work",
         model="composer-2.5",
     )
-    assert argv[:8] == [
+    assert argv[:9] == [
         "/fake/agent",
         "--print",
         "--output-format",
         "stream-json",
         "--trust",
         "--approve-mcps",
+        "--force",
         "--workspace",
         str(tmp_path),
     ]

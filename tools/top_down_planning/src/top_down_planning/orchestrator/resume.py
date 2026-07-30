@@ -174,6 +174,15 @@ def _validate_session_refs(
     production: dict[str, Any],
     phase: str,
 ) -> None:
+    """Enforce session continuity for phases that already own a primary session.
+
+    Missing primary session ids are allowed only when the phase orchestrator is
+    still responsible for *starting* that owner session for the first time
+    (``planning`` → planner, ``plan_validated`` / ``production`` → producer).
+    Once a later phase depends on an already-established owner (reviews,
+    amendment), missing refs block resume — never invent a replacement id.
+    """
+
     sessions = dict(run.get("sessions") or {})
     planner_session_id = sessions.get("primary_planner_session_id")
     producer_session_id = sessions.get("primary_producer_session_id")
@@ -192,7 +201,7 @@ def _validate_session_refs(
         return
 
     if phase == PLANNING:
-        _require_session(planner_session_id, label="primary planner", phase=phase)
+        # PlanningPhaseOrchestrator starts the primary planner when absent.
         return
 
     if phase == WHOLE_PLAN_REVIEW:
@@ -200,8 +209,9 @@ def _validate_session_refs(
         _validate_active_reviewer_session(store, run_id, "whole_plan", phase)
         return
 
-    if phase == PRODUCTION:
-        _require_session(producer_session_id, label="primary producer", phase=phase)
+    if phase in {PLAN_VALIDATED, PRODUCTION}:
+        # ProductionPhaseOrchestrator starts the primary producer when absent
+        # (including interrupt after entering ``production`` but before persist).
         return
 
     if phase == WHOLE_OUTPUT_REVIEW:

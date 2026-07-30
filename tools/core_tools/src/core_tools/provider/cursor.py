@@ -105,6 +105,8 @@ def build_agent_argv(
 ) -> list[str]:
     """Construct a Cursor CLI argv for a non-interactive streamed turn."""
 
+    # --force is required for non-interactive turns: without it, shell/tool
+    # calls are rejected and the planner/producer cannot drive `tdp agent …`.
     argv: list[str] = [
         binary,
         "--print",
@@ -112,6 +114,7 @@ def build_agent_argv(
         "stream-json",
         "--trust",
         "--approve-mcps",
+        "--force",
         "--workspace",
         str(workspace),
     ]

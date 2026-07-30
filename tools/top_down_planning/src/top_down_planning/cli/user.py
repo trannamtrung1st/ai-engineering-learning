@@ -169,6 +169,24 @@ def handle_run_command(args: Namespace) -> None:
         },
     )
 
+    diagnostics = run_startup_diagnostics_payload(
+        cwd=cwd,
+        config_path=config_path,
+        workspace=workspace,
+        resolved_runs=resolved_runs,
+        run_id=run_id,
+    )
+    # Print before the provider blocks on the first Cursor CLI turn.
+    # Do not use emit_message here — it raises SystemExit.
+    if not args.stream_json:
+        print(
+            "Starting planning phase (blocking on provider until the first "
+            "planner turn completes).\n"
+            f"{format_run_startup_diagnostics(diagnostics)}\n"
+            f"Run path: {resolved_runs.path / run_id}",
+            flush=True,
+        )
+
     provider = _create_provider_for_run(
         resolved,
         workspace=workspace,
@@ -180,13 +198,6 @@ def handle_run_command(args: Namespace) -> None:
         _handle_provider_run_error(store, run_id, exc, stream_json=args.stream_json)
 
     run_record = store.load_run(run_id)
-    diagnostics = run_startup_diagnostics_payload(
-        cwd=cwd,
-        config_path=config_path,
-        workspace=workspace,
-        resolved_runs=resolved_runs,
-        run_id=run_id,
-    )
     payload = {
         "ok": result.ok,
         "run_id": run_id,

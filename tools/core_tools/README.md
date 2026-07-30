@@ -6,7 +6,7 @@ Cross-product infrastructure shared by agent orchestration tools in this monorep
 
 | Module | Contents |
 | --- | --- |
-| `core_tools.provider` | Provider protocol, stub/Cursor adapters, stream normalization, session references |
+| `core_tools.provider` | Provider protocol, stub/Cursor adapters, stream normalization, session references. Cursor non-interactive argv uses `--print --output-format stream-json --trust --approve-mcps --force` so shell/`tdp agent` tool calls are not rejected. |
 | `core_tools.config` | Deep merge, YAML config load, `--set` override parsing, workspace paths, resource/skill loading, allowlist validation |
 | `core_tools.persistence` | Atomic file writes, content digests, minimal YAML helpers, optimistic revision helpers |
 | `core_tools.cli` | Structured CLI output, request loading, runs-dir resolution |

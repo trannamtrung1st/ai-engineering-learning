@@ -228,7 +228,9 @@ def test_resume_rejects_plan_digest_mismatch(tmp_path: Path) -> None:
         validate_resume_preconditions(store, "run-resume-planning")
 
 
-def test_resume_planning_missing_session_ref_fails(tmp_path: Path) -> None:
+def test_resume_planning_missing_session_ref_allowed(tmp_path: Path) -> None:
+    """Interrupt before planner session persist may resume and start the owner."""
+
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_planning_run(store, provider)
@@ -240,11 +242,14 @@ def test_resume_planning_missing_session_ref_fails(tmp_path: Path) -> None:
     run["sessions"] = {}
     store.save_run("run-resume-planning", run, expected_revision)
 
-    with pytest.raises(ResumeError, match="primary planner session reference is missing"):
-        validate_resume_preconditions(store, "run-resume-planning")
+    preconditions = validate_resume_preconditions(store, "run-resume-planning")
+    assert preconditions.phase == PLANNING
+    assert preconditions.status == "running"
 
 
-def test_resume_production_missing_session_ref_fails(tmp_path: Path) -> None:
+def test_resume_production_missing_session_ref_allowed(tmp_path: Path) -> None:
+    """Interrupt after entering production but before producer persist may resume."""
+
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_production_run(store, provider)
@@ -256,8 +261,9 @@ def test_resume_production_missing_session_ref_fails(tmp_path: Path) -> None:
     run["sessions"] = {}
     store.save_run("run-resume-production", run, expected_revision)
 
-    with pytest.raises(ResumeError, match="primary producer session reference is missing"):
-        validate_resume_preconditions(store, "run-resume-production")
+    preconditions = validate_resume_preconditions(store, "run-resume-production")
+    assert preconditions.phase == PRODUCTION
+    assert preconditions.status == "running"
 
 
 def test_interrupt_planning_resume_keeps_same_session(tmp_path: Path) -> None:
@@ -409,32 +415,6 @@ def test_resume_twice_does_not_corrupt_revision_counters(tmp_path: Path) -> None
     assert first.phase == WHOLE_PLAN_REVIEW
     assert second.phase == WHOLE_PLAN_REVIEW
     assert int(store.load_run("run-resume-planning")["revision"]) == revision_before
-
-
-def test_resume_cli_rejects_missing_session_ref(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    store = FileRunStore(tmp_path)
-    provider = StubProvider()
-    _create_planning_run(store, provider)
-
-    run = store.load_run("run-resume-planning")
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    run["sessions"] = {}
-    store.save_run("run-resume-planning", run, expected_revision)
-
-    with pytest.raises(SystemExit) as exc:
-        handle_resume_command(
-            Namespace(
-                run="run-resume-planning",
-                runs_dir=str(tmp_path),
-                stream_json=True,
-            )
-        )
-
-    assert exc.value.code == 1
-    captured = capsys.readouterr()
-    assert "primary planner session reference is missing" in captured.out
 
 
 def test_resume_cli_stream_json_for_completed_run(tmp_path: Path) -> None:

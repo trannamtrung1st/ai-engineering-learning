@@ -49,7 +49,7 @@ provider:
 
 Per-role model selection uses `agent_context.<role>.model`, falling back to `agent_context.default.model`. `model: auto` means no explicit Cursor `--model` argument.
 
-- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json`). Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today.
+- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json --trust --approve-mcps --force`). `--force` is required so non-interactive turns can run shell/`tdp agent …` tools; without it those calls are rejected. Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today.
 - `stub` — deterministic scripted turns for **tests only**; call `script_turn()` before each provider turn.
 
 Production runs default to `cursor`. Use `provider.name=stub` only in unit/integration tests.
@@ -130,7 +130,7 @@ tdp resume --run <run-id> --config temp/tdp-configs/tdp-docs.yaml
 
 With `project.workspace: .` and `runtime.runs_dir: temp/tdp-configs/runs`, a run launched from `/path/to/repo` uses workspace `/path/to/repo` and runs root `/path/to/repo/temp/tdp-configs/runs` even when the config file is stored under `temp/tdp-configs/`.
 
-`tdp run` prints startup diagnostics: working directory, config file, workspace, runs root, and runs root source.
+`tdp run` prints startup diagnostics **before** the first provider turn blocks (unless `--stream-json`): working directory, config file, workspace, runs root, runs root source, and run path. The same diagnostics are repeated in the final status line when planning construction returns.
 
 ### Run store location
 
@@ -158,7 +158,7 @@ To resume or inspect from a new shell, provide enough information to locate the 
 
 Run operational `status` values (proposal §15): `running`, `paused`, `completed`, `failed`. Quality `outcome` values: `accepted`, `rejected`, `blocked` (set only by orchestrator outcome resolution).
 
-`tdp run` creates the run store, starts the primary planner session, and drives planning construction until the planner signals `candidate_plan_ready` or a planning limit is hit. On success the run transitions to phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing: config/plan/input/output-goal/output digests must match the materialized store (for `run.output_goal_file`, the output-goal digest binds file contents and resume re-reads the file), missing primary session refs block resume (no silent new sessions), active whole-plan and whole-output review loops require a persisted `reviewer_session_id`, and production/output review require whole-plan approval for the current plan revision. Resume then continues `planning` with the persisted `primary_planner_session_id`, drives the mandatory whole-plan review loop in `whole_plan_review`, drives production in `plan_validated` or `production`, and drives whole-output review in `whole_output_review`.
+`tdp run` creates the run store, starts the primary planner session, and drives planning construction until the planner signals `candidate_plan_ready` or a planning limit is hit. On success the run transitions to phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing: config/plan/input/output-goal/context/output digests must match the materialized store (for `run.output_goal_file`, the output-goal digest binds file contents and resume re-reads the file). Session policy: missing primary session ids are allowed only while the phase orchestrator still owns *starting* that owner (`planning` may start the planner; `plan_validated` / `production` may start the producer). Later phases that depend on an already-established owner block on missing refs — `whole_plan_review` requires `primary_planner_session_id`, `whole_output_review` requires `primary_producer_session_id`, active whole-plan/whole-output review loops require a persisted `reviewer_session_id`, and pending amendments require both primary sessions. Production/output review also require whole-plan approval for the current plan revision. Resume then continues `planning` (starting or resuming the primary planner), drives the mandatory whole-plan review loop in `whole_plan_review`, drives production in `plan_validated` or `production`, and drives whole-output review in `whole_output_review`.
 
 Whole-plan review (proposal §5.2, §11): the orchestrator starts a fresh reviewer session per loop, binds findings to the current plan revision, resumes the same primary planner for revisions after `changes_requested`, and requires the same reviewer to recheck before approval. After approval, deterministic `validate_plan(..., mode="approval")` must pass before the run advances to `plan_validated`. Revision cycles are capped by `limits.whole_plan_review.max_revision_cycles`; limit exhaustion yields `rejected` or `blocked`, never silent acceptance.
 
