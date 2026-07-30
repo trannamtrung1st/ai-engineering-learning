@@ -11,10 +11,14 @@ from typing import Any
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.views import build_tree_view
 from top_down_planning.cli.common import (
+    RunsStoreNotFoundError,
     emit_error_message,
     emit_message,
     emit_payload,
-    resolve_runs_dir,
+    open_run_store,
+    provider_extra_env,
+    resolve_runs_dir_from_args,
+    store_diagnostics_payload,
 )
 from top_down_planning.config import (
     ConfigError,
@@ -55,12 +59,45 @@ from top_down_planning.orchestrator.phases import (
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
-from top_down_planning.persistence.digests import (
-    compute_config_digest,
-    compute_output_digest,
-    compute_plan_digest,
-)
+from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import create_provider
+
+
+def _open_run_store_for_command(
+    args: Namespace,
+    *,
+    resolved_config: dict[str, Any] | None = None,
+    create: bool = False,
+) -> tuple[FileRunStore, Any]:
+    try:
+        return open_run_store(args, resolved_config=resolved_config, create=create)
+    except ConfigError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="config_error",
+        )
+    except RunsStoreNotFoundError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="runs_store_not_found",
+        )
+
+
+def _create_provider_for_run(
+    config: dict[str, Any],
+    *,
+    workspace: Path,
+    resolved_runs: Any,
+) -> Any:
+    return create_provider(
+        config,
+        workspace=workspace,
+        extra_env=provider_extra_env(resolved_runs),
+    )
 
 
 def handle_run_command(args: Namespace) -> None:
@@ -98,7 +135,17 @@ def handle_run_command(args: Namespace) -> None:
     output_goal_digest = compute_output_goal_digest(resolved)
     plan = _initial_plan(run_id, resolved)
 
-    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
+    if resolved_runs.source == "default":
+        emit_error_message(
+            "tdp run requires an explicit run store: set runtime.runs_dir in the "
+            "config, pass --runs-dir, or export TDP_RUNS_DIR",
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="missing_runs_dir",
+        )
+
+    store = FileRunStore(resolved_runs.path)
     store.root.mkdir(parents=True, exist_ok=True)
     run_record = store.create_run(
         run_id,
@@ -107,15 +154,24 @@ def handle_run_command(args: Namespace) -> None:
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
         workspace=str(base_dir),
+        store={
+            "resolved_root": str(resolved_runs.path),
+            "resolution_source": resolved_runs.source,
+        },
     )
 
-    provider = create_provider(resolved, workspace=base_dir)
+    provider = _create_provider_for_run(
+        resolved,
+        workspace=base_dir,
+        resolved_runs=resolved_runs,
+    )
     try:
         result = PlanningPhaseOrchestrator(store, run_id, provider).run()
     except ProviderRunError as exc:
         _handle_provider_run_error(store, run_id, exc, stream_json=args.stream_json)
 
     run_record = store.load_run(run_id)
+    diagnostics = store_diagnostics_payload(resolved_runs, run_id=run_id)
     payload = {
         "ok": result.ok,
         "run_id": run_id,
@@ -127,6 +183,7 @@ def handle_run_command(args: Namespace) -> None:
         "session_id": result.session_id,
         "agent_turns": result.agent_turns,
         "expansion_iterations": result.expansion_iterations,
+        **diagnostics,
     }
     if result.reason:
         payload["reason"] = result.reason
@@ -148,6 +205,12 @@ def handle_run_command(args: Namespace) -> None:
         )
     else:
         message = f"Run {run_id} phase={result.phase} status={result.status}."
+    message = (
+        f"{message}\n"
+        f"Runs root: {resolved_runs.path}\n"
+        f"Resolved from: {resolved_runs.source}\n"
+        f"Run path: {resolved_runs.path / run_id}"
+    )
     emit_message(message, exit_code=exit_code)
 
 
@@ -160,7 +223,7 @@ def handle_resume_command(args: Namespace) -> None:
             code="missing_run",
         )
 
-    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    store, resolved_runs = _open_run_store_for_command(args)
     try:
         run = store.load_run(args.run)
     except RunNotFoundError as exc:
@@ -186,7 +249,11 @@ def handle_resume_command(args: Namespace) -> None:
     if has_pending_amendment(production) and phase != PRODUCTION:
         config = store.load_resolved_config(args.run)
         workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = create_provider(config, workspace=workspace)
+        provider = _create_provider_for_run(
+            config,
+            workspace=workspace,
+            resolved_runs=resolved_runs,
+        )
         try:
             result = PlanAmendmentOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
@@ -259,7 +326,11 @@ def handle_resume_command(args: Namespace) -> None:
     if phase == WHOLE_OUTPUT_REVIEW:
         config = store.load_resolved_config(args.run)
         workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = create_provider(config, workspace=workspace)
+        provider = _create_provider_for_run(
+            config,
+            workspace=workspace,
+            resolved_runs=resolved_runs,
+        )
         try:
             result = WholeOutputReviewOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
@@ -300,7 +371,11 @@ def handle_resume_command(args: Namespace) -> None:
     if phase == PLAN_VALIDATED or phase == PRODUCTION:
         config = store.load_resolved_config(args.run)
         workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = create_provider(config, workspace=workspace)
+        provider = _create_provider_for_run(
+            config,
+            workspace=workspace,
+            resolved_runs=resolved_runs,
+        )
         try:
             result = ProductionPhaseOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
@@ -340,7 +415,11 @@ def handle_resume_command(args: Namespace) -> None:
     if phase == WHOLE_PLAN_REVIEW:
         config = store.load_resolved_config(args.run)
         workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = create_provider(config, workspace=workspace)
+        provider = _create_provider_for_run(
+            config,
+            workspace=workspace,
+            resolved_runs=resolved_runs,
+        )
         try:
             result = WholePlanReviewOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
@@ -381,7 +460,11 @@ def handle_resume_command(args: Namespace) -> None:
     if phase == PLANNING:
         config = store.load_resolved_config(args.run)
         workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = create_provider(config, workspace=workspace)
+        provider = _create_provider_for_run(
+            config,
+            workspace=workspace,
+            resolved_runs=resolved_runs,
+        )
         try:
             result = PlanningPhaseOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
@@ -431,7 +514,7 @@ def handle_status_command(args: Namespace) -> None:
             code="missing_run",
         )
 
-    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    store, resolved_runs = _open_run_store_for_command(args)
     try:
         run = store.load_run(args.run)
         plan = store.load_plan(args.run)
@@ -443,6 +526,7 @@ def handle_status_command(args: Namespace) -> None:
             code="run_not_found",
         )
 
+    diagnostics = store_diagnostics_payload(resolved_runs, run_id=args.run)
     payload = {
         "ok": True,
         "run": {
@@ -454,6 +538,7 @@ def handle_status_command(args: Namespace) -> None:
             "plan_revision": plan.get("revision"),
             "digests": dict(run.get("digests") or {}),
         },
+        **diagnostics,
     }
     if args.stream_json:
         emit_payload(payload)
@@ -465,6 +550,9 @@ def handle_status_command(args: Namespace) -> None:
         f"  outcome: {run.get('outcome')}",
         f"  revision: {run['revision']}",
         f"  plan_revision: {plan.get('revision')}",
+        f"  runs_root: {resolved_runs.path}",
+        f"  runs_root_source: {resolved_runs.source}",
+        f"  run_path: {resolved_runs.path / args.run}",
     ]
     emit_message("\n".join(lines))
 
@@ -487,7 +575,7 @@ def handle_inspect_command(args: Namespace) -> None:
             code="invalid_view",
         )
 
-    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    store, _resolved_runs = _open_run_store_for_command(args)
     try:
         plan = store.load_plan_model(args.run)
         config = store.load_resolved_config(args.run)
@@ -521,7 +609,7 @@ def handle_validate_command(args: Namespace) -> None:
             code="missing_run",
         )
 
-    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    store, _resolved_runs = _open_run_store_for_command(args)
     try:
         run = store.load_run(args.run)
         plan = store.load_plan_model(args.run)

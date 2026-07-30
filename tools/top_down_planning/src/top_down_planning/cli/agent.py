@@ -14,7 +14,13 @@ from top_down_planning.agent_tool import (
     RunAgentService,
     load_structured_request,
 )
-from top_down_planning.cli.common import emit_message, emit_payload, resolve_runs_dir
+from top_down_planning.cli.common import (
+    AGENT_RUNS_DIR_HELP,
+    RunsStoreNotFoundError,
+    emit_message,
+    emit_payload,
+    open_run_store,
+)
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
 from top_down_planning import schema_docs
 
@@ -217,10 +223,15 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
 
 def _add_run_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--run", required=True, help="Run id.")
-    parser.add_argument(
-        "--runs-dir",
-        help="Run store root directory (default: $TDP_RUNS_DIR or ./runs).",
-    )
+    parser.add_argument("--runs-dir", help=AGENT_RUNS_DIR_HELP)
+
+
+def _open_agent_store(args: argparse.Namespace) -> FileRunStore:
+    try:
+        store, _resolved = open_run_store(args)
+    except RunsStoreNotFoundError as exc:
+        raise AgentToolError(str(exc)) from exc
+    return store
 
 
 def emit_response(payload: dict[str, Any], *, exit_code: int = 0) -> None:
@@ -347,7 +358,7 @@ def _handle_plan_command(args: argparse.Namespace) -> None:
             exit_code=2,
         )
 
-    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    store = _open_agent_store(args)
     service = PlanAgentService(store, args.run)
 
     try:
@@ -388,7 +399,7 @@ def _handle_production_command(args: argparse.Namespace) -> None:
             exit_code=2,
         )
 
-    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    store = _open_agent_store(args)
     service = ProductionAgentService(store, args.run)
 
     try:
@@ -436,7 +447,7 @@ def _handle_review_command(args: argparse.Namespace) -> None:
             exit_code=2,
         )
 
-    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    store = _open_agent_store(args)
     service = ReviewAgentService(store, args.run)
 
     try:
@@ -462,7 +473,7 @@ def _handle_review_command(args: argparse.Namespace) -> None:
 
 
 def _handle_run_status(args: argparse.Namespace) -> None:
-    store = FileRunStore(resolve_runs_dir(args.runs_dir))
+    store = _open_agent_store(args)
     service = RunAgentService(store, args.run)
     try:
         emit_response(service.status())

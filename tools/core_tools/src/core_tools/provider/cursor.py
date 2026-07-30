@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from collections import deque
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -25,17 +26,25 @@ from core_tools.provider.events import (
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
 
 
-def default_process_runner(argv: list[str], cwd: Path) -> Iterator[str]:
+def default_process_runner(
+    argv: list[str],
+    cwd: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> Iterator[str]:
     """Run the Cursor CLI and yield stdout lines."""
 
+    popen_kwargs: dict[str, Any] = {
+        "cwd": str(cwd),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if env is not None:
+        popen_kwargs["env"] = dict(env)
+
     try:
-        proc = subprocess.Popen(
-            argv,
-            cwd=str(cwd),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        proc = subprocess.Popen(argv, **popen_kwargs)
     except OSError as exc:
         raise ProviderTurnError(f"failed to start Cursor CLI: {exc}") from exc
 
@@ -130,11 +139,14 @@ class CursorProvider:
         runner: ProcessRunner | None = None,
         binary: str | None = None,
         skip_probe: bool = False,
+        extra_env: Mapping[str, str] | None = None,
     ) -> None:
         self._config = config
         provider_cfg = config.get("provider") or {}
         self._workspace = Path(workspace or Path.cwd()).resolve()
-        self._runner = runner or default_process_runner
+        self._subprocess_env = self._build_subprocess_env(extra_env)
+        base_runner = runner or default_process_runner
+        self._runner = self._wrap_runner(base_runner)
         self._skip_probe = bool(skip_probe or provider_cfg.get("skip_probe"))
         configured_binary = binary or provider_cfg.get("binary")
         self._binary = resolve_agent_binary(
@@ -207,13 +219,18 @@ class CursorProvider:
         self._sessions.pop(session_id, None)
 
     def _probe_binary(self) -> None:
+        run_kwargs: dict[str, Any] = {
+            "cwd": str(self._workspace),
+            "capture_output": True,
+            "text": True,
+            "check": False,
+        }
+        if self._subprocess_env is not None:
+            run_kwargs["env"] = self._subprocess_env
         try:
             proc = subprocess.run(
                 [self._binary, "--version"],
-                cwd=str(self._workspace),
-                capture_output=True,
-                text=True,
-                check=False,
+                **run_kwargs,
             )
         except OSError as exc:
             raise ProviderBinaryNotFoundError(
@@ -329,3 +346,22 @@ class CursorProvider:
                 events.append(normalized)
 
         return events, provider_session_id
+
+    @staticmethod
+    def _build_subprocess_env(
+        extra_env: Mapping[str, str] | None,
+    ) -> dict[str, str] | None:
+        if not extra_env:
+            return None
+        return {**os.environ, **dict(extra_env)}
+
+    def _wrap_runner(self, runner: ProcessRunner) -> ProcessRunner:
+        if self._subprocess_env is None:
+            return runner
+
+        def wrapped(argv: list[str], cwd: Path) -> Iterator[str]:
+            if runner is default_process_runner:
+                return default_process_runner(argv, cwd, env=self._subprocess_env)
+            return runner(argv, cwd)
+
+        return wrapped

@@ -316,6 +316,18 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                 },
                 "additionalProperties": False,
             },
+            "runtime": {
+                "type": "object",
+                "description": (
+                    "Operational storage settings. runtime.runs_dir is the root "
+                    "directory containing all runs; relative paths resolve against "
+                    "the process working directory."
+                ),
+                "properties": {
+                    "runs_dir": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
         },
         "additionalProperties": False,
     },
@@ -693,6 +705,9 @@ refresh before responding when the plan may have changed.
 Run status:
   tdp agent run status --run <run-id>
 
+Run store: agent commands use --runs-dir, $TDP_RUNS_DIR, or ./runs. The orchestrator
+exports the resolved absolute store root as TDP_RUNS_DIR to provider subprocesses.
+
 Published schemas: """ + ", ".join(PUBLIC_SCHEMAS) + """
 Published examples: """ + ", ".join(PUBLIC_EXAMPLES) + """
 
@@ -728,6 +743,13 @@ and mandatory review gates.
 5. Optional focused reviews use `review request` with bounded `scope.item_ids`.
    Focused plan reviewers receive the same embedded plan snapshot guidance as
    whole-plan review.
+
+## Run store
+
+Agent commands locate runs via `--runs-dir`, `$TDP_RUNS_DIR`, or `./runs` (in that
+precedence). The orchestrator exports the resolved absolute store root as
+`TDP_RUNS_DIR` to provider subprocesses, so in-agent commands typically need only
+`--run <run-id>`.
 
 ## Discoverability
 

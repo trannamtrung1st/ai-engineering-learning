@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ def create_provider(
     *,
     workspace: Path | None = None,
     runner: ProcessRunner | None = None,
+    extra_env: Mapping[str, str] | None = None,
 ) -> Provider:
     """Create a provider adapter from resolved configuration."""
 
@@ -30,6 +32,7 @@ def create_provider(
             config,
             workspace=workspace,
             runner=runner,
+            extra_env=extra_env,
         )
 
     raise ProviderError(f"unknown provider.name: {name}")

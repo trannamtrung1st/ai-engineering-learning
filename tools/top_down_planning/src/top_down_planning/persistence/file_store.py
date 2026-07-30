@@ -49,6 +49,7 @@ def new_run_record(
     context_digest: str | None = None,
     phase: str = "planning",
     workspace: str,
+    store: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = _utc_now()
     record = {
@@ -79,6 +80,8 @@ def new_run_record(
         "updated_at": now,
         "workspace": workspace,
     }
+    if store is not None:
+        record["store"] = dict(store)
     return record
 
 
@@ -118,6 +121,7 @@ class FileRunStore:
         phase: str = "planning",
         production: dict[str, Any] | None = None,
         workspace: str,
+        store: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not input_digest or not output_goal_digest:
             raise PersistenceError("input_digest and output_goal_digest are required")
@@ -140,6 +144,7 @@ class FileRunStore:
             context_digest=context_digest,
             phase=phase,
             workspace=workspace,
+            store=store,
         )
 
         run_path.mkdir(parents=True)
@@ -226,7 +231,7 @@ class FileRunStore:
     def append_event(self, run_id: str, event: dict[str, Any]) -> None:
         path = self._events_path(run_id)
         if not path.exists():
-            raise RunNotFoundError(run_id, "events.jsonl missing")
+            raise RunNotFoundError(run_id, "events.jsonl missing", runs_root=self._root)
         payload = dict(event)
         payload.setdefault("ts", _utc_now())
         with path.open("a", encoding="utf-8") as handle:
@@ -235,7 +240,7 @@ class FileRunStore:
     def load_events(self, run_id: str) -> list[dict[str, Any]]:
         path = self._events_path(run_id)
         if not path.exists():
-            raise RunNotFoundError(run_id, "events.jsonl missing")
+            raise RunNotFoundError(run_id, "events.jsonl missing", runs_root=self._root)
         events: list[dict[str, Any]] = []
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -246,7 +251,11 @@ class FileRunStore:
     def load_resolved_config(self, run_id: str) -> dict[str, Any]:
         path = self.run_dir(run_id) / "resolved-config.yaml"
         if not path.exists():
-            raise RunNotFoundError(run_id, "resolved-config.yaml missing")
+            raise RunNotFoundError(
+                run_id,
+                "resolved-config.yaml missing",
+                runs_root=self._root,
+            )
         payload = load_yaml(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise PersistenceError("resolved-config.yaml must contain a mapping")
@@ -261,13 +270,17 @@ class FileRunStore:
             raise PersistenceError("review record requires id")
         reviews_dir = self.reviews_dir(run_id)
         if not reviews_dir.is_dir():
-            raise RunNotFoundError(run_id, "reviews/ missing")
+            raise RunNotFoundError(run_id, "reviews/ missing", runs_root=self._root)
         atomic_write_json(reviews_dir / f"{review_id}.json", dict(review))
 
     def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
         path = self.reviews_dir(run_id) / f"{review_id}.json"
         if not path.exists():
-            raise RunNotFoundError(run_id, f"review {review_id} missing")
+            raise RunNotFoundError(
+                run_id,
+                f"review {review_id} missing",
+                runs_root=self._root,
+            )
         return self._read_json(path)
 
     def list_reviews(self, run_id: str) -> list[dict[str, Any]]:
@@ -299,12 +312,20 @@ class FileRunStore:
 
     def _require_file(self, path: Path, run_id: str) -> None:
         if not path.exists():
-            raise RunNotFoundError(run_id, f"missing {path.name}")
+            raise RunNotFoundError(
+                run_id,
+                f"missing {path.name}",
+                runs_root=self._root,
+            )
 
     def _read_json(self, path: Path) -> dict[str, Any]:
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
-            raise RunNotFoundError(path.parent.name, f"missing {path.name}") from exc
+            raise RunNotFoundError(
+                path.parent.name,
+                f"missing {path.name}",
+                runs_root=self._root,
+            ) from exc
         except json.JSONDecodeError as exc:
             raise PersistenceError(f"failed to load {path}: {exc}") from exc

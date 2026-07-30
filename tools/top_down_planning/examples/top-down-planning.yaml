@@ -8,7 +8,15 @@
 #   tdp agent help
 #   tdp agent schema config
 #   tdp agent example expand-branch
+#
+# Run store (optional):
+#   runtime.runs_dir sets the root directory for all runs. Relative paths resolve
+#   against the process working directory, not the config file directory.
+#   Precedence: --runs-dir > $TDP_RUNS_DIR > runtime.runs_dir > ./runs
 version: 1
+
+runtime:
+  runs_dir: .tdp/runs
 
 run:
   input_refs:

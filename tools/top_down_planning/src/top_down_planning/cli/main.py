@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 from top_down_planning import __version__
+from top_down_planning.cli.common import RUNS_DIR_HELP
 from top_down_planning.cli.agent import add_agent_subparsers, handle_agent_command
 from top_down_planning.cli.user import (
     handle_inspect_command,
@@ -16,10 +17,7 @@ from top_down_planning.cli.user import (
 
 
 def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--runs-dir",
-        help="Run store root directory (default: $TDP_RUNS_DIR or ./runs).",
-    )
+    parser.add_argument("--runs-dir", help=RUNS_DIR_HELP)
     parser.add_argument(
         "--stream-json",
         action="store_true",
@@ -60,14 +58,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     resume_parser = subparsers.add_parser("resume", help="Resume an interrupted run.")
     resume_parser.add_argument("--run", help="Run id.")
+    resume_parser.add_argument(
+        "--config",
+        help="YAML configuration file (uses runtime.runs_dir when locating the store).",
+    )
     _add_operational_flags(resume_parser)
 
     status_parser = subparsers.add_parser("status", help="Show run status.")
     status_parser.add_argument("--run", help="Run id.")
+    status_parser.add_argument(
+        "--config",
+        help="YAML configuration file (uses runtime.runs_dir when locating the store).",
+    )
     _add_operational_flags(status_parser)
 
     inspect_parser = subparsers.add_parser("inspect", help="Inspect run artifacts.")
     inspect_parser.add_argument("--run", help="Run id.")
+    inspect_parser.add_argument(
+        "--config",
+        help="YAML configuration file (uses runtime.runs_dir when locating the store).",
+    )
     inspect_parser.add_argument(
         "--view",
         help="Inspection view (currently only tree).",
@@ -79,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run deterministic validators.",
     )
     validate_parser.add_argument("--run", help="Run id.")
+    validate_parser.add_argument(
+        "--config",
+        help="YAML configuration file (uses runtime.runs_dir when locating the store).",
+    )
     _add_operational_flags(validate_parser)
 
     add_agent_subparsers(subparsers)

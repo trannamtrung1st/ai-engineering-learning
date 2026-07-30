@@ -69,7 +69,31 @@ tdp validate --run <run-id>
 tdp resume --run <run-id>
 ```
 
-Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides. Unknown paths in YAML or `--set` are rejected. Resolved configuration is materialized to `runs/<run-id>/resolved-config.yaml` and included in the run config digest.
+Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides. Unknown paths in YAML or `--set` are rejected. Resolved configuration is materialized to `<runs-root>/<run-id>/resolved-config.yaml` and included in the run config digest.
+
+### Run store location
+
+The run store root is the directory that contains all run folders (`<runs-root>/<run-id>/`). Configure it with optional YAML:
+
+```yaml
+runtime:
+  runs_dir: .tdp/runs   # relative paths resolve against the process working directory
+```
+
+`tdp run` requires an explicit run store: set `runtime.runs_dir` in the config, pass `--runs-dir`, or export `TDP_RUNS_DIR`. Later commands may also use `--config` to locate the store via `runtime.runs_dir`.
+
+Resolution precedence:
+
+1. `--runs-dir` on the command line
+2. `$TDP_RUNS_DIR` environment variable
+3. `runtime.runs_dir` in the YAML config (or `--set runtime.runs_dir=...` on `tdp run`)
+4. `./runs` under the current working directory
+
+`tdp run` creates the store root when needed. Read-only commands (`status`, `inspect`, `validate`, `tdp agent …`) do not create a missing store.
+
+When the orchestrator starts a provider session, it exports the resolved absolute path as `TDP_RUNS_DIR` to provider subprocesses. In-agent commands such as `tdp agent plan snapshot --run <run-id>` therefore only need `--run`; they resolve the store from that environment variable.
+
+To resume or inspect from a new shell, provide enough information to locate the store: `--runs-dir`, `TDP_RUNS_DIR`, or `--config` pointing at a YAML file with `runtime.runs_dir`. `tdp status` also reports `runs_root`, `runs_root_source`, and `run_path`.
 
 Run operational `status` values (proposal §15): `running`, `paused`, `completed`, `failed`. Quality `outcome` values: `accepted`, `rejected`, `blocked` (set only by orchestrator outcome resolution).
 
