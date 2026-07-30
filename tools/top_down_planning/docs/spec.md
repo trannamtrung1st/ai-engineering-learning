@@ -209,9 +209,17 @@ Mutating agent commands are authorized by session capability tokens, not self-de
 
 1. Creates a capability record under `capabilities/` in the run store (persisting only a `secret_hash`, never the raw secret).
 2. Binds the capability to the provider `session_id` and, for reviewers, the review `loop_id`.
-3. Exports `TDP_CAPABILITY_TOKEN` to the provider subprocess.
+3. Exports `TDP_CAPABILITY_TOKEN` to the provider subprocess **before** starting the turn that may call mutating `tdp agent …` commands.
 4. Revokes prior tokens when re-issuing for the same session, at turn boundaries, when a review loop becomes terminal, and when leaving a phase.
 5. Enforces phase, operation, session, and loop checks in the agent tool layer before any mutation.
+
+Reviewer sessions use a two-step provider flow so the capability token is always present on the substantive review turn:
+
+1. `start_reviewer_session` with a minimal allocation request (session id only).
+2. Issue and export the reviewer capability token.
+3. `send` the bounded review package (or a `recheck_revision` request) on a fresh provider turn.
+
+Cold resume of a pending reviewer loop repeats step 2–3 on the existing reviewer session id before consuming the turn.
 
 Role boundaries protect lifecycle integrity:
 
@@ -1028,7 +1036,7 @@ Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary
 
 Console output prints `[category]` once per discrete event block (optional `[timestamp]` when `show_timestamps` is enabled). Multi-line discrete messages omit the prefix on continuation lines. `thinking` and `response` events are incremental deltas: the prefix appears once per block, further deltas omit it, and text is written without trailing newlines until the category changes. Explicit `\n` characters in agent text produce line breaks within the block.
 
-Agent session lifecycle lines use `[session:start]` and `[session:end]`. Audit events `planner_session_started`, `producer_session_started`, and `reviewer_session_started` require `role`, `phase`, `run_id`, and `session_id`; the console prints them on start (for example `planner session started phase=planning role=planner ...`). After each blocking phase step and before provider teardown (including Ctrl+C cancel), `RunEngine` emits one `[session:end]` line per active provider session with the same fields.
+Agent session lifecycle lines use `[session:start]`, `[session:resume]`, and `[session:end]`. Audit events `planner_session_started`, `producer_session_started`, and `reviewer_session_started` are emitted after the orchestrator allocates a provider session and before the first provider turn is consumed (`role`, `phase`, `run_id`, and `session_id` required). Matching `*_session_resumed` events are emitted before each `resume_primary_session` call and when resuming an in-flight reviewer turn. After each blocking phase step and before provider teardown (including Ctrl+C cancel), `RunEngine` emits one `[session:end]` line per active provider session with the same fields.
 
 `tdp run` and `tdp resume` treat Ctrl+C as a cooperative cancel: `RunEngine` calls `terminate_all_sessions()`, emits a `session:cancel` observability event, returns without marking the run failed, and the CLI exits with code 130. With `--stream-json`, the final stdout payload includes `"cancelled": true` and `"reason": "cancelled by user"`.
 
@@ -1093,7 +1101,7 @@ Cursor CLI is the default initial provider. The core orchestrator depends on a p
 ```text
 start_primary_session(role, context_manifest)
 resume_primary_session(session_id, request)
-start_reviewer_session(review_package)
+start_reviewer_session(allocation_request)
 send(session_id, request)
 stream_events(session_id)
 get_capabilities()
@@ -1101,7 +1109,10 @@ get_session_reference(session_id)
 list_active_sessions()
 terminate_session(session_id)
 terminate_all_sessions()
+set_capability_token(token)   # orchestrator hook; exports TDP_CAPABILITY_TOKEN to subprocess env
 ```
+
+Reviewer orchestration uses `start_reviewer_session` only to obtain a provider session id from a minimal allocation payload, then issues a reviewer capability token and delivers the bounded review package (or a `recheck_revision` follow-up) via `send` so mutating `tdp agent review respond` runs in a subprocess that already exports `TDP_CAPABILITY_TOKEN`.
 
 The provider adapter is responsible for:
 

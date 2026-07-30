@@ -30,6 +30,11 @@ from top_down_planning.orchestrator.provider_turns import (
     consume_provider_turn,
     run_pending_focused_review,
 )
+from top_down_planning.orchestrator.session_events import (
+    emit_primary_session_resumed,
+    emit_primary_session_started,
+    sync_persisted_session_id,
+)
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
@@ -99,15 +104,20 @@ class ProductionPhaseOrchestrator:
                 manifest,
                 model=role_context.model,
             )
-            run = _persist_session_id(self._store, self._run_id, session_id)
-            phase = str(run.get("phase") or PRODUCTION)
-            self._append_event(
-                "producer_session_started",
-                session_id=session_id,
+            emit_primary_session_started(
+                self._append_event,
                 role="producer",
-                phase=phase,
+                phase=PRODUCTION,
+                session_id=session_id,
             )
+            run = _persist_session_id(self._store, self._run_id, session_id)
         else:
+            emit_primary_session_resumed(
+                self._append_event,
+                role="producer",
+                phase=PRODUCTION,
+                session_id=session_id,
+            )
             self._provider.resume_primary_session(
                 session_id,
                 {"action": "continue", "phase": PRODUCTION},
@@ -186,6 +196,13 @@ class ProductionPhaseOrchestrator:
                 session_id,
                 allowed_signals=_COMPLETION_SIGNALS,
             )
+            session_id = sync_persisted_session_id(
+                self._provider,
+                self._store,
+                self._run_id,
+                session_id,
+                field="primary_producer_session_id",
+            )
             run_pending_focused_review(
                 self._store,
                 self._run_id,
@@ -211,6 +228,14 @@ class ProductionPhaseOrchestrator:
                     session_id=session_id,
                 )
 
+            run = self._store.load_run(self._run_id)
+            phase = str(run.get("phase") or PRODUCTION)
+            emit_primary_session_resumed(
+                self._append_event,
+                role="producer",
+                phase=phase,
+                session_id=session_id,
+            )
             self._provider.resume_primary_session(
                 session_id,
                 self._producer_resume_request(),

@@ -25,6 +25,10 @@ from top_down_planning.orchestrator.phases import (
     WHOLE_PLAN_REVIEW,
 )
 from top_down_planning.orchestrator.provider_turns import consume_provider_turn
+from top_down_planning.orchestrator.session_events import (
+    emit_primary_session_resumed,
+    sync_persisted_session_id,
+)
 from top_down_planning.orchestrator.whole_plan_review import WholePlanReviewOrchestrator
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
@@ -289,6 +293,13 @@ class PlanAmendmentOrchestrator:
         session_id: str,
         amendment: dict[str, Any],
     ) -> None:
+        emit_primary_session_resumed(
+            self._append_event,
+            role="planner",
+            phase=PLAN_AMENDMENT,
+            session_id=session_id,
+            amendment_id=amendment.get("id"),
+        )
         self._provider.resume_primary_session(
             session_id,
             {
@@ -303,11 +314,19 @@ class PlanAmendmentOrchestrator:
         )
 
     def _consume_planner_turn(self, session_id: str) -> str | None:
-        return consume_provider_turn(
+        signal = consume_provider_turn(
             self._provider,
             session_id,
             allowed_signals=_COMPLETION_SIGNALS,
         )
+        sync_persisted_session_id(
+            self._provider,
+            self._store,
+            self._run_id,
+            session_id,
+            field="primary_planner_session_id",
+        )
+        return signal
 
     def _persist_amendment_revision_cycles(
         self,

@@ -226,6 +226,12 @@ def set_capability_env(monkeypatch: Any, token: str | None) -> None:
         monkeypatch.setenv(CAPABILITY_ENV_VAR, token)
 
 
+def script_reviewer_allocate(provider: Any) -> None:
+    """Queue the allocation turn consumed before a new reviewer review package."""
+
+    provider.script_turn(done_events(text="reviewer allocate"))
+
+
 def done_events(*, signal: str | None = None, text: str = "ok") -> list[dict]:
     events = [
         {"type": "assistant", "text": text},

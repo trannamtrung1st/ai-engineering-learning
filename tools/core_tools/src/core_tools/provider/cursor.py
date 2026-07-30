@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -154,6 +155,16 @@ class _CursorSession:
     manifest: dict[str, Any]
     model: str | None
     pending_events: deque[dict[str, Any]] = field(default_factory=deque)
+    pending_argv: list[str] | None = None
+    turn_running: bool = False
+    turn_complete: bool = False
+    turn_error: ProviderTurnError | None = None
+    collector_thread: threading.Thread | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    condition: threading.Condition = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.condition = threading.Condition(self.lock)
 
 
 class CursorProvider:
@@ -185,6 +196,8 @@ class CursorProvider:
         if not self._skip_probe:
             self._probe_binary()
         self._sessions: dict[str, _CursorSession] = {}
+        self._session_aliases: dict[str, str] = {}
+        self._pending_counter = 0
         self._active_turn_proc: subprocess.Popen[str] | None = None
         self._on_provider_event = on_provider_event
 
@@ -195,16 +208,20 @@ class CursorProvider:
         *,
         model: str | None = None,
     ) -> str:
-        return self._start_session(
+        return self._register_session(
             role=role,
             kind="primary",
             manifest=context_manifest,
             prompt=format_manifest_prompt(role, context_manifest),
             model=model,
+            resume_session_id=None,
         )
 
     def resume_primary_session(self, session_id: str, request: dict[str, Any]) -> None:
-        self._execute_turn(session_id, prompt=format_request_prompt(request))
+        self._queue_turn(
+            self.canonical_session_id(session_id),
+            prompt=format_request_prompt(request),
+        )
 
     def start_reviewer_session(
         self,
@@ -212,21 +229,39 @@ class CursorProvider:
         *,
         model: str | None = None,
     ) -> str:
-        return self._start_session(
+        return self._register_session(
             role="reviewer",
             kind="reviewer",
             manifest=review_package,
             prompt=format_request_prompt(review_package),
             model=model,
+            resume_session_id=None,
         )
 
     def send(self, session_id: str, request: dict[str, Any]) -> None:
-        self._execute_turn(session_id, prompt=format_request_prompt(request))
+        self._queue_turn(
+            self.canonical_session_id(session_id),
+            prompt=format_request_prompt(request),
+        )
 
     def stream_events(self, session_id: str) -> Iterator[dict[str, Any]]:
-        session = self._require_session(session_id)
-        while session.pending_events:
-            yield session.pending_events.popleft()
+        canonical_id = self.canonical_session_id(session_id)
+        session = self._require_session(canonical_id)
+        self._ensure_turn_started(canonical_id, session)
+        while True:
+            with session.condition:
+                while not session.pending_events and not session.turn_complete:
+                    session.condition.wait(timeout=0.05)
+                if session.pending_events:
+                    yield session.pending_events.popleft()
+                    continue
+                if session.turn_complete:
+                    if session.turn_error is not None:
+                        raise session.turn_error
+                    break
+
+    def canonical_session_id(self, session_id: str) -> str:
+        return self._session_aliases.get(session_id, session_id)
 
     def get_capabilities(self) -> dict[str, Any]:
         models: list[str] = []
@@ -248,10 +283,11 @@ class CursorProvider:
         }
 
     def get_session_reference(self, session_id: str) -> dict[str, Any]:
-        session = self._require_session(session_id)
+        canonical_id = self.canonical_session_id(session_id)
+        session = self._require_session(canonical_id)
         return {
             "provider": "cursor",
-            "session_id": session_id,
+            "session_id": canonical_id,
             "role": session.role,
             "kind": session.kind,
             "model": session.model,
@@ -270,13 +306,18 @@ class CursorProvider:
         ]
 
     def terminate_session(self, session_id: str) -> None:
-        self._sessions.pop(session_id, None)
+        canonical_id = self.canonical_session_id(session_id)
+        self._sessions.pop(canonical_id, None)
+        for alias, target in list(self._session_aliases.items()):
+            if target == canonical_id or alias == canonical_id:
+                self._session_aliases.pop(alias, None)
 
     def terminate_all_sessions(self) -> None:
         """Stop in-flight turns and drop tracked provider sessions."""
 
         self._terminate_active_turn()
         self._sessions.clear()
+        self._session_aliases.clear()
 
     def set_capability_token(self, token: str | None) -> None:
         if token:
@@ -310,7 +351,8 @@ class CursorProvider:
             )
 
     def _require_session(self, session_id: str) -> _CursorSession:
-        session = self._sessions.get(session_id)
+        canonical_id = self.canonical_session_id(session_id)
+        session = self._sessions.get(canonical_id)
         if session is None:
             raise ProviderSessionError(
                 f"unknown provider session: {session_id}",
@@ -318,40 +360,46 @@ class CursorProvider:
             )
         return session
 
-    def _start_session(
+    def _new_pending_session_id(self) -> str:
+        self._pending_counter += 1
+        return f"cursor-pending-{self._pending_counter}"
+
+    def _register_session(
         self,
         *,
         role: str,
         kind: str,
         manifest: dict[str, Any],
         prompt: str,
-        model: str | None = None,
+        model: str | None,
+        resume_session_id: str | None,
     ) -> str:
         session_model = _resolve_cli_model(model=model)
         argv = build_agent_argv(
             self._config,
             binary=self._binary,
             workspace=self._workspace,
-            session_id=None,
+            session_id=resume_session_id,
             prompt=prompt,
             model=session_model,
         )
-        events, provider_session_id = self._collect_events(argv)
-        if provider_session_id is None:
-            raise ProviderTurnError(
-                "Cursor CLI turn completed without a provider session id"
-            )
-        self._sessions[provider_session_id] = _CursorSession(
+        session_id = resume_session_id or self._new_pending_session_id()
+        self._sessions[session_id] = _CursorSession(
             role=role,
             kind=kind,
             manifest=dict(manifest),
             model=session_model,
-            pending_events=deque(events),
+            pending_argv=argv,
         )
-        return provider_session_id
+        return session_id
 
-    def _execute_turn(self, session_id: str, *, prompt: str) -> None:
+    def _queue_turn(self, session_id: str, *, prompt: str) -> None:
         session = self._require_session(session_id)
+        if session.turn_running:
+            raise ProviderTurnError(
+                f"provider turn already in progress for session {session_id}",
+                session_id=session_id,
+            )
         argv = build_agent_argv(
             self._config,
             binary=self._binary,
@@ -360,33 +408,60 @@ class CursorProvider:
             prompt=prompt,
             model=session.model,
         )
-        events, provider_session_id = self._collect_events(argv)
-        if provider_session_id is None:
-            raise ProviderTurnError(
-                "Cursor CLI turn completed without a provider session id",
-                session_id=session_id,
-            )
-        if provider_session_id != session_id:
-            raise ProviderTurnError(
-                f"Cursor CLI resume returned unexpected session id "
-                f"{provider_session_id!r} (expected {session_id!r})",
-                session_id=session_id,
-            )
-        session.pending_events = deque(events)
+        with session.condition:
+            session.pending_events.clear()
+            session.pending_argv = argv
+            session.turn_running = False
+            session.turn_complete = False
+            session.turn_error = None
+            session.collector_thread = None
 
-    def _max_retries_per_call(self) -> int:
-        provider_limits = (self._config.get("limits") or {}).get("provider") or {}
-        return int(provider_limits.get("max_retries_per_call", 0))
+    def _ensure_turn_started(self, session_id: str, session: _CursorSession) -> None:
+        with session.condition:
+            if session.turn_running or session.turn_complete:
+                return
+            if session.pending_argv is None:
+                return
+            argv = session.pending_argv
+            session.pending_argv = None
+            session.turn_running = True
+            thread = threading.Thread(
+                target=self._collect_turn,
+                args=(session_id, session, argv),
+                daemon=True,
+            )
+            session.collector_thread = thread
+            thread.start()
 
-    def _collect_events(
+    def _collect_turn(
         self,
+        session_id: str,
+        session: _CursorSession,
         argv: list[str],
-    ) -> tuple[list[dict[str, Any]], str | None]:
+    ) -> None:
+        try:
+            self._collect_turn_once(session_id, session, argv)
+        except ProviderTurnError as exc:
+            with session.condition:
+                session.turn_error = exc
+        finally:
+            with session.condition:
+                session.turn_running = False
+                session.turn_complete = True
+                session.condition.notify_all()
+
+    def _collect_turn_once(
+        self,
+        session_id: str,
+        session: _CursorSession,
+        argv: list[str],
+    ) -> None:
         max_retries = self._max_retries_per_call()
         last_error: ProviderTurnError | None = None
         for attempt in range(max_retries + 1):
             try:
-                return self._collect_events_once(argv)
+                self._collect_turn_stream(session_id, session, argv)
+                return
             except ProviderTurnError as exc:
                 last_error = exc
                 if attempt < max_retries:
@@ -402,13 +477,13 @@ class CursorProvider:
                     raise
         if last_error is not None:
             raise last_error
-        return [], None
 
-    def _collect_events_once(
+    def _collect_turn_stream(
         self,
+        session_id: str,
+        session: _CursorSession,
         argv: list[str],
-    ) -> tuple[list[dict[str, Any]], str | None]:
-        events: list[dict[str, Any]] = []
+    ) -> None:
         provider_session_id: str | None = None
 
         for line in self._runner(argv, self._workspace):
@@ -422,12 +497,42 @@ class CursorProvider:
                 continue
             if raw.get("session_id"):
                 provider_session_id = str(raw["session_id"])
+                session_id = self._maybe_migrate_session(session_id, provider_session_id)
             normalized = normalize_cursor_event(raw)
             if normalized is not None:
                 self._emit_provider_event(normalized)
-                events.append(normalized)
+                with session.condition:
+                    session.pending_events.append(normalized)
+                    session.condition.notify_all()
 
-        return events, provider_session_id
+        if provider_session_id is None:
+            raise ProviderTurnError(
+                "Cursor CLI turn completed without a provider session id",
+                session_id=session_id,
+            )
+        if provider_session_id != session_id:
+            raise ProviderTurnError(
+                f"Cursor CLI resume returned unexpected session id "
+                f"{provider_session_id!r} (expected {session_id!r})",
+                session_id=session_id,
+            )
+
+    def _maybe_migrate_session(self, current_id: str, provider_session_id: str) -> str:
+        if current_id == provider_session_id:
+            return current_id
+
+        session = self._sessions.pop(current_id, None)
+        if session is None:
+            session = self._require_session(provider_session_id)
+            return provider_session_id
+
+        self._sessions[provider_session_id] = session
+        self._session_aliases[current_id] = provider_session_id
+        return provider_session_id
+
+    def _max_retries_per_call(self) -> int:
+        provider_limits = (self._config.get("limits") or {}).get("provider") or {}
+        return int(provider_limits.get("max_retries_per_call", 0))
 
     def _emit_provider_event(self, event: dict[str, Any]) -> None:
         if self._on_provider_event is not None:

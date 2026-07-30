@@ -37,6 +37,9 @@ class Provider(Protocol):
     def stream_events(self, session_id: str) -> Iterator[dict[str, Any]]:
         """Yield normalized provider events for a session."""
 
+    def canonical_session_id(self, session_id: str) -> str:
+        """Return the provider-native session id for a stored session reference."""
+
     def get_capabilities(self) -> dict[str, Any]:
         """Return provider capabilities such as models and features."""
 

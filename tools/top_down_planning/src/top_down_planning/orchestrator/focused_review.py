@@ -16,16 +16,28 @@ from top_down_planning.orchestrator.agent_context import (
 )
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
-    bind_reviewer_capability,
     issue_session_capability,
     revoke_capabilities_for_loop,
     rotate_session_capability,
+)
+from top_down_planning.orchestrator.reviewer_session import (
+    begin_reviewer_review,
+    build_reviewer_tool_instructions,
+    deliver_reviewer_turn,
+    resume_reviewer_session_with_package,
+    reviewer_decision_missing_error,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.orchestrator.provider_turns import (
     consume_provider_turn,
     review_decision_from_store,
+)
+from top_down_planning.orchestrator.session_events import (
+    emit_primary_session_resumed,
+    emit_reviewer_session_resumed,
+    emit_reviewer_session_started,
+    sync_reviewer_loop_session_id,
 )
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
@@ -67,28 +79,55 @@ class FocusedReviewOrchestrator:
 
         config = self._store.load_resolved_config(self._run_id)
         max_revision_cycles = _focused_revision_limit(config, loop.type)
-        loop = self._normalize_loop_for_resume(loop)
+        loop, reviewer_turn_delivered = self._normalize_loop_for_resume(loop)
+        deliver_on_existing_session = (
+            loop.reviewer_session_id is not None and not reviewer_turn_delivered
+        )
 
         while True:
             if loop.status == "pending":
                 session_id = loop.reviewer_session_id
+                phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
                 if session_id is None:
-                    session_id = self._start_reviewer_session(loop)
+                    session_id, self._capability_token = self._start_reviewer_session(loop)
                     loop = self._reload_loop(loop.id)
-                else:
-                    phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-                    self._capability_token = bind_reviewer_capability(
+                    deliver_on_existing_session = False
+                elif deliver_on_existing_session:
+                    emit_reviewer_session_resumed(
+                        self._append_event,
+                        phase=phase,
+                        session_id=session_id,
+                        loop_id=loop.id,
+                        review_type=loop.type,
+                    )
+                    run = self._store.load_run(self._run_id)
+                    config = self._store.load_resolved_config(self._run_id)
+                    package = build_focused_review_package(
+                        self._run_id,
+                        run,
+                        config,
+                        loop,
+                        plan=self._store.load_plan_model(self._run_id),
+                        production=(
+                            self._store.load_production(self._run_id)
+                            if loop.type == "focused_output"
+                            else None
+                        ),
+                    )
+                    self._capability_token = resume_reviewer_session_with_package(
+                        self._provider,
                         self._store,
                         self._run_id,
-                        self._provider,
                         session_id=session_id,
-                        phase=phase,
                         loop_id=loop.id,
+                        phase=phase,
+                        review_package=package,
                     )
+                    deliver_on_existing_session = False
                 decision = self._consume_reviewer_turn(session_id, loop.id)
                 loop = self._reload_loop(loop.id)
                 if decision is None:
-                    raise ProviderRunError("reviewer turn completed without a decision")
+                    raise reviewer_decision_missing_error()
                 if loop.status == "pending":
                     phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
                     self._capability_token = rotate_session_capability(
@@ -166,17 +205,17 @@ class FocusedReviewOrchestrator:
             self._resume_primary_with_findings(loop)
             loop = self._prepare_recheck(loop)
 
-    def _normalize_loop_for_resume(self, loop: ReviewLoop) -> ReviewLoop:
+    def _normalize_loop_for_resume(self, loop: ReviewLoop) -> tuple[ReviewLoop, bool]:
         if loop.status != "changes_requested":
-            return loop
+            return loop, False
 
         current_revision = _current_target_revision(self._store, self._run_id, loop.type)
         if current_revision <= loop.target_revision:
-            return loop
+            return loop, False
 
-        return self._prepare_recheck(loop)
+        return self._prepare_recheck(loop), True
 
-    def _start_reviewer_session(self, loop: ReviewLoop) -> str:
+    def _start_reviewer_session(self, loop: ReviewLoop) -> tuple[str, str]:
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
         package = build_focused_review_package(
@@ -192,9 +231,23 @@ class FocusedReviewOrchestrator:
             ),
         )
         role_context = resolve_role_session_context(config, run, "reviewer")
-        session_id = self._provider.start_reviewer_session(
-            package,
+        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
+        session_id, capability_token = begin_reviewer_review(
+            self._provider,
+            self._store,
+            self._run_id,
+            loop_id=loop.id,
+            review_package=package,
+            phase=phase,
             model=role_context.model,
+        )
+        emit_reviewer_session_started(
+            self._append_event,
+            phase=phase,
+            session_id=session_id,
+            loop_id=loop.id,
+            review_type=loop.type,
+            scope=loop.scope,
         )
         updated = ReviewLoop(
             id=loop.id,
@@ -207,33 +260,20 @@ class FocusedReviewOrchestrator:
             revision_cycles=loop.revision_cycles,
         )
         self._persist_loop(updated)
-        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-        self._capability_token = issue_session_capability(
-            self._store,
-            self._run_id,
-            role="reviewer",
-            phase=phase,
-            session_id=session_id,
-            session_kind="reviewer",
-            loop_id=loop.id,
-        )
-        bind_provider_capability(self._provider, self._capability_token)
-        self._append_event(
-            "reviewer_session_started",
-            loop_id=loop.id,
-            review_type=loop.type,
-            session_id=session_id,
-            scope=loop.scope,
-            role="reviewer",
-            phase=phase,
-        )
-        return session_id
+        return session_id, capability_token
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
         consume_provider_turn(
             self._provider,
             session_id,
             allowed_signals=_NO_COMPLETION_SIGNALS,
+        )
+        sync_reviewer_loop_session_id(
+            self._provider,
+            self._store,
+            self._run_id,
+            loop_id,
+            session_id,
         )
         return review_decision_from_store(self._store, self._run_id, loop_id)
 
@@ -261,6 +301,14 @@ class FocusedReviewOrchestrator:
         )
         bind_provider_capability(self._provider, self._capability_token)
 
+        emit_primary_session_resumed(
+            self._append_event,
+            role=role,
+            phase=phase,
+            session_id=session_id,
+            loop_id=loop.id,
+            review_type=loop.type,
+        )
         self._provider.resume_primary_session(
             session_id,
             {
@@ -314,9 +362,21 @@ class FocusedReviewOrchestrator:
         )
         self._persist_loop(updated)
         phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-        self._provider.send(
-            session_id,
-            {
+        emit_reviewer_session_resumed(
+            self._append_event,
+            phase=phase,
+            session_id=session_id,
+            loop_id=loop.id,
+            review_type=loop.type,
+        )
+        self._capability_token = deliver_reviewer_turn(
+            self._provider,
+            self._store,
+            self._run_id,
+            session_id=session_id,
+            loop_id=loop.id,
+            phase=phase,
+            request={
                 "action": "recheck_revision",
                 "phase": phase,
                 "loop_id": loop.id,
@@ -379,22 +439,16 @@ def build_focused_review_package(
     phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
     revision_label = "plan" if loop.type == "focused_plan" else "output"
 
-    tool_instructions: dict[str, str] = {
-        "authorization": (
-            "Mutating commands require the session capability token exported "
-            "as TDP_CAPABILITY_TOKEN."
-        ),
-        "respond": (
-            f"tdp agent review respond --run {run_id} --request <file>"
-        ),
+    extra_instructions: dict[str, str] = {
         "scope_rule": (
             "Findings must reference only item ids declared in scope.item_ids."
         ),
     }
     if loop.type == "focused_plan":
-        tool_instructions["plan_snapshot"] = (
+        extra_instructions["plan_snapshot"] = (
             f"tdp agent plan snapshot --run {run_id} --view tree"
         )
+    tool_instructions = build_reviewer_tool_instructions(run_id, **extra_instructions)
 
     package: dict[str, Any] = attach_role_context_to_manifest(
         {

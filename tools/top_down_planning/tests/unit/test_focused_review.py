@@ -25,6 +25,7 @@ from tests.helpers import (
     request_focused_review,
     respond_review,
     run_digests_for_config,
+    script_reviewer_allocate,
     whole_plan_approval_record,
 )
 
@@ -142,6 +143,7 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
             _focused_plan_request(["item-api"]),
         ),
     )
+    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="reviewer turn"),
         mutate_store=respond_review(
@@ -344,6 +346,7 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
     run["sessions"] = {"primary_planner_session_id": planner_session_id}
     store.save_run("run-20260101T000401-000401", run, expected_revision)
 
+    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="reviewer turn"),
         mutate_store=respond_review(
@@ -524,6 +527,7 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
             phase=PRODUCTION,
         ),
     )
+    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="reviewer approve"),
         mutate_store=respond_review(

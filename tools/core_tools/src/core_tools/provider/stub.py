@@ -108,6 +108,9 @@ class StubProvider:
     def send(self, session_id: str, request: dict[str, Any]) -> None:
         self._enqueue_turn(session_id, request)
 
+    def canonical_session_id(self, session_id: str) -> str:
+        return session_id
+
     def stream_events(self, session_id: str) -> Iterator[dict[str, Any]]:
         session = self._require_session(session_id)
         if session.pending_hook is not None:

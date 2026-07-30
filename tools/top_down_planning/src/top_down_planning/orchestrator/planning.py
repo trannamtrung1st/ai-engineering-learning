@@ -25,6 +25,11 @@ from top_down_planning.orchestrator.provider_turns import (
     run_pending_focused_review,
     sync_planning_items_added,
 )
+from top_down_planning.orchestrator.session_events import (
+    emit_primary_session_resumed,
+    emit_primary_session_started,
+    sync_persisted_session_id,
+)
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
@@ -85,14 +90,20 @@ class PlanningPhaseOrchestrator:
                 manifest,
                 model=role_context.model,
             )
-            run = _persist_session_id(self._store, self._run_id, session_id)
-            self._append_event(
-                "planner_session_started",
-                session_id=session_id,
+            emit_primary_session_started(
+                self._append_event,
                 role="planner",
                 phase=PLANNING,
+                session_id=session_id,
             )
+            run = _persist_session_id(self._store, self._run_id, session_id)
         else:
+            emit_primary_session_resumed(
+                self._append_event,
+                role="planner",
+                phase=PLANNING,
+                session_id=session_id,
+            )
             self._provider.resume_primary_session(
                 session_id,
                 {"action": "continue", "phase": PLANNING},
@@ -126,6 +137,13 @@ class PlanningPhaseOrchestrator:
                 session_id,
                 allowed_signals=_COMPLETION_SIGNALS,
             )
+            session_id = sync_persisted_session_id(
+                self._provider,
+                self._store,
+                self._run_id,
+                session_id,
+                field="primary_planner_session_id",
+            )
             run_pending_focused_review(
                 self._store,
                 self._run_id,
@@ -154,6 +172,12 @@ class PlanningPhaseOrchestrator:
 
             if turn_signal == _CANDIDATE_READY_SIGNAL:
                 if self._has_blocking_focused_plan_findings():
+                    emit_primary_session_resumed(
+                        self._append_event,
+                        role="planner",
+                        phase=PLANNING,
+                        session_id=session_id,
+                    )
                     self._provider.resume_primary_session(
                         session_id,
                         {
@@ -201,6 +225,12 @@ class PlanningPhaseOrchestrator:
             )
             bind_provider_capability(self._provider, self._capability_token)
 
+            emit_primary_session_resumed(
+                self._append_event,
+                role="planner",
+                phase=phase,
+                session_id=session_id,
+            )
             self._provider.resume_primary_session(
                 session_id,
                 {"action": "continue", "phase": PLANNING},

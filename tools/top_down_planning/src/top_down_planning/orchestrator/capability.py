@@ -118,27 +118,3 @@ def bind_provider_capability(provider: Any, token: str | None) -> None:
     setter = getattr(provider, "set_capability_token", None)
     if setter is not None and token is not None:
         setter(token)
-
-
-def bind_reviewer_capability(
-    store: RunStore,
-    run_id: str,
-    provider: Any,
-    *,
-    session_id: str,
-    phase: str,
-    loop_id: str,
-) -> str:
-    """Issue and bind a reviewer capability for an existing reviewer session."""
-
-    token = issue_session_capability(
-        store,
-        run_id,
-        role="reviewer",
-        phase=phase,
-        session_id=session_id,
-        session_kind="reviewer",
-        loop_id=loop_id,
-    )
-    bind_provider_capability(provider, token)
-    return token

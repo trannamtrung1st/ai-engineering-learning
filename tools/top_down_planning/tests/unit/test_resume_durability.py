@@ -42,6 +42,7 @@ from tests.helpers import (
     grant_capability,
     minimal_resolved_config,
     respond_review,
+    script_reviewer_allocate,
     whole_plan_approval_record,
 )
 
@@ -376,6 +377,7 @@ def test_interrupt_whole_plan_review_resume_keeps_loop_and_reviewer_session(
     store.save_run("run-20260101T001101-001101", run, expected_revision)
 
     run_id = "run-20260101T001101-001101"
+    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(

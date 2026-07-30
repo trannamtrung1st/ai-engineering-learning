@@ -822,7 +822,9 @@ Run status:
 Run store: agent commands use --runs-dir, $TDP_RUNS_DIR, or ./runs. Run ids use
 run-YYYYMMDDTHHMMSS-<6hex> (UTC creation time plus random suffix). The orchestrator
 exports the resolved absolute store root as TDP_RUNS_DIR and a session-scoped
-TDP_CAPABILITY_TOKEN to provider subprocesses. Mutating commands require the token;
+TDP_CAPABILITY_TOKEN to provider subprocesses before turns that may call mutating
+commands. Reviewer sessions allocate a provider session id, bind the token, then
+deliver the review package on the next turn. Mutating commands require the token;
 authorization is bound to run phase and session role, not a self-declared flag.
 
 Published schemas: """ + ", ".join(PUBLIC_SCHEMAS) + """
@@ -845,7 +847,10 @@ advances phases when agents emit explicit completion signals (`candidate_plan_re
 
 The orchestrator binds one primary planner, producer, or reviewer session per phase.
 Mutating `tdp agent` commands require the session capability token exported as
-`TDP_CAPABILITY_TOKEN`. Authorization checks phase, allowed operations, the bound
+`TDP_CAPABILITY_TOKEN` on the provider subprocess that runs the turn. Reviewer
+sessions allocate a provider session id, bind the token, then deliver the review
+package (or a `recheck_revision` follow-up) via `send` before the agent may call
+`tdp agent review respond`. Authorization checks phase, allowed operations, the bound
 provider session, and (for reviewers) the review loop. Capability records store
 only a `secret_hash`; tokens are revoked when turns, loops, or phases end. Agents
 do not pass `--role` on the CLI.

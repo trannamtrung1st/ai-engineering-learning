@@ -157,8 +157,9 @@ def test_cursor_provider_uses_injected_runner(tmp_path: Path) -> None:
     )
 
     session_id = provider.start_primary_session("planner", {"goal": "build"})
-    assert session_id == "chat-abc"
+    assert session_id == "cursor-pending-1"
     events = list(provider.stream_events(session_id))
+    assert provider.canonical_session_id(session_id) == "chat-abc"
     assert captured_argv[0][0].endswith("agent")
     assert "--workspace" in captured_argv[0]
     assert "--resume" not in captured_argv[0]
@@ -350,7 +351,7 @@ def test_format_tool_call_summary_formats_cursor_grep() -> None:
     assert format_tool_call_summary(normalized) == "grep plan_apply"
 
 
-def test_stub_emits_events_before_stream_events_drain() -> None:
+def test_stub_emits_events_when_stream_events_drains_turn() -> None:
     seen: list[str] = []
     provider = StubProvider(
         on_provider_event=lambda event: seen.append(str(event.get("type")))
@@ -369,7 +370,7 @@ def test_stub_emits_events_before_stream_events_drain() -> None:
     assert drained == ["assistant", "done"]
 
 
-def test_cursor_provider_emits_events_during_collection(tmp_path: Path) -> None:
+def test_cursor_provider_emits_events_during_stream_events(tmp_path: Path) -> None:
     seen: list[str] = []
     stream_lines = [
         json.dumps(
@@ -406,8 +407,11 @@ def test_cursor_provider_emits_events_during_collection(tmp_path: Path) -> None:
         on_provider_event=lambda event: seen.append(str(event.get("type"))),
     )
     session_id = provider.start_primary_session("planner", {"goal": "build"})
-    assert session_id == "chat-live"
+    assert session_id == "cursor-pending-1"
+    assert seen == []
+    list(provider.stream_events(session_id))
     assert seen == ["assistant", "done"]
+    assert provider.canonical_session_id(session_id) == "chat-live"
 
 
 def test_resolve_agent_binary_missing_raises() -> None:
@@ -458,7 +462,8 @@ def test_cursor_provider_retries_transient_turn_errors(tmp_path: Path) -> None:
     )
 
     session_id = provider.start_primary_session("planner", {"goal": "build"})
-    assert session_id == "chat-retry"
+    list(provider.stream_events(session_id))
+    assert provider.canonical_session_id(session_id) == "chat-retry"
     assert attempts["count"] == 2
 
 
@@ -494,7 +499,8 @@ def test_cursor_provider_emits_retry_events(tmp_path: Path) -> None:
         skip_probe=True,
         on_provider_event=lambda event: seen.append(str(event.get("type"))),
     )
-    provider.start_primary_session("planner", {"goal": "build"})
+    session_id = provider.start_primary_session("planner", {"goal": "build"})
+    list(provider.stream_events(session_id))
     assert "retry" in seen
 
 
@@ -558,8 +564,10 @@ def test_cursor_provider_stores_model_and_reuses_on_resume(tmp_path: Path) -> No
         model="planner-model",
     )
     assert provider.get_session_reference(session_id)["model"] == "planner-model"
+    list(provider.stream_events(session_id))
     assert captured_argv[0][captured_argv[0].index("--model") + 1] == "planner-model"
 
     provider.send(session_id, {"action": "continue"})
+    list(provider.stream_events(session_id))
     assert captured_argv[1][captured_argv[1].index("--model") + 1] == "planner-model"
 

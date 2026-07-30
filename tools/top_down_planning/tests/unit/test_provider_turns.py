@@ -16,7 +16,7 @@ from top_down_planning.orchestrator.provider_turns import (
 )
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, grant_capability, respond_review
+from tests.helpers import create_run_kwargs, done_events, grant_capability, respond_review, script_reviewer_allocate
 
 
 def test_extract_completion_signal_from_exact_text() -> None:
@@ -229,6 +229,7 @@ def test_planning_runs_store_created_focused_review_before_advancing(
 
     provider = StubProvider()
     provider.script_turn(done_events(text="planner session start"))
+    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="reviewer approve"),
         mutate_store=respond_review(

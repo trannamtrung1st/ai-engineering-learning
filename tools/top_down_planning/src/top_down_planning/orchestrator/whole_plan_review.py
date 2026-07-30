@@ -20,17 +20,30 @@ from top_down_planning.orchestrator.agent_context import (
 )
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
-    bind_reviewer_capability,
     issue_session_capability,
     revoke_capabilities_for_loop,
     revoke_capabilities_for_phase,
     rotate_session_capability,
+)
+from top_down_planning.orchestrator.reviewer_session import (
+    begin_reviewer_review,
+    build_reviewer_tool_instructions,
+    deliver_reviewer_turn,
+    resume_reviewer_session_with_package,
+    reviewer_decision_missing_error,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.provider_turns import (
     consume_provider_turn,
     review_decision_from_store,
+)
+from top_down_planning.orchestrator.session_events import (
+    emit_primary_session_resumed,
+    emit_reviewer_session_resumed,
+    emit_reviewer_session_started,
+    sync_persisted_session_id,
+    sync_reviewer_loop_session_id,
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
@@ -77,29 +90,50 @@ class WholePlanReviewOrchestrator:
 
         config = self._store.load_resolved_config(self._run_id)
         max_revision_cycles = _whole_plan_revision_limit(config)
-        loop = self._normalize_loop_for_resume(self._get_or_create_active_loop())
+        loop, reviewer_turn_delivered = self._normalize_loop_for_resume(
+            self._get_or_create_active_loop()
+        )
+        deliver_on_existing_session = (
+            loop.reviewer_session_id is not None and not reviewer_turn_delivered
+        )
 
         while True:
             if loop.status == "pending":
                 session_id = loop.reviewer_session_id
+                run = self._store.load_run(self._run_id)
+                phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
                 if session_id is None:
-                    session_id = self._start_reviewer_session(loop)
+                    session_id, self._capability_token = self._start_reviewer_session(loop)
                     loop = self._reload_loop(loop.id)
-                else:
-                    run = self._store.load_run(self._run_id)
-                    phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
-                    self._capability_token = bind_reviewer_capability(
-                        self._store,
-                        self._run_id,
-                        self._provider,
-                        session_id=session_id,
+                    deliver_on_existing_session = False
+                elif deliver_on_existing_session:
+                    emit_reviewer_session_resumed(
+                        self._append_event,
                         phase=phase,
+                        session_id=session_id,
                         loop_id=loop.id,
                     )
+                    package = build_whole_plan_review_package(
+                        self._run_id,
+                        run,
+                        self._store.load_resolved_config(self._run_id),
+                        self._store.load_plan_model(self._run_id),
+                        loop,
+                    )
+                    self._capability_token = resume_reviewer_session_with_package(
+                        self._provider,
+                        self._store,
+                        self._run_id,
+                        session_id=session_id,
+                        loop_id=loop.id,
+                        phase=phase,
+                        review_package=package,
+                    )
+                    deliver_on_existing_session = False
                 decision = self._consume_reviewer_turn(session_id, loop.id)
                 loop = self._reload_loop(loop.id)
                 if decision is None:
-                    raise ProviderRunError("reviewer turn completed without a decision")
+                    raise reviewer_decision_missing_error()
                 if loop.status == "pending":
                     run = self._store.load_run(self._run_id)
                     phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
@@ -221,15 +255,15 @@ class WholePlanReviewOrchestrator:
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=False, reason=message)
 
-    def _normalize_loop_for_resume(self, loop: ReviewLoop) -> ReviewLoop:
+    def _normalize_loop_for_resume(self, loop: ReviewLoop) -> tuple[ReviewLoop, bool]:
         if loop.status != "changes_requested":
-            return loop
+            return loop, False
 
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])
         if plan_revision <= loop.target_revision:
-            return loop
+            return loop, False
 
-        return self._prepare_recheck(loop)
+        return self._prepare_recheck(loop), True
 
     def _get_or_create_active_loop(self) -> ReviewLoop:
         for payload in reversed(self._store.list_reviews(self._run_id)):
@@ -269,7 +303,7 @@ class WholePlanReviewOrchestrator:
         index = len(existing) + 1
         return f"review-whole-plan-{index:02d}"
 
-    def _start_reviewer_session(self, loop: ReviewLoop) -> str:
+    def _start_reviewer_session(self, loop: ReviewLoop) -> tuple[str, str]:
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
         package = build_whole_plan_review_package(
@@ -280,9 +314,22 @@ class WholePlanReviewOrchestrator:
             loop,
         )
         role_context = resolve_role_session_context(config, run, "reviewer")
-        session_id = self._provider.start_reviewer_session(
-            package,
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
+        session_id, self._capability_token = begin_reviewer_review(
+            self._provider,
+            self._store,
+            self._run_id,
+            loop_id=loop.id,
+            review_package=package,
+            phase=phase,
             model=role_context.model,
+        )
+        emit_reviewer_session_started(
+            self._append_event,
+            phase=phase,
+            session_id=session_id,
+            loop_id=loop.id,
         )
         updated = ReviewLoop(
             id=loop.id,
@@ -296,32 +343,20 @@ class WholePlanReviewOrchestrator:
             approved_digests=loop.approved_digests,
         )
         self._persist_loop(updated)
-        run = self._store.load_run(self._run_id)
-        phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
-        self._capability_token = issue_session_capability(
-            self._store,
-            self._run_id,
-            role="reviewer",
-            phase=phase,
-            session_id=session_id,
-            session_kind="reviewer",
-            loop_id=loop.id,
-        )
-        bind_provider_capability(self._provider, self._capability_token)
-        self._append_event(
-            "reviewer_session_started",
-            loop_id=loop.id,
-            session_id=session_id,
-            role="reviewer",
-            phase=phase,
-        )
-        return session_id
+        return session_id, self._capability_token
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
         consume_provider_turn(
             self._provider,
             session_id,
             allowed_signals=_NO_COMPLETION_SIGNALS,
+        )
+        sync_reviewer_loop_session_id(
+            self._provider,
+            self._store,
+            self._run_id,
+            loop_id,
+            session_id,
         )
         return review_decision_from_store(self._store, self._run_id, loop_id)
 
@@ -343,6 +378,13 @@ class WholePlanReviewOrchestrator:
         )
         bind_provider_capability(self._provider, self._capability_token)
 
+        emit_primary_session_resumed(
+            self._append_event,
+            role="planner",
+            phase=phase,
+            session_id=session_id,
+            loop_id=loop.id,
+        )
         self._provider.resume_primary_session(
             session_id,
             {
@@ -360,6 +402,13 @@ class WholePlanReviewOrchestrator:
             self._provider,
             session_id,
             allowed_signals=_NO_COMPLETION_SIGNALS,
+        )
+        sync_persisted_session_id(
+            self._provider,
+            self._store,
+            self._run_id,
+            session_id,
+            field="primary_planner_session_id",
         )
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
@@ -380,9 +429,22 @@ class WholePlanReviewOrchestrator:
             approved_digests=None,
         )
         self._persist_loop(updated)
-        self._provider.send(
-            session_id,
-            {
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
+        emit_reviewer_session_resumed(
+            self._append_event,
+            phase=phase,
+            session_id=session_id,
+            loop_id=loop.id,
+        )
+        self._capability_token = deliver_reviewer_turn(
+            self._provider,
+            self._store,
+            self._run_id,
+            session_id=session_id,
+            loop_id=loop.id,
+            phase=phase,
+            request={
                 "action": "recheck_revision",
                 "phase": WHOLE_PLAN_REVIEW,
                 "loop_id": loop.id,
@@ -451,15 +513,11 @@ def build_whole_plan_review_package(
         "acceptance": run_section.get("acceptance"),
         "digests": digests,
         "tool_instructions": {
-            "authorization": (
-                "Mutating commands require the session capability token exported "
-                "as TDP_CAPABILITY_TOKEN."
-            ),
-            "plan_snapshot": (
-                f"tdp agent plan snapshot --run {run_id} --view tree"
-            ),
-            "respond": (
-                f"tdp agent review respond --run {run_id} --request <file>"
+            **build_reviewer_tool_instructions(
+                run_id,
+                plan_snapshot=(
+                    f"tdp agent plan snapshot --run {run_id} --view tree"
+                ),
             ),
         },
         },

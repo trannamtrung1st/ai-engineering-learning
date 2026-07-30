@@ -13,7 +13,7 @@ from top_down_planning.orchestrator import PlanAmendmentOrchestrator, Production
 from top_down_planning.orchestrator.phases import PLAN_AMENDMENT, PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import apply_plan, create_run_kwargs, done_events, grant_capability, respond_review, whole_plan_approval_record
+from tests.helpers import apply_plan, create_run_kwargs, done_events, grant_capability, respond_review, script_reviewer_allocate, whole_plan_approval_record
 
 
 def _batch_apply_request(
@@ -188,6 +188,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             phase=PLAN_AMENDMENT,
         ),
     )
+    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="review turn"),
         mutate_store=respond_review(
@@ -383,6 +384,7 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
     store.save_production("run-20260101T001901-001901", production, int(production["revision"]) - 1)
 
     run_id = "run-20260101T001901-001901"
+    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="review turn"),
         mutate_store=respond_review(

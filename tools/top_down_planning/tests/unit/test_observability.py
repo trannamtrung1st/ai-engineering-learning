@@ -68,6 +68,22 @@ def test_map_audit_event_maps_planner_session_started_with_phase_and_role() -> N
     assert mapped.fields["run_id"] == "run-20260101T000001-000001"
 
 
+def test_map_audit_event_maps_planner_session_resumed_with_phase_and_role() -> None:
+    mapped = map_audit_event(
+        {
+            "type": "planner_session_resumed",
+            "run_id": "run-20260101T000001-000001",
+            "session_id": "planner-1",
+            "role": "planner",
+            "phase": "planning",
+        }
+    )
+    assert mapped is not None
+    assert mapped.category == "session:resume"
+    assert mapped.message == "planner session resumed"
+    assert mapped.session_id == "planner-1"
+
+
 def test_map_audit_event_requires_role_and_phase_for_session_start() -> None:
     assert map_audit_event(
         {
@@ -245,7 +261,7 @@ def test_provider_bridge_clears_tool_start_dedup_on_done() -> None:
     assert len(tool_starts) == 2
 
 
-def test_stub_provider_events_reach_bridge_before_stream_drain() -> None:
+def test_stub_provider_events_reach_bridge_when_stream_events_drains_turn() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(sink=collector)
     provider = StubProvider(on_provider_event=context.provider_callback())
