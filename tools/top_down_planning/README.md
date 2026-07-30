@@ -4,6 +4,23 @@ Generic agent orchestration that receives an input and output goal, builds a hig
 
 Specification: [`temp/final-top-down-planning-tool-proposal.md`](../../temp/final-top-down-planning-tool-proposal.md)
 
+## Quickstart (stub provider)
+
+Use the stub provider for local runs and tests without the Cursor CLI:
+
+```bash
+cd tools/top_down_planning
+python -m pip install -e ".[dev]"
+
+tdp agent help
+tdp agent schema plan-transaction
+tdp agent example expand-branch
+
+tdp run --config examples/top-down-planning.yaml --set provider.name=stub
+tdp status --run <run-id>
+tdp resume --run <run-id>
+```
+
 ## Architecture layers (proposal §17)
 
 | Layer | Package | Responsibility |
@@ -72,6 +89,10 @@ Whole-output review (proposal §5.3, §12.2, §15, §21): after production compl
 ## Agent CLI
 
 ```bash
+tdp agent help
+tdp agent readme
+tdp agent schema              # list schemas; add a name to show one
+tdp agent example expand-branch
 tdp agent plan snapshot --run <run-id> --view tree
 tdp agent plan apply --run <run-id> --role planner --request request.json
 tdp agent plan check --run <run-id>

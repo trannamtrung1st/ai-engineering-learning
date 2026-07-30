@@ -1,4 +1,13 @@
 # Example Top Down Planning configuration (proposal §14).
+#
+# User CLI:
+#   tdp run --config examples/top-down-planning.yaml
+#   tdp run --config examples/top-down-planning.yaml --set provider.name=stub
+#
+# Agent discoverability:
+#   tdp agent help
+#   tdp agent schema config
+#   tdp agent example expand-branch
 version: 1
 
 run:

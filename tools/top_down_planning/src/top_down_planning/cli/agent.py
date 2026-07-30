@@ -14,8 +14,9 @@ from top_down_planning.agent_tool import (
     RunAgentService,
     load_structured_request,
 )
-from top_down_planning.cli.common import emit_payload, resolve_runs_dir
+from top_down_planning.cli.common import emit_message, emit_payload, resolve_runs_dir
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
+from top_down_planning import schema_docs
 
 
 def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
@@ -24,6 +25,35 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         help="Agent-facing structured tool commands.",
     )
     agent_sub = agent_parser.add_subparsers(dest="agent_command")
+
+    agent_sub.add_parser(
+        "help",
+        help="Summarize agent commands, schemas, and examples.",
+    )
+    agent_sub.add_parser(
+        "readme",
+        help="Agent protocol overview and discoverability pointers.",
+    )
+
+    schema_parser = agent_sub.add_parser(
+        "schema",
+        help="Show JSON Schema for a published contract (or list all).",
+    )
+    schema_parser.add_argument(
+        "name",
+        nargs="?",
+        help="Schema name (omit to list published schemas).",
+    )
+
+    example_parser = agent_sub.add_parser(
+        "example",
+        help="Show a minimal valid example payload (or list all).",
+    )
+    example_parser.add_argument(
+        "name",
+        nargs="?",
+        help="Example name (omit to list published examples).",
+    )
 
     plan_parser = agent_sub.add_parser("plan", help="Plan snapshot/apply/check commands.")
     plan_sub = plan_parser.add_subparsers(dest="plan_command")
@@ -220,6 +250,26 @@ def emit_error(exc: Exception, *, exit_code: int = 1) -> None:
 
 
 def handle_agent_command(args: argparse.Namespace) -> None:
+    if args.agent_command is None:
+        emit_message(schema_docs.AGENT_HELP_TEXT)
+        return
+
+    if args.agent_command == "help":
+        emit_message(schema_docs.AGENT_HELP_TEXT)
+        return
+
+    if args.agent_command == "readme":
+        emit_message(schema_docs.AGENT_README_TEXT)
+        return
+
+    if args.agent_command == "schema":
+        _handle_schema_command(args)
+        return
+
+    if args.agent_command == "example":
+        _handle_example_command(args)
+        return
+
     if args.agent_command == "plan":
         _handle_plan_command(args)
         return
@@ -243,6 +293,36 @@ def handle_agent_command(args: argparse.Namespace) -> None:
         AgentToolError(f"unknown agent command: {args.agent_command!r}"),
         exit_code=2,
     )
+
+
+def _handle_schema_command(args: argparse.Namespace) -> None:
+    name = getattr(args, "name", None)
+    if not name:
+        emit_response(schema_docs.schema_list_payload())
+        return
+
+    try:
+        emit_response(
+            {
+                "ok": True,
+                "name": name,
+                "schema": schema_docs.show_schema(name),
+            }
+        )
+    except KeyError:
+        emit_response(schema_docs.unknown_schema_response(name))
+
+
+def _handle_example_command(args: argparse.Namespace) -> None:
+    name = getattr(args, "name", None)
+    if not name:
+        emit_response(schema_docs.example_list_payload())
+        return
+
+    try:
+        emit_response({"ok": True, **schema_docs.show_example(name)})
+    except KeyError:
+        emit_response(schema_docs.unknown_example_response(name))
 
 
 def _resolve_apply_role(args: argparse.Namespace, request: dict[str, Any]) -> str:
