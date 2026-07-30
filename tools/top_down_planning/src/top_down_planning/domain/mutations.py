@@ -5,8 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from top_down_planning.domain.dependencies import assert_no_dependency_cycles
 from top_down_planning.domain.errors import (
-    DependencyCycleError,
     InvalidMutationError,
     RevisionConflictError,
     UnknownItemError,
@@ -74,48 +74,6 @@ def _validate_depends_on(
             raise InvalidMutationError(f"dependency target is not active: {resolved}")
 
 
-def _active_dependency_edges(plan: Plan) -> dict[str, list[str]]:
-    edges: dict[str, list[str]] = {}
-    for item_id, item in plan.items.items():
-        if not is_active_item(item):
-            continue
-        edges[item_id] = [
-            dep
-            for dep in item.depends_on
-            if dep in plan.items and is_active_item(plan.items[dep])
-        ]
-    return edges
-
-
-def _dependency_cycle_path(edges: dict[str, list[str]], start_id: str) -> list[str] | None:
-    visited: set[str] = set()
-    stack: list[str] = []
-
-    def dfs(node_id: str) -> list[str] | None:
-        if node_id in stack:
-            cycle_start = stack.index(node_id)
-            return stack[cycle_start:] + [node_id]
-        if node_id in visited:
-            return None
-        visited.add(node_id)
-        stack.append(node_id)
-        for dep_id in edges.get(node_id, []):
-            cycle = dfs(dep_id)
-            if cycle is not None:
-                return cycle
-        stack.pop()
-        return None
-
-    return dfs(start_id)
-
-
-def _assert_no_dependency_cycles(plan: Plan) -> None:
-    edges = _active_dependency_edges(plan)
-    for item_id in edges:
-        cycle = _dependency_cycle_path(edges, item_id)
-        if cycle is not None:
-            raise DependencyCycleError(cycle)
-
 
 def _item_payload_from_op(op: Operation) -> dict[str, Any]:
     if "item" not in op:
@@ -142,7 +100,7 @@ def _inbound_dependency_users(plan: Plan, item_id: str) -> list[str]:
     return [
         other.id
         for other in plan.items.values()
-        if item_id in other.depends_on and other.planning_status != "removed"
+        if item_id in other.depends_on and is_active_item(other)
     ]
 
 
@@ -176,9 +134,9 @@ def _apply_add_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: 
 def _apply_update_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
     item = _require_active_item(plan, item_id)
-    patch = op.get("patch") or op.get("item") or {}
+    patch = op.get("patch")
     if not patch:
-        raise InvalidMutationError("update_item requires a patch or item payload")
+        raise InvalidMutationError("update_item requires a patch payload")
     if "planning_status" in patch:
         raise InvalidMutationError("update_item cannot change planning_status; use supersede_item or remove_item")
 
@@ -275,7 +233,7 @@ def _apply_add_dependency(plan: Plan, op: Operation, id_map: dict[str, str], cha
 
     item.depends_on.append(depends_on)
     changed.add(item_id)
-    _assert_no_dependency_cycles(plan)
+    assert_no_dependency_cycles(plan)
 
 
 def _apply_remove_dependency(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
@@ -303,7 +261,7 @@ def _apply_replace_dependencies(
 
     item.depends_on = depends_on
     changed.add(item_id)
-    _assert_no_dependency_cycles(plan)
+    assert_no_dependency_cycles(plan)
 
 
 _APPLY_HANDLERS = {
