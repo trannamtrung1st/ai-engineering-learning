@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("--run", help="Run id.")
     inspect_parser.add_argument(
         "--view",
-        help="Inspection view (e.g. tree, ready).",
+        help="Inspection view (currently only tree).",
     )
     _add_operational_flags(inspect_parser)
 

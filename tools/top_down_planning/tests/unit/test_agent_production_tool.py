@@ -17,6 +17,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
+from tests.helpers import run_digests_for_config, whole_plan_approval_record
 
 
 def _batch_apply_request(
@@ -88,27 +89,16 @@ def _create_production_run(
         },
         "provider": {"name": "stub"},
     }
+    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
-        input_digest="input-a",
-        output_goal_digest="goal-b",
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
         phase=PRODUCTION,
     )
-    store.save_review(
-        run_id,
-        {
-            "id": "review-whole-plan-01",
-            "type": "whole_plan",
-            "reviewer_session_id": "stub-session-reviewer",
-            "target_revision": 0,
-            "scope": {"kind": "whole_plan"},
-            "status": "approved",
-            "findings": [],
-            "revision_cycles": 0,
-        },
-    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
 
 def test_apply_requires_production_revision(tmp_path: Path) -> None:

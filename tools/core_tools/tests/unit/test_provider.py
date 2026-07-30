@@ -194,6 +194,53 @@ def test_resolve_agent_binary_missing_raises() -> None:
         resolve_agent_binary("/nonexistent/agent-binary")
 
 
+def test_cursor_provider_retries_transient_turn_errors(tmp_path: Path) -> None:
+    attempts = {"count": 0}
+    stream_lines = [
+        json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "chat-retry",
+            }
+        ),
+        json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": "chat-retry",
+                "is_error": False,
+                "result": "ok",
+            }
+        ),
+    ]
+
+    def flaky_runner(argv: list[str], cwd: Path):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise ProviderTurnError("transient failure")
+        for line in stream_lines:
+            yield line
+
+    config = {
+        "provider": {"name": "cursor"},
+        "limits": {"provider": {"max_retries_per_call": 2}},
+    }
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        config,
+        workspace=tmp_path,
+        runner=flaky_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+
+    session_id = provider.start_primary_session("planner", {"goal": "build"})
+    assert session_id == "chat-retry"
+    assert attempts["count"] == 2
+
+
 @pytest.mark.skipif(
     shutil.which("agent") is None and shutil.which("cursor-agent") is None,
     reason="Cursor CLI not installed",

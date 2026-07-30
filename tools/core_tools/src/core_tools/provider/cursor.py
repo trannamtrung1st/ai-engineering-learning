@@ -290,7 +290,28 @@ class CursorProvider:
             )
         session.pending_events = deque(events)
 
+    def _max_retries_per_call(self) -> int:
+        provider_limits = (self._config.get("limits") or {}).get("provider") or {}
+        return int(provider_limits.get("max_retries_per_call", 0))
+
     def _collect_events(
+        self,
+        argv: list[str],
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        max_retries = self._max_retries_per_call()
+        last_error: ProviderTurnError | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                return self._collect_events_once(argv)
+            except ProviderTurnError as exc:
+                last_error = exc
+                if attempt >= max_retries:
+                    raise
+        if last_error is not None:
+            raise last_error
+        return [], None
+
+    def _collect_events_once(
         self,
         argv: list[str],
     ) -> tuple[list[dict[str, Any]], str | None]:

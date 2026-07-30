@@ -2,8 +2,8 @@
 #
 # User CLI:
 #   tdp run --config examples/top-down-planning.yaml
-#   tdp run --config examples/top-down-planning.yaml --set provider.name=stub
 #
+# Stub provider is for scripted tests only (provider.name=stub + script_turn()).
 # Agent discoverability:
 #   tdp agent help
 #   tdp agent schema config
@@ -14,6 +14,8 @@ run:
   input_refs:
     - README.md
   output_goal: "Produce the requested project output while preserving the declared scope and satisfying the approved plan."
+  boundaries: []
+  acceptance: []
 
 planning:
   stop_hint: "Stop when each item has one coherent outcome, clear boundaries, material dependencies, and acceptance expectations."

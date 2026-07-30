@@ -99,7 +99,7 @@ class ProductionPhaseOrchestrator:
                 {"action": "continue", "phase": PRODUCTION},
             )
 
-        batch_agent_turns = 0
+        batch_agent_turns = _load_batch_agent_turns(self._store, self._run_id)
         while True:
             if self._has_pending_amendment():
                 from top_down_planning.orchestrator.plan_amendment import (
@@ -120,6 +120,7 @@ class ProductionPhaseOrchestrator:
                     )
                 session_id = amendment_result.producer_session_id or session_id
                 batch_agent_turns = 0
+                _persist_batch_agent_turns(self._store, self._run_id, 0)
                 continue
 
             if self._has_blocker_report():
@@ -151,9 +152,11 @@ class ProductionPhaseOrchestrator:
             if self._pending_focused_loop_id is not None:
                 self._run_pending_focused_review()
             batch_agent_turns += agent_turns
+            _persist_batch_agent_turns(self._store, self._run_id, batch_agent_turns)
 
             if turn_signal == _BATCH_COMPLETE_SIGNAL:
                 batch_agent_turns = 0
+                _persist_batch_agent_turns(self._store, self._run_id, 0)
                 continue
 
             if batch_agent_turns > loop_limits["max_agent_turns_per_batch"]:
@@ -519,3 +522,22 @@ def _persist_session_id(
     run["sessions"] = sessions
     store.save_run(run_id, run, expected_revision)
     return store.load_run(run_id)
+
+
+def _load_batch_agent_turns(store: RunStore, run_id: str) -> int:
+    run = store.load_run(run_id)
+    production_loop = run["production_loop"]
+    if not isinstance(production_loop, dict):
+        raise ProviderRunError("run is missing production_loop state")
+    return int(production_loop["current_batch_agent_turns"])
+
+
+def _persist_batch_agent_turns(store: RunStore, run_id: str, turns: int) -> None:
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["production_loop"] = {
+        "current_batch_agent_turns": turns,
+    }
+    store.save_run(run_id, run, expected_revision)

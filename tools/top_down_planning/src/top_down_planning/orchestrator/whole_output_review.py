@@ -9,6 +9,7 @@ from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.errors import AgentToolError
 from top_down_planning.agent_tool.production_service import ProductionAgentService
 from top_down_planning.agent_tool.review_service import ReviewAgentService
+from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.outcome import (
     evaluate_acceptance_invariant,
@@ -18,6 +19,7 @@ from top_down_planning.domain.outcome import (
 from top_down_planning.domain.reviews import ReviewLoop, find_whole_plan_approval
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
+from top_down_planning.orchestrator.workspace import run_workspace
 from top_down_planning.persistence.digests import (
     compute_config_digest,
     compute_output_digest,
@@ -156,6 +158,12 @@ class WholeOutputReviewOrchestrator:
             actual_plan_digest=compute_plan_digest(plan),
             actual_config_digest=compute_config_digest(config),
             actual_output_digest=compute_output_digest(production),
+            actual_input_digest=compute_input_digest(
+                config,
+                base_dir=run_workspace(run, fallback=self._store.root),
+            ),
+            actual_output_goal_digest=compute_output_goal_digest(config),
+            actual_context_digest=(run.get("digests") or {}).get("context"),
         )
 
         if not plan_validation.ok:
@@ -285,6 +293,7 @@ class WholeOutputReviewOrchestrator:
             status=loop.status,
             findings=loop.findings,
             revision_cycles=loop.revision_cycles,
+            approved_digests=loop.approved_digests,
         )
         self._persist_loop(updated)
         self._append_event(
@@ -417,6 +426,7 @@ class WholeOutputReviewOrchestrator:
             status="pending",
             findings=loop.findings,
             revision_cycles=loop.revision_cycles,
+            approved_digests=None,
         )
         self._persist_loop(updated)
         self._provider.send(

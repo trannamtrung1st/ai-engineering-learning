@@ -39,6 +39,7 @@ from top_down_planning.orchestrator import (
     ResumeError,
     WholeOutputReviewOrchestrator,
     WholePlanReviewOrchestrator,
+    mark_run_failed,
     validate_resume_preconditions,
 )
 from top_down_planning.orchestrator.phases import (
@@ -108,12 +109,7 @@ def handle_run_command(args: Namespace) -> None:
     try:
         result = PlanningPhaseOrchestrator(store, run_id, provider).run()
     except ProviderRunError as exc:
-        emit_error_message(
-            str(exc),
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="provider_run_error",
-        )
+        _handle_provider_run_error(store, run_id, exc, stream_json=args.stream_json)
 
     run_record = store.load_run(run_id)
     payload = {
@@ -190,12 +186,7 @@ def handle_resume_command(args: Namespace) -> None:
         try:
             result = PlanAmendmentOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
-            emit_error_message(
-                str(exc),
-                exit_code=1,
-                stream_json=args.stream_json,
-                code="provider_run_error",
-            )
+            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
 
         run = store.load_run(args.run)
         payload = {
@@ -254,12 +245,7 @@ def handle_resume_command(args: Namespace) -> None:
         try:
             result = WholeOutputReviewOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
-            emit_error_message(
-                str(exc),
-                exit_code=1,
-                stream_json=args.stream_json,
-                code="provider_run_error",
-            )
+            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
 
         run = store.load_run(args.run)
         payload = {
@@ -300,12 +286,7 @@ def handle_resume_command(args: Namespace) -> None:
         try:
             result = ProductionPhaseOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
-            emit_error_message(
-                str(exc),
-                exit_code=1,
-                stream_json=args.stream_json,
-                code="provider_run_error",
-            )
+            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
 
         run = store.load_run(args.run)
         payload = {
@@ -345,12 +326,7 @@ def handle_resume_command(args: Namespace) -> None:
         try:
             result = WholePlanReviewOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
-            emit_error_message(
-                str(exc),
-                exit_code=1,
-                stream_json=args.stream_json,
-                code="provider_run_error",
-            )
+            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
 
         run = store.load_run(args.run)
         payload = {
@@ -391,12 +367,7 @@ def handle_resume_command(args: Namespace) -> None:
         try:
             result = PlanningPhaseOrchestrator(store, args.run, provider).run()
         except ProviderRunError as exc:
-            emit_error_message(
-                str(exc),
-                exit_code=1,
-                stream_json=args.stream_json,
-                code="provider_run_error",
-            )
+            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
 
         run = store.load_run(args.run)
         payload = {
@@ -582,7 +553,6 @@ def handle_validate_command(args: Namespace) -> None:
         output_digest_bundle = None
         if output_approval is not None:
             output_review_state, output_digest_bundle = build_output_approval_validation_context(
-                run=run,
                 production=production,
                 approval=output_approval,
                 actual_output_digest=compute_output_digest(production),
@@ -648,6 +618,22 @@ def _initial_plan(run_id: str, config: dict[str, Any]) -> Plan:
         output_goal=output_goal,
         input_refs=input_refs,
         items={"item-root": root},
+    )
+
+
+def _handle_provider_run_error(
+    store: FileRunStore,
+    run_id: str,
+    exc: ProviderRunError,
+    *,
+    stream_json: bool,
+) -> None:
+    mark_run_failed(store, run_id, message=str(exc))
+    emit_error_message(
+        str(exc),
+        exit_code=1,
+        stream_json=stream_json,
+        code="provider_run_error",
     )
 
 

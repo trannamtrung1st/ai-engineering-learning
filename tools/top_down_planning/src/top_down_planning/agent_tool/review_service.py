@@ -173,12 +173,27 @@ class ReviewAgentService:
                 f"revision {current_revision}"
             )
 
+        approved_digests: dict[str, str] | None = None
+        if decision == "approved" and loop.type in {"whole_plan", "whole_output"}:
+            run = self._store.load_run(self._run_id)
+            approved_digests = {
+                str(key): str(value)
+                for key, value in (run.get("digests") or {}).items()
+                if value is not None
+            }
+            if loop.type == "whole_output":
+                from top_down_planning.persistence.digests import compute_output_digest
+
+                production = self._store.load_production(self._run_id)
+                approved_digests["output"] = compute_output_digest(production)
+
         try:
             updated = apply_review_response(
                 loop,
                 target_revision=target_revision,
                 decision=decision,
                 findings=findings,
+                approved_digests=approved_digests,
             )
         except ValueError as exc:
             raise RequestError(str(exc)) from exc

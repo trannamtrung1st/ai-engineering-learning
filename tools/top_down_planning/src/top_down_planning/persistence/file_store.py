@@ -72,6 +72,9 @@ def new_run_record(
             "agent_turns": 0,
             "expansion_iterations": 0,
         },
+        "production_loop": {
+            "current_batch_agent_turns": 0,
+        },
         "created_at": now,
         "updated_at": now,
     }

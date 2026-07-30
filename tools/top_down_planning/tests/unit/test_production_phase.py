@@ -12,7 +12,7 @@ from top_down_planning.orchestrator import ProductionPhaseOrchestrator, Provider
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import done_events
+from tests.helpers import done_events, run_digests_for_config, whole_plan_approval_record
 
 
 def _batch_apply_request(
@@ -93,27 +93,16 @@ def _create_run_at_plan_validated(
     if limits:
         config["limits"]["production"].update(limits)
 
+    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
-        input_digest="input-a",
-        output_goal_digest="goal-b",
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
         phase=PLAN_VALIDATED,
     )
-    store.save_review(
-        run_id,
-        {
-            "id": "review-whole-plan-01",
-            "type": "whole_plan",
-            "reviewer_session_id": "stub-session-reviewer",
-            "target_revision": 0,
-            "scope": {"kind": "whole_plan"},
-            "status": "approved",
-            "findings": [],
-            "revision_cycles": 0,
-        },
-    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
 
 def _enter_production_phase(store: FileRunStore, run_id: str) -> None:
@@ -463,3 +452,24 @@ def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ProviderRunError, match="approved whole-plan review"):
         ProductionPhaseOrchestrator(store, "run-unapproved", provider).run()
+
+
+def test_resume_preserves_batch_agent_turn_budget(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store, limits={"max_agent_turns_per_batch": 1})
+    run = store.load_run("run-production")
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["production_loop"] = {"current_batch_agent_turns": 1}
+    store.save_run("run-production", run, expected_revision)
+
+    provider = StubProvider()
+    provider.script_turn(done_events(text="another production turn"))
+
+    result = ProductionPhaseOrchestrator(store, "run-production", provider).run()
+
+    assert result.ok is False
+    assert result.outcome == "blocked"
+    assert result.reason is not None
+    assert "max_agent_turns_per_batch" in result.reason

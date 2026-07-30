@@ -11,7 +11,12 @@ from top_down_planning.domain.reviews import (
     blocking_unresolved_finding_ids_from_payload,
     find_whole_output_approval,
 )
-from top_down_planning.domain.validators import ValidationIssue, ValidationResult, validation_issue
+from top_down_planning.domain.validators import (
+    ValidationIssue,
+    ValidationResult,
+    severity_for_validation_mode,
+    validation_issue,
+)
 
 ValidationMode = Literal["draft", "approval"]
 
@@ -37,13 +42,17 @@ class OutputDigestBundle:
 
 def build_output_approval_validation_context(
     *,
-    run: dict[str, Any],
     production: dict[str, Any],
     approval: dict[str, Any],
     actual_output_digest: str,
     actual_plan_digest: str,
 ) -> tuple[OutputReviewState, OutputDigestBundle]:
-    digests = run.get("digests") or {}
+    approved_digests = approval.get("approved_digests")
+    expected_digests: dict[str, str] = (
+        {str(key): str(value) for key, value in approved_digests.items()}
+        if isinstance(approved_digests, dict)
+        else {}
+    )
     review_state = OutputReviewState(
         approved_output_revision=int(approval["target_revision"]),
         unresolved_blocking_findings=blocking_unresolved_finding_ids_from_payload(
@@ -52,9 +61,9 @@ def build_output_approval_validation_context(
     )
     digest_bundle = OutputDigestBundle(
         output_revision=int(production["output_revision"]),
-        expected_output_digest=digests.get("output"),
+        expected_output_digest=expected_digests.get("output"),
         actual_output_digest=actual_output_digest,
-        expected_plan_digest=digests.get("plan"),
+        expected_plan_digest=expected_digests.get("plan"),
         actual_plan_digest=actual_plan_digest,
     )
     return review_state, digest_bundle
@@ -63,6 +72,8 @@ def build_output_approval_validation_context(
 def validate_output_review_hooks(
     production: dict[str, Any],
     review_state: OutputReviewState,
+    *,
+    mode: ValidationMode = "draft",
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
@@ -95,7 +106,7 @@ def validate_output_review_hooks(
         issues.append(
             validation_issue(
                 "review_state_not_checked",
-                "warning",
+                severity_for_validation_mode(mode, "warning"),
                 "approved output revision was not provided for comparison",
                 ["production", "output_revision"],
             )
@@ -106,6 +117,8 @@ def validate_output_review_hooks(
 
 def validate_output_digest_hooks(
     digests: OutputDigestBundle,
+    *,
+    mode: ValidationMode = "draft",
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
@@ -114,7 +127,7 @@ def validate_output_digest_hooks(
             issues.append(
                 validation_issue(
                     "digest_not_checked",
-                    "warning",
+                    severity_for_validation_mode(mode, "warning"),
                     "output digest was not fully provided for comparison",
                     ["output"],
                 )
@@ -139,6 +152,15 @@ def validate_output_digest_hooks(
                     ["plan"],
                 )
             )
+    elif digests.actual_plan_digest is not None:
+        issues.append(
+            validation_issue(
+                "digest_not_checked",
+                severity_for_validation_mode(mode, "warning"),
+                "plan digest was not fully provided for comparison",
+                ["plan"],
+            )
+        )
 
     return issues
 
@@ -192,8 +214,8 @@ def validate_output(
                 )
 
     if review_state is not None:
-        issues.extend(validate_output_review_hooks(production, review_state))
+        issues.extend(validate_output_review_hooks(production, review_state, mode=mode))
     if digests is not None:
-        issues.extend(validate_output_digest_hooks(digests))
+        issues.extend(validate_output_digest_hooks(digests, mode=mode))
 
     return ValidationResult(issues=issues)

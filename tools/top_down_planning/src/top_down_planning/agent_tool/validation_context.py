@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.reviews import find_whole_plan_approval
 from top_down_planning.domain.validators import (
@@ -14,6 +16,27 @@ from top_down_planning.domain.validators import (
 )
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
+
+
+def compute_plan_approval_actual_digests(
+    store: RunStore,
+    run_id: str,
+    run: dict[str, Any],
+    plan: Plan,
+) -> tuple[str, str, str, str, str | None]:
+    """Recompute digests for approval-mode comparison against reviewed bindings."""
+
+    config = store.load_resolved_config(run_id)
+    workspace = run.get("workspace")
+    base_dir = Path(str(workspace)) if workspace else store.root
+    run_digests = run.get("digests") or {}
+    return (
+        compute_plan_digest(plan),
+        compute_config_digest(config),
+        compute_input_digest(config, base_dir=base_dir),
+        compute_output_goal_digest(config),
+        run_digests.get("context"),
+    )
 
 
 def plan_approval_validation_context(
@@ -32,13 +55,21 @@ def plan_approval_validation_context(
         return _approval_hooks_not_checked_context(store, run_id, plan)
 
     run = store.load_run(run_id)
-    resolved_config = store.load_resolved_config(run_id)
+    (
+        actual_plan_digest,
+        actual_config_digest,
+        actual_input_digest,
+        actual_output_goal_digest,
+        actual_context_digest,
+    ) = compute_plan_approval_actual_digests(store, run_id, run, plan)
     return build_plan_approval_validation_context(
-        run=run,
         plan=plan,
         approval=approval,
-        actual_plan_digest=compute_plan_digest(plan),
-        actual_config_digest=compute_config_digest(resolved_config),
+        actual_plan_digest=actual_plan_digest,
+        actual_config_digest=actual_config_digest,
+        actual_input_digest=actual_input_digest,
+        actual_output_goal_digest=actual_output_goal_digest,
+        actual_context_digest=actual_context_digest,
     )
 
 
@@ -81,12 +112,20 @@ def user_validate_mode_and_context(
     if approval is None:
         return "draft", None, None
 
-    resolved_config = store.load_resolved_config(run_id)
+    (
+        actual_plan_digest,
+        actual_config_digest,
+        actual_input_digest,
+        actual_output_goal_digest,
+        actual_context_digest,
+    ) = compute_plan_approval_actual_digests(store, run_id, run, plan)
     review_state, digest_bundle = build_plan_approval_validation_context(
-        run=run,
         plan=plan,
         approval=approval,
-        actual_plan_digest=compute_plan_digest(plan),
-        actual_config_digest=compute_config_digest(resolved_config),
+        actual_plan_digest=actual_plan_digest,
+        actual_config_digest=actual_config_digest,
+        actual_input_digest=actual_input_digest,
+        actual_output_goal_digest=actual_output_goal_digest,
+        actual_context_digest=actual_context_digest,
     )
     return "approval", review_state, digest_bundle

@@ -73,6 +73,8 @@ def test_missing_goal_assessment_cannot_accept() -> None:
         "output_evidence": [],
         "completion_claim": {"goal_assessment": "", "summary": ""},
     }
+    run = _sample_run()
+    run["digests"]["output"] = compute_output_digest(production)
     reviews = [
         {
             "id": "review-whole-plan-01",
@@ -80,6 +82,7 @@ def test_missing_goal_assessment_cannot_accept() -> None:
             "status": "approved",
             "target_revision": 0,
             "findings": [],
+            "approved_digests": dict(run["digests"]),
         },
         {
             "id": "review-whole-output-01",
@@ -87,10 +90,9 @@ def test_missing_goal_assessment_cannot_accept() -> None:
             "status": "approved",
             "target_revision": 1,
             "findings": [],
+            "approved_digests": dict(run["digests"]),
         },
     ]
-    run = _sample_run()
-    run["digests"]["output"] = compute_output_digest(production)
 
     invariant, _plan_validation, output_validation = evaluate_acceptance_invariant(
         plan=plan,
@@ -103,6 +105,8 @@ def test_missing_goal_assessment_cannot_accept() -> None:
         actual_plan_digest=compute_plan_digest(plan),
         actual_config_digest=compute_config_digest({"run": {"output_goal": "Deliver."}}),
         actual_output_digest=compute_output_digest(production),
+        actual_input_digest="input-a",
+        actual_output_goal_digest="goal-b",
     )
 
     assert output_validation.ok is False
@@ -120,6 +124,8 @@ def test_unapproved_output_cannot_accept() -> None:
         "output_evidence": [],
         "completion_claim": {"goal_assessment": "Goal met.", "summary": ""},
     }
+    run = _sample_run()
+    run["digests"]["output"] = compute_output_digest(production)
     reviews = [
         {
             "id": "review-whole-plan-01",
@@ -127,10 +133,9 @@ def test_unapproved_output_cannot_accept() -> None:
             "status": "approved",
             "target_revision": 0,
             "findings": [],
+            "approved_digests": dict(run["digests"]),
         }
     ]
-    run = _sample_run()
-    run["digests"]["output"] = compute_output_digest(production)
 
     invariant, _plan_validation, output_validation = evaluate_acceptance_invariant(
         plan=plan,
@@ -143,6 +148,8 @@ def test_unapproved_output_cannot_accept() -> None:
         actual_plan_digest=compute_plan_digest(plan),
         actual_config_digest=compute_config_digest({"run": {"output_goal": "Deliver."}}),
         actual_output_digest=compute_output_digest(production),
+        actual_input_digest="input-a",
+        actual_output_goal_digest="goal-b",
     )
 
     assert output_validation.ok is False

@@ -4,9 +4,7 @@ Generic agent orchestration that receives an input and output goal, builds a hig
 
 Specification: [`temp/final-top-down-planning-tool-proposal.md`](../../temp/final-top-down-planning-tool-proposal.md)
 
-## Quickstart (stub provider)
-
-Use the stub provider for local runs and tests without the Cursor CLI:
+## Quickstart
 
 ```bash
 cd tools/top_down_planning
@@ -16,10 +14,16 @@ tdp agent help
 tdp agent schema plan-transaction
 tdp agent example expand-branch
 
-tdp run --config examples/top-down-planning.yaml --set provider.name=stub
+# Stub is for scripted tests only — not an interactive quickstart:
+# tdp run --config examples/top-down-planning.yaml --set provider.name=stub
+tdp run --config examples/top-down-planning.yaml
 tdp status --run <run-id>
 tdp resume --run <run-id>
 ```
+
+The default provider is `cursor` (requires the Cursor CLI on PATH). For deterministic
+orchestration tests, use `provider.name=stub` and queue each turn with `script_turn()`
+(see `tests/unit/`).
 
 ## Architecture layers (proposal §17)
 
@@ -46,10 +50,10 @@ provider:
   skip_probe: false     # skip CLI version probe when true
 ```
 
-- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json`). Session ids are the provider chat ids returned from the CLI stream (persist via `get_session_reference`).
-- `stub` — deterministic scripted turns for tests; call `script_turn()` before each provider turn.
+- `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json`). Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today.
+- `stub` — deterministic scripted turns for **tests only**; call `script_turn()` before each provider turn.
 
-Use `provider.name=stub` in tests and local orchestration runs. Production runs default to `cursor`.
+Production runs default to `cursor`. Use `provider.name=stub` only in unit/integration tests.
 
 ## Import boundaries
 
@@ -82,7 +86,7 @@ Production (proposal §10): after `plan_validated`, `tdp resume` starts the prim
 
 Plan amendment (proposal §10.4): when production exposes a material plan defect, the producer requests amendment with evidence and affected plan refs. The orchestrator pauses production (`status: paused`, phase `plan_amendment`), resumes the same primary planner to revise the plan, runs mandatory whole-plan review on the amended revision, reconciles production evidence against the prior plan snapshot, then resumes the same primary producer with the reconciliation report. Amendment limits use `limits.amendment.max_requests` and `limits.amendment.max_revision_cycles_per_request`. Production batches, completion claims, and blocker reports are rejected while an amendment is pending. `tdp resume` routes in-flight amendments through `PlanAmendmentOrchestrator` when `pending_amendment_id` is set and the run is in `plan_amendment`, `whole_plan_review`, or `plan_validated`; production-phase resume with a pending amendment is handled inside `ProductionPhaseOrchestrator`.
 
-Whole-output review (proposal §5.3, §12.2, §15, §21): after production completion, `tdp resume` starts a fresh reviewer session bound to the current `output_revision`, resumes the same primary producer for revisions after `changes_requested`, and requires deterministic output validation plus the acceptance invariant before the orchestrator sets `outcome: accepted`. Revision cycles are capped by `limits.whole_output_review.max_revision_cycles`. Deterministic validation failures after reviewer approval yield `blocked`; limit exhaustion yields `rejected`. Provider/orchestrator crashes leave `status: running` with no quality outcome — `failed` is operational only and is not conflated with `rejected`.
+Whole-output review (proposal §5.3, §12.2, §15, §21): after production completion, `tdp resume` starts a fresh reviewer session bound to the current `output_revision`, resumes the same primary producer for revisions after `changes_requested`, and requires deterministic output validation plus the acceptance invariant before the orchestrator sets `outcome: accepted`. Revision cycles are capped by `limits.whole_output_review.max_revision_cycles`. Deterministic validation failures after reviewer approval yield `blocked`; limit exhaustion yields `rejected`. Provider/orchestrator operational failures set `status: failed` without a quality outcome — `failed` is operational only and is not conflated with `rejected`.
 
 `tdp validate` runs deterministic plan validation and, when a completion claim or whole-output review exists, output validation as well.
 

@@ -13,7 +13,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import done_events
+from tests.helpers import done_events, run_digests_for_config, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -92,27 +92,24 @@ def _create_run_at_whole_output_review(
         },
     }
 
+    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
-        input_digest="input-a",
-        output_goal_digest="goal-b",
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
         phase=WHOLE_OUTPUT_REVIEW,
         production=production,
     )
     store.save_review(
         run_id,
-        {
-            "id": "review-whole-plan-01",
-            "type": "whole_plan",
-            "reviewer_session_id": "stub-session-plan-reviewer",
-            "target_revision": 0,
-            "scope": {"kind": "whole_plan"},
-            "status": "approved",
-            "findings": [],
-            "revision_cycles": 0,
-        },
+        whole_plan_approval_record(
+            store,
+            run_id,
+            id="review-whole-plan-01",
+            reviewer_session_id="stub-session-plan-reviewer",
+        ),
     )
 
     session_id = None

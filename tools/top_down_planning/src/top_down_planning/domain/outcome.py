@@ -89,16 +89,21 @@ def evaluate_acceptance_invariant(
     actual_plan_digest: str,
     actual_config_digest: str,
     actual_output_digest: str,
+    actual_input_digest: str,
+    actual_output_goal_digest: str,
+    actual_context_digest: str | None = None,
 ) -> tuple[AcceptanceInvariant, ValidationResult, ValidationResult]:
     plan_review_state: ReviewState | None = None
     plan_digest_bundle: DigestBundle | None = None
     if plan_approval is not None:
         plan_review_state, plan_digest_bundle = build_plan_approval_validation_context(
-            run=run,
             plan=plan,
             approval=plan_approval,
             actual_plan_digest=actual_plan_digest,
             actual_config_digest=actual_config_digest,
+            actual_input_digest=actual_input_digest,
+            actual_output_goal_digest=actual_output_goal_digest,
+            actual_context_digest=actual_context_digest,
         )
 
     plan_validation = validate_plan(
@@ -107,13 +112,13 @@ def evaluate_acceptance_invariant(
         review_state=plan_review_state,
         digests=plan_digest_bundle,
         mode="approval",
+        reviews=reviews,
     )
 
     output_review_state: OutputReviewState | None = None
     output_digest_bundle: OutputDigestBundle | None = None
     if output_approval is not None:
         output_review_state, output_digest_bundle = build_output_approval_validation_context(
-            run=run,
             production=production,
             approval=output_approval,
             actual_output_digest=actual_output_digest,

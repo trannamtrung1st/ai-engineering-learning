@@ -13,6 +13,7 @@ from top_down_planning.cli.main import main
 from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
+from tests.helpers import run_digests_for_config, whole_plan_approval_record
 
 
 def _sample_plan(revision: int = 0) -> Plan:
@@ -39,12 +40,17 @@ def _sample_plan(revision: int = 0) -> Plan:
 
 def _create_run(store: FileRunStore, run_id: str = "run-001", *, revision: int = 0) -> None:
     plan = _sample_plan(revision=revision)
+    config = {
+        "run": {"output_goal": "Deliver the output.", "input_refs": []},
+        "planning": {"max_depth": 4, "max_expansion_per_item": 7},
+    }
+    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config={"planning": {"max_depth": 4, "max_expansion_per_item": 7}},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
+        resolved_config=config,
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
     )
 
 
@@ -132,7 +138,7 @@ def test_plan_check_matches_validator_modes(tmp_path: Path) -> None:
     approval = service.check(mode="approval")
 
     assert draft["ok"] is True
-    assert approval["ok"] is True
+    assert approval["ok"] is False
     assert draft["mode"] == "draft"
     assert approval["mode"] == "approval"
 
@@ -490,13 +496,15 @@ def test_plan_check_approval_without_binding_surfaces_not_checked_warnings(
 
     approval = service.check(mode="approval")
 
-    assert approval["ok"] is True
+    assert approval["ok"] is False
     assert any(
-        "approved revision was not provided" in warning
-        for warning in approval["warnings"]
+        "approved revision was not provided" in issue["message"]
+        for issue in approval["issues"]
+        if issue["severity"] == "error"
     )
     assert any(
-        "digest was not fully provided" in warning for warning in approval["warnings"]
+        issue["code"] == "digest_not_checked" and issue["severity"] == "error"
+        for issue in approval["issues"]
     )
 
 
@@ -505,16 +513,11 @@ def test_plan_check_approval_mode_runs_review_and_digest_hooks(tmp_path: Path) -
     _create_run(store)
     store.save_review(
         "run-001",
-        {
-            "id": "review-whole-plan-01",
-            "type": "whole_plan",
-            "reviewer_session_id": "session-1",
-            "target_revision": 0,
-            "scope": {"kind": "whole_plan"},
-            "status": "approved",
-            "findings": [],
-            "revision_cycles": 0,
-        },
+        whole_plan_approval_record(
+            store,
+            "run-001",
+            reviewer_session_id="session-1",
+        ),
     )
 
     service = PlanAgentService(store, "run-001")
@@ -524,13 +527,11 @@ def test_plan_check_approval_mode_runs_review_and_digest_hooks(tmp_path: Path) -
     assert draft["ok"] is True
     assert approval["ok"] is True
 
-    run = store.load_run("run-001")
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    run["digests"] = dict(run["digests"])
-    run["digests"]["plan"] = "stale-plan-digest"
-    store.save_run("run-001", run, expected_revision)
+    review = store.load_review("run-001", "review-whole-plan-01")
+    review = dict(review)
+    review["approved_digests"] = dict(review["approved_digests"])
+    review["approved_digests"]["plan"] = "stale-plan-digest"
+    store.save_review("run-001", review)
 
     approval_after_tamper = service.check(mode="approval")
     assert approval_after_tamper["ok"] is False

@@ -91,6 +91,67 @@ def test_hierarchy_cycle_and_dependency_cycle_have_distinct_codes_and_paths() ->
     assert not result.ok
 
 
+def test_approval_mode_detects_input_digest_tampering() -> None:
+    from top_down_planning.domain.validators import (
+        DigestBundle,
+        build_plan_approval_validation_context,
+        validate_digest_hooks,
+    )
+
+    root = PlanItem("item-root", None, "0000000000", "Root")
+    plan = Plan(
+        id="plan-digest",
+        revision=1,
+        output_goal="Goal.",
+        items={"item-root": root},
+    )
+    run = {
+        "digests": {
+            "plan": "plan-digest",
+            "input": "input-digest",
+            "output_goal": "goal-digest",
+            "config": "config-digest",
+        }
+    }
+    approval = {
+        "target_revision": 1,
+        "approved_digests": dict(run["digests"]),
+        "findings": [],
+    }
+    _, digest_bundle = build_plan_approval_validation_context(
+        plan=plan,
+        approval=approval,
+        actual_plan_digest="plan-digest",
+        actual_config_digest="config-digest",
+        actual_input_digest="tampered-input-digest",
+        actual_output_goal_digest="goal-digest",
+    )
+    issues = validate_digest_hooks(plan, digest_bundle, mode="approval")
+    assert any(issue.code == "digest_mismatch" and issue.path == ["input"] for issue in issues)
+
+
+def test_review_loop_round_trips_approved_digests() -> None:
+    from top_down_planning.domain.reviews import ReviewLoop
+
+    payload = {
+        "id": "review-whole-plan-01",
+        "type": "whole_plan",
+        "reviewer_session_id": "session-1",
+        "target_revision": 2,
+        "scope": {"kind": "whole_plan"},
+        "status": "approved",
+        "findings": [],
+        "revision_cycles": 1,
+        "approved_digests": {
+            "plan": "plan-digest",
+            "config": "config-digest",
+            "input": "input-digest",
+        },
+    }
+    loop = ReviewLoop.from_dict(payload)
+    assert loop.to_dict()["approved_digests"] == payload["approved_digests"]
+
+
 def test_orphan_parent_and_duplicate_item_id_are_reported() -> None:
     root = PlanItem("item-root", None, "0000000000", "Root")
     orphan = PlanItem(

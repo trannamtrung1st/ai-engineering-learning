@@ -30,7 +30,7 @@ from top_down_planning.config import compute_input_digest, compute_output_goal_d
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import done_events, plan_apply_turn
+from tests.helpers import done_events, plan_apply_turn, whole_plan_approval_record
 
 
 def _create_planning_run(
@@ -157,19 +157,7 @@ def _create_production_run(
         phase=PRODUCTION,
         workspace=str(store.root),
     )
-    store.save_review(
-        run_id,
-        {
-            "id": "review-whole-plan-01",
-            "type": "whole_plan",
-            "reviewer_session_id": "stub-session-reviewer",
-            "target_revision": 0,
-            "scope": {"kind": "whole_plan"},
-            "status": "approved",
-            "findings": [],
-            "revision_cycles": 0,
-        },
-    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
     run = store.load_run(run_id)
     provider.script_turn(done_events(text="producer session start"))
@@ -510,19 +498,7 @@ def test_resume_plan_validated_allows_missing_producer_session(tmp_path: Path) -
         output_goal_digest=compute_output_goal_digest(config),
         phase=PLAN_VALIDATED,
     )
-    store.save_review(
-        run_id,
-        {
-            "id": "review-whole-plan-01",
-            "type": "whole_plan",
-            "reviewer_session_id": "stub-session-reviewer",
-            "target_revision": 0,
-            "scope": {"kind": "whole_plan"},
-            "status": "approved",
-            "findings": [],
-            "revision_cycles": 0,
-        },
-    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
     preconditions = validate_resume_preconditions(store, run_id)
     assert preconditions.phase == PLAN_VALIDATED

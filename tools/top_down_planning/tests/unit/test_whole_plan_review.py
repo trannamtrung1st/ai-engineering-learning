@@ -13,7 +13,7 @@ from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REV
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
-from tests.helpers import done_events
+from tests.helpers import done_events, run_digests_for_config
 
 
 def _create_run_at_whole_plan_review(
@@ -63,12 +63,13 @@ def _create_run_at_whole_plan_review(
     if limits:
         config["limits"]["whole_plan_review"].update(limits)
 
+    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
-        input_digest="input-a",
-        output_goal_digest="goal-b",
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
         phase=WHOLE_PLAN_REVIEW,
     )
     session_id = None

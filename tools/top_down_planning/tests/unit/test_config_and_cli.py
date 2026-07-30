@@ -15,9 +15,10 @@ from top_down_planning.config import (
     resolve_config,
 )
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.persistence import FileRunStore, compute_config_digest
+from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence.digests import compute_config_digest
 from tests.conftest import run_cli
-from tests.helpers import write_config
+from tests.helpers import run_digests_for_config, whole_plan_approval_record, write_config
 
 
 def test_defaults_yaml_cli_precedence_changes_resolved_values(tmp_path: Path) -> None:
@@ -142,12 +143,13 @@ def _create_validate_run(
         "planning": {"max_depth": 4, "max_expansion_per_item": 7},
         "provider": {"name": "stub"},
     }
+    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
-        input_digest="input-a",
-        output_goal_digest="goal-b",
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
     )
 
 
@@ -188,16 +190,7 @@ def test_validate_uses_approval_mode_when_whole_plan_review_approved(
     store = FileRunStore(tmp_path / "runs")
     run_id = "run-validate-approval"
     _create_validate_run(store, run_id)
-    store.save_review(
-        run_id,
-        {
-            "id": "review-whole-plan-01",
-            "type": "whole_plan",
-            "status": "approved",
-            "target_revision": 0,
-            "findings": [],
-        },
-    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
     with patch("top_down_planning.cli.user.emit_payload") as emit_payload:
         with pytest.raises(SystemExit) as exit_info:

@@ -58,9 +58,10 @@ class ReviewLoop:
     status: ReviewLoopStatus = "pending"
     findings: list[ReviewFinding] = field(default_factory=list)
     revision_cycles: int = 0
+    approved_digests: dict[str, str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "id": self.id,
             "type": self.type,
             "reviewer_session_id": self.reviewer_session_id,
@@ -70,6 +71,9 @@ class ReviewLoop:
             "findings": [finding.to_dict() for finding in self.findings],
             "revision_cycles": self.revision_cycles,
         }
+        if self.approved_digests is not None:
+            payload["approved_digests"] = dict(self.approved_digests)
+        return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> ReviewLoop:
@@ -82,6 +86,12 @@ class ReviewLoop:
             for item in (payload.get("findings") or [])
             if isinstance(item, dict)
         ]
+        approved = payload.get("approved_digests")
+        approved_digests = (
+            {str(key): str(value) for key, value in approved.items()}
+            if isinstance(approved, dict)
+            else None
+        )
         return cls(
             id=str(payload["id"]),
             type=str(raw_type).strip(),  # type: ignore[arg-type]
@@ -91,6 +101,7 @@ class ReviewLoop:
             status=str(payload.get("status") or "pending"),  # type: ignore[arg-type]
             findings=findings,
             revision_cycles=int(payload.get("revision_cycles") or 0),
+            approved_digests=approved_digests,
         )
 
 
@@ -333,6 +344,7 @@ def apply_review_response(
     target_revision: int,
     decision: ReviewDecision,
     findings: list[ReviewFinding],
+    approved_digests: dict[str, str] | None = None,
 ) -> ReviewLoop:
     if loop.target_revision != target_revision:
         raise ValueError(
@@ -357,4 +369,7 @@ def apply_review_response(
         status=decision,
         findings=findings,
         revision_cycles=loop.revision_cycles,
+        approved_digests=(
+            approved_digests if approved_digests is not None else loop.approved_digests
+        ),
     )

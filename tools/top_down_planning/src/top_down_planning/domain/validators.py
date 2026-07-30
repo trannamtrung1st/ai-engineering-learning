@@ -81,17 +81,24 @@ class DigestBundle:
 
 def build_plan_approval_validation_context(
     *,
-    run: dict[str, Any],
     plan: Plan,
     approval: dict[str, Any],
     actual_plan_digest: str,
     actual_config_digest: str,
+    actual_input_digest: str,
+    actual_output_goal_digest: str,
+    actual_context_digest: str | None = None,
 ) -> tuple[ReviewState, DigestBundle]:
     """Build approval-mode review and digest bindings for the current plan revision."""
 
     from top_down_planning.domain.reviews import blocking_unresolved_finding_ids_from_payload
 
-    digests = run.get("digests") or {}
+    approved_digests = approval.get("approved_digests")
+    expected_digests: dict[str, str] = (
+        {str(key): str(value) for key, value in approved_digests.items()}
+        if isinstance(approved_digests, dict)
+        else {}
+    )
     review_state = ReviewState(
         approved_revision=int(approval["target_revision"]),
         unresolved_blocking_findings=blocking_unresolved_finding_ids_from_payload(
@@ -100,16 +107,16 @@ def build_plan_approval_validation_context(
     )
     digest_bundle = DigestBundle(
         plan_revision=plan.revision,
-        expected_plan_digest=digests.get("plan"),
+        expected_plan_digest=expected_digests.get("plan"),
         actual_plan_digest=actual_plan_digest,
-        input_digest=digests.get("input"),
-        expected_input_digest=digests.get("input"),
-        output_goal_digest=digests.get("output_goal"),
-        expected_output_goal_digest=digests.get("output_goal"),
+        input_digest=actual_input_digest,
+        expected_input_digest=expected_digests.get("input"),
+        output_goal_digest=actual_output_goal_digest,
+        expected_output_goal_digest=expected_digests.get("output_goal"),
         config_digest=actual_config_digest,
-        expected_config_digest=digests.get("config"),
-        context_digest=digests.get("context"),
-        expected_context_digest=digests.get("context"),
+        expected_config_digest=expected_digests.get("config"),
+        context_digest=actual_context_digest,
+        expected_context_digest=expected_digests.get("context"),
     )
     return review_state, digest_bundle
 
@@ -143,6 +150,15 @@ def _severity_for_mode(mode: ValidationMode, draft_severity: ValidationSeverity)
     if mode == "approval" and draft_severity == "warning":
         return "error"
     return draft_severity
+
+
+def severity_for_validation_mode(
+    mode: ValidationMode,
+    draft_severity: ValidationSeverity,
+) -> ValidationSeverity:
+    """Escalate draft warnings to errors in approval mode."""
+
+    return _severity_for_mode(mode, draft_severity)
 
 
 def _normalized_cycle_key(cycle: list[str]) -> tuple[str, ...]:
@@ -493,13 +509,15 @@ def _validate_digest_pair(
     label: str,
     actual: str | None,
     expected: str | None,
+    *,
+    mode: ValidationMode = "draft",
 ) -> ValidationIssue | None:
     if actual is None and expected is None:
         return None
     if actual is None or expected is None:
         return _issue(
             "digest_not_checked",
-            "warning",
+            _severity_for_mode(mode, "warning"),
             f"{label} digest was not fully provided for comparison",
             [label],
         )
@@ -516,6 +534,8 @@ def _validate_digest_pair(
 def validate_review_hooks(
     plan: Plan,
     review_state: ReviewState,
+    *,
+    mode: ValidationMode = "draft",
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
@@ -546,7 +566,7 @@ def validate_review_hooks(
         issues.append(
             _issue(
                 "review_state_not_checked",
-                "warning",
+                _severity_for_mode(mode, "warning"),
                 "approved revision was not provided for comparison",
                 ["plan", "revision"],
             )
@@ -558,6 +578,8 @@ def validate_review_hooks(
 def validate_digest_hooks(
     plan: Plan,
     digests: DigestBundle,
+    *,
+    mode: ValidationMode = "draft",
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
@@ -581,7 +603,7 @@ def validate_digest_hooks(
         ("config", digests.config_digest, digests.expected_config_digest),
         ("context", digests.context_digest, digests.expected_context_digest),
     ):
-        digest_issue = _validate_digest_pair(label, actual, expected)
+        digest_issue = _validate_digest_pair(label, actual, expected, mode=mode)
         if digest_issue is not None:
             issues.append(digest_issue)
 
@@ -615,8 +637,8 @@ def validate_plan(
     issues.extend(validate_soft_limits(plan, effective_limits, mode))
 
     if review_state is not None:
-        issues.extend(validate_review_hooks(plan, review_state))
+        issues.extend(validate_review_hooks(plan, review_state, mode=mode))
     if digests is not None:
-        issues.extend(validate_digest_hooks(plan, digests))
+        issues.extend(validate_digest_hooks(plan, digests, mode=mode))
 
     return ValidationResult(issues=issues)

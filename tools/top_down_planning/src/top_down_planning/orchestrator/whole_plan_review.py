@@ -8,6 +8,7 @@ from typing import Any
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.plan_service import PlanAgentService
 from top_down_planning.agent_tool.review_service import ReviewAgentService
+from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.validators import (
@@ -16,6 +17,7 @@ from top_down_planning.domain.validators import (
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.workspace import run_workspace
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
@@ -117,11 +119,16 @@ class WholePlanReviewOrchestrator:
         limits = planning_limits_from_config(config)
 
         review_state, digest_bundle = build_plan_approval_validation_context(
-            run=run,
             plan=plan,
             approval=loop.to_dict(),
             actual_plan_digest=compute_plan_digest(plan),
             actual_config_digest=compute_config_digest(config),
+            actual_input_digest=compute_input_digest(
+                config,
+                base_dir=run_workspace(run, fallback=self._store.root),
+            ),
+            actual_output_goal_digest=compute_output_goal_digest(config),
+            actual_context_digest=(run.get("digests") or {}).get("context"),
         )
         validation = validate_plan(
             plan,
@@ -129,6 +136,7 @@ class WholePlanReviewOrchestrator:
             review_state=review_state,
             digests=digest_bundle,
             mode="approval",
+            reviews=self._store.list_reviews(self._run_id),
         )
         if not validation.ok:
             return self._terminate(
@@ -231,6 +239,7 @@ class WholePlanReviewOrchestrator:
             status=loop.status,
             findings=loop.findings,
             revision_cycles=loop.revision_cycles,
+            approved_digests=loop.approved_digests,
         )
         self._persist_loop(updated)
         self._append_event(
@@ -339,6 +348,7 @@ class WholePlanReviewOrchestrator:
             status="pending",
             findings=loop.findings,
             revision_cycles=loop.revision_cycles,
+            approved_digests=None,
         )
         self._persist_loop(updated)
         self._provider.send(
