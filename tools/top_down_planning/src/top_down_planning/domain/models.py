@@ -114,7 +114,14 @@ class Plan:
             raise ValueError("plan schema_version is required")
 
         items_list = data.get("items") or []
-        items = {item["id"]: PlanItem.from_dict(item) for item in items_list}
+        items: dict[str, PlanItem] = {}
+        for raw_item in items_list:
+            if not isinstance(raw_item, dict):
+                raise ValueError("each plan item must be an object")
+            item = PlanItem.from_dict(raw_item)
+            if item.id in items:
+                raise ValueError(f"duplicate plan item id: {item.id}")
+            items[item.id] = item
         return cls(
             id=data["id"],
             revision=int(data.get("revision", 0)),

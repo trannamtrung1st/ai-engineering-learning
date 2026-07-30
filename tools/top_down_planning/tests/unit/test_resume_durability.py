@@ -34,7 +34,13 @@ from top_down_planning.config import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import done_events, minimal_resolved_config, plan_apply_turn, whole_plan_approval_record
+from tests.helpers import (
+    done_events,
+    grant_capability,
+    minimal_resolved_config,
+    plan_apply_turn,
+    whole_plan_approval_record,
+)
 
 
 def _bind_config_workspace(config: dict, workspace: Path) -> dict:
@@ -84,7 +90,7 @@ def _create_planning_run(
             "max_depth": 4,
             "max_expansion_per_item": 7,
         },
-        limits={"planning": {"max_expansion_iterations": 20, "max_agent_turns": 40}},
+        limits={"planning": {"max_items_added": 20, "max_agent_turns": 40}},
         provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
@@ -111,7 +117,7 @@ def _create_planning_run(
     run = dict(run)
     run["revision"] = expected_revision + 1
     run["sessions"] = {"primary_planner_session_id": session_id}
-    run["planning"] = {"agent_turns": 1, "expansion_iterations": 0}
+    run["planning"] = {"agent_turns": 1, "items_added": 0}
     store.save_run(run_id, run, expected_revision)
     return session_id
 
@@ -299,6 +305,12 @@ def test_interrupt_production_resume_keeps_same_session(tmp_path: Path) -> None:
     provider = StubProvider()
     session_id = _create_production_run(store, provider)
     service = ProductionAgentService(store, "run-resume-production")
+    producer_token = grant_capability(
+        store,
+        "run-resume-production",
+        role="producer",
+        phase=PRODUCTION,
+    )
 
     service.apply(
         {
@@ -309,7 +321,7 @@ def test_interrupt_production_resume_keeps_same_session(tmp_path: Path) -> None:
             "contributions": [],
             "summary": "batch complete",
         },
-        role="producer",
+        capability_token=producer_token,
     )
 
     run = store.load_run("run-resume-production")
@@ -586,7 +598,12 @@ def test_resume_production_with_pending_amendment_requires_planner_session(
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
         },
-        role="producer",
+        capability_token=grant_capability(
+            store,
+            "run-resume-production",
+            role="producer",
+            phase=PRODUCTION,
+        ),
     )
 
     run = store.load_run("run-resume-production")

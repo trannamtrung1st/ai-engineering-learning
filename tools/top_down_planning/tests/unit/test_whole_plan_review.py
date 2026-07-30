@@ -7,13 +7,14 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.agent_tool import RequestError, ReviewAgentService
+from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import ProviderRunError, WholePlanReviewOrchestrator
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, run_digests_for_config
+from tests.helpers import done_events, grant_capability, run_digests_for_config
 
 
 def _create_run_at_whole_plan_review(
@@ -213,6 +214,13 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
     )
 
     service = ReviewAgentService(store, "run-review")
+    token = grant_capability(
+        store,
+        "run-review",
+        role="reviewer",
+        phase=WHOLE_PLAN_REVIEW,
+        session_kind="reviewer",
+    )
     with pytest.raises(RequestError, match="blocking findings"):
         service.respond(
             _review_respond_request(
@@ -228,7 +236,7 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
                     }
                 ],
             ),
-            role="reviewer",
+            capability_token=token,
         )
 
 
@@ -250,6 +258,13 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
     )
 
     service = ReviewAgentService(store, "run-review")
+    token = grant_capability(
+        store,
+        "run-review",
+        role="reviewer",
+        phase=WHOLE_PLAN_REVIEW,
+        session_kind="reviewer",
+    )
     plan = store.load_plan_model("run-review")
     plan.revision = 1
     store.save_plan_model("run-review", plan, 0)
@@ -257,7 +272,7 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(RequestError, match="does not match current plan revision"):
         service.respond(
             _review_respond_request(decision="approved", target_revision=0),
-            role="reviewer",
+            capability_token=token,
         )
 
 
@@ -437,18 +452,11 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
 def test_non_reviewer_respond_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_whole_plan_review(store)
-    provider = StubProvider()
-    provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "review_respond",
-                "role": "planner",
-                "request": _review_respond_request(decision="approved"),
-            },
-            *done_events(text="turn complete"),
-        ]
-    )
+    service = ReviewAgentService(store, "run-review")
+    token = grant_capability(store, "run-review", role="planner", phase=WHOLE_PLAN_REVIEW)
 
-    with pytest.raises(ProviderRunError, match="role=reviewer"):
-        WholePlanReviewOrchestrator(store, "run-review", provider).run()
+    with pytest.raises(CapabilityDeniedError):
+        service.respond(
+            _review_respond_request(decision="approved"),
+            capability_token=token,
+        )

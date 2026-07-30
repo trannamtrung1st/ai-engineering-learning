@@ -22,6 +22,11 @@ from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     resolve_role_session_context,
 )
+from top_down_planning.orchestrator.capability import (
+    bind_provider_capability,
+    bind_reviewer_capability,
+    issue_session_capability,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
 from top_down_planning.workspace import run_workspace
@@ -68,6 +73,7 @@ class WholeOutputReviewOrchestrator:
         self._provider = provider
         self._review_service = ReviewAgentService(store, run_id)
         self._production_service = ProductionAgentService(store, run_id)
+        self._capability_token: str | None = None
 
     def run(self) -> WholeOutputReviewResult:
         run = self._store.load_run(self._run_id)
@@ -90,6 +96,16 @@ class WholeOutputReviewOrchestrator:
                 if session_id is None:
                     session_id = self._start_reviewer_session(loop)
                     loop = self._reload_loop(loop.id)
+                else:
+                    run = self._store.load_run(self._run_id)
+                    phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
+                    self._capability_token = bind_reviewer_capability(
+                        self._store,
+                        self._run_id,
+                        self._provider,
+                        session_id=session_id,
+                        phase=phase,
+                    )
                 decision = self._consume_reviewer_turn(session_id, loop.id)
                 loop = self._reload_loop(loop.id)
                 if decision is None:
@@ -309,6 +325,17 @@ class WholeOutputReviewOrchestrator:
             approved_digests=loop.approved_digests,
         )
         self._persist_loop(updated)
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
+        self._capability_token = issue_session_capability(
+            self._store,
+            self._run_id,
+            role="reviewer",
+            phase=phase,
+            session_id=session_id,
+            session_kind="reviewer",
+        )
+        bind_provider_capability(self._provider, self._capability_token)
         self._append_event(
             "reviewer_session_started",
             loop_id=loop.id,
@@ -344,19 +371,30 @@ class WholeOutputReviewOrchestrator:
         if not isinstance(request, dict):
             raise ProviderRunError("review_respond tool_call requires a request object")
 
-        role = event.get("role")
-        if role is None or str(role).strip() != "reviewer":
-            raise ProviderRunError("review_respond tool_call requires role=reviewer")
-
         request = dict(request)
         request.setdefault("loop_id", loop_id)
-        self._review_service.respond(request, role=role)
+        self._review_service.respond(
+            request,
+            capability_token=self._capability_token,
+        )
 
     def _resume_producer_with_findings(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
         session_id = _primary_producer_session_id(run)
         if session_id is None:
             raise ProviderRunError("primary producer session is missing for revision")
+
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
+        self._capability_token = issue_session_capability(
+            self._store,
+            self._run_id,
+            role="producer",
+            phase=phase,
+            session_id=session_id,
+            session_kind="primary",
+        )
+        bind_provider_capability(self._provider, self._capability_token)
 
         self._provider.resume_primary_session(
             session_id,
@@ -432,13 +470,9 @@ class WholeOutputReviewOrchestrator:
         if not isinstance(request, dict):
             raise ProviderRunError(f"{tool} tool_call requires a request object")
 
-        role = event.get("role")
-        if role is None or str(role).strip() != "producer":
-            raise ProviderRunError(f"{tool} tool_call requires role=producer")
-
         handler = getattr(self._production_service, handler_name)
         try:
-            handler(request, role=str(role).strip())
+            handler(request, capability_token=self._capability_token)
         except AgentToolError as exc:
             raise ProviderRunError(str(exc)) from exc
 
@@ -551,10 +585,12 @@ def build_whole_output_review_package(
         "acceptance": run_section.get("acceptance"),
         "digests": digests,
         "tool_instructions": {
-            "role": "Only the reviewer role may submit review responses.",
+            "authorization": (
+                "Mutating commands require the session capability token exported "
+                "as TDP_CAPABILITY_TOKEN."
+            ),
             "respond": (
-                f"tdp agent review respond --run {run_id} --role reviewer "
-                "--request <file>"
+                f"tdp agent review respond --run {run_id} --request <file>"
             ),
         },
         },

@@ -12,7 +12,7 @@ from top_down_planning.orchestrator import ProductionPhaseOrchestrator, Provider
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, run_digests_for_config, whole_plan_approval_record
+from tests.helpers import done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
 
 
 def _batch_apply_request(
@@ -186,13 +186,15 @@ def test_ready_set_blocks_item_with_unmet_dependency(tmp_path: Path) -> None:
     _enter_production_phase(store, "run-production")
     service = ProductionAgentService(store, "run-production")
 
+    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+
     with pytest.raises(RequestError, match="not in the ready set"):
         service.apply(
             _batch_apply_request(
                 plan_items=["item-second"],
                 dispositions={"item-second": {"disposition": "completed"}},
             ),
-            role="producer",
+            capability_token=token,
         )
 
 
@@ -202,13 +204,15 @@ def test_not_applicable_requires_reason(tmp_path: Path) -> None:
     _enter_production_phase(store, "run-production")
     service = ProductionAgentService(store, "run-production")
 
+    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+
     with pytest.raises(RequestError, match="not_applicable requires reason"):
         service.apply(
             _batch_apply_request(
                 plan_items=["item-first"],
                 dispositions={"item-first": {"disposition": "not_applicable"}},
             ),
-            role="producer",
+            capability_token=token,
         )
 
 
@@ -218,13 +222,15 @@ def test_superseded_requires_replacement_ref(tmp_path: Path) -> None:
     _enter_production_phase(store, "run-production")
     service = ProductionAgentService(store, "run-production")
 
+    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+
     with pytest.raises(RequestError, match="superseded requires replacement_ref"):
         service.apply(
             _batch_apply_request(
                 plan_items=["item-first"],
                 dispositions={"item-first": {"disposition": "superseded"}},
             ),
-            role="producer",
+            capability_token=token,
         )
 
 
@@ -234,13 +240,15 @@ def test_blocked_requires_evidence(tmp_path: Path) -> None:
     _enter_production_phase(store, "run-production")
     service = ProductionAgentService(store, "run-production")
 
+    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
+
     with pytest.raises(RequestError, match="blocked requires evidence"):
         service.apply(
             _batch_apply_request(
                 plan_items=["item-first"],
                 dispositions={"item-first": {"disposition": "blocked"}},
             ),
-            role="producer",
+            capability_token=token,
         )
 
     result = service.apply(
@@ -253,7 +261,7 @@ def test_blocked_requires_evidence(tmp_path: Path) -> None:
                 }
             },
         ),
-        role="producer",
+        capability_token=token,
     )
     assert result["ok"] is True
 
@@ -263,6 +271,8 @@ def test_empty_output_batch_persists_justification(tmp_path: Path) -> None:
     _create_run_at_plan_validated(store)
     _enter_production_phase(store, "run-production")
     service = ProductionAgentService(store, "run-production")
+
+    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
 
     result = service.apply(
         _batch_apply_request(
@@ -275,7 +285,7 @@ def test_empty_output_batch_persists_justification(tmp_path: Path) -> None:
             empty_output=True,
             empty_output_reason="Existing output already satisfies this item.",
         ),
-        role="producer",
+        capability_token=token,
     )
 
     assert result["ok"] is True
@@ -356,13 +366,15 @@ def test_production_apply_rejects_plan_validated_phase(tmp_path: Path) -> None:
     _create_run_at_plan_validated(store)
     service = ProductionAgentService(store, "run-production")
 
+    token = grant_capability(store, "run-production", role="producer", phase=PLAN_VALIDATED)
+
     with pytest.raises(RequestError, match="whole-output review phases"):
         service.apply(
             _batch_apply_request(
                 plan_items=["item-first"],
                 dispositions={"item-first": {"disposition": "completed"}},
             ),
-            role="producer",
+            capability_token=token,
         )
 
 
@@ -393,6 +405,7 @@ def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
         workspace=str(store.root),
     )
     service = ProductionAgentService(store, "run-unapproved")
+    token = grant_capability(store, "run-unapproved", role="producer", phase=PRODUCTION)
 
     with pytest.raises(RequestError, match="approved whole-plan review"):
         service.apply(
@@ -400,7 +413,7 @@ def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
                 plan_items=["item-first"],
                 dispositions={"item-first": {"disposition": "completed"}},
             ),
-            role="producer",
+            capability_token=token,
         )
 
 
@@ -409,12 +422,13 @@ def test_production_apply_rejects_already_terminal_item(tmp_path: Path) -> None:
     _create_run_at_plan_validated(store)
     _enter_production_phase(store, "run-production")
     service = ProductionAgentService(store, "run-production")
+    token = grant_capability(store, "run-production", role="producer", phase=PRODUCTION)
     service.apply(
         _batch_apply_request(
             plan_items=["item-first"],
             dispositions={"item-first": {"disposition": "completed"}},
         ),
-        role="producer",
+        capability_token=token,
     )
 
     with pytest.raises(RequestError, match="already have terminal disposition"):
@@ -424,7 +438,7 @@ def test_production_apply_rejects_already_terminal_item(tmp_path: Path) -> None:
                 dispositions={"item-first": {"disposition": "completed"}},
                 production_revision=1,
             ),
-            role="producer",
+            capability_token=token,
         )
 
 

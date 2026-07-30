@@ -1,8 +1,10 @@
-"""File-backed run store (proposal §18)."""
+"""File-backed run store with transactional commits and path containment."""
 
 from __future__ import annotations
 
 import json
+import shutil
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -13,13 +15,17 @@ from core_tools.persistence import (
     RunNotFoundError,
     StoreRevisionConflictError,
     assert_next_revision,
+    atomic_write_bytes,
     atomic_write_json,
     atomic_write_text,
     dump_yaml,
     load_yaml,
     require_revision_field,
 )
+from top_down_planning.persistence.capabilities import new_capability_record
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
+from top_down_planning.persistence.path_ids import validate_store_id
 
 _EMPTY_PRODUCTION: dict[str, Any] = {
     "revision": 0,
@@ -71,7 +77,7 @@ def new_run_record(
         },
         "planning": {
             "agent_turns": 0,
-            "expansion_iterations": 0,
+            "items_added": 0,
         },
         "production_loop": {
             "current_batch_agent_turns": 0,
@@ -89,14 +95,15 @@ class FileRunStore:
     """Canonical file layout under ``<root>/<run-id>/``."""
 
     def __init__(self, root: Path) -> None:
-        self._root = root
+        self._root = root.resolve()
 
     @property
     def root(self) -> Path:
         return self._root
 
     def run_dir(self, run_id: str) -> Path:
-        return self._root / run_id
+        validated = validate_store_id(run_id, label="run_id")
+        return self._assert_contained(self._root / validated)
 
     def create_run(
         self,
@@ -112,6 +119,7 @@ class FileRunStore:
         workspace: str,
         store: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        validated_run_id = validate_store_id(run_id, label="run_id")
         if not input_digest or not output_goal_digest or not context_digest:
             raise PersistenceError(
                 "input_digest, output_goal_digest, and context_digest are required"
@@ -119,15 +127,19 @@ class FileRunStore:
         if not workspace or not str(workspace).strip():
             raise PersistenceError("workspace is required")
 
-        run_path = self.run_dir(run_id)
-        if run_path.exists():
-            raise PersistenceError(f"run already exists: {run_id}")
+        final_run_dir = self.run_dir(validated_run_id)
+        if final_run_dir.exists():
+            raise PersistenceError(f"run already exists: {validated_run_id}")
+
+        staging_dir = self._assert_contained(self._root / f".creating-{validated_run_id}")
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
 
         plan_payload = plan.to_dict() if isinstance(plan, Plan) else dict(plan)
         config_digest = compute_config_digest(resolved_config)
         plan_digest = compute_plan_digest(plan_payload)
         run_record = new_run_record(
-            run_id,
+            validated_run_id,
             input_digest=input_digest,
             output_goal_digest=output_goal_digest,
             config_digest=config_digest,
@@ -138,95 +150,232 @@ class FileRunStore:
             store=store,
         )
 
-        run_path.mkdir(parents=True)
-        (run_path / "reviews").mkdir()
-        atomic_write_text(
-            run_path / "resolved-config.yaml",
-            dump_yaml(resolved_config) + "\n",
+        try:
+            staging_dir.mkdir(parents=True)
+            (staging_dir / "reviews").mkdir()
+            (staging_dir / "capabilities").mkdir()
+            (staging_dir / "artifacts").mkdir()
+            atomic_write_text(
+                staging_dir / "resolved-config.yaml",
+                dump_yaml(resolved_config) + "\n",
+            )
+            atomic_write_json(staging_dir / "run.json", run_record)
+            atomic_write_json(staging_dir / "plan.json", plan_payload)
+            atomic_write_json(
+                staging_dir / "production.json",
+                production if production is not None else dict(_EMPTY_PRODUCTION),
+            )
+            (staging_dir / "events.jsonl").write_text("", encoding="utf-8")
+            staging_dir.rename(final_run_dir)
+        except Exception:
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir)
+            raise
+
+        self.commit(
+            validated_run_id,
+            CommitSpec(
+                events=[
+                    {
+                        "type": "run_created",
+                        "run_id": validated_run_id,
+                        "revision": run_record["revision"],
+                        "phase": run_record["phase"],
+                    }
+                ]
+            ),
         )
-        atomic_write_json(run_path / "run.json", run_record)
-        atomic_write_json(run_path / "plan.json", plan_payload)
-        atomic_write_json(
-            run_path / "production.json",
-            production if production is not None else dict(_EMPTY_PRODUCTION),
-        )
-        (run_path / "events.jsonl").write_text("", encoding="utf-8")
-        self.append_event(
-            run_id,
-            {
-                "type": "run_created",
-                "run_id": run_id,
-                "revision": run_record["revision"],
-                "phase": run_record["phase"],
-            },
-        )
-        return run_record
+        return self.load_run(validated_run_id)
 
     def load_run(self, run_id: str) -> dict[str, Any]:
+        self._recover_incomplete_transactions(run_id)
         return self._read_json(self._run_path(run_id))
 
-    def save_run(self, run_id: str, run: dict[str, Any], expected_revision: int) -> int:
-        current_revision = int(self.load_run(run_id)["revision"])
-        if current_revision != expected_revision:
-            raise StoreRevisionConflictError(expected_revision, current_revision)
-
-        next_revision = require_revision_field(run, "run")
-        assert_next_revision(expected_revision, next_revision)
-
-        payload = dict(run)
-        payload["revision"] = next_revision
-        payload["updated_at"] = _utc_now()
-        atomic_write_json(self._run_path(run_id), payload)
-        return next_revision
-
     def load_plan(self, run_id: str) -> dict[str, Any]:
+        self._recover_incomplete_transactions(run_id)
         return self._read_json(self._plan_path(run_id))
 
     def load_plan_model(self, run_id: str) -> Plan:
         return Plan.from_dict(self.load_plan(run_id))
 
-    def save_plan(self, run_id: str, plan: dict[str, Any], expected_revision: int) -> int:
-        current_revision = int(self.load_plan(run_id)["revision"])
-        if current_revision != expected_revision:
-            raise StoreRevisionConflictError(expected_revision, current_revision)
+    def load_production(self, run_id: str) -> dict[str, Any]:
+        self._recover_incomplete_transactions(run_id)
+        return self._read_json(self._production_path(run_id))
 
-        next_revision = require_revision_field(plan, "plan")
+    def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
+        validated_run_id = validate_store_id(run_id, label="run_id")
+        self._recover_incomplete_transactions(validated_run_id)
+        run_dir = self.run_dir(validated_run_id)
+        if not run_dir.is_dir():
+            raise RunNotFoundError(validated_run_id, "run directory missing", runs_root=self._root)
+
+        if spec.run is not None:
+            expected = spec.run_expected_revision
+            if expected is None:
+                raise PersistenceError("commit with run payload requires run_expected_revision")
+            current_revision = int(self.load_run(validated_run_id)["revision"])
+            if current_revision != expected:
+                raise StoreRevisionConflictError(expected, current_revision)
+            next_revision = require_revision_field(spec.run, "run")
+            assert_next_revision(expected, next_revision)
+            run_payload = dict(spec.run)
+            run_payload["revision"] = next_revision
+            run_payload["updated_at"] = _utc_now()
+        else:
+            run_payload = None
+
+        if spec.plan is not None:
+            expected = spec.plan_expected_revision
+            if expected is None:
+                raise PersistenceError("commit with plan payload requires plan_expected_revision")
+            current_revision = int(self.load_plan(validated_run_id)["revision"])
+            if current_revision != expected:
+                raise StoreRevisionConflictError(expected, current_revision)
+            next_revision = require_revision_field(spec.plan, "plan")
+            assert_next_revision(expected, next_revision)
+            plan_payload = dict(spec.plan)
+            plan_payload["revision"] = next_revision
+        else:
+            plan_payload = None
+
+        if spec.production is not None:
+            expected = spec.production_expected_revision
+            if expected is None:
+                raise PersistenceError(
+                    "commit with production payload requires production_expected_revision"
+                )
+            current_revision = int(self.load_production(validated_run_id)["revision"])
+            if current_revision != expected:
+                raise StoreRevisionConflictError(expected, current_revision)
+            next_revision = require_revision_field(spec.production, "production")
+            assert_next_revision(expected, next_revision)
+            production_payload = dict(spec.production)
+            production_payload["revision"] = next_revision
+        else:
+            production_payload = None
+
+        review_payloads: list[tuple[str, dict[str, Any]]] = []
+        for review in spec.reviews:
+            review_id = review.get("id")
+            if not review_id:
+                raise PersistenceError("review record requires id")
+            validated_review_id = validate_store_id(str(review_id), label="review_id")
+            review_payloads.append((validated_review_id, dict(review)))
+
+        txn_id = uuid.uuid4().hex
+        staging_dir = self._assert_contained(run_dir / f".txn-{txn_id}")
+        journal_path = staging_dir / "journal.json"
+        staging_dir.mkdir()
+        staged_files: list[dict[str, str]] = []
+
+        try:
+            if run_payload is not None:
+                staged_path = staging_dir / "run.json"
+                atomic_write_json(staged_path, run_payload)
+                staged_files.append({"kind": "run", "name": "run.json"})
+
+            if plan_payload is not None:
+                staged_path = staging_dir / "plan.json"
+                atomic_write_json(staged_path, plan_payload)
+                staged_files.append({"kind": "plan", "name": "plan.json"})
+
+            if production_payload is not None:
+                staged_path = staging_dir / "production.json"
+                atomic_write_json(staged_path, production_payload)
+                staged_files.append({"kind": "production", "name": "production.json"})
+
+            for review_id, review_payload in review_payloads:
+                staged_name = f"review__{review_id}.json"
+                staged_path = staging_dir / staged_name
+                atomic_write_json(staged_path, review_payload)
+                staged_files.append(
+                    {
+                        "kind": "review",
+                        "name": staged_name,
+                        "review_id": review_id,
+                    }
+                )
+
+            atomic_write_json(
+                journal_path,
+                {
+                    "txn_id": txn_id,
+                    "files": staged_files,
+                    "events": [dict(event) for event in spec.events],
+                },
+            )
+
+            for entry in staged_files:
+                staged_path = staging_dir / entry["name"]
+                if entry["kind"] == "review":
+                    reviews_dir = self.reviews_dir(validated_run_id)
+                    reviews_dir.mkdir(parents=True, exist_ok=True)
+                    dest = reviews_dir / f"{entry['review_id']}.json"
+                else:
+                    dest = run_dir / entry["name"]
+                self._assert_contained(dest)
+                staged_path.replace(dest)
+
+            if spec.events:
+                events_path = self._events_path(validated_run_id)
+                with events_path.open("a", encoding="utf-8") as handle:
+                    for event in spec.events:
+                        payload = dict(event)
+                        payload.setdefault("ts", _utc_now())
+                        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        finally:
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir)
+
+        result: dict[str, Any] = {"ok": True}
+        if run_payload is not None:
+            result["run_revision"] = int(run_payload["revision"])
+        if plan_payload is not None:
+            result["plan_revision"] = int(plan_payload["revision"])
+        if production_payload is not None:
+            result["production_revision"] = int(production_payload["revision"])
+        return result
+
+    def save_run(self, run_id: str, run: dict[str, Any], expected_revision: int) -> int:
+        payload = dict(run)
+        next_revision = require_revision_field(payload, "run")
         assert_next_revision(expected_revision, next_revision)
+        self.commit(
+            run_id,
+            CommitSpec(run=payload, run_expected_revision=expected_revision),
+        )
+        return next_revision
 
+    def save_plan(self, run_id: str, plan: dict[str, Any], expected_revision: int) -> int:
         payload = dict(plan)
-        payload["revision"] = next_revision
-        atomic_write_json(self._plan_path(run_id), payload)
+        next_revision = require_revision_field(payload, "plan")
+        assert_next_revision(expected_revision, next_revision)
+        self.commit(
+            run_id,
+            CommitSpec(plan=payload, plan_expected_revision=expected_revision),
+        )
         return next_revision
 
     def save_plan_model(self, run_id: str, plan: Plan, expected_revision: int) -> int:
         return self.save_plan(run_id, plan.to_dict(), expected_revision)
 
-    def load_production(self, run_id: str) -> dict[str, Any]:
-        return self._read_json(self._production_path(run_id))
-
     def save_production(
         self, run_id: str, production: dict[str, Any], expected_revision: int
     ) -> int:
-        current_revision = int(self.load_production(run_id)["revision"])
-        if current_revision != expected_revision:
-            raise StoreRevisionConflictError(expected_revision, current_revision)
-
-        next_revision = require_revision_field(production, "production")
-        assert_next_revision(expected_revision, next_revision)
-
         payload = dict(production)
-        payload["revision"] = next_revision
-        atomic_write_json(self._production_path(run_id), payload)
+        next_revision = require_revision_field(payload, "production")
+        assert_next_revision(expected_revision, next_revision)
+        self.commit(
+            run_id,
+            CommitSpec(
+                production=payload,
+                production_expected_revision=expected_revision,
+            ),
+        )
         return next_revision
 
     def append_event(self, run_id: str, event: dict[str, Any]) -> None:
-        path = self._events_path(run_id)
-        if not path.exists():
-            raise RunNotFoundError(run_id, "events.jsonl missing", runs_root=self._root)
-        payload = dict(event)
-        payload.setdefault("ts", _utc_now())
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        self.commit(run_id, CommitSpec(events=[dict(event)]))
 
     def load_events(self, run_id: str) -> list[dict[str, Any]]:
         path = self._events_path(run_id)
@@ -253,23 +402,86 @@ class FileRunStore:
         return payload
 
     def reviews_dir(self, run_id: str) -> Path:
-        return self.run_dir(run_id) / "reviews"
+        return self._assert_contained(self.run_dir(run_id) / "reviews")
+
+    def capabilities_dir(self, run_id: str) -> Path:
+        return self._assert_contained(self.run_dir(run_id) / "capabilities")
+
+    def artifacts_dir(self, run_id: str) -> Path:
+        return self._assert_contained(self.run_dir(run_id) / "artifacts")
+
+    def create_capability(
+        self,
+        run_id: str,
+        *,
+        role: str,
+        phase: str,
+        allowed_ops: frozenset[str],
+        session_id: str | None = None,
+        session_kind: str = "primary",
+    ) -> tuple[str, dict[str, Any]]:
+        capability_id, record = new_capability_record(
+            run_id=run_id,
+            role=role,
+            phase=phase,
+            allowed_ops=allowed_ops,
+            session_id=session_id,
+            session_kind=session_kind,
+        )
+        capabilities_dir = self.capabilities_dir(run_id)
+        capabilities_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(capabilities_dir / f"{capability_id}.json", record)
+        return capability_id, record
+
+    def load_capability(self, run_id: str, capability_id: str) -> dict[str, Any]:
+        validated_id = validate_store_id(capability_id, label="capability_id")
+        path = self.capabilities_dir(run_id) / f"{validated_id}.json"
+        if not path.exists():
+            raise RunNotFoundError(
+                run_id,
+                f"capability {validated_id} missing",
+                runs_root=self._root,
+            )
+        return self._read_json(path)
+
+    def revoke_capability(self, run_id: str, capability_id: str) -> None:
+        record = self.load_capability(run_id, capability_id)
+        record["revoked"] = True
+        validated_id = validate_store_id(capability_id, label="capability_id")
+        atomic_write_json(self.capabilities_dir(run_id) / f"{validated_id}.json", record)
+
+    def artifact_path(self, run_id: str, artifact_id: str, filename: str) -> Path:
+        validated_artifact_id = validate_store_id(artifact_id, label="artifact_id")
+        validated_filename = validate_store_id(filename, label="artifact_filename")
+        return self._assert_contained(
+            self.artifacts_dir(run_id) / validated_artifact_id / validated_filename
+        )
+
+    def write_artifact_bytes(
+        self,
+        run_id: str,
+        artifact_id: str,
+        filename: str,
+        data: bytes,
+    ) -> str:
+        path = self.artifact_path(run_id, artifact_id, filename)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_bytes(path, data)
+        return str(Path("artifacts") / validate_store_id(artifact_id, label="artifact_id") / validate_store_id(filename, label="artifact_filename"))
 
     def save_review(self, run_id: str, review: dict[str, Any]) -> None:
         review_id = review.get("id")
         if not review_id:
             raise PersistenceError("review record requires id")
-        reviews_dir = self.reviews_dir(run_id)
-        if not reviews_dir.is_dir():
-            raise RunNotFoundError(run_id, "reviews/ missing", runs_root=self._root)
-        atomic_write_json(reviews_dir / f"{review_id}.json", dict(review))
+        self.commit(run_id, CommitSpec(reviews=[dict(review)]))
 
     def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
-        path = self.reviews_dir(run_id) / f"{review_id}.json"
+        validated_review_id = validate_store_id(review_id, label="review_id")
+        path = self.reviews_dir(run_id) / f"{validated_review_id}.json"
         if not path.exists():
             raise RunNotFoundError(
                 run_id,
-                f"review {review_id} missing",
+                f"review {validated_review_id} missing",
                 runs_root=self._root,
             )
         return self._read_json(path)
@@ -282,6 +494,23 @@ class FileRunStore:
         for path in sorted(reviews_dir.glob("*.json")):
             reviews.append(self._read_json(path))
         return reviews
+
+    def _recover_incomplete_transactions(self, run_id: str) -> None:
+        run_dir = self.run_dir(run_id)
+        if not run_dir.is_dir():
+            return
+        for staging_dir in sorted(run_dir.glob(".txn-*")):
+            if staging_dir.is_dir():
+                shutil.rmtree(staging_dir)
+
+    def _assert_contained(self, path: Path) -> Path:
+        resolved = path.resolve()
+        root = self._root.resolve()
+        if resolved == root:
+            return resolved
+        if not resolved.is_relative_to(root):
+            raise PersistenceError(f"path escapes run store root: {path}")
+        return resolved
 
     def _run_path(self, run_id: str) -> Path:
         path = self.run_dir(run_id) / "run.json"

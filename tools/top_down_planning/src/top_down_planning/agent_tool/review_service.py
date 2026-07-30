@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from top_down_planning.agent_tool.errors import RequestError, RoleDeniedError
+from top_down_planning.agent_tool.authorization import authorize_mutation
+from top_down_planning.agent_tool.errors import RequestError
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import (
     ReviewLoop,
@@ -16,7 +17,7 @@ from top_down_planning.domain.reviews import (
     validate_findings_within_scope,
     validate_focused_scope,
 )
-from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.commit import CommitSpec
 
 _FOCUSED_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_plan_review"]
 _FOCUSED_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_output_review"]
@@ -33,25 +34,24 @@ class ReviewAgentService:
         self,
         request: dict[str, Any],
         *,
-        role: str,
+        capability_token: str | None = None,
     ) -> dict[str, Any]:
-        normalized_role = str(role).strip()
+        role = authorize_mutation(
+            self._store,
+            self._run_id,
+            operation="review_request",
+            capability_token=capability_token,
+        )
         review_type = str(request.get("type") or "").strip()
         if review_type not in {"focused_plan", "focused_output"}:
             raise RequestError(
                 "request.type must be focused_plan or focused_output"
             )
 
-        if review_type == "focused_plan" and normalized_role != "planner":
-            raise RoleDeniedError(
-                normalized_role,
-                action="Only the planner role may request focused plan reviews.",
-            )
-        if review_type == "focused_output" and normalized_role != "producer":
-            raise RoleDeniedError(
-                normalized_role,
-                action="Only the producer role may request focused output reviews.",
-            )
+        if review_type == "focused_plan" and role != "planner":
+            raise RequestError("focused_plan reviews require a planner capability")
+        if review_type == "focused_output" and role != "producer":
+            raise RequestError("focused_output reviews require a producer capability")
 
         config = self._store.load_resolved_config(self._run_id)
         review_config = (config.get("review") or {}).get(
@@ -97,18 +97,22 @@ class ReviewAgentService:
             scope=scope,
             status="pending",
         )
-        self._store.save_review(self._run_id, loop.to_dict())
-        self._store.append_event(
+        self._store.commit(
             self._run_id,
-            {
-                "type": "focused_review_requested",
-                "run_id": self._run_id,
-                "loop_id": loop_id,
-                "review_type": review_type,
-                "scope": scope,
-                "target_revision": target_revision,
-                "requested_by": normalized_role,
-            },
+            CommitSpec(
+                reviews=[loop.to_dict()],
+                events=[
+                    {
+                        "type": "focused_review_requested",
+                        "run_id": self._run_id,
+                        "loop_id": loop_id,
+                        "review_type": review_type,
+                        "scope": scope,
+                        "target_revision": target_revision,
+                        "requested_by": role,
+                    }
+                ],
+            ),
         )
 
         return {
@@ -124,14 +128,14 @@ class ReviewAgentService:
         self,
         request: dict[str, Any],
         *,
-        role: str,
+        capability_token: str | None = None,
     ) -> dict[str, Any]:
-        normalized_role = str(role).strip()
-        if normalized_role != "reviewer":
-            raise RoleDeniedError(
-                normalized_role,
-                action="Only the reviewer role may submit review responses.",
-            )
+        authorize_mutation(
+            self._store,
+            self._run_id,
+            operation="review_respond",
+            capability_token=capability_token,
+        )
 
         loop_id = request.get("loop_id")
         if loop_id is None or not str(loop_id).strip():
@@ -198,17 +202,21 @@ class ReviewAgentService:
         except ValueError as exc:
             raise RequestError(str(exc)) from exc
 
-        self._store.save_review(self._run_id, updated.to_dict())
-        self._store.append_event(
+        self._store.commit(
             self._run_id,
-            {
-                "type": "review_responded",
-                "run_id": self._run_id,
-                "loop_id": loop_id,
-                "decision": decision,
-                "target_revision": target_revision,
-                "finding_count": len(findings),
-            },
+            CommitSpec(
+                reviews=[updated.to_dict()],
+                events=[
+                    {
+                        "type": "review_responded",
+                        "run_id": self._run_id,
+                        "loop_id": loop_id,
+                        "decision": decision,
+                        "target_revision": target_revision,
+                        "finding_count": len(findings),
+                    }
+                ],
+            ),
         )
 
         return {

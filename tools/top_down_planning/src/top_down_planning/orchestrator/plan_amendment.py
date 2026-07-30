@@ -12,6 +12,10 @@ from top_down_planning.domain.reconciliation import (
     build_reconciliation_report,
 )
 from top_down_planning.domain.reviews import find_whole_plan_approval
+from top_down_planning.orchestrator.capability import (
+    bind_provider_capability,
+    issue_session_capability,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import (
     PLAN_AMENDMENT,
@@ -54,6 +58,7 @@ class PlanAmendmentOrchestrator:
         self._run_id = run_id
         self._provider = provider
         self._plan_service = PlanAgentService(store, run_id)
+        self._capability_token: str | None = None
 
     def run(self) -> PlanAmendmentResult:
         production = self._store.load_production(self._run_id)
@@ -90,6 +95,17 @@ class PlanAmendmentOrchestrator:
             prior_plan = _require_prior_plan_snapshot(amendment)
 
         if str(run.get("phase") or "") == PLAN_AMENDMENT:
+            run = self._store.load_run(self._run_id)
+            phase = str(run.get("phase") or PLAN_AMENDMENT)
+            self._capability_token = issue_session_capability(
+                self._store,
+                self._run_id,
+                role="planner",
+                phase=phase,
+                session_id=planner_session_id,
+                session_kind="primary",
+            )
+            bind_provider_capability(self._provider, self._capability_token)
             revision_cycles = int(amendment.get("revision_cycles") or 0)
             config = self._store.load_resolved_config(self._run_id)
             max_revision_cycles = _amendment_revision_limit(config)
@@ -297,11 +313,7 @@ class PlanAmendmentOrchestrator:
         if not isinstance(request, dict):
             raise ProviderRunError("plan_apply tool_call requires a request object")
 
-        role = event.get("role")
-        if role is None or str(role).strip() != "planner":
-            raise ProviderRunError("plan_apply tool_call requires role=planner")
-
-        self._plan_service.apply(request, role=role)
+        self._plan_service.apply(request, capability_token=self._capability_token)
 
     def _persist_amendment_revision_cycles(
         self,

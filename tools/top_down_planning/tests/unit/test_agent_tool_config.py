@@ -11,7 +11,7 @@ def test_planning_limits_read_from_planning_section_only() -> None:
     limits = planning_limits_from_config(
         {
             "planning": {"max_depth": 5, "max_expansion_per_item": 3},
-            "limits": {"planning": {"max_expansion_iterations": 20}},
+            "limits": {"planning": {"max_items_added": 20}},
         }
     )
     assert limits.max_depth == 5

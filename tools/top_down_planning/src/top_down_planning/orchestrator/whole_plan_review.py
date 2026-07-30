@@ -20,6 +20,11 @@ from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     resolve_role_session_context,
 )
+from top_down_planning.orchestrator.capability import (
+    bind_provider_capability,
+    bind_reviewer_capability,
+    issue_session_capability,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
 from top_down_planning.workspace import run_workspace
@@ -56,6 +61,7 @@ class WholePlanReviewOrchestrator:
         self._provider = provider
         self._plan_service = PlanAgentService(store, run_id)
         self._review_service = ReviewAgentService(store, run_id)
+        self._capability_token: str | None = None
 
     def run(self) -> WholePlanReviewResult:
         run = self._store.load_run(self._run_id)
@@ -75,6 +81,16 @@ class WholePlanReviewOrchestrator:
                 if session_id is None:
                     session_id = self._start_reviewer_session(loop)
                     loop = self._reload_loop(loop.id)
+                else:
+                    run = self._store.load_run(self._run_id)
+                    phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
+                    self._capability_token = bind_reviewer_capability(
+                        self._store,
+                        self._run_id,
+                        self._provider,
+                        session_id=session_id,
+                        phase=phase,
+                    )
                 decision = self._consume_reviewer_turn(session_id, loop.id)
                 loop = self._reload_loop(loop.id)
                 if decision is None:
@@ -257,6 +273,17 @@ class WholePlanReviewOrchestrator:
             approved_digests=loop.approved_digests,
         )
         self._persist_loop(updated)
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
+        self._capability_token = issue_session_capability(
+            self._store,
+            self._run_id,
+            role="reviewer",
+            phase=phase,
+            session_id=session_id,
+            session_kind="reviewer",
+        )
+        bind_provider_capability(self._provider, self._capability_token)
         self._append_event(
             "reviewer_session_started",
             loop_id=loop.id,
@@ -292,19 +319,30 @@ class WholePlanReviewOrchestrator:
         if not isinstance(request, dict):
             raise ProviderRunError("review_respond tool_call requires a request object")
 
-        role = event.get("role")
-        if role is None or str(role).strip() != "reviewer":
-            raise ProviderRunError("review_respond tool_call requires role=reviewer")
-
         request = dict(request)
         request.setdefault("loop_id", loop_id)
-        self._review_service.respond(request, role=role)
+        self._review_service.respond(
+            request,
+            capability_token=self._capability_token,
+        )
 
     def _resume_planner_with_findings(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
         session_id = _primary_planner_session_id(run)
         if session_id is None:
             raise ProviderRunError("primary planner session is missing for revision")
+
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
+        self._capability_token = issue_session_capability(
+            self._store,
+            self._run_id,
+            role="planner",
+            phase=phase,
+            session_id=session_id,
+            session_kind="primary",
+        )
+        bind_provider_capability(self._provider, self._capability_token)
 
         self._provider.resume_primary_session(
             session_id,
@@ -342,11 +380,7 @@ class WholePlanReviewOrchestrator:
         if not isinstance(request, dict):
             raise ProviderRunError("plan_apply tool_call requires a request object")
 
-        role = event.get("role")
-        if role is None or str(role).strip() != "planner":
-            raise ProviderRunError("plan_apply tool_call requires role=planner")
-
-        self._plan_service.apply(request, role=role)
+        self._plan_service.apply(request, capability_token=self._capability_token)
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])
@@ -437,13 +471,15 @@ def build_whole_plan_review_package(
         "acceptance": run_section.get("acceptance"),
         "digests": digests,
         "tool_instructions": {
-            "role": "Only the reviewer role may submit review responses.",
+            "authorization": (
+                "Mutating commands require the session capability token exported "
+                "as TDP_CAPABILITY_TOKEN."
+            ),
             "plan_snapshot": (
                 f"tdp agent plan snapshot --run {run_id} --view tree"
             ),
             "respond": (
-                f"tdp agent review respond --run {run_id} --role reviewer "
-                "--request <file>"
+                f"tdp agent review respond --run {run_id} --request <file>"
             ),
         },
         },

@@ -9,7 +9,6 @@ from top_down_planning.agent_tool import (
     AgentToolError,
     PlanAgentService,
     ProductionAgentService,
-    RequestError,
     ReviewAgentService,
     RunAgentService,
     load_structured_request,
@@ -87,10 +86,6 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         "--request",
         help="JSON or YAML request file (default: stdin).",
     )
-    apply_parser.add_argument(
-        "--role",
-        help="Agent role (required unless request.role is set).",
-    )
 
     check_parser = plan_sub.add_parser("check", help="Run deterministic plan validation.")
     _add_run_flags(check_parser)
@@ -128,10 +123,6 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         "--request",
         help="JSON or YAML request file (default: stdin).",
     )
-    production_apply_parser.add_argument(
-        "--role",
-        help="Agent role (required unless request.role is set).",
-    )
 
     production_check_parser = production_sub.add_parser(
         "check",
@@ -148,10 +139,6 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         "--request",
         help="JSON or YAML request file (default: stdin).",
     )
-    production_amendment_parser.add_argument(
-        "--role",
-        help="Agent role (required unless request.role is set).",
-    )
 
     production_completion_parser = production_sub.add_parser(
         "submit-completion",
@@ -162,10 +149,6 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         "--request",
         help="JSON or YAML request file (default: stdin).",
     )
-    production_completion_parser.add_argument(
-        "--role",
-        help="Agent role (required unless request.role is set).",
-    )
 
     production_blocked_parser = production_sub.add_parser(
         "report-blocked",
@@ -175,10 +158,6 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
     production_blocked_parser.add_argument(
         "--request",
         help="JSON or YAML request file (default: stdin).",
-    )
-    production_blocked_parser.add_argument(
-        "--role",
-        help="Agent role (required unless request.role is set).",
     )
 
     review_parser = agent_sub.add_parser(
@@ -196,10 +175,6 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         "--request",
         help="JSON or YAML request file (default: stdin).",
     )
-    respond_parser.add_argument(
-        "--role",
-        help="Agent role (required unless request.role is set).",
-    )
 
     request_parser = review_sub.add_parser(
         "request",
@@ -209,10 +184,6 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
     request_parser.add_argument(
         "--request",
         help="JSON or YAML request file (default: stdin).",
-    )
-    request_parser.add_argument(
-        "--role",
-        help="Agent role (required unless request.role is set).",
     )
 
     run_parser = agent_sub.add_parser("run", help="Run-level agent commands.")
@@ -336,21 +307,6 @@ def _handle_example_command(args: argparse.Namespace) -> None:
         emit_response(schema_docs.unknown_example_response(name))
 
 
-def _resolve_role(
-    args: argparse.Namespace,
-    request: dict[str, Any],
-    verb: str,
-) -> str:
-    role = args.role if args.role is not None else request.get("role")
-    if role is None or not str(role).strip():
-        raise RequestError(f"{verb} requires --role or request.role")
-    return str(role).strip()
-
-
-def _resolve_apply_role(args: argparse.Namespace, request: dict[str, Any]) -> str:
-    return _resolve_role(args, request, "apply")
-
-
 def _handle_plan_command(args: argparse.Namespace) -> None:
     if args.plan_command is None:
         emit_error(
@@ -372,8 +328,7 @@ def _handle_plan_command(args: argparse.Namespace) -> None:
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.plan_command == "apply":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_apply_role(args, request)
-            payload = service.apply(request, role=role)
+            payload = service.apply(request)
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.plan_command == "check":
             payload = service.check(mode=args.mode)
@@ -408,26 +363,22 @@ def _handle_production_command(args: argparse.Namespace) -> None:
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "apply":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_apply_role(args, request)
-            payload = service.apply(request, role=role)
+            payload = service.apply(request)
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "check":
             payload = service.check()
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "request-amendment":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_role(args, request, "request-amendment")
-            payload = service.request_amendment(request, role=role)
+            payload = service.request_amendment(request)
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "submit-completion":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_role(args, request, "submit-completion")
-            payload = service.submit_completion(request, role=role)
+            payload = service.submit_completion(request)
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "report-blocked":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_role(args, request, "report-blocked")
-            payload = service.report_blocked(request, role=role)
+            payload = service.report_blocked(request)
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         else:
             emit_error(
@@ -453,13 +404,11 @@ def _handle_review_command(args: argparse.Namespace) -> None:
     try:
         if args.review_command == "respond":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_role(args, request, "respond")
-            payload = service.respond(request, role=role)
+            payload = service.respond(request)
             emit_response(payload)
         elif args.review_command == "request":
             request = load_structured_request(request_path=args.request)
-            role = _resolve_role(args, request, "request")
-            payload = service.request(request, role=role)
+            payload = service.request(request)
             emit_response(payload)
         else:
             emit_error(

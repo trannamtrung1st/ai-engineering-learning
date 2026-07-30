@@ -16,6 +16,10 @@ from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     resolve_role_session_context,
 )
+from top_down_planning.orchestrator.capability import (
+    bind_provider_capability,
+    issue_session_capability,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import (
@@ -63,6 +67,7 @@ class ProductionPhaseOrchestrator:
         self._provider = provider
         self._production_service = ProductionAgentService(store, run_id)
         self._review_service = ReviewAgentService(store, run_id)
+        self._capability_token: str | None = None
         self._pending_focused_loop_id: str | None = None
 
     def run(self) -> ProductionPhaseResult:
@@ -109,6 +114,18 @@ class ProductionPhaseOrchestrator:
                 session_id,
                 {"action": "continue", "phase": PRODUCTION},
             )
+
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or PRODUCTION)
+        self._capability_token = issue_session_capability(
+            self._store,
+            self._run_id,
+            role="producer",
+            phase=phase,
+            session_id=session_id,
+            session_kind="primary",
+        )
+        bind_provider_capability(self._provider, self._capability_token)
 
         batch_agent_turns = _load_batch_agent_turns(self._store, self._run_id)
         while True:
@@ -236,13 +253,9 @@ class ProductionPhaseOrchestrator:
         if tool == "production_submit_completion":
             self._assert_no_blocking_focused_output_findings_for_plan()
 
-        role = event.get("role")
-        if role is None or str(role).strip() != "producer":
-            raise ProviderRunError(f"{tool} tool_call requires role=producer")
-
         handler = getattr(self._production_service, handler_name)
         try:
-            handler(request, role=str(role).strip())
+            handler(request, capability_token=self._capability_token)
         except AgentToolError as exc:
             raise ProviderRunError(str(exc)) from exc
 
@@ -251,12 +264,11 @@ class ProductionPhaseOrchestrator:
         if not isinstance(request, dict):
             raise ProviderRunError("review_request tool_call requires a request object")
 
-        role = event.get("role")
-        if role is None or str(role).strip() != "producer":
-            raise ProviderRunError("review_request tool_call requires role=producer")
-
         try:
-            created = self._review_service.request(request, role=str(role).strip())
+            created = self._review_service.request(
+                request,
+                capability_token=self._capability_token,
+            )
         except AgentToolError as exc:
             raise ProviderRunError(str(exc)) from exc
 
@@ -463,27 +475,28 @@ def build_producer_context_manifest(
         "loop_limits": limits,
         "digests": digests,
         "tool_instructions": {
-            "role": "Only the producer role may record production batches.",
+            "authorization": (
+                "Mutating commands require the session capability token exported "
+                "as TDP_CAPABILITY_TOKEN."
+            ),
             "snapshot": f"tdp agent production snapshot --run {run_id} --view ready",
             "apply": (
-                f"tdp agent production apply --run {run_id} --role producer "
-                "--request <file>"
+                f"tdp agent production apply --run {run_id} --request <file>"
             ),
             "check": f"tdp agent production check --run {run_id}",
             "request_amendment": (
-                f"tdp agent production request-amendment --run {run_id} --role producer "
+                f"tdp agent production request-amendment --run {run_id} "
                 "--request <file>"
             ),
             "submit_completion": (
-                f"tdp agent production submit-completion --run {run_id} --role producer "
+                f"tdp agent production submit-completion --run {run_id} "
                 "--request <file>  # requires goal_met: true and goal_assessment"
             ),
             "report_blocked": (
-                f"tdp agent production report-blocked --run {run_id} --role producer "
-                "--request <file>"
+                f"tdp agent production report-blocked --run {run_id} --request <file>"
             ),
             "request_review": (
-                f"tdp agent review request --run {run_id} --role producer --request <file>"
+                f"tdp agent review request --run {run_id} --request <file>"
             ),
             "batch_complete_signal": _BATCH_COMPLETE_SIGNAL,
         },

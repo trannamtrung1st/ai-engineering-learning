@@ -6,10 +6,10 @@ response shaping.
 
 from top_down_planning.agent_tool.errors import (
     AgentToolError,
+    CapabilityDeniedError,
     OperationError,
     RequestError,
     RevisionConflictError,
-    RoleDeniedError,
 )
 from top_down_planning.agent_tool.plan_service import PlanAgentService
 from top_down_planning.agent_tool.production_service import ProductionAgentService
@@ -19,13 +19,13 @@ from top_down_planning.agent_tool.run_service import RunAgentService
 
 __all__ = [
     "AgentToolError",
+    "CapabilityDeniedError",
     "OperationError",
     "PlanAgentService",
     "ProductionAgentService",
     "RequestError",
     "ReviewAgentService",
     "RevisionConflictError",
-    "RoleDeniedError",
     "RunAgentService",
     "load_structured_request",
 ]

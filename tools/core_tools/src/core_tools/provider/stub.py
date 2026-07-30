@@ -30,6 +30,7 @@ class StubProvider:
         self._default_scripts: list[list[dict[str, Any]]] = []
         self._session_scripts: dict[str, list[list[dict[str, Any]]]] = {}
         self._counter = 0
+        self._capability_token: str | None = None
 
     def script_turn(self, events: list[dict[str, Any]]) -> None:
         """Queue scripted normalized events for the next turn on any session."""
@@ -108,7 +109,9 @@ class StubProvider:
 
     def terminate_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
-        self._session_scripts.pop(session_id, None)
+
+    def set_capability_token(self, token: str | None) -> None:
+        self._capability_token = token
 
     def _new_session_id(self) -> str:
         self._counter += 1

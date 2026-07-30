@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
+from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
+from top_down_planning.persistence.capabilities import CAPABILITY_ENV_VAR
 
 
 def test_run_workspace(store: Any) -> str:
@@ -127,6 +129,38 @@ def whole_output_approval_record(store: Any, run_id: str, **fields: Any) -> dict
     return payload
 
 
+def grant_capability(
+    store: Any,
+    run_id: str,
+    *,
+    role: str,
+    phase: str | None = None,
+    session_kind: str = "primary",
+) -> str:
+    """Issue a session capability token and return its serialized value."""
+
+    from top_down_planning.orchestrator.capability import issue_session_capability
+
+    if phase is None:
+        phase = PLANNING if role == "planner" else PRODUCTION
+    return issue_session_capability(
+        store,
+        run_id,
+        role=role,
+        phase=phase,
+        session_kind=session_kind,
+    )
+
+
+def set_capability_env(monkeypatch: Any, token: str | None) -> None:
+    """Set or clear TDP_CAPABILITY_TOKEN for CLI and service tests."""
+
+    if token is None:
+        monkeypatch.delenv(CAPABILITY_ENV_VAR, raising=False)
+    else:
+        monkeypatch.setenv(CAPABILITY_ENV_VAR, token)
+
+
 def done_events(*, signal: str | None = None, text: str = "ok") -> list[dict]:
     events = [
         {"type": "assistant", "text": text},
@@ -148,7 +182,6 @@ def plan_apply_turn(
         {
             "type": "tool_call",
             "tool": "plan_apply",
-            "role": "planner",
             "request": {
                 "base_revision": base_revision,
                 "operations": operations,

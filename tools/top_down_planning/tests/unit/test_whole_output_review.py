@@ -7,13 +7,14 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.agent_tool import RequestError, ReviewAgentService
+from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import ProviderRunError, WholeOutputReviewOrchestrator
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, run_digests_for_config, whole_plan_approval_record
+from tests.helpers import done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -188,6 +189,9 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_at_whole_output_review(store, provider=provider)
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
 
     provider.script_turn(
         [
@@ -401,8 +405,15 @@ def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> Non
     )
 
     service = ReviewAgentService(store, "run-output-review")
+    token = grant_capability(
+        store,
+        "run-output-review",
+        role="reviewer",
+        phase=WHOLE_OUTPUT_REVIEW,
+        session_kind="reviewer",
+    )
     with pytest.raises(RequestError, match="does not match current output revision"):
         service.respond(
             _review_respond_request(decision="approved", target_revision=0),
-            role="reviewer",
+            capability_token=token,
         )

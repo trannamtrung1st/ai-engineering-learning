@@ -336,7 +336,7 @@ def test_checkpoint_resume_from_whole_plan_review_reaches_accepted(
 
 
 @pytest.mark.integration
-def test_role_guardrails_reject_non_planner_plan_apply(tmp_path: Path) -> None:
+def test_capability_guardrails_reject_missing_token(tmp_path: Path) -> None:
     runs_dir = tmp_path / "runs"
     config_path = write_e2e_config(tmp_path / "run.yaml")
 
@@ -358,7 +358,7 @@ def test_role_guardrails_reject_non_planner_plan_apply(tmp_path: Path) -> None:
         tmp_path / "plan-apply.json",
         {"base_revision": 0, "operations": []},
     )
-    reviewer_result = run_cli(
+    denied_result = run_cli(
         [
             "agent",
             "plan",
@@ -367,34 +367,14 @@ def test_role_guardrails_reject_non_planner_plan_apply(tmp_path: Path) -> None:
             run_id,
             "--runs-dir",
             str(runs_dir),
-            "--role",
-            "reviewer",
             "--request",
             str(request_path),
         ]
     )
-    assert reviewer_result.exit_code == 1
-    reviewer_payload = reviewer_result.json()
-    assert reviewer_payload["ok"] is False
-    assert reviewer_payload["error"]["code"] == "role_denied"
-
-    producer_result = run_cli(
-        [
-            "agent",
-            "plan",
-            "apply",
-            "--run",
-            run_id,
-            "--runs-dir",
-            str(runs_dir),
-            "--role",
-            "producer",
-            "--request",
-            str(request_path),
-        ]
-    )
-    assert producer_result.exit_code == 1
-    assert producer_result.json()["error"]["code"] == "role_denied"
+    assert denied_result.exit_code == 1
+    denied_payload = denied_result.json()
+    assert denied_payload["ok"] is False
+    assert denied_payload["error"]["code"] == "capability_denied"
 
 
 @pytest.mark.integration

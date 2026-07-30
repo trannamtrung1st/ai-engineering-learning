@@ -157,7 +157,8 @@ class CursorProvider:
         self._config = config
         provider_cfg = config.get("provider") or {}
         self._workspace = Path(workspace or Path.cwd()).resolve()
-        self._subprocess_env = self._build_subprocess_env(extra_env)
+        self._extra_env = dict(extra_env or {})
+        self._subprocess_env = self._build_subprocess_env(self._extra_env)
         base_runner = runner or default_process_runner
         self._runner = self._wrap_runner(base_runner)
         self._skip_probe = bool(skip_probe or provider_cfg.get("skip_probe"))
@@ -242,6 +243,13 @@ class CursorProvider:
 
     def terminate_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
+
+    def set_capability_token(self, token: str | None) -> None:
+        if token:
+            self._extra_env["TDP_CAPABILITY_TOKEN"] = token
+        else:
+            self._extra_env.pop("TDP_CAPABILITY_TOKEN", None)
+        self._subprocess_env = self._build_subprocess_env(self._extra_env)
 
     def _probe_binary(self) -> None:
         run_kwargs: dict[str, Any] = {

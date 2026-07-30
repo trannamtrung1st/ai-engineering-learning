@@ -168,7 +168,6 @@ _FOCUSED_REVIEW_BRANCH_SCHEMAS = [
         "type": "object",
         "required": ["type", "scope"],
         "properties": {
-            "role": {"type": "string"},
             "type": {"const": review_type},
             "scope": {
                 **{
@@ -290,19 +289,9 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                         "properties": {"enabled": {"type": "boolean"}},
                         "additionalProperties": False,
                     },
-                    "whole_plan": {
-                        "type": "object",
-                        "properties": {"required": {"type": "boolean"}},
-                        "additionalProperties": False,
-                    },
                     "focused_output": {
                         "type": "object",
                         "properties": {"enabled": {"type": "boolean"}},
-                        "additionalProperties": False,
-                    },
-                    "whole_output": {
-                        "type": "object",
-                        "properties": {"required": {"type": "boolean"}},
                         "additionalProperties": False,
                     },
                 },
@@ -323,7 +312,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                     "planning": {
                         "type": "object",
                         "properties": {
-                            "max_expansion_iterations": {"type": "integer"},
+                            "max_items_added": {"type": "integer"},
                             "max_agent_turns": {"type": "integer"},
                         },
                         "additionalProperties": False,
@@ -406,7 +395,6 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "required": ["base_revision", "operations"],
         "properties": {
-            "role": {"type": "string"},
             "base_revision": {"type": "integer"},
             "operations": {
                 "type": "array",
@@ -419,11 +407,15 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     "production-apply": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "ProductionApplyRequest",
-        "description": "Production batch request for `tdp agent production apply`.",
+        "description": (
+            "Production batch request for `tdp agent production apply`. "
+            "Output evidence is content-bound at apply time: agents supply only "
+            "`id`, `type`, and workspace `ref`; the service captures sha256, "
+            "size, media_type, captured_at, and an artifacts/ snapshot."
+        ),
         "type": "object",
         "required": ["production_revision", "plan_items", "dispositions"],
         "properties": {
-            "role": {"type": "string"},
             "production_revision": {"type": "integer"},
             "batch_id": {"type": "string"},
             "plan_items": {
@@ -489,7 +481,6 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "required": ["loop_id", "target_revision", "decision", "findings"],
         "properties": {
-            "role": {"type": "string"},
             "loop_id": {"type": "string"},
             "target_revision": {"type": "integer"},
             "decision": {
@@ -519,7 +510,6 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "required": ["evidence", "affected_refs"],
         "properties": {
-            "role": {"type": "string"},
             "id": {"type": "string"},
             "evidence": {"type": "string", "minLength": 1},
             "affected_refs": {
@@ -538,7 +528,6 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "required": ["goal_assessment", "goal_met"],
         "properties": {
-            "role": {"type": "string"},
             "goal_assessment": {"type": "string", "minLength": 1},
             "goal_met": {"type": "boolean", "const": True},
             "summary": {"type": "string"},
@@ -552,7 +541,6 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "required": ["evidence"],
         "properties": {
-            "role": {"type": "string"},
             "evidence": {"type": "string", "minLength": 1},
             "affected_refs": {
                 "type": "array",
@@ -749,22 +737,22 @@ Discover contracts without reading source:
   tdp agent schema [<name>]   # omit name to list published schemas
   tdp agent example [<name>]  # omit name to list published examples
 
-Plan (planner role):
+Plan:
   tdp agent plan snapshot --run <run-id> [--view tree|ready|issues]
-  tdp agent plan apply --run <run-id> --role planner --request <file>
+  tdp agent plan apply --run <run-id> --request <file>
   tdp agent plan check --run <run-id> [--mode draft|approval]
 
-Production (producer role):
+Production:
   tdp agent production snapshot --run <run-id> [--view tree|ready]
-  tdp agent production apply --run <run-id> --role producer --request <file>
+  tdp agent production apply --run <run-id> --request <file>
   tdp agent production check --run <run-id>
-  tdp agent production request-amendment --run <run-id> --role producer --request <file>
-  tdp agent production submit-completion --run <run-id> --role producer --request <file>
-  tdp agent production report-blocked --run <run-id> --role producer --request <file>
+  tdp agent production request-amendment --run <run-id> --request <file>
+  tdp agent production submit-completion --run <run-id> --request <file>
+  tdp agent production report-blocked --run <run-id> --request <file>
 
 Review:
-  tdp agent review request --run <run-id> --role planner|producer --request <file>
-  tdp agent review respond --run <run-id> --role reviewer --request <file>
+  tdp agent review request --run <run-id> --request <file>
+  tdp agent review respond --run <run-id> --request <file>
 
 Whole-plan and focused_plan reviewers receive an embedded plan snapshot in the
 review package; call `tdp agent plan snapshot --run <run-id> --view tree` to
@@ -774,7 +762,9 @@ Run status:
   tdp agent run status --run <run-id>
 
 Run store: agent commands use --runs-dir, $TDP_RUNS_DIR, or ./runs. The orchestrator
-exports the resolved absolute store root as TDP_RUNS_DIR to provider subprocesses.
+exports the resolved absolute store root as TDP_RUNS_DIR and a session-scoped
+TDP_CAPABILITY_TOKEN to provider subprocesses. Mutating commands require the token;
+authorization is bound to run phase and session role, not a self-declared flag.
 
 Published schemas: """ + ", ".join(PUBLIC_SCHEMAS) + """
 Published examples: """ + ", ".join(PUBLIC_EXAMPLES) + """
@@ -789,7 +779,12 @@ AGENT_README_TEXT = """# Top Down Planning — agent protocol
 only through `tdp agent` commands; the orchestrator owns lifecycle transitions, limits,
 and mandatory review gates.
 
-## Roles
+## Session roles and authorization
+
+The orchestrator binds one primary planner, producer, or reviewer session per phase.
+Mutating `tdp agent` commands require the session capability token exported as
+`TDP_CAPABILITY_TOKEN`. The token encodes the allowed role and phase; agents do
+not pass `--role` on the CLI.
 
 - planner — mutate the plan during planning or amendment
 - producer — record production batches, completion claims, blockers, amendment requests
@@ -816,8 +811,12 @@ and mandatory review gates.
 
 Agent commands locate runs via `--runs-dir`, `$TDP_RUNS_DIR`, or `./runs` (in that
 precedence). The orchestrator exports the resolved absolute store root as
-`TDP_RUNS_DIR` to provider subprocesses, so in-agent commands typically need only
-`--run <run-id>`.
+`TDP_RUNS_DIR` and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses,
+so in-agent commands typically need only `--run <run-id>`.
+
+Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
+The service captures content hashes and snapshots artifacts under `artifacts/` in
+the run store.
 
 ## Discoverability
 
@@ -861,7 +860,7 @@ use `production snapshot` or `production check` for plan validation.
 ## Further reading
 
 Package README: tools/top_down_planning/README.md
-Specification: temp/final-top-down-planning-tool-proposal.md
+Specification: tools/top_down_planning/docs/spec.md
 """
 
 

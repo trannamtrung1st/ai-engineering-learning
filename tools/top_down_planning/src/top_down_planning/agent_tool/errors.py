@@ -57,25 +57,31 @@ class RevisionConflictError(AgentToolError):
         return payload
 
 
-class RoleDeniedError(AgentToolError):
-    code = "role_denied"
+class CapabilityDeniedError(AgentToolError):
+    code = "capability_denied"
 
     def __init__(
         self,
-        role: str,
+        message: str,
         *,
+        operation: str | None = None,
         action: str | None = None,
     ) -> None:
         super().__init__(
-            f"role {role!r} is not allowed to perform this operation",
+            message,
             action=action
-            or "Only the planner role may apply plan mutations.",
+            or (
+                "Mutating agent commands require a valid session capability token. "
+                f"Ensure {__import__('top_down_planning.persistence.capabilities', fromlist=['CAPABILITY_ENV_VAR']).CAPABILITY_ENV_VAR} "
+                "is exported to the provider subprocess."
+            ),
         )
-        self.role = role
+        self.operation = operation
 
     def to_dict(self) -> dict[str, Any]:
         payload = super().to_dict()
-        payload["role"] = self.role
+        if self.operation is not None:
+            payload["operation"] = self.operation
         return payload
 
 

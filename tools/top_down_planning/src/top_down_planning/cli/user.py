@@ -32,7 +32,6 @@ from top_down_planning.config import (
     resolve_workspace,
 )
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.domain.production import has_pending_amendment
 from top_down_planning.agent_tool.validation_context import (
     compute_plan_approval_actual_digests,
     user_validate_mode_and_context,
@@ -44,23 +43,13 @@ from top_down_planning.domain.output_validators import (
 )
 from top_down_planning.domain.validators import validate_plan
 from top_down_planning.orchestrator import (
-    PlanningPhaseOrchestrator,
-    PlanAmendmentOrchestrator,
-    ProductionPhaseOrchestrator,
-    ProviderRunError,
     ResumeError,
-    WholeOutputReviewOrchestrator,
-    WholePlanReviewOrchestrator,
-    mark_run_failed,
+    RunEngine,
     validate_resume_preconditions,
 )
 from top_down_planning.orchestrator.phases import (
     OUTPUT_VALIDATED,
-    PLANNING,
-    PLAN_VALIDATED,
-    PRODUCTION,
     WHOLE_OUTPUT_REVIEW,
-    WHOLE_PLAN_REVIEW,
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
@@ -103,6 +92,20 @@ def _create_provider_for_run(
         workspace=workspace,
         extra_env=provider_extra_env(resolved_runs),
     )
+
+
+def _build_run_engine(
+    store: FileRunStore,
+    resolved_runs: Any,
+) -> RunEngine:
+    def create_provider(config: dict[str, Any], workspace: Path) -> Any:
+        return _create_provider_for_run(
+            config,
+            workspace=workspace,
+            resolved_runs=resolved_runs,
+        )
+
+    return RunEngine(store, create_provider=create_provider)
 
 
 def handle_run_command(args: Namespace) -> None:
@@ -155,7 +158,7 @@ def handle_run_command(args: Namespace) -> None:
 
     store = FileRunStore(resolved_runs.path)
     store.root.mkdir(parents=True, exist_ok=True)
-    run_record = store.create_run(
+    store.create_run(
         run_id,
         plan=plan,
         resolved_config=resolved,
@@ -176,61 +179,60 @@ def handle_run_command(args: Namespace) -> None:
         resolved_runs=resolved_runs,
         run_id=run_id,
     )
-    # Print before the provider blocks on the first Cursor CLI turn.
-    # Do not use emit_message here — it raises SystemExit.
     if not args.stream_json:
         print(
-            "Starting planning phase (blocking on provider until the first "
-            "planner turn completes).\n"
+            "Starting run (blocking on provider until the target milestone).\n"
             f"{format_run_startup_diagnostics(diagnostics)}\n"
             f"Run path: {resolved_runs.path / run_id}",
             flush=True,
         )
 
-    provider = _create_provider_for_run(
-        resolved,
-        workspace=workspace,
-        resolved_runs=resolved_runs,
-    )
-    try:
-        result = PlanningPhaseOrchestrator(store, run_id, provider).run()
-    except ProviderRunError as exc:
-        _handle_provider_run_error(store, run_id, exc, stream_json=args.stream_json)
+    until = getattr(args, "until", "plan") or "plan"
+    engine = _build_run_engine(store, resolved_runs)
+    continuation = engine.continue_run(run_id, until=until)
 
     run_record = store.load_run(run_id)
+    last_step = continuation.steps[-1].details if continuation.steps else {}
     payload = {
-        "ok": result.ok,
+        "ok": continuation.ok,
         "run_id": run_id,
         "revision": run_record["revision"],
-        "phase": run_record["phase"],
-        "status": run_record.get("status"),
-        "outcome": run_record.get("outcome"),
+        "phase": continuation.phase,
+        "status": continuation.status,
+        "outcome": continuation.outcome,
         "config_digest": run_record["digests"]["config"],
-        "session_id": result.session_id,
-        "agent_turns": result.agent_turns,
-        "expansion_iterations": result.expansion_iterations,
-        **diagnostics,
+        "until": until,
+        "steps": [
+            {
+                "phase": step.phase,
+                "ok": step.ok,
+                "status": step.status,
+                "outcome": step.outcome,
+                "details": step.details,
+                "reason": step.reason,
+            }
+            for step in continuation.steps
+        ],
+        **last_step,
+        **(diagnostics or {}),
     }
-    if result.reason:
-        payload["reason"] = result.reason
+    if continuation.reason:
+        payload["reason"] = continuation.reason
 
-    exit_code = 0 if result.ok else 1
+    exit_code = 0 if continuation.ok else 1
     if args.stream_json:
         emit_payload(payload, exit_code=exit_code)
 
-    if result.ok and result.phase == WHOLE_PLAN_REVIEW:
+    if continuation.ok:
         message = (
-            f"Run {run_id} completed planning construction "
-            f"(phase={WHOLE_PLAN_REVIEW}, session={result.session_id}, "
-            f"turns={result.agent_turns})."
-        )
-    elif not result.ok:
-        message = (
-            f"Run {run_id} stopped during planning: {result.reason} "
-            f"(outcome={result.outcome})."
+            f"Run {run_id} reached target {until!r} "
+            f"(phase={continuation.phase}, status={continuation.status})."
         )
     else:
-        message = f"Run {run_id} phase={result.phase} status={result.status}."
+        message = (
+            f"Run {run_id} stopped: {continuation.reason} "
+            f"(phase={continuation.phase}, outcome={continuation.outcome})."
+        )
     message = (
         f"{message}\n"
         f"{format_run_startup_diagnostics(diagnostics)}\n"
@@ -270,53 +272,6 @@ def handle_resume_command(args: Namespace) -> None:
         )
 
     phase = preconditions.phase
-    production = store.load_production(args.run)
-    if has_pending_amendment(production) and phase != PRODUCTION:
-        config = store.load_resolved_config(args.run)
-        workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = _create_provider_for_run(
-            config,
-            workspace=workspace,
-            resolved_runs=resolved_runs,
-        )
-        try:
-            result = PlanAmendmentOrchestrator(store, args.run, provider).run()
-        except ProviderRunError as exc:
-            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
-
-        run = store.load_run(args.run)
-        payload = {
-            "ok": result.ok,
-            "run_id": args.run,
-            "phase": run.get("phase"),
-            "status": run.get("status"),
-            "outcome": run.get("outcome"),
-            "amendment_id": result.amendment_id,
-            "planner_session_id": result.planner_session_id,
-            "producer_session_id": result.producer_session_id,
-            "reconciliation": result.reconciliation,
-        }
-        if result.reason:
-            payload["reason"] = result.reason
-        exit_code = 0 if result.ok else 1
-        if args.stream_json:
-            emit_payload(payload, exit_code=exit_code)
-
-        if result.ok and result.phase == PRODUCTION:
-            message = (
-                f"Run {args.run} completed plan amendment "
-                f"(amendment={result.amendment_id}, phase={PRODUCTION})."
-            )
-        elif not result.ok:
-            message = (
-                f"Run {args.run} stopped during plan amendment: {result.reason} "
-                f"(outcome={result.outcome})."
-            )
-        else:
-            message = f"Run {args.run} phase={result.phase} status={result.status}."
-        emit_message(message, exit_code=exit_code)
-        return
-
     if phase == OUTPUT_VALIDATED or preconditions.status in {"completed", "failed"}:
         if phase == OUTPUT_VALIDATED and preconditions.status == "completed":
             message = "run already completed with final outcome"
@@ -335,199 +290,61 @@ def handle_resume_command(args: Namespace) -> None:
         }
         if args.stream_json:
             emit_payload(payload)
-        if phase == OUTPUT_VALIDATED and preconditions.status == "completed":
-            emit_message(
-                f"Run {args.run} already completed "
-                f"(phase={OUTPUT_VALIDATED}, outcome={run.get('outcome')}).",
-            )
-        else:
-            emit_message(
-                f"Run {args.run} already terminated "
-                f"(phase={phase}, status={preconditions.status}, "
-                f"outcome={preconditions.outcome}).",
-            )
-        return
-
-    if phase == WHOLE_OUTPUT_REVIEW:
-        config = store.load_resolved_config(args.run)
-        workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = _create_provider_for_run(
-            config,
-            workspace=workspace,
-            resolved_runs=resolved_runs,
+        emit_message(
+            f"Run {args.run}: {message}",
         )
-        try:
-            result = WholeOutputReviewOrchestrator(store, args.run, provider).run()
-        except ProviderRunError as exc:
-            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
-
-        run = store.load_run(args.run)
-        payload = {
-            "ok": result.ok,
-            "run_id": args.run,
-            "phase": run.get("phase"),
-            "status": run.get("status"),
-            "outcome": run.get("outcome"),
-            "loop_id": result.loop_id,
-            "reviewer_session_id": result.reviewer_session_id,
-            "revision_cycles": result.revision_cycles,
-        }
-        if result.reason:
-            payload["reason"] = result.reason
-        exit_code = 0 if result.ok else 1
-        if args.stream_json:
-            emit_payload(payload, exit_code=exit_code)
-
-        if result.ok and result.phase == OUTPUT_VALIDATED:
-            message = (
-                f"Run {args.run} accepted output "
-                f"(phase={OUTPUT_VALIDATED}, outcome={result.outcome})."
-            )
-        elif not result.ok:
-            message = (
-                f"Run {args.run} stopped during whole-output review: {result.reason} "
-                f"(outcome={result.outcome})."
-            )
-        else:
-            message = f"Run {args.run} phase={result.phase} status={result.status}."
-        emit_message(message, exit_code=exit_code)
         return
 
-    if phase == PLAN_VALIDATED or phase == PRODUCTION:
-        config = store.load_resolved_config(args.run)
-        workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = _create_provider_for_run(
-            config,
-            workspace=workspace,
-            resolved_runs=resolved_runs,
+    until = getattr(args, "until", None)
+    engine = _build_run_engine(store, resolved_runs)
+    if until:
+        continuation = engine.continue_run(args.run, until=until)
+    else:
+        continuation = engine.continue_run(
+            args.run,
+            until="completed",
+            single_step=True,
         )
-        try:
-            result = ProductionPhaseOrchestrator(store, args.run, provider).run()
-        except ProviderRunError as exc:
-            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
 
-        run = store.load_run(args.run)
-        payload = {
-            "ok": result.ok,
-            "run_id": args.run,
-            "phase": run.get("phase"),
-            "status": run.get("status"),
-            "outcome": run.get("outcome"),
-            "session_id": result.session_id,
-            "batch_count": result.batch_count,
-        }
-        if result.reason:
-            payload["reason"] = result.reason
-        exit_code = 0 if result.ok else 1
-        if args.stream_json:
-            emit_payload(payload, exit_code=exit_code)
+    run = store.load_run(args.run)
+    payload = {
+        "ok": continuation.ok,
+        "run_id": args.run,
+        "phase": continuation.phase,
+        "status": continuation.status,
+        "outcome": continuation.outcome,
+        "steps": [
+            {
+                "phase": step.phase,
+                "ok": step.ok,
+                "status": step.status,
+                "outcome": step.outcome,
+                "details": step.details,
+                "reason": step.reason,
+            }
+            for step in continuation.steps
+        ],
+    }
+    if continuation.reason:
+        payload["reason"] = continuation.reason
+    if until:
+        payload["until"] = until
 
-        if result.ok and result.phase == WHOLE_OUTPUT_REVIEW:
-            message = (
-                f"Run {args.run} completed production "
-                f"(phase={WHOLE_OUTPUT_REVIEW}, batches={result.batch_count})."
-            )
-        elif not result.ok:
-            message = (
-                f"Run {args.run} stopped during production: {result.reason} "
-                f"(outcome={result.outcome})."
-            )
-        else:
-            message = f"Run {args.run} phase={result.phase} status={result.status}."
-        emit_message(message, exit_code=exit_code)
-        return
+    exit_code = 0 if continuation.ok else 1
+    if args.stream_json:
+        emit_payload(payload, exit_code=exit_code)
 
-    if phase == WHOLE_PLAN_REVIEW:
-        config = store.load_resolved_config(args.run)
-        workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = _create_provider_for_run(
-            config,
-            workspace=workspace,
-            resolved_runs=resolved_runs,
+    if continuation.ok:
+        message = (
+            f"Resumed run {args.run} to phase {run.get('phase')} "
+            f"(status={run.get('status')})."
         )
-        try:
-            result = WholePlanReviewOrchestrator(store, args.run, provider).run()
-        except ProviderRunError as exc:
-            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
-
-        run = store.load_run(args.run)
-        payload = {
-            "ok": result.ok,
-            "run_id": args.run,
-            "phase": run.get("phase"),
-            "status": run.get("status"),
-            "outcome": run.get("outcome"),
-            "loop_id": result.loop_id,
-            "reviewer_session_id": result.reviewer_session_id,
-            "revision_cycles": result.revision_cycles,
-        }
-        if result.reason:
-            payload["reason"] = result.reason
-        exit_code = 0 if result.ok else 1
-        if args.stream_json:
-            emit_payload(payload, exit_code=exit_code)
-
-        if result.ok and result.phase == PLAN_VALIDATED:
-            message = (
-                f"Run {args.run} passed whole-plan review "
-                f"(phase={PLAN_VALIDATED}, loop={result.loop_id})."
-            )
-        elif not result.ok:
-            message = (
-                f"Run {args.run} stopped during whole-plan review: {result.reason} "
-                f"(outcome={result.outcome})."
-            )
-        else:
-            message = f"Run {args.run} phase={result.phase} status={result.status}."
-        emit_message(message, exit_code=exit_code)
-        return
-
-    if phase == PLANNING:
-        config = store.load_resolved_config(args.run)
-        workspace = _require_run_workspace(run, stream_json=args.stream_json)
-        provider = _create_provider_for_run(
-            config,
-            workspace=workspace,
-            resolved_runs=resolved_runs,
+    else:
+        message = (
+            f"Resumed run {args.run} stopped: {continuation.reason} "
+            f"(outcome={continuation.outcome})."
         )
-        try:
-            result = PlanningPhaseOrchestrator(store, args.run, provider).run()
-        except ProviderRunError as exc:
-            _handle_provider_run_error(store, args.run, exc, stream_json=args.stream_json)
-
-        run = store.load_run(args.run)
-        payload = {
-            "ok": result.ok,
-            "run_id": args.run,
-            "phase": run.get("phase"),
-            "status": run.get("status"),
-            "outcome": run.get("outcome"),
-            "session_id": result.session_id,
-        }
-        if result.reason:
-            payload["reason"] = result.reason
-        exit_code = 0 if result.ok else 1
-        if args.stream_json:
-            emit_payload(payload, exit_code=exit_code)
-        if result.ok:
-            emit_message(
-                f"Resumed run {args.run} to phase {run.get('phase')} "
-                f"(session={result.session_id}).",
-                exit_code=exit_code,
-            )
-        else:
-            emit_message(
-                f"Resumed run {args.run} stopped: {result.reason} (outcome={result.outcome}).",
-                exit_code=exit_code,
-            )
-        return
-
-    emit_error_message(
-        f"cannot resume unsupported phase: {phase!r}",
-        exit_code=2,
-        stream_json=args.stream_json,
-        code="unsupported_phase",
-    )
+    emit_message(message, exit_code=exit_code)
 
 
 def handle_status_command(args: Namespace) -> None:
@@ -762,22 +579,6 @@ def _initial_plan(run_id: str, config: dict[str, Any], *, output_goal: str) -> P
         output_goal=output_goal,
         input_refs=input_refs,
         items={"item-root": root},
-    )
-
-
-def _handle_provider_run_error(
-    store: FileRunStore,
-    run_id: str,
-    exc: ProviderRunError,
-    *,
-    stream_json: bool,
-) -> None:
-    mark_run_failed(store, run_id, message=str(exc))
-    emit_error_message(
-        str(exc),
-        exit_code=1,
-        stream_json=stream_json,
-        code="provider_run_error",
     )
 
 

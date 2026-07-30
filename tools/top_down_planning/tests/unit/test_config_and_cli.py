@@ -83,12 +83,12 @@ def test_override_values_parse_yaml_types(tmp_path: Path) -> None:
         config_path,
         [
             "planning.max_depth=5",
-            "review.whole_plan.required=false",
+            "review.focused_plan.enabled=false",
             "run.input_refs=[README.md, docs/spec.md]",
         ],
     )
     assert resolved["planning"]["max_depth"] == 5
-    assert resolved["review"]["whole_plan"]["required"] is False
+    assert resolved["review"]["focused_plan"]["enabled"] is False
     assert resolved["run"]["input_refs"] == ["README.md", "docs/spec.md"]
 
 

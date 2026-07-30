@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
+from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import (
     OperationError,
     RequestError,
     RevisionConflictError,
 )
-from top_down_planning.agent_tool.roles import assert_plan_mutations_allowed
 from top_down_planning.agent_tool.validation_context import plan_approval_validation_context
 from top_down_planning.agent_tool.views import (
     PlanView,
@@ -31,6 +31,7 @@ from top_down_planning.domain.errors import (
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.mutations import apply_operations
 from top_down_planning.domain.validators import ValidationMode, validate_plan
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.persistence import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
@@ -91,12 +92,14 @@ class PlanAgentService:
         self,
         request: dict[str, Any],
         *,
-        role: str,
+        capability_token: str | None = None,
     ) -> dict[str, Any]:
-        normalized_role = str(role).strip()
-        if not normalized_role:
-            raise RequestError("apply requires role")
-        assert_plan_mutations_allowed(normalized_role)
+        authorize_mutation(
+            self._store,
+            self._run_id,
+            operation="plan_apply",
+            capability_token=capability_token,
+        )
 
         if "base_revision" not in request:
             raise RequestError("apply requires base_revision")
@@ -133,32 +136,39 @@ class PlanAgentService:
             raise OperationError(str(exc)) from exc
 
         before_plan = plan
+        run = self._store.load_run(self._run_id)
+        expected_run_revision = int(run["revision"])
+        run_payload = dict(run)
+        run_payload["revision"] = expected_run_revision + 1
+        run_payload["digests"] = dict(run_payload.get("digests") or {})
+        run_payload["digests"]["plan"] = compute_plan_digest(result.plan)
+
         try:
-            self._store.save_plan_model(self._run_id, result.plan, base_revision)
+            self._store.commit(
+                self._run_id,
+                CommitSpec(
+                    plan=result.plan.to_dict(),
+                    plan_expected_revision=base_revision,
+                    run=run_payload,
+                    run_expected_revision=expected_run_revision,
+                    events=[
+                        {
+                            "type": "plan_applied",
+                            "run_id": self._run_id,
+                            "base_revision": base_revision,
+                            "revision": result.revision,
+                            "operation_count": len(operations),
+                            "changed_item_ids": result.changed_item_ids,
+                        }
+                    ],
+                ),
+            )
         except StoreRevisionConflictError as exc:
             raise RevisionConflictError(
                 str(exc),
                 expected=exc.expected,
                 actual=exc.actual,
             ) from exc
-
-        run = self._store.load_run(self._run_id)
-        expected_run_revision = int(run["revision"])
-        run["revision"] = expected_run_revision + 1
-        run["digests"]["plan"] = compute_plan_digest(result.plan)
-        self._store.save_run(self._run_id, run, expected_run_revision)
-
-        self._store.append_event(
-            self._run_id,
-            {
-                "type": "plan_applied",
-                "run_id": self._run_id,
-                "base_revision": base_revision,
-                "revision": result.revision,
-                "operation_count": len(operations),
-                "changed_item_ids": result.changed_item_ids,
-            },
-        )
 
         validation = validate_plan(
             result.plan,

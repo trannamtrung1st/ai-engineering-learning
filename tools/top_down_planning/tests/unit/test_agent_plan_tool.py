@@ -7,13 +7,19 @@ from pathlib import Path
 
 import pytest
 
-from top_down_planning.agent_tool import PlanAgentService, RequestError, RevisionConflictError
-from top_down_planning.agent_tool.errors import RoleDeniedError
+from top_down_planning.agent_tool import PlanAgentService, RevisionConflictError
+from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.cli.main import main
 from top_down_planning.domain.models import Plan, PlanItem, Scope
+from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
-from tests.helpers import run_digests_for_config, whole_plan_approval_record
+from tests.helpers import (
+    grant_capability,
+    run_digests_for_config,
+    set_capability_env,
+    whole_plan_approval_record,
+)
 
 
 def _sample_plan(revision: int = 0) -> Plan:
@@ -61,6 +67,7 @@ def test_apply_persists_multi_op_transaction(tmp_path: Path) -> None:
     _create_run(store)
 
     service = PlanAgentService(store, "run-001")
+    token = grant_capability(store, "run-001", role="planner", phase=PLANNING)
     result = service.apply(
         {
             "base_revision": 0,
@@ -79,7 +86,7 @@ def test_apply_persists_multi_op_transaction(tmp_path: Path) -> None:
                 },
             ],
         },
-        role="planner",
+        capability_token=token,
     )
 
     assert result["ok"] is True
@@ -100,6 +107,7 @@ def test_stale_revision_apply_fails_with_snapshot_instruction(tmp_path: Path) ->
     store = FileRunStore(tmp_path)
     _create_run(store)
     service = PlanAgentService(store, "run-001")
+    token = grant_capability(store, "run-001", role="planner", phase=PLANNING)
 
     with pytest.raises(RevisionConflictError) as exc_info:
         service.apply(
@@ -113,7 +121,7 @@ def test_stale_revision_apply_fails_with_snapshot_instruction(tmp_path: Path) ->
                     }
                 ],
             },
-            role="planner",
+            capability_token=token,
         )
 
     assert exc_info.value.action is not None
@@ -145,12 +153,12 @@ def test_plan_check_matches_validator_modes(tmp_path: Path) -> None:
     assert approval["mode"] == "approval"
 
 
-def test_apply_requires_role(tmp_path: Path) -> None:
+def test_apply_requires_capability_token(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
     service = PlanAgentService(store, "run-001")
 
-    with pytest.raises(RequestError, match="requires role"):
+    with pytest.raises(CapabilityDeniedError, match="capability token"):
         service.apply(
             {
                 "base_revision": 0,
@@ -158,20 +166,20 @@ def test_apply_requires_role(tmp_path: Path) -> None:
                     {
                         "op": "update_item",
                         "item_id": "item-root",
-                        "patch": {"title": "Missing role"},
+                        "patch": {"title": "Missing capability"},
                     }
                 ],
             },
-            role="",
         )
 
 
-def test_producer_role_denied_for_apply(tmp_path: Path) -> None:
+def test_producer_capability_denied_for_apply(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
     service = PlanAgentService(store, "run-001")
+    token = grant_capability(store, "run-001", role="producer", phase=PLANNING)
 
-    with pytest.raises(RoleDeniedError):
+    with pytest.raises(CapabilityDeniedError):
         service.apply(
             {
                 "base_revision": 0,
@@ -183,13 +191,17 @@ def test_producer_role_denied_for_apply(tmp_path: Path) -> None:
                     }
                 ],
             },
-            role="producer",
+            capability_token=token,
         )
 
 
-def test_cli_plan_commands_smoke(tmp_path: Path) -> None:
+def test_cli_plan_commands_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
+    set_capability_env(
+        monkeypatch,
+        grant_capability(store, "run-001", role="planner", phase=PLANNING),
+    )
 
     request = {
         "base_revision": 0,
@@ -217,8 +229,6 @@ def test_cli_plan_commands_smoke(tmp_path: Path) -> None:
             str(tmp_path),
             "--request",
             str(request_path),
-            "--role",
-            "planner",
         ]
     )
     assert apply.exit_code == 0, apply.stderr
@@ -263,9 +273,16 @@ def test_cli_plan_commands_smoke(tmp_path: Path) -> None:
     assert status_payload["run"]["plan_revision"] == 1
 
 
-def test_cli_stale_revision_returns_actionable_error(tmp_path: Path) -> None:
+def test_cli_stale_revision_returns_actionable_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
+    set_capability_env(
+        monkeypatch,
+        grant_capability(store, "run-001", role="planner", phase=PLANNING),
+    )
 
     request_path = tmp_path / "stale.json"
     request_path.write_text(
@@ -295,8 +312,6 @@ def test_cli_stale_revision_returns_actionable_error(tmp_path: Path) -> None:
             str(tmp_path),
             "--request",
             str(request_path),
-            "--role",
-            "planner",
         ]
     )
     assert result.exit_code == 1
@@ -340,6 +355,7 @@ def test_apply_returns_post_mutation_validation_issues(tmp_path: Path) -> None:
     )
 
     service = PlanAgentService(store, "run-001")
+    token = grant_capability(store, "run-001", role="planner", phase=PLANNING)
     result = service.apply(
         {
             "base_revision": 0,
@@ -351,7 +367,7 @@ def test_apply_returns_post_mutation_validation_issues(tmp_path: Path) -> None:
                 }
             ],
         },
-        role="planner",
+        capability_token=token,
     )
 
     assert result["ok"] is False
@@ -359,7 +375,10 @@ def test_apply_returns_post_mutation_validation_issues(tmp_path: Path) -> None:
     assert any(issue["code"] == "dependency_deadlock" for issue in result["issues"])
 
 
-def test_cli_plan_apply_exits_nonzero_when_validation_fails(tmp_path: Path) -> None:
+def test_cli_plan_apply_exits_nonzero_when_validation_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     store = FileRunStore(tmp_path)
     gate = PlanItem("item-gate", None, "0000000000", "Gate")
     worker = PlanItem(
@@ -384,6 +403,10 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(tmp_path: Path) -> N
         context_digest="0" * 64,
         production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
         workspace=str(store.root),
+    )
+    set_capability_env(
+        monkeypatch,
+        grant_capability(store, "run-001", role="planner", phase=PLANNING),
     )
 
     request_path = tmp_path / "apply.json"
@@ -414,8 +437,6 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(tmp_path: Path) -> N
             str(tmp_path),
             "--request",
             str(request_path),
-            "--role",
-            "planner",
         ]
     )
 

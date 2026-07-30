@@ -72,7 +72,7 @@ planning:
   max_depth: 4
 limits:
   planning:
-    max_expansion_iterations: {planning_limits.get("max_expansion_iterations", 20)}
+    max_items_added: {planning_limits.get("max_items_added", 20)}
     max_agent_turns: {planning_limits.get("max_agent_turns", 40)}
   whole_plan_review:
     max_revision_cycles: {whole_plan_limits.get("max_revision_cycles", 5)}

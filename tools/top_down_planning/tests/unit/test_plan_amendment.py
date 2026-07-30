@@ -12,7 +12,7 @@ from top_down_planning.orchestrator import PlanAmendmentOrchestrator, Production
 from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, run_digests_for_config, whole_plan_approval_record
+from tests.helpers import done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
 
 
 def _batch_apply_request(
@@ -159,7 +159,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             plan_items=["item-first"],
             dispositions={"item-first": {"disposition": "completed"}},
         ),
-        role="producer",
+        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
     )
     service.request_amendment(
         {
@@ -167,7 +167,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             "affected_refs": ["item-root"],
             "summary": "Need API subtree.",
         },
-        role="producer",
+        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
     )
 
     provider.script_turn(
@@ -235,11 +235,11 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             },
             production_revision=int(production["revision"]),
         ),
-        role="producer",
+        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
     )
     service.submit_completion(
         {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-        role="producer",
+        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
     )
 
     production = store.load_production("run-amendment")
@@ -266,7 +266,7 @@ def test_apply_rejected_while_amendment_pending(tmp_path: Path) -> None:
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
         },
-        role="producer",
+        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
     )
 
     with pytest.raises(RequestError, match="paused while a plan amendment is pending"):
@@ -276,7 +276,7 @@ def test_apply_rejected_while_amendment_pending(tmp_path: Path) -> None:
                 dispositions={"item-first": {"disposition": "completed"}},
                 production_revision=1,
             ),
-            role="producer",
+            capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
         )
 
 
@@ -296,7 +296,7 @@ def test_amendment_max_requests_is_enforced(tmp_path: Path) -> None:
             "affected_refs": ["item-root"],
             "summary": "First amendment.",
         },
-        role="producer",
+        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
     )
 
     production = store.load_production("run-amendment")
@@ -313,7 +313,7 @@ def test_amendment_max_requests_is_enforced(tmp_path: Path) -> None:
                 "affected_refs": ["item-root"],
                 "summary": "Second amendment.",
             },
-            role="producer",
+            capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
         )
 
 
@@ -352,13 +352,13 @@ def test_submit_completion_rejected_while_amendment_pending(tmp_path: Path) -> N
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
         },
-        role="producer",
+        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
     )
 
     with pytest.raises(RequestError, match="paused while a plan amendment is pending"):
         service.submit_completion(
             {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-            role="producer",
+            capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
         )
 
 
@@ -373,7 +373,7 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
         },
-        role="producer",
+        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
     )
 
     run = store.load_run("run-amendment")
@@ -427,7 +427,7 @@ def test_resume_amendment_requires_prior_plan_snapshot(tmp_path: Path) -> None:
             "affected_refs": ["item-root"],
             "summary": "Need more plan detail.",
         },
-        role="producer",
+        capability_token=grant_capability(store, "run-amendment", role="producer", phase=PRODUCTION),
     )
 
     run = store.load_run("run-amendment")

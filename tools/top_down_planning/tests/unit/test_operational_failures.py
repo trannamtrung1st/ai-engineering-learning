@@ -11,7 +11,9 @@ import pytest
 from top_down_planning.cli.user import handle_resume_command
 from top_down_planning.cli.user import handle_status_command
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator import ProviderRunError, mark_run_failed
+from top_down_planning.orchestrator import mark_run_failed
+from top_down_planning.orchestrator.engine import RunContinuationResult
+from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import minimal_resolved_config, run_digests_for_config
@@ -93,9 +95,21 @@ def test_provider_run_error_sets_failed_status(tmp_path: Path) -> None:
     run["sessions"] = {"primary_planner_session_id": "stub-planner-session"}
     store.save_run("run-failed", run, expected_revision)
 
+    def _fail_continue(_self, run_id: str, **_kwargs: object) -> RunContinuationResult:
+        mark_run_failed(store, run_id, message="provider crashed")
+        run = store.load_run(run_id)
+        return RunContinuationResult(
+            ok=False,
+            run_id=run_id,
+            phase=str(run.get("phase") or WHOLE_PLAN_REVIEW),
+            status=str(run.get("status") or "failed"),
+            outcome=run.get("outcome"),
+            reason="provider crashed",
+        )
+
     with patch(
-        "top_down_planning.cli.user.WholePlanReviewOrchestrator.run",
-        side_effect=ProviderRunError("provider crashed"),
+        "top_down_planning.cli.user.RunEngine.continue_run",
+        _fail_continue,
     ):
         with pytest.raises(SystemExit) as exit_info:
             handle_resume_command(

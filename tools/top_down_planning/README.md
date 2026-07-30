@@ -1,8 +1,8 @@
 # Top Down Planning (`tdp`)
 
-Generic agent orchestration that receives an input and output goal, builds a high-level top-down plan, reviews and validates it, then produces output in coherent batches.
+Planning and production orchestration: receive an input and output goal, build a top-down plan, review and validate it, produce output in coherent batches, and resolve a final quality outcome.
 
-Specification: [`temp/final-top-down-planning-tool-proposal.md`](../../temp/final-top-down-planning-tool-proposal.md)
+Specification: [`docs/spec.md`](docs/spec.md)
 
 ## Quickstart
 
@@ -16,8 +16,10 @@ tdp agent schema plan-transaction
 tdp agent example expand-branch
 
 tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp run --config tools/top_down_planning/examples/top-down-planning.yaml --until validated
 tdp status --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
 tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp resume --run <run-id> --until completed --config tools/top_down_planning/examples/top-down-planning.yaml
 ```
 
 The default provider is `cursor` (requires the Cursor CLI on PATH). For deterministic
@@ -152,13 +154,13 @@ Resolution precedence:
 
 `tdp run` creates the store root when needed. Read-only commands (`status`, `inspect`, `validate`, `tdp agent …`) do not create a missing store.
 
-When the orchestrator starts a provider session, it exports the resolved absolute path as `TDP_RUNS_DIR` to provider subprocesses. In-agent commands such as `tdp agent plan snapshot --run <run-id>` therefore only need `--run`; they resolve the store from that environment variable.
+When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR` and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses. Mutating `tdp agent …` commands require the capability token; authorization is bound to run phase and role, not a self-declared `--role` flag.
 
-To resume or inspect from a new shell, provide enough information to locate the store: `--runs-dir`, `TDP_RUNS_DIR`, or `--config` pointing at a YAML file with `runtime.runs_dir`. `tdp status` also reports `runs_root`, `runs_root_source`, and `run_path`.
+`tdp run` supports `--until plan|validated|completed` (default `plan`). `tdp resume` advances one phase step by default, or loops to `--until` when set. Both use the central `RunEngine` continuation loop.
 
-Run operational `status` values (proposal §15): `running`, `paused`, `completed`, `failed`. Quality `outcome` values: `accepted`, `rejected`, `blocked` (set only by orchestrator outcome resolution).
+Persistence uses transactional `RunStore.commit()` for multi-file mutations. Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files into the run store.
 
-`tdp run` creates the run store, starts the primary planner session, and drives planning construction until the planner signals `candidate_plan_ready` or a planning limit is hit. On success the run transitions to phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing: config/plan/input/output-goal/context/output digests must match the materialized store (for `run.output_goal_file`, the output-goal digest binds file contents and resume re-reads the file). Session policy: missing primary session ids are allowed only while the phase orchestrator still owns *starting* that owner (`planning` may start the planner; `plan_validated` / `production` may start the producer). Later phases that depend on an already-established owner block on missing refs — `whole_plan_review` requires `primary_planner_session_id`, `whole_output_review` requires `primary_producer_session_id`, active whole-plan/whole-output review loops require a persisted `reviewer_session_id`, and pending amendments require both primary sessions. Production/output review also require whole-plan approval for the current plan revision. Resume then continues `planning` (starting or resuming the primary planner), drives the mandatory whole-plan review loop in `whole_plan_review`, drives production in `plan_validated` or `production`, and drives whole-output review in `whole_output_review`.
+`tdp run` creates the run store and drives the run until the requested milestone or a limit/failure. On the default `plan` target, success means phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing.
 
 Whole-plan review (proposal §5.2, §11): the orchestrator starts a fresh reviewer session per loop, binds findings to the current plan revision, resumes the same primary planner for revisions after `changes_requested`, and requires the same reviewer to recheck before approval. After approval, deterministic `validate_plan(..., mode="approval")` must pass before the run advances to `plan_validated`. Revision cycles are capped by `limits.whole_plan_review.max_revision_cycles`; limit exhaustion yields `rejected` or `blocked`, never silent acceptance.
 
@@ -180,16 +182,16 @@ tdp agent readme
 tdp agent schema              # list schemas; add a name to show one
 tdp agent example expand-branch
 tdp agent plan snapshot --run <run-id> --view tree
-tdp agent plan apply --run <run-id> --role planner --request request.json
+tdp agent plan apply --run <run-id> --request request.json
 tdp agent plan check --run <run-id>
 tdp agent production snapshot --run <run-id> --view ready
-tdp agent production apply --run <run-id> --role producer --request request.json
+tdp agent production apply --run <run-id> --request request.json
 tdp agent production check --run <run-id>
-tdp agent production request-amendment --run <run-id> --role producer --request request.json
-tdp agent production submit-completion --run <run-id> --role producer --request request.json
-tdp agent production report-blocked --run <run-id> --role producer --request request.json
-tdp agent review request --run <run-id> --role planner --request focused-review.json
-tdp agent review respond --run <run-id> --role reviewer --request review.json
+tdp agent production request-amendment --run <run-id> --request request.json
+tdp agent production submit-completion --run <run-id> --request request.json
+tdp agent production report-blocked --run <run-id> --request request.json
+tdp agent review request --run <run-id> --request focused-review.json
+tdp agent review respond --run <run-id> --request review.json
 tdp agent run status --run <run-id>
 ```
 
@@ -201,9 +203,8 @@ non-blocking findings, and `ok` when validation has no error-severity issues.
 Production-specific batch checks use `production check`. Tree snapshots include
 `scope`, `boundaries`, and `acceptance` on each item. `plan apply` also sets
 `applied: true` when the mutation batch was persisted (exit code still reflects
-`ok`, not whether the batch was saved). Plan apply persists `plan.json`,
-`run.json` digests, and `events.jsonl` as separate atomic writes — not one
-cross-file transaction.
+`ok`, not whether the batch was saved). Mutations commit plan, run digests, and
+events in one store transaction.
 
 `tdp agent plan snapshot`, `plan apply`, and `plan check` exit 0 only when
 `ok` is true. `production snapshot` and `production check` follow the same rule.
@@ -214,6 +215,8 @@ persisted; use `production snapshot` or `production check` for plan validation.
 When planning dependencies, prefer the narrowest meaningful plan item as the dependency target (e.g. depend on a leaf API item rather than its parent epic) so readiness and production batching stay precise.
 
 ## Development
+
+TDP is developed inside this monorepo and depends on the sibling [`core_tools`](../core_tools) package (`core-tools @ file:../core_tools`). Install both editable packages together; this is not published as a standalone wheel.
 
 ```bash
 cd tools/top_down_planning

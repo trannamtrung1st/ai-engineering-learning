@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from pathlib import Path
+
+from top_down_planning.agent_tool.artifacts import capture_output_artifact
+from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.errors import RequestError, RevisionConflictError
-from top_down_planning.agent_tool.roles import assert_production_mutations_allowed
 from top_down_planning.agent_tool.views import (
     build_ready_view,
     build_tree_view,
@@ -43,6 +46,7 @@ from top_down_planning.domain.reviews import (
 )
 from top_down_planning.domain.validators import validate_plan
 from core_tools.persistence import StoreRevisionConflictError
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
 
 _PRODUCTION_SNAPSHOT_ACTION = (
@@ -97,10 +101,14 @@ class ProductionAgentService:
         self,
         request: dict[str, Any],
         *,
-        role: str,
+        capability_token: str | None = None,
     ) -> dict[str, Any]:
-        normalized_role = str(role).strip()
-        assert_production_mutations_allowed(normalized_role)
+        authorize_mutation(
+            self._store,
+            self._run_id,
+            operation="production_apply",
+            capability_token=capability_token,
+        )
 
         plan = self._store.load_plan_model(self._run_id)
         self._require_production_context(plan)
@@ -144,7 +152,7 @@ class ProductionAgentService:
         empty_output_reason = request.get("empty_output_reason")
         if empty_output_reason is not None:
             empty_output_reason = str(empty_output_reason).strip() or None
-        outputs = _parse_outputs(request.get("outputs") or [])
+        outputs = _parse_outputs(self._store, self._run_id, request.get("outputs") or [])
         contributions = _parse_contributions(request.get("contributions") or [])
         _validate_contributions(outputs, contributions, plan_item_ids)
 
@@ -217,11 +225,24 @@ class ProductionAgentService:
         if evidence_revision:
             updated["completion_claim"] = None
         try:
-            next_revision = self._store.save_production(
+            self._store.commit(
                 self._run_id,
-                updated,
-                current_revision,
+                CommitSpec(
+                    production=updated,
+                    production_expected_revision=current_revision,
+                    events=[
+                        {
+                            "type": "production_batch_recorded",
+                            "run_id": self._run_id,
+                            "batch_id": batch_id,
+                            "plan_items": batch.plan_items,
+                            "production_revision": updated["revision"],
+                            "output_revision": updated["output_revision"],
+                        }
+                    ],
+                ),
             )
+            next_revision = int(updated["revision"])
         except StoreRevisionConflictError as exc:
             raise RevisionConflictError(
                 str(exc),
@@ -229,18 +250,6 @@ class ProductionAgentService:
                 actual=exc.actual,
                 action=_PRODUCTION_SNAPSHOT_ACTION,
             ) from exc
-
-        self._store.append_event(
-            self._run_id,
-            {
-                "type": "production_batch_recorded",
-                "run_id": self._run_id,
-                "batch_id": batch_id,
-                "plan_items": batch.plan_items,
-                "production_revision": next_revision,
-                "output_revision": updated["output_revision"],
-            },
-        )
 
         merged_dispositions = self._dispositions(updated)
         return {
@@ -277,10 +286,14 @@ class ProductionAgentService:
         self,
         request: dict[str, Any],
         *,
-        role: str,
+        capability_token: str | None = None,
     ) -> dict[str, Any]:
-        normalized_role = str(role).strip()
-        assert_production_mutations_allowed(normalized_role)
+        authorize_mutation(
+            self._store,
+            self._run_id,
+            operation="production_request_amendment",
+            capability_token=capability_token,
+        )
 
         plan = self._store.load_plan_model(self._run_id)
         self._require_production_context(plan)
@@ -327,11 +340,23 @@ class ProductionAgentService:
         updated["pending_amendment_id"] = amendment_id
 
         try:
-            next_revision = self._store.save_production(
+            self._store.commit(
                 self._run_id,
-                updated,
-                expected_revision,
+                CommitSpec(
+                    production=updated,
+                    production_expected_revision=expected_revision,
+                    events=[
+                        {
+                            "type": "production_amendment_requested",
+                            "run_id": self._run_id,
+                            "amendment_id": amendment_id,
+                            "affected_refs": affected_refs,
+                            "production_revision": updated["revision"],
+                        }
+                    ],
+                ),
             )
+            next_revision = int(updated["revision"])
         except StoreRevisionConflictError as exc:
             raise RevisionConflictError(
                 str(exc),
@@ -339,17 +364,6 @@ class ProductionAgentService:
                 actual=exc.actual,
                 action=_PRODUCTION_SNAPSHOT_ACTION,
             ) from exc
-
-        self._store.append_event(
-            self._run_id,
-            {
-                "type": "production_amendment_requested",
-                "run_id": self._run_id,
-                "amendment_id": amendment_id,
-                "affected_refs": affected_refs,
-                "production_revision": next_revision,
-            },
-        )
 
         return {
             "ok": True,
@@ -363,10 +377,14 @@ class ProductionAgentService:
         self,
         request: dict[str, Any],
         *,
-        role: str,
+        capability_token: str | None = None,
     ) -> dict[str, Any]:
-        normalized_role = str(role).strip()
-        assert_production_mutations_allowed(normalized_role)
+        authorize_mutation(
+            self._store,
+            self._run_id,
+            operation="production_submit_completion",
+            capability_token=capability_token,
+        )
 
         goal_assessment = _required_text(
             request.get("goal_assessment"),
@@ -405,11 +423,22 @@ class ProductionAgentService:
         updated["completion_claim"] = claim
 
         try:
-            next_revision = self._store.save_production(
+            self._store.commit(
                 self._run_id,
-                updated,
-                expected_revision,
+                CommitSpec(
+                    production=updated,
+                    production_expected_revision=expected_revision,
+                    events=[
+                        {
+                            "type": "production_completion_claimed",
+                            "run_id": self._run_id,
+                            "production_revision": updated["revision"],
+                            "output_revision": claim["output_revision"],
+                        }
+                    ],
+                ),
             )
+            next_revision = int(updated["revision"])
         except StoreRevisionConflictError as exc:
             raise RevisionConflictError(
                 str(exc),
@@ -417,16 +446,6 @@ class ProductionAgentService:
                 actual=exc.actual,
                 action=_PRODUCTION_SNAPSHOT_ACTION,
             ) from exc
-
-        self._store.append_event(
-            self._run_id,
-            {
-                "type": "production_completion_claimed",
-                "run_id": self._run_id,
-                "production_revision": next_revision,
-                "output_revision": claim["output_revision"],
-            },
-        )
 
         run = self._store.load_run(self._run_id)
         return {
@@ -440,10 +459,14 @@ class ProductionAgentService:
         self,
         request: dict[str, Any],
         *,
-        role: str,
+        capability_token: str | None = None,
     ) -> dict[str, Any]:
-        normalized_role = str(role).strip()
-        assert_production_mutations_allowed(normalized_role)
+        authorize_mutation(
+            self._store,
+            self._run_id,
+            operation="production_report_blocked",
+            capability_token=capability_token,
+        )
 
         evidence = _required_text(request.get("evidence"), field="evidence")
         affected_refs = _parse_affected_refs(request.get("affected_refs"))
@@ -470,11 +493,22 @@ class ProductionAgentService:
         updated["blocker_report"] = report
 
         try:
-            next_revision = self._store.save_production(
+            self._store.commit(
                 self._run_id,
-                updated,
-                expected_revision,
+                CommitSpec(
+                    production=updated,
+                    production_expected_revision=expected_revision,
+                    events=[
+                        {
+                            "type": "production_blocked_reported",
+                            "run_id": self._run_id,
+                            "affected_refs": affected_refs,
+                            "production_revision": updated["revision"],
+                        }
+                    ],
+                ),
             )
+            next_revision = int(updated["revision"])
         except StoreRevisionConflictError as exc:
             raise RevisionConflictError(
                 str(exc),
@@ -482,16 +516,6 @@ class ProductionAgentService:
                 actual=exc.actual,
                 action=_PRODUCTION_SNAPSHOT_ACTION,
             ) from exc
-
-        self._store.append_event(
-            self._run_id,
-            {
-                "type": "production_blocked_reported",
-                "run_id": self._run_id,
-                "affected_refs": affected_refs,
-                "production_revision": next_revision,
-            },
-        )
 
         run = self._store.load_run(self._run_id)
         return {
@@ -527,7 +551,12 @@ class ProductionAgentService:
                     id=output.id,
                     type=output.type,
                     ref=output.ref,
+                    sha256=output.sha256,
+                    size=output.size,
+                    media_type=output.media_type,
+                    captured_at=output.captured_at,
                     batch_id=batch.id,
+                    snapshot_ref=output.snapshot_ref,
                 ).to_dict()
             )
         updated["output_evidence"] = evidence
@@ -553,15 +582,37 @@ class ProductionAgentService:
         return dict(raw)
 
 
-def _parse_outputs(raw_outputs: Any) -> list[OutputEvidence]:
+def _parse_outputs(store: RunStore, run_id: str, raw_outputs: Any) -> list[OutputEvidence]:
     if not isinstance(raw_outputs, list):
         raise RequestError("outputs must be a list")
+    run = store.load_run(run_id)
+    workspace = Path(str(run.get("workspace") or "")).resolve()
     outputs: list[OutputEvidence] = []
     seen_ids: set[str] = set()
     for item in raw_outputs:
         if not isinstance(item, dict):
             raise RequestError("each output must be an object")
-        output = OutputEvidence.from_dict(item)
+        evidence_id = str(item.get("id") or "")
+        ref = str(item.get("ref") or "")
+        if not evidence_id or not ref:
+            raise RequestError("each output requires id and ref")
+        captured = capture_output_artifact(
+            store,  # type: ignore[arg-type]
+            run_id,
+            workspace=workspace,
+            evidence_id=evidence_id,
+            ref=ref,
+        )
+        output = OutputEvidence(
+            id=evidence_id,
+            type=str(item.get("type") or "artifact"),
+            ref=str(captured["ref"]),
+            sha256=str(captured["sha256"]),
+            size=int(captured["size"]),
+            media_type=str(captured["media_type"]),
+            captured_at=str(captured["captured_at"]),
+            snapshot_ref=str(captured["snapshot_ref"]),
+        )
         if output.id in seen_ids:
             raise RequestError(f"duplicate output id: {output.id}")
         seen_ids.add(output.id)

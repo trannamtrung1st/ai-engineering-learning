@@ -11,6 +11,10 @@ from top_down_planning.agent_tool.plan_service import PlanAgentService
 from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import blocking_focused_findings_for_items
+from top_down_planning.orchestrator.capability import (
+    bind_provider_capability,
+    issue_session_capability,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
@@ -34,7 +38,7 @@ class PlanningPhaseResult:
     outcome: str | None
     session_id: str | None
     agent_turns: int
-    expansion_iterations: int
+    items_added: int
     reason: str | None = None
 
 
@@ -52,6 +56,7 @@ class PlanningPhaseOrchestrator:
         self._provider = provider
         self._plan_service = PlanAgentService(store, run_id)
         self._review_service = ReviewAgentService(store, run_id)
+        self._capability_token: str | None = None
         self._pending_focused_loop_id: str | None = None
 
     def run(self) -> PlanningPhaseResult:
@@ -89,6 +94,18 @@ class PlanningPhaseOrchestrator:
                 session_id,
                 {"action": "continue", "phase": PLANNING},
             )
+
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or PLANNING)
+        self._capability_token = issue_session_capability(
+            self._store,
+            self._run_id,
+            role="planner",
+            phase=phase,
+            session_id=session_id,
+            session_kind="primary",
+        )
+        bind_provider_capability(self._provider, self._capability_token)
 
         while True:
             turn_signal = self._consume_provider_turn(session_id)
@@ -129,13 +146,13 @@ class PlanningPhaseOrchestrator:
                     ),
                 )
 
-            if metrics["expansion_iterations"] >= loop_limits["max_expansion_iterations"]:
+            if metrics["items_added"] >= loop_limits["max_items_added"]:
                 return self._terminate_for_limit(
                     session_id,
-                    limit="max_expansion_iterations",
+                    limit="max_items_added",
                     message=(
-                        "planning exceeded max_expansion_iterations "
-                        f"({loop_limits['max_expansion_iterations']})"
+                        "planning exceeded max_items_added "
+                        f"({loop_limits['max_items_added']})"
                     ),
                 )
 
@@ -175,20 +192,16 @@ class PlanningPhaseOrchestrator:
         if not isinstance(request, dict):
             raise ProviderRunError("plan_apply tool_call requires a request object")
 
-        role = event.get("role")
-        if role is None or str(role).strip() != "planner":
-            raise ProviderRunError("plan_apply tool_call requires role=planner")
-
         operations = request.get("operations") or []
         before_revision = self._store.load_plan(self._run_id)["revision"]
-        self._plan_service.apply(request, role=role)
+        self._plan_service.apply(request, capability_token=self._capability_token)
         after_revision = self._store.load_plan(self._run_id)["revision"]
         if after_revision != before_revision:
             expansion_added = _count_add_item_operations(operations)
             if expansion_added:
                 run = self._store.load_run(self._run_id)
                 metrics = _planning_metrics(run)
-                metrics["expansion_iterations"] += expansion_added
+                metrics["items_added"] += expansion_added
                 _persist_planning_metrics(
                     self._store,
                     self._run_id,
@@ -196,7 +209,7 @@ class PlanningPhaseOrchestrator:
                 )
                 self._append_event(
                     "planning_expansion_recorded",
-                    expansion_iterations=metrics["expansion_iterations"],
+                    items_added=metrics["items_added"],
                     added_items=expansion_added,
                 )
 
@@ -205,12 +218,11 @@ class PlanningPhaseOrchestrator:
         if not isinstance(request, dict):
             raise ProviderRunError("review_request tool_call requires a request object")
 
-        role = event.get("role")
-        if role is None or str(role).strip() != "planner":
-            raise ProviderRunError("review_request tool_call requires role=planner")
-
         try:
-            created = self._review_service.request(request, role=str(role).strip())
+            created = self._review_service.request(
+                request,
+                capability_token=self._capability_token,
+            )
         except AgentToolError as exc:
             raise ProviderRunError(str(exc)) from exc
 
@@ -256,7 +268,7 @@ class PlanningPhaseOrchestrator:
             "planning_candidate_ready",
             session_id=session_id,
             agent_turns=metrics["agent_turns"],
-            expansion_iterations=metrics["expansion_iterations"],
+            items_added=metrics["items_added"],
             plan_revision=self._store.load_plan(self._run_id)["revision"],
         )
         run = self._store.load_run(self._run_id)
@@ -307,7 +319,7 @@ class PlanningPhaseOrchestrator:
             outcome=run.get("outcome"),
             session_id=session_id or sessions.get("primary_planner_session_id"),
             agent_turns=metrics["agent_turns"],
-            expansion_iterations=metrics["expansion_iterations"],
+            items_added=metrics["items_added"],
             reason=reason,
         )
 
@@ -344,14 +356,15 @@ def build_planner_context_manifest(
         "loop_limits": loop_limits,
         "digests": digests,
         "tool_instructions": {
-            "role": "Only the planner role may mutate the plan during planning.",
-            "snapshot": f"tdp agent plan snapshot --run {run_id} --view tree",
-            "apply": (
-                f"tdp agent plan apply --run {run_id} --role planner --request <file>"
+            "authorization": (
+                "Mutating commands require the session capability token exported "
+                "as TDP_CAPABILITY_TOKEN."
             ),
+            "snapshot": f"tdp agent plan snapshot --run {run_id} --view tree",
+            "apply": f"tdp agent plan apply --run {run_id} --request <file>",
             "check": f"tdp agent plan check --run {run_id}",
             "request_review": (
-                f"tdp agent review request --run {run_id} --role planner --request <file>"
+                f"tdp agent review request --run {run_id} --request <file>"
             ),
             "completion_signal": _CANDIDATE_READY_SIGNAL,
         },
@@ -365,10 +378,10 @@ def build_planner_context_manifest(
 def _planning_loop_limits(config: dict[str, Any]) -> dict[str, int]:
     planning_limits = (config.get("limits") or {}).get("planning") or {}
     return {
-        "max_expansion_iterations": int(
+        "max_items_added": int(
             planning_limits.get(
-                "max_expansion_iterations",
-                _PLANNING_LIMIT_DEFAULTS["max_expansion_iterations"],
+                "max_items_added",
+                _PLANNING_LIMIT_DEFAULTS["max_items_added"],
             )
         ),
         "max_agent_turns": int(
@@ -384,7 +397,7 @@ def _planning_metrics(run: dict[str, Any]) -> dict[str, int]:
     planning = run.get("planning") or {}
     return {
         "agent_turns": int(planning.get("agent_turns") or 0),
-        "expansion_iterations": int(planning.get("expansion_iterations") or 0),
+        "items_added": int(planning.get("items_added") or 0),
     }
 
 
@@ -423,7 +436,7 @@ def _persist_planning_metrics(
     run["revision"] = expected_revision + 1
     run["planning"] = {
         "agent_turns": metrics["agent_turns"],
-        "expansion_iterations": metrics["expansion_iterations"],
+        "items_added": metrics["items_added"],
     }
     plan = store.load_plan(run_id)
     run.setdefault("digests", {})

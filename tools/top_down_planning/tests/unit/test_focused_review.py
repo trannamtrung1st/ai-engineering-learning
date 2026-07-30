@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestra
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import done_events, run_digests_for_config, whole_plan_approval_record
+from tests.helpers import done_events, grant_capability, run_digests_for_config, whole_plan_approval_record
 
 
 def _planning_config(*, limits: dict | None = None, review: dict | None = None) -> dict:
@@ -33,7 +33,7 @@ def _planning_config(*, limits: dict | None = None, review: dict | None = None) 
         },
         "limits": {
             "planning": {
-                "max_expansion_iterations": 20,
+                "max_items_added": 20,
                 "max_agent_turns": 40,
             },
             "focused_plan_review": {
@@ -43,9 +43,7 @@ def _planning_config(*, limits: dict | None = None, review: dict | None = None) 
         },
         "review": {
             "focused_plan": {"enabled": True},
-            "whole_plan": {"required": True},
             "focused_output": {"enabled": True},
-            "whole_output": {"required": True},
         },
         "provider": {"name": "stub"},
     }
@@ -223,6 +221,7 @@ def test_focused_plan_scope_violation_on_request_is_rejected(tmp_path: Path) -> 
     store = FileRunStore(tmp_path)
     _create_planning_run(store)
     service = ReviewAgentService(store, "run-focused-plan")
+    token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
 
     with pytest.raises(RequestError, match="whole scope kind"):
         service.request(
@@ -230,7 +229,7 @@ def test_focused_plan_scope_violation_on_request_is_rejected(tmp_path: Path) -> 
                 "type": "focused_plan",
                 "scope": {"kind": "whole_plan", "item_ids": ["item-api"]},
             },
-            role="planner",
+            capability_token=token,
         )
 
 
@@ -238,8 +237,16 @@ def test_focused_plan_finding_outside_scope_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_planning_run(store)
     service = ReviewAgentService(store, "run-focused-plan")
+    planner_token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
+    reviewer_token = grant_capability(
+        store,
+        "run-focused-plan",
+        role="reviewer",
+        phase=PLANNING,
+        session_kind="reviewer",
+    )
 
-    created = service.request(_focused_plan_request(["item-api"]), role="planner")
+    created = service.request(_focused_plan_request(["item-api"]), capability_token=planner_token)
     store.save_review(
         "run-focused-plan",
         {
@@ -264,7 +271,7 @@ def test_focused_plan_finding_outside_scope_is_rejected(tmp_path: Path) -> None:
                     }
                 ],
             ),
-            role="reviewer",
+            capability_token=reviewer_token,
         )
 
 
@@ -274,21 +281,22 @@ def test_disabled_focused_plan_review_request_is_rejected(tmp_path: Path) -> Non
         store,
         review={
             "focused_plan": {"enabled": False},
-            "whole_plan": {"required": True},
         },
     )
     service = ReviewAgentService(store, "run-focused-plan")
+    token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
 
     with pytest.raises(RequestError, match="disabled in config"):
-        service.request(_focused_plan_request(["item-api"]), role="planner")
+        service.request(_focused_plan_request(["item-api"]), capability_token=token)
 
 
 def test_focused_plan_loop_limit_is_enforced(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_planning_run(store, limits={"max_loops": 1})
     service = ReviewAgentService(store, "run-focused-plan")
+    token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
 
-    created = service.request(_focused_plan_request(["item-api"]), role="planner")
+    created = service.request(_focused_plan_request(["item-api"]), capability_token=token)
     store.save_review(
         "run-focused-plan",
         {
@@ -297,17 +305,18 @@ def test_focused_plan_loop_limit_is_enforced(tmp_path: Path) -> None:
         },
     )
     with pytest.raises(RequestError, match="max_loops"):
-        service.request(_focused_plan_request(["item-root"]), role="planner")
+        service.request(_focused_plan_request(["item-root"]), capability_token=token)
 
 
 def test_overlapping_active_focused_plan_request_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_planning_run(store)
     service = ReviewAgentService(store, "run-focused-plan")
+    token = grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING)
 
-    created = service.request(_focused_plan_request(["item-api"]), role="planner")
+    created = service.request(_focused_plan_request(["item-api"]), capability_token=token)
     with pytest.raises(RequestError, match="overlapping scope"):
-        service.request(_focused_plan_request(["item-api"]), role="planner")
+        service.request(_focused_plan_request(["item-api"]), capability_token=token)
 
     review = store.load_review("run-focused-plan", created["loop_id"])
     assert review["status"] == "pending"
@@ -320,7 +329,7 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
 
     created = ReviewAgentService(store, "run-focused-plan").request(
         _focused_plan_request(["item-api"]),
-        role="planner",
+        capability_token=grant_capability(store, "run-focused-plan", role="planner", phase=PLANNING),
     )
     loop_id = created["loop_id"]
 
@@ -466,9 +475,7 @@ def _create_production_run(
         },
         "review": {
             "focused_plan": {"enabled": True},
-            "whole_plan": {"required": True},
             "focused_output": {"enabled": True},
-            "whole_output": {"required": True},
         },
         "provider": {"name": "stub"},
     }

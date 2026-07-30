@@ -35,17 +35,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "review": {
         "focused_plan": {"enabled": True},
-        "whole_plan": {"required": True},
         "focused_output": {"enabled": True},
-        "whole_output": {"required": True},
     },
     "provider": {
         "name": "cursor",
         "skip_probe": False,
     },
-    "limits": {
+        "limits": {
         "planning": {
-            "max_expansion_iterations": 20,
+            "max_items_added": 20,
             "max_agent_turns": 40,
         },
         "focused_plan_review": {
@@ -107,13 +105,11 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "planning.max_depth",
         "planning.max_expansion_per_item",
         "review.focused_plan.enabled",
-        "review.whole_plan.required",
         "review.focused_output.enabled",
-        "review.whole_output.required",
         "provider.name",
         "provider.binary",
         "provider.skip_probe",
-        "limits.planning.max_expansion_iterations",
+        "limits.planning.max_items_added",
         "limits.planning.max_agent_turns",
         "limits.focused_plan_review.max_loops",
         "limits.focused_plan_review.max_revision_cycles_per_loop",

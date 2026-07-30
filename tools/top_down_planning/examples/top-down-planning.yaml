@@ -64,12 +64,8 @@ planning:
 review:
   focused_plan:
     enabled: true
-  whole_plan:
-    required: true
   focused_output:
     enabled: true
-  whole_output:
-    required: true
 
 provider:
   name: cursor
@@ -78,7 +74,7 @@ provider:
 
 limits:
   planning:
-    max_expansion_iterations: 20
+    max_items_added: 20
     max_agent_turns: 40
   focused_plan_review:
     max_loops: 5

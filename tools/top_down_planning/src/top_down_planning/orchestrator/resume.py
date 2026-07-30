@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from top_down_planning.agent_tool.artifacts import verify_evidence_snapshot
+from top_down_planning.agent_tool.errors import RequestError
 from top_down_planning.config import (
     compute_input_digest,
     compute_output_goal_digest,
@@ -154,6 +156,24 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
             "output digest mismatch; refusing to resume with divergent production.json",
             code="digest_mismatch",
         )
+    _validate_output_evidence_snapshots(store, run_id, production)
+
+
+def _validate_output_evidence_snapshots(
+    store: RunStore,
+    run_id: str,
+    production: dict[str, Any],
+) -> None:
+    for entry in production.get("output_evidence") or []:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            verify_evidence_snapshot(store, run_id, entry)
+        except RequestError as exc:
+            raise ResumeError(
+                str(exc),
+                code="evidence_integrity",
+            ) from exc
 
 
 def _validate_phase_binding(

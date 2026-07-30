@@ -18,6 +18,7 @@ from core_tools.cli import (
 
 from top_down_planning.config import resolve_config
 from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence.capabilities import CAPABILITY_ENV_VAR
 
 RUNS_DIR_ENV_VAR = "TDP_RUNS_DIR"
 
@@ -119,10 +120,17 @@ def open_run_store(
     return store, resolved
 
 
-def provider_extra_env(resolved: ResolvedRunsDir) -> dict[str, str]:
+def provider_extra_env(
+    resolved: ResolvedRunsDir,
+    *,
+    capability_token: str | None = None,
+) -> dict[str, str]:
     """Environment variables exported to provider subprocesses."""
 
-    return {RUNS_DIR_ENV_VAR: str(resolved.path)}
+    env = {RUNS_DIR_ENV_VAR: str(resolved.path)}
+    if capability_token is not None:
+        env[CAPABILITY_ENV_VAR] = capability_token
+    return env
 
 
 def store_diagnostics_payload(
@@ -170,6 +178,7 @@ def format_run_startup_diagnostics(payload: Mapping[str, str]) -> str:
 
 __all__ = [
     "AGENT_RUNS_DIR_HELP",
+    "CAPABILITY_ENV_VAR",
     "RUNS_DIR_ENV_VAR",
     "RUNS_DIR_HELP",
     "ResolvedRunsDir",

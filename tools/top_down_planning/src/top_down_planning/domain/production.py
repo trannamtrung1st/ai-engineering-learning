@@ -24,25 +24,47 @@ class OutputEvidence:
     id: str
     type: str
     ref: str
+    sha256: str
+    size: int
+    media_type: str
+    captured_at: str
     batch_id: str | None = None
+    snapshot_ref: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "id": self.id,
             "type": self.type,
             "ref": self.ref,
+            "sha256": self.sha256,
+            "size": self.size,
+            "media_type": self.media_type,
+            "captured_at": self.captured_at,
         }
         if self.batch_id is not None:
             payload["batch_id"] = self.batch_id
+        if self.snapshot_ref is not None:
+            payload["snapshot_ref"] = self.snapshot_ref
         return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> OutputEvidence:
+        required = ("id", "ref", "sha256", "size", "media_type", "captured_at")
+        missing = [field for field in required if field not in payload]
+        if missing:
+            raise ValueError(
+                "output evidence missing required fields: " + ", ".join(missing)
+            )
         return cls(
             id=str(payload["id"]),
             type=str(payload.get("type") or "artifact"),
-            ref=str(payload.get("ref") or ""),
+            ref=str(payload["ref"]),
+            sha256=str(payload["sha256"]),
+            size=int(payload["size"]),
+            media_type=str(payload["media_type"]),
+            captured_at=str(payload["captured_at"]),
             batch_id=payload.get("batch_id"),
+            snapshot_ref=payload.get("snapshot_ref"),
         )
 
 

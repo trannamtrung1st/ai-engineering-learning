@@ -61,6 +61,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resolved-config override (repeatable; proposal §14).",
     )
     _add_operational_flags(run_parser)
+    run_parser.add_argument(
+        "--until",
+        choices=["plan", "validated", "completed"],
+        default="plan",
+        help=(
+            "Continue until planning construction (plan), plan validation "
+            "(validated), or final outcome (completed)."
+        ),
+    )
 
     resume_parser = subparsers.add_parser("resume", help="Resume an interrupted run.")
     resume_parser.add_argument("--run", help="Run id.")
@@ -72,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_operational_flags(resume_parser)
+    resume_parser.add_argument(
+        "--until",
+        choices=["plan", "validated", "completed"],
+        help="Continue until the target lifecycle milestone (default: one phase step).",
+    )
 
     status_parser = subparsers.add_parser("status", help="Show run status.")
     status_parser.add_argument("--run", help="Run id.")

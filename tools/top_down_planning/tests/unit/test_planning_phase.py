@@ -7,12 +7,13 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.agent_tool import PlanAgentService
+from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import PlanningPhaseOrchestrator, ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import done_events
+from tests.helpers import done_events, grant_capability
 
 
 def _create_run(
@@ -45,7 +46,7 @@ def _create_run(
         },
         "limits": {
             "planning": {
-                "max_expansion_iterations": 20,
+                "max_items_added": 20,
                 "max_agent_turns": 40,
             }
         },
@@ -107,7 +108,7 @@ def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) 
     assert result.outcome is None
     assert result.session_id is not None
     assert result.agent_turns == 1
-    assert result.expansion_iterations == 2
+    assert result.items_added == 2
 
     plan = store.load_plan_model("run-planning")
     assert len(plan.items) == 3
@@ -161,7 +162,7 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
     expected_revision = int(run["revision"])
     run["revision"] = expected_revision + 1
     run["sessions"] = {"primary_planner_session_id": session_id}
-    run["planning"] = {"agent_turns": 1, "expansion_iterations": 0}
+    run["planning"] = {"agent_turns": 1, "items_added": 0}
     store.save_run("run-planning", run, expected_revision)
 
     provider.script_turn(done_events(signal="candidate_plan_ready", text="planning turn"))
@@ -177,32 +178,25 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
 def test_non_planner_apply_during_planning_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    provider = StubProvider()
-    provider.script_turn(
-        [
-            {
-                "type": "tool_call",
-                "tool": "plan_apply",
-                "role": "producer",
-                "request": {
-                    "base_revision": 0,
-                    "operations": [
-                        {
-                            "op": "add_item",
-                            "temp_id": "item-x",
-                            "parent_id": "item-root",
-                            "placement": {"last_child": True},
-                            "item": {"title": "X"},
-                        }
-                    ],
-                },
-            },
-            *done_events(signal="candidate_plan_ready", text="planning turn"),
-        ]
-    )
+    service = PlanAgentService(store, "run-planning")
+    token = grant_capability(store, "run-planning", role="producer", phase=PLANNING)
 
-    with pytest.raises(ProviderRunError, match="role=planner"):
-        PlanningPhaseOrchestrator(store, "run-planning", provider).run()
+    with pytest.raises(CapabilityDeniedError):
+        service.apply(
+            {
+                "base_revision": 0,
+                "operations": [
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-x",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {"title": "X"},
+                    }
+                ],
+            },
+            capability_token=token,
+        )
 
 
 def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -> None:
@@ -225,7 +219,7 @@ def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -
                 }
             ],
         },
-        role="planner",
+        capability_token=grant_capability(store, "run-planning", role="planner", phase=PLANNING),
     )
 
     result = PlanningPhaseOrchestrator(store, "run-planning", provider).run()
