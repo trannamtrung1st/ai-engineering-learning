@@ -11,7 +11,6 @@ from rich.text import Text
 
 from core_tools.observability.color import ColorMode, resolve_color_mode
 from core_tools.observability.events import ConsoleEvent, category_tag
-from core_tools.observability.format import format_multiline_body, prefix_width
 from core_tools.observability.redaction import RedactionPolicy, redact_event
 
 _CATEGORY_STYLES: dict[str, str] = {
@@ -71,18 +70,22 @@ class ColorizedConsoleSink:
         tag = category_tag(safe.category)
         body = _format_message(safe)
         prefix = _build_prefix(safe.ts, tag, show_timestamps=self._show_timestamps)
-        width = prefix_width(show_timestamps=self._show_timestamps, tag=tag)
-        formatted_body = format_multiline_body(body, prefix_width=width)
-        line = f"{prefix}{formatted_body}"
+        lines = body.splitlines() or [""]
 
         if self._use_color:
             style = _CATEGORY_STYLES.get(safe.category, "")
-            text = Text(line)
+            first = f"{prefix}{lines[0]}"
+            text = Text(first)
             if style:
                 text.stylize(style)
             self._console.print(text, soft_wrap=True)
+            for line in lines[1:]:
+                self._console.print(line, soft_wrap=True)
         else:
-            self._stream.write(line + "\n")
+            output = f"{prefix}{lines[0]}"
+            if len(lines) > 1:
+                output += "\n" + "\n".join(lines[1:])
+            self._stream.write(output + "\n")
             self._stream.flush()
 
 

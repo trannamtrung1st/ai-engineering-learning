@@ -6,11 +6,11 @@ Cross-product infrastructure shared by agent orchestration tools in this monorep
 
 | Module | Contents |
 | --- | --- |
-| `core_tools.provider` | Provider protocol, stub/Cursor adapters, stream normalization, session references, subprocess cleanup. Cursor non-interactive argv uses `--print --output-format stream-json --trust --approve-mcps --force` so shell/`tdp agent` tool calls are not rejected. `terminate_all_sessions()` stops in-flight CLI process trees so orchestrators do not leave orphaned background agent subprocesses. |
+| `core_tools.provider` | Provider protocol, stub/Cursor adapters, stream normalization (`text` or `message.content`), session references, subprocess cleanup. Cursor non-interactive argv uses `--print --output-format stream-json --trust --approve-mcps --force` so shell/`tdp agent` tool calls are not rejected. `terminate_all_sessions()` stops in-flight CLI process trees so orchestrators do not leave orphaned background agent subprocesses. |
 | `core_tools.config` | Deep merge, YAML config load, `--set` override parsing, workspace paths, resource/skill loading, allowlist validation |
 | `core_tools.persistence` | Atomic file writes, content digests, minimal YAML helpers, optimistic revision helpers |
 | `core_tools.cli` | Structured CLI output, request loading, runs-dir resolution |
-| `core_tools.observability` | Structured `ConsoleEvent` model, `EventSink` protocol, redaction, colorized stderr console renderer, JSONL sinks |
+| `core_tools.observability` | Structured `ConsoleEvent` model, `EventSink` protocol, redaction, colorized stderr console renderer (prefix on first line only for multi-line messages), JSONL sinks, agent text sentence streaming (`AgentTextStreamController`) |
 | `core_tools.schema` | Minimal JSON Schema validation for published contracts |
 
 ## What stays in product packages

@@ -16,8 +16,10 @@ from core_tools.observability.sink import (
     FilteredSink,
     NullSink,
 )
+from core_tools.observability.text_stream import AgentTextStreamController
 
 __all__ = [
+    "AgentTextStreamController",
     "CATEGORY_TAGS",
     "ColorMode",
     "ColorizedConsoleSink",

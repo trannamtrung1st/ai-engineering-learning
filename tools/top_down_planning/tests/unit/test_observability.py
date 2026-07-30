@@ -42,6 +42,56 @@ def test_map_audit_event_maps_planning_candidate_ready() -> None:
     assert mapped.fields["plan_revision"] == 2
 
 
+def test_provider_bridge_streams_thinking_sentences_not_empty_lines() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+
+    for chunk in ("Let me inspect the config.", " I'll read the schema next"):
+        bridge.handle({"type": "thinking", "text": chunk})
+
+    thinking = [event.message for event in collector.events if event.category == "thinking"]
+    assert thinking == ["Let me inspect the config."]
+    bridge.handle({"type": "tool_call", "tool": "read", "call_id": "call-1"})
+    thinking = [event.message for event in collector.events if event.category == "thinking"]
+    assert thinking == ["Let me inspect the config.", "I'll read the schema next"]
+
+
+def test_provider_bridge_ignores_empty_thinking_events() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    bridge.handle({"type": "thinking", "text": ""})
+    bridge.handle({"type": "thinking"})
+    assert collector.events == []
+
+
+def test_provider_bridge_flushes_response_on_tool_call() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+
+    bridge.handle({"type": "assistant", "text": "Partial reply"})
+    bridge.handle({"type": "tool_call", "tool": "read", "call_id": "call-1"})
+
+    response = [event.message for event in collector.events if event.category == "response"]
+    assert response == ["Partial reply"]
+    assert any(event.category == "tool:start" for event in collector.events)
+
+
+def test_provider_bridge_streams_cumulative_thinking_chunks() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+
+    bridge.handle({"type": "thinking", "text": "Hello"})
+    bridge.handle({"type": "thinking", "text": "Hello world."})
+    bridge.handle({"type": "thinking", "text": "Hello world. Done."})
+
+    thinking = [event.message for event in collector.events if event.category == "thinking"]
+    assert thinking == ["Hello world.", "Done."]
+
+
 def test_provider_bridge_correlates_tool_start_and_end() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(sink=collector)

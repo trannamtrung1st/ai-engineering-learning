@@ -1011,6 +1011,10 @@ built-in defaults < YAML configuration < CLI --set overrides < dedicated CLI fla
 
 Observability and other presentation settings may be set in YAML under `observability` or overridden with dedicated flags (`--log-level`, `--color`, `--timestamps`, `--agent-text`, `--agent-transcript`, `--log-format`). Omitted flags do not override YAML.
 
+Agent thinking/response console output uses `core_tools.observability.AgentTextStreamController`: Cursor `stream-json` text is read from `text` or `message.content`, cumulative chunks are deduplicated, complete sentences are emitted as they arrive, and any trailing fragment flushes before tool calls or turn completion. Empty thinking events are not normalized or printed.
+
+Multi-line console messages print `[timestamp] [category]` on the first line only; continuation lines are plain text with no prefix or category styling.
+
 Dedicated operational flags include:
 
 ```text

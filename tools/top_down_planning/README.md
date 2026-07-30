@@ -79,11 +79,15 @@ tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-pla
 | `--color auto\|always\|never` | from config / `auto` | Color mode (`--no-color` ⇒ `never`) |
 | `--log-level quiet\|normal\|verbose\|trace` | from config / `normal` | Verbosity |
 | `--log-format console\|jsonl` | from config / `console` | Human console vs JSONL on stderr |
-| `--agent-text` / `--no-agent-text` | from config / on | Show thinking/response text |
-| `--timestamps` / `--no-timestamps` | from config / on | Timestamp prefix |
+| `--agent-text` / `--no-agent-text` | from config / on | Show thinking/response text (streamed sentence-by-sentence) |
+| `--timestamps` / `--no-timestamps` | from config / on | Timestamp/category prefix on the first line only |
 | `--agent-transcript` / `--no-agent-transcript` | from config / off | Persist redacted provider transcript |
 
 Observability can be set in YAML under `observability` (same file as orchestration config). Precedence for presentation settings: built-in defaults → YAML → `--set` → explicitly supplied dedicated CLI flag (omitted flags do not override YAML). Changing observability or `runtime.runs_dir` does not invalidate resume; semantic config digests exclude those fields.
+
+Provider thinking and response text is normalized from Cursor `stream-json` (`text` field or `message.content`), deduplicated when cumulative, and printed one complete sentence at a time. Empty thinking chunks are dropped. Remaining text flushes before tool calls and turn completion.
+
+Multi-line console messages (for example startup diagnostics) print `[timestamp] [category]` on the first line only; continuation lines are plain text with no prefix or category styling.
 
 `events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens, secrets, and oversized payloads are redacted at every log level.
 

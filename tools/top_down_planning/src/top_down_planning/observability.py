@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from core_tools.observability import (
+    AgentTextStreamController,
     ColorizedConsoleSink,
     CompositeSink,
     ConsoleEvent,
@@ -140,29 +141,30 @@ class ProviderToConsoleBridge:
     def __init__(self, context: ObservabilityContext) -> None:
         self._context = context
         self._tool_starts: dict[str, tuple[float, str]] = {}
+        self._agent_text = AgentTextStreamController()
 
     def handle(self, event: dict[str, Any]) -> None:
         event_type = str(event.get("type") or "")
         session_id = event.get("session_id")
+        session = str(session_id) if session_id else None
         if event_type == "thinking":
-            self._context.emit(
-                ConsoleEvent(
-                    category="thinking",
-                    message=str(event.get("text") or ""),
-                    session_id=str(session_id) if session_id else None,
-                )
+            self._emit_sentences(
+                "thinking",
+                self._agent_text.ingest_thinking(str(event.get("text") or "")),
+                session_id=session,
             )
             return
         if event_type == "assistant":
-            self._context.emit(
-                ConsoleEvent(
-                    category="response",
-                    message=str(event.get("text") or ""),
-                    session_id=str(session_id) if session_id else None,
-                )
+            flushed_thinking, response = self._agent_text.ingest_response(
+                str(event.get("text") or "")
             )
+            self._emit_sentences("thinking", flushed_thinking, session_id=session)
+            self._emit_sentences("response", response, session_id=session)
             return
         if event_type == "tool_call":
+            flushed_thinking, flushed_response = self._agent_text.flush_for_tool_call()
+            self._emit_sentences("thinking", flushed_thinking, session_id=session)
+            self._emit_sentences("response", flushed_response, session_id=session)
             call_id = str(event.get("call_id") or f"call-{len(self._tool_starts) + 1}")
             tool_name = str(event.get("tool") or "tool")
             self._tool_starts[call_id] = (time.monotonic(), tool_name)
@@ -170,7 +172,7 @@ class ProviderToConsoleBridge:
                 ConsoleEvent(
                     category="tool:start",
                     message=tool_name,
-                    session_id=str(session_id) if session_id else None,
+                    session_id=session,
                     fields=_tool_start_fields(event, call_id=call_id),
                 )
             )
@@ -187,7 +189,7 @@ class ProviderToConsoleBridge:
                 ConsoleEvent(
                     category=category,
                     message=str(event.get("tool") or "tool"),
-                    session_id=str(session_id) if session_id else None,
+                    session_id=session,
                     fields=_tool_end_fields(event, call_id=call_id, duration_ms=duration_ms, ok=bool(ok)),
                 )
             )
@@ -209,22 +211,41 @@ class ProviderToConsoleBridge:
                 ConsoleEvent(
                     category="error",
                     message=str(event.get("text") or "provider error"),
-                    session_id=str(session_id) if session_id else None,
+                    session_id=session,
                 )
             )
             return
         if event_type == "done":
+            flushed_thinking, flushed_response = self._agent_text.flush_for_done()
+            self._emit_sentences("thinking", flushed_thinking, session_id=session)
+            self._emit_sentences("response", flushed_response, session_id=session)
             if event.get("is_error"):
                 self._context.emit(
                     ConsoleEvent(
                         category="error",
                         message=str(event.get("text") or "provider turn failed"),
-                        session_id=str(session_id) if session_id else None,
+                        session_id=session,
                     )
                 )
             else:
                 self._flush_open_tools(ok=True)
             return
+
+    def _emit_sentences(
+        self,
+        category: str,
+        sentences: list[str],
+        *,
+        session_id: str | None,
+    ) -> None:
+        for sentence in sentences:
+            self._context.emit(
+                ConsoleEvent(
+                    category=category,
+                    message=sentence,
+                    session_id=session_id,
+                )
+            )
 
     def _flush_open_tools(self, *, ok: bool) -> None:
         for call_id, (started_at, tool_name) in list(self._tool_starts.items()):

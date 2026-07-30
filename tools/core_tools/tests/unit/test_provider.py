@@ -175,6 +175,36 @@ def test_stub_missing_script_raises() -> None:
         provider.start_primary_session("planner", {"goal": "x"})
 
 
+def test_normalize_cursor_event_maps_thinking_text_field() -> None:
+    normalized = normalize_cursor_event(
+        {
+            "type": "thinking",
+            "subtype": "extended",
+            "session_id": "chat-1",
+            "text": "Planning the work.",
+        }
+    )
+    assert normalized is not None
+    assert normalized["type"] == "thinking"
+    assert normalized["text"] == "Planning the work."
+
+
+def test_normalize_cursor_event_maps_assistant_text_field() -> None:
+    normalized = normalize_cursor_event(
+        {
+            "type": "assistant",
+            "session_id": "chat-1",
+            "text": "Plan candidate ready.",
+        }
+    )
+    assert normalized is not None
+    assert normalized["text"] == "Plan candidate ready."
+
+
+def test_normalize_cursor_event_skips_empty_thinking() -> None:
+    assert normalize_cursor_event({"type": "thinking", "session_id": "chat-1"}) is None
+
+
 def test_normalize_cursor_event_maps_result_to_done() -> None:
     normalized = normalize_cursor_event(
         {

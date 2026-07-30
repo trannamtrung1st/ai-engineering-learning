@@ -56,12 +56,14 @@ def normalize_cursor_event(raw: dict[str, Any]) -> dict[str, Any] | None:
         return normalized
 
     if event_type in _ASSISTANT_TYPES:
-        normalized["text"] = _extract_text(raw.get("message"))
+        normalized["text"] = _provider_event_text(raw) or ""
         return normalized
 
     if event_type in _THINKING_TYPES:
-        normalized["type"] = "thinking"
-        normalized["text"] = _extract_text(raw.get("message")) or _extract_text(raw)
+        text = _provider_event_text(raw)
+        if not text:
+            return None
+        normalized["text"] = text
         return normalized
 
     if event_type in _DONE_TYPES:
@@ -118,6 +120,13 @@ def _nested_call_id(raw: dict[str, Any]) -> str | None:
         if isinstance(nested, dict) and nested.get("id"):
             return str(nested["id"])
     return None
+
+
+def _provider_event_text(raw: dict[str, Any]) -> str | None:
+    direct = raw.get("text")
+    if isinstance(direct, str) and direct:
+        return direct
+    return _extract_text(raw.get("message"))
 
 
 def _extract_text(message: Any) -> str | None:

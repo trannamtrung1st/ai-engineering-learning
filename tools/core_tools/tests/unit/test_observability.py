@@ -11,7 +11,6 @@ import pytest
 from core_tools.observability.color import resolve_color_mode
 from core_tools.observability.console import ColorizedConsoleSink
 from core_tools.observability.events import ConsoleEvent
-from core_tools.observability.format import format_multiline_body, prefix_width
 from core_tools.observability.jsonl import JsonlEventSink
 from core_tools.observability.redaction import RedactionPolicy, redact_event, redact_value
 from core_tools.observability.sink import CompositeSink, FilteredSink, NullSink
@@ -25,14 +24,19 @@ class _CollectSink:
         self.events.append(event)
 
 
-def test_multiline_indent_uses_single_prefix_width() -> None:
-    body = format_multiline_body(
-        "Implementation and tests are complete.\nConsole logs stream to stderr.",
-        prefix_width=prefix_width(show_timestamps=True, tag="response"),
+def test_multiline_message_prefixes_first_line_only() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never", show_timestamps=False)
+    sink.emit(
+        ConsoleEvent(
+            category="session:start",
+            message="Starting run.\nWorking directory: /tmp\nConfig file: /tmp/config.yaml",
+        )
     )
-    lines = body.splitlines()
-    assert lines[0] == "Implementation and tests are complete."
-    assert lines[1].startswith(" " * (prefix_width(show_timestamps=True, tag="response") + 2))
+    lines = stderr.getvalue().splitlines()
+    assert lines[0].startswith("[session:start] Starting run.")
+    assert lines[1] == "Working directory: /tmp"
+    assert lines[2] == "Config file: /tmp/config.yaml"
 
 
 def test_color_disabled_for_no_color_and_dumb_term() -> None:
