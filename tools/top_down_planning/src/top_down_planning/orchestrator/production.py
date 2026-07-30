@@ -12,6 +12,10 @@ from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.production import all_applicable_items_processed, has_pending_amendment, latest_reconciliation_report
 from top_down_planning.domain.readiness import detect_deadlock
 from top_down_planning.domain.reviews import blocking_focused_findings_for_items, find_whole_plan_approval
+from top_down_planning.orchestrator.agent_context import (
+    attach_role_context_to_manifest,
+    resolve_role_session_context,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import (
@@ -80,15 +84,21 @@ class ProductionPhaseOrchestrator:
 
         session_id = _primary_producer_session_id(run)
         if session_id is None:
+            run_record = self._store.load_run(self._run_id)
             manifest = build_producer_context_manifest(
                 self._run_id,
-                self._store.load_run(self._run_id),
+                run_record,
                 config,
                 self._store.load_plan_model(self._run_id),
                 plan_revision=int(self._store.load_plan(self._run_id)["revision"]),
                 production=self._store.load_production(self._run_id),
             )
-            session_id = self._provider.start_primary_session("producer", manifest)
+            role_context = resolve_role_session_context(config, run_record, "producer")
+            session_id = self._provider.start_primary_session(
+                "producer",
+                manifest,
+                model=role_context.model,
+            )
             run = _persist_session_id(self._store, self._run_id, session_id)
             self._append_event(
                 "producer_session_started",
@@ -441,7 +451,8 @@ def build_producer_context_manifest(
     limits = _production_loop_limits(config)
     digests = dict(run.get("digests") or {})
 
-    manifest: dict[str, Any] = {
+    manifest: dict[str, Any] = attach_role_context_to_manifest(
+        {
         "run_id": run_id,
         "phase": PRODUCTION,
         "input_refs": list(run_section.get("input_refs") or []),
@@ -476,7 +487,11 @@ def build_producer_context_manifest(
             ),
             "batch_complete_signal": _BATCH_COMPLETE_SIGNAL,
         },
-    }
+        },
+        config=config,
+        run=run,
+        role="producer",
+    )
     if production is not None:
         reconciliation = latest_reconciliation_report(production)
         if reconciliation is not None:

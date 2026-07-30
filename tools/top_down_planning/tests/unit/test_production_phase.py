@@ -93,13 +93,14 @@ def _create_run_at_plan_validated(
     if limits:
         config["limits"]["production"].update(limits)
 
-    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
+    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        context_digest="0" * 64,
         phase=PLAN_VALIDATED,
         workspace=str(store.root),
     )
@@ -387,6 +388,7 @@ def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="a",
         output_goal_digest="b",
+        context_digest="0" * 64,
         phase=PRODUCTION,
         workspace=str(store.root),
     )
@@ -448,6 +450,7 @@ def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="a",
         output_goal_digest="b",
+        context_digest="0" * 64,
         phase=PLAN_VALIDATED,
         workspace=str(store.root),
     )

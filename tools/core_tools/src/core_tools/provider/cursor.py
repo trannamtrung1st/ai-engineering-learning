@@ -85,6 +85,15 @@ def resolve_agent_binary(configured: str | None) -> str:
     )
 
 
+def _resolve_cli_model(*, model: str | None = None) -> str | None:
+    if model is None:
+        return None
+    resolved = str(model).strip()
+    if not resolved or resolved.lower() == "auto":
+        return None
+    return resolved
+
+
 def build_agent_argv(
     config: dict[str, Any],
     *,
@@ -92,10 +101,10 @@ def build_agent_argv(
     workspace: Path,
     session_id: str | None = None,
     prompt: str | None = None,
+    model: str | None = None,
 ) -> list[str]:
     """Construct a Cursor CLI argv for a non-interactive streamed turn."""
 
-    provider_cfg = config.get("provider") or {}
     argv: list[str] = [
         binary,
         "--print",
@@ -107,9 +116,9 @@ def build_agent_argv(
         str(workspace),
     ]
 
-    model = provider_cfg.get("model")
-    if model:
-        argv.extend(["--model", str(model)])
+    resolved_model = _resolve_cli_model(model=model)
+    if resolved_model:
+        argv.extend(["--model", resolved_model])
 
     if session_id:
         argv.extend(["--resume", session_id])
@@ -125,6 +134,7 @@ class _CursorSession:
     role: str
     kind: str
     manifest: dict[str, Any]
+    model: str | None
     pending_events: deque[dict[str, Any]] = field(default_factory=deque)
 
 
@@ -157,24 +167,35 @@ class CursorProvider:
         self._sessions: dict[str, _CursorSession] = {}
 
     def start_primary_session(
-        self, role: str, context_manifest: dict[str, Any]
+        self,
+        role: str,
+        context_manifest: dict[str, Any],
+        *,
+        model: str | None = None,
     ) -> str:
         return self._start_session(
             role=role,
             kind="primary",
             manifest=context_manifest,
             prompt=format_manifest_prompt(role, context_manifest),
+            model=model,
         )
 
     def resume_primary_session(self, session_id: str, request: dict[str, Any]) -> None:
         self._execute_turn(session_id, prompt=format_request_prompt(request))
 
-    def start_reviewer_session(self, review_package: dict[str, Any]) -> str:
+    def start_reviewer_session(
+        self,
+        review_package: dict[str, Any],
+        *,
+        model: str | None = None,
+    ) -> str:
         return self._start_session(
             role="reviewer",
             kind="reviewer",
             manifest=review_package,
             prompt=format_request_prompt(review_package),
+            model=model,
         )
 
     def send(self, session_id: str, request: dict[str, Any]) -> None:
@@ -211,6 +232,7 @@ class CursorProvider:
             "session_id": session_id,
             "role": session.role,
             "kind": session.kind,
+            "model": session.model,
             "binary": self._binary,
             "workspace": str(self._workspace),
         }
@@ -258,13 +280,16 @@ class CursorProvider:
         kind: str,
         manifest: dict[str, Any],
         prompt: str,
+        model: str | None = None,
     ) -> str:
+        session_model = _resolve_cli_model(model=model)
         argv = build_agent_argv(
             self._config,
             binary=self._binary,
             workspace=self._workspace,
             session_id=None,
             prompt=prompt,
+            model=session_model,
         )
         events, provider_session_id = self._collect_events(argv)
         if provider_session_id is None:
@@ -275,6 +300,7 @@ class CursorProvider:
             role=role,
             kind=kind,
             manifest=dict(manifest),
+            model=session_model,
             pending_events=deque(events),
         )
         return provider_session_id
@@ -287,6 +313,7 @@ class CursorProvider:
             workspace=self._workspace,
             session_id=session_id,
             prompt=prompt,
+            model=session.model,
         )
         events, provider_session_id = self._collect_events(argv)
         if provider_session_id is None:

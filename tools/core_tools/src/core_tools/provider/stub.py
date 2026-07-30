@@ -17,6 +17,7 @@ class _StubSession:
     role: str
     kind: str
     manifest: dict[str, Any]
+    model: str | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
     pending_events: deque[dict[str, Any]] = field(default_factory=deque)
 
@@ -42,13 +43,18 @@ class StubProvider:
         scripts.append(copy.deepcopy(events))
 
     def start_primary_session(
-        self, role: str, context_manifest: dict[str, Any]
+        self,
+        role: str,
+        context_manifest: dict[str, Any],
+        *,
+        model: str | None = None,
     ) -> str:
         session_id = self._new_session_id()
         self._sessions[session_id] = _StubSession(
             role=role,
             kind="primary",
             manifest=copy.deepcopy(context_manifest),
+            model=model,
         )
         prompt = format_manifest_prompt(role, context_manifest)
         self._enqueue_turn(session_id, {"prompt": prompt, "kind": "start"})
@@ -57,12 +63,18 @@ class StubProvider:
     def resume_primary_session(self, session_id: str, request: dict[str, Any]) -> None:
         self._enqueue_turn(session_id, request)
 
-    def start_reviewer_session(self, review_package: dict[str, Any]) -> str:
+    def start_reviewer_session(
+        self,
+        review_package: dict[str, Any],
+        *,
+        model: str | None = None,
+    ) -> str:
         session_id = self._new_session_id()
         self._sessions[session_id] = _StubSession(
             role="reviewer",
             kind="reviewer",
             manifest=copy.deepcopy(review_package),
+            model=model,
         )
         prompt = format_request_prompt(review_package)
         self._enqueue_turn(session_id, {"prompt": prompt, "kind": "start"})
@@ -90,6 +102,7 @@ class StubProvider:
             "session_id": session_id,
             "role": session.role,
             "kind": session.kind,
+            "model": session.model,
             "turn_count": len(session.history),
         }
 

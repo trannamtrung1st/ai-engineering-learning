@@ -4,12 +4,26 @@ from __future__ import annotations
 
 from typing import Any
 
+_AGENT_CONTEXT_ROLE_DEFAULT: dict[str, Any] = {
+    "resources": [],
+    "skills": [],
+}
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "version": 1,
+    "project": {
+        "resources": [],
+    },
     "run": {
         "input_refs": [],
         "boundaries": [],
         "acceptance": [],
+    },
+    "agent_context": {
+        "default": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
+        "planner": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
+        "producer": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
+        "reviewer": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
     },
     "planning": {
         "stop_hint": (
@@ -62,16 +76,33 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
 }
 
+ALLOWED_AGENT_CONTEXT_ROLES: frozenset[str] = frozenset(
+    {"default", "planner", "producer", "reviewer"}
+)
+
 ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
     {
         "version",
         "runtime.runs_dir",
-        "run.workspace",
+        "project.workspace",
+        "project.resources",
         "run.input_refs",
         "run.output_goal",
         "run.output_goal_file",
         "run.boundaries",
         "run.acceptance",
+        "agent_context.default.model",
+        "agent_context.default.resources",
+        "agent_context.default.skills",
+        "agent_context.planner.model",
+        "agent_context.planner.resources",
+        "agent_context.planner.skills",
+        "agent_context.producer.model",
+        "agent_context.producer.resources",
+        "agent_context.producer.skills",
+        "agent_context.reviewer.model",
+        "agent_context.reviewer.resources",
+        "agent_context.reviewer.skills",
         "planning.stop_hint",
         "planning.max_depth",
         "planning.max_expansion_per_item",
@@ -80,7 +111,6 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "review.focused_output.enabled",
         "review.whole_output.required",
         "provider.name",
-        "provider.model",
         "provider.binary",
         "provider.skip_probe",
         "limits.planning.max_expansion_iterations",

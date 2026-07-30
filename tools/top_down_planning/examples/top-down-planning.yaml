@@ -4,8 +4,10 @@
 #   tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
 #
 # Path resolution:
-#   Relative paths (run.workspace, runtime.runs_dir, run.input_refs,
-#   run.output_goal_file) resolve against the process working directory.
+#   project.workspace resolves against the process working directory.
+#   project.resources, run.input_refs, run.output_goal_file, and all
+#   agent_context resources/skills resolve against project.workspace.
+#   runtime.runs_dir continues to resolve against the process working directory.
 #
 # Stub provider is for scripted tests only (provider.name=stub + script_turn()).
 # Agent discoverability:
@@ -20,8 +22,11 @@ version: 1
 runtime:
   runs_dir: .tdp/runs
 
-run:
+project:
   workspace: .
+  resources: []
+
+run:
   input_refs:
     - tools/top_down_planning/README.md
   output_goal: "Produce the requested project output while preserving the declared scope and satisfying the approved plan."
@@ -29,6 +34,27 @@ run:
   # output_goal_file: tools/top_down_planning/examples/output-goal.md
   boundaries: []
   acceptance: []
+
+agent_context:
+  default:
+    model: auto
+    resources: []
+    skills: []
+
+  planner:
+    model: auto
+    resources: []
+    skills: []
+
+  producer:
+    model: auto
+    resources: []
+    skills: []
+
+  reviewer:
+    model: auto
+    resources: []
+    skills: []
 
 planning:
   stop_hint: "Stop when each item has one coherent outcome, clear boundaries, material dependencies, and acceptance expectations."
@@ -47,7 +73,6 @@ review:
 
 provider:
   name: cursor
-  # model: composer-2.5
   # binary: /path/to/agent
   # skip_probe: false
 

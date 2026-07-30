@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any
+
+from top_down_planning.config.defaults import DEFAULT_CONFIG
 
 
 def test_run_workspace(store: Any) -> str:
@@ -17,16 +20,61 @@ def write_config(path: Path, body: str) -> Path:
     return path
 
 
+def minimal_resolved_config(**overrides: Any) -> dict[str, Any]:
+    """Return a minimal resolved config snapshot for test runs."""
+
+    config = copy.deepcopy(DEFAULT_CONFIG)
+    config["project"]["workspace"] = "."
+    config["run"]["output_goal"] = "Goal."
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(config.get(key), dict):
+            merged = copy.deepcopy(config[key])
+            merged.update(value)
+            config[key] = merged
+        else:
+            config[key] = value
+    return config
+
+
 def run_digests_for_config(
-    store_root: Path,
+    workspace: Path,
     config: dict[str, Any],
-) -> tuple[str, str]:
-    from top_down_planning.config import compute_input_digest, compute_output_goal_digest
+) -> tuple[str, str, str]:
+    from top_down_planning.config import (
+        compute_context_digest_from_config,
+        compute_input_digest,
+        compute_output_goal_digest,
+    )
 
     return (
-        compute_input_digest(config, base_dir=store_root),
-        compute_output_goal_digest(config, base_dir=store_root),
+        compute_input_digest(config, base_dir=workspace),
+        compute_output_goal_digest(config, base_dir=workspace),
+        compute_context_digest_from_config(config, workspace=workspace),
     )
+
+
+def create_run_kwargs(
+    workspace: Path,
+    *,
+    resolved_config: dict[str, Any] | None = None,
+) -> dict[str, str | dict[str, Any]]:
+    """Return shared ``create_run`` digest/config kwargs for tests."""
+
+    config = resolved_config or minimal_resolved_config()
+    if isinstance(config.get("project"), dict):
+        config = copy.deepcopy(config)
+        config["project"]["workspace"] = str(workspace.resolve())
+    input_digest, output_goal_digest, context_digest = run_digests_for_config(
+        workspace,
+        config,
+    )
+    return {
+        "resolved_config": config,
+        "input_digest": input_digest,
+        "output_goal_digest": output_goal_digest,
+        "context_digest": context_digest,
+        "workspace": str(workspace.resolve()),
+    }
 
 
 def approved_digests_from_run(store: Any, run_id: str) -> dict[str, str]:

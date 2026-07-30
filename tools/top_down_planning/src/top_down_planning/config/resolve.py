@@ -13,14 +13,18 @@ from core_tools.config import (
     load_yaml_config,
 )
 from core_tools.config.errors import ConfigError
-from core_tools.persistence.digests import digest_text
 
-from top_down_planning.config.defaults import ALLOWED_OVERRIDE_PATHS, DEFAULT_CONFIG
-from top_down_planning.config.paths import resolve_path
+from top_down_planning.config.defaults import (
+    ALLOWED_AGENT_CONTEXT_ROLES,
+    ALLOWED_OVERRIDE_PATHS,
+    DEFAULT_CONFIG,
+)
+from top_down_planning.config.paths import resolve_workspace
 
 __all__ = [
     "compute_input_digest",
     "compute_output_goal_digest",
+    "finalize_resolved_config",
     "resolve_config",
     "resolve_output_goal_text",
 ]
@@ -46,9 +50,48 @@ def _reject_unknown_config_paths(
         raise ConfigError(f"unknown config path: {unknown[0]}", path=unknown[0])
 
 
+def _validate_agent_context_roles(config: dict[str, Any]) -> None:
+    agent_context = config.get("agent_context")
+    if agent_context is None:
+        return
+    if not isinstance(agent_context, dict):
+        raise ConfigError(
+            "agent_context must be a mapping",
+            path="agent_context",
+        )
+    for role_name in agent_context:
+        if role_name not in ALLOWED_AGENT_CONTEXT_ROLES:
+            raise ConfigError(
+                f"unknown agent_context role: {role_name!r}",
+                path=f"agent_context.{role_name}",
+            )
+
+
+def finalize_resolved_config(
+    config: dict[str, Any],
+    *,
+    cwd: Path,
+) -> dict[str, Any]:
+    """Normalize workspace fields and validate agent context roles."""
+
+    finalized = copy.deepcopy(config)
+    _validate_agent_context_roles(finalized)
+
+    workspace = resolve_workspace(finalized, cwd=cwd)
+
+    project = finalized.setdefault("project", {})
+    if not isinstance(project, dict):
+        raise ConfigError("project must be a mapping", path="project")
+    project["workspace"] = str(workspace)
+
+    return finalized
+
+
 def resolve_config(
     config_path: Path | None,
     overrides: list[str] | None = None,
+    *,
+    cwd: Path | None = None,
 ) -> dict[str, Any]:
     """
     Resolve configuration with precedence:
@@ -58,6 +101,7 @@ def resolve_config(
     resolved = copy.deepcopy(DEFAULT_CONFIG)
     if config_path is not None:
         yaml_config = load_yaml_config(config_path)
+        _validate_agent_context_roles(yaml_config)
         _reject_unknown_config_paths(yaml_config, allowed_paths=ALLOWED_OVERRIDE_PATHS)
         resolved = deep_merge(resolved, yaml_config)
     if overrides:
@@ -66,8 +110,9 @@ def resolve_config(
             overrides,
             allowed_paths=ALLOWED_OVERRIDE_PATHS,
         )
+    _validate_agent_context_roles(resolved)
     _reject_unknown_config_paths(resolved, allowed_paths=ALLOWED_OVERRIDE_PATHS)
-    return resolved
+    return finalize_resolved_config(resolved, cwd=cwd or Path.cwd())
 
 
 def compute_input_digest(config: dict[str, Any], *, base_dir: Path) -> str:
@@ -79,6 +124,8 @@ def compute_input_digest(config: dict[str, Any], *, base_dir: Path) -> str:
 
 def resolve_output_goal_text(config: dict[str, Any], *, base_dir: Path) -> str:
     """Load inline or file-backed output goal text (mutually exclusive)."""
+
+    from top_down_planning.config.paths import resolve_workspace_path
 
     run_section = config.get("run")
     if not isinstance(run_section, dict):
@@ -102,7 +149,7 @@ def resolve_output_goal_text(config: dict[str, Any], *, base_dir: Path) -> str:
         )
 
     if file_ref:
-        goal_path = resolve_path(file_ref, cwd=base_dir)
+        goal_path = resolve_workspace_path(file_ref, workspace=base_dir)
         if not goal_path.is_file():
             raise ConfigError(
                 f"output goal file not found: {goal_path}",
@@ -126,4 +173,6 @@ def resolve_output_goal_text(config: dict[str, Any], *, base_dir: Path) -> str:
 
 
 def compute_output_goal_digest(config: dict[str, Any], *, base_dir: Path) -> str:
+    from core_tools.persistence.digests import digest_text
+
     return digest_text(resolve_output_goal_text(config, base_dir=base_dir))

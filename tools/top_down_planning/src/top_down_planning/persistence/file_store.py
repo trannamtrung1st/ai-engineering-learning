@@ -46,7 +46,7 @@ def new_run_record(
     output_goal_digest: str,
     config_digest: str,
     plan_digest: str,
-    context_digest: str | None = None,
+    context_digest: str,
     phase: str = "planning",
     workspace: str,
     store: dict[str, Any] | None = None,
@@ -117,14 +117,16 @@ class FileRunStore:
         resolved_config: dict[str, Any],
         input_digest: str,
         output_goal_digest: str,
-        context_digest: str | None = None,
+        context_digest: str,
         phase: str = "planning",
         production: dict[str, Any] | None = None,
         workspace: str,
         store: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if not input_digest or not output_goal_digest:
-            raise PersistenceError("input_digest and output_goal_digest are required")
+        if not input_digest or not output_goal_digest or not context_digest:
+            raise PersistenceError(
+                "input_digest, output_goal_digest, and context_digest are required"
+            )
         if not workspace or not str(workspace).strip():
             raise PersistenceError("workspace is required")
 

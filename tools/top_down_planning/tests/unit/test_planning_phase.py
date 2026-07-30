@@ -60,6 +60,7 @@ def _create_run(
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 

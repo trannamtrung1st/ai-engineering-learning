@@ -18,6 +18,10 @@ from top_down_planning.domain.outcome import (
 )
 from top_down_planning.domain.production import build_production_review_snapshot
 from top_down_planning.domain.reviews import ReviewLoop, find_whole_plan_approval
+from top_down_planning.orchestrator.agent_context import (
+    attach_role_context_to_manifest,
+    resolve_role_session_context,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
 from top_down_planning.workspace import run_workspace
@@ -278,15 +282,21 @@ class WholeOutputReviewOrchestrator:
         return f"review-whole-output-{index:02d}"
 
     def _start_reviewer_session(self, loop: ReviewLoop) -> str:
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
         package = build_whole_output_review_package(
             self._run_id,
-            self._store.load_run(self._run_id),
-            self._store.load_resolved_config(self._run_id),
+            run,
+            config,
             self._store.load_plan_model(self._run_id),
             self._store.load_production(self._run_id),
             loop,
         )
-        session_id = self._provider.start_reviewer_session(package)
+        role_context = resolve_role_session_context(config, run, "reviewer")
+        session_id = self._provider.start_reviewer_session(
+            package,
+            model=role_context.model,
+        )
         updated = ReviewLoop(
             id=loop.id,
             type=loop.type,
@@ -524,7 +534,8 @@ def build_whole_output_review_package(
 
     run_section = config.get("run") or {}
     digests = dict(run.get("digests") or {})
-    return {
+    return attach_role_context_to_manifest(
+        {
         "run_id": run_id,
         "phase": WHOLE_OUTPUT_REVIEW,
         "type": "whole_output",
@@ -546,7 +557,11 @@ def build_whole_output_review_package(
                 "--request <file>"
             ),
         },
-    }
+        },
+        config=config,
+        run=run,
+        role="reviewer",
+    )
 
 
 def _whole_output_revision_limit(config: dict[str, Any]) -> int:

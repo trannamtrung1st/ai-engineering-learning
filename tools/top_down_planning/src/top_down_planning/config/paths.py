@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core_tools.config.errors import ConfigError
+
 
 @dataclass(frozen=True)
 class PathResolutionContext:
@@ -23,24 +25,62 @@ def resolve_path(value: str | Path, *, cwd: Path) -> Path:
     return path.resolve()
 
 
+def resolve_workspace_path(value: str | Path, *, workspace: Path) -> Path:
+    """Resolve a configured path relative to the project workspace."""
+
+    path = Path(value)
+    if not path.is_absolute():
+        path = workspace / path
+    return path.resolve()
+
+
+def is_path_within_workspace(path: Path, *, workspace: Path) -> bool:
+    """Return True when ``path`` resolves inside ``workspace``."""
+
+    try:
+        path.resolve().relative_to(workspace.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _configured_workspace_value(config: dict[str, Any], section: str, key: str) -> str | None:
+    block = config.get(section)
+    if not isinstance(block, dict):
+        return None
+    configured = block.get(key)
+    if configured is None:
+        return None
+    stripped = str(configured).strip()
+    return stripped or None
+
+
 def resolve_workspace(config: dict[str, Any], *, cwd: Path) -> Path:
     """
-    Resolve the provider workspace from ``run.workspace`` or process cwd.
+    Resolve the canonical project workspace from ``project.workspace``.
 
-    Relative ``run.workspace`` values resolve against ``cwd``. Omitted or empty
-    values default to ``cwd``.
+    Relative values resolve against ``cwd``. Omitted or empty values default to
+    ``cwd``.
     """
 
-    run_section = config.get("run")
-    if not isinstance(run_section, dict):
-        return cwd.resolve()
-
-    configured = run_section.get("workspace")
+    configured = _configured_workspace_value(config, "project", "workspace")
     if configured is None:
         return cwd.resolve()
+    return resolve_path(configured, cwd=cwd)
 
-    stripped = str(configured).strip()
-    if not stripped:
-        return cwd.resolve()
 
-    return resolve_path(stripped, cwd=cwd)
+def assert_path_within_workspace(
+    resolved: Path,
+    *,
+    workspace: Path,
+    field: str,
+    configured_value: str,
+) -> None:
+    """Raise ``ConfigError`` when ``resolved`` escapes the workspace."""
+
+    if not is_path_within_workspace(resolved, workspace=workspace):
+        raise ConfigError(
+            f"{field}={configured_value!r} resolves outside project workspace "
+            f"{workspace}: {resolved}",
+            path=field,
+        )

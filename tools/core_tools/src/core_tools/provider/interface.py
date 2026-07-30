@@ -10,7 +10,11 @@ class Provider(Protocol):
     """Abstract provider for planner, producer, and reviewer sessions."""
 
     def start_primary_session(
-        self, role: str, context_manifest: dict[str, Any]
+        self,
+        role: str,
+        context_manifest: dict[str, Any],
+        *,
+        model: str | None = None,
     ) -> str:
         """Start a new primary session and return its provider session id."""
 
@@ -19,7 +23,12 @@ class Provider(Protocol):
     ) -> None:
         """Resume an existing primary session with a follow-up request."""
 
-    def start_reviewer_session(self, review_package: dict[str, Any]) -> str:
+    def start_reviewer_session(
+        self,
+        review_package: dict[str, Any],
+        *,
+        model: str | None = None,
+    ) -> str:
         """Start a fresh reviewer session for a bounded review package."""
 
     def send(self, session_id: str, request: dict[str, Any]) -> None:

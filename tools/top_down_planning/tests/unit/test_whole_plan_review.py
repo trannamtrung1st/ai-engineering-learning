@@ -63,13 +63,14 @@ def _create_run_at_whole_plan_review(
     if limits:
         config["limits"]["whole_plan_review"].update(limits)
 
-    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
+    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        context_digest="0" * 64,
         phase=WHOLE_PLAN_REVIEW,
         workspace=str(store.root),
     )

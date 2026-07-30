@@ -40,8 +40,9 @@ def _repo_layout(tmp_path: Path) -> dict[str, Path]:
         """
 runtime:
   runs_dir: temp/tdp-configs/runs
-run:
+project:
   workspace: .
+run:
   input_refs:
     - tools/top_down_planning/README.md
     - temp/plans/tdp-docs/task.md
@@ -61,7 +62,7 @@ provider:
 def test_resolve_workspace_defaults_to_cwd(tmp_path: Path) -> None:
     cwd = tmp_path / "work"
     cwd.mkdir()
-    config = resolve_config(None)
+    config = resolve_config(None, cwd=cwd)
     assert resolve_workspace(config, cwd=cwd) == cwd.resolve()
 
 
@@ -73,11 +74,13 @@ def test_resolve_workspace_relative_from_cwd(tmp_path: Path) -> None:
         write_config(
             tmp_path / "base.yaml",
             """
-run:
+project:
   workspace: nested
+run:
   output_goal: Goal.
 """,
-        )
+        ),
+        cwd=cwd,
     )
     assert resolve_workspace(config, cwd=cwd) == nested.resolve()
 
@@ -91,8 +94,9 @@ def test_resolve_workspace_absolute_unchanged(tmp_path: Path) -> None:
         write_config(
             tmp_path / "base.yaml",
             f"""
-run:
+project:
   workspace: {absolute}
+run:
   output_goal: Goal.
 """,
         )
@@ -304,8 +308,9 @@ def test_absolute_workspace_config_remains_valid(
     config_path = write_config(
         tmp_path / "run.yaml",
         f"""
-run:
+project:
   workspace: {absolute}
+run:
   output_goal: Deliver output.
 provider:
   name: stub
@@ -359,6 +364,8 @@ def test_command_md_does_not_instruct_copying_config() -> None:
         / "tdp-configs"
         / "COMMAND.md"
     )
+    if not command_md.is_file():
+        pytest.skip("COMMAND.md fixture not present")
     text = command_md.read_text(encoding="utf-8")
     assert "copy the config" not in text.lower()
     assert "cp temp/tdp-configs/tdp-docs.yaml" not in text

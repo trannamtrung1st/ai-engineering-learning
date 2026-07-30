@@ -26,11 +26,38 @@ from top_down_planning.orchestrator.phases import (
 )
 from top_down_planning.orchestrator.planning import build_planner_context_manifest
 from top_down_planning.orchestrator.production import build_producer_context_manifest
-from top_down_planning.config import compute_input_digest, compute_output_goal_digest
+from top_down_planning.config import (
+    compute_context_digest_from_config,
+    compute_input_digest,
+    compute_output_goal_digest,
+)
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import done_events, plan_apply_turn, whole_plan_approval_record
+from tests.helpers import done_events, minimal_resolved_config, plan_apply_turn, whole_plan_approval_record
+
+
+def _bind_config_workspace(config: dict, workspace: Path) -> dict:
+    bound = dict(config)
+    project = dict(bound.get("project") or {})
+    project["workspace"] = str(workspace.resolve())
+    bound["project"] = project
+    return bound
+
+
+def _run_digests(config: dict, workspace: Path) -> tuple[str, str, str]:
+    merged = minimal_resolved_config()
+    for key, value in config.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    bound = _bind_config_workspace(merged, workspace)
+    return (
+        compute_input_digest(bound, base_dir=workspace),
+        compute_output_goal_digest(bound, base_dir=workspace),
+        compute_context_digest_from_config(bound, workspace=workspace),
+    )
 
 
 def _create_planning_run(
@@ -50,30 +77,25 @@ def _create_planning_run(
         output_goal="Deliver the feature.",
         items={"item-root": root},
     )
-    config = {
-        "run": {
-            "output_goal": "Deliver the feature.",
-            "input_refs": ["README.md"],
-        },
-        "planning": {
+    config = minimal_resolved_config(
+        run={"output_goal": "Deliver the feature.", "input_refs": ["README.md"]},
+        planning={
             "stop_hint": "Stop when ready.",
             "max_depth": 4,
             "max_expansion_per_item": 7,
         },
-        "limits": {
-            "planning": {
-                "max_expansion_iterations": 20,
-                "max_agent_turns": 40,
-            }
-        },
-        "provider": {"name": "stub"},
-    }
+        limits={"planning": {"max_expansion_iterations": 20, "max_agent_turns": 40}},
+        provider={"name": "stub"},
+    )
+    bound = _bind_config_workspace(config, store.root)
+    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
+        resolved_config=bound,
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
+        context_digest=context_digest,
         workspace=str(store.root),
     )
 
@@ -81,7 +103,7 @@ def _create_planning_run(
     provider.script_turn(done_events(signal="continue", text="planning turn"))
     session_id = provider.start_primary_session(
         "planner",
-        build_planner_context_manifest(run_id, run, config, plan),
+        build_planner_context_manifest(run_id, run, bound, plan),
     )
     list(provider.stream_events(session_id))
 
@@ -130,30 +152,23 @@ def _create_production_run(
             "item-second": second,
         },
     )
-    config = {
-        "run": {
+    config = minimal_resolved_config(
+        run={
             "output_goal": "Deliver the feature.",
             "input_refs": ["README.md"],
         },
-        "planning": {
-            "stop_hint": "Stop when ready.",
-            "max_depth": 4,
-            "max_expansion_per_item": 7,
-        },
-        "limits": {
-            "production": {
-                "max_batches": 50,
-                "max_agent_turns_per_batch": 10,
-            }
-        },
-        "provider": {"name": "stub"},
-    }
+        limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
+        provider={"name": "stub"},
+    )
+    bound = _bind_config_workspace(config, store.root)
+    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
+        resolved_config=bound,
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
+        context_digest=context_digest,
         phase=PRODUCTION,
         workspace=str(store.root),
     )
@@ -166,7 +181,7 @@ def _create_production_run(
         build_producer_context_manifest(
             run_id,
             run,
-            config,
+            bound,
             plan,
             plan_revision=0,
             production=store.load_production(run_id),
@@ -432,17 +447,19 @@ def test_resume_cli_stream_json_for_completed_run(tmp_path: Path) -> None:
         output_goal="Deliver.",
         items={"item-root": root},
     )
-    config = {
-        "run": {"output_goal": "Deliver.", "input_refs": []},
-        "planning": {"stop_hint": "Stop.", "max_depth": 4, "max_expansion_per_item": 7},
-        "provider": {"name": "stub"},
-    }
+    config = minimal_resolved_config(
+        run={"output_goal": "Deliver.", "input_refs": []},
+        provider={"name": "stub"},
+    )
+    bound = _bind_config_workspace(config, store.root)
+    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
+        resolved_config=bound,
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
+        context_digest=context_digest,
         phase="output_validated",
         workspace=str(store.root),
     )
@@ -475,17 +492,19 @@ def test_resume_completed_rejected_whole_plan_review_does_not_restart(
         output_goal="Deliver.",
         items={"item-root": root},
     )
-    config = {
-        "run": {"output_goal": "Deliver.", "input_refs": []},
-        "planning": {"stop_hint": "Stop.", "max_depth": 4, "max_expansion_per_item": 7},
-        "provider": {"name": "stub"},
-    }
+    config = minimal_resolved_config(
+        run={"output_goal": "Deliver.", "input_refs": []},
+        provider={"name": "stub"},
+    )
+    bound = _bind_config_workspace(config, store.root)
+    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
+        resolved_config=bound,
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
+        context_digest=context_digest,
         phase=WHOLE_PLAN_REVIEW,
         workspace=str(store.root),
     )
@@ -551,18 +570,20 @@ def test_resume_plan_validated_allows_missing_producer_session(tmp_path: Path) -
         output_goal="Deliver.",
         items={"item-root": root, "item-first": first},
     )
-    config = {
-        "run": {"output_goal": "Deliver.", "input_refs": []},
-        "planning": {"stop_hint": "Stop.", "max_depth": 4, "max_expansion_per_item": 7},
-        "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
-        "provider": {"name": "stub"},
-    }
+    config = minimal_resolved_config(
+        run={"output_goal": "Deliver.", "input_refs": []},
+        limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
+        provider={"name": "stub"},
+    )
+    bound = _bind_config_workspace(config, store.root)
+    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
+        resolved_config=bound,
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
+        context_digest=context_digest,
         phase=PLAN_VALIDATED,
         workspace=str(store.root),
     )
@@ -609,17 +630,19 @@ def test_resume_plan_amendment_without_pending_request_fails(tmp_path: Path) -> 
         output_goal="Deliver.",
         items={"item-root": root},
     )
-    config = {
-        "run": {"output_goal": "Deliver.", "input_refs": []},
-        "planning": {"stop_hint": "Stop.", "max_depth": 4, "max_expansion_per_item": 7},
-        "provider": {"name": "stub"},
-    }
+    config = minimal_resolved_config(
+        run={"output_goal": "Deliver.", "input_refs": []},
+        provider={"name": "stub"},
+    )
+    bound = _bind_config_workspace(config, store.root)
+    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
-        resolved_config=config,
-        input_digest=compute_input_digest(config, base_dir=store.root),
-        output_goal_digest=compute_output_goal_digest(config, base_dir=store.root),
+        resolved_config=bound,
+        input_digest=input_digest,
+        output_goal_digest=output_goal_digest,
+        context_digest=context_digest,
         phase="plan_amendment",
         workspace=str(store.root),
     )

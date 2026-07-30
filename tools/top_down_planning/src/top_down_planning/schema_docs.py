@@ -191,26 +191,65 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "TopDownPlanningConfig",
         "description": "Resolved run configuration (proposal §14).",
         "type": "object",
-        "required": ["version", "run", "planning", "review", "provider", "limits"],
+        "required": ["version", "project", "run", "agent_context", "planning", "review", "provider", "limits"],
         "properties": {
             "version": {"type": "integer"},
-            "run": {
+            "project": {
                 "type": "object",
                 "description": (
-                    "Run inputs and goals. Relative paths in input_refs and "
-                    "output_goal_file resolve against the process working "
-                    "directory (or run.workspace when set). Use either "
-                    "output_goal (inline) or output_goal_file (path), not both."
+                    "Shared project context. project.workspace is the canonical "
+                    "workspace root. project.resources resolve against "
+                    "project.workspace."
                 ),
                 "properties": {
                     "workspace": {
                         "type": "string",
                         "description": (
-                            "Provider workspace root. Relative paths resolve "
-                            "against the process working directory. Defaults to "
-                            "the process working directory when omitted."
+                            "Canonical workspace root. Relative paths resolve "
+                            "against the process working directory."
                         ),
                     },
+                    "resources": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "additionalProperties": False,
+            },
+            "agent_context": {
+                "type": "object",
+                "description": (
+                    "Per-role model, resources, and skills. Resources and skills "
+                    "are additive with agent_context.default and project.resources."
+                ),
+                "properties": {
+                    role: {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string"},
+                            "resources": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "skills": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                        "additionalProperties": False,
+                    }
+                    for role in ("default", "planner", "producer", "reviewer")
+                },
+                "additionalProperties": False,
+            },
+            "run": {
+                "type": "object",
+                "description": (
+                    "Run inputs and goals. Relative paths in input_refs and "
+                    "output_goal_file resolve against project.workspace. Use either "
+                    "output_goal (inline) or output_goal_file (path), not both."
+                ),
+                "properties": {
                     "input_refs": {"type": "array", "items": {"type": "string"}},
                     "output_goal": {
                         "type": "string",
@@ -223,7 +262,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                         "type": "string",
                         "description": (
                             "Path to a UTF-8 file containing the output goal. "
-                            "Resolved against run.workspace (or process cwd). "
+                            "Resolved against project.workspace. "
                             "Mutually exclusive with output_goal."
                         ),
                     },
@@ -271,7 +310,6 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "enum": ["cursor", "stub"]},
-                    "model": {"type": "string"},
                     "binary": {"type": "string"},
                     "skip_probe": {"type": "boolean"},
                 },

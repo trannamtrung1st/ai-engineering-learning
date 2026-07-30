@@ -24,6 +24,7 @@ from top_down_planning.cli.common import (
 )
 from top_down_planning.config import (
     ConfigError,
+    compute_context_digest_from_config,
     compute_input_digest,
     compute_output_goal_digest,
     resolve_config,
@@ -139,6 +140,7 @@ def handle_run_command(args: Namespace) -> None:
 
     input_digest = compute_input_digest(resolved, base_dir=workspace)
     output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
+    context_digest = compute_context_digest_from_config(resolved, workspace=workspace)
     plan = _initial_plan(run_id, resolved, output_goal=output_goal)
 
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
@@ -159,6 +161,7 @@ def handle_run_command(args: Namespace) -> None:
         resolved_config=resolved,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        context_digest=context_digest,
         workspace=str(workspace),
         store={
             "resolved_root": str(resolved_runs.path),

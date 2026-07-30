@@ -18,7 +18,7 @@ class RunStore(Protocol):
         resolved_config: dict[str, Any],
         input_digest: str,
         output_goal_digest: str,
-        context_digest: str | None = None,
+        context_digest: str,
         phase: str = "planning",
         production: dict[str, Any] | None = None,
         workspace: str,

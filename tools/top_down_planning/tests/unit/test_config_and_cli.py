@@ -160,13 +160,14 @@ def _create_validate_run(
         "planning": {"max_depth": 4, "max_expansion_per_item": 7},
         "provider": {"name": "stub"},
     }
-    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
+    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 
@@ -292,12 +293,13 @@ def test_output_goal_file_resolves_from_workspace_not_config_dir(tmp_path: Path)
     config_path = write_config(
         config_dir / "run.yaml",
         """
-run:
+project:
   workspace: .
+run:
   output_goal_file: goals/output-goal.md
 """,
     )
-    resolved = resolve_config(config_path)
+    resolved = resolve_config(config_path, cwd=workspace)
     base_dir = resolve_workspace(resolved, cwd=workspace)
     assert resolve_output_goal_text(resolved, base_dir=base_dir) == (
         "Workspace-relative goal."
@@ -315,12 +317,13 @@ def test_file_backed_goal_leaves_no_inline_output_goal_in_resolved_config(
     config_path = write_config(
         config_dir / "run.yaml",
         """
-run:
+project:
   workspace: .
+run:
   output_goal_file: goal.md
 """,
     )
-    resolved = resolve_config(config_path)
+    resolved = resolve_config(config_path, cwd=workspace)
     run_section = resolved["run"]
     assert "output_goal" not in run_section
     assert run_section["output_goal_file"] == "goal.md"
@@ -350,6 +353,7 @@ def test_resume_rejects_changed_output_goal_file(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest=compute_input_digest(config, base_dir=workspace),
         output_goal_digest=compute_output_goal_digest(config, base_dir=workspace),
+        context_digest="0" * 64,
         workspace=str(workspace),
     )
 

@@ -14,6 +14,10 @@ from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.production import build_production_review_snapshot
 from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.orchestrator.agent_context import (
+    attach_role_context_to_manifest,
+    resolve_role_session_context,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence.digests import compute_output_digest
@@ -151,10 +155,12 @@ class FocusedReviewOrchestrator:
         return self._prepare_recheck(loop)
 
     def _start_reviewer_session(self, loop: ReviewLoop) -> str:
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
         package = build_focused_review_package(
             self._run_id,
-            self._store.load_run(self._run_id),
-            self._store.load_resolved_config(self._run_id),
+            run,
+            config,
             loop,
             plan=self._store.load_plan_model(self._run_id),
             production=(
@@ -163,7 +169,11 @@ class FocusedReviewOrchestrator:
                 else None
             ),
         )
-        session_id = self._provider.start_reviewer_session(package)
+        role_context = resolve_role_session_context(config, run, "reviewer")
+        session_id = self._provider.start_reviewer_session(
+            package,
+            model=role_context.model,
+        )
         updated = ReviewLoop(
             id=loop.id,
             type=loop.type,
@@ -420,7 +430,8 @@ def build_focused_review_package(
             f"tdp agent plan snapshot --run {run_id} --view tree"
         )
 
-    package: dict[str, Any] = {
+    package: dict[str, Any] = attach_role_context_to_manifest(
+        {
         "run_id": run_id,
         "phase": phase,
         "type": loop.type,
@@ -434,7 +445,11 @@ def build_focused_review_package(
         "acceptance": run_section.get("acceptance"),
         "digests": digests,
         "tool_instructions": tool_instructions,
-    }
+        },
+        config=config,
+        run=run,
+        role="reviewer",
+    )
     if loop.type == "focused_plan":
         limits = planning_limits_from_config(config)
         package["plan_revision"] = plan.revision

@@ -44,6 +44,7 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 
@@ -76,6 +77,7 @@ def test_load_resolved_config_round_trip(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 
@@ -84,13 +86,14 @@ def test_load_resolved_config_round_trip(tmp_path: Path) -> None:
 
 def test_create_run_requires_digests(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    with pytest.raises(PersistenceError, match="input_digest and output_goal_digest"):
+    with pytest.raises(PersistenceError, match="context_digest are required"):
         store.create_run(
             "run-001",
             plan=_sample_plan(),
             resolved_config={},
             input_digest="",
             output_goal_digest="goal-b",
+            context_digest="0" * 64,
             workspace=str(store.root),
         )
 
@@ -104,6 +107,7 @@ def test_create_run_requires_workspace(tmp_path: Path) -> None:
             resolved_config={},
             input_digest="input-a",
             output_goal_digest="goal-b",
+            context_digest="0" * 64,
             workspace="",
         )
 
@@ -117,6 +121,7 @@ def test_save_plan_revision_conflict(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 
@@ -139,6 +144,7 @@ def test_save_plan_requires_explicit_revision(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 
@@ -157,6 +163,7 @@ def test_save_plan_model_round_trip(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 
@@ -176,6 +183,7 @@ def test_reload_after_new_store_instance(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 
@@ -196,6 +204,7 @@ def test_append_event_is_append_only(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 
@@ -250,6 +259,7 @@ def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
     with pytest.raises(PersistenceError, match="already exists"):
@@ -259,5 +269,6 @@ def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
             resolved_config={},
             input_digest="input-a",
             output_goal_digest="goal-b",
+            context_digest="0" * 64,
             workspace=str(store.root),
         )

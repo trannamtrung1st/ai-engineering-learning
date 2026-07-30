@@ -89,6 +89,7 @@ def _create_planning_run(
         resolved_config=_planning_config(limits=limits, review=review),
         input_digest="input-a",
         output_goal_digest="goal-b",
+        context_digest="0" * 64,
         workspace=str(store.root),
     )
 
@@ -476,13 +477,14 @@ def _create_production_run(
     if review:
         config["review"].update(review)
 
-    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
+    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        context_digest="0" * 64,
         phase=PRODUCTION,
         workspace=str(store.root),
     )

@@ -12,6 +12,10 @@ from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import blocking_focused_findings_for_items
 from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.agent_context import (
+    attach_role_context_to_manifest,
+    resolve_role_session_context,
+)
 from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence.digests import compute_plan_digest
@@ -69,7 +73,12 @@ class PlanningPhaseOrchestrator:
                 config,
                 self._store.load_plan_model(self._run_id),
             )
-            session_id = self._provider.start_primary_session("planner", manifest)
+            role_context = resolve_role_session_context(config, run, "planner")
+            session_id = self._provider.start_primary_session(
+                "planner",
+                manifest,
+                model=role_context.model,
+            )
             run = _persist_session_id(self._store, self._run_id, session_id)
             self._append_event(
                 "planner_session_started",
@@ -321,7 +330,8 @@ def build_planner_context_manifest(
     loop_limits = _planning_loop_limits(config)
     digests = dict(run.get("digests") or {})
 
-    return {
+    return attach_role_context_to_manifest(
+        {
         "run_id": run_id,
         "phase": PLANNING,
         "input_refs": list(run_section.get("input_refs") or []),
@@ -345,7 +355,11 @@ def build_planner_context_manifest(
             ),
             "completion_signal": _CANDIDATE_READY_SIGNAL,
         },
-    }
+        },
+        config=config,
+        run=run,
+        role="planner",
+    )
 
 
 def _planning_loop_limits(config: dict[str, Any]) -> dict[str, int]:

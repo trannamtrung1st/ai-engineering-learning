@@ -43,10 +43,11 @@ Provider adapters live in `core_tools.provider`. Resolved configuration selects 
 ```yaml
 provider:
   name: cursor          # cursor | stub
-  model: composer-2.5   # optional Cursor model
   binary: /path/to/agent  # optional; otherwise agent or cursor-agent on PATH
   skip_probe: false     # skip CLI version probe when true
 ```
+
+Per-role model selection uses `agent_context.<role>.model`, falling back to `agent_context.default.model`. `model: auto` means no explicit Cursor `--model` argument.
 
 - `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json`). Session ids returned by the CLI stream are stored on the run record (`sessions.primary_*_session_id`). `get_session_reference` is available on the provider for durable ref export; orchestrators persist the session id directly today.
 - `stub` — deterministic scripted turns for **tests only**; call `script_turn()` before each provider turn.
@@ -74,17 +75,48 @@ Configuration precedence: built-in defaults → YAML file → repeated `--set pa
 
 ### Path resolution
 
-Config files may live anywhere. Relative paths in YAML resolve against the **process working directory**:
+Config files may live anywhere. `project.workspace` is the canonical workspace root for a run.
 
-- `run.workspace` (defaults to process cwd when omitted)
-- `runtime.runs_dir`
-- `run.input_refs`
-- `run.output_goal_file` (mutually exclusive with inline `run.output_goal`)
-- any other configured filesystem path
+- `project.workspace` resolves against the **process working directory** (defaults to process cwd when omitted).
+- `project.resources`, `run.input_refs`, `run.output_goal_file`, and all `agent_context.*.resources` / `agent_context.*.skills` resolve against the resolved `project.workspace`.
+- `runtime.runs_dir` resolves against the process working directory.
 
 Absolute paths are used directly. Launch `tdp` from the intended working directory (for example the repository root).
 
-Use either `run.output_goal` (inline text) or `run.output_goal_file` (path to a UTF-8 file), not both. File-backed goals resolve against `run.workspace` (or process cwd). At run start the file contents are loaded into `plan.output_goal`; the path stays in resolved config. Resume re-reads the file and rejects digest mismatches if the content changed.
+Use either `run.output_goal` (inline text) or `run.output_goal_file` (path to a UTF-8 file), not both. File-backed goals resolve against `project.workspace`. At run start the file contents are loaded into `plan.output_goal`; the path stays in resolved config. Resume re-reads the file and rejects digest mismatches if the content changed.
+
+### Project and agent context
+
+```yaml
+project:
+  workspace: .
+  resources:
+    - README.md
+    - docs/
+
+agent_context:
+  default:
+    model: auto
+    resources:
+      - AGENTS.md
+    skills:
+      - .agents/skills/common/
+
+  planner:
+    model: reasoning-model
+    resources:
+      - docs/planning-guidelines.md
+    skills:
+      - .agents/skills/top-down-planning/
+
+  producer:
+    model: coding-model
+
+  reviewer:
+    model: review-model
+```
+
+`project.resources` are shared context for every role. Role `resources` and `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. The effective context is attached to fresh planner, producer, and reviewer sessions and bound by a context digest at run creation.
 
 Example from a repository root:
 
@@ -96,7 +128,7 @@ tdp run --config temp/tdp-configs/tdp-docs.yaml
 tdp resume --run <run-id> --config temp/tdp-configs/tdp-docs.yaml
 ```
 
-With `run.workspace: .` and `runtime.runs_dir: temp/tdp-configs/runs`, a run launched from `/path/to/repo` uses workspace `/path/to/repo` and runs root `/path/to/repo/temp/tdp-configs/runs` even when the config file is stored under `temp/tdp-configs/`.
+With `project.workspace: .` and `runtime.runs_dir: temp/tdp-configs/runs`, a run launched from `/path/to/repo` uses workspace `/path/to/repo` and runs root `/path/to/repo/temp/tdp-configs/runs` even when the config file is stored under `temp/tdp-configs/`.
 
 `tdp run` prints startup diagnostics: working directory, config file, workspace, runs root, and runs root source.
 

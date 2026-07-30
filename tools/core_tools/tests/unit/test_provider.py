@@ -82,13 +82,13 @@ def test_create_provider_selects_stub_from_config(tmp_path: Path) -> None:
 
 
 def test_build_agent_argv_shape_with_fake_runner(tmp_path: Path) -> None:
-    config = {"provider": {"model": "composer-2.5"}}
     argv = build_agent_argv(
-        config,
+        {},
         binary="/fake/agent",
         workspace=tmp_path,
         session_id="provider-chat-1",
         prompt="Plan the work",
+        model="composer-2.5",
     )
     assert argv[:8] == [
         "/fake/agent",
@@ -248,4 +248,61 @@ def test_cursor_provider_retries_transient_turn_errors(tmp_path: Path) -> None:
 def test_cursor_smoke_binary_probe() -> None:
     binary = resolve_agent_binary(None)
     assert binary
+
+
+def test_build_agent_argv_explicit_model_overrides_provider_default(tmp_path: Path) -> None:
+    argv = build_agent_argv(
+        {},
+        binary="/fake/agent",
+        workspace=tmp_path,
+        model="session-model",
+    )
+    assert argv[argv.index("--model") + 1] == "session-model"
+
+
+def test_cursor_provider_stores_model_and_reuses_on_resume(tmp_path: Path) -> None:
+    stream_lines = [
+        json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "chat-model",
+            }
+        ),
+        json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": "chat-model",
+                "is_error": False,
+                "result": "ok",
+            }
+        ),
+    ]
+    captured_argv: list[list[str]] = []
+
+    def fake_runner(argv: list[str], cwd: Path):
+        captured_argv.append(argv)
+        for line in stream_lines:
+            yield line
+
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        {},
+        workspace=tmp_path,
+        runner=fake_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+    session_id = provider.start_primary_session(
+        "planner",
+        {"goal": "build"},
+        model="planner-model",
+    )
+    assert provider.get_session_reference(session_id)["model"] == "planner-model"
+    assert captured_argv[0][captured_argv[0].index("--model") + 1] == "planner-model"
+
+    provider.send(session_id, {"action": "continue"})
+    assert captured_argv[1][captured_argv[1].index("--model") + 1] == "planner-model"
 

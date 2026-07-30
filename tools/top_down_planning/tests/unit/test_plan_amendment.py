@@ -99,13 +99,14 @@ def _create_run_in_production_with_sessions(
         "limits": limits,
         "provider": {"name": "stub"},
     }
-    input_digest, output_goal_digest = run_digests_for_config(store.root, config)
+    input_digest, output_goal_digest, context_digest = run_digests_for_config(store.root, config)
     store.create_run(
         run_id,
         plan=plan,
         resolved_config=config,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        context_digest="0" * 64,
         phase=PRODUCTION,
         workspace=str(store.root),
     )

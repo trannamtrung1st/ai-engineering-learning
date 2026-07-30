@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from top_down_planning.config import compute_input_digest, compute_output_goal_digest
+from top_down_planning.config import (
+    compute_input_digest,
+    compute_output_goal_digest,
+    compute_context_digest_from_config,
+)
 from top_down_planning.domain.production import has_pending_amendment
 from top_down_planning.domain.reviews import (
     find_active_review_loop,
@@ -127,6 +131,18 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
     if actual_input != expected_input:
         raise ResumeError(
             "input digest mismatch; refusing to resume with changed input refs",
+            code="digest_mismatch",
+        )
+
+    expected_context = compute_context_digest_from_config(
+        config,
+        workspace=base_dir,
+    )
+    actual_context = stored.get("context")
+    if actual_context != expected_context:
+        raise ResumeError(
+            "context digest mismatch; refusing to resume with changed "
+            "project resources or agent context",
             code="digest_mismatch",
         )
 
