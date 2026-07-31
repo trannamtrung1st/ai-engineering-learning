@@ -132,17 +132,185 @@ def approved_digests_from_run(store: Any, run_id: str) -> dict[str, str]:
     }
 
 
+def mandatory_plan_digest(store: Any, run_id: str) -> str:
+    from top_down_planning.persistence.digests import compute_plan_digest
+
+    return compute_plan_digest(store.load_plan_model(run_id))
+
+
+def mandatory_output_digest(store: Any, run_id: str) -> str:
+    from top_down_planning.persistence.digests import compute_output_digest
+
+    return compute_output_digest(store.load_production(run_id))
+
+
+def mandatory_initial_respond_request(
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    target_revision: int,
+    review_type: str,
+    decision: str = "approved",
+    findings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    digest = (
+        mandatory_plan_digest(store, run_id)
+        if review_type == "whole_plan"
+        else mandatory_output_digest(store, run_id)
+    )
+    payload: dict[str, Any] = {
+        "loop_id": loop_id,
+        "target_revision": target_revision,
+        "stage": "initial_review",
+        "decision": decision,
+        "findings": findings or [],
+    }
+    if decision == "approved":
+        payload["target_digest"] = digest
+    return payload
+
+
+def mandatory_blocker_respond_request(
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    target_revision: int,
+    review_type: str,
+    findings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    digest = (
+        mandatory_plan_digest(store, run_id)
+        if review_type == "whole_plan"
+        else mandatory_output_digest(store, run_id)
+    )
+    scope_id = "whole_plan" if review_type == "whole_plan" else "whole_output"
+    return {
+        "loop_id": loop_id,
+        "target_revision": target_revision,
+        "stage": "scope_blocker_review",
+        "decision": "approve",
+        "blocking_findings": findings or [],
+        "target_digest": digest,
+        "scope_id": scope_id,
+        "acceptance_criteria_checked": ["Core Invariant"],
+        "summary": "No remaining blockers.",
+    }
+
+
+def mandatory_blocker_found_respond_request(
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    target_revision: int,
+    review_type: str,
+    findings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    digest = (
+        mandatory_plan_digest(store, run_id)
+        if review_type == "whole_plan"
+        else mandatory_output_digest(store, run_id)
+    )
+    scope_id = "whole_plan" if review_type == "whole_plan" else "whole_output"
+    return {
+        "loop_id": loop_id,
+        "target_revision": target_revision,
+        "stage": "scope_blocker_review",
+        "decision": "blockers_found",
+        "blocking_findings": findings,
+        "target_digest": digest,
+        "scope_id": scope_id,
+        "summary": "Blockers remain.",
+    }
+
+
+def mandatory_verification_respond_request(
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    target_revision: int,
+    review_type: str,
+    finding_set_id: str,
+    finding_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    digest = (
+        mandatory_plan_digest(store, run_id)
+        if review_type == "whole_plan"
+        else mandatory_output_digest(store, run_id)
+    )
+    return {
+        "loop_id": loop_id,
+        "target_revision": target_revision,
+        "stage": "finding_verification",
+        "decision": "verified",
+        "finding_set_id": finding_set_id,
+        "finding_results": finding_results,
+        "new_direct_side_effect_findings": [],
+        "target_digest": digest,
+        "summary": "Findings verified.",
+    }
+
+
+def mandatory_verification_needs_revision_request(
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    target_revision: int,
+    review_type: str,
+    finding_set_id: str,
+    finding_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    digest = (
+        mandatory_plan_digest(store, run_id)
+        if review_type == "whole_plan"
+        else mandatory_output_digest(store, run_id)
+    )
+    return {
+        "loop_id": loop_id,
+        "target_revision": target_revision,
+        "stage": "finding_verification",
+        "decision": "needs_revision",
+        "finding_set_id": finding_set_id,
+        "finding_results": finding_results,
+        "new_direct_side_effect_findings": [],
+        "target_digest": digest,
+        "summary": "Findings still need revision.",
+    }
+
+
 def whole_plan_approval_record(store: Any, run_id: str, **fields: Any) -> dict[str, Any]:
+    from top_down_planning.persistence.digests import compute_plan_digest
+
+    digests = approved_digests_from_run(store, run_id)
+    plan_digest = mandatory_plan_digest(store, run_id)
+    digests["plan"] = plan_digest
+    blocker_result = {
+        "stage": "scope_blocker_review",
+        "target_digest": plan_digest,
+        "scope_id": "whole_plan",
+        "decision": "approve",
+        "blocking_findings": [],
+        "acceptance_criteria_checked": ["Core Invariant"],
+        "summary": "Approved.",
+    }
     payload: dict[str, Any] = {
         "id": "review-whole-plan-01",
         "type": "whole_plan",
         "reviewer_session_id": "stub-session-reviewer",
         "target_revision": 0,
         "scope": {"kind": "whole_plan"},
-        "status": "approved",
+        "status": "approve",
         "findings": [],
         "revision_cycles": 0,
-        "approved_digests": approved_digests_from_run(store, run_id),
+        "approved_digests": digests,
+        "lifecycle_status": "approved",
+        "active_stage": "scope_blocker_review",
+        "blocker_review_rounds": 1,
+        "blocker_review_result": blocker_result,
     }
     payload.update(fields)
     return payload
@@ -160,10 +328,22 @@ def whole_output_approval_record(store: Any, run_id: str, **fields: Any) -> dict
         "reviewer_session_id": "stub-session-output-reviewer",
         "target_revision": int(production["output_revision"]),
         "scope": {"kind": "whole_output"},
-        "status": "approved",
+        "status": "approve",
         "findings": [],
         "revision_cycles": 0,
         "approved_digests": digests,
+        "lifecycle_status": "approved",
+        "active_stage": "scope_blocker_review",
+        "blocker_review_rounds": 1,
+        "blocker_review_result": {
+            "stage": "scope_blocker_review",
+            "target_digest": digests["output"],
+            "scope_id": "whole_output",
+            "decision": "approve",
+            "blocking_findings": [],
+            "acceptance_criteria_checked": ["Core Invariant"],
+            "summary": "Approved.",
+        },
     }
     payload.update(fields)
     return payload
@@ -251,6 +431,153 @@ def script_reviewer_allocate(provider: Any) -> None:
     """Queue the allocation turn consumed before a new reviewer review package."""
 
     provider.script_turn(done_events(text="reviewer allocate"))
+
+
+def script_verification_then_blocker_approval(
+    provider: Any,
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    phase: str,
+    target_revision: int,
+    findings: list[dict[str, Any]] | None = None,
+    finding_set_id: str | None = None,
+    finding_results: list[dict[str, Any]] | None = None,
+) -> None:
+    """After a recheck delivery, script verification approve then fresh blocker approve."""
+
+    review_type = "whole_plan" if "plan" in phase else "whole_output"
+    loop_payload = dict(store.load_review(run_id, loop_id))
+    loop_payload["lifecycle_status"] = "verification_pending"
+    loop_payload["active_stage"] = "finding_verification"
+    loop_payload["status"] = "pending"
+    loop_payload["target_revision"] = target_revision
+    resolved_finding_set_id = finding_set_id or str(
+        loop_payload.get("finding_set_id") or f"{loop_id}-fs-01"
+    )
+    loop_payload["finding_set_id"] = resolved_finding_set_id
+    store.save_review(run_id, loop_payload)
+
+    resolved_results = finding_results
+    if resolved_results is None:
+        resolved_results = [
+            {
+                "finding_id": finding["id"],
+                "disposition": "resolved",
+                "evidence": ["verified"],
+                "direct_side_effects": [],
+            }
+            for finding in (loop_payload.get("findings") or [])
+            if finding.get("importance") == "blocking"
+            and finding.get("status") in {"unresolved", "partially_resolved"}
+        ]
+    respond_review(
+        store,
+        run_id,
+        mandatory_verification_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            review_type=review_type,
+            finding_set_id=resolved_finding_set_id,
+            finding_results=resolved_results,
+        ),
+        phase=phase,
+        loop_id=loop_id,
+    )()
+    prepare_loop_for_blocker_respond(
+        store,
+        run_id,
+        loop_id,
+        target_revision=target_revision,
+    )
+    respond_review(
+        store,
+        run_id,
+        mandatory_blocker_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            review_type=review_type,
+            findings=findings,
+        ),
+        phase=phase,
+        loop_id=loop_id,
+    )()
+
+
+def prepare_loop_for_blocker_respond(
+    store: Any,
+    run_id: str,
+    loop_id: str,
+    *,
+    target_revision: int,
+) -> None:
+    """Align loop state for a scope_blocker_review respond (orchestrator-equivalent)."""
+
+    from dataclasses import replace
+
+    from top_down_planning.domain.reviews import ReviewLoop
+    from top_down_planning.orchestrator.mandatory_review_stages import (
+        prepare_blocker_review_loop,
+    )
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    if loop.target_revision != target_revision:
+        loop = replace(loop, target_revision=target_revision)
+    loop = prepare_blocker_review_loop(loop)
+    store.save_review(run_id, loop.to_dict())
+
+
+def script_mandatory_clear_approval(
+    provider: Any,
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    phase: str,
+    target_revision: int,
+    findings: list[dict[str, Any]] | None = None,
+) -> None:
+    """Script initial approve plus fresh blocker-review approve (clear path)."""
+
+    review_type = "whole_plan" if "plan" in phase else "whole_output"
+    respond_review(
+        store,
+        run_id,
+        mandatory_initial_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            review_type=review_type,
+            findings=findings,
+        ),
+        phase=phase,
+        loop_id=loop_id,
+    )()
+    prepare_loop_for_blocker_respond(
+        store,
+        run_id,
+        loop_id,
+        target_revision=target_revision,
+    )
+    respond_review(
+        store,
+        run_id,
+        mandatory_blocker_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            review_type=review_type,
+        ),
+        phase=phase,
+        loop_id=loop_id,
+    )()
 
 
 def done_events(*, signal: str | None = None, text: str = "ok") -> list[dict]:

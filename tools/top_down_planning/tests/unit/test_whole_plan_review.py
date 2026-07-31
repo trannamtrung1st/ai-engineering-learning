@@ -14,7 +14,21 @@ from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REV
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
-from tests.helpers import apply_plan, create_run_kwargs, done_events, grant_capability, respond_review, script_reviewer_allocate
+from tests.helpers import (
+    apply_plan,
+    create_run_kwargs,
+    done_events,
+    grant_capability,
+    mandatory_blocker_respond_request,
+    mandatory_initial_respond_request,
+    mandatory_plan_digest,
+    mandatory_verification_respond_request,
+    respond_review,
+    script_mandatory_clear_approval,
+    script_reviewer_allocate,
+    script_verification_then_blocker_approval,
+    prepare_loop_for_blocker_respond,
+)
 
 
 def _create_run_at_whole_plan_review(
@@ -88,6 +102,21 @@ def _create_run_at_whole_plan_review(
         sessions["primary_planner_session_id"] = session_id
     run["sessions"] = sessions
     store.save_run(run_id, run, expected_revision)
+    store.save_review(
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "reviewer_session_id": None,
+            "target_revision": 0,
+            "scope": {"kind": "whole_plan"},
+            "status": "pending",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "review_pending",
+            "blocker_review_rounds": 0,
+        },
+    )
     return session_id
 
 
@@ -96,13 +125,19 @@ def _review_respond_request(
     decision: str,
     target_revision: int = 0,
     findings: list[dict] | None = None,
+    store: FileRunStore | None = None,
+    run_id: str | None = None,
 ) -> dict:
-    return {
+    payload = {
         "loop_id": "review-whole-plan-01",
         "target_revision": target_revision,
+        "stage": "initial_review",
         "decision": decision,
         "findings": findings or [],
     }
+    if decision == "approved" and store is not None and run_id is not None:
+        payload["target_digest"] = mandatory_plan_digest(store, run_id)
+    return payload
 
 
 def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
@@ -113,63 +148,51 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
     _create_run_at_whole_plan_review(store, provider=provider)
 
     run_id = "run-20260101T000301-000301"
-    script_reviewer_allocate(provider)
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
-            store,
-            run_id,
-            _review_respond_request(
-                decision="changes_requested",
-                findings=[
-                    {
-                        "id": "finding-01",
-                        "importance": "blocking",
-                        "target_refs": ["item-api"],
-                        "issue": "API outcome is too vague.",
-                        "required_change": "Add concrete acceptance criteria.",
-                        "status": "unresolved",
-                    }
-                ],
-            ),
-            phase=WHOLE_PLAN_REVIEW,
-            loop_id="review-whole-plan-01",
-        ),
-    )
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=apply_plan(
-            store,
-            run_id,
-            base_revision=0,
-            operations=[
+    respond_review(
+        store,
+        run_id,
+        _review_respond_request(
+            decision="changes_requested",
+            findings=[
                 {
-                    "op": "update_item",
-                    "item_id": "item-api",
-                    "patch": {
-                        "outcome": "REST API endpoints exist.",
-                        "acceptance": [
-                            "GET /health returns 200.",
-                            "POST /items creates a record.",
-                        ],
-                    },
+                    "id": "finding-01",
+                    "importance": "blocking",
+                    "target_refs": ["item-api"],
+                    "issue": "API outcome is too vague.",
+                    "required_change": "Add concrete acceptance criteria.",
+                    "status": "unresolved",
                 }
             ],
-            phase=WHOLE_PLAN_REVIEW,
         ),
-    )
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
-            store,
-            run_id,
-            _review_respond_request(
-                decision="approved",
-                target_revision=1,
-            ),
-            phase=WHOLE_PLAN_REVIEW,
-            loop_id="review-whole-plan-01",
-        ),
+        phase=WHOLE_PLAN_REVIEW,
+        loop_id="review-whole-plan-01",
+    )()
+    apply_plan(
+        store,
+        run_id,
+        base_revision=0,
+        operations=[
+            {
+                "op": "update_item",
+                "item_id": "item-api",
+                "patch": {
+                    "outcome": "REST API endpoints exist.",
+                    "acceptance": [
+                        "GET /health returns 200.",
+                        "POST /items creates a record.",
+                    ],
+                },
+            }
+        ],
+        phase=WHOLE_PLAN_REVIEW,
+    )()
+    script_verification_then_blocker_approval(
+        provider,
+        store,
+        run_id,
+        loop_id="review-whole-plan-01",
+        phase=WHOLE_PLAN_REVIEW,
+        target_revision=1,
     )
 
     result = WholePlanReviewOrchestrator(store, run_id, provider).run()
@@ -178,11 +201,15 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
     assert result.phase == PLAN_VALIDATED
     assert result.outcome is None
     assert result.loop_id == "review-whole-plan-01"
-    assert result.revision_cycles == 1
+    review = store.load_review(run_id, "review-whole-plan-01")
+    assert review.get("verification_result")
+    assert review.get("blocker_review_result")
 
     review = store.load_review("run-20260101T000301-000301", "review-whole-plan-01")
-    assert review["status"] == "approved"
+    assert review["status"] == "approve"
     assert review["target_revision"] == 1
+    assert review.get("active_stage") == "scope_blocker_review"
+    assert review.get("blocker_review_rounds", 0) >= 1
 
     run = store.load_run("run-20260101T000301-000301")
     assert run["phase"] == PLAN_VALIDATED
@@ -230,6 +257,8 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
                         "status": "unresolved",
                     }
                 ],
+                store=store,
+                run_id="run-20260101T000301-000301",
             ),
             capability_token=token,
         )
@@ -268,7 +297,12 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(RequestError, match="does not match current plan revision"):
         service.respond(
-            _review_respond_request(decision="approved", target_revision=0),
+            _review_respond_request(
+                decision="approved",
+                target_revision=0,
+                store=store,
+                run_id="run-20260101T000301-000301",
+            ),
             capability_token=token,
         )
 
@@ -399,10 +433,13 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "reviewer_session_id": reviewer_session_id,
-            "target_revision": 0,
+            "target_revision": 1,
             "scope": {"kind": "whole_plan"},
-            "status": "changes_requested",
+            "status": "pending",
             "revision_cycles": 1,
+            "lifecycle_status": "verification_pending",
+            "active_stage": "finding_verification",
+            "finding_set_id": "review-whole-plan-01-fs-01",
             "findings": [
                 {
                     "id": "finding-01",
@@ -426,19 +463,47 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
     store.save_run("run-20260101T000301-000301", run, expected_revision)
 
     run_id = "run-20260101T000301-000301"
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
+    respond_review(
+        store,
+        run_id,
+        mandatory_verification_respond_request(
             store,
             run_id,
-            _review_respond_request(
-                decision="approved",
-                target_revision=1,
-            ),
-            phase=WHOLE_PLAN_REVIEW,
             loop_id="review-whole-plan-01",
+            target_revision=1,
+            review_type="whole_plan",
+            finding_set_id="review-whole-plan-01-fs-01",
+            finding_results=[
+                {
+                    "finding_id": "finding-01",
+                    "disposition": "resolved",
+                    "evidence": ["improved"],
+                    "direct_side_effects": [],
+                }
+            ],
         ),
+        phase=WHOLE_PLAN_REVIEW,
+        loop_id="review-whole-plan-01",
+    )()
+    prepare_loop_for_blocker_respond(
+        store,
+        run_id,
+        "review-whole-plan-01",
+        target_revision=1,
     )
+    respond_review(
+        store,
+        run_id,
+        mandatory_blocker_respond_request(
+            store,
+            run_id,
+            loop_id="review-whole-plan-01",
+            target_revision=1,
+            review_type="whole_plan",
+        ),
+        phase=WHOLE_PLAN_REVIEW,
+        loop_id="review-whole-plan-01",
+    )()
 
     result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 

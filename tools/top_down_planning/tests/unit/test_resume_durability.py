@@ -43,6 +43,7 @@ from tests.helpers import (
     grant_capability,
     minimal_resolved_config,
     respond_review,
+    script_mandatory_clear_approval,
     script_reviewer_allocate,
     whole_plan_approval_record,
 )
@@ -121,6 +122,21 @@ def _create_planning_run(
     run["sessions"] = {"primary_planner_session_id": session_id}
     run["planning"] = {"agent_turns": 1, "items_added": 0}
     store.save_run(run_id, run, expected_revision)
+    store.save_review(
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "reviewer_session_id": None,
+            "target_revision": 0,
+            "scope": {"kind": "whole_plan"},
+            "status": "pending",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "review_pending",
+            "blocker_review_rounds": 0,
+        },
+    )
     return session_id
 
 
@@ -382,21 +398,13 @@ def test_interrupt_whole_plan_review_resume_keeps_loop_and_reviewer_session(
     store.save_run("run-20260101T001101-001101", run, expected_revision)
 
     run_id = "run-20260101T001101-001101"
-    script_reviewer_allocate(provider)
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
-            store,
-            run_id,
-            {
-                "loop_id": "review-whole-plan-01",
-                "target_revision": 0,
-                "decision": "approved",
-                "findings": [],
-            },
-            phase=WHOLE_PLAN_REVIEW,
-            loop_id="review-whole-plan-01",
-        ),
+    script_mandatory_clear_approval(
+        provider,
+        store,
+        run_id,
+        loop_id="review-whole-plan-01",
+        phase=WHOLE_PLAN_REVIEW,
+        target_revision=0,
     )
 
     result = WholePlanReviewOrchestrator(store, run_id, provider).run()

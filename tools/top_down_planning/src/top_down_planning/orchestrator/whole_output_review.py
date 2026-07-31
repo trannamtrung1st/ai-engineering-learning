@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
-from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.outcome import (
     evaluate_acceptance_invariant,
     load_approvals_for_acceptance,
@@ -17,7 +16,30 @@ from top_down_planning.domain.production import (
     build_output_traceability,
     build_production_review_snapshot,
 )
-from top_down_planning.domain.reviews import ReviewLoop, find_whole_plan_approval
+from top_down_planning.domain.reviews import (
+    ReviewLoop,
+    find_whole_plan_approval,
+    is_revision_requested_status,
+    is_terminal_review_loop,
+    mandatory_review_limits_from_config,
+    mandatory_approval_allowed,
+)
+from top_down_planning.orchestrator.mandatory_review_stages import (
+    approved_means_final_approval,
+    approved_means_start_blocker_review,
+    is_blocker_stage,
+    limit_message,
+    mark_findings_open,
+    mark_limit_reached_loop,
+    mark_mandatory_approved,
+    enter_planner_revision_cycle,
+    mark_verification_pending,
+    mandatory_orchestration_decision,
+    prepare_blocker_review_loop,
+    seed_mandatory_loop_fields,
+    stage_package_fields,
+    verification_recheck_request,
+)
 from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
@@ -61,7 +83,6 @@ from top_down_planning.persistence.digests import (
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
-_WHOLE_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["whole_output_review"]
 _NO_COMPLETION_SIGNALS = frozenset[str]()
 
 @dataclass(frozen=True)
@@ -102,7 +123,7 @@ class WholeOutputReviewOrchestrator:
         self._require_plan_approval()
 
         config = self._store.load_resolved_config(self._run_id)
-        max_revision_cycles = _whole_output_revision_limit(config)
+        limits = mandatory_review_limits_from_config(config, "whole_output")
         output_revision = int(self._store.load_production(self._run_id)["output_revision"])
         loop, deliver_on_existing_session = bootstrap_whole_review_loop(
             self._get_or_create_active_loop(),
@@ -110,6 +131,7 @@ class WholeOutputReviewOrchestrator:
             resume_interrupted_revision=self._resume_interrupted_producer_revision,
             normalize_loop_for_resume=self._normalize_loop_for_resume,
         )
+        loop = self._persist_loop(seed_mandatory_loop_fields(loop))
 
         while True:
             if loop.status == "pending":
@@ -164,44 +186,125 @@ class WholeOutputReviewOrchestrator:
                         loop_id=loop.id,
                     )
                     bind_provider_capability(self._provider, self._capability_token)
-            else:
-                decision = loop.status
+                    continue
+            stage_decision = mandatory_orchestration_decision(loop)
 
-            if decision == "approved":
-                return self._complete_with_approval(loop)
+            if stage_decision in {"approve", "verified", "approved"}:
+                loop = self._reload_loop(loop.id)
+                if approved_means_final_approval(loop):
+                    return self._complete_with_approval(loop)
+                if approved_means_start_blocker_review(loop):
+                    transition = self._begin_blocker_review(loop, limits)
+                    if isinstance(transition, WholeOutputReviewResult):
+                        return transition
+                    loop = transition
+                    deliver_on_existing_session = False
+                    continue
+                raise ProviderRunError(
+                    "approved decision left blocking findings unresolved"
+                )
 
-            if decision == "blocked":
+            if stage_decision == "blocked":
                 revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
-                return self._terminate("blocked", "whole-output reviewer blocked the run")
+                if loop.lifecycle_status == "limit_reached":
+                    exhausted = loop.exhausted_budget or "verification_revision"
+                    return self._terminate(
+                        "rejected",
+                        limit_message(
+                            limits,
+                            exhausted=exhausted,
+                            review_label="whole-output review",
+                        ),
+                        loop=loop,
+                    )
+                return self._terminate(
+                    "blocked",
+                    "whole-output reviewer blocked the run",
+                    loop=loop,
+                )
 
-            if decision != "changes_requested":
-                raise ProviderRunError(f"unexpected review decision: {decision}")
+            if stage_decision not in {
+                "needs_revision",
+                "blockers_found",
+                "changes_requested",
+            }:
+                raise ProviderRunError(
+                    f"unexpected mandatory review decision: {stage_decision}"
+                )
+
+            loop = self._reload_loop(loop.id)
+            prior_finding_set_id = loop.finding_set_id
+            was_blocker_stage = is_blocker_stage(loop)
+            loop = self._persist_loop(mark_findings_open(loop))
+            if was_blocker_stage:
+                self._append_event(
+                    "whole_output_blockers_found",
+                    loop_id=loop.id,
+                    finding_set_id=loop.finding_set_id,
+                    prior_finding_set_id=prior_finding_set_id,
+                    finding_count=len(loop.findings),
+                )
 
             revision_cycles = loop.revision_cycles + 1
             loop = self._persist_loop(
-                ReviewLoop(
-                    id=loop.id,
-                    type=loop.type,
-                    reviewer_session_id=loop.reviewer_session_id,
-                    target_revision=loop.target_revision,
-                    scope=loop.scope,
-                    status="pending",
-                    findings=loop.findings,
-                    revision_cycles=revision_cycles,
+                enter_planner_revision_cycle(
+                    replace(loop, revision_cycles=revision_cycles)
                 )
             )
 
-            if revision_cycles >= max_revision_cycles:
+            if revision_cycles >= limits.max_revision_cycles:
+                loop = self._persist_loop(
+                    mark_limit_reached_loop(
+                        loop,
+                        limits=limits,
+                        exhausted="verification_revision",
+                    )
+                )
                 return self._terminate(
                     "rejected",
-                    (
-                        "whole-output review exceeded max_revision_cycles "
-                        f"({max_revision_cycles})"
+                    limit_message(
+                        limits,
+                        exhausted="verification_revision",
+                        review_label="whole-output review",
                     ),
+                    loop=loop,
                 )
 
             self._resume_producer_with_findings(loop)
             loop = self._prepare_recheck(loop)
+
+    def _begin_blocker_review(
+        self,
+        loop: ReviewLoop,
+        limits: Any,
+    ) -> ReviewLoop | WholeOutputReviewResult:
+        if loop.blocker_review_rounds >= limits.max_blocker_review_rounds:
+            loop = self._persist_loop(
+                mark_limit_reached_loop(
+                    loop,
+                    limits=limits,
+                    exhausted="blocker_review",
+                )
+            )
+            return self._terminate(
+                "rejected",
+                limit_message(
+                    limits,
+                    exhausted="blocker_review",
+                    review_label="whole-output review",
+                ),
+                loop=loop,
+            )
+        if loop.reviewer_session_id is not None:
+            revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
+        updated = self._persist_loop(prepare_blocker_review_loop(loop))
+        self._append_event(
+            "whole_output_blocker_review_started",
+            loop_id=updated.id,
+            blocker_review_rounds=updated.blocker_review_rounds,
+            target_revision=updated.target_revision,
+        )
+        return updated
 
     def _complete_with_approval(self, loop: ReviewLoop) -> WholeOutputReviewResult:
         plan = self._store.load_plan_model(self._run_id)
@@ -209,6 +312,23 @@ class WholeOutputReviewOrchestrator:
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
         limits = planning_limits_from_config(config)
+        review_limits = mandatory_review_limits_from_config(config, "whole_output")
+        current_digest = compute_output_digest(production)
+
+        loop = self._reload_loop(loop.id)
+        if not mandatory_approval_allowed(
+            loop,
+            current_artifact_digest=current_digest,
+            limits=review_limits,
+        ):
+            return self._terminate(
+                "blocked",
+                "mandatory whole-output approval invariant not satisfied",
+                loop=loop,
+            )
+
+        loop = self._persist_loop(mark_mandatory_approved(loop))
+
         reviews = self._store.list_reviews(self._run_id)
 
         plan_approval, output_approval = load_approvals_for_acceptance(
@@ -290,6 +410,8 @@ class WholeOutputReviewOrchestrator:
         self,
         outcome: str,
         message: str,
+        *,
+        loop: ReviewLoop | None = None,
     ) -> WholeOutputReviewResult:
         revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_OUTPUT_REVIEW)
         run = self._store.load_run(self._run_id)
@@ -303,12 +425,14 @@ class WholeOutputReviewOrchestrator:
             "whole_output_review_failed",
             outcome=outcome,
             message=message,
+            loop_id=loop.id if loop is not None else None,
+            lifecycle_status=loop.lifecycle_status if loop is not None else None,
         )
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=False, reason=message)
 
     def _normalize_loop_for_resume(self, loop: ReviewLoop) -> tuple[ReviewLoop, bool]:
-        if loop.status != "changes_requested":
+        if not is_revision_requested_status(loop.status):
             return loop, False
 
         output_revision = int(self._store.load_production(self._run_id)["output_revision"])
@@ -318,11 +442,14 @@ class WholeOutputReviewOrchestrator:
         return self._prepare_recheck(loop), True
 
     def _get_or_create_active_loop(self) -> ReviewLoop:
+        output_revision = int(self._store.load_production(self._run_id)["output_revision"])
         for payload in reversed(self._store.list_reviews(self._run_id)):
             if payload.get("type") != "whole_output":
                 continue
             loop = ReviewLoop.from_dict(payload)
-            if loop.status in {"approved", "blocked"}:
+            if loop.target_revision != output_revision:
+                continue
+            if is_terminal_review_loop(loop):
                 continue
             return loop
         return self._create_loop()
@@ -337,6 +464,9 @@ class WholeOutputReviewOrchestrator:
             target_revision=output_revision,
             scope={"kind": "whole_output"},
             status="pending",
+            lifecycle_status="review_pending",
+            active_stage=None,
+            blocker_review_rounds=0,
         )
         self._store.save_review(self._run_id, loop.to_dict())
         self._append_event(
@@ -381,17 +511,7 @@ class WholeOutputReviewOrchestrator:
             session_id=session_id,
             loop_id=loop.id,
         )
-        updated = ReviewLoop(
-            id=loop.id,
-            type=loop.type,
-            reviewer_session_id=session_id,
-            target_revision=loop.target_revision,
-            scope=loop.scope,
-            status=loop.status,
-            findings=loop.findings,
-            revision_cycles=loop.revision_cycles,
-            approved_digests=loop.approved_digests,
-        )
+        updated = replace(loop, reviewer_session_id=session_id)
         self._persist_loop(updated)
         self._capability_token = deliver_reviewer_turn(
             self._provider,
@@ -503,18 +623,9 @@ class WholeOutputReviewOrchestrator:
         if session_id is None:
             raise ProviderRunError("reviewer session is missing for recheck")
 
-        updated = ReviewLoop(
-            id=loop.id,
-            type=loop.type,
-            reviewer_session_id=session_id,
-            target_revision=output_revision,
-            scope=loop.scope,
-            status="pending",
-            findings=loop.findings,
-            revision_cycles=loop.revision_cycles,
-            approved_digests=None,
+        updated = self._persist_loop(
+            mark_verification_pending(loop, target_revision=output_revision)
         )
-        self._persist_loop(updated)
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
         emit_reviewer_session_resumed(
@@ -530,12 +641,11 @@ class WholeOutputReviewOrchestrator:
             session_id=session_id,
             loop_id=loop.id,
             phase=phase,
-            request={
-                "action": "recheck_revision",
-                "phase": WHOLE_OUTPUT_REVIEW,
-                "loop_id": loop.id,
-                "target_revision": output_revision,
-            },
+            request=verification_recheck_request(
+                phase=WHOLE_OUTPUT_REVIEW,
+                loop=updated,
+                target_revision=output_revision,
+            ),
         )
         return updated
 
@@ -602,13 +712,16 @@ def build_whole_output_review_package(
 
     digests = dict(run.get("digests") or {})
     traceability = build_output_traceability(plan, production)
-    return attach_role_context_to_manifest(
-        {
+    package: dict[str, Any] = {
         "run_id": run_id,
         "phase": WHOLE_OUTPUT_REVIEW,
         "type": "whole_output",
         "loop_id": loop.id,
-        "purpose": "Mandatory whole-output review before final outcome",
+        "purpose": (
+            "Mandatory whole-output scope-complete blocker review before final outcome"
+            if loop.active_stage == "scope_blocker_review"
+            else "Mandatory whole-output review before final outcome"
+        ),
         "scope": dict(loop.scope),
         "target_revision": loop.target_revision,
         "output_revision": int(production["output_revision"]),
@@ -617,23 +730,18 @@ def build_whole_output_review_package(
         "evidence_by_item": traceability["evidence_by_item"],
         **plan_execution_contract_fields(plan),
         "digests": digests,
-        "protocol_instructions": build_reviewer_protocol_instructions(),
+        **stage_package_fields(loop),
+        "protocol_instructions": build_reviewer_protocol_instructions(
+            stage=loop.active_stage or "initial_review"
+        ),
         "tool_instructions": build_reviewer_tool_instructions(run_id),
-        },
+    }
+    return attach_role_context_to_manifest(
+        package,
         config=config,
         run=run,
         role="reviewer",
         output_goal=plan.output_goal,
-    )
-
-
-def _whole_output_revision_limit(config: dict[str, Any]) -> int:
-    review_limits = (config.get("limits") or {}).get("whole_output_review") or {}
-    return int(
-        review_limits.get(
-            "max_revision_cycles",
-            _WHOLE_OUTPUT_LIMIT_DEFAULTS["max_revision_cycles"],
-        )
     )
 
 

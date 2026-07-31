@@ -19,6 +19,13 @@ REVIEWER_DECISION_MISSING = (
     "session — invoke `tdp` directly, not `uv run tdp`)"
 )
 
+_FORBIDDEN_STAGE_LABELS = (
+    "full review",
+    "confirmation review",
+    "holistic review",
+    "spot check",
+)
+
 
 def build_reviewer_allocation_request(*, run_id: str, loop_id: str) -> dict[str, Any]:
     """Minimal allocation payload that only establishes a provider session id."""
@@ -30,10 +37,13 @@ def build_reviewer_allocation_request(*, run_id: str, loop_id: str) -> dict[str,
     }
 
 
-def build_reviewer_protocol_instructions() -> list[str]:
+def build_reviewer_protocol_instructions(
+    *,
+    stage: str | None = None,
+) -> list[str]:
     """Provider-agnostic reviewer behavior instructions for review packages."""
 
-    return [
+    instructions = [
         (
             "You are the TDP reviewer. Inspect the delivered review package and "
             "submit a structured decision through tdp agent review respond in "
@@ -50,6 +60,57 @@ def build_reviewer_protocol_instructions() -> list[str]:
             "with `uv run`."
         ),
     ]
+    normalized = str(stage or "").strip() or None
+    if normalized == "finding_verification":
+        instructions.extend(
+            [
+                (
+                    "Stage: finding_verification (Verify revisions). Confirm each "
+                    "finding was addressed, evidence supports closure, and direct "
+                    "revision side effects are handled. Do not search broadly for "
+                    "unrelated or previously missed issues."
+                ),
+                (
+                    "Respond with stage finding_verification. Prefer decision "
+                    "verified|needs_revision|blocked and finding_results "
+                    "dispositions "
+                    "resolved|partially_resolved|unresolved|superseded|invalid."
+                ),
+            ]
+        )
+    elif normalized == "scope_blocker_review":
+        instructions.extend(
+            [
+                (
+                    "Stage: scope_blocker_review (Check remaining blockers). This "
+                    "is a fresh discovery pass: do not anchor on prior finding "
+                    "lists or revision discussion. Search for remaining approval "
+                    "blockers within the current scope only."
+                ),
+                (
+                    "Cover all approval-relevant surfaces in scope — not only "
+                    "last-changed areas. Do not raise optional style or out-of-scope "
+                    "improvements. Do not call this a full, confirmation, holistic, "
+                    "or spot-check review."
+                ),
+                (
+                    "Respond with stage scope_blocker_review. Prefer decision "
+                    "approve|blockers_found|blocked and blocking_findings. "
+                    "Finding closure alone must not approve the artifact."
+                ),
+            ]
+        )
+    else:
+        instructions.extend(
+            [
+                (
+                    "Initial mandatory review: raise blocking findings when needed, "
+                    "or approve the candidate so a fresh scope_blocker_review can "
+                    "run. Approval of the run still requires that blocker gate."
+                ),
+            ]
+        )
+    return instructions
 
 
 def build_reviewer_tool_instructions(
@@ -67,6 +128,11 @@ def build_reviewer_tool_instructions(
         "respond": (
             f"tdp agent review respond --run {run_id} --request <file> "
             "(invoke `tdp` directly; do not wrap with `uv run`)"
+        ),
+        "schema": "tdp agent schema review-respond",
+        "examples": (
+            "tdp agent example review-respond-verification ; "
+            "tdp agent example review-respond-blocker"
         ),
     }
     instructions.update(extra)

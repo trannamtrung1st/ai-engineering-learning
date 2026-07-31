@@ -10,6 +10,7 @@ import pytest
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.agent_tool.review_service import ReviewAgentService
+from tests.helpers import mandatory_plan_digest
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_phase,
@@ -144,14 +145,18 @@ def test_planner_cannot_use_reviewer_authority_from_disk(tmp_path: Path) -> None
         payload = json.loads(path.read_text(encoding="utf-8"))
         assert payload.get("role") != "reviewer" or "secret" not in payload
 
-    service = ReviewAgentService(store, "run-20260101T000901-000901")
+    run_id = "run-20260101T000901-000901"
+    plan_digest = mandatory_plan_digest(store, run_id)
+    service = ReviewAgentService(store, run_id)
     with pytest.raises(CapabilityDeniedError):
         service.respond(
             {
                 "loop_id": "review-whole-plan-01",
                 "target_revision": 0,
+                "stage": "initial_review",
                 "decision": "approved",
                 "findings": [],
+                "target_digest": plan_digest,
             },
             capability_token=planner_token,
         )
@@ -177,8 +182,10 @@ def test_planner_cannot_use_reviewer_authority_from_disk(tmp_path: Path) -> None
             {
                 "loop_id": "review-whole-plan-01",
                 "target_revision": 0,
+                "stage": "initial_review",
                 "decision": "approved",
                 "findings": [],
+                "target_digest": plan_digest,
             },
             capability_token=wrong_loop_token,
         )
@@ -188,8 +195,10 @@ def test_planner_cannot_use_reviewer_authority_from_disk(tmp_path: Path) -> None
         {
             "loop_id": "review-whole-plan-01",
             "target_revision": 0,
+            "stage": "initial_review",
             "decision": "approved",
             "findings": [],
+            "target_digest": plan_digest,
         },
         capability_token=reviewer_token,
     )

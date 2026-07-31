@@ -14,7 +14,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, respond_review, script_reviewer_allocate, whole_plan_approval_record
+from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_output_digest, respond_review, script_mandatory_clear_approval, script_reviewer_allocate, script_verification_then_blocker_approval, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -134,6 +134,21 @@ def _create_run_at_whole_output_review(
         sessions["primary_producer_session_id"] = session_id
     run["sessions"] = sessions
     store.save_run(run_id, run, expected_revision)
+    store.save_review(
+        run_id,
+        {
+            "id": "review-whole-output-01",
+            "type": "whole_output",
+            "reviewer_session_id": None,
+            "target_revision": int(production["output_revision"]),
+            "scope": {"kind": "whole_output"},
+            "status": "pending",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "review_pending",
+            "blocker_review_rounds": 0,
+        },
+    )
     return session_id
 
 
@@ -142,13 +157,19 @@ def _review_respond_request(
     decision: str,
     target_revision: int = 1,
     findings: list[dict] | None = None,
+    store: FileRunStore | None = None,
+    run_id: str | None = None,
 ) -> dict:
-    return {
+    payload = {
         "loop_id": "review-whole-output-01",
         "target_revision": target_revision,
+        "stage": "initial_review",
         "decision": decision,
         "findings": findings or [],
     }
+    if decision == "approved" and store is not None and run_id is not None:
+        payload["target_digest"] = mandatory_output_digest(store, run_id)
+    return payload
 
 
 def test_whole_output_review_approve_reaches_accepted(tmp_path: Path) -> None:
@@ -157,16 +178,13 @@ def test_whole_output_review_approve_reaches_accepted(tmp_path: Path) -> None:
     _create_run_at_whole_output_review(store, provider=provider)
 
     run_id = "run-20260101T000801-000801"
-    script_reviewer_allocate(provider)
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
-            store,
-            run_id,
-            _review_respond_request(decision="approved"),
-            phase=WHOLE_OUTPUT_REVIEW,
-            loop_id="review-whole-output-01",
-        ),
+    script_mandatory_clear_approval(
+        provider,
+        store,
+        run_id,
+        loop_id="review-whole-output-01",
+        phase=WHOLE_OUTPUT_REVIEW,
+        target_revision=1,
     )
 
     result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
@@ -192,95 +210,83 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
     (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
 
     run_id = "run-20260101T000801-000801"
-    script_reviewer_allocate(provider)
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
-            store,
-            run_id,
-            _review_respond_request(
-                decision="changes_requested",
-                findings=[
-                    {
-                        "id": "finding-01",
-                        "importance": "blocking",
-                        "target_refs": ["item-leaf"],
-                        "issue": "Output evidence is missing.",
-                        "required_change": "Add artifact reference.",
-                        "status": "unresolved",
-                    }
-                ],
-            ),
-            phase=WHOLE_OUTPUT_REVIEW,
-            loop_id="review-whole-output-01",
-        ),
-    )
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=lambda: (
-            apply_production(
-                store,
-                run_id,
+    respond_review(
+        store,
+        run_id,
+        _review_respond_request(
+            decision="changes_requested",
+            findings=[
                 {
-                    "production_revision": 2,
-                    "evidence_revision": True,
-                    "plan_items": ["item-leaf"],
-                    "dispositions": {
-                        "item-leaf": {
-                            "disposition": "completed",
-                            "evidence": "Added artifact reference.",
-                        }
-                    },
-                    "outputs": [
-                        {
-                            "id": "output-leaf",
-                            "type": "artifact",
-                            "ref": "artifacts/leaf.txt",
-                        }
-                    ],
-                    "contributions": [
-                        {
-                            "item_id": "item-leaf",
-                            "output_refs": ["output-leaf"],
-                            "summary": "Revised evidence.",
-                        }
-                    ],
-                    "summary": "Addressed reviewer finding.",
-                },
-                handler="apply",
-                phase=WHOLE_OUTPUT_REVIEW,
-            )(),
-            apply_production(
-                store,
-                run_id,
+                    "id": "finding-01",
+                    "importance": "blocking",
+                    "target_refs": ["item-leaf"],
+                    "issue": "Output evidence is missing.",
+                    "required_change": "Add artifact reference.",
+                    "status": "unresolved",
+                }
+            ],
+        ),
+        phase=WHOLE_OUTPUT_REVIEW,
+        loop_id="review-whole-output-01",
+    )()
+    apply_production(
+        store,
+        run_id,
+        {
+            "production_revision": 2,
+            "evidence_revision": True,
+            "plan_items": ["item-leaf"],
+            "dispositions": {
+                "item-leaf": {
+                    "disposition": "completed",
+                    "evidence": "Added artifact reference.",
+                }
+            },
+            "outputs": [
                 {
-                    "goal_assessment": "Output goal is fully met after revision.",
-                    "goal_met": True,
-                },
-                handler="submit_completion",
-                phase=WHOLE_OUTPUT_REVIEW,
-            )(),
-        ),
-    )
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
-            store,
-            run_id,
-            _review_respond_request(
-                decision="approved",
-                target_revision=2,
-            ),
-            phase=WHOLE_OUTPUT_REVIEW,
-            loop_id="review-whole-output-01",
-        ),
+                    "id": "output-leaf",
+                    "type": "artifact",
+                    "ref": "artifacts/leaf.txt",
+                }
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-leaf",
+                    "output_refs": ["output-leaf"],
+                    "summary": "Revised evidence.",
+                }
+            ],
+            "summary": "Addressed reviewer finding.",
+        },
+        handler="apply",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+    apply_production(
+        store,
+        run_id,
+        {
+            "goal_assessment": "Output goal is fully met after revision.",
+            "goal_met": True,
+        },
+        handler="submit_completion",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+    script_verification_then_blocker_approval(
+        provider,
+        store,
+        run_id,
+        loop_id="review-whole-output-01",
+        phase=WHOLE_OUTPUT_REVIEW,
+        target_revision=2,
     )
 
     result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.outcome == "accepted"
-    assert result.revision_cycles == 1
+    review = store.load_review(run_id, "review-whole-output-01")
+    assert review.get("verification_result")
+    assert review.get("blocker_review_result")
 
 
 def test_missing_goal_assessment_blocks_acceptance(tmp_path: Path) -> None:
@@ -293,16 +299,13 @@ def test_missing_goal_assessment_blocks_acceptance(tmp_path: Path) -> None:
     )
 
     run_id = "run-20260101T000801-000801"
-    script_reviewer_allocate(provider)
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
-            store,
-            run_id,
-            _review_respond_request(decision="approved"),
-            phase=WHOLE_OUTPUT_REVIEW,
-            loop_id="review-whole-output-01",
-        ),
+    script_mandatory_clear_approval(
+        provider,
+        store,
+        run_id,
+        loop_id="review-whole-output-01",
+        phase=WHOLE_OUTPUT_REVIEW,
+        target_revision=1,
     )
 
     result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
@@ -416,7 +419,12 @@ def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> Non
     )
     with pytest.raises(RequestError, match="does not match current output revision"):
         service.respond(
-            _review_respond_request(decision="approved", target_revision=0),
+            _review_respond_request(
+                decision="approved",
+                target_revision=0,
+                store=store,
+                run_id="run-20260101T000801-000801",
+            ),
             capability_token=token,
         )
 
@@ -438,6 +446,9 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
             "scope": {"kind": "whole_output"},
             "status": "pending",
             "revision_cycles": 1,
+            "lifecycle_status": "verification_pending",
+            "active_stage": "finding_verification",
+            "finding_set_id": "review-whole-output-01-fs-01",
             "findings": [
                 {
                     "id": "finding-01",
@@ -462,65 +473,64 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
     (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=lambda: (
-            apply_production(
-                store,
-                run_id,
+    apply_production(
+        store,
+        run_id,
+        {
+            "production_revision": 2,
+            "evidence_revision": True,
+            "plan_items": ["item-leaf"],
+            "dispositions": {
+                "item-leaf": {
+                    "disposition": "completed",
+                    "evidence": "Added artifact reference.",
+                }
+            },
+            "outputs": [
                 {
-                    "production_revision": 2,
-                    "evidence_revision": True,
-                    "plan_items": ["item-leaf"],
-                    "dispositions": {
-                        "item-leaf": {
-                            "disposition": "completed",
-                            "evidence": "Added artifact reference.",
-                        }
-                    },
-                    "outputs": [
-                        {
-                            "id": "output-leaf",
-                            "type": "artifact",
-                            "ref": "artifacts/leaf.txt",
-                        }
-                    ],
-                    "contributions": [
-                        {
-                            "item_id": "item-leaf",
-                            "output_refs": ["output-leaf"],
-                            "summary": "Revised evidence.",
-                        }
-                    ],
-                    "summary": "Addressed reviewer finding.",
-                },
-                handler="apply",
-                phase=WHOLE_OUTPUT_REVIEW,
-            )(),
-            apply_production(
-                store,
-                run_id,
+                    "id": "output-leaf",
+                    "type": "artifact",
+                    "ref": "artifacts/leaf.txt",
+                }
+            ],
+            "contributions": [
                 {
-                    "goal_assessment": "Output goal is fully met after revision.",
-                    "goal_met": True,
-                },
-                handler="submit_completion",
-                phase=WHOLE_OUTPUT_REVIEW,
-            )(),
-        ),
-    )
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
-            store,
-            run_id,
-            _review_respond_request(
-                decision="approved",
-                target_revision=2,
-            ),
-            phase=WHOLE_OUTPUT_REVIEW,
-            loop_id="review-whole-output-01",
-        ),
+                    "item_id": "item-leaf",
+                    "output_refs": ["output-leaf"],
+                    "summary": "Revised evidence.",
+                }
+            ],
+            "summary": "Addressed reviewer finding.",
+        },
+        handler="apply",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+    apply_production(
+        store,
+        run_id,
+        {
+            "goal_assessment": "Output goal is fully met after revision.",
+            "goal_met": True,
+        },
+        handler="submit_completion",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+    script_verification_then_blocker_approval(
+        provider,
+        store,
+        run_id,
+        loop_id="review-whole-output-01",
+        phase=WHOLE_OUTPUT_REVIEW,
+        target_revision=2,
+        finding_set_id="review-whole-output-01-fs-01",
+        finding_results=[
+            {
+                "finding_id": "finding-01",
+                "disposition": "resolved",
+                "evidence": ["artifact added"],
+                "direct_side_effects": [],
+            }
+        ],
     )
 
     result = WholeOutputReviewOrchestrator(store, run_id, provider).run()

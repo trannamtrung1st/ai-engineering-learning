@@ -13,7 +13,18 @@ from top_down_planning.orchestrator import PlanAmendmentOrchestrator, Production
 from top_down_planning.orchestrator.phases import PLAN_AMENDMENT, PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import apply_plan, create_run_kwargs, done_events, grant_capability, respond_review, script_reviewer_allocate, whole_plan_approval_record
+from tests.helpers import (
+    apply_plan,
+    create_run_kwargs,
+    done_events,
+    grant_capability,
+    respond_review,
+    script_mandatory_clear_approval,
+    script_reviewer_allocate,
+    whole_plan_approval_record,
+    mandatory_blocker_respond_request,
+    mandatory_initial_respond_request,
+)
 
 
 def _batch_apply_request(
@@ -32,13 +43,25 @@ def _batch_apply_request(
     }
 
 
-def _review_respond_request(*, decision: str, target_revision: int) -> dict:
-    return {
+def _review_respond_request(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    decision: str,
+    target_revision: int,
+) -> dict:
+    from tests.helpers import mandatory_plan_digest
+
+    payload = {
         "loop_id": "review-whole-plan-02",
         "target_revision": target_revision,
+        "stage": "initial_review",
         "decision": decision,
         "findings": [],
     }
+    if decision == "approved":
+        payload["target_digest"] = mandatory_plan_digest(store, run_id)
+    return payload
 
 
 def _create_run_in_production_with_sessions(
@@ -196,16 +219,36 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
     script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="review turn"),
-        mutate_store=respond_review(
+        mutate_store=lambda: respond_review(
             store,
             run_id,
-            _review_respond_request(
-                decision="approved",
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id="review-whole-plan-02",
                 target_revision=1,
+                review_type="whole_plan",
             ),
             phase="whole_plan_review",
             loop_id="review-whole-plan-02",
-        ),
+        )(),
+    )
+    script_reviewer_allocate(provider)
+    provider.script_turn(
+        done_events(text="blocker review turn"),
+        mutate_store=lambda: respond_review(
+            store,
+            run_id,
+            mandatory_blocker_respond_request(
+                store,
+                run_id,
+                loop_id="review-whole-plan-02",
+                target_revision=1,
+                review_type="whole_plan",
+            ),
+            phase="whole_plan_review",
+            loop_id="review-whole-plan-02",
+        )(),
     )
 
     amendment_result = PlanAmendmentOrchestrator(store, run_id, provider).run()
@@ -392,16 +435,35 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
     script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="review turn"),
-        mutate_store=respond_review(
+        mutate_store=lambda: respond_review(
             store,
             run_id,
             _review_respond_request(
+                store,
+                run_id,
                 decision="approved",
                 target_revision=0,
             ),
             phase="whole_plan_review",
             loop_id="review-whole-plan-02",
-        ),
+        )(),
+    )
+    script_reviewer_allocate(provider)
+    provider.script_turn(
+        done_events(text="blocker review turn"),
+        mutate_store=lambda: respond_review(
+            store,
+            run_id,
+            mandatory_blocker_respond_request(
+                store,
+                run_id,
+                loop_id="review-whole-plan-02",
+                target_revision=0,
+                review_type="whole_plan",
+            ),
+            phase="whole_plan_review",
+            loop_id="review-whole-plan-02",
+        )(),
     )
 
     result = PlanAmendmentOrchestrator(store, run_id, provider).run()

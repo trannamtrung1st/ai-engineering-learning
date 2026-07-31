@@ -10,14 +10,23 @@ from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     apply_review_response,
+    build_scope_blocker_review_result,
     find_overlapping_active_focused_loop,
+    findings_from_focused_respond,
+    is_review_respond_closed,
+    is_terminal_review_loop,
+    merge_verification_findings,
+    parse_initial_review_findings,
     focused_loop_count,
-    parse_findings,
+    require_review_respond_stage,
     validate_decision,
     validate_findings_within_scope,
     validate_focused_scope,
+    validate_mandatory_stage_decision,
+    validate_review_respond_stage,
 )
 from top_down_planning.persistence.commit import CommitSpec
+from top_down_planning.persistence.interface import RunStore
 
 _FOCUSED_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_plan_review"]
 _FOCUSED_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_output_review"]
@@ -150,15 +159,65 @@ class ReviewAgentService:
         if "decision" not in request:
             raise RequestError("respond requires decision")
 
+        loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+        if is_review_respond_closed(loop):
+            raise RequestError(f"review loop {loop_id} is already terminal: {loop.status}")
+
+        stage: str | None = None
         try:
-            decision = validate_decision(str(request["decision"]))
-            findings = parse_findings(request.get("findings") or [])
+            if loop.type in {"whole_plan", "whole_output"}:
+                stage = require_review_respond_stage(request)
+                expected_stage = loop.active_stage or "initial_review"
+                if stage != expected_stage:
+                    raise ValueError(
+                        f"respond stage {stage!r} does not match loop active_stage "
+                        f"{loop.active_stage!r}"
+                    )
+                decision = validate_mandatory_stage_decision(
+                    stage,
+                    str(request["decision"]),
+                )
+            else:
+                validate_review_respond_stage(request)
+                decision = validate_decision(str(request["decision"]))
         except ValueError as exc:
             raise RequestError(str(exc)) from exc
 
-        loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
-        if loop.status in {"approved", "blocked"}:
-            raise RequestError(f"review loop {loop_id} is already terminal: {loop.status}")
+        if loop.type in {"whole_plan", "whole_output"}:
+            if stage == "finding_verification":
+                try:
+                    findings, verification_result = merge_verification_findings(
+                        loop, request
+                    )
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+                verification_payload = verification_result.to_dict()
+                blocker_payload = None
+            elif stage == "scope_blocker_review":
+                try:
+                    findings, blocker_result = build_scope_blocker_review_result(
+                        request, loop
+                    )
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+                verification_payload = loop.verification_result
+                blocker_payload = blocker_result.to_dict()
+            elif stage == "initial_review":
+                try:
+                    findings = parse_initial_review_findings(request)
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+                verification_payload = None
+                blocker_payload = None
+            else:
+                raise RequestError(f"unsupported mandatory review stage: {stage}")
+        else:
+            try:
+                findings = findings_from_focused_respond(request)
+            except ValueError as exc:
+                raise RequestError(str(exc)) from exc
+            verification_payload = None
+            blocker_payload = None
 
         if loop.type in {"focused_plan", "focused_output"}:
             try:
@@ -179,7 +238,8 @@ class ReviewAgentService:
             )
 
         approved_digests: dict[str, str] | None = None
-        if decision == "approved" and loop.type in {"whole_plan", "whole_output"}:
+        artifact_digest: str | None = None
+        if loop.type in {"whole_plan", "whole_output"}:
             run = self._store.load_run(self._run_id)
             approved_digests = {
                 str(key): str(value)
@@ -191,6 +251,43 @@ class ReviewAgentService:
 
                 production = self._store.load_production(self._run_id)
                 approved_digests["output"] = compute_output_digest(production)
+                artifact_digest = approved_digests.get("output")
+            else:
+                from top_down_planning.persistence.digests import compute_plan_digest
+
+                plan = self._store.load_plan_model(self._run_id)
+                approved_digests["plan"] = compute_plan_digest(plan)
+                artifact_digest = approved_digests.get("plan")
+
+            mandatory_stage = stage or (loop.active_stage or "initial_review")
+            request_digest = str(request.get("target_digest") or "").strip()
+            stages_requiring_digest = frozenset(
+                {"finding_verification", "scope_blocker_review"}
+            )
+            if mandatory_stage in stages_requiring_digest:
+                if not request_digest:
+                    raise RequestError(
+                        f"{mandatory_stage} respond requires target_digest"
+                    )
+                if artifact_digest is not None and request_digest != artifact_digest:
+                    artifact_key = "plan" if loop.type == "whole_plan" else "output"
+                    raise RequestError(
+                        f"target_digest does not match current {artifact_key} digest"
+                    )
+            if decision in {"approved", "approve"}:
+                if artifact_digest is None:
+                    raise RequestError(
+                        "mandatory review approval requires artifact digest"
+                    )
+                if not request_digest:
+                    raise RequestError(
+                        f"{mandatory_stage} approval requires target_digest"
+                    )
+                if artifact_digest is not None and request_digest != artifact_digest:
+                    artifact_key = "plan" if loop.type == "whole_plan" else "output"
+                    raise RequestError(
+                        f"target_digest does not match current {artifact_key} digest"
+                    )
 
         try:
             updated = apply_review_response(
@@ -198,29 +295,35 @@ class ReviewAgentService:
                 target_revision=target_revision,
                 decision=decision,
                 findings=findings,
-                approved_digests=approved_digests,
+                approved_digests=(
+                    approved_digests if decision in {"approved", "approve"} else None
+                ),
+                verification_result=verification_payload,
+                blocker_review_result=blocker_payload,
             )
         except ValueError as exc:
             raise RequestError(str(exc)) from exc
+
+        event: dict[str, Any] = {
+            "type": "review_responded",
+            "run_id": self._run_id,
+            "loop_id": loop_id,
+            "decision": decision,
+            "target_revision": target_revision,
+            "finding_count": len(findings),
+        }
+        if stage is not None:
+            event["stage"] = stage
 
         self._store.commit(
             self._run_id,
             CommitSpec(
                 reviews=[updated.to_dict()],
-                events=[
-                    {
-                        "type": "review_responded",
-                        "run_id": self._run_id,
-                        "loop_id": loop_id,
-                        "decision": decision,
-                        "target_revision": target_revision,
-                        "finding_count": len(findings),
-                    }
-                ],
+                events=[event],
             ),
         )
 
-        return {
+        response: dict[str, Any] = {
             "ok": True,
             "loop_id": loop_id,
             "decision": decision,
@@ -228,6 +331,9 @@ class ReviewAgentService:
             "status": updated.status,
             "findings": [finding.to_dict() for finding in updated.findings],
         }
+        if stage is not None:
+            response["stage"] = stage
+        return response
 
 
 def _focused_max_loops(config: dict[str, Any], review_type: str) -> int:

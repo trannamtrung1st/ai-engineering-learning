@@ -12,7 +12,7 @@ from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import plan_apply_turn, write_config
+from tests.helpers import apply_plan, done_events, only_run_id, write_config
 
 
 @pytest.mark.integration
@@ -31,27 +31,34 @@ planning:
 """,
     )
     runs_dir = tmp_path / "runs"
+    store = FileRunStore(runs_dir)
+
+    operations = [
+        {
+            "op": "add_item",
+            "temp_id": "item-api",
+            "parent_id": "item-root",
+            "placement": {"last_child": True},
+            "item": {"kind": "work", "title": "API", "outcome": "API exists."},
+        },
+        {
+            "op": "add_item",
+            "temp_id": "item-ui",
+            "parent_id": "item-root",
+            "placement": {"last_child": True},
+            "item": {"kind": "work", "title": "UI", "outcome": "UI exists."},
+        },
+    ]
 
     provider = StubProvider()
     provider.script_turn(
-        plan_apply_turn(
-            operations=[
-                {
-                    "op": "add_item",
-                    "temp_id": "item-api",
-                    "parent_id": "item-root",
-                    "placement": {"last_child": True},
-                    "item": {"kind": "work", "title": "API", "outcome": "API exists."},
-                },
-                {
-                    "op": "add_item",
-                    "temp_id": "item-ui",
-                    "parent_id": "item-root",
-                    "placement": {"last_child": True},
-                    "item": {"kind": "work", "title": "UI", "outcome": "UI exists."},
-                },
-            ]
-        )
+        done_events(signal="candidate_plan_ready", text="planning turn"),
+        mutate_store=lambda: apply_plan(
+            store,
+            only_run_id(store),
+            base_revision=0,
+            operations=operations,
+        )(),
     )
 
     with patch("top_down_planning.cli.user.create_provider", return_value=provider):
@@ -95,6 +102,5 @@ planning:
     assert resolved_path.exists()
     assert "max_depth: 5" in resolved_path.read_text(encoding="utf-8")
 
-    store = FileRunStore(runs_dir)
     plan = store.load_plan_model(run_id)
     assert len(plan.items) == 3

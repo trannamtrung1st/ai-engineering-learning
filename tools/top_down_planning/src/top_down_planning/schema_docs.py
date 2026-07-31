@@ -28,6 +28,10 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "evidence-revision",
     "evidence-revision-focused",
     "review-respond",
+    "review-respond-initial",
+    "review-respond-initial-approved",
+    "review-respond-verification",
+    "review-respond-blocker",
     "focused-review-request",
     "amendment-request",
     "completion-claim",
@@ -204,8 +208,35 @@ _REVIEW_FINDING_SCHEMA: dict[str, Any] = {
         "required_change": {"type": "string"},
         "status": {
             "type": "string",
-            "enum": ["unresolved", "resolved", "superseded"],
+            "enum": [
+                "unresolved",
+                "partially_resolved",
+                "resolved",
+                "superseded",
+                "invalid",
+            ],
         },
+    },
+    "additionalProperties": False,
+}
+
+_FINDING_VERIFICATION_ENTRY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["finding_id", "disposition"],
+    "properties": {
+        "finding_id": {"type": "string"},
+        "disposition": {
+            "type": "string",
+            "enum": [
+                "resolved",
+                "partially_resolved",
+                "unresolved",
+                "superseded",
+                "invalid",
+            ],
+        },
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "direct_side_effects": {"type": "array", "items": {"type": "string"}},
     },
     "additionalProperties": False,
 }
@@ -246,7 +277,155 @@ _FOCUSED_REVIEW_BRANCH_SCHEMAS = [
     for review_type in ("focused_plan", "focused_output")
 ]
 
-_SCHEMAS: dict[str, dict[str, Any]] = {
+_REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
+    {
+        "title": "FocusedReviewRespond",
+        "type": "object",
+        "required": ["loop_id", "target_revision", "decision"],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "decision": {
+                "type": "string",
+                "enum": ["approved", "changes_requested", "blocked"],
+            },
+            "findings": {
+                "type": "array",
+                "items": _REVIEW_FINDING_SCHEMA,
+            },
+        },
+        "additionalProperties": False,
+    },
+    {
+        "title": "MandatoryInitialReviewApprovedRespond",
+        "type": "object",
+        "required": [
+            "loop_id",
+            "target_revision",
+            "decision",
+            "stage",
+            "findings",
+            "target_digest",
+        ],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "stage": {"const": "initial_review"},
+            "decision": {"const": "approved"},
+            "findings": {
+                "type": "array",
+                "items": _REVIEW_FINDING_SCHEMA,
+            },
+            "target_digest": {
+                "type": "string",
+                "description": (
+                    "Artifact digest inspected at initial_review approval "
+                    "(Digest and Approval Rules)."
+                ),
+            },
+        },
+        "additionalProperties": False,
+    },
+    {
+        "title": "MandatoryInitialReviewRevisionRespond",
+        "type": "object",
+        "required": ["loop_id", "target_revision", "decision", "stage", "findings"],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "stage": {"const": "initial_review"},
+            "decision": {
+                "type": "string",
+                "enum": ["changes_requested", "blocked"],
+            },
+            "findings": {
+                "type": "array",
+                "items": _REVIEW_FINDING_SCHEMA,
+            },
+        },
+        "additionalProperties": False,
+    },
+    {
+        "title": "MandatoryFindingVerificationRespond",
+        "type": "object",
+        "required": [
+            "loop_id",
+            "target_revision",
+            "decision",
+            "stage",
+            "target_digest",
+            "finding_set_id",
+            "finding_results",
+            "new_direct_side_effect_findings",
+            "summary",
+        ],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "stage": {"const": "finding_verification"},
+            "decision": {
+                "type": "string",
+                "enum": ["verified", "needs_revision", "blocked"],
+            },
+            "target_digest": {
+                "type": "string",
+                "description": "Artifact digest inspected by this stage.",
+            },
+            "finding_set_id": {"type": "string"},
+            "finding_results": {
+                "type": "array",
+                "items": _FINDING_VERIFICATION_ENTRY_SCHEMA,
+            },
+            "new_direct_side_effect_findings": {
+                "type": "array",
+                "items": _REVIEW_FINDING_SCHEMA,
+            },
+            "summary": {"type": "string"},
+        },
+        "additionalProperties": False,
+    },
+    {
+        "title": "MandatoryScopeBlockerReviewRespond",
+        "type": "object",
+        "required": [
+            "loop_id",
+            "target_revision",
+            "decision",
+            "stage",
+            "target_digest",
+            "scope_id",
+            "blocking_findings",
+            "acceptance_criteria_checked",
+            "summary",
+        ],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "stage": {"const": "scope_blocker_review"},
+            "decision": {
+                "type": "string",
+                "enum": ["approve", "blockers_found", "blocked"],
+            },
+            "target_digest": {
+                "type": "string",
+                "description": "Artifact digest inspected by this stage.",
+            },
+            "scope_id": {"type": "string"},
+            "blocking_findings": {
+                "type": "array",
+                "items": _REVIEW_FINDING_SCHEMA,
+            },
+            "acceptance_criteria_checked": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "summary": {"type": "string"},
+        },
+        "additionalProperties": False,
+    },
+]
+
+SCHEMAS: dict[str, dict[str, Any]] = {
     "config": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "TopDownPlanningConfig",
@@ -417,7 +596,20 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                     "whole_plan_review": {
                         "type": "object",
                         "properties": {
-                            "max_revision_cycles": {"type": "integer"},
+                            "max_revision_cycles": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum verification/revision cycles per "
+                                    "finding set for mandatory whole-plan review."
+                                ),
+                            },
+                            "max_blocker_review_rounds": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum fresh scope-complete blocker-review "
+                                    "rounds per whole-plan review phase."
+                                ),
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -440,7 +632,20 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                     "whole_output_review": {
                         "type": "object",
                         "properties": {
-                            "max_revision_cycles": {"type": "integer"},
+                            "max_revision_cycles": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum verification/revision cycles per "
+                                    "finding set for mandatory whole-output review."
+                                ),
+                            },
+                            "max_blocker_review_rounds": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum fresh scope-complete blocker-review "
+                                    "rounds per whole-output review phase."
+                                ),
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -576,22 +781,13 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     "review-respond": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "ReviewRespondRequest",
-        "description": "Review findings and decision for `tdp agent review respond`.",
-        "type": "object",
-        "required": ["loop_id", "target_revision", "decision", "findings"],
-        "properties": {
-            "loop_id": {"type": "string"},
-            "target_revision": {"type": "integer"},
-            "decision": {
-                "type": "string",
-                "enum": ["approved", "changes_requested", "blocked"],
-            },
-            "findings": {
-                "type": "array",
-                "items": _REVIEW_FINDING_SCHEMA,
-            },
-        },
-        "additionalProperties": False,
+        "description": (
+            "Review findings and decision for `tdp agent review respond`. "
+            "Mandatory whole_plan / whole_output loops require `stage` and "
+            "stage-native decisions per branch below. Focused reviews omit "
+            "`stage` and use approved|changes_requested|blocked."
+        ),
+        "oneOf": _REVIEW_RESPOND_ONE_OF,
     },
     "focused-review-request": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -650,6 +846,8 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "additionalProperties": False,
     },
 }
+
+_SCHEMAS = SCHEMAS
 
 _EXAMPLES: dict[str, dict[str, Any]] = {
     "expand-branch": {
@@ -808,9 +1006,9 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
     },
     "review-respond": {
         "schema": "review-respond",
-        "description": "Reviewer requests plan changes with one blocking finding.",
+        "description": "Focused plan review: request changes with one blocking finding.",
         "payload": {
-            "loop_id": "review-whole-plan-01",
+            "loop_id": "review-focused-plan-01",
             "target_revision": 0,
             "decision": "changes_requested",
             "findings": [
@@ -823,6 +1021,90 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "status": "unresolved",
                 }
             ],
+        },
+    },
+    "review-respond-initial": {
+        "schema": "review-respond",
+        "description": (
+            "Mandatory initial_review: raise blocking findings before verification."
+        ),
+        "payload": {
+            "loop_id": "review-whole-plan-01",
+            "target_revision": 0,
+            "stage": "initial_review",
+            "decision": "changes_requested",
+            "findings": [
+                {
+                    "id": "finding-001",
+                    "importance": "blocking",
+                    "target_refs": ["item-api"],
+                    "issue": "Acceptance criteria are not testable.",
+                    "required_change": "Add concrete acceptance checks for API behavior.",
+                    "status": "unresolved",
+                }
+            ],
+        },
+    },
+    "review-respond-initial-approved": {
+        "schema": "review-respond",
+        "description": (
+            "Mandatory initial_review: clear approval with digest binding "
+            "(still requires scope_blocker_review before final gate approval)."
+        ),
+        "payload": {
+            "loop_id": "review-whole-plan-01",
+            "target_revision": 0,
+            "stage": "initial_review",
+            "decision": "approved",
+            "findings": [],
+            "target_digest": "plan-digest-abc",
+        },
+    },
+    "review-respond-verification": {
+        "schema": "review-respond",
+        "description": (
+            "Stage-1 finding_verification Result Contract: findings closed with "
+            "verified decision."
+        ),
+        "payload": {
+            "loop_id": "review-whole-plan-01",
+            "target_revision": 1,
+            "stage": "finding_verification",
+            "target_digest": "plan-digest-abc",
+            "finding_set_id": "review-whole-plan-01-fs-01",
+            "decision": "verified",
+            "finding_results": [
+                {
+                    "finding_id": "finding-001",
+                    "disposition": "resolved",
+                    "evidence": ["Updated acceptance on item-api"],
+                    "direct_side_effects": [],
+                }
+            ],
+            "new_direct_side_effect_findings": [],
+            "summary": "All required findings closed; no direct side effects.",
+        },
+    },
+    "review-respond-blocker": {
+        "schema": "review-respond",
+        "description": (
+            "Stage-2 scope_blocker_review Result Contract: clear approve with no "
+            "blocking findings."
+        ),
+        "payload": {
+            "loop_id": "review-whole-plan-01",
+            "target_revision": 1,
+            "stage": "scope_blocker_review",
+            "target_digest": "plan-digest-abc",
+            "scope_id": "whole_plan",
+            "decision": "approve",
+            "blocking_findings": [],
+            "acceptance_criteria_checked": [
+                "coverage",
+                "dependencies",
+                "acceptance",
+            ],
+            "summary": "No remaining approval blockers in current scope.",
         },
     },
     "focused-review-request": {
@@ -927,7 +1209,8 @@ The orchestrator binds one primary planner, producer, or reviewer session per ph
 Mutating `tdp agent` commands require the session capability token exported as
 `TDP_CAPABILITY_TOKEN` on the provider subprocess that runs the turn. Reviewer
 sessions allocate a provider session id, bind the token, then deliver the review
-package (or a `recheck_revision` follow-up) via `send` before the agent may call
+package (or a mandatory `finding_verification` recheck, or a focused `recheck_revision`
+follow-up) via `send` before the agent may call
 `tdp agent review respond`. Authorization checks phase, allowed operations, the bound
 provider session, and (for reviewers) the review loop. Capability records store
 only a `secret_hash`; tokens are revoked when turns, loops, or phases end. Agents
@@ -966,13 +1249,21 @@ not consumed by the orchestrator.
    grouping-only parents. The seeded root is `aggregate`. Use `update_plan` to
    revise plan-level `scope`, `boundaries`, `constraints`, `assumptions`, and
    `acceptance` (seeded from `run.boundaries` / `run.acceptance` at run creation).
-2. Mandatory whole-plan review (`review respond`) must approve before production.
-   Review packages include an embedded plan tree and optional `rubric`; refresh with
-   `plan snapshot --view tree` when revising after `changes_requested`.
+2. Mandatory whole-plan review (`review respond`) must complete the gate before production.
+   Stages: `initial_review` (discovery), optional `finding_verification` (close known
+   findings after revisions), then fresh `scope_blocker_review` (remaining blockers).
+   Each stage requires `stage` plus Result Contract fields — see
+   `review-respond-initial`, `review-respond-initial-approved`, `review-respond-verification`, and `review-respond-blocker`.
+   Review packages include an embedded plan tree and optional `rubric` on initial
+   review only; refresh with `plan snapshot --view tree` when revising after
+   `needs_revision` or initial `changes_requested`. Approval requires a clear
+   blocker review against the current artifact digest — finding closure alone is not
+   enough.
 3. Producer records batches with `production apply`, then `submit-completion` with
    `goal_met: true` and a `goal_assessment` rationale. Production `ready` snapshots
    expose `ready_items` (contracts per ready leaf) alongside `ready_item_ids`.
-4. Mandatory whole-output review must approve before `outcome: accepted`. After
+4. Mandatory whole-output review must complete the gate before `outcome: accepted`.
+   Same three-stage model as whole-plan review. After `needs_revision` or initial
    `changes_requested`, the producer must use `production apply` with
    `evidence_revision: true` and **new** output evidence IDs on terminal items
    targeted by unresolved blocking findings (dispositions unchanged), then

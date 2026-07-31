@@ -2,14 +2,36 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.views import build_plan_review_snapshot
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.config.defaults import DEFAULT_CONFIG
-from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.reviews import (
+    ReviewLoop,
+    is_revision_requested_status,
+    is_terminal_review_loop,
+    mandatory_review_limits_from_config,
+    mandatory_approval_allowed,
+)
+from top_down_planning.orchestrator.mandatory_review_stages import (
+    approved_means_final_approval,
+    approved_means_start_blocker_review,
+    is_blocker_stage,
+    limit_message,
+    mark_findings_open,
+    mark_limit_reached_loop,
+    mark_mandatory_approved,
+    enter_planner_revision_cycle,
+    mark_verification_pending,
+    mandatory_orchestration_decision,
+    prepare_blocker_review_loop,
+    seed_mandatory_loop_fields,
+    stage_package_fields,
+    verification_recheck_request,
+)
 from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
 from top_down_planning.domain.validators import (
     build_plan_approval_validation_context,
@@ -53,7 +75,6 @@ from top_down_planning.persistence.digests import compute_config_digest, compute
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
-_WHOLE_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["whole_plan_review"]
 _NO_COMPLETION_SIGNALS = frozenset[str]()
 
 
@@ -92,7 +113,7 @@ class WholePlanReviewOrchestrator:
             raise ProviderRunError(f"run is not in whole-plan review phase: {phase}")
 
         config = self._store.load_resolved_config(self._run_id)
-        max_revision_cycles = _whole_plan_revision_limit(config)
+        limits = mandatory_review_limits_from_config(config, "whole_plan")
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])
         loop, deliver_on_existing_session = bootstrap_whole_review_loop(
             self._get_or_create_active_loop(),
@@ -100,6 +121,7 @@ class WholePlanReviewOrchestrator:
             resume_interrupted_revision=self._resume_interrupted_planner_revision,
             normalize_loop_for_resume=self._normalize_loop_for_resume,
         )
+        loop = self._persist_loop(seed_mandatory_loop_fields(loop))
 
         while True:
             if loop.status == "pending":
@@ -152,50 +174,147 @@ class WholePlanReviewOrchestrator:
                         loop_id=loop.id,
                     )
                     bind_provider_capability(self._provider, self._capability_token)
-            else:
-                decision = loop.status
+                    continue
+            stage_decision = mandatory_orchestration_decision(loop)
 
-            if decision == "approved":
-                return self._complete_with_approval(loop)
+            if stage_decision in {"approve", "verified", "approved"}:
+                loop = self._reload_loop(loop.id)
+                if approved_means_final_approval(loop):
+                    return self._complete_with_approval(loop)
+                if approved_means_start_blocker_review(loop):
+                    transition = self._begin_blocker_review(loop, limits)
+                    if isinstance(transition, WholePlanReviewResult):
+                        return transition
+                    loop = transition
+                    deliver_on_existing_session = False
+                    continue
+                raise ProviderRunError(
+                    "approved decision left blocking findings unresolved"
+                )
 
-            if decision == "blocked":
+            if stage_decision == "blocked":
                 revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
-                return self._terminate("blocked", "whole-plan reviewer blocked the run")
+                if loop.lifecycle_status == "limit_reached":
+                    exhausted = loop.exhausted_budget or "verification_revision"
+                    return self._terminate(
+                        "rejected",
+                        limit_message(
+                            limits,
+                            exhausted=exhausted,
+                            review_label="whole-plan review",
+                        ),
+                        loop=loop,
+                    )
+                return self._terminate(
+                    "blocked",
+                    "whole-plan reviewer blocked the run",
+                    loop=loop,
+                )
 
-            if decision != "changes_requested":
-                raise ProviderRunError(f"unexpected review decision: {decision}")
+            if stage_decision not in {
+                "needs_revision",
+                "blockers_found",
+                "changes_requested",
+            }:
+                raise ProviderRunError(
+                    f"unexpected mandatory review decision: {stage_decision}"
+                )
+
+            loop = self._reload_loop(loop.id)
+            prior_finding_set_id = loop.finding_set_id
+            was_blocker_stage = is_blocker_stage(loop)
+            loop = self._persist_loop(mark_findings_open(loop))
+            if was_blocker_stage:
+                self._append_event(
+                    "whole_plan_blockers_found",
+                    loop_id=loop.id,
+                    finding_set_id=loop.finding_set_id,
+                    prior_finding_set_id=prior_finding_set_id,
+                    finding_count=len(loop.findings),
+                )
 
             revision_cycles = loop.revision_cycles + 1
             loop = self._persist_loop(
-                ReviewLoop(
-                    id=loop.id,
-                    type=loop.type,
-                    reviewer_session_id=loop.reviewer_session_id,
-                    target_revision=loop.target_revision,
-                    scope=loop.scope,
-                    status="pending",
-                    findings=loop.findings,
-                    revision_cycles=revision_cycles,
+                enter_planner_revision_cycle(
+                    replace(loop, revision_cycles=revision_cycles)
                 )
             )
 
-            if revision_cycles >= max_revision_cycles:
+            if revision_cycles >= limits.max_revision_cycles:
+                loop = self._persist_loop(
+                    mark_limit_reached_loop(
+                        loop,
+                        limits=limits,
+                        exhausted="verification_revision",
+                    )
+                )
                 return self._terminate(
                     "rejected",
-                    (
-                        "whole-plan review exceeded max_revision_cycles "
-                        f"({max_revision_cycles})"
+                    limit_message(
+                        limits,
+                        exhausted="verification_revision",
+                        review_label="whole-plan review",
                     ),
+                    loop=loop,
                 )
 
             self._resume_planner_with_findings(loop)
             loop = self._prepare_recheck(loop)
+
+    def _begin_blocker_review(
+        self,
+        loop: ReviewLoop,
+        limits: Any,
+    ) -> ReviewLoop | WholePlanReviewResult:
+        if loop.blocker_review_rounds >= limits.max_blocker_review_rounds:
+            loop = self._persist_loop(
+                mark_limit_reached_loop(
+                    loop,
+                    limits=limits,
+                    exhausted="blocker_review",
+                )
+            )
+            return self._terminate(
+                "rejected",
+                limit_message(
+                    limits,
+                    exhausted="blocker_review",
+                    review_label="whole-plan review",
+                ),
+                loop=loop,
+            )
+        if loop.reviewer_session_id is not None:
+            revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
+        updated = self._persist_loop(prepare_blocker_review_loop(loop))
+        self._append_event(
+            "whole_plan_blocker_review_started",
+            loop_id=updated.id,
+            blocker_review_rounds=updated.blocker_review_rounds,
+            target_revision=updated.target_revision,
+        )
+        return updated
 
     def _complete_with_approval(self, loop: ReviewLoop) -> WholePlanReviewResult:
         plan = self._store.load_plan_model(self._run_id)
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
         limits = planning_limits_from_config(config)
+        review_limits = mandatory_review_limits_from_config(config, "whole_plan")
+        current_digest = compute_plan_digest(plan)
+
+        loop = self._reload_loop(loop.id)
+        if not mandatory_approval_allowed(
+            loop,
+            current_artifact_digest=current_digest,
+            limits=review_limits,
+        ):
+            return self._terminate(
+                "blocked",
+                "mandatory whole-plan approval invariant not satisfied",
+                loop=loop,
+            )
+
+        loop = self._persist_loop(mark_mandatory_approved(loop))
 
         review_state, digest_bundle = build_plan_approval_validation_context(
             plan=plan,
@@ -242,7 +361,13 @@ class WholePlanReviewOrchestrator:
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, loop=loop)
 
-    def _terminate(self, outcome: str, message: str) -> WholePlanReviewResult:
+    def _terminate(
+        self,
+        outcome: str,
+        message: str,
+        *,
+        loop: ReviewLoop | None = None,
+    ) -> WholePlanReviewResult:
         revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_PLAN_REVIEW)
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
@@ -255,12 +380,14 @@ class WholePlanReviewOrchestrator:
             "whole_plan_review_failed",
             outcome=outcome,
             message=message,
+            loop_id=loop.id if loop is not None else None,
+            lifecycle_status=loop.lifecycle_status if loop is not None else None,
         )
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=False, reason=message)
 
     def _normalize_loop_for_resume(self, loop: ReviewLoop) -> tuple[ReviewLoop, bool]:
-        if loop.status != "changes_requested":
+        if not is_revision_requested_status(loop.status):
             return loop, False
 
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])
@@ -270,11 +397,14 @@ class WholePlanReviewOrchestrator:
         return self._prepare_recheck(loop), True
 
     def _get_or_create_active_loop(self) -> ReviewLoop:
+        plan_revision = int(self._store.load_plan(self._run_id)["revision"])
         for payload in reversed(self._store.list_reviews(self._run_id)):
             if payload.get("type") != "whole_plan":
                 continue
             loop = ReviewLoop.from_dict(payload)
-            if loop.status in {"approved", "blocked"}:
+            if loop.target_revision != plan_revision:
+                continue
+            if is_terminal_review_loop(loop):
                 continue
             return loop
         return self._create_loop()
@@ -289,6 +419,9 @@ class WholePlanReviewOrchestrator:
             target_revision=plan_revision,
             scope={"kind": "whole_plan"},
             status="pending",
+            lifecycle_status="review_pending",
+            active_stage=None,
+            blocker_review_rounds=0,
         )
         self._store.save_review(self._run_id, loop.to_dict())
         self._append_event(
@@ -332,17 +465,7 @@ class WholePlanReviewOrchestrator:
             session_id=session_id,
             loop_id=loop.id,
         )
-        updated = ReviewLoop(
-            id=loop.id,
-            type=loop.type,
-            reviewer_session_id=session_id,
-            target_revision=loop.target_revision,
-            scope=loop.scope,
-            status=loop.status,
-            findings=loop.findings,
-            revision_cycles=loop.revision_cycles,
-            approved_digests=loop.approved_digests,
-        )
+        updated = replace(loop, reviewer_session_id=session_id)
         self._persist_loop(updated)
         self._capability_token = deliver_reviewer_turn(
             self._provider,
@@ -431,18 +554,9 @@ class WholePlanReviewOrchestrator:
         if session_id is None:
             raise ProviderRunError("reviewer session is missing for recheck")
 
-        updated = ReviewLoop(
-            id=loop.id,
-            type=loop.type,
-            reviewer_session_id=session_id,
-            target_revision=plan_revision,
-            scope=loop.scope,
-            status="pending",
-            findings=loop.findings,
-            revision_cycles=loop.revision_cycles,
-            approved_digests=None,
+        updated = self._persist_loop(
+            mark_verification_pending(loop, target_revision=plan_revision)
         )
-        self._persist_loop(updated)
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
         emit_reviewer_session_resumed(
@@ -458,12 +572,11 @@ class WholePlanReviewOrchestrator:
             session_id=session_id,
             loop_id=loop.id,
             phase=phase,
-            request={
-                "action": "recheck_revision",
-                "phase": WHOLE_PLAN_REVIEW,
-                "loop_id": loop.id,
-                "target_revision": plan_revision,
-            },
+            request=verification_recheck_request(
+                phase=WHOLE_PLAN_REVIEW,
+                loop=updated,
+                target_revision=plan_revision,
+            ),
         )
         return updated
 
@@ -514,21 +627,26 @@ def build_whole_plan_review_package(
         review_cfg.get("rubric")
         or DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
     )
-    return attach_role_context_to_manifest(
-        {
+    package: dict[str, Any] = {
         "run_id": run_id,
         "phase": WHOLE_PLAN_REVIEW,
         "type": "whole_plan",
         "loop_id": loop.id,
-        "purpose": "Mandatory whole-plan review before production",
+        "purpose": (
+            "Mandatory whole-plan scope-complete blocker review before production"
+            if loop.active_stage == "scope_blocker_review"
+            else "Mandatory whole-plan review before production"
+        ),
         "scope": dict(loop.scope),
         "target_revision": loop.target_revision,
         "plan_revision": plan.revision,
         "plan": build_plan_review_snapshot(plan, limits=limits),
-        "rubric": rubric,
         **plan_execution_contract_fields(plan),
         "digests": digests,
-        "protocol_instructions": build_reviewer_protocol_instructions(),
+        **stage_package_fields(loop),
+        "protocol_instructions": build_reviewer_protocol_instructions(
+            stage=loop.active_stage or "initial_review"
+        ),
         "tool_instructions": {
             **build_reviewer_tool_instructions(
                 run_id,
@@ -537,21 +655,15 @@ def build_whole_plan_review_package(
                 ),
             ),
         },
-        },
+    }
+    if loop.active_stage != "scope_blocker_review":
+        package["rubric"] = rubric
+    return attach_role_context_to_manifest(
+        package,
         config=config,
         run=run,
         role="reviewer",
         output_goal=plan.output_goal,
-    )
-
-
-def _whole_plan_revision_limit(config: dict[str, Any]) -> int:
-    review_limits = (config.get("limits") or {}).get("whole_plan_review") or {}
-    return int(
-        review_limits.get(
-            "max_revision_cycles",
-            _WHOLE_PLAN_LIMIT_DEFAULTS["max_revision_cycles"],
-        )
     )
 
 

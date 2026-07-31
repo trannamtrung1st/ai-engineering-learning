@@ -26,11 +26,24 @@ from tests.helpers import (
     apply_plan,
     apply_production,
     done_events,
+    mandatory_blocker_respond_request,
+    mandatory_initial_respond_request,
     only_run_id,
     request_amendment,
     respond_review,
+    script_reviewer_allocate,
     write_config,
 )
+
+def queue_turn(
+    provider: Any,
+    script: tuple[list[dict[str, Any]], Callable[[], None]],
+) -> None:
+    """Queue a (events, mutate) script using keyword mutate_store."""
+
+    events, mutate = script
+    provider.script_turn(events, mutate_store=mutate)
+
 
 ScriptBuilder = Callable[[str], list[dict[str, Any]]]
 
@@ -85,11 +98,13 @@ limits:
     max_agent_turns: {planning_limits.get("max_agent_turns", 40)}
   whole_plan_review:
     max_revision_cycles: {whole_plan_limits.get("max_revision_cycles", 5)}
+    max_blocker_review_rounds: {whole_plan_limits.get("max_blocker_review_rounds", 3)}
   production:
     max_batches: {production_limits.get("max_batches", 50)}
     max_agent_turns_per_batch: {production_limits.get("max_agent_turns_per_batch", 10)}
   whole_output_review:
     max_revision_cycles: {whole_output_limits.get("max_revision_cycles", 5)}
+    max_blocker_review_rounds: {whole_output_limits.get("max_blocker_review_rounds", 3)}
   amendment:
     max_requests: {amendment_limits.get("max_requests", 3)}
     max_revision_cycles_per_request: {amendment_limits.get("max_revision_cycles_per_request", 3)}
@@ -172,15 +187,35 @@ def review_respond_script(
     findings: list[dict[str, Any]] | None = None,
     phase: str = WHOLE_PLAN_REVIEW,
 ) -> tuple[list[dict[str, Any]], Callable[[], None]]:
-    return done_events(text="review turn"), respond_review(
-        store,
-        run_id,
-        {
+    if phase == WHOLE_PLAN_REVIEW:
+        review_type = "whole_plan"
+    elif phase == WHOLE_OUTPUT_REVIEW:
+        review_type = "whole_output"
+    else:
+        review_type = None
+
+    if review_type is not None:
+        request = mandatory_initial_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            review_type=review_type,
+            decision=decision,
+            findings=findings,
+        )
+    else:
+        request = {
             "loop_id": loop_id,
             "target_revision": target_revision,
             "decision": decision,
             "findings": findings or [],
-        },
+        }
+
+    return done_events(text="review turn"), respond_review(
+        store,
+        run_id,
+        request,
         phase=phase,
         loop_id=loop_id,
     )
@@ -252,6 +287,74 @@ def whole_plan_review_script(
     )
 
 
+def script_whole_plan_review(
+    provider: Any,
+    store: FileRunStore,
+    run_id: str,
+    *,
+    decision: str,
+    loop_id: str = "review-whole-plan-01",
+) -> None:
+    """Queue allocate + respond turns for whole-plan review (two-stage when approved)."""
+
+    target_revision = current_plan_revision(store, run_id)
+    if decision == "approved":
+        script_reviewer_allocate(provider)
+        queue_turn(
+            provider,
+            (
+                done_events(text="review turn"),
+                respond_review(
+                    store,
+                    run_id,
+                    mandatory_initial_respond_request(
+                        store,
+                        run_id,
+                        loop_id=loop_id,
+                        target_revision=target_revision,
+                        review_type="whole_plan",
+                    ),
+                    phase=WHOLE_PLAN_REVIEW,
+                    loop_id=loop_id,
+                ),
+            ),
+        )
+        script_reviewer_allocate(provider)
+        queue_turn(
+            provider,
+            (
+                done_events(text="blocker review turn"),
+                respond_review(
+                    store,
+                    run_id,
+                    mandatory_blocker_respond_request(
+                        store,
+                        run_id,
+                        loop_id=loop_id,
+                        target_revision=target_revision,
+                        review_type="whole_plan",
+                    ),
+                    phase=WHOLE_PLAN_REVIEW,
+                    loop_id=loop_id,
+                ),
+            ),
+        )
+        return
+
+    script_reviewer_allocate(provider)
+    queue_turn(
+        provider,
+        review_respond_script(
+            store,
+            run_id,
+            decision=decision,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            phase=WHOLE_PLAN_REVIEW,
+        ),
+    )
+
+
 def whole_output_review_script(
     store: FileRunStore,
     run_id: str,
@@ -267,6 +370,75 @@ def whole_output_review_script(
         loop_id=loop_id,
         target_revision=int(production["output_revision"]),
         phase=WHOLE_OUTPUT_REVIEW,
+    )
+
+
+def script_whole_output_review(
+    provider: Any,
+    store: FileRunStore,
+    run_id: str,
+    *,
+    decision: str,
+    loop_id: str = "review-whole-output-01",
+) -> None:
+    """Queue allocate + respond turns for whole-output review (two-stage when approved)."""
+
+    production = store.load_production(run_id)
+    target_revision = int(production["output_revision"])
+    if decision == "approved":
+        script_reviewer_allocate(provider)
+        queue_turn(
+            provider,
+            (
+                done_events(text="review turn"),
+                respond_review(
+                    store,
+                    run_id,
+                    mandatory_initial_respond_request(
+                        store,
+                        run_id,
+                        loop_id=loop_id,
+                        target_revision=target_revision,
+                        review_type="whole_output",
+                    ),
+                    phase=WHOLE_OUTPUT_REVIEW,
+                    loop_id=loop_id,
+                ),
+            ),
+        )
+        script_reviewer_allocate(provider)
+        queue_turn(
+            provider,
+            (
+                done_events(text="blocker review turn"),
+                respond_review(
+                    store,
+                    run_id,
+                    mandatory_blocker_respond_request(
+                        store,
+                        run_id,
+                        loop_id=loop_id,
+                        target_revision=target_revision,
+                        review_type="whole_output",
+                    ),
+                    phase=WHOLE_OUTPUT_REVIEW,
+                    loop_id=loop_id,
+                ),
+            ),
+        )
+        return
+
+    script_reviewer_allocate(provider)
+    queue_turn(
+        provider,
+        review_respond_script(
+            store,
+            run_id,
+            decision=decision,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            phase=WHOLE_OUTPUT_REVIEW,
+        ),
     )
 
 
