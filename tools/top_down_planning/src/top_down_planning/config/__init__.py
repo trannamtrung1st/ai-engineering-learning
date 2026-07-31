@@ -54,6 +54,7 @@ from top_down_planning.config.snapshot_policy import (
     CanonicalPathError,
     SnapshotCollection,
     SnapshotPolicy,
+    canonicalize_evidence_ref,
     canonicalize_workspace_path,
     detect_canonical_collisions,
 )
@@ -90,6 +91,7 @@ __all__ = [
     "build_context_spec_payload",
     "build_context_snapshot_payload",
     "build_initial_context_snapshot_binding",
+    "canonicalize_evidence_ref",
     "canonicalize_workspace_path",
     "compile_exclude_matcher",
     "compute_context_snapshot_digest_from_config",

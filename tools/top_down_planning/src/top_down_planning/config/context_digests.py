@@ -13,7 +13,7 @@ from top_down_planning.config.context import (
 )
 from top_down_planning.config.snapshot_policy import (
     CanonicalPathError,
-    canonicalize_workspace_path,
+    canonicalize_evidence_ref,
 )
 
 
@@ -53,7 +53,11 @@ def authorized_production_workspace_paths(
     *,
     workspace: Path,
 ) -> set[str]:
-    """Workspace-relative paths attributable to persisted production output evidence."""
+    """Canonical relative paths attributable to persisted production evidence.
+
+    Uses the same evidence-ref canonicalization as artifact capture so authorized
+    paths compare equal to snapshot binding keys (proposal §§8,10–11).
+    """
 
     authorized: set[str] = set()
 
@@ -62,12 +66,9 @@ def authorized_production_workspace_paths(
         if not ref_text:
             return
         try:
-            authorized.add(
-                canonicalize_workspace_path(ref_text, workspace=workspace)
-            )
+            authorized.add(canonicalize_evidence_ref(ref_text, workspace=workspace))
         except CanonicalPathError:
-            # Invalid refs are ignored for authorization (they cannot authorize drift).
-            # Evidence capture rejects escapes separately at apply time.
+            # Invalid refs never authorize drift; apply-time capture rejects them.
             return
 
     for entry in production.get("output_evidence") or []:

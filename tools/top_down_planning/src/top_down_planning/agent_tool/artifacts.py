@@ -28,10 +28,24 @@ def capture_output_artifact(
     workspace: Path,
     ref: str,
 ) -> dict[str, str | int]:
-    """Resolve, hash, and snapshot a workspace artifact into the run store."""
+    """Resolve, hash, and snapshot a workspace artifact into the run store.
+
+    Evidence refs are canonicalized to workspace-relative POSIX paths. Absolute
+    refs, unresolved ``..``, and symlink escapes fail validation explicitly.
+    """
+
+    from top_down_planning.config.snapshot_policy import (
+        CanonicalPathError,
+        canonicalize_evidence_ref,
+    )
 
     workspace_root = workspace.resolve()
-    artifact_path = (workspace_root / ref).resolve()
+    try:
+        canonical_ref = canonicalize_evidence_ref(ref, workspace=workspace_root)
+    except CanonicalPathError as exc:
+        raise RequestError(str(exc)) from exc
+
+    artifact_path = (workspace_root / canonical_ref).resolve()
     if not artifact_path.is_relative_to(workspace_root):
         raise RequestError(f"artifact ref escapes workspace: {ref!r}")
     if not artifact_path.is_file():
@@ -48,7 +62,7 @@ def capture_output_artifact(
         data,
     )
     return {
-        "ref": ref,
+        "ref": canonical_ref,
         "snapshot_ref": snapshot_ref,
         "sha256": sha256,
         "size": len(data),

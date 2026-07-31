@@ -54,7 +54,7 @@ def canonicalize_workspace_path(
     - Preserve intentional case behavior of the resolved relative path.
     - Absolute inputs are accepted only when they resolve inside the workspace
       (collection from discovered ``Path`` objects); callers that must reject
-      absolute evidence refs should validate before calling.
+      absolute evidence refs should use ``canonicalize_evidence_ref``.
     """
 
     workspace_resolved = workspace.resolve()
@@ -84,6 +84,23 @@ def canonicalize_workspace_path(
 
     return relative.as_posix()
 
+
+def canonicalize_evidence_ref(ref: str, *, workspace: Path) -> str:
+    """Canonicalize a production evidence ``ref`` (proposal §8).
+
+    Evidence refs must already be workspace-relative. Absolute paths, unresolved
+    ``..``, workspace escapes, and symlink-resolved escapes are rejected.
+    """
+
+    text = str(ref or "").strip()
+    if not text:
+        raise CanonicalPathError("evidence ref must be a non-empty relative path")
+    raw = Path(text)
+    if raw.is_absolute() or text.startswith(("/", "\\")) or (len(text) >= 2 and text[1] == ":"):
+        raise CanonicalPathError(
+            f"evidence ref must be workspace-relative, got absolute: {ref!r}"
+        )
+    return canonicalize_workspace_path(text, workspace=workspace)
 
 def detect_canonical_collisions(
     paths: Iterable[Path],
@@ -278,5 +295,6 @@ __all__ = [
     "SnapshotCollection",
     "SnapshotPolicy",
     "canonicalize_workspace_path",
+    "canonicalize_evidence_ref",
     "detect_canonical_collisions",
 ]
