@@ -82,6 +82,7 @@ def test_map_audit_event_maps_planner_session_started_with_phase_and_role() -> N
             "session_id": "planner-1",
             "role": "planner",
             "phase": "planning",
+            "model": "reasoning-model",
         }
     )
     assert mapped is not None
@@ -91,6 +92,7 @@ def test_map_audit_event_maps_planner_session_started_with_phase_and_role() -> N
     assert mapped.fields["phase"] == "planning"
     assert mapped.fields["role"] == "planner"
     assert mapped.fields["run_id"] == "run-20260101T000001-000001"
+    assert mapped.fields["model"] == "reasoning-model"
 
 
 def test_map_audit_event_maps_planner_session_resumed_with_phase_and_role() -> None:
@@ -128,6 +130,7 @@ def test_session_lifecycle_event_builds_start_and_end() -> None:
         phase="planning",
         session_id="planner-1",
         run_id="run-20260101T000001-000001",
+        model="reasoning-model",
     )
     ended = session_lifecycle_event(
         category="session:end",
@@ -136,12 +139,15 @@ def test_session_lifecycle_event_builds_start_and_end() -> None:
         session_id="planner-1",
         run_id="run-20260101T000001-000001",
         kind="primary",
+        model="reasoning-model",
     )
     assert started.category == "session:start"
     assert started.message == "planner session started"
+    assert started.fields["model"] == "reasoning-model"
     assert ended.category == "session:end"
     assert ended.message == "planner session ended"
     assert ended.fields["kind"] == "primary"
+    assert ended.fields["model"] == "reasoning-model"
 
 
 def test_provider_bridge_streams_thinking_deltas_not_empty_lines() -> None:
@@ -198,15 +204,16 @@ def test_provider_bridge_emits_tool_start_summary_only() -> None:
     collector = _CollectSink()
     context = ObservabilityContext(sink=collector)
     bridge = ProviderToConsoleBridge(context)
-    bridge.handle(
-        _normalized_tool_call(
-            tool="plan_apply",
-            request={"base_revision": 0, "operations": [{}, {}, {}]},
-        )
+    event = _normalized_tool_call(
+        tool="plan_apply",
+        request={"base_revision": 0, "operations": [{}, {}, {}]},
+        session_id="planner-1",
     )
+    event["model"] = "reasoning-model"
+    bridge.handle(event)
     assert [event.category for event in collector.events] == ["tool:start"]
     assert collector.events[0].message == "plan_apply @r0 3 ops"
-    assert collector.events[0].fields == {}
+    assert collector.events[0].fields == {"model": "reasoning-model"}
 
 
 def test_provider_bridge_emits_tool_end_for_completed_tool_calls() -> None:
@@ -296,10 +303,15 @@ def test_stub_provider_events_reach_bridge_when_stream_events_drains_turn() -> N
             *done_events(signal="candidate_plan_ready"),
         ]
     )
-    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    session_id = provider.start_primary_session(
+        "planner",
+        {"goal": "x"},
+        model="reasoning-model",
+    )
     assert any(event.category == "response" for event in collector.events)
     drained = list(provider.stream_events(session_id))
     assert len(drained) == 3
+    assert all(event.get("model") == "reasoning-model" for event in drained)
     assert drained[-1]["type"] == "done"
 
 

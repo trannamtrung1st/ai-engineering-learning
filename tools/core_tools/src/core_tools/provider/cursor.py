@@ -101,13 +101,38 @@ def resolve_agent_binary(configured: str | None) -> str:
     )
 
 
-def _resolve_cli_model(*, model: str | None = None) -> str | None:
+def resolve_provider_cli_model(*, model: str | None = None) -> str | None:
+    """Normalize a configured model value for provider CLI argv."""
+
     if model is None:
         return None
     resolved = str(model).strip()
     if not resolved or resolved.lower() == "auto":
         return None
     return resolved
+
+
+def format_provider_model_name(model: str | None) -> str:
+    """Return the observability label for a provider-resolved model."""
+
+    resolved = resolve_provider_cli_model(model=model)
+    if resolved is None:
+        return "auto"
+    return resolved
+
+
+def enrich_provider_observability_event(
+    event: dict[str, Any],
+    *,
+    session_id: str,
+    model: str | None,
+) -> dict[str, Any]:
+    """Attach session identity and resolved model label to a provider event."""
+
+    enriched = dict(event)
+    enriched["session_id"] = session_id
+    enriched["model"] = format_provider_model_name(model)
+    return enriched
 
 
 def build_agent_argv(
@@ -135,7 +160,7 @@ def build_agent_argv(
         str(workspace),
     ]
 
-    resolved_model = _resolve_cli_model(model=model)
+    resolved_model = resolve_provider_cli_model(model=model)
     if resolved_model:
         argv.extend(["--model", resolved_model])
 
@@ -217,11 +242,14 @@ class CursorProvider:
             resume_session_id=None,
         )
 
-    def resume_primary_session(self, session_id: str, request: dict[str, Any]) -> None:
+    def resume_primary_session(
+        self, session_id: str, request: dict[str, Any], *, model: str | None = None
+    ) -> None:
         canonical_id = self._ensure_durable_session(
             session_id,
             role="primary",
             kind="primary",
+            model=model,
         )
         self._queue_turn(
             canonical_id,
@@ -243,11 +271,12 @@ class CursorProvider:
             resume_session_id=None,
         )
 
-    def send(self, session_id: str, request: dict[str, Any]) -> None:
+    def send(self, session_id: str, request: dict[str, Any], *, model: str | None = None) -> None:
         canonical_id = self._ensure_durable_session(
             session_id,
             role="reviewer",
             kind="reviewer",
+            model=model,
         )
         self._queue_turn(
             canonical_id,
@@ -300,7 +329,7 @@ class CursorProvider:
             "session_id": canonical_id,
             "role": session.role,
             "kind": session.kind,
-            "model": session.model,
+            "model": format_provider_model_name(session.model),
             "binary": self._binary,
             "workspace": str(self._workspace),
         }
@@ -311,6 +340,7 @@ class CursorProvider:
                 "session_id": session_id,
                 "role": session.role,
                 "kind": session.kind,
+                "model": format_provider_model_name(session.model),
             }
             for session_id, session in self._sessions.items()
         ]
@@ -376,6 +406,7 @@ class CursorProvider:
         *,
         role: str,
         kind: str,
+        model: str | None = None,
     ) -> str:
         """Re-register a persisted Cursor session after in-memory teardown."""
 
@@ -392,7 +423,7 @@ class CursorProvider:
             kind=kind,
             manifest={},
             prompt="",
-            model=None,
+            model=model,
             resume_session_id=canonical_id,
         )
         return canonical_id
@@ -411,7 +442,7 @@ class CursorProvider:
         model: str | None,
         resume_session_id: str | None,
     ) -> str:
-        session_model = _resolve_cli_model(model=model)
+        session_model = resolve_provider_cli_model(model=model)
         argv = build_agent_argv(
             self._config,
             binary=self._binary,
@@ -503,12 +534,16 @@ class CursorProvider:
                 last_error = exc
                 if attempt < max_retries:
                     self._emit_provider_event(
-                        {
-                            "type": "retry",
-                            "text": str(exc),
-                            "attempt": attempt + 1,
-                            "max_retries": max_retries,
-                        }
+                        enrich_provider_observability_event(
+                            {
+                                "type": "retry",
+                                "text": str(exc),
+                                "attempt": attempt + 1,
+                                "max_retries": max_retries,
+                            },
+                            session_id=session_id,
+                            model=session.model,
+                        )
                     )
                 if attempt >= max_retries:
                     raise
@@ -537,9 +572,14 @@ class CursorProvider:
                 session_id = self._maybe_migrate_session(session_id, provider_session_id)
             normalized = normalize_cursor_event(raw)
             if normalized is not None:
-                self._emit_provider_event(normalized)
+                enriched = enrich_provider_observability_event(
+                    normalized,
+                    session_id=session_id,
+                    model=session.model,
+                )
+                self._emit_provider_event(enriched)
                 with session.condition:
-                    session.pending_events.append(normalized)
+                    session.pending_events.append(enriched)
                     session.condition.notify_all()
 
         if provider_session_id is None:

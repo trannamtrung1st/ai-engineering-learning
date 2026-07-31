@@ -25,8 +25,9 @@ from top_down_planning.orchestrator.phases import (
     WHOLE_PLAN_REVIEW,
 )
 from top_down_planning.orchestrator.provider_turns import consume_provider_turn
+from top_down_planning.orchestrator.agent_context import resolve_role_session_context
 from top_down_planning.orchestrator.session_events import (
-    emit_primary_session_resumed,
+    resume_primary_session_with_audit,
     sync_persisted_session_id,
 )
 from top_down_planning.orchestrator.whole_plan_review import WholePlanReviewOrchestrator
@@ -293,16 +294,16 @@ class PlanAmendmentOrchestrator:
         session_id: str,
         amendment: dict[str, Any],
     ) -> None:
-        emit_primary_session_resumed(
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        role_context = resolve_role_session_context(config, run, "planner")
+        resume_primary_session_with_audit(
             self._append_event,
+            self._provider,
             role="planner",
             phase=PLAN_AMENDMENT,
             session_id=session_id,
-            amendment_id=amendment.get("id"),
-        )
-        self._provider.resume_primary_session(
-            session_id,
-            {
+            request={
                 "action": "revise_for_amendment",
                 "phase": PLAN_AMENDMENT,
                 "amendment_id": amendment.get("id"),
@@ -311,6 +312,8 @@ class PlanAmendmentOrchestrator:
                 "summary": amendment.get("summary"),
                 "completion_signal": _AMENDMENT_REVISION_READY_SIGNAL,
             },
+            model=role_context.model,
+            amendment_id=amendment.get("id"),
         )
 
     def _consume_planner_turn(self, session_id: str) -> str | None:

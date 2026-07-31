@@ -69,7 +69,12 @@ def test_stub_provider_list_active_sessions() -> None:
     active = provider.list_active_sessions()
 
     assert active == [
-        {"session_id": session_id, "role": "planner", "kind": "primary"},
+        {
+            "session_id": session_id,
+            "role": "planner",
+            "kind": "primary",
+            "model": "auto",
+        },
     ]
 
 

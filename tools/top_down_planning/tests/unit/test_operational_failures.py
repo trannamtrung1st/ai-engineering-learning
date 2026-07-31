@@ -232,6 +232,7 @@ def test_engine_emits_session_end_before_terminate(tmp_path: Path) -> None:
     assert len(end_events) == 1
     assert end_events[0].fields["phase"] == PLANNING
     assert end_events[0].fields["role"] == "planner"
+    assert end_events[0].fields["model"] == "auto"
     assert end_events[0].session_id is not None
     cancel_index = next(
         index for index, event in enumerate(collector) if event.category == "session:cancel"

@@ -19,7 +19,7 @@ class Provider(Protocol):
         """Start a new primary session and return its provider session id."""
 
     def resume_primary_session(
-        self, session_id: str, request: dict[str, Any]
+        self, session_id: str, request: dict[str, Any], *, model: str | None = None
     ) -> None:
         """Resume an existing primary session with a follow-up request."""
 
@@ -31,7 +31,7 @@ class Provider(Protocol):
     ) -> str:
         """Start a fresh reviewer session for a bounded review package."""
 
-    def send(self, session_id: str, request: dict[str, Any]) -> None:
+    def send(self, session_id: str, request: dict[str, Any], *, model: str | None = None) -> None:
         """Deliver a request to an active session."""
 
     def stream_events(self, session_id: str) -> Iterator[dict[str, Any]]:
@@ -47,7 +47,7 @@ class Provider(Protocol):
         """Return a durable reference for resuming this session later."""
 
     def list_active_sessions(self) -> list[dict[str, str]]:
-        """Return tracked sessions as session_id, role, and kind before termination."""
+        """Return tracked sessions with session_id, role, kind, and model before termination."""
 
     def terminate_session(self, session_id: str) -> None:
         """Terminate a provider session when orchestration no longer needs it."""

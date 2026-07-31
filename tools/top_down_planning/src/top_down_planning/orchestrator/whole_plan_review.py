@@ -66,9 +66,9 @@ from top_down_planning.orchestrator.provider_turns import (
     review_decision_from_store,
 )
 from top_down_planning.orchestrator.session_events import (
-    emit_primary_session_resumed,
     emit_reviewer_session_resumed,
     emit_reviewer_session_started,
+    resume_primary_session_with_audit,
     sync_persisted_session_id,
     sync_reviewer_loop_session_id,
 )
@@ -135,17 +135,12 @@ class WholePlanReviewOrchestrator:
                     loop = self._reload_loop(loop.id)
                     deliver_on_existing_session = False
                 elif deliver_on_existing_session:
-                    emit_reviewer_session_resumed(
-                        self._append_event,
-                        self._provider,
-                        phase=phase,
-                        session_id=session_id,
-                        loop_id=loop.id,
-                    )
+                    config = self._store.load_resolved_config(self._run_id)
+                    role_context = resolve_role_session_context(config, run, "reviewer")
                     package = build_whole_plan_review_package(
                         self._run_id,
                         run,
-                        self._store.load_resolved_config(self._run_id),
+                        config,
                         self._store.load_plan_model(self._run_id),
                         loop,
                     )
@@ -157,6 +152,14 @@ class WholePlanReviewOrchestrator:
                         loop_id=loop.id,
                         phase=phase,
                         review_package=package,
+                        model=role_context.model,
+                    )
+                    emit_reviewer_session_resumed(
+                        self._append_event,
+                        self._provider,
+                        phase=phase,
+                        session_id=session_id,
+                        loop_id=loop.id,
                     )
                     deliver_on_existing_session = False
                 decision = self._consume_reviewer_turn(session_id, loop.id)
@@ -521,23 +524,23 @@ class WholePlanReviewOrchestrator:
         )
         bind_provider_capability(self._provider, self._capability_token)
 
-        emit_primary_session_resumed(
+        config = self._store.load_resolved_config(self._run_id)
+        role_context = resolve_role_session_context(config, run, "planner")
+        resume_primary_session_with_audit(
             self._append_event,
             self._provider,
             role="planner",
             phase=phase,
             session_id=session_id,
-            loop_id=loop.id,
-        )
-        self._provider.resume_primary_session(
-            session_id,
-            {
+            request={
                 "action": "address_review_findings",
                 "phase": WHOLE_PLAN_REVIEW,
                 "loop_id": loop.id,
                 "target_revision": loop.target_revision,
                 "findings": [finding.to_dict() for finding in loop.findings],
             },
+            model=role_context.model,
+            loop_id=loop.id,
         )
         self._consume_planner_turn(session_id)
 
@@ -566,13 +569,8 @@ class WholePlanReviewOrchestrator:
         )
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
-        emit_reviewer_session_resumed(
-            self._append_event,
-            self._provider,
-            phase=phase,
-            session_id=session_id,
-            loop_id=loop.id,
-        )
+        config = self._store.load_resolved_config(self._run_id)
+        role_context = resolve_role_session_context(config, run, "reviewer")
         self._capability_token = deliver_reviewer_turn(
             self._provider,
             self._store,
@@ -585,6 +583,14 @@ class WholePlanReviewOrchestrator:
                 loop=updated,
                 target_revision=plan_revision,
             ),
+            model=role_context.model,
+        )
+        emit_reviewer_session_resumed(
+            self._append_event,
+            self._provider,
+            phase=phase,
+            session_id=session_id,
+            loop_id=loop.id,
         )
         return updated
 

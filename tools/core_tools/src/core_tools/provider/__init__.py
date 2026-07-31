@@ -5,7 +5,10 @@ from core_tools.provider.cursor import (
     ProcessRunner,
     build_agent_argv,
     default_process_runner,
+    enrich_provider_observability_event,
+    format_provider_model_name,
     resolve_agent_binary,
+    resolve_provider_cli_model,
 )
 from core_tools.provider.errors import (
     ProviderBinaryNotFoundError,
@@ -30,6 +33,9 @@ __all__ = [
     "build_agent_argv",
     "create_provider",
     "default_process_runner",
+    "enrich_provider_observability_event",
+    "format_provider_model_name",
     "normalize_cursor_event",
     "resolve_agent_binary",
+    "resolve_provider_cli_model",
 ]

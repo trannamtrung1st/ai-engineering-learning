@@ -8,6 +8,11 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from core_tools.provider.cursor import (
+    enrich_provider_observability_event,
+    format_provider_model_name,
+    resolve_provider_cli_model,
+)
 from core_tools.provider.errors import ProviderSessionError, ProviderTurnError
 from core_tools.provider.events import format_manifest_prompt, format_request_prompt, normalize_cursor_event
 
@@ -79,14 +84,16 @@ class StubProvider:
             role=role,
             kind="primary",
             manifest=copy.deepcopy(context_manifest),
-            model=model,
+            model=resolve_provider_cli_model(model=model),
         )
         prompt = format_manifest_prompt(role, context_manifest)
         self._enqueue_turn(session_id, {"prompt": prompt, "kind": "start"})
         return session_id
 
-    def resume_primary_session(self, session_id: str, request: dict[str, Any]) -> None:
-        self._ensure_durable_session(session_id, role="primary", kind="primary")
+    def resume_primary_session(
+        self, session_id: str, request: dict[str, Any], *, model: str | None = None
+    ) -> None:
+        self._ensure_durable_session(session_id, role="primary", kind="primary", model=model)
         self._enqueue_turn(session_id, request)
 
     def start_reviewer_session(
@@ -100,14 +107,14 @@ class StubProvider:
             role="reviewer",
             kind="reviewer",
             manifest=copy.deepcopy(review_package),
-            model=model,
+            model=resolve_provider_cli_model(model=model),
         )
         prompt = format_request_prompt(review_package)
         self._enqueue_turn(session_id, {"prompt": prompt, "kind": "start"})
         return session_id
 
-    def send(self, session_id: str, request: dict[str, Any]) -> None:
-        self._ensure_durable_session(session_id, role="reviewer", kind="reviewer")
+    def send(self, session_id: str, request: dict[str, Any], *, model: str | None = None) -> None:
+        self._ensure_durable_session(session_id, role="reviewer", kind="reviewer", model=model)
         self._enqueue_turn(session_id, request)
 
     def canonical_session_id(self, session_id: str) -> str:
@@ -136,7 +143,7 @@ class StubProvider:
             "session_id": session_id,
             "role": session.role,
             "kind": session.kind,
-            "model": session.model,
+            "model": format_provider_model_name(session.model),
             "turn_count": len(session.history),
         }
 
@@ -146,6 +153,7 @@ class StubProvider:
                 "session_id": session_id,
                 "role": session.role,
                 "kind": session.kind,
+                "model": format_provider_model_name(session.model),
             }
             for session_id, session in self._sessions.items()
         ]
@@ -178,6 +186,7 @@ class StubProvider:
         *,
         role: str,
         kind: str,
+        model: str | None = None,
     ) -> None:
         if session_id in self._sessions:
             return
@@ -185,6 +194,7 @@ class StubProvider:
             role=role,
             kind=kind,
             manifest={},
+            model=resolve_provider_cli_model(model=model),
         )
 
     def _enqueue_turn(self, session_id: str, request: dict[str, Any]) -> None:
@@ -195,9 +205,13 @@ class StubProvider:
             normalized = normalize_cursor_event(copy.deepcopy(event))
             if normalized is None:
                 continue
-            normalized.setdefault("session_id", session_id)
-            self._emit_provider_event(normalized)
-            session.pending_events.append(normalized)
+            enriched = enrich_provider_observability_event(
+                normalized,
+                session_id=session_id,
+                model=session.model,
+            )
+            self._emit_provider_event(enriched)
+            session.pending_events.append(enriched)
 
     def _emit_provider_event(self, event: dict[str, Any]) -> None:
         if self._on_provider_event is not None:

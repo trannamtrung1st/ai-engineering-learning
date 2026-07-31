@@ -228,14 +228,18 @@ class ProviderToConsoleBridge:
                 self._emit_tool_event("tool:end", event, session_id=session)
             return
         if event_type == "retry":
+            fields = self._provider_fields(event)
+            fields.update(
+                {
+                    "attempt": event.get("attempt"),
+                    "max_retries": event.get("max_retries"),
+                }
+            )
             self._context.emit(
                 ConsoleEvent(
                     category="retry",
                     message=str(event.get("text") or "provider retry"),
-                    fields={
-                        "attempt": event.get("attempt"),
-                        "max_retries": event.get("max_retries"),
-                    },
+                    fields=fields,
                 )
             )
             return
@@ -245,6 +249,7 @@ class ProviderToConsoleBridge:
                     category="error",
                     message=str(event.get("text") or "provider error"),
                     session_id=session,
+                    fields=self._provider_fields(event),
                 )
             )
             return
@@ -258,9 +263,16 @@ class ProviderToConsoleBridge:
                         category="error",
                         message=str(event.get("text") or "provider turn failed"),
                         session_id=session,
+                        fields=self._provider_fields(event),
                     )
                 )
             return
+
+    def _provider_fields(self, event: dict[str, Any]) -> dict[str, str]:
+        model = event.get("model")
+        if isinstance(model, str) and model:
+            return {"model": model}
+        return {}
 
     def _emit_delta(
         self,
@@ -299,6 +311,7 @@ class ProviderToConsoleBridge:
                 category=category,
                 message=summary,
                 session_id=session_id,
+                fields=self._provider_fields(event),
             )
         )
 

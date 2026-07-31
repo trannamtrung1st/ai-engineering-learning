@@ -167,6 +167,7 @@ def deliver_reviewer_turn(
     loop_id: str,
     phase: str,
     request: dict[str, Any],
+    model: str | None = None,
 ) -> str:
     """Issue a reviewer capability token, bind it, then queue a provider turn."""
 
@@ -180,7 +181,7 @@ def deliver_reviewer_turn(
         loop_id=loop_id,
     )
     bind_provider_capability(provider, token)
-    provider.send(session_id, request)
+    provider.send(session_id, request, model=model)
     return token
 
 
@@ -223,6 +224,7 @@ def resume_reviewer_session_with_package(
     loop_id: str,
     phase: str,
     review_package: dict[str, Any],
+    model: str | None = None,
 ) -> str:
     """Deliver a full review package on an existing reviewer session (cold resume)."""
 
@@ -234,6 +236,7 @@ def resume_reviewer_session_with_package(
         loop_id=loop_id,
         phase=phase,
         request=review_package,
+        model=model,
     )
 
 

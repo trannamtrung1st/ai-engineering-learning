@@ -299,14 +299,20 @@ class RunEngine:
                 return result
             finally:
                 for session in provider.list_active_sessions():
+                    session_id = session["session_id"]
+                    model = session.get("model")
+                    extra_fields: dict[str, Any] = {}
+                    if isinstance(model, str):
+                        extra_fields["model"] = model
                     self._emit(
                         session_lifecycle_event(
                             category="session:end",
                             role=session["role"],
                             phase=phase,
-                            session_id=session["session_id"],
+                            session_id=session_id,
                             run_id=run_id,
                             kind=session.get("kind"),
+                            **extra_fields,
                         )
                     )
                 provider.terminate_all_sessions()

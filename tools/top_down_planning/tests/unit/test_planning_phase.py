@@ -113,7 +113,9 @@ def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) 
     assert run["outcome"] is None
 
     events = store.load_events("run-20260101T000101-000101")
-    assert any(event["type"] == "planner_session_started" for event in events)
+    started = [event for event in events if event["type"] == "planner_session_started"]
+    assert started
+    assert started[0]["model"] == "auto"
     assert any(event["type"] == "planning_candidate_ready" for event in events)
 
 
@@ -167,6 +169,49 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
     assert result.session_id == session_id
     assert result.agent_turns == 2
     assert provider.get_session_reference(session_id)["turn_count"] == 2
+
+
+def test_planning_resumes_persisted_session_on_fresh_provider(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    provider = StubProvider()
+    provider.script_turn(done_events(signal="continue", text="planning turn"))
+    run = store.load_run("run-20260101T000101-000101")
+    config = store.load_resolved_config("run-20260101T000101-000101")
+    from top_down_planning.orchestrator.planning import build_planner_context_manifest
+
+    plan = store.load_plan_model("run-20260101T000101-000101")
+    session_id = provider.start_primary_session(
+        "planner",
+        build_planner_context_manifest("run-20260101T000101-000101", run, config, plan),
+    )
+    list(provider.stream_events(session_id))
+
+    expected_revision = int(run["revision"])
+    run["revision"] = expected_revision + 1
+    run["sessions"] = {"primary_planner_session_id": session_id}
+    run["planning"] = {"agent_turns": 1, "items_added": 0}
+    store.save_run("run-20260101T000101-000101", run, expected_revision)
+
+    fresh_provider = StubProvider()
+    fresh_provider.script_session_turn(
+        session_id,
+        done_events(signal="candidate_plan_ready", text="done"),
+    )
+    result = PlanningPhaseOrchestrator(
+        store,
+        "run-20260101T000101-000101",
+        fresh_provider,
+    ).run()
+
+    assert result.ok is True
+    resumed = [
+        event
+        for event in store.load_events("run-20260101T000101-000101")
+        if event["type"] == "planner_session_resumed"
+    ]
+    assert resumed
+    assert resumed[-1]["model"] == "auto"
 
 
 def test_non_planner_apply_during_planning_is_rejected(tmp_path: Path) -> None:

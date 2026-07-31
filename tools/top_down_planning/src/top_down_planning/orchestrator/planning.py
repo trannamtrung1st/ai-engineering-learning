@@ -32,8 +32,8 @@ from top_down_planning.orchestrator.provider_turns import (
     sync_planning_items_added,
 )
 from top_down_planning.orchestrator.session_events import (
-    emit_primary_session_resumed,
     emit_primary_session_started,
+    resume_primary_session_with_audit,
     sync_persisted_session_id,
 )
 from top_down_planning.persistence.digests import compute_plan_digest
@@ -80,6 +80,7 @@ class PlanningPhaseOrchestrator:
 
         config = self._store.load_resolved_config(self._run_id)
         loop_limits = _planning_loop_limits(config)
+        role_context = resolve_role_session_context(config, run, "planner")
 
         session_id = _primary_planner_session_id(run)
         if session_id is None:
@@ -97,21 +98,21 @@ class PlanningPhaseOrchestrator:
             )
             emit_primary_session_started(
                 self._append_event,
+                self._provider,
                 role="planner",
                 phase=PLANNING,
                 session_id=session_id,
             )
             run = _persist_session_id(self._store, self._run_id, session_id)
         else:
-            emit_primary_session_resumed(
+            resume_primary_session_with_audit(
                 self._append_event,
+                self._provider,
                 role="planner",
                 phase=PLANNING,
                 session_id=session_id,
-            )
-            self._provider.resume_primary_session(
-                session_id,
-                {"action": "continue", "phase": PLANNING},
+                request={"action": "continue", "phase": PLANNING},
+                model=role_context.model,
             )
 
         run = self._store.load_run(self._run_id)
@@ -177,15 +178,13 @@ class PlanningPhaseOrchestrator:
 
             if turn_signal == PLANNER_CANDIDATE_READY_SIGNAL:
                 if self._has_blocking_focused_plan_findings():
-                    emit_primary_session_resumed(
+                    resume_primary_session_with_audit(
                         self._append_event,
+                        self._provider,
                         role="planner",
                         phase=PLANNING,
                         session_id=session_id,
-                    )
-                    self._provider.resume_primary_session(
-                        session_id,
-                        {
+                        request={
                             "action": "continue",
                             "phase": PLANNING,
                             "blocked_reason": (
@@ -193,6 +192,7 @@ class PlanningPhaseOrchestrator:
                                 "focused plan review findings remain in scope"
                             ),
                         },
+                        model=role_context.model,
                     )
                     continue
                 preflight = self._candidate_preflight()
@@ -202,15 +202,13 @@ class PlanningPhaseOrchestrator:
                     if issue.severity == "warning"
                 ]
                 if not preflight.ok:
-                    emit_primary_session_resumed(
+                    resume_primary_session_with_audit(
                         self._append_event,
+                        self._provider,
                         role="planner",
                         phase=PLANNING,
                         session_id=session_id,
-                    )
-                    self._provider.resume_primary_session(
-                        session_id,
-                        {
+                        request={
                             "action": "continue",
                             "phase": PLANNING,
                             "blocked_reason": (
@@ -224,6 +222,7 @@ class PlanningPhaseOrchestrator:
                             ],
                             "warnings": warnings,
                         },
+                        model=role_context.model,
                     )
                     continue
                 plan = self._store.load_plan_model(self._run_id)
@@ -266,15 +265,14 @@ class PlanningPhaseOrchestrator:
             )
             bind_provider_capability(self._provider, self._capability_token)
 
-            emit_primary_session_resumed(
+            resume_primary_session_with_audit(
                 self._append_event,
+                self._provider,
                 role="planner",
                 phase=phase,
                 session_id=session_id,
-            )
-            self._provider.resume_primary_session(
-                session_id,
-                {"action": "continue", "phase": PLANNING},
+                request={"action": "continue", "phase": PLANNING},
+                model=role_context.model,
             )
 
     def _has_blocking_focused_plan_findings(self) -> bool:

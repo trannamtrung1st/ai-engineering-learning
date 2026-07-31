@@ -49,8 +49,8 @@ from top_down_planning.orchestrator.provider_turns import (
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.orchestrator.session_events import (
-    emit_primary_session_resumed,
     emit_primary_session_started,
+    resume_primary_session_with_audit,
     sync_persisted_session_id,
 )
 from top_down_planning.persistence.digests import compute_output_digest
@@ -103,6 +103,7 @@ class ProductionPhaseOrchestrator:
 
         config = self._store.load_resolved_config(self._run_id)
         loop_limits = _production_loop_limits(config)
+        role_context = resolve_role_session_context(config, run, "producer")
 
         session_id = _primary_producer_session_id(run)
         if session_id is None:
@@ -122,21 +123,21 @@ class ProductionPhaseOrchestrator:
             )
             emit_primary_session_started(
                 self._append_event,
+                self._provider,
                 role="producer",
                 phase=PRODUCTION,
                 session_id=session_id,
             )
             run = _persist_session_id(self._store, self._run_id, session_id)
         else:
-            emit_primary_session_resumed(
+            resume_primary_session_with_audit(
                 self._append_event,
+                self._provider,
                 role="producer",
                 phase=PRODUCTION,
                 session_id=session_id,
-            )
-            self._provider.resume_primary_session(
-                session_id,
-                {"action": "continue", "phase": PRODUCTION},
+                request={"action": "continue", "phase": PRODUCTION},
+                model=role_context.model,
             )
 
         run = self._store.load_run(self._run_id)
@@ -246,15 +247,14 @@ class ProductionPhaseOrchestrator:
 
             run = self._store.load_run(self._run_id)
             phase = str(run.get("phase") or PRODUCTION)
-            emit_primary_session_resumed(
+            resume_primary_session_with_audit(
                 self._append_event,
+                self._provider,
                 role="producer",
                 phase=phase,
                 session_id=session_id,
-            )
-            self._provider.resume_primary_session(
-                session_id,
-                self._producer_resume_request(),
+                request=self._producer_resume_request(),
+                model=role_context.model,
             )
 
             run = self._store.load_run(self._run_id)

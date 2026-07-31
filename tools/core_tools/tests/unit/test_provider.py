@@ -15,8 +15,11 @@ from core_tools.provider import (
     StubProvider,
     build_agent_argv,
     create_provider,
+    format_provider_model_name,
+    enrich_provider_observability_event,
     normalize_cursor_event,
     resolve_agent_binary,
+    resolve_provider_cli_model,
 )
 from core_tools.provider.events import (
     format_manifest_prompt,
@@ -686,4 +689,35 @@ def test_cursor_resume_primary_session_restores_after_terminate(tmp_path: Path) 
     list(provider.stream_events(canonical_id))
 
     assert captured_argv[1][captured_argv[1].index("--resume") + 1] == "chat-abc"
+
+
+def test_resolve_provider_cli_model_skips_auto_and_blank() -> None:
+    assert resolve_provider_cli_model(model=None) is None
+    assert resolve_provider_cli_model(model="auto") is None
+    assert resolve_provider_cli_model(model="  auto  ") is None
+    assert resolve_provider_cli_model(model="reasoning-model") == "reasoning-model"
+
+
+def test_format_provider_model_name_labels_auto() -> None:
+    assert format_provider_model_name(None) == "auto"
+    assert format_provider_model_name("auto") == "auto"
+    assert format_provider_model_name("coding-model") == "coding-model"
+
+
+def test_enrich_provider_observability_event_attaches_session_and_model() -> None:
+    enriched = enrich_provider_observability_event(
+        {"type": "assistant", "text": "hello"},
+        session_id="session-1",
+        model="coding-model",
+    )
+    assert enriched["session_id"] == "session-1"
+    assert enriched["model"] == "coding-model"
+    assert enriched["text"] == "hello"
+
+    auto = enrich_provider_observability_event(
+        {"type": "done", "subtype": "success"},
+        session_id="session-2",
+        model=None,
+    )
+    assert auto["model"] == "auto"
 

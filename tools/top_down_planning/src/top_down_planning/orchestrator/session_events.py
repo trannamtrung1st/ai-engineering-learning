@@ -11,8 +11,22 @@ from core_tools.provider import Provider
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
 
 
+def session_model_from_provider(provider: Provider, session_id: str) -> str:
+    """Return the provider-resolved model label for an active session."""
+
+    model = provider.get_session_reference(session_id).get("model")
+    if not isinstance(model, str) or not model:
+        raise ValueError(f"provider session {session_id} is missing a model label")
+    return model
+
+
+def _session_model_fields(provider: Provider, session_id: str) -> dict[str, str]:
+    return {"model": session_model_from_provider(provider, session_id)}
+
+
 def emit_primary_session_started(
     append_event: Callable[..., None],
+    provider: Provider,
     *,
     role: str,
     phase: str,
@@ -26,12 +40,14 @@ def emit_primary_session_started(
         session_id=session_id,
         role=role,
         phase=phase,
+        **_session_model_fields(provider, session_id),
         **fields,
     )
 
 
 def emit_primary_session_resumed(
     append_event: Callable[..., None],
+    provider: Provider,
     *,
     role: str,
     phase: str,
@@ -45,12 +61,14 @@ def emit_primary_session_resumed(
         session_id=session_id,
         role=role,
         phase=phase,
+        **_session_model_fields(provider, session_id),
         **fields,
     )
 
 
 def emit_reviewer_session_started(
     append_event: Callable[..., None],
+    provider: Provider,
     *,
     phase: str,
     session_id: str,
@@ -61,12 +79,14 @@ def emit_reviewer_session_started(
         session_id=session_id,
         role="reviewer",
         phase=phase,
+        **_session_model_fields(provider, session_id),
         **fields,
     )
 
 
 def emit_reviewer_session_resumed(
     append_event: Callable[..., None],
+    provider: Provider,
     *,
     phase: str,
     session_id: str,
@@ -77,6 +97,49 @@ def emit_reviewer_session_resumed(
         session_id=session_id,
         role="reviewer",
         phase=phase,
+        **_session_model_fields(provider, session_id),
+        **fields,
+    )
+
+
+def resume_primary_session_with_audit(
+    append_event: Callable[..., None],
+    provider: Provider,
+    *,
+    role: str,
+    phase: str,
+    session_id: str,
+    request: dict[str, Any],
+    model: str | None,
+    **fields: Any,
+) -> None:
+    provider.resume_primary_session(session_id, request, model=model)
+    emit_primary_session_resumed(
+        append_event,
+        provider,
+        role=role,
+        phase=phase,
+        session_id=session_id,
+        **fields,
+    )
+
+
+def send_reviewer_session_with_audit(
+    append_event: Callable[..., None],
+    provider: Provider,
+    *,
+    phase: str,
+    session_id: str,
+    request: dict[str, Any],
+    model: str | None,
+    **fields: Any,
+) -> None:
+    provider.send(session_id, request, model=model)
+    emit_reviewer_session_resumed(
+        append_event,
+        provider,
+        phase=phase,
+        session_id=session_id,
         **fields,
     )
 
