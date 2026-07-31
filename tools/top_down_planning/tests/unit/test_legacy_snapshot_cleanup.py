@@ -23,7 +23,7 @@ _FORBIDDEN = (
 )
 
 _ALLOWED_REJECTION_MARKERS = (
-    "legacy list-shaped snapshot bindings are not supported",
+    "Unsupported context snapshot binding shape",
     "rejects absolute binding path",
     "Unsupported context snapshot binding",
     "Recreate the run",

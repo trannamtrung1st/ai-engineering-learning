@@ -427,6 +427,9 @@ class FileRunStore:
 
     def save_run(self, run_id: str, run: dict[str, Any], expected_revision: int) -> int:
         payload = dict(run)
+        binding = payload.get("context_snapshot_binding")
+        if binding is not None:
+            validate_context_snapshot_binding(binding)
         next_revision = require_revision_field(payload, "run")
         assert_next_revision(expected_revision, next_revision)
         self.commit(

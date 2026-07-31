@@ -229,6 +229,7 @@ context_snapshot:
 - Patterns match canonical workspace-relative POSIX paths. Negations (including overrides of built-ins), `*`, `**`, root anchors (`/rooted.txt`), and directory-only patterns (`dir/`) follow the gitignore dialect via a pathspec adapter.
 - TDP does **not** inherit `.gitignore`. Exclusion policy participates in `context_spec` identity, so changing defaults, patterns, pattern order, or the built-in policy version changes the context-spec digest.
 - Direct file resources always bind (including missing files with a missing-resource sentinel digest), even when they match an exclude pattern. Files discovered through directory or glob expansion are filtered. Glob expansion stays file-only / non-recursive as before.
+- Resource paths must resolve inside the workspace; absolute paths, unresolved `..`, and symlink escapes are rejected during materialization (same contract as production evidence refs). External paths fail at collection, not as silent unauthorized drift.
 - Binding keys are workspace-relative POSIX paths (`/`); digests are bare lowercase hex (no `sha256:` prefix). Production evidence `ref` values use the same canonical relative path model. The persisted binding is a compact map:
 
 ```json
@@ -240,6 +241,8 @@ context_snapshot:
 ```
 
 List-shaped `{path, digest}` entries, absolute path keys, and a binding-level `workspace` field are rejected; recreate the run. Config document `version` is unrelated to run-record `schema_version` (currently `2`). Unsupported or missing run `schema_version` fails load with a recreate message — there is no automatic migrator. `PYTHONDONTWRITEBYTECODE=1` may still suppress local bytecode during older workflows, but it is not the permanent fix; use snapshot excludes instead.
+
+Snapshot excludes apply only to **context snapshot** resource materialization (`SnapshotPolicy.collect`). Agent session resource manifests still expand directories recursively and may list `__pycache__` / `.pyc` paths from `resolve_expanded_path_list`; that packaging surface is intentionally unchanged — use snapshot excludes for integrity binding, not for agent manifest hygiene.
 
 Phase-entry audit events distinguish precondition failures from orchestrator start:
 

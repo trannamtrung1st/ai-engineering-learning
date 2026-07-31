@@ -12,6 +12,7 @@ _LEGACY_BINDING_MESSAGE = (
     "Unsupported context snapshot binding shape. "
     "Recreate the run using the current TDP version."
 )
+LEGACY_SNAPSHOT_BINDING_MESSAGE = _LEGACY_BINDING_MESSAGE
 
 
 class InvalidSnapshotBindingError(PersistenceError):
@@ -104,5 +105,6 @@ def validate_context_snapshot_binding(binding: object) -> dict[str, Any]:
 
 __all__ = [
     "InvalidSnapshotBindingError",
+    "LEGACY_SNAPSHOT_BINDING_MESSAGE",
     "validate_context_snapshot_binding",
 ]

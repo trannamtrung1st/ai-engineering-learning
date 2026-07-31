@@ -18,6 +18,7 @@ from core_tools.config.paths import assert_path_within_workspace
 from core_tools.persistence.digests import digest_file, digest_text
 
 from top_down_planning.config.resolve import resolve_output_goal_text
+from top_down_planning.config.snapshot_policy import _has_glob_metacharacters
 
 AgentRole = Literal["planner", "producer", "reviewer"]
 
@@ -134,10 +135,6 @@ def _resolve_supporting_resources(
     return tuple(resolved)
 
 
-def _path_has_glob_metacharacters(value: str) -> bool:
-    return any(char in value for char in "*?[]")
-
-
 def _normalize_resource_selection(
     entries: list[Any],
     *,
@@ -158,7 +155,7 @@ def _normalize_resource_selection(
         if not configured_value:
             continue
 
-        if _path_has_glob_metacharacters(configured_value):
+        if _has_glob_metacharacters(configured_value):
             key = configured_value
         else:
             candidate = resolve_workspace_path(configured_value, workspace=workspace)
@@ -508,83 +505,39 @@ def _materialize_resource_digests(
     *,
     workspace: Path,
 ) -> tuple[dict[str, str], "SnapshotDiagnostics"]:
-    """Materialize resource snapshot digests with §6 exclusion semantics.
+    """Materialize resource snapshot digests via SnapshotPolicy.collect (§10).
 
-    - Direct files (including missing) always bind; exclusions do not apply.
-    - Directory declarations are walked recursively; discovered files are filtered.
-    - Glob declarations keep file-only non-recursive expansion; matches are filtered.
-    - Skills/guidance are not handled here.
-
-    Directory walks post-filter after ``rglob`` (no prune) so later negated exclude
-    patterns can still re-include descendants (proposal §5). ``pruned_directories``
-    in diagnostics therefore remains 0; excluded counts reflect enumerated files only.
+    Direct files (including missing) always bind; directory walks and glob expansion
+    filter discovered files. Skills/guidance are not handled here.
     """
 
     from top_down_planning.config.snapshot_diagnostics import SnapshotDiagnostics
-    from top_down_planning.config.snapshot_policy import (
-        CanonicalPathCollisionError,
-        SnapshotPolicy,
-        canonicalize_workspace_path,
-    )
+    from top_down_planning.config.snapshot_policy import SnapshotPolicy
 
     policy = SnapshotPolicy.from_config(config, workspace=workspace)
-    workspace_resolved = workspace.resolve()
-    digests: dict[str, str] = {}
-    paths_by_key: dict[str, Path] = {}
-    excluded_files = 0
-
-    def bind(path: Path, *, explicitly_declared: bool) -> None:
-        nonlocal excluded_files
-        key = canonicalize_workspace_path(path, workspace=workspace)
-        if not policy.is_included(
-            key,
-            is_directory=False,
-            explicitly_declared=explicitly_declared,
-        ):
-            excluded_files += 1
-            return
-        prior = paths_by_key.get(key)
-        if prior is not None and prior.resolve() != path.resolve():
-            raise CanonicalPathCollisionError(key, prior, path)
-        if key in digests:
-            return
-        paths_by_key[key] = path
-        digests[key] = (
-            digest_file(path) if path.is_file() else MISSING_RESOURCE_FILE_DIGEST
-        )
-
+    resources: list[str] = []
     for field, configured_value in _configured_resource_entries(config):
-        if _path_has_glob_metacharacters(configured_value):
-            for match in sorted(workspace_resolved.glob(configured_value)):
-                if match.is_file():
-                    bind(match, explicitly_declared=False)
-            continue
+        if not _has_glob_metacharacters(configured_value):
+            candidate = resolve_workspace_path(configured_value, workspace=workspace)
+            assert_path_within_workspace(
+                candidate,
+                workspace=workspace,
+                field=field,
+                configured_value=configured_value,
+            )
+        resources.append(configured_value)
 
-        candidate = resolve_workspace_path(configured_value, workspace=workspace)
-        assert_path_within_workspace(
-            candidate,
-            workspace=workspace,
-            field=field,
-            configured_value=configured_value,
-        )
-        if candidate.is_file():
-            bind(candidate, explicitly_declared=True)
-            continue
-        if candidate.is_dir():
-            for file_path in sorted(candidate.rglob("*")):
-                if file_path.is_file():
-                    bind(file_path, explicitly_declared=False)
-            continue
-        bind(candidate, explicitly_declared=True)
-
-    ordered = {key: digests[key] for key in sorted(digests)}
-    diagnostics = SnapshotDiagnostics(
-        included_files=len(ordered),
-        excluded_files=excluded_files,
-        pruned_directories=0,
-        policy_version=policy.policy_version,
+    collection = policy.collect(
+        resources,
+        missing_digest=MISSING_RESOURCE_FILE_DIGEST,
     )
-    return ordered, diagnostics
+    diagnostics = SnapshotDiagnostics(
+        included_files=len(collection.digests),
+        excluded_files=collection.excluded_file_count,
+        pruned_directories=collection.excluded_directory_count,
+        policy_version=collection.policy_version,
+    )
+    return collection.digests, diagnostics
 
 
 def _exclusion_policy_for_context_spec(

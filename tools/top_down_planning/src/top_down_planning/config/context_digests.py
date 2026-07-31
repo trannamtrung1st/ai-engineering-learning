@@ -5,6 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from top_down_planning.config.binding_validation import (
+    InvalidSnapshotBindingError,
+    LEGACY_SNAPSHOT_BINDING_MESSAGE,
+)
 from top_down_planning.config.context import (
     build_context_snapshot_payload_with_diagnostics,
     compute_context_snapshot_digest_from_payload,
@@ -33,6 +37,17 @@ class UnauthorizedContextMutationError(ValueError):
         self.unauthorized_paths = unauthorized_paths
 
 
+class InvalidProductionEvidenceError(ValueError):
+    """Production evidence refs cannot be canonicalized for authorization."""
+
+    def __init__(self, invalid_refs: tuple[str, ...]) -> None:
+        joined = ", ".join(invalid_refs)
+        super().__init__(
+            f"production contains invalid evidence refs (recreate or fix production): {joined}"
+        )
+        self.invalid_refs = invalid_refs
+
+
 def _guidance_digest_key(entry: dict[str, Any]) -> str | None:
     path = entry.get("path")
     if path:
@@ -51,6 +66,45 @@ def _format_snapshot_drift_label(key: str) -> str:
     return key
 
 
+def _production_evidence_ref_strings(production: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    for entry in production.get("output_evidence") or []:
+        if isinstance(entry, dict):
+            ref_text = str(entry.get("ref") or "").strip()
+            if ref_text:
+                refs.append(ref_text)
+    for batch in production.get("batches") or []:
+        if not isinstance(batch, dict):
+            continue
+        if batch.get("evidence_status") == "invalidated_by_reconciliation":
+            continue
+        result = batch.get("result")
+        if not isinstance(result, dict):
+            continue
+        for output in result.get("outputs") or []:
+            if isinstance(output, dict):
+                ref_text = str(output.get("ref") or "").strip()
+                if ref_text:
+                    refs.append(ref_text)
+    return refs
+
+
+def invalid_production_evidence_refs(
+    production: dict[str, Any],
+    *,
+    workspace: Path,
+) -> tuple[str, ...]:
+    """Return evidence refs that fail canonicalization (corrupted production)."""
+
+    invalid: list[str] = []
+    for ref_text in _production_evidence_ref_strings(production):
+        try:
+            canonicalize_evidence_ref(ref_text, workspace=workspace)
+        except CanonicalPathError:
+            invalid.append(ref_text)
+    return tuple(invalid)
+
+
 def authorized_production_workspace_paths(
     production: dict[str, Any],
     *,
@@ -63,33 +117,13 @@ def authorized_production_workspace_paths(
     """
 
     authorized: set[str] = set()
-
-    def add_ref(ref: object) -> None:
-        ref_text = str(ref or "").strip()
-        if not ref_text:
-            return
+    for ref_text in _production_evidence_ref_strings(production):
         try:
             authorized.add(canonicalize_evidence_ref(ref_text, workspace=workspace))
         except CanonicalPathError:
-            # Invalid refs never authorize drift; apply-time capture rejects them.
-            return
-
-    for entry in production.get("output_evidence") or []:
-        if isinstance(entry, dict):
-            add_ref(entry.get("ref"))
-
-    for batch in production.get("batches") or []:
-        if not isinstance(batch, dict):
+            # Invalid refs are surfaced by invalid_production_evidence_refs /
+            # validate_production_snapshot_rebase before authorization checks.
             continue
-        if batch.get("evidence_status") == "invalidated_by_reconciliation":
-            continue
-        result = batch.get("result")
-        if not isinstance(result, dict):
-            continue
-        for output in result.get("outputs") or []:
-            if isinstance(output, dict):
-                add_ref(output.get("ref"))
-
     return authorized
 
 
@@ -107,10 +141,7 @@ def diff_snapshot_binding_paths(
         resources_raw = binding.get("resource_digests") or {}
         skills_raw = binding.get("skill_digests") or {}
         if isinstance(resources_raw, list) or isinstance(skills_raw, list):
-            raise ValueError(
-                "legacy list-shaped snapshot bindings are not supported; "
-                "recreate the run using the current TDP version"
-            )
+            raise InvalidSnapshotBindingError(LEGACY_SNAPSHOT_BINDING_MESSAGE)
         resources = {
             str(path): str(digest or "")
             for path, digest in dict(resources_raw).items()
@@ -154,6 +185,10 @@ def validate_production_snapshot_rebase(
     changed_paths = diff_snapshot_binding_paths(old_binding, new_binding)
     if not changed_paths:
         return []
+
+    invalid_refs = invalid_production_evidence_refs(production, workspace=workspace)
+    if invalid_refs:
+        raise InvalidProductionEvidenceError(invalid_refs)
 
     authorized = authorized_production_workspace_paths(production, workspace=workspace)
     unauthorized = [path for path in changed_paths if path not in authorized]
@@ -234,11 +269,13 @@ def recompute_context_snapshot_binding_with_diagnostics(
 
 
 __all__ = [
+    "InvalidProductionEvidenceError",
     "UnauthorizedContextMutationError",
     "authorized_production_workspace_paths",
     "build_initial_context_snapshot_binding",
     "build_initial_context_snapshot_binding_with_diagnostics",
     "diff_snapshot_binding_paths",
+    "invalid_production_evidence_refs",
     "recompute_context_snapshot_binding",
     "recompute_context_snapshot_binding_with_diagnostics",
     "short_path_for_observability",

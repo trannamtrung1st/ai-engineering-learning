@@ -98,6 +98,21 @@ def test_diff_uses_map_comparison() -> None:
     ]
 
 
+def test_diff_rejects_legacy_list_shape_with_binding_error() -> None:
+    legacy = {
+        "resource_digests": [{"path": "a.py", "digest": "a" * 64}],
+        "skill_digests": {},
+        "guidance_digests": [],
+    }
+    compact = {
+        "resource_digests": {},
+        "skill_digests": {},
+        "guidance_digests": [],
+    }
+    with pytest.raises(InvalidSnapshotBindingError, match="Recreate"):
+        diff_snapshot_binding_paths(legacy, compact)
+
+
 def test_create_run_persists_and_reloads_compact_binding(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     (workspace / "guide.md").write_text("g\n", encoding="utf-8")
@@ -132,3 +147,39 @@ agent_context:
     assert isinstance(binding["resource_digests"], dict)
     assert "guide.md" in binding["resource_digests"]
     assert "workspace" not in binding
+
+
+def test_save_run_validates_context_snapshot_binding(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+""",
+        ),
+        cwd=workspace,
+    )
+    store = FileRunStore(tmp_path / "runs")
+    store.create_run(
+        "run-20260101T000502-000502",
+        plan={
+            "schema_version": 1,
+            "id": "plan-save-run",
+            "revision": 0,
+            "output_goal": "Goal.",
+            "items": [],
+        },
+        **create_run_kwargs(workspace, resolved_config=config),
+    )
+    run = store.load_run("run-20260101T000502-000502")
+    expected = int(run["revision"])
+    run["revision"] = expected + 1
+    run["context_snapshot_binding"] = {
+        "resource_digests": [{"path": "a.py", "digest": "a" * 64}],
+        "skill_digests": {},
+        "guidance_digests": [],
+    }
+    with pytest.raises(InvalidSnapshotBindingError, match="Recreate"):
+        store.save_run("run-20260101T000502-000502", run, expected)

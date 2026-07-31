@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core_tools.config.errors import ConfigError
 from core_tools.persistence.digests import digest_file
 
 from top_down_planning.config.exclude_matching import (
@@ -21,6 +22,12 @@ from top_down_planning.config.exclude_matching import (
 )
 
 SNAPSHOT_POLICY_VERSION = "snapshot-excludes-v1"
+
+_GLOB_METACHARACTERS = frozenset("*?[]")
+
+
+def _has_glob_metacharacters(value: str) -> bool:
+    return any(char in _GLOB_METACHARACTERS for char in value)
 
 
 class CanonicalPathError(ValueError):
@@ -107,15 +114,17 @@ def detect_canonical_collisions(
     *,
     workspace: Path,
 ) -> dict[str, Path]:
-    """Map canonical keys to paths; raise on duplicate keys."""
+    """Map canonical keys to paths; dedupe symlink aliases with the same resolve target."""
 
     mapping: dict[str, Path] = {}
     for path in paths:
         key = canonicalize_workspace_path(path, workspace=workspace)
         prior = mapping.get(key)
         if prior is not None:
-            raise CanonicalPathCollisionError(key, prior, path)
-        mapping[key] = path
+            if prior.resolve() != path.resolve():
+                raise CanonicalPathCollisionError(key, prior, path)
+            continue
+        mapping[key] = path.resolve()
     return mapping
 
 
@@ -139,6 +148,15 @@ class SnapshotPolicy:
     user_patterns: tuple[str, ...] = ()
     effective_patterns: tuple[str, ...] = ()
     policy_version: str = SNAPSHOT_POLICY_VERSION
+    _exclude_matcher: Any = None
+
+    def __post_init__(self) -> None:
+        matcher = (
+            compile_exclude_matcher(self.effective_patterns)
+            if self.effective_patterns
+            else None
+        )
+        object.__setattr__(self, "_exclude_matcher", matcher)
 
     @classmethod
     def from_config(
@@ -158,12 +176,24 @@ class SnapshotPolicy:
 
         defaults = excludes.get("defaults", True)
         if not isinstance(defaults, bool):
-            defaults = True
+            raise ConfigError(
+                "context_snapshot.excludes.defaults must be a boolean",
+                path="context_snapshot.excludes.defaults",
+            )
 
-        patterns_raw = excludes.get("patterns") or []
+        patterns_raw = excludes.get("patterns", [])
         if not isinstance(patterns_raw, list):
-            patterns_raw = []
-        user_patterns = tuple(str(item) for item in patterns_raw)
+            raise ConfigError(
+                "context_snapshot.excludes.patterns must be a list",
+                path="context_snapshot.excludes.patterns",
+            )
+        for index, pattern in enumerate(patterns_raw):
+            if not isinstance(pattern, str) or not pattern.strip():
+                raise ConfigError(
+                    "context_snapshot.excludes.patterns entries must be non-empty strings",
+                    path=f"context_snapshot.excludes.patterns[{index}]",
+                )
+        user_patterns = tuple(patterns_raw)
         patterns = effective_exclude_patterns(
             defaults_enabled=defaults,
             user_patterns=user_patterns,
@@ -194,12 +224,11 @@ class SnapshotPolicy:
 
         if explicitly_declared:
             return True
-        if not self.effective_patterns:
+        if self._exclude_matcher is None:
             return True
-        matcher = compile_exclude_matcher(self.effective_patterns)
         return not path_is_excluded(
             relative_path,
-            matcher=matcher,
+            matcher=self._exclude_matcher,
             is_directory=is_directory,
         )
 
@@ -211,10 +240,12 @@ class SnapshotPolicy:
     ) -> SnapshotCollection:
         """Expand resources, apply inclusion hooks, canonicalize, hash files.
 
-        ``resources`` entries are workspace-relative or absolute paths already
-        known to be under the workspace. Glob patterns are not expanded here;
-        callers expand globs before collect. Declared directories are walked;
-        discovered children are subject to excludes. Declared files always bind.
+        ``resources`` entries are workspace-relative path strings (or absolute
+        paths under the workspace). Glob patterns (``*``, ``?``, ``[]``) expand
+        file-only, non-recursively via ``Path.glob``. Declared directories are
+        walked; discovered children are subject to excludes. Declared files always
+        bind. Symlink aliases that canonicalize to the same key are deduped when
+        they resolve to the same target; distinct paths sharing one key raise.
 
         Traversal tradeoff (proposal §5): directory expansion uses post-filter
         after ``rglob`` rather than pruning ignored directories. Safe pruning is
@@ -243,12 +274,24 @@ class SnapshotPolicy:
                 return
             prior = included.get(key)
             if prior is not None:
-                raise CanonicalPathCollisionError(key, prior, path)
+                if prior.resolve() != path.resolve():
+                    raise CanonicalPathCollisionError(key, prior, path)
+                return
             included[key] = path.resolve()
             digests[key] = digest_file(path) if path.is_file() else sentinel
 
         for entry in resources:
-            configured = Path(entry)
+            configured_text = str(entry).strip()
+            if not configured_text:
+                continue
+
+            if _has_glob_metacharacters(configured_text):
+                for match in sorted(workspace_resolved.glob(configured_text)):
+                    if match.is_file():
+                        add_file(match.resolve(), explicitly_declared=False)
+                continue
+
+            configured = Path(configured_text)
             if configured.is_absolute():
                 candidate = configured.resolve()
             else:

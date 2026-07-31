@@ -29,6 +29,7 @@ from top_down_planning.config.context import (
     validate_guidance_for_binding,
 )
 from top_down_planning.config.context_digests import (
+    InvalidProductionEvidenceError,
     UnauthorizedContextMutationError,
     authorized_production_workspace_paths,
     build_initial_context_snapshot_binding,
@@ -64,7 +65,6 @@ from top_down_planning.config.snapshot_policy import (
     SnapshotPolicy,
     canonicalize_evidence_ref,
     canonicalize_workspace_path,
-    detect_canonical_collisions,
 )
 from top_down_planning.config.exclude_matching import (
     BUILT_IN_EXCLUDE_PATTERNS,
@@ -89,6 +89,7 @@ __all__ = [
     "ConfigError",
     "EffectiveRoleContext",
     "GuidanceEntry",
+    "InvalidProductionEvidenceError",
     "InvalidSnapshotBindingError",
     "PathResolutionContext",
     "SkillEntry",
@@ -111,7 +112,6 @@ __all__ = [
     "compute_context_spec_digest_from_config",
     "UnauthorizedContextMutationError",
     "authorized_production_workspace_paths",
-    "detect_canonical_collisions",
     "diff_snapshot_binding_paths",
     "effective_exclude_patterns",
     "format_unauthorized_mutation_message",
@@ -124,6 +124,7 @@ __all__ = [
     "compute_input_digest",
     "compute_output_goal_digest",
     "finalize_resolved_config",
+    "invalid_production_evidence_refs",
     "is_path_within_workspace",
     "load_skills",
     "resolve_config",

@@ -63,7 +63,7 @@ MATRIX_COVERAGE: dict[str, str] = {
     "24b": "test_snapshot_matrix_s13.py::test_missing_direct_file_create_and_delete_drift",
     "24c": "test_snapshot_matrix_s13.py::test_missing_direct_file_create_and_delete_drift",
     "25": "test_snapshot_matrix_s13.py::test_duplicate_explicit_resources_single_key",
-    "26": "test_snapshot_matrix_s13.py::test_canonical_collision_fails_during_snapshot_build",
+    "26": "test_snapshot_matrix_s13.py::test_canonical_collision_symlink_aliases_deduped_in_snapshot_build",
     "26b": "test_resource_kinds_and_identity.py::test_skills_not_filtered_by_excludes",
     "26c": "test_production_auth_alignment.py::test_cache_noise_does_not_block_authorized_rebase",
     "26d": "test_production_auth_alignment.py::test_canonicalize_evidence_ref_rejects_absolute",
@@ -81,7 +81,8 @@ MATRIX_COVERAGE: dict[str, str] = {
     "37": "test_snapshot_matrix_s13.py::test_binding_order_independent_of_creation_order",
     "38": "test_snapshot_matrix_s13.py::test_binding_order_independent_of_creation_order",
     "39": "test_snapshot_matrix_s13.py::test_windows_style_evidence_refs_rejected",
-    "40": "test_snapshot_policy.py::test_detect_canonical_collisions",
+    "39b": "test_snapshot_matrix_s13.py::test_windows_style_resource_paths_use_posix_binding_keys",
+    "40": "test_snapshot_policy.py::test_detect_canonical_collisions_dedupes_symlink_aliases",
     "41": "test_snapshot_policy.py::test_canonicalize_rejects_workspace_escape",
     "42": "test_snapshot_policy.py::test_canonicalize_symlink_inside_workspace_uses_resolved_target",
     "43": "test_snapshot_matrix_s13.py::test_meaningful_edit_add_delete_create_drift",
@@ -152,6 +153,7 @@ _EXPECTED_SCENARIOS = {
     "37",
     "38",
     "39",
+    "39b",
     "40",
     "41",
     "42",
@@ -337,19 +339,34 @@ agent_context:
     assert list(binding["resource_digests"]) == ["shared.py"]
 
 
-def test_canonical_collision_fails_during_snapshot_build(tmp_path: Path) -> None:
-    """§13 #26: SnapshotPolicy.collect rejects two declarations sharing one key."""
+def test_canonical_collision_symlink_aliases_deduped_in_snapshot_build(tmp_path: Path) -> None:
+    """§13 #26: symlink alias resource declarations dedupe to one binding key."""
 
-    from top_down_planning.config import SnapshotPolicy
+    from top_down_planning.config import build_context_snapshot_payload, resolve_config
+    from tests.helpers import write_config
 
     workspace = tmp_path / "ws"
     real = workspace / "real" / "file.py"
     real.parent.mkdir(parents=True)
     real.write_text("ok\n", encoding="utf-8")
     (workspace / "alias.py").symlink_to(real)
-    policy = SnapshotPolicy.from_config(None, workspace=workspace)
-    with pytest.raises(CanonicalPathCollisionError, match="collision"):
-        policy.collect(["alias.py", "real/file.py"])
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  producer:
+    resources:
+      - alias.py
+      - real/file.py
+""",
+        ),
+        cwd=workspace,
+    )
+    binding = build_context_snapshot_payload(config, workspace=workspace)
+    assert list(binding["resource_digests"]) == ["real/file.py"]
 
 
 def test_removing_pattern_changes_context_spec_digest(tmp_path: Path) -> None:
@@ -457,6 +474,32 @@ def test_windows_style_evidence_refs_rejected(tmp_path: Path) -> None:
         canonicalize_evidence_ref(r"C:\src\a.py", workspace=workspace)
     with pytest.raises(CanonicalPathError, match="absolute|relative"):
         canonicalize_evidence_ref(r"\src\a.py", workspace=workspace)
+
+
+def test_windows_style_resource_paths_use_posix_binding_keys(tmp_path: Path) -> None:
+    """§13 #39: resource materialization emits POSIX binding keys without backslashes."""
+
+    workspace = tmp_path / "ws"
+    target = workspace / "src" / "a.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("ok\n", encoding="utf-8")
+    config = _dir_config(
+        tmp_path,
+        workspace,
+        body="""
+run:
+  output_goal: Goal.
+agent_context:
+  producer:
+    resources:
+      - src/a.py
+""",
+    )
+    binding = build_context_snapshot_payload(config, workspace=workspace)
+    keys = list(binding["resource_digests"])
+    assert keys == ["src/a.py"]
+    assert all("\\" not in key for key in keys)
+    validate_context_snapshot_binding(binding)
 
 
 def test_meaningful_edit_add_delete_create_drift(tmp_path: Path) -> None:

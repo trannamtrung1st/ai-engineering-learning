@@ -12,7 +12,6 @@ from top_down_planning.config import (
     CanonicalPathError,
     SnapshotPolicy,
     canonicalize_workspace_path,
-    detect_canonical_collisions,
 )
 from top_down_planning.config.context import MISSING_RESOURCE_FILE_DIGEST
 from core_tools.persistence.digests import digest_file
@@ -86,7 +85,7 @@ def test_canonicalize_symlink_inside_workspace_uses_resolved_target(tmp_path: Pa
     assert canonicalize_workspace_path(link, workspace=workspace) == "real/file.py"
 
 
-def test_detect_canonical_collisions(tmp_path: Path) -> None:
+def test_detect_canonical_collisions_dedupes_symlink_aliases(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     real = workspace / "real" / "file.py"
     real.parent.mkdir(parents=True)
@@ -94,8 +93,11 @@ def test_detect_canonical_collisions(tmp_path: Path) -> None:
     link = workspace / "alias.py"
     link.symlink_to(real)
 
-    with pytest.raises(CanonicalPathCollisionError, match="collision"):
-        detect_canonical_collisions([real, link], workspace=workspace)
+    from top_down_planning.config.snapshot_policy import detect_canonical_collisions
+
+    mapping = detect_canonical_collisions([real, link], workspace=workspace)
+    assert list(mapping) == ["real/file.py"]
+    assert mapping["real/file.py"] == real.resolve()
 
 
 def test_snapshot_policy_from_config_defaults(tmp_path: Path) -> None:
@@ -135,9 +137,80 @@ def test_snapshot_policy_collect_hashes_and_orders(tmp_path: Path) -> None:
     assert collection.excluded_file_count == 0
 
 
+def test_snapshot_policy_collect_symlink_aliases_deduped(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    real = workspace / "real" / "file.py"
+    real.parent.mkdir(parents=True)
+    real.write_text("ok\n", encoding="utf-8")
+    link = workspace / "alias.py"
+    link.symlink_to(real)
+
+    policy = SnapshotPolicy.from_config(None, workspace=workspace)
+    collection = policy.collect(["alias.py", "real/file.py"])
+    assert list(collection.included) == ["real/file.py"]
+
+
+def test_snapshot_policy_from_config_rejects_invalid_defaults(tmp_path: Path) -> None:
+    from core_tools.config import ConfigError
+
+    with pytest.raises(ConfigError, match="defaults must be a boolean"):
+        SnapshotPolicy.from_config(
+            {"context_snapshot": {"excludes": {"defaults": "yes"}}},
+            workspace=tmp_path,
+        )
+
+
+def test_snapshot_policy_from_config_rejects_invalid_patterns(tmp_path: Path) -> None:
+    from core_tools.config import ConfigError
+
+    with pytest.raises(ConfigError, match="patterns must be a list"):
+        SnapshotPolicy.from_config(
+            {"context_snapshot": {"excludes": {"patterns": "generated/"}}},
+            workspace=tmp_path,
+        )
+    with pytest.raises(ConfigError, match="non-empty strings"):
+        SnapshotPolicy.from_config(
+            {"context_snapshot": {"excludes": {"patterns": ["", "ok/"]}}},
+            workspace=tmp_path,
+        )
+
+
 def test_snapshot_policy_collect_missing_direct_file_sentinel(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     workspace.mkdir()
     policy = SnapshotPolicy.from_config(None, workspace=workspace)
     collection = policy.collect(["missing.py"])
     assert collection.digests["missing.py"] == MISSING_RESOURCE_FILE_DIGEST
+
+
+def test_directory_walk_rejects_escape_symlink(tmp_path: Path) -> None:
+    """§8 / §13 #41: escape symlinks discovered during directory walks fail snapshot build."""
+
+    from top_down_planning.config import build_context_snapshot_payload, resolve_config
+    from tests.helpers import write_config
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    pkg = workspace / "pkg"
+    pkg.mkdir()
+    (pkg / "ok.py").write_text("ok\n", encoding="utf-8")
+    outside = tmp_path / "outside.py"
+    outside.write_text("secret\n", encoding="utf-8")
+    (pkg / "escape.py").symlink_to(outside)
+
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  producer:
+    resources:
+      - pkg/
+""",
+        ),
+        cwd=workspace,
+    )
+    with pytest.raises(CanonicalPathError, match="escapes"):
+        build_context_snapshot_payload(config, workspace=workspace)

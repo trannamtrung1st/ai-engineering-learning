@@ -9,6 +9,7 @@ import pytest
 from top_down_planning.agent_tool.artifacts import capture_output_artifact
 from top_down_planning.agent_tool.errors import RequestError
 from top_down_planning.config import (
+    InvalidProductionEvidenceError,
     UnauthorizedContextMutationError,
     authorized_production_workspace_paths,
     build_context_snapshot_payload,
@@ -205,3 +206,39 @@ def test_authorized_paths_alias_to_same_canonical_key(tmp_path: Path) -> None:
     }
     authorized = authorized_production_workspace_paths(production, workspace=workspace)
     assert authorized == {"real/file.py"}
+
+
+def test_invalid_production_evidence_refs_fail_rebase_validation(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    src = workspace / "src"
+    src.mkdir(parents=True)
+    module = src / "feature.py"
+    module.write_text("v1\n", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  producer:
+    resources:
+      - src/
+""",
+        ),
+        cwd=workspace,
+    )
+    old_binding = build_context_snapshot_payload(config, workspace=workspace)
+    module.write_text("v2\n", encoding="utf-8")
+    new_binding, _ = recompute_context_snapshot_binding(config, workspace=workspace)
+    production = {
+        "output_evidence": [{"ref": "../outside.py"}],
+        "batches": [],
+    }
+    with pytest.raises(InvalidProductionEvidenceError, match="invalid evidence refs"):
+        validate_production_snapshot_rebase(
+            old_binding,
+            new_binding,
+            production,
+            workspace=workspace,
+        )

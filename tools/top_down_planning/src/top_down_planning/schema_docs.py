@@ -1385,7 +1385,10 @@ maps; guidance remains a list of digest entries). Exclusions apply to resource c
 only — skills and guidance stay bound. Direct file resources always bind; directory/glob
 discoveries are filtered. Production completion rebases the snapshot when drift is
 attributable to production evidence (same canonical relative paths as evidence `ref`);
-unauthorized drift blocks completion or resume. `.gitignore` is not inherited. Omitting
+unauthorized drift blocks completion or resume. Resource paths and evidence refs must
+resolve inside the workspace; escapes and absolute refs fail explicitly. Invalid
+persisted evidence refs fail rebase validation rather than masquerading as unauthorized
+drift. `.gitignore` is not inherited. Omitting
 `context_snapshot` equals `excludes.defaults: true` with empty user patterns.
 
 Run records carry top-level `schema_version` (currently `2`), distinct from config document
