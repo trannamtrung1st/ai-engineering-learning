@@ -32,6 +32,7 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "review-respond-initial",
     "review-respond-initial-approved",
     "review-respond-verification",
+    "review-respond-scope",
     "review-respond-blocker",
     "review-record-finding-actions",
     "focused-review-request",
@@ -370,7 +371,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             "target_revision": {"type": "integer"},
             "stage": {
                 "type": "string",
-                "enum": ["initial_review", "scope_blocker_review"],
+                "enum": ["initial_review", "scope_review", "scope_blocker_review"],
             },
             "finding_set_id": {"type": "string"},
             "target_digest": {"type": "string"},
@@ -499,7 +500,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
         "additionalProperties": False,
     },
     {
-        "title": "MandatoryScopeBlockerReviewRespond",
+        "title": "MandatoryScopeReviewRespond",
         "type": "object",
         "required": [
             "loop_id",
@@ -508,26 +509,39 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             "stage",
             "target_digest",
             "scope_id",
-            "blocking_findings",
-            "acceptance_criteria_checked",
             "summary",
         ],
         "properties": {
             "loop_id": {"type": "string"},
             "target_revision": {"type": "integer"},
-            "stage": {"const": "scope_blocker_review"},
+            "stage": {
+                "type": "string",
+                "enum": ["scope_review", "scope_blocker_review"],
+            },
             "decision": {
                 "type": "string",
-                "enum": ["approve", "blockers_found", "blocked"],
+                "enum": [
+                    "approved",
+                    "changes_requested",
+                    "blocked",
+                    "approve",
+                    "blockers_found",
+                ],
             },
             "target_digest": {
                 "type": "string",
                 "description": "Artifact digest inspected by this stage.",
             },
             "scope_id": {"type": "string"},
+            "reported_findings": {
+                "type": "array",
+                "items": _ANY_REVIEW_FINDING_SCHEMA,
+                "description": "Preferred discovery field for fresh scope_review.",
+            },
             "blocking_findings": {
                 "type": "array",
                 "items": _ANY_REVIEW_FINDING_SCHEMA,
+                "description": "Legacy alias for reported_findings.",
             },
             "acceptance_criteria_checked": {
                 "type": "array",
@@ -1406,7 +1420,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "schema": "review-respond",
         "description": (
             "Mandatory initial_review: clear approval with digest binding "
-            "(still requires scope_blocker_review before final gate approval)."
+            "(still requires a fresh scope_review before final gate approval)."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
@@ -1442,11 +1456,34 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "summary": "All required findings closed; no direct side effects.",
         },
     },
+    "review-respond-scope": {
+        "schema": "review-respond",
+        "description": (
+            "Fresh scope_review discovery: clear approved outcome with empty "
+            "reported_findings."
+        ),
+        "payload": {
+            "loop_id": "review-whole-plan-01",
+            "target_revision": 1,
+            "stage": "scope_review",
+            "finding_set_id": "review-whole-plan-01-fs-02",
+            "target_digest": "plan-digest-abc",
+            "scope_id": "whole_plan",
+            "reported_findings": [],
+            "review_completed": True,
+            "acceptance_criteria_checked": [
+                "coverage",
+                "dependencies",
+                "acceptance",
+            ],
+            "summary": "No remaining material issues in current scope.",
+        },
+    },
     "review-respond-blocker": {
         "schema": "review-respond",
         "description": (
-            "Stage-2 scope_blocker_review Result Contract: clear approve with no "
-            "blocking findings."
+            "Legacy alias for review-respond-scope (scope_blocker_review / "
+            "blocking_findings)."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
@@ -1461,7 +1498,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                 "dependencies",
                 "acceptance",
             ],
-            "summary": "No remaining approval blockers in current scope.",
+            "summary": "No remaining material issues in current scope.",
         },
     },
     "review-record-finding-actions": {
@@ -1631,23 +1668,23 @@ not consumed by the orchestrator.
    `acceptance` (seeded from `run.boundaries` / `run.acceptance` at run creation).
 2. Mandatory whole-plan review (`review respond`) must complete the gate before production.
    Stages: `initial_review` (discovery), optional `finding_verification` (close known
-   findings after revisions), then fresh `scope_blocker_review` (remaining blockers).
+   findings after revisions), then fresh `scope_review` (complete-scope discovery).
    Each stage requires `stage` plus Result Contract fields — see
-   `review-respond-initial`, `review-respond-initial-approved`, `review-respond-verification`, and `review-respond-blocker`.
+   `review-respond-initial`, `review-respond-initial-approved`, `review-respond-verification`, and `review-respond-scope`.
    Review packages include an embedded plan tree and optional `rubric` on initial
    review only; refresh with `plan snapshot --view active` when revising after
    `needs_revision` or initial `changes_requested`. Approval requires a clear
-   blocker review against the current artifact digest — finding closure alone is not
+   fresh `scope_review` against the current artifact digest — finding closure alone is not
    enough.
 3. Producer records batches with `production apply`, then `submit-completion` with
    `goal_met: true` and a `goal_assessment` rationale. Production `ready` snapshots
    expose `ready_items` (contracts per ready leaf) alongside `ready_item_ids`.
 4. Mandatory whole-output review must complete the gate before `outcome: accepted`.
-   Same two-mode mandatory gate as whole-plan review (`initial_review`, then
-   repeatable verification and fresh blocker rounds). After `needs_revision` or initial
+   Same mandatory gate as whole-plan review (`initial_review`, then
+   repeatable verification and fresh `scope_review` rounds). After `needs_revision` or initial
    `changes_requested`, the producer must use `production apply` with
    `evidence_revision: true` and **new** output evidence IDs on terminal items
-   targeted by unresolved blocking findings (dispositions unchanged), then
+   targeted by unresolved required findings (dispositions unchanged), then
    re-submit completion with `goal_met: true`. During production, focused-output
    evidence revision also requires `focused_review_loop_id` bound to the loop's
    `target_revision`. Plan amendment is not available during whole-output review.

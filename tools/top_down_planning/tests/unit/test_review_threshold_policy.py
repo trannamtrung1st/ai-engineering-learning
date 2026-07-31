@@ -129,6 +129,9 @@ def test_policy_observability_fields() -> None:
     fields = policy_observability_fields(findings, [], "major")
     assert fields == {
         "revise_at": "major",
+        "finding_count": 2,
+        "required_open_finding_count": 1,
+        "optional_open_finding_count": 1,
         "required_open_finding_ids": ["f-major"],
         "optional_open_finding_ids": ["f-minor"],
         "unacknowledged_optional_finding_ids": ["f-minor"],

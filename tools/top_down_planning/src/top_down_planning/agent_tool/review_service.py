@@ -415,16 +415,66 @@ class ReviewAgentService:
         }
         if stage is not None:
             event["stage"] = stage
+        observability = policy_observability_fields(
+            updated.findings,
+            updated.finding_actions,
+            loop_revise_at(updated),
+            finding_set_id=updated.finding_set_id,
+        )
+        event.update(observability)
         if derived_outcome is not None:
             event["derived_outcome"] = derived_outcome
-            event.update(
-                policy_observability_fields(
-                    updated.findings,
-                    updated.finding_actions,
-                    loop_revise_at(updated),
-                    finding_set_id=updated.finding_set_id,
+
+        extra_events: list[dict[str, Any]] = []
+        if derived_outcome is not None or stage is not None:
+            # Concise audit companions (no full finding payloads).
+            reported = observability
+            findings_event = {
+                "type": "review_findings_reported",
+                "run_id": self._run_id,
+                "loop_id": loop_id,
+                "stage": stage or (loop.active_stage or "initial_review"),
+                "finding_set_id": updated.finding_set_id,
+                **{
+                    key: reported[key]
+                    for key in (
+                        "revise_at",
+                        "finding_count",
+                        "required_open_finding_count",
+                        "optional_open_finding_count",
+                        "required_open_finding_ids",
+                        "optional_open_finding_ids",
+                        "unacknowledged_optional_finding_ids",
+                    )
+                },
+            }
+            extra_events.append(findings_event)
+            revision_statuses = {
+                "changes_requested",
+                "needs_revision",
+                "blockers_found",
+            }
+            if (
+                derived_outcome == "changes_requested"
+                or str(decision or "") in revision_statuses
+                or updated.status in revision_statuses
+            ):
+                extra_events.append(
+                    {
+                        "type": "review_revision_required",
+                        "run_id": self._run_id,
+                        "loop_id": loop_id,
+                        "stage": stage or (loop.active_stage or "initial_review"),
+                        "finding_set_id": updated.finding_set_id,
+                        "revise_at": observability["revise_at"],
+                        "required_open_finding_count": observability[
+                            "required_open_finding_count"
+                        ],
+                        "required_open_finding_ids": observability[
+                            "required_open_finding_ids"
+                        ],
+                    }
                 )
-            )
 
         if derived_outcome == "review_incomplete":
             marker = updated.review_incomplete or {}
@@ -446,12 +496,13 @@ class ReviewAgentService:
                 "phase": run.get("phase"),
                 "finding_set_id": updated.finding_set_id,
                 "stage": marker.get("stage") or stage,
+                "revise_at": observability["revise_at"],
             }
             self._store.commit(
                 self._run_id,
                 CommitSpec(
                     reviews=[updated.to_dict()],
-                    events=[event, incomplete_event],
+                    events=[event, *extra_events, incomplete_event],
                     run=run_patch,
                     run_expected_revision=expected_run_revision,
                 ),
@@ -461,7 +512,7 @@ class ReviewAgentService:
                 self._run_id,
                 CommitSpec(
                     reviews=[updated.to_dict()],
-                    events=[event],
+                    events=[event, *extra_events],
                 ),
             )
 
@@ -472,19 +523,12 @@ class ReviewAgentService:
             "target_revision": target_revision,
             "status": updated.status,
             "findings": [finding.to_dict() for finding in updated.findings],
+            **observability,
         }
         if stage is not None:
             response["stage"] = stage
         if derived_outcome is not None:
             response["derived_outcome"] = derived_outcome
-            response.update(
-                policy_observability_fields(
-                    updated.findings,
-                    updated.finding_actions,
-                    loop_revise_at(updated),
-                    finding_set_id=updated.finding_set_id,
-                )
-            )
         return response
 
     def record_finding_actions(
@@ -551,7 +595,7 @@ class ReviewAgentService:
             raise RequestError(str(exc)) from exc
 
         event: dict[str, Any] = {
-            "type": "review_finding_actions_recorded",
+            "type": "review_finding_action_recorded",
             "run_id": self._run_id,
             "loop_id": loop_id,
             "actor_role": role,

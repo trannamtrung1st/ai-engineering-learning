@@ -57,6 +57,7 @@ def test_review_respond_schema_accepts_stage_contracts() -> None:
         "review-respond-initial",
         "review-respond-initial-approved",
         "review-respond-verification",
+        "review-respond-scope",
         "review-respond-blocker",
     ):
         assert name in PUBLIC_EXAMPLES

@@ -929,16 +929,22 @@ def policy_observability_fields(
 ) -> dict[str, Any]:
     """Derived threshold/requirement state for review responses and events."""
 
+    required_ids = required_open_finding_ids(findings, threshold)
+    optional_ids = optional_open_finding_ids(findings, threshold)
+    unacked_ids = unacknowledged_optional_finding_ids(
+        findings,
+        finding_actions,
+        threshold,
+        finding_set_id=finding_set_id,
+    )
     return {
         "revise_at": threshold,
-        "required_open_finding_ids": required_open_finding_ids(findings, threshold),
-        "optional_open_finding_ids": optional_open_finding_ids(findings, threshold),
-        "unacknowledged_optional_finding_ids": unacknowledged_optional_finding_ids(
-            findings,
-            finding_actions,
-            threshold,
-            finding_set_id=finding_set_id,
-        ),
+        "finding_count": len(findings),
+        "required_open_finding_count": len(required_ids),
+        "optional_open_finding_count": len(optional_ids),
+        "required_open_finding_ids": required_ids,
+        "optional_open_finding_ids": optional_ids,
+        "unacknowledged_optional_finding_ids": unacked_ids,
     }
 
 

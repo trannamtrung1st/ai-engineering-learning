@@ -31,6 +31,7 @@ from top_down_planning.domain.reviews import (
     mark_advisory_handoff_completed,
     needs_advisory_handoff,
     owner_actions_require_revision,
+    policy_observability_fields,
     primary_review_resume_fields,
     required_open_findings,
     verification_required_for_loop,
@@ -695,7 +696,12 @@ class WholeOutputReviewOrchestrator:
             "review_advisory_handoff_started",
             loop_id=loop.id,
             finding_set_id=loop.finding_set_id,
-            revise_at=loop_revise_at(loop),
+            **policy_observability_fields(
+                loop.findings,
+                loop.finding_actions,
+                loop_revise_at(loop),
+                finding_set_id=loop.finding_set_id,
+            ),
         )
         self._resume_producer_advisory_handoff(loop)
         loop = self._reload_loop(loop.id)

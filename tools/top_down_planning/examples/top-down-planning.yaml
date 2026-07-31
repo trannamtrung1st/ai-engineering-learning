@@ -105,6 +105,7 @@ limits:
     max_revision_cycles_per_loop: 3
   whole_plan_review:
     max_revision_cycles: 5
+    max_scope_review_rounds: 3
     max_blocker_review_rounds: 3
   production:
     max_batches: 50
@@ -114,6 +115,7 @@ limits:
     max_revision_cycles_per_loop: 3
   whole_output_review:
     max_revision_cycles: 5
+    max_scope_review_rounds: 3
     max_blocker_review_rounds: 3
   amendment:
     max_requests: 3

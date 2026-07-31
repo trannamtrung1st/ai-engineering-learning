@@ -151,7 +151,7 @@ def build_reviewer_tool_instructions(
         "schema": "tdp agent schema review-respond",
         "examples": (
             "tdp agent example review-respond-verification ; "
-            "tdp agent example review-respond-blocker"
+            "tdp agent example review-respond-scope"
         ),
     }
     instructions.update(extra)

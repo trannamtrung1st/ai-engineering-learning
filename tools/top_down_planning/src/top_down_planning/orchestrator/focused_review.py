@@ -23,6 +23,7 @@ from top_down_planning.domain.reviews import (
     optional_open_findings,
     owner_actions_require_revision,
     owner_actions_require_verification,
+    policy_observability_fields,
     prepare_review_incomplete_retry,
     primary_review_resume_fields,
     required_open_findings,
@@ -282,6 +283,12 @@ class FocusedReviewOrchestrator:
             loop_id=loop.id,
             review_type=loop.type,
             finding_set_id=loop.finding_set_id,
+            **policy_observability_fields(
+                loop.findings,
+                loop.finding_actions,
+                loop_revise_at(loop),
+                finding_set_id=loop.finding_set_id,
+            ),
         )
         self._resume_primary_advisory_handoff(loop)
         loop = self._reload_loop(loop.id)
