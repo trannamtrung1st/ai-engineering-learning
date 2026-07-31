@@ -218,7 +218,6 @@ def test_review_service_rejects_finding_set_id_mismatch(tmp_path: Path) -> None:
             {
                 "loop_id": loop.id,
                 "target_revision": 0,
-                "decision": "approved",
                 "finding_set_id": "wrong",
                 "reported_findings": [],
                 "review_completed": True,

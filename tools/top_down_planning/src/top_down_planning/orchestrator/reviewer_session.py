@@ -78,7 +78,7 @@ def build_reviewer_protocol_instructions(
                 ),
             ]
         )
-    elif normalized in {"scope_review", "scope_blocker_review"}:
+    elif normalized == "scope_review":
         instructions.extend(
             [
                 (

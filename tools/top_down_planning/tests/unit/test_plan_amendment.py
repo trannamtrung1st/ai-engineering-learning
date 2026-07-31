@@ -22,7 +22,7 @@ from tests.helpers import (
     script_mandatory_clear_approval,
     script_reviewer_allocate,
     whole_plan_approval_record,
-    mandatory_blocker_respond_request,
+    mandatory_scope_review_respond_request,
     mandatory_initial_respond_request,
 )
 
@@ -50,18 +50,14 @@ def _review_respond_request(
     decision: str,
     target_revision: int,
 ) -> dict:
-    from tests.helpers import mandatory_plan_digest
-
-    payload = {
-        "loop_id": "review-whole-plan-02",
-        "target_revision": target_revision,
-        "stage": "initial_review",
-        "decision": decision,
-        "findings": [],
-    }
-    if decision == "approved":
-        payload["target_digest"] = mandatory_plan_digest(store, run_id)
-    return payload
+    return mandatory_initial_respond_request(
+        store,
+        run_id,
+        loop_id="review-whole-plan-02",
+        target_revision=target_revision,
+        review_type="whole_plan",
+        decision=decision,
+    )
 
 
 def _create_run_in_production_with_sessions(
@@ -239,7 +235,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
         mutate_store=lambda: respond_review(
             store,
             run_id,
-            mandatory_blocker_respond_request(
+            mandatory_scope_review_respond_request(
                 store,
                 run_id,
                 loop_id="review-whole-plan-02",
@@ -454,7 +450,7 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
         mutate_store=lambda: respond_review(
             store,
             run_id,
-            mandatory_blocker_respond_request(
+            mandatory_scope_review_respond_request(
                 store,
                 run_id,
                 loop_id="review-whole-plan-02",

@@ -12,16 +12,16 @@ from top_down_planning.domain.reviews import (
     FindingVerificationResult,
     ReviewFinding,
     ReviewLoop,
-    ScopeBlockerReviewResult,
+    ScopeReviewResult,
     assert_mandatory_review_transition,
-    blocking_unresolved_finding_ids,
+    required_unresolved_finding_ids,
     can_transition_mandatory_review,
     digests_equal,
     find_whole_plan_approval,
     is_approval_eligible,
     is_mandatory_gate_approval_record,
     stage_digest_matches_artifact,
-    validate_blocker_review_decision,
+    validate_scope_review_decision,
     validate_finding_disposition,
     validate_mandatory_lifecycle_status,
     validate_verification_decision,
@@ -37,11 +37,11 @@ def _finding(
     finding_id: str = "finding-1",
     *,
     status: str = "unresolved",
-    importance: str = "blocking",
+    severity: str = "blocker",
 ) -> ReviewFinding:
     return ReviewFinding(
         id=finding_id,
-        severity=("blocker" if importance == "blocking" else "minor"),  # type: ignore[arg-type]
+        severity=severity,  # type: ignore[arg-type]
         category="other",
         target_refs=["item-a"],
         issue="Coverage gap",
@@ -70,13 +70,13 @@ def _verified_result(
     )
 
 
-def _blocker_approve(*, digest: str = DIGEST_A) -> ScopeBlockerReviewResult:
-    return ScopeBlockerReviewResult(
+def _scope_review_approve(*, digest: str = DIGEST_A) -> ScopeReviewResult:
+    return ScopeReviewResult(
         target_digest=digest,
-        decision="approve",
+        decision="approved",
         scope_id="whole_plan",
         acceptance_criteria_checked=["Core Invariant"],
-        summary="No blockers.",
+        summary="No required findings.",
     )
 
 
@@ -100,10 +100,10 @@ def test_partially_resolved_blocks_like_unresolved() -> None:
         _finding("f-open", status="partially_resolved"),
         _finding("f-invalid", status="invalid"),
     ]
-    assert blocking_unresolved_finding_ids(findings) == ["f-open"]
+    assert required_unresolved_finding_ids(findings, revise_at="blocker") == ["f-open"]
 
 
-def test_verification_and_blocker_result_round_trip() -> None:
+def test_verification_and_scope_review_result_round_trip() -> None:
     verification = FindingVerificationResult(
         target_digest=DIGEST_A,
         decision="needs_revision",
@@ -119,11 +119,11 @@ def test_verification_and_blocker_result_round_trip() -> None:
         new_direct_side_effect_findings=[_finding("finding-side")],
         summary="Still open.",
     )
-    blocker = ScopeBlockerReviewResult(
+    blocker = ScopeReviewResult(
         target_digest=DIGEST_A,
-        decision="blockers_found",
+        decision="changes_requested",
         scope_id="whole_output",
-        blocking_findings=[_finding("finding-new")],
+        reported_findings=[_finding("finding-new")],
         acceptance_criteria_checked=["acceptance-a"],
         summary="New blockers.",
     )
@@ -131,11 +131,11 @@ def test_verification_and_blocker_result_round_trip() -> None:
     assert FindingVerificationResult.from_dict(verification.to_dict()).to_dict() == (
         verification.to_dict()
     )
-    assert ScopeBlockerReviewResult.from_dict(blocker.to_dict()).to_dict() == (
+    assert ScopeReviewResult.from_dict(blocker.to_dict()).to_dict() == (
         blocker.to_dict()
     )
     assert validate_verification_decision("verified") == "verified"
-    assert validate_blocker_review_decision("approve") == "approve"
+    assert validate_scope_review_decision("approved") == "approved"
 
 
 def test_review_loop_round_trip_preserves_lifecycle_fields() -> None:
@@ -151,13 +151,14 @@ def test_review_loop_round_trip_preserves_lifecycle_fields() -> None:
         lifecycle_status="verification_pending",
         active_stage="finding_verification",
         finding_set_id="fs-1",
-        blocker_review_rounds=2,
+        scope_review_rounds=2,
+        revise_at="blocker",
     )
     restored = ReviewLoop.from_dict(loop.to_dict())
     assert restored.lifecycle_status == "verification_pending"
     assert restored.active_stage == "finding_verification"
     assert restored.finding_set_id == "fs-1"
-    assert restored.blocker_review_rounds == 2
+    assert restored.scope_review_rounds == 2
     assert restored.to_dict() == loop.to_dict()
 
 
@@ -166,7 +167,7 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
         "review_pending": {
             "findings_open",
             "scope_review_pending",
-            "blocker_review_pending",
+            "scope_review_pending",
             "review_incomplete",
         },
         "findings_open": {"revision_in_progress", "blocked", "review_incomplete"},
@@ -180,7 +181,7 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
         },
         "findings_closed": {
             "scope_review_pending",
-            "blocker_review_pending",
+            "scope_review_pending",
             "limit_reached",
         },
         "scope_review_pending": {
@@ -190,7 +191,7 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
             "limit_reached",
             "review_incomplete",
         },
-        "blocker_review_pending": {
+        "scope_review_pending": {
             "approved",
             "findings_open",
             "blocked",
@@ -204,7 +205,7 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
             "review_pending",
             "findings_open",
             "scope_review_pending",
-            "blocker_review_pending",
+            "scope_review_pending",
             "verification_pending",
         },
     }
@@ -212,10 +213,10 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
         expected
     )
     assert can_transition_mandatory_review("findings_closed", "scope_review_pending")
-    assert can_transition_mandatory_review("findings_closed", "blocker_review_pending")
+    assert can_transition_mandatory_review("findings_closed", "scope_review_pending")
     assert not can_transition_mandatory_review("findings_open", "approved")
     assert_mandatory_review_transition("scope_review_pending", "approved")
-    assert_mandatory_review_transition("blocker_review_pending", "approved")
+    assert_mandatory_review_transition("scope_review_pending", "approved")
     with pytest.raises(ValueError, match="illegal mandatory review transition"):
         assert_mandatory_review_transition("limit_reached", "approved")
     assert validate_mandatory_lifecycle_status("limit_reached") == "limit_reached"
@@ -238,10 +239,11 @@ def test_digest_helpers_enforce_equality_rules() -> None:
     assert digests_equal(DIGEST_A, DIGEST_A)
 
 
-def test_mandatory_gate_approval_record_requires_blocker_stage() -> None:
+def test_mandatory_gate_approval_record_requires_scope_review_stage() -> None:
     incomplete = {
         "type": "whole_plan",
-        "status": "approve",
+        "revise_at": "blocker",
+        "status": "approved",
         "target_revision": 0,
         "lifecycle_status": "review_pending",
     }
@@ -249,16 +251,17 @@ def test_mandatory_gate_approval_record_requires_blocker_stage() -> None:
 
     complete = {
         "type": "whole_plan",
-        "status": "approve",
+        "revise_at": "blocker",
+        "status": "approved",
         "target_revision": 0,
         "lifecycle_status": "approved",
-        "active_stage": "scope_blocker_review",
-        "blocker_review_result": {
-            "stage": "scope_blocker_review",
-            "decision": "approve",
+        "active_stage": "scope_review",
+        "scope_review_result": {
+            "stage": "scope_review",
+            "decision": "approved",
             "target_digest": DIGEST_A,
             "scope_id": "whole_plan",
-            "blocking_findings": [],
+            "reported_findings": [],
         },
     }
     assert is_mandatory_gate_approval_record(complete) is True
@@ -271,12 +274,12 @@ def test_mandatory_gate_approval_record_requires_blocker_stage() -> None:
 
 
 def test_approval_eligible_clear_path_without_verification_result() -> None:
-    blocker = _blocker_approve()
+    blocker = _scope_review_approve()
     assert is_approval_eligible(
         verification=None,
-        blocker_review=blocker,
+        scope_review_result=blocker,
         current_artifact_digest=DIGEST_A,
-        lifecycle_status="blocker_review_pending",
+        lifecycle_status="scope_review_pending",
     )
 
 
@@ -303,11 +306,11 @@ def test_approval_eligible_clear_path_without_verification_result() -> None:
             )
         },
         {
-            "blocker_review": ScopeBlockerReviewResult(
+            "scope_review_result": ScopeReviewResult(
                 target_digest=DIGEST_A,
-                decision="blockers_found",
+                decision="changes_requested",
                 scope_id="whole_plan",
-                blocking_findings=[_finding()],
+                reported_findings=[_finding()],
             )
         },
         {"current_artifact_digest": DIGEST_B},
@@ -315,14 +318,14 @@ def test_approval_eligible_clear_path_without_verification_result() -> None:
             "verification": _verified_result(digest=DIGEST_B),
         },
         {
-            "blocker_review": _blocker_approve(digest=DIGEST_B),
+            "scope_review_result": _scope_review_approve(digest=DIGEST_B),
         },
     ],
 )
 def test_approval_not_eligible_when_invariant_broken(kwargs: dict) -> None:
     base = {
         "verification": _verified_result(),
-        "blocker_review": _blocker_approve(),
+        "scope_review_result": _scope_review_approve(),
         "current_artifact_digest": DIGEST_A,
     }
     base.update(kwargs)

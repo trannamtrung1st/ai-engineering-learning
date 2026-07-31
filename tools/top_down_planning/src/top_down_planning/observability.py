@@ -387,17 +387,12 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         "context_snapshot_collected": ("state", "context snapshot collected"),
         "whole_plan_review_started": ("phase:start", "whole plan review started"),
         "whole_plan_scope_review_started": ("phase:start", "whole plan scope review started"),
-        "whole_plan_blocker_review_started": ("phase:start", "whole plan blocker review started"),
         "whole_plan_review_approved": ("review", "whole plan review approved"),
         "whole_plan_review_failed": ("error", "whole plan review failed"),
         "whole_output_review_started": ("phase:start", "whole output review started"),
         "whole_output_scope_review_started": (
             "phase:start",
             "whole output scope review started",
-        ),
-        "whole_output_blocker_review_started": (
-            "phase:start",
-            "whole output blocker review started",
         ),
         "review_responded": ("review", "review responded"),
         "review_findings_reported": ("review", "review findings reported"),

@@ -8,7 +8,7 @@ from top_down_planning.domain.reviews import (
     FindingVerificationResult,
     MandatoryReviewLimits,
     ReviewFinding,
-    ScopeBlockerReviewResult,
+    ScopeReviewResult,
     approval_allowed_under_loop_bounds,
     build_limit_reached_terminal,
     mandatory_review_limits_from_config,
@@ -43,10 +43,10 @@ def _clear_verification() -> FindingVerificationResult:
     )
 
 
-def _clear_blocker() -> ScopeBlockerReviewResult:
-    return ScopeBlockerReviewResult(
+def _clear_blocker() -> ScopeReviewResult:
+    return ScopeReviewResult(
         target_digest=DIGEST,
-        decision="approve",
+        decision="approved",
         scope_id="whole_plan",
     )
 
@@ -66,13 +66,6 @@ def test_default_mandatory_review_limits_include_stage_budgets() -> None:
     assert (
         "limits.whole_output_review.max_scope_review_rounds" in ALLOWED_OVERRIDE_PATHS
     )
-    # Legacy override path remains readable for older configs.
-    assert (
-        "limits.whole_plan_review.max_blocker_review_rounds" in ALLOWED_OVERRIDE_PATHS
-    )
-    assert (
-        "limits.whole_output_review.max_blocker_review_rounds" in ALLOWED_OVERRIDE_PATHS
-    )
 
 
 def test_config_schema_documents_scope_review_rounds() -> None:
@@ -82,7 +75,7 @@ def test_config_schema_documents_scope_review_rounds() -> None:
         assert "max_revision_cycles" in props
         assert "max_scope_review_rounds" in props
         assert props["max_scope_review_rounds"]["type"] == "integer"
-        assert "max_blocker_review_rounds" in props  # legacy read alias in schema
+        assert "max_scope_review_rounds" in props  # legacy read alias in schema
 
 
 def test_mandatory_review_limits_from_config_defaults_and_overrides() -> None:
@@ -98,18 +91,18 @@ def test_mandatory_review_limits_from_config_defaults_and_overrides() -> None:
             "limits": {
                 "whole_output_review": {
                     "max_revision_cycles": 2,
-                    "max_blocker_review_rounds": 1,
+                    "max_scope_review_rounds": 1,
                 }
             }
         },
         "whole_output",
     )
     assert loaded.max_revision_cycles == 2
-    assert loaded.max_blocker_review_rounds == 1
+    assert loaded.max_scope_review_rounds == 1
 
 
 def test_limit_reached_preserves_findings_and_rejects_approval() -> None:
-    limits = MandatoryReviewLimits(max_revision_cycles=1, max_blocker_review_rounds=1)
+    limits = MandatoryReviewLimits(max_revision_cycles=1, max_scope_review_rounds=1)
     findings = [_open_finding()]
     terminal = build_limit_reached_terminal(
         exhausted_budget="verification_revision",
@@ -125,7 +118,7 @@ def test_limit_reached_preserves_findings_and_rejects_approval() -> None:
 
     exhausted = reject_approval_when_budget_exhausted(
         revision_cycles=1,
-        blocker_review_rounds=0,
+        scope_review_rounds=0,
         limits=limits,
         findings=findings,
     )
@@ -135,7 +128,7 @@ def test_limit_reached_preserves_findings_and_rejects_approval() -> None:
 
     blocker_exhausted = reject_approval_when_budget_exhausted(
         revision_cycles=0,
-        blocker_review_rounds=1,
+        scope_review_rounds=1,
         limits=limits,
         findings=findings,
     )
@@ -144,41 +137,44 @@ def test_limit_reached_preserves_findings_and_rejects_approval() -> None:
 
 
 def test_exhausted_budget_never_approves_even_when_stages_clear() -> None:
-    limits = MandatoryReviewLimits(max_revision_cycles=1, max_blocker_review_rounds=1)
+    limits = MandatoryReviewLimits(max_revision_cycles=1, max_scope_review_rounds=1)
     findings = [_open_finding()]
     assert (
         approval_allowed_under_loop_bounds(
             revision_cycles=1,
-            blocker_review_rounds=0,
+            scope_review_rounds=0,
             limits=limits,
             verification=_clear_verification(),
-            blocker_review=_clear_blocker(),
+            scope_review_result=_clear_blocker(),
             current_artifact_digest=DIGEST,
             findings=findings,
+            revise_at="blocker",
         )
         is False
     )
     assert (
         approval_allowed_under_loop_bounds(
             revision_cycles=0,
-            blocker_review_rounds=1,
+            scope_review_rounds=1,
             limits=limits,
             verification=_clear_verification(),
-            blocker_review=_clear_blocker(),
+            scope_review_result=_clear_blocker(),
             current_artifact_digest=DIGEST,
             findings=findings,
+            revise_at="blocker",
         )
         is False
     )
     assert (
         approval_allowed_under_loop_bounds(
             revision_cycles=0,
-            blocker_review_rounds=0,
+            scope_review_rounds=0,
             limits=limits,
             verification=_clear_verification(),
-            blocker_review=_clear_blocker(),
+            scope_review_result=_clear_blocker(),
             current_artifact_digest=DIGEST,
             findings=[],
+            revise_at="blocker",
         )
         is True
     )

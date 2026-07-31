@@ -125,6 +125,7 @@ def _create_planning_run(
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": None,
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
@@ -132,7 +133,7 @@ def _create_planning_run(
             "findings": [],
             "revision_cycles": 0,
             "lifecycle_status": "review_pending",
-            "blocker_review_rounds": 0,
+            "scope_review_rounds": 0,
         },
     )
     return session_id
@@ -510,6 +511,7 @@ def test_resume_completed_rejected_whole_plan_review_does_not_restart(
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "status": "blocked",
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},

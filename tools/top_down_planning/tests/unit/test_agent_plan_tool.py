@@ -792,6 +792,7 @@ def test_snapshot_ready_excludes_review_blocked_items(tmp_path: Path) -> None:
         {
             "id": "review-focused-plan-01",
             "type": "focused_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "session-1",
             "target_revision": 0,
             "scope": {"kind": "focused_plan", "item_ids": ["item-child"]},
@@ -799,10 +800,10 @@ def test_snapshot_ready_excludes_review_blocked_items(tmp_path: Path) -> None:
             "findings": [
                 {
                     "id": "finding-01",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-child"],
                     "issue": "Needs more detail.",
-                    "required_change": "Expand acceptance.",
+                    "recommended_change": "Expand acceptance.",
                     "status": "unresolved",
                 }
             ],

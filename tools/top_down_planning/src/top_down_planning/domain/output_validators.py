@@ -11,7 +11,7 @@ from top_down_planning.domain.production import (
     validate_production_checks,
 )
 from top_down_planning.domain.reviews import (
-    blocking_unresolved_finding_ids_from_payload,
+    required_unresolved_finding_ids_from_payload,
     find_whole_output_approval,
     OUTPUT_REVIEW_TYPES,
     build_is_review_blocked_fn,
@@ -32,7 +32,7 @@ class OutputReviewState:
     """Optional whole-output review context for approval-mode hooks."""
 
     approved_output_revision: int | None = None
-    unresolved_blocking_findings: list[str] = field(default_factory=list)
+    unresolved_required_findings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -76,7 +76,7 @@ def build_output_approval_validation_context(
     )
     review_state = OutputReviewState(
         approved_output_revision=int(approval["target_revision"]),
-        unresolved_blocking_findings=blocking_unresolved_finding_ids_from_payload(
+        unresolved_required_findings=required_unresolved_finding_ids_from_payload(
             approval
         ),
     )
@@ -108,12 +108,12 @@ def validate_output_review_hooks(
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
-    for finding in review_state.unresolved_blocking_findings:
+    for finding in review_state.unresolved_required_findings:
         issues.append(
             validation_issue(
-                "unresolved_blocking_finding",
+                "unresolved_required_finding",
                 "error",
-                f"blocking whole-output finding remains unresolved: {finding}",
+                f"required whole-output finding remains unresolved: {finding}",
                 [finding],
             )
         )
@@ -133,7 +133,7 @@ def validate_output_review_hooks(
                     ["production", "output_revision"],
                 )
             )
-    elif not review_state.unresolved_blocking_findings:
+    elif not review_state.unresolved_required_findings:
         issues.append(
             validation_issue(
                 "review_state_not_checked",

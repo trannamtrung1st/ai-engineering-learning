@@ -14,7 +14,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_output_digest, respond_review, script_mandatory_clear_approval, script_reviewer_allocate, script_verification_then_blocker_approval, whole_plan_approval_record
+from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, respond_review, script_mandatory_clear_approval, script_reviewer_allocate, script_verification_then_scope_review_approval, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -139,6 +139,7 @@ def _create_run_at_whole_output_review(
         {
             "id": "review-whole-output-01",
             "type": "whole_output",
+            "revise_at": "blocker",
             "reviewer_session_id": None,
             "target_revision": int(production["output_revision"]),
             "scope": {"kind": "whole_output"},
@@ -146,7 +147,7 @@ def _create_run_at_whole_output_review(
             "findings": [],
             "revision_cycles": 0,
             "lifecycle_status": "review_pending",
-            "blocker_review_rounds": 0,
+            "scope_review_rounds": 0,
         },
     )
     return session_id
@@ -160,16 +161,16 @@ def _review_respond_request(
     store: FileRunStore | None = None,
     run_id: str | None = None,
 ) -> dict:
-    payload = {
-        "loop_id": "review-whole-output-01",
-        "target_revision": target_revision,
-        "stage": "initial_review",
-        "decision": decision,
-        "findings": findings or [],
-    }
-    if decision == "approved" and store is not None and run_id is not None:
-        payload["target_digest"] = mandatory_output_digest(store, run_id)
-    return payload
+    assert store is not None and run_id is not None
+    return mandatory_initial_respond_request(
+        store,
+        run_id,
+        loop_id="review-whole-output-01",
+        target_revision=target_revision,
+        review_type="whole_output",
+        decision=decision,
+        findings=findings,
+    )
 
 
 def test_whole_output_review_approve_reaches_accepted(tmp_path: Path) -> None:
@@ -218,13 +219,15 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
             findings=[
                 {
                     "id": "finding-01",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-leaf"],
                     "issue": "Output evidence is missing.",
-                    "required_change": "Add artifact reference.",
+                    "recommended_change": "Add artifact reference.",
                     "status": "unresolved",
                 }
             ],
+            store=store,
+            run_id=run_id,
         ),
         phase=WHOLE_OUTPUT_REVIEW,
         loop_id="review-whole-output-01",
@@ -271,7 +274,7 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
         handler="submit_completion",
         phase=WHOLE_OUTPUT_REVIEW,
     )()
-    script_verification_then_blocker_approval(
+    script_verification_then_scope_review_approval(
         provider,
         store,
         run_id,
@@ -331,13 +334,15 @@ def test_revision_cycle_limit_yields_rejected_not_accepted(tmp_path: Path) -> No
                 findings=[
                     {
                         "id": "finding-01",
-                        "importance": "blocking",
+                        "severity": "blocker",
                         "target_refs": ["item-leaf"],
                         "issue": "Needs work.",
-                        "required_change": "Improve output.",
+                        "recommended_change": "Improve output.",
                         "status": "unresolved",
                     }
                 ],
+                store=store,
+                run_id=run_id,
             ),
             phase=WHOLE_OUTPUT_REVIEW,
             loop_id="review-whole-output-01",
@@ -354,13 +359,15 @@ def test_revision_cycle_limit_yields_rejected_not_accepted(tmp_path: Path) -> No
                 findings=[
                     {
                         "id": "finding-02",
-                        "importance": "blocking",
+                        "severity": "blocker",
                         "target_refs": ["item-leaf"],
                         "issue": "Still needs work.",
-                        "required_change": "Improve again.",
+                        "recommended_change": "Improve again.",
                         "status": "unresolved",
                     }
                 ],
+                store=store,
+                run_id=run_id,
             ),
             phase=WHOLE_OUTPUT_REVIEW,
             loop_id="review-whole-output-01",
@@ -398,12 +405,16 @@ def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> Non
         {
             "id": "review-whole-output-01",
             "type": "whole_output",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 1,
             "scope": {"kind": "whole_output"},
             "status": "pending",
             "findings": [],
             "revision_cycles": 0,
+            "finding_set_id": "review-whole-output-01-fs-01",
+            "lifecycle_status": "review_pending",
+            "active_stage": "initial_review",
         },
     )
 
@@ -441,6 +452,7 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
         {
             "id": "review-whole-output-01",
             "type": "whole_output",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 1,
             "scope": {"kind": "whole_output"},
@@ -452,10 +464,10 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
             "findings": [
                 {
                     "id": "finding-01",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-leaf"],
                     "issue": "Output evidence is missing.",
-                    "required_change": "Add artifact reference.",
+                    "recommended_change": "Add artifact reference.",
                     "status": "unresolved",
                 }
             ],
@@ -515,7 +527,7 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
         handler="submit_completion",
         phase=WHOLE_OUTPUT_REVIEW,
     )()
-    script_verification_then_blocker_approval(
+    script_verification_then_scope_review_approval(
         provider,
         store,
         run_id,

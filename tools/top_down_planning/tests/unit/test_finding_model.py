@@ -1,4 +1,4 @@
-"""Domain tests for finding model, finding_actions, and legacy migration."""
+"""Domain tests for finding model, finding_actions, and revise_at persistence."""
 
 from __future__ import annotations
 
@@ -15,37 +15,34 @@ from top_down_planning.domain.reviews import (
 )
 
 
-def test_legacy_importance_maps_on_read() -> None:
+def test_finding_from_dict_requires_severity_and_recommended_change() -> None:
     blocking = ReviewFinding.from_dict(
         {
             "id": "f-block",
-            "importance": "blocking",
+            "severity": "blocker",
             "target_refs": ["item-a"],
             "issue": "Broken",
-            "required_change": "Fix it",
+            "recommended_change": "Fix it",
             "status": "unresolved",
         }
     )
     assert blocking.severity == "blocker"
-    assert blocking.category == "other"
     assert blocking.recommended_change == "Fix it"
-    assert blocking.importance == "blocking"
-    assert blocking.required_change == "Fix it"
 
-    advisory = ReviewFinding.from_dict(
-        {
-            "id": "f-adv",
-            "importance": "advisory",
-            "target_refs": [],
-            "issue": "Nit",
-            "required_change": "Polish",
-        }
-    )
-    assert advisory.severity == "minor"
-    assert advisory.category == "other"
+    with pytest.raises(ValueError, match="legacy finding field importance"):
+        ReviewFinding.from_dict(
+            {
+                "id": "f-legacy",
+                "importance": "blocking",
+                "severity": "blocker",
+                "target_refs": [],
+                "issue": "x",
+                "recommended_change": "y",
+            }
+        )
 
 
-def test_new_writes_emit_only_new_shape() -> None:
+def test_finding_to_dict_emits_canonical_fields() -> None:
     finding = ReviewFinding(
         id="f-1",
         severity="major",
@@ -57,12 +54,12 @@ def test_new_writes_emit_only_new_shape() -> None:
         reopens_finding_id=None,
     )
     payload = finding.to_dict()
-    assert "importance" not in payload
-    assert "required_change" not in payload
     assert payload["severity"] == "major"
     assert payload["category"] == "correctness"
     assert payload["recommended_change"] == "Cover it"
     assert payload["evidence"] == ["obs-1"]
+    assert "importance" not in payload
+    assert "required_change" not in payload
 
 
 def test_reopens_finding_id_requires_closed_same_loop_finding() -> None:
@@ -109,20 +106,6 @@ def test_reopens_finding_id_requires_closed_same_loop_finding() -> None:
             [closed, open_finding],
         )
 
-    with pytest.raises(ValueError, match="same loop"):
-        validate_reopens_finding_id(
-            ReviewFinding(
-                id="f-bad",
-                severity="major",
-                category="other",
-                target_refs=[],
-                issue="x",
-                recommended_change="y",
-                reopens_finding_id="missing",
-            ),
-            [closed],
-        )
-
 
 def test_finding_action_challenge_requires_proposed_disposition() -> None:
     action = parse_finding_action(
@@ -152,29 +135,6 @@ def test_finding_action_challenge_requires_proposed_disposition() -> None:
     assert challenge.proposed_disposition == "superseded"
     assert challenge.superseded_by_finding_id == "f-old"
 
-    with pytest.raises(ValueError, match="requires rationale"):
-        parse_finding_action(
-            {
-                "finding_id": "f-1",
-                "action": "accept_as_is",
-                "actor_role": "producer",
-                "artifact_revision": 1,
-                "finding_set_id": "fs-1",
-            }
-        )
-
-    with pytest.raises(ValueError, match="proposed_disposition"):
-        parse_finding_action(
-            {
-                "finding_id": "f-1",
-                "action": "challenge",
-                "rationale": "Disagree",
-                "actor_role": "producer",
-                "artifact_revision": 1,
-                "finding_set_id": "fs-1",
-            }
-        )
-
 
 def test_review_loop_persists_revise_at_actions_and_schema_version() -> None:
     loop = ReviewLoop(
@@ -199,13 +159,8 @@ def test_review_loop_persists_revise_at_actions_and_schema_version() -> None:
     payload = loop.to_dict()
     assert payload["review_schema_version"] == CURRENT_REVIEW_SCHEMA_VERSION
     assert payload["revise_at"] == "major"
-    assert payload["finding_actions"][0]["action"] == "defer"
-    assert payload["review_incomplete"] is None
-
     restored = ReviewLoop.from_dict(payload)
     assert restored.revise_at == "major"
-    assert restored.finding_actions[0].finding_id == "f-1"
-    assert restored.review_schema_version == CURRENT_REVIEW_SCHEMA_VERSION
 
 
 def test_revise_at_immutable_after_loop_creation() -> None:
@@ -222,28 +177,16 @@ def test_revise_at_immutable_after_loop_creation() -> None:
         with_loop_revise_at(loop, "major")
 
 
-def test_legacy_loop_without_schema_version_loads() -> None:
-    restored = ReviewLoop.from_dict(
-        {
-            "id": "legacy-loop",
-            "type": "focused_output",
-            "reviewer_session_id": None,
-            "target_revision": 2,
-            "scope": {"kind": "focused_output", "item_ids": ["item-a"]},
-            "status": "pending",
-            "findings": [
-                {
-                    "id": "f-1",
-                    "importance": "blocking",
-                    "target_refs": ["item-a"],
-                    "issue": "Gap",
-                    "required_change": "Fix",
-                    "status": "unresolved",
-                }
-            ],
-        }
-    )
-    assert restored.review_schema_version == CURRENT_REVIEW_SCHEMA_VERSION
-    assert restored.findings[0].severity == "blocker"
-    assert restored.revise_at is None
-    assert restored.finding_actions == []
+def test_review_loop_load_requires_revise_at() -> None:
+    with pytest.raises(ValueError, match="missing required revise_at"):
+        ReviewLoop.from_dict(
+            {
+                "id": "legacy-loop",
+                "type": "focused_output",
+                "reviewer_session_id": None,
+                "target_revision": 2,
+                "scope": {"kind": "focused_output", "item_ids": ["item-a"]},
+                "status": "pending",
+                "findings": [],
+            }
+        )

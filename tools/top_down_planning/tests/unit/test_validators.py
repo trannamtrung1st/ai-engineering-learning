@@ -118,6 +118,7 @@ def test_approval_mode_detects_input_digest_tampering() -> None:
     }
     approval = {
         "target_revision": 1,
+        "revise_at": "blocker",
         "approved_digests": dict(run["digests"]),
         "findings": [],
     }
@@ -139,6 +140,7 @@ def test_review_loop_round_trips_approved_digests() -> None:
     payload = {
         "id": "review-whole-plan-01",
         "type": "whole_plan",
+        "revise_at": "blocker",
         "reviewer_session_id": "session-1",
         "target_revision": 2,
         "scope": {"kind": "whole_plan"},

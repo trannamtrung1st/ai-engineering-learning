@@ -2,7 +2,7 @@
 
 Locks Final Recommendation across domain helpers and both mandatory gates:
 verified finding closure alone never approves; approval requires a clear fresh
-scope_blocker_review against the current artifact digest; limit_reached/blocked
+scope_review against the current artifact digest; limit_reached/blocked
 never convert to approval.
 """
 
@@ -19,7 +19,7 @@ from top_down_planning.domain.reviews import (
     MandatoryReviewLimits,
     ReviewFinding,
     ReviewLoop,
-    ScopeBlockerReviewResult,
+    ScopeReviewResult,
     approval_allowed_under_loop_bounds,
     is_approval_eligible,
     reject_approval_when_budget_exhausted,
@@ -30,8 +30,8 @@ from top_down_planning.orchestrator import (
 )
 from top_down_planning.orchestrator.mandatory_review_stages import (
     approved_means_final_approval,
-    approved_means_start_blocker_review,
-    prepare_blocker_review_loop,
+    approved_means_start_scope_review,
+    prepare_scope_review_loop,
     stage_package_fields,
 )
 from top_down_planning.orchestrator.phases import (
@@ -71,10 +71,10 @@ def _closed_verification(*, digest: str = DIGEST) -> FindingVerificationResult:
     )
 
 
-def _clear_blocker(*, digest: str = DIGEST) -> ScopeBlockerReviewResult:
-    return ScopeBlockerReviewResult(
+def _clear_blocker(*, digest: str = DIGEST) -> ScopeReviewResult:
+    return ScopeReviewResult(
         target_digest=digest,
-        decision="approve",
+        decision="approved",
         scope_id="whole_plan",
         acceptance_criteria_checked=["Core Invariant"],
         summary="No remaining blockers.",
@@ -88,7 +88,7 @@ def test_core_invariant_finding_closure_alone_never_approves() -> None:
     assert (
         is_approval_eligible(
             verification=verification,
-            blocker_review=None,
+            scope_review_result=None,
             current_artifact_digest=DIGEST,
         )
         is False
@@ -104,11 +104,12 @@ def test_core_invariant_finding_closure_alone_never_approves() -> None:
         findings=[],
         lifecycle_status="findings_closed",
         active_stage="finding_verification",
+        revise_at="blocker",
     )
     assert approved_means_final_approval(initial) is False
-    assert approved_means_start_blocker_review(initial) is True
+    assert approved_means_start_scope_review(initial) is True
 
-    blocker_pending = prepare_blocker_review_loop(initial)
+    blocker_pending = prepare_scope_review_loop(initial)
     assert blocker_pending.active_stage == "scope_review"
     assert blocker_pending.status == "pending"
     assert approved_means_final_approval(blocker_pending) is True
@@ -119,20 +120,20 @@ def test_core_invariant_finding_closure_alone_never_approves() -> None:
     assert blocker_pending.finding_set_id is not None
 
 
-def test_core_invariant_requires_verified_clear_blocker_and_digest_match() -> None:
+def test_core_invariant_requires_verified_clear_scope_review_and_digest_match() -> None:
     assert (
         is_approval_eligible(
             verification=_closed_verification(),
-            blocker_review=_clear_blocker(),
+            scope_review_result=_clear_blocker(),
             current_artifact_digest=DIGEST,
-            lifecycle_status="blocker_review_pending",
+            lifecycle_status="scope_review_pending",
         )
         is True
     )
     assert (
         is_approval_eligible(
             verification=_closed_verification(digest=DIGEST_STALE),
-            blocker_review=_clear_blocker(),
+            scope_review_result=_clear_blocker(),
             current_artifact_digest=DIGEST,
         )
         is False
@@ -140,7 +141,7 @@ def test_core_invariant_requires_verified_clear_blocker_and_digest_match() -> No
     assert (
         is_approval_eligible(
             verification=_closed_verification(),
-            blocker_review=_clear_blocker(digest=DIGEST_STALE),
+            scope_review_result=_clear_blocker(digest=DIGEST_STALE),
             current_artifact_digest=DIGEST,
         )
         is False
@@ -148,11 +149,11 @@ def test_core_invariant_requires_verified_clear_blocker_and_digest_match() -> No
     assert (
         is_approval_eligible(
             verification=_closed_verification(),
-            blocker_review=ScopeBlockerReviewResult(
+            scope_review_result=ScopeReviewResult(
                 target_digest=DIGEST,
-                decision="blockers_found",
+                decision="changes_requested",
                 scope_id="whole_plan",
-                blocking_findings=[
+                reported_findings=[
                     ReviewFinding(
                         id="finding-new",
                         severity="blocker",
@@ -174,16 +175,16 @@ def test_loop_bounds_terminals_never_approve(lifecycle: str) -> None:
     assert (
         is_approval_eligible(
             verification=_closed_verification(),
-            blocker_review=_clear_blocker(),
+            scope_review_result=_clear_blocker(),
             current_artifact_digest=DIGEST,
             lifecycle_status=lifecycle,
         )
         is False
     )
-    limits = MandatoryReviewLimits(max_revision_cycles=1, max_blocker_review_rounds=1)
+    limits = MandatoryReviewLimits(max_revision_cycles=1, max_scope_review_rounds=1)
     exhausted = reject_approval_when_budget_exhausted(
         revision_cycles=1,
-        blocker_review_rounds=0,
+        scope_review_rounds=0,
         limits=limits,
         findings=[
             ReviewFinding(
@@ -202,10 +203,10 @@ def test_loop_bounds_terminals_never_approve(lifecycle: str) -> None:
     assert (
         approval_allowed_under_loop_bounds(
             revision_cycles=1,
-            blocker_review_rounds=0,
+            scope_review_rounds=0,
             limits=limits,
             verification=_closed_verification(),
-            blocker_review=_clear_blocker(),
+            scope_review_result=_clear_blocker(),
             current_artifact_digest=DIGEST,
             findings=[],
         )
@@ -213,7 +214,7 @@ def test_loop_bounds_terminals_never_approve(lifecycle: str) -> None:
     )
 
 
-def test_whole_plan_approval_requires_fresh_blocker_gate(tmp_path: Path) -> None:
+def test_whole_plan_approval_requires_fresh_scope_review_gate(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_at_whole_plan_review(store, provider=provider)
@@ -239,7 +240,7 @@ def test_whole_plan_approval_requires_fresh_blocker_gate(tmp_path: Path) -> None
     assert "plan" in review["approved_digests"]
 
 
-def test_whole_output_approval_requires_fresh_blocker_gate(tmp_path: Path) -> None:
+def test_whole_output_approval_requires_fresh_scope_review_gate(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_at_whole_output_review(store, provider=provider)
@@ -265,14 +266,14 @@ def test_whole_output_approval_requires_fresh_blocker_gate(tmp_path: Path) -> No
     assert "output" in review["approved_digests"]
 
 
-def test_whole_output_blocker_round_limit_rejects_without_approval(
+def test_whole_output_scope_review_round_limit_rejects_without_approval(
     tmp_path: Path,
 ) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_at_whole_output_review(
         store,
-        limits={"max_revision_cycles": 5, "max_blocker_review_rounds": 1},
+        limits={"max_revision_cycles": 5, "max_scope_review_rounds": 1},
         provider=provider,
     )
     artifacts_dir = tmp_path / "artifacts"
@@ -282,12 +283,12 @@ def test_whole_output_blocker_round_limit_rejects_without_approval(
     from tests.helpers import (
         apply_production,
         done_events,
-        mandatory_blocker_found_respond_request,
+        mandatory_scope_review_found_respond_request,
         mandatory_initial_respond_request,
         mandatory_verification_respond_request,
         respond_review,
         script_reviewer_allocate,
-        prepare_loop_for_blocker_respond,
+        prepare_loop_for_scope_review_respond,
     )
 
     # Initial clear → first blocker finds issues → revise → verify clear →
@@ -309,7 +310,7 @@ def test_whole_output_blocker_round_limit_rejects_without_approval(
             loop_id="review-whole-output-01",
         ),
     )
-    prepare_loop_for_blocker_respond(
+    prepare_loop_for_scope_review_respond(
         store,
         run_id,
         "review-whole-output-01",
@@ -318,7 +319,7 @@ def test_whole_output_blocker_round_limit_rejects_without_approval(
     respond_review(
         store,
         run_id,
-        mandatory_blocker_found_respond_request(
+        mandatory_scope_review_found_respond_request(
             store,
             run_id,
             loop_id="review-whole-output-01",
@@ -327,10 +328,10 @@ def test_whole_output_blocker_round_limit_rejects_without_approval(
             findings=[
                 {
                     "id": "finding-blocker-01",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-leaf"],
                     "issue": "Still blocked.",
-                    "required_change": "Fix coverage.",
+                    "recommended_change": "Fix coverage.",
                     "status": "unresolved",
                 }
             ],
@@ -449,14 +450,16 @@ def test_review_respond_rejects_stale_target_digest(tmp_path: Path) -> None:
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
             "status": "pending",
             "findings": [],
-            "lifecycle_status": "blocker_review_pending",
-            "active_stage": "scope_blocker_review",
-            "blocker_review_rounds": 1,
+            "lifecycle_status": "scope_review_pending",
+            "active_stage": "scope_review",
+            "scope_review_rounds": 1,
+            "finding_set_id": "review-whole-plan-01-fs-01",
         },
     )
     token = grant_capability(
@@ -473,11 +476,13 @@ def test_review_respond_rejects_stale_target_digest(tmp_path: Path) -> None:
             {
                 "loop_id": "review-whole-plan-01",
                 "target_revision": 0,
-                "stage": "scope_blocker_review",
-                "decision": "approve",
-                "blocking_findings": [],
+                "stage": "scope_review",
+                "finding_set_id": "review-whole-plan-01-fs-01",
+                "reported_findings": [],
+                "review_completed": True,
                 "target_digest": "not-the-current-plan-digest",
-                "findings": [],
+                "scope_id": "whole_plan",
+                "summary": "clear",
             },
             capability_token=token,
         )
@@ -529,13 +534,14 @@ def test_mandatory_review_loop_fields_survive_persistence(tmp_path: Path) -> Non
         lifecycle_status="verification_pending",
         active_stage="finding_verification",
         finding_set_id="review-whole-plan-01-fs-02",
-        blocker_review_rounds=1,
+        scope_review_rounds=1,
+        revise_at="blocker",
     )
     store.save_review(run_id, loop.to_dict())
     restored = ReviewLoop.from_dict(store.load_review(run_id, loop.id))
     assert restored.lifecycle_status == "verification_pending"
     assert restored.active_stage == "finding_verification"
     assert restored.finding_set_id == "review-whole-plan-01-fs-02"
-    assert restored.blocker_review_rounds == 1
+    assert restored.scope_review_rounds == 1
     assert restored.findings[0].status == "resolved"
     assert approved_means_final_approval(restored) is False

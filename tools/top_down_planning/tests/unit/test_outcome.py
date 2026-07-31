@@ -48,7 +48,7 @@ def test_acceptance_invariant_requires_all_checks() -> None:
         production_output_goal_explicitly_assessed_as_met=True,
         output_whole_output_review_approved_current_revision=True,
         output_deterministic_output_validation_passed=True,
-        findings_unresolved_blocking_findings=0,
+        findings_unresolved_required_findings=0,
     )
     assert invariant.satisfied is True
 
@@ -59,7 +59,7 @@ def test_acceptance_invariant_requires_all_checks() -> None:
         production_output_goal_explicitly_assessed_as_met=False,
         output_whole_output_review_approved_current_revision=True,
         output_deterministic_output_validation_passed=True,
-        findings_unresolved_blocking_findings=0,
+        findings_unresolved_required_findings=0,
     )
     assert blocked.satisfied is False
 
@@ -80,6 +80,7 @@ def test_missing_goal_assessment_cannot_accept() -> None:
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "status": "approved",
             "target_revision": 0,
             "findings": [],
@@ -88,6 +89,7 @@ def test_missing_goal_assessment_cannot_accept() -> None:
         {
             "id": "review-whole-output-01",
             "type": "whole_output",
+            "revise_at": "blocker",
             "status": "approved",
             "target_revision": 1,
             "findings": [],
@@ -134,6 +136,7 @@ def test_unapproved_output_cannot_accept() -> None:
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "status": "approved",
             "target_revision": 0,
             "findings": [],
@@ -180,6 +183,7 @@ def test_goal_not_met_assessment_cannot_accept() -> None:
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "status": "approved",
             "target_revision": 0,
             "findings": [],
@@ -188,6 +192,7 @@ def test_goal_not_met_assessment_cannot_accept() -> None:
         {
             "id": "review-whole-output-01",
             "type": "whole_output",
+            "revise_at": "blocker",
             "status": "approved",
             "target_revision": 1,
             "findings": [],
@@ -222,7 +227,7 @@ def test_resolve_quality_outcome_maps_validation_failures_to_blocked() -> None:
         production_output_goal_explicitly_assessed_as_met=True,
         output_whole_output_review_approved_current_revision=True,
         output_deterministic_output_validation_passed=True,
-        findings_unresolved_blocking_findings=0,
+        findings_unresolved_required_findings=0,
     )
     assert resolve_quality_outcome(invariant) == "blocked"
 
@@ -235,7 +240,7 @@ def test_resolve_quality_outcome_maps_quality_gaps_to_rejected() -> None:
         production_output_goal_explicitly_assessed_as_met=False,
         output_whole_output_review_approved_current_revision=True,
         output_deterministic_output_validation_passed=True,
-        findings_unresolved_blocking_findings=0,
+        findings_unresolved_required_findings=0,
     )
     assert resolve_quality_outcome(invariant) == "rejected"
 

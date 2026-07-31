@@ -26,7 +26,7 @@ from tests.helpers import (
     apply_plan,
     apply_production,
     done_events,
-    mandatory_blocker_respond_request,
+    mandatory_scope_review_respond_request,
     mandatory_initial_respond_request,
     only_run_id,
     request_amendment,
@@ -98,13 +98,13 @@ limits:
     max_agent_turns: {planning_limits.get("max_agent_turns", 40)}
   whole_plan_review:
     max_revision_cycles: {whole_plan_limits.get("max_revision_cycles", 5)}
-    max_blocker_review_rounds: {whole_plan_limits.get("max_blocker_review_rounds", 3)}
+    max_scope_review_rounds: {whole_plan_limits.get("max_scope_review_rounds", 3)}
   production:
     max_batches: {production_limits.get("max_batches", 50)}
     max_agent_turns_per_batch: {production_limits.get("max_agent_turns_per_batch", 10)}
   whole_output_review:
     max_revision_cycles: {whole_output_limits.get("max_revision_cycles", 5)}
-    max_blocker_review_rounds: {whole_output_limits.get("max_blocker_review_rounds", 3)}
+    max_scope_review_rounds: {whole_output_limits.get("max_scope_review_rounds", 3)}
   amendment:
     max_requests: {amendment_limits.get("max_requests", 3)}
     max_revision_cycles_per_request: {amendment_limits.get("max_revision_cycles_per_request", 3)}
@@ -327,7 +327,7 @@ def script_whole_plan_review(
                 respond_review(
                     store,
                     run_id,
-                    mandatory_blocker_respond_request(
+                    mandatory_scope_review_respond_request(
                         store,
                         run_id,
                         loop_id=loop_id,
@@ -414,7 +414,7 @@ def script_whole_output_review(
                 respond_review(
                     store,
                     run_id,
-                    mandatory_blocker_respond_request(
+                    mandatory_scope_review_respond_request(
                         store,
                         run_id,
                         loop_id=loop_id,

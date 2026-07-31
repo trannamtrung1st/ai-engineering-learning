@@ -59,7 +59,7 @@ class ReviewState:
     """Optional whole-plan review context for approval-mode hooks."""
 
     approved_revision: int | None = None
-    unresolved_blocking_findings: list[str] = field(default_factory=list)
+    unresolved_required_findings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -91,7 +91,7 @@ def build_plan_approval_validation_context(
 ) -> tuple[ReviewState, DigestBundle]:
     """Build approval-mode review and digest bindings for the current plan revision."""
 
-    from top_down_planning.domain.reviews import blocking_unresolved_finding_ids_from_payload
+    from top_down_planning.domain.reviews import required_unresolved_finding_ids_from_payload
 
     approved_digests = approval.get("approved_digests")
     expected_digests: dict[str, str] = (
@@ -101,7 +101,7 @@ def build_plan_approval_validation_context(
     )
     review_state = ReviewState(
         approved_revision=int(approval["target_revision"]),
-        unresolved_blocking_findings=blocking_unresolved_finding_ids_from_payload(
+        unresolved_required_findings=required_unresolved_finding_ids_from_payload(
             approval
         ),
     )
@@ -664,12 +664,12 @@ def validate_review_hooks(
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
-    for finding in review_state.unresolved_blocking_findings:
+    for finding in review_state.unresolved_required_findings:
         issues.append(
             _issue(
-                "unresolved_blocking_finding",
+                "unresolved_required_finding",
                 "error",
-                f"blocking whole-plan finding remains unresolved: {finding}",
+                f"required whole-plan finding remains unresolved: {finding}",
                 [finding],
             )
         )
@@ -687,7 +687,7 @@ def validate_review_hooks(
                     ["plan", "revision"],
                 )
             )
-    elif not review_state.unresolved_blocking_findings:
+    elif not review_state.unresolved_required_findings:
         issues.append(
             _issue(
                 "review_state_not_checked",

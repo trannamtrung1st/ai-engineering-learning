@@ -33,7 +33,6 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "review-respond-initial-approved",
     "review-respond-verification",
     "review-respond-scope",
-    "review-respond-blocker",
     "review-record-finding-actions",
     "focused-review-request",
     "amendment-request",
@@ -236,33 +235,6 @@ _REVIEW_FINDING_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-_LEGACY_REVIEW_FINDING_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "required": ["id", "importance", "target_refs", "issue", "required_change"],
-    "properties": {
-        "id": {"type": "string"},
-        "importance": {"type": "string", "enum": ["blocking", "advisory"]},
-        "target_refs": {"type": "array", "items": {"type": "string"}},
-        "issue": {"type": "string"},
-        "required_change": {"type": "string"},
-        "status": {
-            "type": "string",
-            "enum": [
-                "unresolved",
-                "partially_resolved",
-                "resolved",
-                "superseded",
-                "invalid",
-            ],
-        },
-    },
-    "additionalProperties": False,
-}
-
-_ANY_REVIEW_FINDING_SCHEMA: dict[str, Any] = {
-    "oneOf": [_REVIEW_FINDING_SCHEMA, _LEGACY_REVIEW_FINDING_SCHEMA]
-}
-
 _FINDING_VERIFICATION_ENTRY_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": ["finding_id", "disposition"],
@@ -343,12 +315,10 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             },
             "review_completed": {"type": "boolean"},
             "summary": {"type": "string"},
-            "decision": {
-                "type": "string",
-                "enum": ["approved", "changes_requested", "blocked"],
+            "block_review": {
+                "type": "boolean",
                 "description": (
-                    "Legacy optional during transition; service derives outcomes "
-                    "from reported_findings and revise_at."
+                    "When true, halt scope review without reporting findings."
                 ),
             },
         },
@@ -371,7 +341,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             "target_revision": {"type": "integer"},
             "stage": {
                 "type": "string",
-                "enum": ["initial_review", "scope_review", "scope_blocker_review"],
+                "enum": ["initial_review", "scope_review"],
             },
             "finding_set_id": {"type": "string"},
             "target_digest": {"type": "string"},
@@ -381,81 +351,16 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             },
             "review_completed": {"type": "boolean"},
             "summary": {"type": "string"},
-            "decision": {
-                "type": "string",
-                "description": "Legacy optional during transition.",
+            "block_review": {
+                "type": "boolean",
+                "description": (
+                    "When true, halt scope review without reporting findings."
+                ),
             },
             "scope_id": {"type": "string"},
             "acceptance_criteria_checked": {
                 "type": "array",
                 "items": {"type": "string"},
-            },
-        },
-        "additionalProperties": False,
-    },
-    {
-        "title": "FocusedReviewRespond",
-        "type": "object",
-        "required": ["loop_id", "target_revision", "decision"],
-        "properties": {
-            "loop_id": {"type": "string"},
-            "target_revision": {"type": "integer"},
-            "decision": {
-                "type": "string",
-                "enum": ["approved", "changes_requested", "blocked"],
-            },
-            "findings": {
-                "type": "array",
-                "items": _ANY_REVIEW_FINDING_SCHEMA,
-            },
-        },
-        "additionalProperties": False,
-    },
-    {
-        "title": "MandatoryInitialReviewApprovedRespond",
-        "type": "object",
-        "required": [
-            "loop_id",
-            "target_revision",
-            "decision",
-            "stage",
-            "findings",
-            "target_digest",
-        ],
-        "properties": {
-            "loop_id": {"type": "string"},
-            "target_revision": {"type": "integer"},
-            "stage": {"const": "initial_review"},
-            "decision": {"const": "approved"},
-            "findings": {
-                "type": "array",
-                "items": _ANY_REVIEW_FINDING_SCHEMA,
-            },
-            "target_digest": {
-                "type": "string",
-                "description": (
-                    "Artifact digest inspected at initial_review approval "
-                    "(Digest and Approval Rules)."
-                ),
-            },
-        },
-        "additionalProperties": False,
-    },
-    {
-        "title": "MandatoryInitialReviewRevisionRespond",
-        "type": "object",
-        "required": ["loop_id", "target_revision", "decision", "stage", "findings"],
-        "properties": {
-            "loop_id": {"type": "string"},
-            "target_revision": {"type": "integer"},
-            "stage": {"const": "initial_review"},
-            "decision": {
-                "type": "string",
-                "enum": ["changes_requested", "blocked"],
-            },
-            "findings": {
-                "type": "array",
-                "items": _ANY_REVIEW_FINDING_SCHEMA,
             },
         },
         "additionalProperties": False,
@@ -493,59 +398,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             },
             "new_direct_side_effect_findings": {
                 "type": "array",
-                "items": _ANY_REVIEW_FINDING_SCHEMA,
-            },
-            "summary": {"type": "string"},
-        },
-        "additionalProperties": False,
-    },
-    {
-        "title": "MandatoryScopeReviewRespond",
-        "type": "object",
-        "required": [
-            "loop_id",
-            "target_revision",
-            "decision",
-            "stage",
-            "target_digest",
-            "scope_id",
-            "summary",
-        ],
-        "properties": {
-            "loop_id": {"type": "string"},
-            "target_revision": {"type": "integer"},
-            "stage": {
-                "type": "string",
-                "enum": ["scope_review", "scope_blocker_review"],
-            },
-            "decision": {
-                "type": "string",
-                "enum": [
-                    "approved",
-                    "changes_requested",
-                    "blocked",
-                    "approve",
-                    "blockers_found",
-                ],
-            },
-            "target_digest": {
-                "type": "string",
-                "description": "Artifact digest inspected by this stage.",
-            },
-            "scope_id": {"type": "string"},
-            "reported_findings": {
-                "type": "array",
-                "items": _ANY_REVIEW_FINDING_SCHEMA,
-                "description": "Preferred discovery field for fresh scope_review.",
-            },
-            "blocking_findings": {
-                "type": "array",
-                "items": _ANY_REVIEW_FINDING_SCHEMA,
-                "description": "Legacy alias for reported_findings.",
-            },
-            "acceptance_criteria_checked": {
-                "type": "array",
-                "items": {"type": "string"},
+                "items": _REVIEW_FINDING_SCHEMA,
             },
             "summary": {"type": "string"},
         },
@@ -905,12 +758,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                     "rounds per whole-plan review phase."
                                 ),
                             },
-                            "max_blocker_review_rounds": {
-                                "type": "integer",
-                                "description": (
-                                    "Legacy alias for max_scope_review_rounds."
-                                ),
-                            },
                         },
                         "additionalProperties": False,
                     },
@@ -945,12 +792,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                 "description": (
                                     "Maximum fresh scope-complete review "
                                     "rounds per whole-output review phase."
-                                ),
-                            },
-                            "max_blocker_review_rounds": {
-                                "type": "integer",
-                                "description": (
-                                    "Legacy alias for max_scope_review_rounds."
                                 ),
                             },
                         },
@@ -1068,7 +909,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "boolean",
                 "description": (
                     "Revise outputs for terminal plan_items targeted by unresolved "
-                    "blocking findings without changing dispositions. Allowed during "
+                    "required findings without changing dispositions. Allowed during "
                     "whole_output_review, or during production when an active "
                     "focused_output review has status changes_requested."
                 ),
@@ -1297,7 +1138,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "schema": "production-apply",
         "description": (
             "During whole_output_review, revise evidence for terminal items targeted "
-            "by unresolved blocking findings."
+            "by unresolved required findings."
         ),
         "payload": {
             "production_revision": 3,
@@ -1385,7 +1226,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             ],
             "review_completed": True,
             "summary": "One blocker finding in scope.",
-            "decision": "changes_requested",
         },
     },
     "review-respond-initial": {
@@ -1413,22 +1253,23 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             ],
             "review_completed": True,
             "summary": "Material acceptance gap found.",
-            "decision": "changes_requested",
         },
     },
     "review-respond-initial-approved": {
         "schema": "review-respond",
         "description": (
-            "Mandatory initial_review: clear approval with digest binding "
+            "Mandatory initial_review: clear discovery with digest binding "
             "(still requires a fresh scope_review before final gate approval)."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
             "target_revision": 0,
             "stage": "initial_review",
-            "decision": "approved",
-            "findings": [],
+            "finding_set_id": "review-whole-plan-01-fs-01",
+            "reported_findings": [],
+            "review_completed": True,
             "target_digest": "plan-digest-abc",
+            "summary": "No material issues in initial discovery.",
         },
     },
     "review-respond-verification": {
@@ -1471,28 +1312,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "scope_id": "whole_plan",
             "reported_findings": [],
             "review_completed": True,
-            "acceptance_criteria_checked": [
-                "coverage",
-                "dependencies",
-                "acceptance",
-            ],
-            "summary": "No remaining material issues in current scope.",
-        },
-    },
-    "review-respond-blocker": {
-        "schema": "review-respond",
-        "description": (
-            "Legacy alias for review-respond-scope (scope_blocker_review / "
-            "blocking_findings)."
-        ),
-        "payload": {
-            "loop_id": "review-whole-plan-01",
-            "target_revision": 1,
-            "stage": "scope_blocker_review",
-            "target_digest": "plan-digest-abc",
-            "scope_id": "whole_plan",
-            "decision": "approve",
-            "blocking_findings": [],
             "acceptance_criteria_checked": [
                 "coverage",
                 "dependencies",
@@ -1624,8 +1443,7 @@ The orchestrator binds one primary planner, producer, or reviewer session per ph
 Mutating `tdp agent` commands require the session capability token exported as
 `TDP_CAPABILITY_TOKEN` on the provider subprocess that runs the turn. Reviewer
 sessions allocate a provider session id, bind the token, then deliver the review
-package (or a mandatory `finding_verification` recheck, or a focused `recheck_revision`
-follow-up) via `send` before the agent may call
+package (or a mandatory `finding_verification` recheck) via `send` before the agent may call
 `tdp agent review respond`. Authorization checks phase, allowed operations, the bound
 provider session, and (for reviewers) the review loop. Capability records store
 only a `secret_hash`; tokens are revoked when turns, loops, or phases end. Agents

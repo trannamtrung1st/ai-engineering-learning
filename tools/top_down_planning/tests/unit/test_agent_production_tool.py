@@ -421,6 +421,7 @@ def test_production_ready_snapshot_excludes_review_blocked_items(tmp_path: Path)
         {
             "id": "review-focused-output-01",
             "type": "focused_output",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 0,
             "scope": {"kind": "focused_output", "item_ids": ["item-second"]},
@@ -428,10 +429,10 @@ def test_production_ready_snapshot_excludes_review_blocked_items(tmp_path: Path)
             "findings": [
                 {
                     "id": "finding-01",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-second"],
                     "issue": "Output incomplete.",
-                    "required_change": "Add evidence.",
+                    "recommended_change": "Add evidence.",
                     "status": "unresolved",
                 }
             ],

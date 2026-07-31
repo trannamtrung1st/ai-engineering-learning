@@ -341,7 +341,7 @@ def test_clear_discovery_skips_verification_signal() -> None:
     assert outcome == "approved"
     assert updated.status == "approved"
     from top_down_planning.orchestrator.mandatory_review_stages import (
-        approved_means_start_blocker_review,
+        approved_means_start_scope_review,
     )
 
-    assert approved_means_start_blocker_review(updated) is True
+    assert approved_means_start_scope_review(updated) is True

@@ -14,6 +14,7 @@ from top_down_planning.domain.reviews import (
     ReviewLoop,
     apply_discovery_response,
     derive_discovery_outcome,
+    map_discovery_outcome_to_loop_status,
     merge_discovery_findings,
 )
 from top_down_planning.persistence import FileRunStore
@@ -82,7 +83,6 @@ def test_derive_outcomes_for_incomplete_required_optional_and_clear() -> None:
             [],
             "blocker",
             review_completed=True,
-            finding_set_id="fs-01",
         )
         == "pending"
     )
@@ -101,7 +101,6 @@ def test_derive_outcomes_for_incomplete_required_optional_and_clear() -> None:
             ],
             "blocker",
             review_completed=True,
-            finding_set_id="fs-01",
         )
         == "approved"
     )
@@ -170,7 +169,7 @@ def test_apply_discovery_persists_finding_actions_and_incomplete_marker() -> Non
     assert incomplete.review_incomplete["reason"] == "missing inputs"
 
 
-def test_legacy_importance_findings_remain_readable_after_merge() -> None:
+def test_legacy_severity_findings_remain_readable_after_merge() -> None:
     loop = ReviewLoop(
         id="review-focused-plan-01",
         type="focused_plan",
@@ -183,10 +182,10 @@ def test_legacy_importance_findings_remain_readable_after_merge() -> None:
             ReviewFinding.from_dict(
                 {
                     "id": "legacy-1",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-root"],
                     "issue": "Legacy blocker",
-                    "required_change": "Fix",
+                    "recommended_change": "Fix",
                     "status": "resolved",
                 }
             )
@@ -213,10 +212,40 @@ def test_legacy_importance_findings_remain_readable_after_merge() -> None:
     )
     assert outcome == "pending"
     assert findings[0].severity == "blocker"
-    assert findings[0].importance == "blocking"
-    assert findings[0].required_change == "Fix"
+    assert findings[0].severity == "blocker"
+    assert findings[0].recommended_change == "Fix"
     assert updated.findings[0].id == "legacy-1"
     assert updated.status == "advisory_pending"
+
+
+def test_block_review_yields_blocked_outcome_and_status() -> None:
+    loop = ReviewLoop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        active_stage="scope_review",
+        finding_set_id="fs-1",
+        findings=[],
+        revise_at="blocker",
+    )
+    updated, findings, outcome = apply_discovery_response(
+        loop,
+        {
+            "finding_set_id": "fs-1",
+            "reported_findings": [],
+            "review_completed": False,
+            "block_review": True,
+            "summary": "Cannot complete scope review.",
+        },
+        stage="scope_review",
+    )
+    assert outcome == "blocked"
+    assert updated.status == "blocked"
+    assert map_discovery_outcome_to_loop_status(outcome, stage="scope_review") == "blocked"
+    assert findings == []
 
 
 def _seed_focused_run(tmp_path: Path) -> tuple[FileRunStore, str, ReviewLoop, str]:
@@ -292,30 +321,29 @@ def test_review_service_derives_changes_requested_from_discovery(
     assert [item.id for item in persisted.findings] == ["finding-001"]
 
 
-def test_review_service_legacy_decision_path_still_works(tmp_path: Path) -> None:
+def test_review_service_rejects_legacy_decision_path(tmp_path: Path) -> None:
     store, run_id, loop, token = _seed_focused_run(tmp_path)
     service = ReviewAgentService(store, run_id)
-    response = service.respond(
-        {
-            "loop_id": loop.id,
-            "target_revision": 0,
-            "decision": "changes_requested",
-            "findings": [
-                {
-                    "id": "finding-legacy",
-                    "importance": "blocking",
-                    "target_refs": ["item-root"],
-                    "issue": "Legacy path",
-                    "required_change": "Fix",
-                    "status": "unresolved",
-                }
-            ],
-            "summary": "legacy",
-        },
-        capability_token=token,
-    )
-    assert response["status"] == "changes_requested"
-    assert "derived_outcome" not in response
+    with pytest.raises(RequestError, match="discovery contract"):
+        service.respond(
+            {
+                "loop_id": loop.id,
+                "target_revision": 0,
+                "decision": "changes_requested",
+                "findings": [
+                    {
+                        "id": "finding-legacy",
+                        "severity": "blocker",
+                        "target_refs": ["item-root"],
+                        "issue": "Legacy path",
+                        "recommended_change": "Fix",
+                        "status": "unresolved",
+                    }
+                ],
+                "summary": "legacy",
+            },
+            capability_token=token,
+        )
 
 
 def test_review_service_rejects_reused_finding_id_on_merge(tmp_path: Path) -> None:

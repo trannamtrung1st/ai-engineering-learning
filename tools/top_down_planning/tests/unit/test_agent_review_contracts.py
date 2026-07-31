@@ -12,7 +12,8 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.reviews import (
     ReviewFinding,
     ReviewLoop,
-    build_scope_blocker_review_result,
+    ScopeReviewResult,
+    merge_scope_review_findings,
     merge_verification_findings,
     mandatory_stage_respond_decision,
     validate_mandatory_stage_decision,
@@ -32,7 +33,7 @@ from top_down_planning.schema_docs import PUBLIC_EXAMPLES, show_example, show_sc
 from tests.helpers import (
     create_run_kwargs,
     grant_capability,
-    mandatory_blocker_respond_request,
+    mandatory_scope_review_respond_request,
     mandatory_plan_digest,
     minimal_resolved_config,
 )
@@ -58,7 +59,6 @@ def test_review_respond_schema_accepts_stage_contracts() -> None:
         "review-respond-initial-approved",
         "review-respond-verification",
         "review-respond-scope",
-        "review-respond-blocker",
     ):
         assert name in PUBLIC_EXAMPLES
         example = show_example(name)
@@ -114,9 +114,10 @@ def test_review_respond_schema_rejects_cross_stage_fields() -> None:
 
 def test_stage_decision_validation_and_finding_resolution() -> None:
     assert validate_mandatory_stage_decision("finding_verification", "verified") == "verified"
-    assert validate_mandatory_stage_decision("scope_blocker_review", "approve") == "approve"
+    with pytest.raises(ValueError, match="unknown mandatory review stage"):
+        validate_mandatory_stage_decision("scope_review", "approved")
     with pytest.raises(ValueError, match="finding_verification decisions"):
-        validate_mandatory_stage_decision("finding_verification", "approve")
+        validate_mandatory_stage_decision("finding_verification", "approved")
 
     verification_loop = ReviewLoop(
         id="review-whole-plan-01",
@@ -138,6 +139,7 @@ def test_stage_decision_validation_and_finding_resolution() -> None:
         lifecycle_status="verification_pending",
         active_stage="finding_verification",
         finding_set_id="fs-1",
+        revise_at="blocker",
     )
     verification = merge_verification_findings(
         verification_loop,
@@ -161,32 +163,26 @@ def test_stage_decision_validation_and_finding_resolution() -> None:
     assert verification[0].status == "resolved"
     assert verification[0].issue == "Gap"
 
-    blockers, _ = build_scope_blocker_review_result(
-        {
-            "stage": "scope_blocker_review",
-            "decision": "blockers_found",
-            "target_digest": "digest-1",
-            "scope_id": "whole_plan",
-            "blocking_findings": [
-                {
-                    "id": "finding-new",
-                    "importance": "blocking",
-                    "target_refs": ["item-a"],
-                    "issue": "Coverage gap",
-                    "required_change": "Add leaf",
-                    "status": "unresolved",
-                }
-            ],
-        },
-        ReviewLoop(
-            id="review-whole-plan-01",
-            type="whole_plan",
-            reviewer_session_id="sess",
-            target_revision=1,
-            scope={"kind": "whole_plan"},
-        ),
+    scope_loop = ReviewLoop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
     )
-    assert blockers[0].id == "finding-new"
+    reported = [
+        ReviewFinding(
+            id="finding-new",
+            severity="blocker",
+            category="other",
+            target_refs=["item-a"],
+            issue="Coverage gap",
+            recommended_change="Add leaf",
+            status="unresolved",
+        )
+    ]
+    merged = merge_scope_review_findings(scope_loop, reported)
+    assert merged[0].id == "finding-new"
     assert mandatory_stage_respond_decision(
         ReviewLoop(
             id="review-whole-plan-01",
@@ -194,21 +190,21 @@ def test_stage_decision_validation_and_finding_resolution() -> None:
             reviewer_session_id="sess",
             target_revision=1,
             scope={"kind": "whole_plan"},
-            status="blockers_found",
-            active_stage="scope_blocker_review",
-            blocker_review_result={
-                "stage": "scope_blocker_review",
-                "decision": "blockers_found",
+            status="changes_requested",
+            active_stage="scope_review",
+            scope_review_result={
+                "stage": "scope_review",
+                "decision": "changes_requested",
                 "target_digest": "digest-1",
                 "scope_id": "whole_plan",
-                "blocking_findings": [],
+                "reported_findings": [],
                 "summary": "",
             },
         )
     ) == "changes_requested"
 
 
-def test_blocker_package_omits_prior_finding_framing(tmp_path: Path) -> None:
+def test_scope_review_package_omits_prior_finding_framing(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T003301-003301"
     root = PlanItem(
@@ -244,8 +240,8 @@ def test_blocker_package_omits_prior_finding_framing(tmp_path: Path) -> None:
         reviewer_session_id="sess",
         target_revision=0,
         scope={"kind": "whole_plan"},
-        lifecycle_status="blocker_review_pending",
-        active_stage="scope_blocker_review",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
         finding_set_id="review-whole-plan-01-fs-01",
         findings=[
             ReviewFinding(
@@ -258,7 +254,7 @@ def test_blocker_package_omits_prior_finding_framing(tmp_path: Path) -> None:
                 status="resolved",
             )
         ],
-        blocker_review_rounds=1,
+        scope_review_rounds=1,
     )
     package = build_whole_plan_review_package(
         run_id,
@@ -352,6 +348,7 @@ def test_review_service_accepts_stage_payloads(tmp_path: Path) -> None:
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 1,
             "scope": {"kind": "whole_plan"},
@@ -404,15 +401,16 @@ def test_review_service_accepts_stage_payloads(tmp_path: Path) -> None:
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 1,
             "scope": {"kind": "whole_plan"},
             "status": "pending",
             "findings": [],
             "revision_cycles": 1,
-            "lifecycle_status": "blocker_review_pending",
-            "active_stage": "scope_blocker_review",
-            "blocker_review_rounds": 1,
+            "lifecycle_status": "scope_review_pending",
+            "active_stage": "scope_review",
+            "scope_review_rounds": 1,
         },
     )
     token = grant_capability(
@@ -465,6 +463,7 @@ def test_mandatory_respond_requires_stage(tmp_path: Path) -> None:
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
@@ -524,20 +523,21 @@ def test_review_service_rejects_respond_after_gate_approve(tmp_path: Path) -> No
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
-            "status": "approve",
+            "status": "approved",
             "findings": [],
-            "lifecycle_status": "blocker_review_pending",
-            "active_stage": "scope_blocker_review",
-            "blocker_review_rounds": 1,
-            "blocker_review_result": {
-                "stage": "scope_blocker_review",
-                "decision": "approve",
+            "lifecycle_status": "scope_review_pending",
+            "active_stage": "scope_review",
+            "scope_review_rounds": 1,
+            "scope_review_result": {
+                "stage": "scope_review",
+                "decision": "approved",
                 "target_digest": digest,
                 "scope_id": "whole_plan",
-                "blocking_findings": [],
+                "reported_findings": [],
                 "acceptance_criteria_checked": ["Core Invariant"],
                 "summary": "Clear.",
             },
@@ -555,7 +555,7 @@ def test_review_service_rejects_respond_after_gate_approve(tmp_path: Path) -> No
     )
     with pytest.raises(RequestError, match="already terminal"):
         service.respond(
-            mandatory_blocker_respond_request(
+            mandatory_scope_review_respond_request(
                 store,
                 run_id,
                 loop_id="review-whole-plan-01",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -12,6 +13,7 @@ from top_down_planning.orchestrator import (
     PlanningPhaseOrchestrator,
     ProductionPhaseOrchestrator,
 )
+from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence import FileRunStore
@@ -106,6 +108,7 @@ def _create_planning_run(
 def _focused_plan_request(item_ids: list[str]) -> dict:
     return {
         "type": "focused_plan",
+        "revise_at": "blocker",
         "scope": {
             "kind": "focused_plan",
             "item_ids": item_ids,
@@ -113,18 +116,68 @@ def _focused_plan_request(item_ids: list[str]) -> dict:
     }
 
 
+def _focused_verification_respond_request(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    loop_id: str,
+    target_revision: int,
+    finding_results: list[dict] | None = None,
+    decision: str = "verified",
+) -> dict:
+    from tests.helpers import mandatory_plan_digest
+
+    loop_payload = store.load_review(run_id, loop_id)
+    return {
+        "loop_id": loop_id,
+        "target_revision": target_revision,
+        "stage": "finding_verification",
+        "decision": decision,
+        "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
+        "finding_results": finding_results or [],
+        "new_direct_side_effect_findings": [],
+        "target_digest": mandatory_plan_digest(store, run_id),
+        "summary": "focused verification",
+    }
+
+
 def _review_respond_request(
+    store: FileRunStore,
+    run_id: str,
     *,
     loop_id: str,
     decision: str,
     target_revision: int = 0,
     findings: list[dict] | None = None,
 ) -> dict:
+    loop_payload: dict[str, Any] | None = None
+    try:
+        loop_payload = store.load_review(run_id, loop_id)
+    except Exception:
+        loop_payload = None
+    finding_set_id = (
+        str(loop_payload.get("finding_set_id") or "")
+        if loop_payload is not None
+        else f"{loop_id}-fs-01"
+    )
+    reported: list[dict] = []
+    for item in findings or []:
+        finding = dict(item)
+        if not str(finding.get("severity") or "").strip():
+            severity = str(finding.get("severity") or "").strip()
+            finding["severity"] = "blocker" if severity == "blocker" else "minor"
+        if not str(finding.get("category") or "").strip():
+            finding["category"] = "other"
+        if "recommended_change" not in finding and "recommended_change" in finding:
+            finding["recommended_change"] = finding["recommended_change"]
+        reported.append(finding)
     return {
         "loop_id": loop_id,
         "target_revision": target_revision,
-        "decision": decision,
-        "findings": findings or [],
+        "finding_set_id": finding_set_id,
+        "reported_findings": reported,
+        "review_completed": decision != "blocked",
+        "summary": "focused review respond",
     }
 
 
@@ -136,32 +189,68 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
     provider = StubProvider()
 
     run_id = "run-20260101T000401-000401"
-    provider.script_turn(done_events(text="planner session start"))
-    provider.script_turn(
-        done_events(text="after review request"),
-        mutate_store=request_focused_review(
+    request_focused_review(
+        store,
+        run_id,
+        _focused_plan_request(["item-api"]),
+    )()
+    respond_review(
+        store,
+        run_id,
+        _review_respond_request(
             store,
             run_id,
-            _focused_plan_request(["item-api"]),
+            loop_id="review-focused-plan-01",
+            decision="changes_requested",
+            findings=[
+                {
+                    "id": "finding-01",
+                    "severity": "blocker",
+                    "category": "other",
+                    "target_refs": ["item-api"],
+                    "issue": "API outcome is too vague.",
+                    "recommended_change": "Add concrete acceptance criteria.",
+                    "status": "unresolved",
+                }
+            ],
         ),
-    )
+        phase=PLANNING,
+        loop_id="review-focused-plan-01",
+    )()
+    apply_plan(
+        store,
+        run_id,
+        base_revision=0,
+        operations=[
+            {
+                "op": "update_item",
+                "item_id": "item-api",
+                "patch": {
+                    "outcome": "REST API endpoints exist.",
+                    "acceptance": ["GET /health returns 200."],
+                },
+            }
+        ],
+    )()
     script_reviewer_allocate(provider)
+    with pytest.raises(ProviderRunError, match="without a decision"):
+        FocusedReviewOrchestrator(store, run_id, provider).run("review-focused-plan-01")
     provider.script_turn(
-        done_events(text="reviewer turn"),
+        done_events(text="reviewer verify"),
         mutate_store=respond_review(
             store,
             run_id,
-            _review_respond_request(
+            _focused_verification_respond_request(
+                store,
+                run_id,
                 loop_id="review-focused-plan-01",
-                decision="changes_requested",
-                findings=[
+                target_revision=1,
+                finding_results=[
                     {
-                        "id": "finding-01",
-                        "importance": "blocking",
-                        "target_refs": ["item-api"],
-                        "issue": "API outcome is too vague.",
-                        "required_change": "Add concrete acceptance criteria.",
-                        "status": "unresolved",
+                        "finding_id": "finding-01",
+                        "disposition": "resolved",
+                        "evidence": ["acceptance criteria added"],
+                        "direct_side_effects": [],
                     }
                 ],
             ),
@@ -169,38 +258,9 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
             loop_id="review-focused-plan-01",
         ),
     )
-    provider.script_turn(
-        done_events(text="planner revision"),
-        mutate_store=apply_plan(
-            store,
-            run_id,
-            base_revision=0,
-            operations=[
-                {
-                    "op": "update_item",
-                    "item_id": "item-api",
-                    "patch": {
-                        "outcome": "REST API endpoints exist.",
-                        "acceptance": ["GET /health returns 200."],
-                    },
-                }
-            ],
-        ),
-    )
-    provider.script_turn(
-        done_events(text="reviewer approve"),
-        mutate_store=respond_review(
-            store,
-            run_id,
-            _review_respond_request(
-                loop_id="review-focused-plan-01",
-                decision="approved",
-                target_revision=1,
-            ),
-            phase=PLANNING,
-            loop_id="review-focused-plan-01",
-        ),
-    )
+    assert FocusedReviewOrchestrator(store, run_id, provider).run(
+        "review-focused-plan-01"
+    ).ok
     provider.script_turn(done_events(signal="candidate_plan_ready", text="planning turn"))
 
     result = PlanningPhaseOrchestrator(store, run_id, provider).run()
@@ -209,7 +269,7 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
     assert result.phase == "whole_plan_review"
 
     review = store.load_review("run-20260101T000401-000401", "review-focused-plan-01")
-    assert review["status"] == "approved"
+    assert review["status"] == "verified"
     assert review["target_revision"] == 1
 
     run = store.load_run("run-20260101T000401-000401")
@@ -227,6 +287,7 @@ def test_focused_plan_scope_violation_on_request_is_rejected(tmp_path: Path) -> 
         service.request(
             {
                 "type": "focused_plan",
+                "revise_at": "blocker",
                 "scope": {"kind": "whole_plan", "item_ids": ["item-api"]},
             },
             capability_token=token,
@@ -260,15 +321,17 @@ def test_focused_plan_finding_outside_scope_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(RequestError, match="outside declared scope"):
         service.respond(
             _review_respond_request(
+                store,
+                "run-20260101T000401-000401",
                 loop_id=created["loop_id"],
                 decision="changes_requested",
                 findings=[
                     {
                         "id": "finding-01",
-                        "importance": "blocking",
+                        "severity": "blocker",
                         "target_refs": ["item-root"],
                         "issue": "Root needs work.",
-                        "required_change": "Improve root.",
+                        "recommended_change": "Improve root.",
                         "status": "unresolved",
                     }
                 ],
@@ -355,15 +418,17 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
             store,
             "run-20260101T000401-000401",
             _review_respond_request(
+                store,
+                "run-20260101T000401-000401",
                 loop_id=loop_id,
                 decision="changes_requested",
                 findings=[
                     {
                         "id": "finding-01",
-                        "importance": "blocking",
+                        "severity": "blocker",
                         "target_refs": ["item-api"],
                         "issue": "Needs work.",
-                        "required_change": "Improve acceptance.",
+                        "recommended_change": "Improve acceptance.",
                         "status": "unresolved",
                     }
                 ],
@@ -388,23 +453,24 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
             ],
         ),
     )
+    script_reviewer_allocate(provider)
     provider.script_turn(
-        done_events(text="reviewer turn"),
-        mutate_store=respond_review(
+        done_events(text="reviewer verify"),
+        mutate_store=lambda: respond_review(
             store,
             "run-20260101T000401-000401",
-            _review_respond_request(
+            _focused_verification_respond_request(
+                store,
+                "run-20260101T000401-000401",
                 loop_id=loop_id,
-                decision="changes_requested",
                 target_revision=1,
-                findings=[
+                decision="needs_revision",
+                finding_results=[
                     {
-                        "id": "finding-02",
-                        "importance": "blocking",
-                        "target_refs": ["item-api"],
-                        "issue": "Still needs work.",
-                        "required_change": "Improve again.",
-                        "status": "unresolved",
+                        "finding_id": "finding-01",
+                        "disposition": "unresolved",
+                        "evidence": ["still insufficient"],
+                        "direct_side_effects": [],
                     }
                 ],
             ),
@@ -522,6 +588,7 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
             run_id,
             {
                 "type": "focused_output",
+                "revise_at": "blocker",
                 "scope": {
                     "kind": "focused_output",
                     "item_ids": ["item-first"],
@@ -538,6 +605,8 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
             store,
             run_id,
             _review_respond_request(
+                store,
+                run_id,
                 loop_id="review-focused-output-01",
                 decision="approved",
             ),
@@ -594,6 +663,7 @@ def test_blocking_focused_output_findings_prevent_production_apply(
         {
             "id": "review-focused-output-01",
             "type": "focused_output",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 0,
             "scope": {"kind": "focused_output", "item_ids": ["item-first"]},
@@ -601,10 +671,10 @@ def test_blocking_focused_output_findings_prevent_production_apply(
             "findings": [
                 {
                     "id": "finding-01",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-first"],
                     "issue": "Output incomplete.",
-                    "required_change": "Add evidence.",
+                    "recommended_change": "Add evidence.",
                     "status": "unresolved",
                 }
             ],

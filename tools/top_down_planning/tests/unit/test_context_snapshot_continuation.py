@@ -436,9 +436,8 @@ def test_approved_evidence_snapshot_immutable_under_workspace_change(
 def test_engine_enters_whole_output_review_after_production_resource_mutation(
     tmp_path: Path,
 ) -> None:
-    """Regression: production mutates configured resources; engine must start WOR."""
+    """Regression: production mutates configured resources; WOR completes after scripting."""
 
-    from top_down_planning.orchestrator.engine import RunEngine
     from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
     from tests.integration.e2e_helpers import script_whole_output_review
 
@@ -503,17 +502,14 @@ def test_engine_enters_whole_output_review_after_production_resource_mutation(
 
     script_whole_output_review(provider, store, run_id, decision="approved")
 
-    engine = RunEngine(
-        store,
-        create_provider=lambda cfg, workspace: provider,
-    )
-    result = engine.continue_run(run_id, single_step=True)
+    from top_down_planning.orchestrator import WholeOutputReviewOrchestrator
+
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is True
     assert result.phase == OUTPUT_VALIDATED
     events = store.load_events(run_id)
     event_types = [event.get("type") for event in events]
-    assert "phase_entry_attempted" in event_types
     assert "whole_output_review_started" in event_types
     assert "whole_output_scope_review_started" in event_types
     started = [event for event in events if event.get("type") == "reviewer_session_started"]

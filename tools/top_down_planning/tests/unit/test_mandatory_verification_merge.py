@@ -32,6 +32,7 @@ def _loop_with_open_finding() -> ReviewLoop:
         lifecycle_status="verification_pending",
         active_stage="finding_verification",
         finding_set_id="review-whole-plan-01-fs-01",
+        revise_at="blocker",
     )
 
 
@@ -72,6 +73,6 @@ def test_merge_preserves_finding_metadata() -> None:
         },
     )
     assert merged[0].issue == "Gap in API coverage."
-    assert merged[0].required_change == "Add acceptance criteria."
+    assert merged[0].recommended_change == "Add acceptance criteria."
     assert merged[0].target_refs == ["item-api"]
     assert merged[0].status == "resolved"

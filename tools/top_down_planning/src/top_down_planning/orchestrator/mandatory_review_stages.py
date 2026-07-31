@@ -11,7 +11,7 @@ from top_down_planning.domain.reviews import (
     ReviewLoop,
     SCOPE_REVIEW_STAGE,
     allocate_discovery_finding_set_id,
-    blocking_unresolved_finding_ids,
+    required_unresolved_finding_ids,
     build_limit_reached_terminal,
     assert_mandatory_review_transition,
     is_scope_review_stage_name,
@@ -25,17 +25,11 @@ ReviewArtifactKind = Literal["plan", "output"]
 
 _INITIAL_STAGES = frozenset({None, "initial_review"})
 _VERIFICATION_STAGES = frozenset({"finding_verification"})
-_SCOPE_REVIEW_STAGES = frozenset({"scope_review", "scope_blocker_review"})
+_SCOPE_REVIEW_STAGES = frozenset({"scope_review"})
 
 
 def is_scope_review_stage(loop: ReviewLoop) -> bool:
     return is_scope_review_stage_name(loop.active_stage)
-
-
-def is_blocker_stage(loop: ReviewLoop) -> bool:
-    """Legacy alias for :func:`is_scope_review_stage`."""
-
-    return is_scope_review_stage(loop)
 
 
 def is_verification_or_initial_stage(loop: ReviewLoop) -> bool:
@@ -52,7 +46,7 @@ def seed_mandatory_loop_fields(loop: ReviewLoop) -> ReviewLoop:
         lifecycle_status="review_pending",
         active_stage=None,
         finding_set_id=loop.finding_set_id,
-        blocker_review_rounds=loop.blocker_review_rounds,
+        scope_review_rounds=loop.scope_review_rounds,
     )
 
 
@@ -85,7 +79,7 @@ def mark_findings_open(loop: ReviewLoop) -> ReviewLoop:
         finding_set_id=finding_set_id,
         revision_cycles=revision_cycles,
         approved_digests=None,
-        blocker_review_result=None,
+        scope_review_result=None,
     )
 
 
@@ -172,18 +166,11 @@ def prepare_scope_review_loop(loop: ReviewLoop) -> ReviewLoop:
         reviewer_session_id=None,
         lifecycle_status="scope_review_pending",
         active_stage=SCOPE_REVIEW_STAGE,
-        blocker_review_rounds=loop.blocker_review_rounds + 1,
         approved_digests=None,
-        blocker_review_result=None,
+        scope_review_result=None,
     )
     prepared, _finding_set_id = allocate_discovery_finding_set_id(prepared)
     return prepared
-
-
-def prepare_blocker_review_loop(loop: ReviewLoop) -> ReviewLoop:
-    """Legacy alias for :func:`prepare_scope_review_loop`."""
-
-    return prepare_scope_review_loop(loop)
 
 
 def mark_mandatory_approved(loop: ReviewLoop) -> ReviewLoop:
@@ -237,32 +224,21 @@ def approved_means_start_scope_review(loop: ReviewLoop) -> bool:
 
     if is_scope_review_stage(loop):
         return False
-    return not blocking_unresolved_finding_ids(
+    return not required_unresolved_finding_ids(
         loop.findings,
         revise_at=loop_revise_at(loop),
     )
 
 
-def approved_means_start_blocker_review(loop: ReviewLoop) -> bool:
-    """Legacy alias for :func:`approved_means_start_scope_review`."""
-
-    return approved_means_start_scope_review(loop)
-
-
 def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
     """Fields embedded in reviewer packages for stage awareness."""
 
-    from top_down_planning.domain.reviews import canonicalize_review_stage
+    from top_down_planning.domain.reviews import validate_review_stage
 
-    stage = canonicalize_review_stage(loop.active_stage) or "initial_review"
+    stage = validate_review_stage(loop.active_stage) or "initial_review"
     fields: dict[str, Any] = {
         "stage": stage,
-        "lifecycle_status": (
-            # Prefer canonical lifecycle names in packages.
-            "scope_review_pending"
-            if str(loop.lifecycle_status or "") == "blocker_review_pending"
-            else (loop.lifecycle_status or "review_pending")
-        ),
+        "lifecycle_status": loop.lifecycle_status or "review_pending",
         "review_policy": reviewer_package_policy_guidance(),
     }
     if is_scope_review_stage_name(stage):
@@ -302,7 +278,7 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             ]
         fields["respond_contract"] = {
             "stage": SCOPE_REVIEW_STAGE,
-            "preferred_fields": [
+            "required_fields": [
                 "finding_set_id",
                 "reported_findings",
                 "review_completed",
@@ -310,11 +286,7 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
                 "scope_id",
                 "summary",
             ],
-            "accepted_legacy_fields": [
-                "decision",
-                "blocking_findings",
-                "acceptance_criteria_checked",
-            ],
+            "optional_fields": ["acceptance_criteria_checked"],
         }
     elif stage == "finding_verification":
         if loop.finding_set_id is not None:
@@ -341,14 +313,13 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             fields["finding_set_id"] = loop.finding_set_id
         fields["respond_contract"] = {
             "stage": "initial_review",
-            "preferred_fields": [
+            "required_fields": [
                 "finding_set_id",
                 "reported_findings",
                 "review_completed",
                 "target_digest",
                 "summary",
             ],
-            "legacy_fields": ["decision", "findings"],
         }
         fields["initial_review_guidance"] = [
             "Mandatory review gate: report every material issue with severity and category",
@@ -358,6 +329,22 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             "Do not omit lower-severity issues because they may not force revision",
         ]
     return fields
+
+
+def prepare_focused_verification_recheck(
+    loop: ReviewLoop,
+    *,
+    target_revision: int,
+) -> ReviewLoop:
+    """Enter focused finding_verification without mandatory lifecycle transitions."""
+
+    return replace(
+        loop,
+        target_revision=target_revision,
+        status="pending",
+        active_stage="finding_verification",
+        approved_digests=None,
+    )
 
 
 def verification_recheck_request(
@@ -388,7 +375,7 @@ def verification_recheck_request(
 def limit_message(
     limits: MandatoryReviewLimits,
     *,
-    exhausted: Literal["verification_revision", "scope_review", "blocker_review"],
+    exhausted: Literal["verification_revision", "scope_review"],
     review_label: str,
 ) -> str:
     if exhausted == "verification_revision":

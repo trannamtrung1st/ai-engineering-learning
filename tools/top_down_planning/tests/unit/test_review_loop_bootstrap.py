@@ -26,6 +26,7 @@ def _loop(**overrides) -> ReviewLoop:
             )
         ],
         revision_cycles=1,
+        revise_at="blocker",
     )
     return ReviewLoop(
         id=overrides.get("id", base.id),
@@ -36,6 +37,7 @@ def _loop(**overrides) -> ReviewLoop:
         status=overrides.get("status", base.status),
         findings=overrides.get("findings", base.findings),
         revision_cycles=overrides.get("revision_cycles", base.revision_cycles),
+        revise_at=overrides.get("revise_at", base.revise_at),
     )
 
 

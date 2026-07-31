@@ -10,14 +10,11 @@ import pytest
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.agent_tool.review_service import ReviewAgentService
-from tests.helpers import mandatory_plan_digest
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator.capability import (
-    revoke_capabilities_for_phase,
-)
+from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, grant_capability, minimal_resolved_config
+from tests.helpers import create_run_kwargs, grant_capability, mandatory_initial_respond_request, mandatory_plan_digest, minimal_resolved_config
 
 
 def _create_planning_run(store: FileRunStore, run_id: str = "run-20260101T000901-000901") -> None:
@@ -115,12 +112,14 @@ def test_planner_cannot_use_reviewer_authority_from_disk(tmp_path: Path) -> None
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "reviewer-session-01",
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
             "status": "pending",
             "findings": [],
             "revision_cycles": 0,
+            "finding_set_id": "review-whole-plan-01-fs-01",
         },
     )
     reviewer_token = grant_capability(
@@ -150,14 +149,14 @@ def test_planner_cannot_use_reviewer_authority_from_disk(tmp_path: Path) -> None
     service = ReviewAgentService(store, run_id)
     with pytest.raises(CapabilityDeniedError):
         service.respond(
-            {
-                "loop_id": "review-whole-plan-01",
-                "target_revision": 0,
-                "stage": "initial_review",
-                "decision": "approved",
-                "findings": [],
-                "target_digest": plan_digest,
-            },
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id="review-whole-plan-01",
+                target_revision=0,
+                review_type="whole_plan",
+                decision="approved",
+            ),
             capability_token=planner_token,
         )
 
@@ -179,26 +178,26 @@ def test_planner_cannot_use_reviewer_authority_from_disk(tmp_path: Path) -> None
     )
     with pytest.raises(CapabilityDeniedError, match="session"):
         service.respond(
-            {
-                "loop_id": "review-whole-plan-01",
-                "target_revision": 0,
-                "stage": "initial_review",
-                "decision": "approved",
-                "findings": [],
-                "target_digest": plan_digest,
-            },
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id="review-whole-plan-01",
+                target_revision=0,
+                review_type="whole_plan",
+                decision="approved",
+            ),
             capability_token=wrong_loop_token,
         )
 
     # Leaked reviewer token from the correct session still works.
     service.respond(
-        {
-            "loop_id": "review-whole-plan-01",
-            "target_revision": 0,
-            "stage": "initial_review",
-            "decision": "approved",
-            "findings": [],
-            "target_digest": plan_digest,
-        },
+        mandatory_initial_respond_request(
+            store,
+            run_id,
+            loop_id="review-whole-plan-01",
+            target_revision=0,
+            review_type="whole_plan",
+            decision="approved",
+        ),
         capability_token=reviewer_token,
     )

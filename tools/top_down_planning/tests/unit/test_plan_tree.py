@@ -434,6 +434,7 @@ def test_remove_item_rejects_items_with_review_history() -> None:
         {
             "id": "review-focused-plan-01",
             "type": "focused_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "session-1",
             "target_revision": 1,
             "scope": {"kind": "focused_plan", "item_ids": ["item-first"]},
@@ -441,10 +442,10 @@ def test_remove_item_rejects_items_with_review_history() -> None:
             "findings": [
                 {
                     "id": "finding-01",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-first"],
                     "issue": "Too vague.",
-                    "required_change": "Add detail.",
+                    "recommended_change": "Add detail.",
                     "status": "resolved",
                 }
             ],

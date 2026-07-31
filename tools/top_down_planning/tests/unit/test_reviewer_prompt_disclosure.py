@@ -26,7 +26,7 @@ def test_discovery_protocol_requires_full_material_disclosure() -> None:
 
 def test_scope_review_protocol_is_not_blocker_only() -> None:
     protocol = " ".join(
-        build_reviewer_protocol_instructions(stage="scope_blocker_review")
+        build_reviewer_protocol_instructions(stage="scope_review")
     ).lower()
     assert "every material issue" in protocol
     assert "remaining approval blockers within the current scope only" not in protocol
@@ -116,8 +116,8 @@ def test_focused_and_whole_packages_omit_revise_at(tmp_path: Path) -> None:
         reviewer_session_id="sess",
         target_revision=1,
         scope={"kind": "whole_plan"},
-        lifecycle_status="blocker_review_pending",
-        active_stage="scope_blocker_review",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
         finding_set_id="review-whole-plan-01-fs-01",
         revise_at="major",
     )

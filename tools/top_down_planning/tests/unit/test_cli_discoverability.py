@@ -117,6 +117,7 @@ def test_focused_review_request_schema_rejects_type_kind_mismatch() -> None:
     issues = validate_against_schema(
         {
             "type": "focused_plan",
+            "revise_at": "blocker",
             "scope": {"kind": "focused_output", "item_ids": ["item-api"]},
         },
         schema,

@@ -130,7 +130,7 @@ def test_challenge_requires_proposed_disposition_and_keeps_finding_open() -> Non
 
 
 def test_defer_does_not_mutate_artifact_and_permits_approval() -> None:
-    loop = _optional_loop(revision_cycles=2, blocker_review_rounds=1)
+    loop = _optional_loop(revision_cycles=2, scope_review_rounds=1)
     before = budgets_snapshot(loop)
     updated, _parsed = apply_owner_finding_actions(
         loop,
@@ -183,7 +183,7 @@ def test_review_incomplete_preserves_budgets_and_reuses_finding_set_id() -> None
         revise_at="major",
         finding_set_id="fs-scope-01",
         revision_cycles=3,
-        blocker_review_rounds=2,
+        scope_review_rounds=2,
     )
     before = budgets_snapshot(loop)
     incomplete, _findings, outcome = apply_discovery_response(
@@ -276,7 +276,7 @@ def test_review_incomplete_run_transition_and_resume(tmp_path: Path) -> None:
     assert resumed.get("outcome") is None
 
 
-def test_review_service_incomplete_fails_run_without_outcome(tmp_path: Path) -> None:
+def test_review_service_incomplete_does_not_fail_run_for_focused(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path / "runs")
     run_id = "run-20260101T000001-d00d01"
     root = PlanItem(
@@ -328,7 +328,7 @@ def test_review_service_incomplete_fails_run_without_outcome(tmp_path: Path) -> 
     )
     assert response["derived_outcome"] == "review_incomplete"
     run = store.load_run(run_id)
-    assert run["status"] == "failed"
+    assert run["status"] == "running"
     assert run.get("outcome") is None
     persisted = ReviewLoop.from_dict(store.load_review(run_id, loop.id))
     assert persisted.revision_cycles == 1

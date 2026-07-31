@@ -11,7 +11,7 @@ from top_down_planning.domain.production import (
     completion_claim_asserts_goal_met,
 )
 from top_down_planning.domain.reviews import (
-    blocking_unresolved_finding_ids_from_payload,
+    required_unresolved_finding_ids_from_payload,
     find_whole_output_approval,
     find_whole_plan_approval,
 )
@@ -40,7 +40,7 @@ class AcceptanceInvariant:
     production_output_goal_explicitly_assessed_as_met: bool
     output_whole_output_review_approved_current_revision: bool
     output_deterministic_output_validation_passed: bool
-    findings_unresolved_blocking_findings: int
+    findings_unresolved_required_findings: int
 
     @property
     def satisfied(self) -> bool:
@@ -51,7 +51,7 @@ class AcceptanceInvariant:
             and self.production_output_goal_explicitly_assessed_as_met
             and self.output_whole_output_review_approved_current_revision
             and self.output_deterministic_output_validation_passed
-            and self.findings_unresolved_blocking_findings == 0
+            and self.findings_unresolved_required_findings == 0
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -74,8 +74,8 @@ class AcceptanceInvariant:
             "output.deterministic_output_validation_passed": (
                 self.output_deterministic_output_validation_passed
             ),
-            "findings.unresolved_blocking_findings": (
-                self.findings_unresolved_blocking_findings
+            "findings.unresolved_required_findings": (
+                self.findings_unresolved_required_findings
             ),
         }
 
@@ -153,7 +153,7 @@ def evaluate_acceptance_invariant(
     unresolved_findings = 0
     if output_approval is not None:
         unresolved_findings = len(
-            blocking_unresolved_finding_ids_from_payload(output_approval)
+            required_unresolved_finding_ids_from_payload(output_approval)
         )
 
     dispositions = dict(production.get("dispositions") or {})
@@ -166,7 +166,7 @@ def evaluate_acceptance_invariant(
         production_output_goal_explicitly_assessed_as_met=goal_assessed,
         output_whole_output_review_approved_current_revision=output_approval is not None,
         output_deterministic_output_validation_passed=output_validation.ok,
-        findings_unresolved_blocking_findings=unresolved_findings,
+        findings_unresolved_required_findings=unresolved_findings,
     )
     return invariant, plan_validation, output_validation
 

@@ -6,6 +6,8 @@ from pathlib import Path
 
 from core_tools.provider import StubProvider
 from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.orchestrator.mandatory_review_stages import verification_recheck_request
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.reviewer_session import (
     build_reviewer_allocation_request,
@@ -101,6 +103,13 @@ def test_deliver_reviewer_turn_binds_token_before_send(tmp_path: Path) -> None:
     )
     provider.script_turn(done_events(text="recheck"))
 
+    loop = ReviewLoop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id=session_id,
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+    )
     token = deliver_reviewer_turn(
         provider,
         store,
@@ -108,7 +117,11 @@ def test_deliver_reviewer_turn_binds_token_before_send(tmp_path: Path) -> None:
         session_id=session_id,
         loop_id="review-whole-plan-01",
         phase=WHOLE_PLAN_REVIEW,
-        request={"action": "recheck_revision"},
+        request=verification_recheck_request(
+            phase=WHOLE_PLAN_REVIEW,
+            loop=loop,
+            target_revision=0,
+        ),
     )
 
     assert token

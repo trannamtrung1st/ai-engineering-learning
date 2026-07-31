@@ -85,6 +85,7 @@ def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
     ReviewAgentService(store, run_id).request(
         {
             "type": "focused_plan",
+            "revise_at": "blocker",
             "scope": {"kind": "focused_plan", "item_ids": ["item-root"]},
         },
         capability_token=token,
@@ -120,6 +121,7 @@ def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:
     ReviewAgentService(store, run_id).request(
         {
             "type": "focused_plan",
+            "revise_at": "blocker",
             "scope": {"kind": "focused_plan", "item_ids": ["item-root"]},
         },
         capability_token=planner_token,
@@ -132,12 +134,15 @@ def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:
         phase="planning",
         loop_id="review-focused-plan-01",
     )
+    loop = store.load_review(run_id, "review-focused-plan-01")
     ReviewAgentService(store, run_id).respond(
         {
             "loop_id": "review-focused-plan-01",
             "target_revision": 0,
-            "decision": "approved",
-            "findings": [],
+            "finding_set_id": str(loop.get("finding_set_id") or ""),
+            "reported_findings": [],
+            "review_completed": True,
+            "summary": "clear",
         },
         capability_token=reviewer_token,
     )
@@ -217,6 +222,7 @@ def test_planning_runs_store_created_focused_review_before_advancing(
     ReviewAgentService(store, run_id).request(
         {
             "type": "focused_plan",
+            "revise_at": "blocker",
             "scope": {"kind": "focused_plan", "item_ids": ["item-api"]},
         },
         capability_token=planner_token,
@@ -239,8 +245,15 @@ def test_planning_runs_store_created_focused_review_before_advancing(
             {
                 "loop_id": "review-focused-plan-01",
                 "target_revision": 0,
-                "decision": "approved",
-                "findings": [],
+                "finding_set_id": str(
+                    store.load_review(run_id, "review-focused-plan-01").get(
+                        "finding_set_id"
+                    )
+                    or ""
+                ),
+                "reported_findings": [],
+                "review_completed": True,
+                "summary": "clear",
             },
             phase="planning",
             loop_id="review-focused-plan-01",

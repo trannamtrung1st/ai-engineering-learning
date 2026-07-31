@@ -113,6 +113,7 @@ def _focused_review(*, item_ids: list[str], status: str = "changes_requested") -
     return {
         "id": "review-focused-output-01",
         "type": "focused_output",
+        "revise_at": "blocker",
         "reviewer_session_id": "stub-session-reviewer",
         "target_revision": 1,
         "scope": {"kind": "focused_output", "item_ids": item_ids},
@@ -120,10 +121,10 @@ def _focused_review(*, item_ids: list[str], status: str = "changes_requested") -
         "findings": [
             {
                 "id": "finding-01",
-                "importance": "blocking",
+                "severity": "blocker",
                 "target_refs": item_ids[:1],
                 "issue": "Need better evidence.",
-                "required_change": "Add revised artifact.",
+                "recommended_change": "Add revised artifact.",
                 "status": "unresolved",
             }
         ],

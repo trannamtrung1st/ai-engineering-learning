@@ -14,7 +14,7 @@ from core_tools.provider import StubProvider
 from tests.helpers import (
     apply_plan,
     done_events,
-    mandatory_blocker_found_respond_request,
+    mandatory_scope_review_found_respond_request,
     mandatory_initial_respond_request,
     mandatory_verification_needs_revision_request,
     respond_review,
@@ -26,15 +26,15 @@ from tests.unit.test_whole_plan_review import _create_run_at_whole_plan_review
 def _blocker_finding() -> dict:
     return {
         "id": "finding-blocker-01",
-        "importance": "blocking",
+        "severity": "blocker",
         "target_refs": ["item-api"],
         "issue": "Coverage gap.",
-        "required_change": "Add acceptance checks.",
+        "recommended_change": "Add acceptance checks.",
         "status": "unresolved",
     }
 
 
-def test_in_process_blockers_found_emits_event_and_enters_revision(tmp_path: Path) -> None:
+def test_in_process_scope_review_changes_requested_emits_event_and_enters_revision(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_at_whole_plan_review(store, provider=provider)
@@ -63,7 +63,7 @@ def test_in_process_blockers_found_emits_event_and_enters_revision(tmp_path: Pat
         mutate_store=lambda: respond_review(
             store,
             run_id,
-            mandatory_blocker_found_respond_request(
+            mandatory_scope_review_found_respond_request(
                 store,
                 run_id,
                 loop_id="review-whole-plan-01",
@@ -104,7 +104,9 @@ def test_in_process_blockers_found_emits_event_and_enters_revision(tmp_path: Pat
     review = store.load_review(run_id, "review-whole-plan-01")
     events = store.load_events(run_id)
     blocker_events = [
-        event for event in events if event.get("type") == "whole_plan_blockers_found"
+        event
+        for event in events
+        if event.get("type") == "whole_plan_scope_review_changes_requested"
     ]
     assert blocker_events
     assert blocker_events[-1]["finding_set_id"] == review["finding_set_id"]

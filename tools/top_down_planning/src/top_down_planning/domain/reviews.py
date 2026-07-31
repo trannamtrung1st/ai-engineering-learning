@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from top_down_planning.domain.review_policy import (
+    BUILTIN_REVISE_AT,
     FindingCategory,
     ReviewSeverity,
     severity_at_or_above,
@@ -18,7 +19,7 @@ from top_down_planning.domain.review_policy import (
 CURRENT_REVIEW_SCHEMA_VERSION = 1
 
 _ACTIVE_REVIEW_BLOCKING_STATUSES = frozenset(
-    {"changes_requested", "needs_revision", "blockers_found"}
+    {"changes_requested", "needs_revision"}
 )
 PLAN_REVIEW_TYPES = frozenset({"focused_plan", "whole_plan"})
 OUTPUT_REVIEW_TYPES = frozenset({"focused_output", "whole_output"})
@@ -33,8 +34,6 @@ ReviewLoopStatus = Literal[
     "blocked",
     "verified",
     "needs_revision",
-    "approve",
-    "blockers_found",
     "review_incomplete",
 ]
 MandatoryStageDecision = Literal[
@@ -43,14 +42,12 @@ MandatoryStageDecision = Literal[
     "blocked",
     "verified",
     "needs_revision",
-    "approve",
-    "blockers_found",
     "review_incomplete",
 ]
 REVISION_REQUESTED_STATUSES = frozenset(
-    {"changes_requested", "needs_revision", "blockers_found"}
+    {"changes_requested", "needs_revision"}
 )
-CLEAR_APPROVAL_STATUSES = frozenset({"approved", "verified", "approve"})
+CLEAR_APPROVAL_STATUSES = frozenset({"approved", "verified"})
 
 # Persisted finding status on ReviewFinding; open statuses block approval.
 FindingStatus = Literal[
@@ -68,31 +65,24 @@ FindingDisposition = Literal[
     "superseded",
     "invalid",
 ]
-FindingImportance = Literal["blocking", "advisory"]
-
 # Recommended Naming / Result Contracts
-# Canonical stage for fresh mandatory discovery is ``scope_review``; legacy
-# ``scope_blocker_review`` remains readable.
 ReviewStage = Literal[
     "finding_verification",
     "scope_review",
-    "scope_blocker_review",  # legacy alias
 ]
 VerificationDecision = Literal["verified", "needs_revision", "blocked"]
-# Canonical scope-review decisions are approved|changes_requested|blocked;
-# approve|blockers_found remain readable legacy aliases.
 ScopeReviewDecision = Literal[
     "approved",
     "changes_requested",
     "blocked",
-    "approve",
-    "blockers_found",
 ]
-BlockerReviewDecision = ScopeReviewDecision  # legacy alias name
 
 SCOPE_REVIEW_STAGE = "scope_review"
-LEGACY_SCOPE_REVIEW_STAGE = "scope_blocker_review"
-SCOPE_REVIEW_STAGES = frozenset({SCOPE_REVIEW_STAGE, LEGACY_SCOPE_REVIEW_STAGE})
+SCOPE_REVIEW_STAGES = frozenset({SCOPE_REVIEW_STAGE})
+_LEGACY_REVIEW_STAGE_NAMES = frozenset({"scope_blocker_review"})
+_LEGACY_LIFECYCLE_STATUS_NAMES = frozenset({"blocker_review_pending"})
+_LEGACY_SCOPE_REVIEW_DECISIONS = frozenset({"approve", "blockers_found"})
+_LEGACY_LOOP_STATUS_NAMES = frozenset({"approve", "blockers_found"})
 
 # Suggested State Model for mandatory whole_* loops
 MandatoryReviewLifecycleStatus = Literal[
@@ -102,7 +92,6 @@ MandatoryReviewLifecycleStatus = Literal[
     "verification_pending",
     "findings_closed",
     "scope_review_pending",
-    "blocker_review_pending",  # legacy alias
     "approved",
     "blocked",
     "limit_reached",
@@ -149,7 +138,6 @@ MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
         {
             "findings_open",
             "scope_review_pending",
-            "blocker_review_pending",
             "review_incomplete",
         }
     ),
@@ -166,13 +154,8 @@ MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
             "review_incomplete",
         }
     ),
-    "findings_closed": frozenset(
-        {"scope_review_pending", "blocker_review_pending", "limit_reached"}
-    ),
+    "findings_closed": frozenset({"scope_review_pending", "limit_reached"}),
     "scope_review_pending": frozenset(
-        {"approved", "findings_open", "blocked", "limit_reached", "review_incomplete"}
-    ),
-    "blocker_review_pending": frozenset(
         {"approved", "findings_open", "blocked", "limit_reached", "review_incomplete"}
     ),
     "approved": frozenset(),
@@ -183,47 +166,78 @@ MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
             "review_pending",
             "findings_open",
             "scope_review_pending",
-            "blocker_review_pending",
             "verification_pending",
         }
     ),
 }
 
 
-def canonicalize_review_stage(stage: str | None) -> str | None:
-    """Map legacy scope_blocker_review onto canonical scope_review."""
+def _reject_legacy_review_stage(stage: str) -> None:
+    if stage in _LEGACY_REVIEW_STAGE_NAMES:
+        raise ValueError(
+            f"legacy review stage {stage!r} is not accepted; use scope_review"
+        )
+
+
+def _reject_legacy_lifecycle_status(status: str) -> None:
+    if status in _LEGACY_LIFECYCLE_STATUS_NAMES:
+        raise ValueError(
+            f"legacy lifecycle status {status!r} is not accepted; "
+            "use scope_review_pending"
+        )
+
+
+def _reject_legacy_scope_review_decision(decision: str) -> None:
+    if decision in _LEGACY_SCOPE_REVIEW_DECISIONS:
+        raise ValueError(
+            f"legacy scope review decision {decision!r} is not accepted; "
+            "use approved, changes_requested, or blocked"
+        )
+
+
+def validate_review_stage(stage: str | None) -> str | None:
+    """Validate a persisted or request review stage name."""
 
     if stage is None:
         return None
     normalized = str(stage).strip()
     if not normalized:
         return None
-    if normalized == LEGACY_SCOPE_REVIEW_STAGE:
-        return SCOPE_REVIEW_STAGE
+    _reject_legacy_review_stage(normalized)
+    if normalized not in {
+        "initial_review",
+        "finding_verification",
+        SCOPE_REVIEW_STAGE,
+    }:
+        raise ValueError(
+            "review stage must be one of: initial_review, finding_verification, "
+            "scope_review"
+        )
     return normalized
 
 
 def is_scope_review_stage_name(stage: str | None) -> bool:
-    return str(stage or "").strip() in SCOPE_REVIEW_STAGES
+    return str(stage or "").strip() == SCOPE_REVIEW_STAGE
 
 
-def canonicalize_lifecycle_status(status: str | None) -> str | None:
+def validate_lifecycle_status(status: str | None) -> str | None:
     if status is None:
         return None
     normalized = str(status).strip()
     if not normalized:
         return None
-    if normalized == "blocker_review_pending":
-        return "scope_review_pending"
+    _reject_legacy_lifecycle_status(normalized)
     return normalized
 
 
-def canonicalize_scope_review_decision(decision: str) -> str:
+def validate_scope_review_decision_value(decision: str) -> str:
     normalized = str(decision).strip()
-    if normalized == "approve":
-        return "approved"
-    if normalized == "blockers_found":
-        return "changes_requested"
+    _reject_legacy_scope_review_decision(normalized)
+    if normalized not in {"approved", "changes_requested", "blocked"}:
+        raise ValueError(
+            "scope review decision must be one of: approved, changes_requested, "
+            "blocked"
+        )
     return normalized
 
 
@@ -232,7 +246,10 @@ def normalize_exhausted_budget(value: str | None) -> str | None:
         return None
     normalized = str(value).strip()
     if normalized == "blocker_review":
-        return "scope_review"
+        raise ValueError(
+            "legacy exhausted_budget value blocker_review is not accepted; "
+            "use scope_review"
+        )
     return normalized or None
 
 
@@ -247,18 +264,6 @@ class ReviewFinding:
     status: FindingStatus = "unresolved"
     evidence: list[str] = field(default_factory=list)
     reopens_finding_id: str | None = None
-
-    @property
-    def importance(self) -> FindingImportance:
-        """Legacy derived importance until threshold-aware helpers replace callers."""
-
-        return "blocking" if self.severity == "blocker" else "advisory"
-
-    @property
-    def required_change(self) -> str:
-        """Legacy alias for recommended_change until callers migrate."""
-
-        return self.recommended_change
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -284,10 +289,13 @@ class ReviewFinding:
         else:
             category = validate_finding_category(str(category_raw))
 
-        if "recommended_change" in payload:
-            recommended_change = str(payload.get("recommended_change") or "")
-        else:
-            recommended_change = str(payload.get("required_change") or "")
+        if "recommended_change" not in payload:
+            raise ValueError("finding requires recommended_change")
+        recommended_change = str(payload.get("recommended_change") or "")
+        if payload.get("importance") is not None or payload.get("required_change") is not None:
+            raise ValueError(
+                "legacy finding fields importance and required_change are not accepted"
+            )
 
         reopens_raw = payload.get("reopens_finding_id")
         reopens_finding_id = (
@@ -314,19 +322,11 @@ class ReviewFinding:
 
 
 def _severity_from_payload(payload: Mapping[str, Any]) -> ReviewSeverity:
-    if payload.get("severity") is not None and str(payload.get("severity")).strip():
-        return validate_review_severity(str(payload["severity"]))
-    importance = payload.get("importance")
-    if importance is None or not str(importance).strip():
-        raise ValueError("finding requires severity (or legacy importance)")
-    normalized = str(importance).strip()
-    if normalized == "blocking":
-        return "blocker"
-    if normalized == "advisory":
-        return "minor"
-    raise ValueError(
-        "legacy finding importance must be one of: blocking, advisory"
-    )
+    if payload.get("severity") is None or not str(payload.get("severity")).strip():
+        raise ValueError("finding requires severity")
+    if payload.get("importance") is not None:
+        raise ValueError("legacy finding field importance is not accepted")
+    return validate_review_severity(str(payload["severity"]))
 
 
 @dataclass
@@ -486,9 +486,9 @@ class ReviewLoop:
     lifecycle_status: MandatoryReviewLifecycleStatus | None = None
     active_stage: ReviewStage | None = None
     finding_set_id: str | None = None
-    blocker_review_rounds: int = 0
+    scope_review_rounds: int = 0
     verification_result: dict[str, Any] | None = None
-    blocker_review_result: dict[str, Any] | None = None
+    scope_review_result: dict[str, Any] | None = None
     exhausted_budget: ExhaustedReviewBudget | None = None
     # Severity-threshold review fields (proposal review-record model).
     review_schema_version: int = CURRENT_REVIEW_SCHEMA_VERSION
@@ -521,23 +521,18 @@ class ReviewLoop:
         if self.approved_digests is not None:
             payload["approved_digests"] = dict(self.approved_digests)
         if self.lifecycle_status is not None:
-            payload["lifecycle_status"] = (
-                canonicalize_lifecycle_status(self.lifecycle_status)
-                or self.lifecycle_status
-            )
+            payload["lifecycle_status"] = self.lifecycle_status
         if self.active_stage is not None:
-            payload["active_stage"] = (
-                canonicalize_review_stage(self.active_stage) or self.active_stage
-            )
+            payload["active_stage"] = self.active_stage
         if self.finding_set_id is not None:
             payload["finding_set_id"] = self.finding_set_id
-        rounds = int(self.blocker_review_rounds)
+        rounds = int(self.scope_review_rounds)
         if rounds:
             payload["scope_review_rounds"] = rounds
         if self.verification_result is not None:
             payload["verification_result"] = dict(self.verification_result)
-        if self.blocker_review_result is not None:
-            payload["scope_review_result"] = dict(self.blocker_review_result)
+        if self.scope_review_result is not None:
+            payload["scope_review_result"] = dict(self.scope_review_result)
         if self.exhausted_budget is not None:
             payload["exhausted_budget"] = normalize_exhausted_budget(self.exhausted_budget)
         return payload
@@ -560,13 +555,13 @@ class ReviewLoop:
             else None
         )
         lifecycle_raw = payload.get("lifecycle_status")
-        lifecycle_status = canonicalize_lifecycle_status(
+        lifecycle_status = validate_lifecycle_status(
             str(lifecycle_raw).strip()
             if lifecycle_raw is not None and str(lifecycle_raw).strip()
             else None
         )
         stage_raw = payload.get("active_stage")
-        active_stage = canonicalize_review_stage(
+        active_stage = validate_review_stage(
             str(stage_raw).strip()
             if stage_raw is not None and str(stage_raw).strip()
             else None
@@ -582,9 +577,11 @@ class ReviewLoop:
             dict(verification_raw) if isinstance(verification_raw, dict) else None
         )
         blocker_raw = payload.get("scope_review_result")
-        if not isinstance(blocker_raw, dict):
-            blocker_raw = payload.get("blocker_review_result")
-        blocker_review_result = (
+        if blocker_raw is None and payload.get("blocker_review_result") is not None:
+            raise ValueError(
+                "legacy field blocker_review_result is not accepted; use scope_review_result"
+            )
+        scope_review_result = (
             dict(blocker_raw) if isinstance(blocker_raw, dict) else None
         )
         exhausted_raw = payload.get("exhausted_budget")
@@ -594,9 +591,12 @@ class ReviewLoop:
             else None
         )
         rounds_raw = payload.get("scope_review_rounds")
-        if rounds_raw is None:
-            rounds_raw = payload.get("blocker_review_rounds")
-        blocker_review_rounds = int(rounds_raw or 0)
+        if rounds_raw is None and payload.get("blocker_review_rounds") is not None:
+            raise ValueError(
+                "legacy field blocker_review_rounds is not accepted; "
+                "use scope_review_rounds"
+            )
+        scope_review_rounds = int(rounds_raw or 0)
         schema_raw = payload.get("review_schema_version")
         if schema_raw is None:
             review_schema_version = CURRENT_REVIEW_SCHEMA_VERSION
@@ -612,6 +612,17 @@ class ReviewLoop:
         revise_at: ReviewSeverity | None = None
         if revise_raw is not None and str(revise_raw).strip():
             revise_at = validate_review_severity(str(revise_raw))
+        loop_type = str(raw_type).strip()
+        if revise_at is None and loop_type in BUILTIN_REVISE_AT:
+            raise ValueError(
+                f"review loop {payload.get('id')!r} is missing required revise_at"
+            )
+
+        status_raw = str(payload.get("status") or "pending").strip()
+        if status_raw in _LEGACY_LOOP_STATUS_NAMES:
+            raise ValueError(
+                f"legacy review loop status {status_raw!r} is not accepted"
+            )
 
         finding_actions = [
             parse_finding_action(item)
@@ -634,16 +645,16 @@ class ReviewLoop:
             reviewer_session_id=payload.get("reviewer_session_id"),
             target_revision=int(payload.get("target_revision") or 0),
             scope=dict(payload.get("scope") or {}),
-            status=str(payload.get("status") or "pending"),  # type: ignore[arg-type]
+            status=status_raw,  # type: ignore[arg-type]
             findings=findings,
             revision_cycles=int(payload.get("revision_cycles") or 0),
             approved_digests=approved_digests,
             lifecycle_status=lifecycle_status,  # type: ignore[arg-type]
             active_stage=active_stage,  # type: ignore[arg-type]
             finding_set_id=finding_set_id,
-            blocker_review_rounds=blocker_review_rounds,
+            scope_review_rounds=scope_review_rounds,
             verification_result=verification_result,
-            blocker_review_result=blocker_review_result,
+            scope_review_result=scope_review_result,
             exhausted_budget=exhausted_budget,  # type: ignore[arg-type]
             review_schema_version=review_schema_version,
             revise_at=revise_at,
@@ -686,9 +697,6 @@ def is_review_respond_closed(loop: ReviewLoop) -> bool:
 
     if is_terminal_review_loop(loop):
         return True
-    if is_mandatory_review_loop(loop) and loop.status == "approve":
-        # Legacy mandatory-gate closed status.
-        return True
     if (
         is_mandatory_review_loop(loop)
         and loop.status == "approved"
@@ -696,9 +704,9 @@ def is_review_respond_closed(loop: ReviewLoop) -> bool:
         and is_scope_review_stage_name(loop.active_stage)
     ):
         return True
-    blocker = loop.blocker_review_result
+    blocker = loop.scope_review_result
     if is_mandatory_review_loop(loop) and isinstance(blocker, dict):
-        decision = canonicalize_scope_review_decision(
+        decision = validate_scope_review_decision_value(
             str(blocker.get("decision") or "")
         )
         if decision == "approved" and is_scope_review_stage_name(
@@ -775,11 +783,11 @@ def is_open_finding_status(status: str) -> bool:
 
 
 def loop_revise_at(loop: ReviewLoop) -> ReviewSeverity:
-    """Return the loop's persisted revise_at, or blocker for legacy loops."""
+    """Return the loop's persisted revise_at threshold."""
 
-    if loop.revise_at is not None:
-        return loop.revise_at
-    return "blocker"
+    if loop.revise_at is None:
+        raise ValueError(f"review loop {loop.id!r} is missing required revise_at")
+    return loop.revise_at
 
 
 def open_findings(findings: Sequence[ReviewFinding]) -> list[ReviewFinding]:
@@ -837,16 +845,19 @@ def open_optional_findings_without_owner_action(
     *,
     finding_set_id: str | None = None,
 ) -> list[ReviewFinding]:
-    """Optional open findings lacking a qualifying defer/accept_as_is action."""
+    """Optional open findings lacking a qualifying defer/accept_as_is action.
 
+    Acknowledgments are keyed by ``finding_id`` only, not ``finding_set_id``.
+    The parameter is accepted for call-site symmetry with policy helpers but is
+    intentionally ignored: a defer/accept on an optional finding applies for the
+    lifetime of the loop regardless of which discovery set reported the finding.
+    """
+
+    del finding_set_id
     acknowledged = {
         action.finding_id
         for action in finding_actions
         if action.action in QUALIFYING_OPTIONAL_OWNER_ACTIONS
-        and (
-            finding_set_id is None
-            or action.finding_set_id == finding_set_id
-        )
     }
     return [
         finding
@@ -944,15 +955,14 @@ def policy_observability_fields(
     }
 
 
-def blocking_unresolved_finding_ids(
+def required_unresolved_finding_ids(
     findings: list[ReviewFinding],
     *,
-    revise_at: ReviewSeverity | None = None,
+    revise_at: ReviewSeverity,
 ) -> list[str]:
-    """Return open finding ids at or above ``revise_at`` (default: blocker)."""
+    """Return open finding ids at or above ``revise_at``."""
 
-    threshold: ReviewSeverity = revise_at if revise_at is not None else "blocker"
-    return required_open_finding_ids(findings, threshold)
+    return required_open_finding_ids(findings, revise_at)
 
 
 def needs_primary_revision_resume(
@@ -967,7 +977,7 @@ def needs_primary_revision_resume(
     if current_revision > loop.target_revision:
         return False
     return bool(
-        blocking_unresolved_finding_ids(
+        required_unresolved_finding_ids(
             loop.findings,
             revise_at=loop_revise_at(loop),
         )
@@ -1068,7 +1078,7 @@ def blocking_focused_findings_for_items(
         if loop.status not in {"changes_requested", "blocked"}:
             continue
         blocked.extend(
-            blocking_unresolved_finding_ids(
+            required_unresolved_finding_ids(
                 loop.findings,
                 revise_at=loop_revise_at(loop),
             )
@@ -1077,17 +1087,19 @@ def blocking_focused_findings_for_items(
     return blocked
 
 
-def blocking_unresolved_finding_ids_from_payload(review: dict[str, Any]) -> list[str]:
+def required_unresolved_finding_ids_from_payload(review: dict[str, Any]) -> list[str]:
     findings = [
         ReviewFinding.from_dict(item)
         for item in (review.get("findings") or [])
         if isinstance(item, dict)
     ]
     revise_raw = review.get("revise_at")
-    revise_at: ReviewSeverity | None = None
-    if revise_raw is not None and str(revise_raw).strip():
-        revise_at = validate_review_severity(str(revise_raw))
-    return blocking_unresolved_finding_ids(findings, revise_at=revise_at)
+    if revise_raw is None or not str(revise_raw).strip():
+        raise ValueError(
+            "review record requires revise_at for threshold-aware unresolved finding ids"
+        )
+    revise_at = validate_review_severity(str(revise_raw))
+    return required_unresolved_finding_ids(findings, revise_at=revise_at)
 
 
 def find_active_review_loop(
@@ -1184,7 +1196,7 @@ def find_whole_output_approval(
     for payload in reversed(reviews):
         if payload.get("type") != "whole_output":
             continue
-        if str(payload.get("status") or "").strip() not in {"approve", "approved"}:
+        if str(payload.get("status") or "").strip() != "approved":
             continue
         target_revision = payload.get("target_revision")
         if target_revision is None:
@@ -1201,7 +1213,7 @@ def is_mandatory_gate_approval_record(payload: Mapping[str, Any]) -> bool:
     """True when a persisted mandatory loop completed the mandatory approval gate."""
 
     status = str(payload.get("status") or "").strip()
-    if status not in {"approve", "approved"}:
+    if status != "approved":
         return False
     if payload.get("lifecycle_status") != "approved":
         return False
@@ -1209,22 +1221,33 @@ def is_mandatory_gate_approval_record(payload: Mapping[str, Any]) -> bool:
         return False
     blocker_raw = payload.get("scope_review_result")
     if not isinstance(blocker_raw, dict):
-        blocker_raw = payload.get("blocker_review_result")
+        blocker_raw = payload.get("scope_review_result")
     if not isinstance(blocker_raw, dict):
         return False
     if not is_scope_review_stage_name(str(blocker_raw.get("stage") or "")):
         return False
-    decision = canonicalize_scope_review_decision(
+    decision = validate_scope_review_decision_value(
         str(blocker_raw.get("decision") or "")
     )
     if decision != "approved":
         return False
-    reported = blocker_raw.get("reported_findings")
-    if reported is None:
-        reported = blocker_raw.get("blocking_findings")
-    if reported:
-        return False
     if not str(blocker_raw.get("target_digest") or "").strip():
+        return False
+    findings = [
+        ReviewFinding.from_dict(item)
+        for item in (payload.get("findings") or [])
+        if isinstance(item, dict)
+    ]
+    finding_actions = [
+        parse_finding_action(item)
+        for item in (payload.get("finding_actions") or [])
+        if isinstance(item, dict)
+    ]
+    revise_raw = payload.get("revise_at")
+    if revise_raw is None or not str(revise_raw).strip():
+        raise ValueError("mandatory gate approval record requires revise_at")
+    revise_at = validate_review_severity(str(revise_raw))
+    if not findings_permit_approval(findings, finding_actions, revise_at):
         return False
     return True
 
@@ -1236,7 +1259,7 @@ def find_whole_plan_approval(
     for payload in reversed(reviews):
         if payload.get("type") != "whole_plan":
             continue
-        if str(payload.get("status") or "").strip() not in {"approve", "approved"}:
+        if str(payload.get("status") or "").strip() != "approved":
             continue
         target_revision = payload.get("target_revision")
         if target_revision is None:
@@ -1421,6 +1444,7 @@ def parse_request_finding_actions(
 DiscoveryDerivedOutcome = Literal[
     "approved",
     "changes_requested",
+    "blocked",
     "review_incomplete",
     "pending",
 ]
@@ -1432,7 +1456,6 @@ def derive_discovery_outcome(
     threshold: ReviewSeverity,
     *,
     review_completed: bool,
-    finding_set_id: str | None = None,
 ) -> DiscoveryDerivedOutcome:
     """Derive lifecycle outcome from findings and revise_at (service-owned)."""
 
@@ -1444,7 +1467,6 @@ def derive_discovery_outcome(
         findings,
         finding_actions,
         threshold,
-        finding_set_id=finding_set_id,
     ):
         # Optional findings need owner actions; do not force revision.
         return "pending"
@@ -1464,6 +1486,8 @@ def map_discovery_outcome_to_loop_status(
         return "advisory_pending"
     if outcome == "changes_requested":
         return "changes_requested"
+    if outcome == "blocked":
+        return "blocked"
     if is_scope_review_stage_name(stage):
         return "approved"
     return "approved"
@@ -1490,6 +1514,27 @@ def apply_discovery_response(
 ) -> tuple[ReviewLoop, list[ReviewFinding], DiscoveryDerivedOutcome]:
     """Validate, merge, and derive outcome for a discovery respond payload."""
 
+    explicit_blocked = bool(request.get("block_review"))
+    if request.get("decision") is not None:
+        raise ValueError(
+            "discovery respond must not include decision; use block_review to halt "
+            "scope review without reporting findings"
+        )
+    if explicit_blocked:
+        finding_set_id = validate_finding_set_id_echo(loop, request)
+        reported = parse_reported_findings(request) if request.get("reported_findings") else []
+        if reported:
+            assert_reported_finding_ids_unused(loop, reported)
+            merged = merge_discovery_findings(loop, reported)
+        else:
+            merged = list(loop.findings)
+        updated = replace(
+            loop,
+            findings=merged,
+            status="blocked",
+        )
+        return updated, merged, "blocked"
+
     reported = parse_discovery_respond_findings(loop, request)
     review_completed = bool(request.get("review_completed"))
     finding_set_id = validate_finding_set_id_echo(loop, request)
@@ -1502,7 +1547,6 @@ def apply_discovery_response(
         finding_actions,
         threshold,
         review_completed=review_completed,
-        finding_set_id=finding_set_id,
     )
     incomplete: dict[str, Any] | None = None
     if outcome == "review_incomplete":
@@ -1522,6 +1566,15 @@ def apply_discovery_response(
         review_incomplete=incomplete,
         status=status,
     )
+    if (
+        is_scope_review_stage_name(stage or "")
+        and review_completed
+        and outcome != "review_incomplete"
+    ):
+        updated = replace(
+            updated,
+            scope_review_rounds=loop.scope_review_rounds + 1,
+        )
     if is_mandatory_review_loop(loop) and outcome == "review_incomplete":
         updated = replace(updated, lifecycle_status="review_incomplete")
     return updated, merged, outcome
@@ -1554,7 +1607,6 @@ def needs_advisory_handoff(loop: ReviewLoop) -> bool:
             loop.findings,
             loop.finding_actions,
             threshold,
-            finding_set_id=loop.finding_set_id,
         )
     )
 
@@ -1667,12 +1719,10 @@ def apply_owner_finding_actions(
         updated.findings,
         updated.finding_actions,
         threshold,
-        finding_set_id=updated.finding_set_id,
     ):
         if is_mandatory_review_loop(updated) and is_scope_review_stage_name(
             updated.active_stage or "initial_review"
         ):
-            # Scope-review gate closure uses approved (legacy approve still readable).
             updated = replace(updated, status="approved")
         else:
             updated = replace(updated, status="approved")
@@ -1684,12 +1734,6 @@ def apply_owner_finding_actions(
 
 def is_scope_review_stage(loop: ReviewLoop) -> bool:
     return is_scope_review_stage_name(loop.active_stage)
-
-
-def is_blocker_stage_active(loop: ReviewLoop) -> bool:
-    """Legacy alias for :func:`is_scope_review_stage`."""
-
-    return is_scope_review_stage(loop)
 
 
 def prepare_review_incomplete_retry(loop: ReviewLoop) -> ReviewLoop:
@@ -1717,7 +1761,7 @@ def prepare_review_incomplete_retry(loop: ReviewLoop) -> ReviewLoop:
         active_stage=(
             None
             if stage in {"", "initial_review"}
-            else canonicalize_review_stage(stage)  # type: ignore[arg-type]
+            else validate_review_stage(stage)  # type: ignore[arg-type]
         ),
         # Budgets intentionally unchanged: revision_cycles / scope_review_rounds.
     )
@@ -1726,7 +1770,7 @@ def prepare_review_incomplete_retry(loop: ReviewLoop) -> ReviewLoop:
 def budgets_snapshot(loop: ReviewLoop) -> dict[str, int]:
     return {
         "revision_cycles": int(loop.revision_cycles),
-        "scope_review_rounds": int(loop.blocker_review_rounds),
+        "scope_review_rounds": int(loop.scope_review_rounds),
     }
 
 
@@ -1755,47 +1799,14 @@ def primary_review_resume_fields(loop: ReviewLoop) -> dict[str, Any]:
 def verification_required_for_loop(loop: ReviewLoop) -> bool:
     """True when artifact change, claimed fix, or open challenge requires verification."""
 
-    if owner_actions_require_verification(loop.finding_actions):
-        # Prefer actions for the active finding set when present.
-        active = [
-            action
-            for action in loop.finding_actions
-            if loop.finding_set_id is None
-            or action.finding_set_id == loop.finding_set_id
-        ]
-        if active:
-            return owner_actions_require_verification(active)
-        return True
-    return False
-
-
-def parse_initial_review_findings(request: dict[str, Any]) -> list[ReviewFinding]:
-    """Parse initial_review findings from a mandatory respond payload."""
-
-    if "finding_results" in request or "blocking_findings" in request:
-        raise ValueError(
-            "initial_review respond must use findings, not stage Result Contract fields"
-        )
-    if is_discovery_respond_payload(request):
-        # Caller must supply the loop for full discovery validation.
-        raise ValueError(
-            "initial_review discovery payloads must be parsed with "
-            "parse_discovery_respond_findings"
-        )
-    return parse_findings(request.get("findings") or [])
-
-
-def findings_from_focused_respond(request: dict[str, Any]) -> list[ReviewFinding]:
-    """Parse findings from a focused review respond payload."""
-
-    if request.get("stage") is not None:
-        raise ValueError("focused review respond must not include stage")
-    if is_discovery_respond_payload(request):
-        raise ValueError(
-            "focused discovery payloads must be parsed with "
-            "parse_discovery_respond_findings"
-        )
-    return parse_findings(request.get("findings") or [])
+    open_ids = {finding.id for finding in open_findings(loop.findings)}
+    relevant = [
+        action
+        for action in loop.finding_actions
+        if action.finding_id in open_ids
+        and action.action in {"fix", "challenge"}
+    ]
+    return owner_actions_require_verification(relevant)
 
 
 def validate_decision(decision: str) -> ReviewDecision:
@@ -1810,14 +1821,7 @@ def validate_decision(decision: str) -> ReviewDecision:
 
 
 _MANDATORY_STAGE_DECISIONS: Mapping[str, frozenset[str]] = {
-    "initial_review": frozenset({"approved", "changes_requested", "blocked"}),
     "finding_verification": frozenset({"verified", "needs_revision", "blocked"}),
-    "scope_review": frozenset(
-        {"approved", "changes_requested", "blocked", "approve", "blockers_found"}
-    ),
-    "scope_blocker_review": frozenset(
-        {"approved", "changes_requested", "blocked", "approve", "blockers_found"}
-    ),
 }
 
 
@@ -1830,11 +1834,10 @@ def require_review_respond_stage(request: dict[str, Any]) -> str:
             "mandatory review respond requires stage: initial_review, "
             "finding_verification, or scope_review"
         )
-    stage = str(raw_stage).strip()
-    if stage not in _MANDATORY_STAGE_DECISIONS:
+    stage = validate_review_stage(str(raw_stage).strip())
+    if stage is None:
         raise ValueError(
-            "stage must be one of: initial_review, finding_verification, "
-            "scope_review"
+            "stage must be one of: initial_review, finding_verification, scope_review"
         )
     return stage
 
@@ -1868,11 +1871,11 @@ def mandatory_stage_respond_decision(loop: ReviewLoop) -> str:
     stage = loop.active_stage or "initial_review"
 
     if is_scope_review_stage_name(stage):
-        blocker = loop.blocker_review_result
+        blocker = loop.scope_review_result
         if not isinstance(blocker, dict):
             raise ValueError("scope_review loop missing scope_review_result")
         raw = str(blocker.get("decision") or "").strip()
-        canonical = canonicalize_scope_review_decision(raw)
+        canonical = validate_scope_review_decision_value(raw)
         if canonical not in {"approved", "changes_requested", "blocked"}:
             raise ValueError(f"invalid scope_review_result.decision: {raw!r}")
         return canonical
@@ -2003,72 +2006,22 @@ def merge_verification_findings(
     return merged, result
 
 
-def build_scope_review_result(
-    request: dict[str, Any],
+def merge_scope_review_findings(
     loop: ReviewLoop,
-) -> tuple[list[ReviewFinding], ScopeReviewResult]:
-    """Build Stage-2 scope review result and findings from a respond payload."""
-
-    target_digest = str(request.get("target_digest") or "").strip()
-    if not target_digest:
-        raise ValueError("scope_review respond requires target_digest")
-
-    decision = validate_scope_review_decision(str(request.get("decision") or ""))
-    scope_id = str(request.get("scope_id") or loop.scope.get("kind") or "").strip()
-    if not scope_id:
-        raise ValueError("scope_review respond requires scope_id")
-
-    raw_reported = request.get("reported_findings")
-    if raw_reported is None:
-        raw_reported = request.get("blocking_findings") or []
-    reported_findings = parse_findings(raw_reported)
-    acceptance = [
-        str(item)
-        for item in (request.get("acceptance_criteria_checked") or [])
-    ]
-    canonical = canonicalize_scope_review_decision(decision)
-    if canonical == "approved":
-        loop_findings = list(loop.findings)
-    else:
-        loop_findings = merge_blocker_reopen_findings(loop, reported_findings)
-    result = ScopeReviewResult(
-        target_digest=target_digest,
-        decision=canonical,  # type: ignore[arg-type]
-        scope_id=scope_id,
-        reported_findings=reported_findings,
-        acceptance_criteria_checked=acceptance,
-        summary=str(request.get("summary") or ""),
-    )
-    return loop_findings, result
-
-
-def build_scope_blocker_review_result(
-    request: dict[str, Any],
-    loop: ReviewLoop,
-) -> tuple[list[ReviewFinding], ScopeReviewResult]:
-    """Legacy alias for :func:`build_scope_review_result`."""
-
-    return build_scope_review_result(request, loop)
-
-
-def merge_blocker_reopen_findings(
-    loop: ReviewLoop,
-    blocking_findings: list[ReviewFinding],
+    reported_findings: list[ReviewFinding],
 ) -> list[ReviewFinding]:
-    """Retain prior loop findings for audit; overlay new scope-review ids."""
+    """Append new scope-review findings; never mutate existing records."""
 
-    new_by_id = {finding.id: finding for finding in blocking_findings}
-    merged: list[ReviewFinding] = []
-    seen: set[str] = set()
-    for finding in loop.findings:
-        if finding.id in new_by_id:
-            merged.append(new_by_id[finding.id])
-        else:
-            merged.append(finding)
-        seen.add(finding.id)
-    for finding in blocking_findings:
-        if finding.id not in seen:
-            merged.append(finding)
+    existing_ids = {finding.id for finding in loop.findings}
+    merged = list(loop.findings)
+    for finding in reported_findings:
+        if finding.id in existing_ids:
+            raise ValueError(
+                f"scope review finding id {finding.id!r} already exists in the loop; "
+                "rediscovery must use a new id with reopens_finding_id"
+            )
+        merged.append(finding)
+        existing_ids.add(finding.id)
     return merged
 
 
@@ -2082,7 +2035,7 @@ def validate_verification_closure(
     if result.decision != "verified":
         return
 
-    unresolved = blocking_unresolved_finding_ids(
+    unresolved = required_unresolved_finding_ids(
         merged_findings,
         revise_at=loop_revise_at(loop),
     )
@@ -2135,7 +2088,7 @@ def apply_review_response(
     findings: list[ReviewFinding],
     approved_digests: dict[str, str] | None = None,
     verification_result: dict[str, Any] | None = None,
-    blocker_review_result: dict[str, Any] | None = None,
+    scope_review_result: dict[str, Any] | None = None,
     lifecycle_status: MandatoryReviewLifecycleStatus | str | None = None,
 ) -> ReviewLoop:
     if loop.target_revision != target_revision:
@@ -2150,14 +2103,12 @@ def apply_review_response(
             findings,
             loop.finding_actions,
             threshold,
-            finding_set_id=loop.finding_set_id,
         ):
             required_ids = required_open_finding_ids(findings, threshold)
             unacked = unacknowledged_optional_finding_ids(
                 findings,
                 loop.finding_actions,
                 threshold,
-                finding_set_id=loop.finding_set_id,
             )
             details: list[str] = []
             if required_ids:
@@ -2181,9 +2132,9 @@ def apply_review_response(
         else loop.verification_result
     )
     resolved_blocker = (
-        blocker_review_result
-        if blocker_review_result is not None
-        else loop.blocker_review_result
+        scope_review_result
+        if scope_review_result is not None
+        else loop.scope_review_result
     )
 
     return replace(
@@ -2195,7 +2146,7 @@ def apply_review_response(
         ),
         lifecycle_status=resolved_lifecycle,  # type: ignore[arg-type]
         verification_result=resolved_verification,
-        blocker_review_result=resolved_blocker,
+        scope_review_result=resolved_blocker,
     )
 
 
@@ -2306,38 +2257,22 @@ class ScopeReviewResult:
         acceptance_criteria_checked: list[str] | None = None,
         summary: str = "",
         stage: ReviewStage = "scope_review",
-        *,
-        blocking_findings: list[ReviewFinding] | None = None,
     ) -> None:
-        findings = reported_findings
-        if findings is None:
-            findings = blocking_findings or []
         self.target_digest = target_digest
-        self.decision = decision
+        self.decision = validate_scope_review_decision_value(decision)
         self.scope_id = scope_id
-        self.reported_findings = list(findings)
+        self.reported_findings = list(reported_findings or [])
         self.acceptance_criteria_checked = list(acceptance_criteria_checked or [])
         self.summary = summary
-        self.stage = (
-            SCOPE_REVIEW_STAGE
-            if is_scope_review_stage_name(stage)
-            else stage
-        )
-
-    @property
-    def blocking_findings(self) -> list[ReviewFinding]:
-        """Legacy alias for :attr:`reported_findings`."""
-
-        return self.reported_findings
+        self.stage = SCOPE_REVIEW_STAGE
 
     def to_dict(self) -> dict[str, Any]:
         findings_payload = [finding.to_dict() for finding in self.reported_findings]
-        decision = canonicalize_scope_review_decision(self.decision)
         return {
             "stage": SCOPE_REVIEW_STAGE,
             "target_digest": self.target_digest,
             "scope_id": self.scope_id,
-            "decision": decision,
+            "decision": self.decision,
             "reported_findings": findings_payload,
             "acceptance_criteria_checked": list(self.acceptance_criteria_checked),
             "summary": self.summary,
@@ -2346,15 +2281,11 @@ class ScopeReviewResult:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> ScopeReviewResult:
         stage_raw = str(payload.get("stage") or SCOPE_REVIEW_STAGE).strip()
-        if not is_scope_review_stage_name(stage_raw):
-            raise ValueError(
-                "scope review result stage must be 'scope_review' "
-                "(legacy 'scope_blocker_review' also accepted)"
-            )
-        decision = validate_scope_review_decision(str(payload.get("decision") or ""))
-        raw_findings = payload.get("reported_findings")
-        if raw_findings is None:
-            raw_findings = payload.get("blocking_findings") or []
+        validate_review_stage(stage_raw)
+        if payload.get("blocking_findings") is not None:
+            raise ValueError("legacy field blocking_findings is not accepted")
+        decision = validate_scope_review_decision_value(str(payload.get("decision") or ""))
+        raw_findings = payload.get("reported_findings") or []
         reported = [
             ReviewFinding.from_dict(item)
             for item in raw_findings
@@ -2362,7 +2293,7 @@ class ScopeReviewResult:
         ]
         return cls(
             target_digest=str(payload.get("target_digest") or ""),
-            decision=canonicalize_scope_review_decision(decision),  # type: ignore[arg-type]
+            decision=decision,  # type: ignore[arg-type]
             scope_id=str(payload.get("scope_id") or ""),
             reported_findings=reported,
             acceptance_criteria_checked=[
@@ -2371,10 +2302,6 @@ class ScopeReviewResult:
             summary=str(payload.get("summary") or ""),
             stage=SCOPE_REVIEW_STAGE,
         )
-
-
-# Legacy alias retained for callers/tests still importing the old name.
-ScopeBlockerReviewResult = ScopeReviewResult
 
 
 def validate_finding_disposition(disposition: str) -> FindingDisposition:
@@ -2397,31 +2324,14 @@ def validate_verification_decision(decision: str) -> VerificationDecision:
 
 
 def validate_scope_review_decision(decision: str) -> ScopeReviewDecision:
-    normalized = str(decision).strip()
-    if normalized not in {
-        "approved",
-        "changes_requested",
-        "blocked",
-        "approve",
-        "blockers_found",
-    }:
-        raise ValueError(
-            "scope review decision must be one of: approved, changes_requested, "
-            "blocked (legacy: approve, blockers_found)"
-        )
-    return normalized  # type: ignore[return-value]
-
-
-def validate_blocker_review_decision(decision: str) -> BlockerReviewDecision:
-    """Legacy alias for :func:`validate_scope_review_decision`."""
-
-    return validate_scope_review_decision(decision)
+    return validate_scope_review_decision_value(decision)  # type: ignore[return-value]
 
 
 def validate_mandatory_lifecycle_status(
     status: str,
 ) -> MandatoryReviewLifecycleStatus:
     normalized = str(status).strip()
+    _reject_legacy_lifecycle_status(normalized)
     if normalized not in MANDATORY_REVIEW_TRANSITIONS:
         raise ValueError(
             "mandatory review lifecycle status must be one of: "
@@ -2490,9 +2400,12 @@ def verification_findings_closed(
 def is_approval_eligible(
     *,
     verification: FindingVerificationResult | None,
-    blocker_review: ScopeReviewResult | None,
+    scope_review_result: ScopeReviewResult | None,
     current_artifact_digest: str,
     lifecycle_status: MandatoryReviewLifecycleStatus | str | None = None,
+    findings: Sequence[ReviewFinding] | None = None,
+    finding_actions: Sequence[FindingAction] | None = None,
+    revise_at: ReviewSeverity | None = None,
 ) -> bool:
     """Core Invariant + Digest and Approval Rules for mandatory gates.
 
@@ -2503,16 +2416,25 @@ def is_approval_eligible(
 
     if lifecycle_status in {"blocked", "limit_reached"}:
         return False
-    if blocker_review is None:
+    if scope_review_result is None:
         return False
-    if not is_scope_review_stage_name(blocker_review.stage):
+    if not is_scope_review_stage_name(scope_review_result.stage):
         return False
-    if canonicalize_scope_review_decision(blocker_review.decision) != "approved":
+    if validate_scope_review_decision_value(scope_review_result.decision) != "approved":
         return False
-    if blocker_review.reported_findings:
+    if findings is not None:
+        if revise_at is None:
+            raise ValueError("is_approval_eligible requires revise_at when findings are provided")
+        if not findings_permit_approval(
+            findings,
+            finding_actions or [],
+            revise_at,
+        ):
+            return False
+    elif scope_review_result.reported_findings:
         return False
     if not stage_digest_matches_artifact(
-        stage_target_digest=blocker_review.target_digest,
+        stage_target_digest=scope_review_result.target_digest,
         current_artifact_digest=current_artifact_digest,
     ):
         return False
@@ -2538,12 +2460,10 @@ def is_approval_eligible(
 # Defaults aligned with config.defaults.DEFAULT_CONFIG limits.whole_*_review.
 _DEFAULT_MAX_REVISION_CYCLES = 5
 _DEFAULT_MAX_SCOPE_REVIEW_ROUNDS = 3
-_DEFAULT_MAX_BLOCKER_REVIEW_ROUNDS = _DEFAULT_MAX_SCOPE_REVIEW_ROUNDS
 
 ExhaustedReviewBudget = Literal[
     "verification_revision",
     "scope_review",
-    "blocker_review",  # legacy alias
 ]
 
 
@@ -2553,39 +2473,23 @@ class MandatoryReviewLimits:
 
     ``max_revision_cycles`` caps verification/revision cycles per finding set.
     ``max_scope_review_rounds`` caps fresh scope-complete reviews per phase.
-    ``max_blocker_review_rounds`` remains a readable legacy alias property.
     """
 
     max_revision_cycles: int = _DEFAULT_MAX_REVISION_CYCLES
     max_scope_review_rounds: int = _DEFAULT_MAX_SCOPE_REVIEW_ROUNDS
 
-    def __init__(
-        self,
-        max_revision_cycles: int = _DEFAULT_MAX_REVISION_CYCLES,
-        max_scope_review_rounds: int | None = None,
-        max_blocker_review_rounds: int | None = None,
-    ) -> None:
-        rounds = max_scope_review_rounds
-        if rounds is None:
-            rounds = max_blocker_review_rounds
-        if rounds is None:
-            rounds = _DEFAULT_MAX_SCOPE_REVIEW_ROUNDS
-        object.__setattr__(self, "max_revision_cycles", int(max_revision_cycles))
-        object.__setattr__(self, "max_scope_review_rounds", int(rounds))
-
-    @property
-    def max_blocker_review_rounds(self) -> int:
-        return self.max_scope_review_rounds
-
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any] | None) -> MandatoryReviewLimits:
         raw = dict(payload or {})
-        rounds = raw.get("max_scope_review_rounds")
-        if rounds is None:
-            rounds = raw.get(
-                "max_blocker_review_rounds",
-                _DEFAULT_MAX_SCOPE_REVIEW_ROUNDS,
+        if raw.get("max_blocker_review_rounds") is not None:
+            raise ValueError(
+                "legacy config key max_blocker_review_rounds is not accepted; "
+                "use max_scope_review_rounds"
             )
+        rounds = raw.get(
+            "max_scope_review_rounds",
+            _DEFAULT_MAX_SCOPE_REVIEW_ROUNDS,
+        )
         return cls(
             max_revision_cycles=int(
                 raw.get("max_revision_cycles", _DEFAULT_MAX_REVISION_CYCLES)
@@ -2622,14 +2526,11 @@ def verification_revision_budget_exhausted(
     return int(revision_cycles) >= int(limits.max_revision_cycles)
 
 
-def blocker_review_budget_exhausted(
-    blocker_review_rounds: int,
+def scope_review_budget_exhausted(
+    scope_review_rounds: int,
     limits: MandatoryReviewLimits,
 ) -> bool:
-    return int(blocker_review_rounds) >= int(limits.max_scope_review_rounds)
-
-
-scope_review_budget_exhausted = blocker_review_budget_exhausted
+    return int(scope_review_rounds) >= int(limits.max_scope_review_rounds)
 
 
 @dataclass(frozen=True)
@@ -2689,7 +2590,7 @@ def build_limit_reached_terminal(
 def reject_approval_when_budget_exhausted(
     *,
     revision_cycles: int,
-    blocker_review_rounds: int,
+    scope_review_rounds: int,
     limits: MandatoryReviewLimits,
     findings: list[ReviewFinding],
 ) -> LimitReachedTerminal | None:
@@ -2705,7 +2606,7 @@ def reject_approval_when_budget_exhausted(
             findings=findings,
             limits=limits,
         )
-    if scope_review_budget_exhausted(blocker_review_rounds, limits):
+    if scope_review_budget_exhausted(scope_review_rounds, limits):
         return build_limit_reached_terminal(
             exhausted_budget="scope_review",
             findings=findings,
@@ -2717,12 +2618,14 @@ def reject_approval_when_budget_exhausted(
 def approval_allowed_under_loop_bounds(
     *,
     revision_cycles: int,
-    blocker_review_rounds: int,
+    scope_review_rounds: int,
     limits: MandatoryReviewLimits,
     verification: FindingVerificationResult | None,
-    blocker_review: ScopeReviewResult | None,
+    scope_review_result: ScopeReviewResult | None,
     current_artifact_digest: str,
     findings: list[ReviewFinding],
+    finding_actions: list[FindingAction] | None = None,
+    revise_at: ReviewSeverity | None = None,
     lifecycle_status: MandatoryReviewLifecycleStatus | str | None = None,
 ) -> bool:
     """True only when budgets remain and Core Invariant approval eligibility holds.
@@ -2732,7 +2635,7 @@ def approval_allowed_under_loop_bounds(
 
     terminal = reject_approval_when_budget_exhausted(
         revision_cycles=revision_cycles,
-        blocker_review_rounds=blocker_review_rounds,
+        scope_review_rounds=scope_review_rounds,
         limits=limits,
         findings=findings,
     )
@@ -2740,9 +2643,12 @@ def approval_allowed_under_loop_bounds(
         return False
     return is_approval_eligible(
         verification=verification,
-        blocker_review=blocker_review,
+        scope_review_result=scope_review_result,
         current_artifact_digest=current_artifact_digest,
         lifecycle_status=lifecycle_status,
+        findings=findings,
+        finding_actions=finding_actions,
+        revise_at=revise_at,
     )
 
 
@@ -2757,16 +2663,18 @@ def mandatory_approval_allowed(
     verification: FindingVerificationResult | None = None
     if loop.verification_result is not None:
         verification = FindingVerificationResult.from_dict(loop.verification_result)
-    blocker_review: ScopeReviewResult | None = None
-    if loop.blocker_review_result is not None:
-        blocker_review = ScopeReviewResult.from_dict(loop.blocker_review_result)
+    scope_review: ScopeReviewResult | None = None
+    if loop.scope_review_result is not None:
+        scope_review = ScopeReviewResult.from_dict(loop.scope_review_result)
     return approval_allowed_under_loop_bounds(
         revision_cycles=loop.revision_cycles,
-        blocker_review_rounds=loop.blocker_review_rounds,
+        scope_review_rounds=loop.scope_review_rounds,
         limits=limits,
         verification=verification,
-        blocker_review=blocker_review,
+        scope_review_result=scope_review,
         current_artifact_digest=current_artifact_digest,
         findings=loop.findings,
+        finding_actions=loop.finding_actions,
+        revise_at=loop_revise_at(loop),
         lifecycle_status=loop.lifecycle_status,
     )

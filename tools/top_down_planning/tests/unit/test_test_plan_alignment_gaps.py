@@ -14,7 +14,7 @@ from top_down_planning.domain.reviews import (
     apply_owner_finding_actions,
     budgets_snapshot,
     focused_output_revision_target_ids,
-    merge_blocker_reopen_findings,
+    merge_scope_review_findings,
     merge_verification_findings,
     owner_actions_require_revision,
     owner_actions_require_verification,
@@ -92,7 +92,7 @@ def test_challenge_marks_verification_required_without_budget_mutation() -> None
         revise_at="blocker",
         finding_set_id="fs-01",
         revision_cycles=2,
-        blocker_review_rounds=1,
+        scope_review_rounds=1,
         findings=[_finding("f-opt")],
     )
     before = budgets_snapshot(loop)
@@ -262,7 +262,7 @@ def test_duplicate_findings_across_fresh_reviews_not_deduplicated() -> None:
             issue="Missing acceptance criteria",
         )
     ]
-    merged = merge_blocker_reopen_findings(prior, fresh)
+    merged = merge_scope_review_findings(prior, fresh)
     assert [finding.id for finding in merged] == ["f-old", "f-new"]
     assert merged[0].issue == merged[1].issue
 
@@ -384,7 +384,6 @@ def test_fresh_scope_discovery_preserves_prior_and_new_ids() -> None:
             ],
             "review_completed": True,
             "summary": "fresh scope",
-            "decision": "changes_requested",
         },
         stage="scope_review",
     )

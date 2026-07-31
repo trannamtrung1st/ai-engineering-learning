@@ -48,6 +48,10 @@ from top_down_planning.orchestrator.reviewer_session import (
     resume_reviewer_session_with_package,
     reviewer_decision_missing_error,
 )
+from top_down_planning.orchestrator.mandatory_review_stages import (
+    prepare_focused_verification_recheck,
+    verification_recheck_request,
+)
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.orchestrator.provider_turns import (
@@ -168,8 +172,11 @@ class FocusedReviewOrchestrator:
             else:
                 decision = loop.status
 
-            if decision == "approved":
+            if decision in {"approved", "verified"}:
                 return self._result_from_loop(loop, ok=True)
+
+            if decision == "needs_revision":
+                decision = "changes_requested"
 
             if decision == "blocked":
                 return self._result_from_loop(
@@ -198,12 +205,13 @@ class FocusedReviewOrchestrator:
                 if required_open_findings(loop.findings, loop_revise_at(loop)):
                     decision = "changes_requested"
                 elif owner_actions_require_verification(loop.finding_actions):
+                    open_ids = {finding.id for finding in loop.findings if finding.status == "unresolved"}
                     active_actions = [
                         action
                         for action in loop.finding_actions
-                        if action.finding_set_id == loop.finding_set_id
+                        if action.finding_id in open_ids
                     ]
-                    if owner_actions_require_revision(active_actions or loop.finding_actions):
+                    if owner_actions_require_revision(active_actions):
                         decision = "changes_requested"
                     else:
                         # Challenge-only: verification/recheck without revision budget.
@@ -277,7 +285,6 @@ class FocusedReviewOrchestrator:
                 f"{loop.finding_set_id!r}"
             )
         before_budgets = budgets_snapshot(loop)
-        loop = self._persist_loop(mark_advisory_handoff_completed(loop))
         self._append_event(
             "review_advisory_handoff_started",
             loop_id=loop.id,
@@ -292,6 +299,10 @@ class FocusedReviewOrchestrator:
         )
         self._resume_primary_advisory_handoff(loop)
         loop = self._reload_loop(loop.id)
+        if needs_advisory_handoff(loop):
+            raise ProviderRunError(
+                "advisory handoff completed without qualifying owner actions"
+            )
         after_budgets = budgets_snapshot(loop)
         if after_budgets != before_budgets and not owner_actions_require_revision(
             loop.finding_actions
@@ -300,7 +311,7 @@ class FocusedReviewOrchestrator:
             raise ProviderRunError(
                 "advisory handoff must not consume revision budget without a fix"
             )
-        return loop
+        return self._persist_loop(mark_advisory_handoff_completed(loop))
 
     def _resume_primary_advisory_handoff(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
@@ -522,13 +533,11 @@ class FocusedReviewOrchestrator:
         if session_id is None:
             raise ProviderRunError("reviewer session is missing for recheck")
 
-        updated = replace(
+        updated = prepare_focused_verification_recheck(
             loop,
-            reviewer_session_id=session_id,
             target_revision=current_revision,
-            status="pending",
         )
-        updated, _finding_set_id = allocate_discovery_finding_set_id(updated)
+        updated = replace(updated, reviewer_session_id=session_id)
         self._persist_loop(updated)
         phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
         run = self._store.load_run(self._run_id)
@@ -541,14 +550,11 @@ class FocusedReviewOrchestrator:
             session_id=session_id,
             loop_id=loop.id,
             phase=phase,
-            request={
-                "action": "recheck_revision",
-                "phase": phase,
-                "loop_id": loop.id,
-                "review_type": loop.type,
-                "target_revision": current_revision,
-                "scope": dict(loop.scope),
-            },
+            request=verification_recheck_request(
+                phase=phase,
+                loop=updated,
+                target_revision=current_revision,
+            ),
             model=role_context.model,
         )
         emit_reviewer_session_resumed(

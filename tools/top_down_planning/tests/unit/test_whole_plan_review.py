@@ -19,15 +19,15 @@ from tests.helpers import (
     create_run_kwargs,
     done_events,
     grant_capability,
-    mandatory_blocker_respond_request,
+    mandatory_scope_review_respond_request,
     mandatory_initial_respond_request,
     mandatory_plan_digest,
     mandatory_verification_respond_request,
     respond_review,
     script_mandatory_clear_approval,
     script_reviewer_allocate,
-    script_verification_then_blocker_approval,
-    prepare_loop_for_blocker_respond,
+    script_verification_then_scope_review_approval,
+    prepare_loop_for_scope_review_respond,
 )
 
 
@@ -107,6 +107,7 @@ def _create_run_at_whole_plan_review(
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": None,
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
@@ -114,7 +115,7 @@ def _create_run_at_whole_plan_review(
             "findings": [],
             "revision_cycles": 0,
             "lifecycle_status": "review_pending",
-            "blocker_review_rounds": 0,
+            "scope_review_rounds": 0,
         },
     )
     return session_id
@@ -128,16 +129,16 @@ def _review_respond_request(
     store: FileRunStore | None = None,
     run_id: str | None = None,
 ) -> dict:
-    payload = {
-        "loop_id": "review-whole-plan-01",
-        "target_revision": target_revision,
-        "stage": "initial_review",
-        "decision": decision,
-        "findings": findings or [],
-    }
-    if decision == "approved" and store is not None and run_id is not None:
-        payload["target_digest"] = mandatory_plan_digest(store, run_id)
-    return payload
+    assert store is not None and run_id is not None
+    return mandatory_initial_respond_request(
+        store,
+        run_id,
+        loop_id="review-whole-plan-01",
+        target_revision=target_revision,
+        review_type="whole_plan",
+        decision=decision,
+        findings=findings,
+    )
 
 
 def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
@@ -156,13 +157,15 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
             findings=[
                 {
                     "id": "finding-01",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-api"],
                     "issue": "API outcome is too vague.",
-                    "required_change": "Add concrete acceptance criteria.",
+                    "recommended_change": "Add concrete acceptance criteria.",
                     "status": "unresolved",
                 }
             ],
+            store=store,
+            run_id=run_id,
         ),
         phase=WHOLE_PLAN_REVIEW,
         loop_id="review-whole-plan-01",
@@ -186,7 +189,7 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
         ],
         phase=WHOLE_PLAN_REVIEW,
     )()
-    script_verification_then_blocker_approval(
+    script_verification_then_scope_review_approval(
         provider,
         store,
         run_id,
@@ -224,12 +227,14 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
             "status": "pending",
             "findings": [],
             "revision_cycles": 0,
+            "finding_set_id": "review-whole-plan-01-fs-01",
         },
     )
 
@@ -243,25 +248,26 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
         session_id="stub-session-reviewer",
         loop_id="review-whole-plan-01",
     )
-    with pytest.raises(RequestError, match="open required findings"):
-        service.respond(
-            _review_respond_request(
-                decision="approved",
-                findings=[
-                    {
-                        "id": "finding-01",
-                        "importance": "blocking",
-                        "target_refs": ["item-api"],
-                        "issue": "Still vague.",
-                        "required_change": "Clarify.",
-                        "status": "unresolved",
-                    }
-                ],
-                store=store,
-                run_id="run-20260101T000301-000301",
-            ),
-            capability_token=token,
-        )
+    response = service.respond(
+        _review_respond_request(
+            decision="approved",
+            findings=[
+                {
+                    "id": "finding-01",
+                    "severity": "blocker",
+                    "target_refs": ["item-api"],
+                    "issue": "Still vague.",
+                    "recommended_change": "Clarify.",
+                    "status": "unresolved",
+                }
+            ],
+            store=store,
+            run_id="run-20260101T000301-000301",
+        ),
+        capability_token=token,
+    )
+    assert response["derived_outcome"] == "changes_requested"
+    assert response["status"] == "changes_requested"
 
 
 def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
@@ -272,12 +278,14 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": "stub-session-reviewer",
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
             "status": "pending",
             "findings": [],
             "revision_cycles": 0,
+            "finding_set_id": "review-whole-plan-01-fs-01",
         },
     )
 
@@ -324,13 +332,15 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                 findings=[
                     {
                         "id": "finding-01",
-                        "importance": "blocking",
+                        "severity": "blocker",
                         "target_refs": ["item-api"],
                         "issue": "Needs work.",
-                        "required_change": "Improve acceptance.",
+                        "recommended_change": "Improve acceptance.",
                         "status": "unresolved",
                     }
                 ],
+                store=store,
+                run_id=run_id,
             ),
             phase=WHOLE_PLAN_REVIEW,
             loop_id="review-whole-plan-01",
@@ -348,13 +358,15 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                 findings=[
                     {
                         "id": "finding-01",
-                        "importance": "blocking",
+                        "severity": "blocker",
                         "target_refs": ["item-api"],
                         "issue": "Still needs work.",
-                        "required_change": "Improve acceptance.",
+                        "recommended_change": "Improve acceptance.",
                         "status": "unresolved",
                     }
                 ],
+                store=store,
+                run_id=run_id,
             ),
             phase=WHOLE_PLAN_REVIEW,
             loop_id="review-whole-plan-01",
@@ -394,13 +406,15 @@ def test_unapproved_plan_cannot_leave_whole_plan_review_phase(tmp_path: Path) ->
                 findings=[
                     {
                         "id": "finding-01",
-                        "importance": "blocking",
+                        "severity": "blocker",
                         "target_refs": ["item-root"],
                         "issue": "Plan is not viable.",
-                        "required_change": "Rework the plan.",
+                        "recommended_change": "Rework the plan.",
                         "status": "unresolved",
                     }
                 ],
+                store=store,
+                run_id=run_id,
             ),
             phase=WHOLE_PLAN_REVIEW,
             loop_id="review-whole-plan-01",
@@ -432,6 +446,7 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
+            "revise_at": "blocker",
             "reviewer_session_id": reviewer_session_id,
             "target_revision": 1,
             "scope": {"kind": "whole_plan"},
@@ -443,10 +458,10 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
             "findings": [
                 {
                     "id": "finding-01",
-                    "importance": "blocking",
+                    "severity": "blocker",
                     "target_refs": ["item-api"],
                     "issue": "Needs work.",
-                    "required_change": "Improve acceptance.",
+                    "recommended_change": "Improve acceptance.",
                     "status": "unresolved",
                 }
             ],
@@ -485,7 +500,7 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
         phase=WHOLE_PLAN_REVIEW,
         loop_id="review-whole-plan-01",
     )()
-    prepare_loop_for_blocker_respond(
+    prepare_loop_for_scope_review_respond(
         store,
         run_id,
         "review-whole-plan-01",
@@ -494,7 +509,7 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
     respond_review(
         store,
         run_id,
-        mandatory_blocker_respond_request(
+        mandatory_scope_review_respond_request(
             store,
             run_id,
             loop_id="review-whole-plan-01",
@@ -520,7 +535,11 @@ def test_non_reviewer_respond_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(CapabilityDeniedError):
         service.respond(
-            _review_respond_request(decision="approved"),
+            _review_respond_request(
+                decision="approved",
+                store=store,
+                run_id="run-20260101T000301-000301",
+            ),
             capability_token=token,
         )
 
