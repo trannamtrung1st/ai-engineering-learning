@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from top_down_planning.domain.dependencies import dependency_cycle_issue
 from top_down_planning.domain.dispositions import DispositionMap, SATISFIED_DISPOSITIONS
-from top_down_planning.domain.models import Plan, PlanningLimits, PLAN_SCHEMA_VERSION
+from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits, PLAN_SCHEMA_VERSION
 from top_down_planning.domain.plan_tree import (
     compute_planning_budget,
     find_hierarchy_cycle,
@@ -172,6 +172,108 @@ def _normalized_cycle_key(cycle: list[str]) -> tuple[str, ...]:
     return tuple(rotated + [rotated[0]])
 
 
+def _has_active_work_descendant(plan: Plan, item_id: str) -> bool:
+    from top_down_planning.domain.plan_tree import active_children_of
+
+    stack = list(active_children_of(plan, item_id))
+    while stack:
+        child = stack.pop()
+        if child.kind == "work":
+            return True
+        stack.extend(active_children_of(plan, child.id))
+    return False
+
+
+def _contract_fingerprint(item: PlanItem) -> tuple[Any, ...]:
+    return (
+        item.title.strip().casefold(),
+        item.outcome.strip().casefold(),
+        tuple(entry.strip().casefold() for entry in item.scope.includes),
+        tuple(entry.strip().casefold() for entry in item.scope.excludes),
+        tuple(entry.strip().casefold() for entry in item.acceptance),
+    )
+
+
+def validate_plan_quality_warnings(plan: Plan) -> list[ValidationIssue]:
+    """Advisory semantic warnings that never escalate to hard errors alone."""
+
+    issues: list[ValidationIssue] = []
+
+    for item_id, item in sorted(plan.items.items()):
+        if not is_active_item(item):
+            continue
+        if item.kind == "aggregate":
+            from top_down_planning.domain.plan_tree import active_children_of
+
+            if not active_children_of(plan, item_id):
+                issues.append(
+                    _issue(
+                        "aggregate_without_descendants",
+                        "warning",
+                        f"aggregate item {item_id} has no active descendants",
+                        [item_id, "kind"],
+                    )
+                )
+            continue
+        if item.kind != "work":
+            continue
+        if _has_active_work_descendant(plan, item_id):
+            issues.append(
+                _issue(
+                    "executable_parent_overlap",
+                    "warning",
+                    (
+                        f"work item {item_id} has executable descendants; "
+                        "verify that parent and child work do not overlap"
+                    ),
+                    [item_id],
+                )
+            )
+
+    siblings_by_parent: dict[str | None, list[PlanItem]] = {}
+    for item in plan.items.values():
+        if not is_active_item(item):
+            continue
+        siblings_by_parent.setdefault(item.parent_id, []).append(item)
+
+    for siblings in siblings_by_parent.values():
+        # Direct siblings only; keep duplicate detection conservative (exact match).
+        by_fingerprint: dict[tuple[Any, ...], list[str]] = {}
+        for sibling in siblings:
+            fingerprint = _contract_fingerprint(sibling)
+            # Skip empty/near-empty contracts to avoid noisy false positives.
+            if fingerprint == ("", "", (), (), ()):
+                continue
+            by_fingerprint.setdefault(fingerprint, []).append(sibling.id)
+        for item_ids in by_fingerprint.values():
+            if len(item_ids) < 2:
+                continue
+            joined = ", ".join(sorted(item_ids))
+            issues.append(
+                _issue(
+                    "duplicate_looking_sibling_contracts",
+                    "warning",
+                    (
+                        "sibling items have identical title/outcome/scope/acceptance: "
+                        f"{joined}"
+                    ),
+                    sorted(item_ids),
+                )
+            )
+
+    return issues
+
+
+def plan_advisory_warning_messages(plan: Plan) -> list[str]:
+    """Semantic quality warnings for review packages and planning completion.
+
+    Planning-budget soft limits (for example near/at depth) are surfaced only
+    through plan check/snapshot draft validation, not through this helper.
+    """
+
+    return [issue.message for issue in validate_plan_quality_warnings(plan)]
+
+
 def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
@@ -255,18 +357,8 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     [item.id, "kind"],
                 )
             )
-        elif item.kind == "aggregate":
-            from top_down_planning.domain.plan_tree import active_children_of
 
-            if not active_children_of(plan, item.id):
-                issues.append(
-                    _issue(
-                        "aggregate_without_descendants",
-                        "warning",
-                        f"aggregate item {item.id} has no active descendants",
-                        [item.id, "kind"],
-                    )
-                )
+    issues.extend(validate_plan_quality_warnings(plan))
 
     for field_name in ("boundaries", "constraints", "assumptions", "acceptance"):
         value = getattr(plan, field_name)

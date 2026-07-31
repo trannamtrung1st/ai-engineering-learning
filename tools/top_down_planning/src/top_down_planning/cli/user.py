@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
-from top_down_planning.agent_tool.views import build_tree_view
+from top_down_planning.agent_tool.views import build_active_view, build_audit_view
 from top_down_planning.cli.common import (
     RunsStoreNotFoundError,
     emit_error_message,
@@ -538,10 +538,10 @@ def handle_inspect_command(args: Namespace) -> None:
             code="missing_run",
         )
 
-    view = args.view or "tree"
-    if view != "tree":
+    view = args.view or "active"
+    if view not in {"active", "audit"}:
         emit_error_message(
-            f"unsupported inspect view: {view!r} (supported: tree)",
+            f"unsupported inspect view: {view!r} (supported: active, audit)",
             exit_code=2,
             stream_json=args.stream_json,
             code="invalid_view",
@@ -560,12 +560,13 @@ def handle_inspect_command(args: Namespace) -> None:
         )
 
     limits = planning_limits_from_config(config)
-    tree = build_tree_view(plan, limits=limits)
+    if view == "audit":
+        snapshot = build_audit_view(plan, limits=limits)
+    else:
+        snapshot = build_active_view(plan, limits=limits)
     payload = {
         "ok": True,
-        "view": view,
-        "revision": plan.revision,
-        **tree,
+        **snapshot,
     }
     if args.stream_json:
         emit_payload(payload)

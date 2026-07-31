@@ -67,9 +67,9 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
     _add_run_flags(snapshot_parser)
     snapshot_parser.add_argument(
         "--view",
-        choices=["tree", "ready", "issues"],
-        default="tree",
-        help="Snapshot view (default: tree).",
+        choices=["active", "audit", "ready", "issues"],
+        default="active",
+        help="Snapshot view (default: active). audit includes inactive history.",
     )
     snapshot_parser.add_argument("--root", help="Subtree root item id.")
     snapshot_parser.add_argument("--depth", type=int, help="Maximum subtree depth.")

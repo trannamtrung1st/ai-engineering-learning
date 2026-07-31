@@ -14,7 +14,8 @@ from core_tools.config import (
     resolve_workspace_path,
 )
 from core_tools.config.errors import ConfigError
-from core_tools.persistence.digests import digest_file, digest_text
+from core_tools.config.paths import assert_path_within_workspace
+from core_tools.persistence.digests import digest_text
 
 from top_down_planning.config.resolve import resolve_output_goal_text
 
@@ -114,15 +115,53 @@ def _resolve_supporting_resources(
     return tuple(resolved)
 
 
-def resolve_effective_role_context(
-    config: dict[str, Any],
-    role: AgentRole,
+def _path_has_glob_metacharacters(value: str) -> bool:
+    return any(char in value for char in "*?[]")
+
+
+def _normalize_resource_selection(
+    entries: list[Any],
     *,
     workspace: Path,
-    output_goal: str | None = None,
-) -> EffectiveRoleContext:
-    """Resolve authoritative run contracts and supporting role context."""
+    field: str,
+) -> tuple[str, ...]:
+    """Normalize configured resource path selection/order without expanding contents.
 
+    Directory entries remain directory paths. File entries remain file paths. Glob
+    patterns remain the configured pattern string. This is the digests.context
+    binding surface for resource selection.
+    """
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        configured_value = str(entry).strip()
+        if not configured_value:
+            continue
+
+        if _path_has_glob_metacharacters(configured_value):
+            key = configured_value
+        else:
+            candidate = resolve_workspace_path(configured_value, workspace=workspace)
+            assert_path_within_workspace(
+                candidate,
+                workspace=workspace,
+                field=field,
+                configured_value=configured_value,
+            )
+            key = str(candidate.resolve())
+
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(key)
+    return tuple(selected)
+
+
+def _agent_context_sections(
+    config: dict[str, Any],
+    role: AgentRole,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     agent_context = config.get("agent_context")
     if not isinstance(agent_context, dict):
         agent_context = {}
@@ -135,6 +174,76 @@ def resolve_effective_role_context(
     if not isinstance(default_section, dict):
         default_section = {}
 
+    return default_section, role_section
+
+
+def _resource_selection_for_role(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    workspace: Path,
+) -> tuple[str, ...]:
+    default_section, role_section = _agent_context_sections(config, role)
+    default_entries = list(default_section.get("resources") or [])
+    role_entries = list(role_section.get("resources") or [])
+    return _normalize_resource_selection(
+        default_entries,
+        workspace=workspace,
+        field="agent_context.default.resources",
+    ) + _normalize_resource_selection(
+        role_entries,
+        workspace=workspace,
+        field=f"agent_context.{role}.resources",
+    )
+
+
+def _skills_for_role(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    workspace: Path,
+) -> tuple[SkillEntry, ...]:
+    default_section, role_section = _agent_context_sections(config, role)
+    skill_entries: list[Any] = []
+    skill_entries.extend(default_section.get("skills") or [])
+    skill_entries.extend(role_section.get("skills") or [])
+    return tuple(
+        load_skills(
+            skill_entries,
+            workspace=workspace,
+            field="skills",
+        )
+    )
+
+
+def _role_context_digest_from_config(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    workspace: Path,
+) -> dict[str, Any]:
+    """Digest payload without expanding resource contents (selection-only binding)."""
+
+    skills = _skills_for_role(config, role, workspace=workspace)
+    return {
+        "model": resolve_provider_model(config, role),
+        "resources": list(_resource_selection_for_role(config, role, workspace=workspace)),
+        "skills": [str(entry.path) for entry in skills],
+        "skill_digests": _skill_digest_entries(skills),
+    }
+
+
+def resolve_effective_role_context(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    workspace: Path,
+    output_goal: str | None = None,
+) -> EffectiveRoleContext:
+    """Resolve authoritative run contracts and supporting role context."""
+
+    default_section, role_section = _agent_context_sections(config, role)
+
     input_refs = _resolve_input_ref_paths(config, workspace=workspace)
     goal_text = output_goal if output_goal is not None else resolve_output_goal_text(
         config,
@@ -143,8 +252,11 @@ def resolve_effective_role_context(
 
     forbidden = set(input_refs) | _excluded_supporting_paths(config, workspace=workspace)
 
+    default_entries = list(default_section.get("resources") or [])
+    role_entries = list(role_section.get("resources") or [])
+
     default_resources = _resolve_supporting_resources(
-        list(default_section.get("resources") or []),
+        default_entries,
         workspace=workspace,
         forbidden=forbidden,
         field="agent_context.default.resources",
@@ -152,24 +264,13 @@ def resolve_effective_role_context(
     forbidden |= set(default_resources)
 
     role_resources = _resolve_supporting_resources(
-        list(role_section.get("resources") or []),
+        role_entries,
         workspace=workspace,
         forbidden=forbidden,
         field=f"agent_context.{role}.resources",
     )
     resources = default_resources + role_resources
-
-    skill_entries: list[Any] = []
-    skill_entries.extend(default_section.get("skills") or [])
-    skill_entries.extend(role_section.get("skills") or [])
-
-    skills = tuple(
-        load_skills(
-            skill_entries,
-            workspace=workspace,
-            field="skills",
-        )
-    )
+    skills = _skills_for_role(config, role, workspace=workspace)
 
     return EffectiveRoleContext(
         role=role,
@@ -198,30 +299,11 @@ def build_agent_context_manifest_payload(
     }
 
 
-def _resource_digest_entries(paths: tuple[Path, ...]) -> list[dict[str, str]]:
-    return [
-        {"path": str(path), "digest": digest_file(path)}
-        for path in paths
-    ]
-
-
 def _skill_digest_entries(skills: tuple[SkillEntry, ...]) -> list[dict[str, str]]:
     return [
         {"path": str(entry.path), "digest": digest_text(entry.content)}
         for entry in skills
     ]
-
-
-def _role_context_digest_payload(context: EffectiveRoleContext) -> dict[str, Any]:
-    """Digest payload for supporting agent context only (not run contracts)."""
-
-    return {
-        "model": context.model,
-        "resources": [str(path) for path in context.resources],
-        "skills": [str(entry.path) for entry in context.skills],
-        "resource_digests": _resource_digest_entries(context.resources),
-        "skill_digests": _skill_digest_entries(context.skills),
-    }
 
 
 def build_context_digest_payload(
@@ -233,8 +315,11 @@ def build_context_digest_payload(
 
     roles_payload: dict[str, Any] = {}
     for role in ("planner", "producer", "reviewer"):
-        context = resolve_effective_role_context(config, role, workspace=workspace)
-        roles_payload[role] = _role_context_digest_payload(context)
+        roles_payload[role] = _role_context_digest_from_config(
+            config,
+            role,
+            workspace=workspace,
+        )
 
     return {
         "workspace": str(workspace.resolve()),

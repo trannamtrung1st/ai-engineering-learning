@@ -36,12 +36,41 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "focused_output": {"enabled": True},
         "whole_plan": {
             "rubric": [
-                "coverage",
-                "granularity",
-                "dependencies",
-                "contracts",
-                "hierarchy",
-                "traceability",
+                (
+                    "Hierarchy: Is every child a genuine decomposition of its parent "
+                    "outcome? Are unrelated enhancements siblings? Are grouping-only "
+                    "nodes marked aggregate? Does any executable parent overlap "
+                    "executable descendants?"
+                ),
+                (
+                    "Dependencies: Is every dependency a real execution prerequisite? "
+                    "Could the dependent item begin correctly without the prerequisite "
+                    "completing? Is the edge merely preferred order or integration "
+                    "convenience rather than a hard blocker?"
+                ),
+                (
+                    "Granularity: Does each item represent a coherent executable "
+                    "outcome? Is any item too broad or an artificial micro-step? Has "
+                    "the plan introduced coordination shells with no direct value?"
+                ),
+                (
+                    "Contract ownership: Are acceptance criteria attached to the "
+                    "item that implements them? Are cross-feature integration checks "
+                    "placed at the root or final-review level when appropriate?"
+                ),
+                (
+                    "Plan cleanliness: Does the active plan contain only current "
+                    "work and meaningful aggregates? Are titles, outcomes, and "
+                    "scopes distinct enough to avoid overlapping work?"
+                ),
+                (
+                    "Coverage: Does the plan address all material requirements from "
+                    "the input references and output goal without obvious gaps?"
+                ),
+                (
+                    "Traceability: Can each acceptance criterion be traced to a "
+                    "specific planned outcome and verification path?"
+                ),
             ],
         },
     },

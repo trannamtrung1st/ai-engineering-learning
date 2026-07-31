@@ -11,8 +11,8 @@ from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.errors import RequestError, RevisionConflictError
 from top_down_planning.agent_tool.views import (
+    build_hierarchy_snapshot,
     build_ready_view,
-    build_tree_view,
     validation_issues,
     validation_warnings,
 )
@@ -80,7 +80,7 @@ class ProductionAgentService:
         )
 
         if view == "tree":
-            payload = build_tree_view(plan, limits=limits)
+            payload = build_hierarchy_snapshot(plan, limits=limits, view="tree")
         elif view == "ready":
             payload = build_ready_view(
                 plan,

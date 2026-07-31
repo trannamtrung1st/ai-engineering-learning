@@ -67,9 +67,13 @@ review:
     enabled: true
   whole_plan:
     rubric:
-      - "Plan items have clear outcomes and acceptance criteria."
-      - "Dependencies are minimal and acyclic."
-      - "Aggregate parents group work without duplicating batchable scope."
+      - "Hierarchy: Is every child a genuine decomposition of its parent outcome?"
+      - "Dependencies: Is every dependency a real execution prerequisite?"
+      - "Granularity: Does each item represent a coherent executable outcome?"
+      - "Contract ownership: Are acceptance criteria attached to the implementing item?"
+      - "Plan cleanliness: Does the active plan contain only current work?"
+      - "Coverage: Does the plan address all material requirements?"
+      - "Traceability: Can each acceptance criterion be traced to a planned outcome?"
 
 observability:
   log_level: normal

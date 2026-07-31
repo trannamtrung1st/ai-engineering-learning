@@ -201,3 +201,111 @@ def test_plan_from_dict_requires_schema_version() -> None:
 
     with pytest.raises(ValueError, match="schema_version is required"):
         Plan.from_dict({key: value for key, value in plan.to_dict().items() if key != "schema_version"})
+
+
+def test_executable_parent_overlap_warns_without_blocking() -> None:
+    plan = Plan(
+        id="plan-overlap",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-parent": PlanItem(
+                id="item-parent",
+                parent_id=None,
+                order_key="0000000000",
+                title="Parent work",
+                kind="work",
+                outcome="Parent outcome.",
+            ),
+            "item-child": PlanItem(
+                id="item-child",
+                parent_id="item-parent",
+                order_key="0000000000",
+                title="Child work",
+                kind="work",
+                outcome="Child outcome.",
+            ),
+        },
+    )
+    result = validate_plan(plan)
+    assert result.ok
+    overlap = [issue for issue in result.issues if issue.code == "executable_parent_overlap"]
+    assert len(overlap) == 1
+    assert overlap[0].severity == "warning"
+    assert "item-parent" in overlap[0].message
+    assert "executable descendants" in overlap[0].message
+
+
+def test_duplicate_looking_sibling_contracts_warns_without_blocking() -> None:
+    plan = Plan(
+        id="plan-dup",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            ),
+            "item-a": PlanItem(
+                id="item-a",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Same title",
+                kind="work",
+                outcome="Same outcome.",
+                acceptance=["done"],
+            ),
+            "item-b": PlanItem(
+                id="item-b",
+                parent_id="item-root",
+                order_key="0000000100",
+                title="Same title",
+                kind="work",
+                outcome="Same outcome.",
+                acceptance=["done"],
+            ),
+        },
+    )
+    result = validate_plan(plan)
+    assert result.ok
+    dupes = [
+        issue
+        for issue in result.issues
+        if issue.code == "duplicate_looking_sibling_contracts"
+    ]
+    assert len(dupes) == 1
+    assert dupes[0].severity == "warning"
+    assert "item-a" in dupes[0].message and "item-b" in dupes[0].message
+
+
+def test_plan_quality_warnings_remain_warnings_in_approval_mode() -> None:
+    plan = Plan(
+        id="plan-overlap-approval",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-parent": PlanItem(
+                id="item-parent",
+                parent_id=None,
+                order_key="0000000000",
+                title="Parent work",
+                kind="work",
+            ),
+            "item-child": PlanItem(
+                id="item-child",
+                parent_id="item-parent",
+                order_key="0000000000",
+                title="Child work",
+                kind="work",
+            ),
+        },
+    )
+    approval = validate_plan(plan, mode="approval")
+    assert approval.ok
+    assert any(
+        issue.code == "executable_parent_overlap" and issue.severity == "warning"
+        for issue in approval.issues
+    )

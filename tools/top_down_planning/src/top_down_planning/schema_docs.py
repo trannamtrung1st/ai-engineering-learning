@@ -1156,7 +1156,7 @@ Discover contracts without reading source:
   tdp agent example [<name>]  # omit name to list published examples
 
 Plan:
-  tdp agent plan snapshot --run <run-id> [--view tree|ready|issues]
+  tdp agent plan snapshot --run <run-id> [--view active|audit|ready|issues]
   tdp agent plan apply --run <run-id> --request <file>
   tdp agent plan check --run <run-id> [--mode draft|approval]
 
@@ -1173,7 +1173,7 @@ Review:
   tdp agent review respond --run <run-id> --request <file>
 
 Whole-plan and focused_plan reviewers receive an embedded plan snapshot in the
-review package; call `tdp agent plan snapshot --run <run-id> --view tree` to
+review package; call `tdp agent plan snapshot --run <run-id> --view active` to
 refresh before responding when the plan may have changed.
 
 Run status:
@@ -1255,7 +1255,7 @@ not consumed by the orchestrator.
    Each stage requires `stage` plus Result Contract fields — see
    `review-respond-initial`, `review-respond-initial-approved`, `review-respond-verification`, and `review-respond-blocker`.
    Review packages include an embedded plan tree and optional `rubric` on initial
-   review only; refresh with `plan snapshot --view tree` when revising after
+   review only; refresh with `plan snapshot --view active` when revising after
    `needs_revision` or initial `changes_requested`. Approval requires a clear
    blocker review against the current artifact digest — finding closure alone is not
    enough.

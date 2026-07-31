@@ -542,7 +542,9 @@ agent_context:
     assert digest_a == digest_b
 
 
-def test_context_digest_changes_when_supporting_resource_changes(tmp_path: Path) -> None:
+def test_context_digest_stable_when_supporting_resource_content_changes(
+    tmp_path: Path,
+) -> None:
     workspace = _workspace(tmp_path)
     readme = workspace / "README.md"
     readme.write_text("alpha", encoding="utf-8")
@@ -563,10 +565,189 @@ agent_context:
     before = compute_context_digest_from_config(config, workspace=workspace)
     readme.write_text("beta", encoding="utf-8")
     after = compute_context_digest_from_config(config, workspace=workspace)
+    assert before == after
+
+
+def test_context_digest_changes_when_resource_path_selection_changes(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path)
+    (workspace / "a.md").write_text("a", encoding="utf-8")
+    (workspace / "b.md").write_text("b", encoding="utf-8")
+    config_a = resolve_config(
+        write_config(
+            tmp_path / "a.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  default:
+    resources:
+      - a.md
+""",
+        ),
+        cwd=workspace,
+    )
+    config_b = resolve_config(
+        write_config(
+            tmp_path / "b.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  default:
+    resources:
+      - b.md
+""",
+        ),
+        cwd=workspace,
+    )
+    digest_a = compute_context_digest_from_config(config_a, workspace=workspace)
+    digest_b = compute_context_digest_from_config(config_b, workspace=workspace)
+    assert digest_a != digest_b
+
+
+def test_context_digest_changes_when_resource_order_changes(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    (workspace / "a.md").write_text("a", encoding="utf-8")
+    (workspace / "b.md").write_text("b", encoding="utf-8")
+    config_ab = resolve_config(
+        write_config(
+            tmp_path / "ab.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  default:
+    resources:
+      - a.md
+      - b.md
+""",
+        ),
+        cwd=workspace,
+    )
+    config_ba = resolve_config(
+        write_config(
+            tmp_path / "ba.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  default:
+    resources:
+      - b.md
+      - a.md
+""",
+        ),
+        cwd=workspace,
+    )
+    digest_ab = compute_context_digest_from_config(config_ab, workspace=workspace)
+    digest_ba = compute_context_digest_from_config(config_ba, workspace=workspace)
+    assert digest_ab != digest_ba
+
+
+def test_context_digest_changes_when_role_model_changes(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    config_a = resolve_config(
+        write_config(
+            tmp_path / "a.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  planner:
+    model: model-a
+""",
+        ),
+        cwd=workspace,
+    )
+    config_b = resolve_config(
+        write_config(
+            tmp_path / "b.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  planner:
+    model: model-b
+""",
+        ),
+        cwd=workspace,
+    )
+    digest_a = compute_context_digest_from_config(config_a, workspace=workspace)
+    digest_b = compute_context_digest_from_config(config_b, workspace=workspace)
+    assert digest_a != digest_b
+
+
+def test_context_digest_changes_when_skill_content_changes(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    skill_dir = workspace / ".agents" / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text("skill-a", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "base.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  default:
+    skills:
+      - .agents/skills/demo/
+""",
+        ),
+        cwd=workspace,
+    )
+    before = compute_context_digest_from_config(config, workspace=workspace)
+    skill_file.write_text("skill-b", encoding="utf-8")
+    after = compute_context_digest_from_config(config, workspace=workspace)
     assert before != after
 
 
-def test_context_digest_persisted_and_blocks_resume_on_change(tmp_path: Path) -> None:
+def test_context_digest_persisted_and_blocks_resume_on_skill_content_change(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path)
+    skill_dir = workspace / ".agents" / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text("skill-a", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "base.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  default:
+    skills:
+      - .agents/skills/demo/
+""",
+        ),
+        cwd=workspace,
+    )
+    store = FileRunStore(tmp_path / "runs")
+    store.root.mkdir(parents=True)
+    plan_payload = {
+        "schema_version": 1,
+        "id": "plan-context-test",
+        "revision": 0,
+        "output_goal": "Goal.",
+        "items": [],
+    }
+    store.create_run(
+        "run-20260101T002301-002301",
+        plan=plan_payload,
+        **create_run_kwargs(workspace, resolved_config=config),
+    )
+
+    skill_file.write_text("skill-b", encoding="utf-8")
+    with pytest.raises(ResumeError, match="context digest mismatch"):
+        validate_resume_preconditions(store, "run-20260101T002301-002301")
+
+
+def test_context_digest_content_change_does_not_block_resume(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     readme = workspace / "README.md"
     readme.write_text("alpha", encoding="utf-8")
@@ -600,8 +781,33 @@ agent_context:
     )
 
     readme.write_text("beta", encoding="utf-8")
-    with pytest.raises(ResumeError, match="context digest mismatch"):
-        validate_resume_preconditions(store, "run-20260101T002301-002301")
+    validate_resume_preconditions(store, "run-20260101T002301-002301")
+
+
+def test_context_digest_recompute_when_configured_resource_deleted(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path)
+    guide = workspace / "guide.md"
+    guide.write_text("guide", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "base.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  default:
+    resources:
+      - guide.md
+""",
+        ),
+        cwd=workspace,
+    )
+    before = compute_context_digest_from_config(config, workspace=workspace)
+    guide.unlink()
+    after = compute_context_digest_from_config(config, workspace=workspace)
+    assert before == after
 
 
 def test_context_digest_payload_covers_supporting_context_only(
@@ -634,7 +840,42 @@ agent_context:
     assert "input_refs" not in planner
     assert "output_goal_digest" not in planner
     assert str(guide.resolve()) in planner["resources"]
-    assert "resource_digests" in planner
+    assert "resource_digests" not in planner
+    assert "skill_digests" in planner
+    # Regression lock: resource *contents* must never re-enter digests.context.
+    allowed_role_keys = {"model", "resources", "skills", "skill_digests"}
+    for role_name, role_payload in payload["roles"].items():
+        assert "resource_digests" not in role_payload, role_name
+        assert set(role_payload) <= allowed_role_keys, role_name
+
+
+def test_context_digest_stable_when_files_change_under_resource_directory(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path)
+    src = workspace / "src"
+    src.mkdir()
+    (src / "a.py").write_text("a1\n", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "base.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  producer:
+    resources:
+      - src/
+""",
+        ),
+        cwd=workspace,
+    )
+    before = compute_context_digest_from_config(config, workspace=workspace)
+    (src / "a.py").write_text("a2\n", encoding="utf-8")
+    (src / "b.py").write_text("new\n", encoding="utf-8")
+    (src / "a.py").unlink()
+    after = compute_context_digest_from_config(config, workspace=workspace)
+    assert before == after
 
 
 def test_context_digest_unchanged_when_input_ref_content_changes(tmp_path: Path) -> None:

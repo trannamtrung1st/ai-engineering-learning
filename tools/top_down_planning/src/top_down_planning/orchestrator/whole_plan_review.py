@@ -35,6 +35,7 @@ from top_down_planning.orchestrator.mandatory_review_stages import (
 from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
 from top_down_planning.domain.validators import (
     build_plan_approval_validation_context,
+    plan_advisory_warning_messages,
     validate_plan,
 )
 from top_down_planning.orchestrator.agent_context import (
@@ -627,6 +628,7 @@ def build_whole_plan_review_package(
         review_cfg.get("rubric")
         or DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
     )
+    quality_warnings = plan_advisory_warning_messages(plan)
     package: dict[str, Any] = {
         "run_id": run_id,
         "phase": WHOLE_PLAN_REVIEW,
@@ -641,6 +643,7 @@ def build_whole_plan_review_package(
         "target_revision": loop.target_revision,
         "plan_revision": plan.revision,
         "plan": build_plan_review_snapshot(plan, limits=limits),
+        "warnings": quality_warnings,
         **plan_execution_contract_fields(plan),
         "digests": digests,
         **stage_package_fields(loop),
@@ -651,7 +654,7 @@ def build_whole_plan_review_package(
             **build_reviewer_tool_instructions(
                 run_id,
                 plan_snapshot=(
-                    f"tdp agent plan snapshot --run {run_id} --view tree"
+                    f"tdp agent plan snapshot --run {run_id} --view active"
                 ),
             ),
         },

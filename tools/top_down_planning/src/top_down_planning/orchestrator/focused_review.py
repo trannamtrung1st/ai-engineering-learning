@@ -475,7 +475,7 @@ def build_focused_review_package(
     }
     if loop.type == "focused_plan":
         extra_instructions["plan_snapshot"] = (
-            f"tdp agent plan snapshot --run {run_id} --view tree"
+            f"tdp agent plan snapshot --run {run_id} --view active"
         )
     tool_instructions = build_reviewer_tool_instructions(run_id, **extra_instructions)
 

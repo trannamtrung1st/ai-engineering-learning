@@ -140,6 +140,52 @@ observability:
     assert compute_config_digest(base) == compute_config_digest(verbose)
 
 
+def test_run_boundaries_and_acceptance_affect_config_digest(tmp_path: Path) -> None:
+    base = resolve_config(
+        write_config(
+            tmp_path / "base.yaml",
+            """
+run:
+  output_goal: Goal.
+  boundaries:
+    - stay in tools/
+  acceptance:
+    - tests pass
+""",
+        )
+    )
+    drifted_boundaries = resolve_config(
+        write_config(
+            tmp_path / "boundaries.yaml",
+            """
+run:
+  output_goal: Goal.
+  boundaries:
+    - stay in tools/
+    - no docs rewrites
+  acceptance:
+    - tests pass
+""",
+        )
+    )
+    drifted_acceptance = resolve_config(
+        write_config(
+            tmp_path / "acceptance.yaml",
+            """
+run:
+  output_goal: Goal.
+  boundaries:
+    - stay in tools/
+  acceptance:
+    - tests pass
+    - resume stays green
+""",
+        )
+    )
+    assert compute_config_digest(base) != compute_config_digest(drifted_boundaries)
+    assert compute_config_digest(base) != compute_config_digest(drifted_acceptance)
+
+
 def test_runtime_runs_dir_excluded_from_config_digest(tmp_path: Path) -> None:
     no_runtime = write_config(
         tmp_path / "no-runtime.yaml",

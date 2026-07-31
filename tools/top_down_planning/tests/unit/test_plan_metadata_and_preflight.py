@@ -15,7 +15,7 @@ from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, grant_capability
+from tests.helpers import create_run_kwargs, done_events, script_planning_candidate_ready
 
 
 def test_initial_plan_seeds_boundaries_and_acceptance() -> None:
@@ -100,7 +100,7 @@ def test_plan_snapshot_exposes_metadata(tmp_path: Path) -> None:
         **create_run_kwargs(store.root),
         phase=PLANNING,
     )
-    snapshot = PlanAgentService(store, "run-20260101T000701-000701").snapshot(view="tree")
+    snapshot = PlanAgentService(store, "run-20260101T000701-000701").snapshot()
     assert snapshot["boundaries"] == ["bound"]
     assert snapshot["acceptance"] == ["accept"]
     assert "constraints" in snapshot
@@ -191,10 +191,17 @@ def test_valid_candidate_still_enters_whole_plan_review(tmp_path: Path) -> None:
                 parent_id=None,
                 order_key="0000000000",
                 title="Root",
+                kind="aggregate",
+            ),
+            "item-work": PlanItem(
+                id="item-work",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Work",
                 outcome="Done.",
                 acceptance=["ok"],
-                kind="aggregate",
-            )
+                kind="work",
+            ),
         },
     )
     store.create_run(
@@ -210,6 +217,68 @@ def test_valid_candidate_still_enters_whole_plan_review(tmp_path: Path) -> None:
     ).run()
     assert result.ok is True
     assert store.load_run("run-20260101T000703-000703")["phase"] == "whole_plan_review"
+
+
+def test_candidate_preflight_surfaces_warnings_without_blocking(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    plan = Plan(
+        id="plan-warn",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                outcome="Root outcome.",
+                acceptance=["root ok"],
+                kind="aggregate",
+            ),
+            "item-parent": PlanItem(
+                id="item-parent",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Parent work",
+                outcome="Parent outcome.",
+                acceptance=["parent ok"],
+                kind="work",
+            ),
+            "item-child": PlanItem(
+                id="item-child",
+                parent_id="item-parent",
+                order_key="0000000000",
+                title="Child work",
+                outcome="Child outcome.",
+                acceptance=["child ok"],
+                kind="work",
+            ),
+        },
+    )
+    store.create_run(
+        "run-20260101T000705-000705",
+        plan=plan,
+        **create_run_kwargs(store.root),
+        phase=PLANNING,
+    )
+    provider = StubProvider()
+    script_planning_candidate_ready(provider)
+    result = PlanningPhaseOrchestrator(
+        store, "run-20260101T000705-000705", provider
+    ).run()
+    assert result.ok is True
+    assert store.load_run("run-20260101T000705-000705")["phase"] == "whole_plan_review"
+    events = store.load_events("run-20260101T000705-000705")
+    ready_events = [
+        event
+        for event in events
+        if event["type"] == "planning_candidate_ready"
+    ]
+    assert len(ready_events) == 1
+    assert any(
+        "executable descendants" in warning
+        for warning in ready_events[0].get("warnings") or []
+    )
 
 
 def test_draft_validation_ok_for_titled_plan() -> None:

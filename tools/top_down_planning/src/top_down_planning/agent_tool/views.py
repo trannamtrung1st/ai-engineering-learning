@@ -11,6 +11,7 @@ from top_down_planning.domain.plan_tree import (
     compute_planning_budget,
     descendants_of,
     display_traversal,
+    is_active_item,
     item_depth,
     walk_active_tree,
 )
@@ -18,11 +19,11 @@ from top_down_planning.domain.readiness import compute_ready_view
 from top_down_planning.domain.reviews import build_is_review_blocked_fn
 from top_down_planning.domain.validators import ValidationResult
 
-PlanView = Literal["tree", "ready", "issues"]
+PlanView = Literal["active", "audit", "ready", "issues"]
 
 
 def item_snapshot(item: PlanItem, display_number: str, *, depth: int) -> dict[str, Any]:
-    return {
+    payload = {
         "id": item.id,
         "display_number": display_number,
         "parent_id": item.parent_id,
@@ -36,6 +37,9 @@ def item_snapshot(item: PlanItem, display_number: str, *, depth: int) -> dict[st
         "depends_on": list(item.depends_on),
         "planning_status": item.planning_status,
     }
+    if item.superseded_by is not None:
+        payload["superseded_by"] = item.superseded_by
+    return payload
 
 
 def _visible_item_ids(
@@ -66,10 +70,21 @@ def _visible_item_ids(
     }
 
 
-def build_tree_view(
+def _plan_metadata(plan: Plan) -> dict[str, Any]:
+    return {
+        "scope": plan.scope.to_dict(),
+        "boundaries": list(plan.boundaries),
+        "constraints": list(plan.constraints),
+        "assumptions": list(plan.assumptions),
+        "acceptance": list(plan.acceptance),
+    }
+
+
+def build_hierarchy_snapshot(
     plan: Plan,
     *,
     limits: PlanningLimits,
+    view: str,
     root_id: str | None = None,
     depth: int | None = None,
 ) -> dict[str, Any]:
@@ -87,16 +102,93 @@ def build_tree_view(
         budgets.append(compute_planning_budget(plan, item_id, limits).to_dict())
 
     return {
-        "view": "tree",
+        "view": view,
         "revision": plan.revision,
         "items": items,
         "planning_budget": budgets,
-        "scope": plan.scope.to_dict(),
-        "boundaries": list(plan.boundaries),
-        "constraints": list(plan.constraints),
-        "assumptions": list(plan.assumptions),
-        "acceptance": list(plan.acceptance),
+        **_plan_metadata(plan),
     }
+
+
+def build_active_view(
+    plan: Plan,
+    *,
+    limits: PlanningLimits,
+    root_id: str | None = None,
+    depth: int | None = None,
+) -> dict[str, Any]:
+    """Active inspection view: current hierarchy only (excludes removed/superseded)."""
+
+    return build_hierarchy_snapshot(
+        plan,
+        limits=limits,
+        view="active",
+        root_id=root_id,
+        depth=depth,
+    )
+
+
+def _inactive_items_related_to_subtree(
+    inactive: list[PlanItem],
+    related: set[str],
+) -> list[PlanItem]:
+    """Include inactive records reachable from the visible subtree via parent links."""
+
+    expanded = set(related)
+    changed = True
+    while changed:
+        changed = False
+        for item in inactive:
+            if item.id in expanded:
+                continue
+            if item.parent_id in expanded:
+                expanded.add(item.id)
+                changed = True
+                continue
+            if item.superseded_by is not None and item.superseded_by in expanded:
+                expanded.add(item.id)
+                changed = True
+    return [item for item in inactive if item.id in expanded]
+
+
+def build_audit_view(
+    plan: Plan,
+    *,
+    limits: PlanningLimits,
+    root_id: str | None = None,
+    depth: int | None = None,
+) -> dict[str, Any]:
+    """Audit inspection view: active tree plus inactive records and supersession links."""
+
+    payload = build_hierarchy_snapshot(
+        plan, limits=limits, view="audit", root_id=root_id, depth=depth
+    )
+
+    active_ids = {item["id"] for item in payload["items"]}
+    inactive = sorted(
+        (
+            item
+            for item in plan.items.values()
+            if item.id not in active_ids and not is_active_item(item)
+        ),
+        key=lambda item: item.id,
+    )
+    # When a subtree root filter is set, walk inactive ancestry so supersession
+    # chains under inactive parents remain inspectable.
+    if root_id is not None:
+        related = set(active_ids)
+        related.add(root_id)
+        inactive = _inactive_items_related_to_subtree(inactive, related)
+
+    for item in inactive:
+        payload["items"].append(
+            item_snapshot(
+                item,
+                display_number="",
+                depth=item_depth(plan, item.id),
+            )
+        )
+    return payload
 
 
 def build_plan_review_snapshot(
@@ -106,7 +198,7 @@ def build_plan_review_snapshot(
 ) -> dict[str, Any]:
     """Bounded plan artifact for reviewer packages (proposal §4.3, §5.2)."""
 
-    snapshot = build_tree_view(plan, limits=limits)
+    snapshot = build_active_view(plan, limits=limits)
     snapshot["output_goal"] = plan.output_goal
     return snapshot
 

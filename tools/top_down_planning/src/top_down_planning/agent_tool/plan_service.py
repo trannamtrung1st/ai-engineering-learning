@@ -14,9 +14,11 @@ from top_down_planning.agent_tool.errors import (
 from top_down_planning.agent_tool.validation_context import plan_approval_validation_context
 from top_down_planning.agent_tool.views import (
     PlanView,
+    build_active_view,
+    build_audit_view,
     build_changed_subtree_view,
+    build_hierarchy_snapshot,
     build_ready_view,
-    build_tree_view,
     ready_item_changes,
     validation_issues,
     validation_warnings,
@@ -51,7 +53,7 @@ class PlanAgentService:
     def snapshot(
         self,
         *,
-        view: PlanView = "tree",
+        view: PlanView = "active",
         root_id: str | None = None,
         depth: int | None = None,
         mode: ValidationMode = "draft",
@@ -76,8 +78,14 @@ class PlanAgentService:
             mode=mode,
         )
 
-        if view == "tree":
-            payload = build_tree_view(plan, limits=limits, root_id=root_id, depth=depth)
+        if view == "active":
+            payload = build_active_view(
+                plan, limits=limits, root_id=root_id, depth=depth
+            )
+        elif view == "audit":
+            payload = build_audit_view(
+                plan, limits=limits, root_id=root_id, depth=depth
+            )
         elif view == "ready":
             payload = build_ready_view(plan, dispositions, reviews=reviews)
         else:

@@ -590,6 +590,17 @@ def done_events(*, signal: str | None = None, text: str = "ok") -> list[dict]:
     return events
 
 
+def script_planning_candidate_ready(
+    provider: Any,
+    *,
+    signal: str | None = "candidate_plan_ready",
+    text: str = "ready",
+) -> None:
+    """Script a provider turn that signals planning completion."""
+
+    provider.script_turn(done_events(signal=signal, text=text))
+
+
 def apply_plan(
     store: Any,
     run_id: str,

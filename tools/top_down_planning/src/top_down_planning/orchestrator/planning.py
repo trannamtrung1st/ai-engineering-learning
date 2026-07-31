@@ -8,7 +8,7 @@ from typing import Any
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import blocking_focused_findings_for_items
-from top_down_planning.domain.validators import ValidationResult, validate_plan
+from top_down_planning.domain.validators import ValidationResult, plan_advisory_warning_messages, validate_plan
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
@@ -196,6 +196,11 @@ class PlanningPhaseOrchestrator:
                     )
                     continue
                 preflight = self._candidate_preflight()
+                warnings = [
+                    issue.message
+                    for issue in preflight.issues
+                    if issue.severity == "warning"
+                ]
                 if not preflight.ok:
                     emit_primary_session_resumed(
                         self._append_event,
@@ -217,15 +222,16 @@ class PlanningPhaseOrchestrator:
                                 for issue in preflight.issues
                                 if issue.severity == "error"
                             ],
-                            "warnings": [
-                                issue.message
-                                for issue in preflight.issues
-                                if issue.severity == "warning"
-                            ],
+                            "warnings": warnings,
                         },
                     )
                     continue
-                return self._complete_planning(session_id, metrics)
+                plan = self._store.load_plan_model(self._run_id)
+                return self._complete_planning(
+                    session_id,
+                    metrics,
+                    advisory_warnings=plan_advisory_warning_messages(plan),
+                )
 
             if metrics["agent_turns"] >= loop_limits["max_agent_turns"]:
                 return self._terminate_for_limit(
@@ -291,6 +297,8 @@ class PlanningPhaseOrchestrator:
         self,
         session_id: str,
         metrics: dict[str, int],
+        *,
+        advisory_warnings: list[str] | None = None,
     ) -> PlanningPhaseResult:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
@@ -299,13 +307,15 @@ class PlanningPhaseOrchestrator:
         run["revision"] = expected_revision + 1
         run["phase"] = WHOLE_PLAN_REVIEW
         self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event(
-            "planning_candidate_ready",
-            session_id=session_id,
-            agent_turns=metrics["agent_turns"],
-            items_added=metrics["items_added"],
-            plan_revision=self._store.load_plan(self._run_id)["revision"],
-        )
+        event_fields: dict[str, Any] = {
+            "session_id": session_id,
+            "agent_turns": metrics["agent_turns"],
+            "items_added": metrics["items_added"],
+            "plan_revision": self._store.load_plan(self._run_id)["revision"],
+        }
+        if advisory_warnings:
+            event_fields["warnings"] = list(advisory_warnings)
+        self._append_event("planning_candidate_ready", **event_fields)
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, session_id=session_id)
 

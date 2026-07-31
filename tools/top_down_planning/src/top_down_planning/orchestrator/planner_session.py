@@ -45,7 +45,7 @@ def build_planner_tool_instructions(run_id: str) -> dict[str, str]:
             "Mutating commands require the session capability token exported "
             "as TDP_CAPABILITY_TOKEN."
         ),
-        "snapshot": f"tdp agent plan snapshot --run {run_id} --view tree",
+        "snapshot": f"tdp agent plan snapshot --run {run_id} --view active",
         "apply": f"tdp agent plan apply --run {run_id} --request <file>",
         "check": f"tdp agent plan check --run {run_id}",
         "request_review": f"tdp agent review request --run {run_id} --request <file>",

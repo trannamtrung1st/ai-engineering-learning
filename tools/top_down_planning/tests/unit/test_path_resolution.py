@@ -18,7 +18,7 @@ from top_down_planning.config import (
 )
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
-from tests.helpers import write_config
+from tests.helpers import script_planning_candidate_ready, write_config
 
 
 def _repo_layout(tmp_path: Path) -> dict[str, Path]:
@@ -150,18 +150,7 @@ def test_run_uses_cwd_workspace_not_config_parent(
         from core_tools.provider import StubProvider
 
         provider = StubProvider()
-        provider.script_turn(
-            [
-                {"type": "assistant", "text": "done"},
-                {
-                    "type": "done",
-                    "subtype": "success",
-                    "text": "done",
-                    "is_error": False,
-                    "signal": "candidate_plan_ready",
-                },
-            ]
-        )
+        script_planning_candidate_ready(provider, text="done")
         create_provider.return_value = provider
 
         result = run_cli(
@@ -214,18 +203,7 @@ runtime:
         from core_tools.provider import StubProvider
 
         provider = StubProvider()
-        provider.script_turn(
-            [
-                {"type": "assistant", "text": "done"},
-                {
-                    "type": "done",
-                    "subtype": "success",
-                    "text": "done",
-                    "is_error": False,
-                    "signal": "candidate_plan_ready",
-                },
-            ]
-        )
+        script_planning_candidate_ready(provider, text="done")
         create_provider.return_value = provider
 
         result = run_cli(
@@ -258,18 +236,7 @@ def test_resume_with_config_uses_cwd_runs_dir(
         from core_tools.provider import StubProvider
 
         provider = StubProvider()
-        provider.script_turn(
-            [
-                {"type": "assistant", "text": "done"},
-                {
-                    "type": "done",
-                    "subtype": "success",
-                    "text": "done",
-                    "is_error": False,
-                    "signal": "candidate_plan_ready",
-                },
-            ]
-        )
+        script_planning_candidate_ready(provider, text="done")
         create_provider.return_value = provider
 
         run_result = run_cli(
@@ -321,18 +288,7 @@ runtime:
         from core_tools.provider import StubProvider
 
         provider = StubProvider()
-        provider.script_turn(
-            [
-                {"type": "assistant", "text": "done"},
-                {
-                    "type": "done",
-                    "subtype": "success",
-                    "text": "done",
-                    "is_error": False,
-                    "signal": "candidate_plan_ready",
-                },
-            ]
-        )
+        script_planning_candidate_ready(provider, text="done")
         create_provider.return_value = provider
 
         result = run_cli(

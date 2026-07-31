@@ -14,7 +14,7 @@ from top_down_planning.config import resolve_config
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_config_digest
 from tests.conftest import run_cli
-from tests.helpers import write_config
+from tests.helpers import script_planning_candidate_ready, write_config
 
 
 def test_cli_overrides_environment_and_config(tmp_path: Path) -> None:
@@ -139,18 +139,7 @@ runtime:
         from core_tools.provider import StubProvider
 
         provider = StubProvider()
-        provider.script_turn(
-            [
-                {"type": "assistant", "text": "done"},
-                {
-                    "type": "done",
-                    "subtype": "success",
-                    "text": "done",
-                    "is_error": False,
-                    "signal": "candidate_plan_ready",
-                },
-            ]
-        )
+        script_planning_candidate_ready(provider, text="done")
         create_provider.return_value = provider
 
         result = run_cli(

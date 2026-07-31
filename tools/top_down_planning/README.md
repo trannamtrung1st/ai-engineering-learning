@@ -109,7 +109,7 @@ Agent session lifecycle: `[session:start]` on `planner_session_started` / `produ
 tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
 tdp run --config tools/top_down_planning/examples/top-down-planning.yaml --set planning.max_depth=5
 tdp status --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
-tdp inspect --run <run-id> --view tree --config tools/top_down_planning/examples/top-down-planning.yaml
+tdp inspect --run <run-id> --view active --config tools/top_down_planning/examples/top-down-planning.yaml
 tdp validate --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
 tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
 ```
@@ -263,7 +263,7 @@ tdp agent help
 tdp agent readme
 tdp agent schema              # list schemas; add a name to show one
 tdp agent example expand-branch
-tdp agent plan snapshot --run <run-id> --view tree
+tdp agent plan snapshot --run <run-id> --view active
 tdp agent plan apply --run <run-id> --request request.json
 tdp agent plan check --run <run-id>
 tdp agent production snapshot --run <run-id> --view ready
@@ -281,10 +281,10 @@ Production apply requires `production_revision` from the latest snapshot. `submi
 
 Plan items require explicit `kind` (`work` or `aggregate`). The run seeds a root `aggregate` item; only `work` leaves appear in `ready_item_ids`. Use `update_plan` to revise plan-level metadata (`scope`, `boundaries`, `constraints`, `assumptions`, `acceptance`). Producer sessions receive `approved_plan`; production `ready` snapshots include `ready_items` with per-item contracts.
 
-Agent plan `snapshot`/`check`/`apply` and production `snapshot` (tree/ready) share the same
+Agent plan `snapshot`/`check`/`apply` and production `snapshot` (`active`/`audit`/`ready`/`issues` for plan; `tree`/`ready` for production) share the same
 plan validation contract: structured `issues` for errors, string `warnings` for
 non-blocking findings, and `ok` when validation has no error-severity issues.
-Production-specific batch checks use `production check`. Tree snapshots include
+Production-specific batch checks use `production check`. Active plan snapshots include
 `scope`, `boundaries`, and `acceptance` on each item. `plan apply` sets
 `applied: true` only when the mutation batch was persisted (exit code still reflects
 `ok`, not whether the batch was saved). Invalid operations and mutations that would

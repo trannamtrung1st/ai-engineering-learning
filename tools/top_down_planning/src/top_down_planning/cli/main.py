@@ -145,7 +145,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect_parser.add_argument(
         "--view",
-        help="Inspection view (currently only tree).",
+        choices=["active", "audit"],
+        default="active",
+        help="Inspection view (default: active). audit includes inactive history.",
     )
     _add_operational_flags(inspect_parser)
 

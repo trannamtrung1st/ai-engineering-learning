@@ -525,6 +525,23 @@ def test_non_reviewer_respond_is_rejected(tmp_path: Path) -> None:
         )
 
 
+def test_default_whole_plan_rubric_covers_advisory_themes() -> None:
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+
+    rubric = DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
+    joined = "\n".join(rubric).casefold()
+    for theme in (
+        "hierarchy",
+        "dependencies",
+        "granularity",
+        "contract ownership",
+        "plan cleanliness",
+        "coverage",
+        "traceability",
+    ):
+        assert theme in joined, f"missing advisory theme {theme!r} in {rubric}"
+
+
 def test_whole_plan_package_includes_default_rubric(tmp_path: Path) -> None:
     from top_down_planning.config.defaults import DEFAULT_CONFIG
     from top_down_planning.domain.reviews import ReviewLoop
@@ -554,6 +571,114 @@ def test_whole_plan_package_includes_default_rubric(tmp_path: Path) -> None:
     assert package["rubric"] == DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
     assert package["plan_revision"] == 0
     assert "plan" in package
+    assert package["plan"]["view"] == "active"
+    assert "warnings" in package
+
+
+def test_whole_plan_package_includes_overlap_warnings(tmp_path: Path) -> None:
+    from top_down_planning.domain.reviews import ReviewLoop
+    from top_down_planning.orchestrator.whole_plan_review import (
+        build_whole_plan_review_package,
+    )
+    from tests.helpers import minimal_resolved_config
+
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_plan_review(store)
+    plan = Plan(
+        id="plan-overlap-package",
+        revision=0,
+        output_goal="Deliver the feature.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                outcome="Root outcome.",
+                acceptance=["root ok"],
+                kind="aggregate",
+            ),
+            "item-parent": PlanItem(
+                id="item-parent",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Parent work",
+                outcome="Parent outcome.",
+                acceptance=["parent ok"],
+                kind="work",
+            ),
+            "item-child": PlanItem(
+                id="item-child",
+                parent_id="item-parent",
+                order_key="0000000000",
+                title="Child work",
+                outcome="Child outcome.",
+                acceptance=["child ok"],
+                kind="work",
+            ),
+        },
+    )
+    config = minimal_resolved_config()
+    loop = ReviewLoop(
+        id="review-whole-plan-02",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+    )
+    package = build_whole_plan_review_package(
+        "run-20260101T000301-000301",
+        store.load_run("run-20260101T000301-000301"),
+        config,
+        plan,
+        loop,
+    )
+    assert any(
+        "executable descendants" in warning for warning in package["warnings"]
+    )
+
+
+def test_whole_plan_package_includes_empty_aggregate_warnings(tmp_path: Path) -> None:
+    from top_down_planning.domain.reviews import ReviewLoop
+    from top_down_planning.orchestrator.whole_plan_review import (
+        build_whole_plan_review_package,
+    )
+    from tests.helpers import minimal_resolved_config
+
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_plan_review(store)
+    plan = Plan(
+        id="plan-empty-aggregate",
+        revision=0,
+        output_goal="Deliver the feature.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            ),
+        },
+    )
+    config = minimal_resolved_config()
+    loop = ReviewLoop(
+        id="review-whole-plan-03",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+    )
+    package = build_whole_plan_review_package(
+        "run-20260101T000301-000301",
+        store.load_run("run-20260101T000301-000301"),
+        config,
+        plan,
+        loop,
+    )
+    assert any(
+        "no active descendants" in warning for warning in package["warnings"]
+    )
 
 
 def test_whole_plan_package_preserves_custom_rubric(tmp_path: Path) -> None:

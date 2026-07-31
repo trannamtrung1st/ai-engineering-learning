@@ -143,6 +143,252 @@ def test_snapshot_ready_view_reflects_dependency_readiness(tmp_path: Path) -> No
     assert "item-child" in ready["not_ready"]
 
 
+def test_snapshot_active_and_audit_views(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    plan = Plan(
+        id="plan-views",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            ),
+            "item-live": PlanItem(
+                id="item-live",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Live",
+                kind="work",
+            ),
+            "item-old": PlanItem(
+                id="item-old",
+                parent_id="item-root",
+                order_key="0000000100",
+                title="Old",
+                kind="work",
+                planning_status="superseded",
+                superseded_by="item-live",
+            ),
+            "item-gone": PlanItem(
+                id="item-gone",
+                parent_id="item-root",
+                order_key="0000000200",
+                title="Gone",
+                kind="work",
+                planning_status="removed",
+            ),
+        },
+    )
+    store.create_run(
+        "run-20260101T000001-000001",
+        plan=plan,
+        **create_run_kwargs(
+            store.root,
+            resolved_config={
+                "run": {"output_goal": "Deliver the output.", "input_refs": []},
+                "planning": {"max_depth": 4, "max_expansion_per_item": 7},
+            },
+        ),
+    )
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+
+    active = service.snapshot(view="active")
+    assert active["view"] == "active"
+    assert active["revision"] == 0
+    active_ids = [item["id"] for item in active["items"]]
+    assert active_ids == ["item-root", "item-live"]
+    assert "item-old" not in active_ids
+    assert "item-gone" not in active_ids
+    assert all(item["planning_status"] == "open" for item in active["items"])
+    assert all("superseded_by" not in item for item in active["items"])
+
+    audit = service.snapshot(view="audit")
+    assert audit["view"] == "audit"
+    assert audit["revision"] == 0
+    audit_ids = [item["id"] for item in audit["items"]]
+    assert audit_ids[:2] == ["item-root", "item-live"]
+    assert "item-gone" in audit_ids
+    assert "item-old" in audit_ids
+    old = next(item for item in audit["items"] if item["id"] == "item-old")
+    assert old["planning_status"] == "superseded"
+    assert old["superseded_by"] == "item-live"
+    gone = next(item for item in audit["items"] if item["id"] == "item-gone")
+    assert gone["planning_status"] == "removed"
+    assert "superseded_by" not in gone
+
+
+def test_audit_view_includes_nested_inactive_under_root_filter(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    plan = Plan(
+        id="plan-audit-nested",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            ),
+            "item-live": PlanItem(
+                id="item-live",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Live",
+                kind="work",
+            ),
+            "item-dead-parent": PlanItem(
+                id="item-dead-parent",
+                parent_id="item-root",
+                order_key="0000000100",
+                title="Dead parent",
+                kind="work",
+                planning_status="removed",
+            ),
+            "item-dead-child": PlanItem(
+                id="item-dead-child",
+                parent_id="item-dead-parent",
+                order_key="0000000000",
+                title="Dead child",
+                kind="work",
+                planning_status="removed",
+            ),
+        },
+    )
+    store.create_run(
+        "run-20260101T000001-000001",
+        plan=plan,
+        **create_run_kwargs(
+            store.root,
+            resolved_config={
+                "run": {"output_goal": "Deliver the output.", "input_refs": []},
+                "planning": {"max_depth": 4, "max_expansion_per_item": 7},
+            },
+        ),
+    )
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+
+    audit = service.snapshot(view="audit", root_id="item-root")
+    audit_ids = [item["id"] for item in audit["items"]]
+    assert audit_ids[:2] == ["item-root", "item-live"]
+    assert "item-dead-parent" in audit_ids
+    assert "item-dead-child" in audit_ids
+
+
+def test_plan_snapshot_defaults_to_active_view(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+
+    snapshot = service.snapshot()
+    assert snapshot["view"] == "active"
+
+
+def test_whole_plan_and_producer_packages_remain_active_only(tmp_path: Path) -> None:
+    """walk_active_tree already filters packages; assert inactive history stays out."""
+
+    from top_down_planning.agent_tool.views import build_plan_review_snapshot
+    from top_down_planning.domain.models import PlanningLimits
+    from top_down_planning.domain.production import build_compact_approved_plan
+    from top_down_planning.domain.reviews import ReviewLoop
+    from top_down_planning.orchestrator.production import build_producer_context_manifest
+    from top_down_planning.orchestrator.whole_plan_review import (
+        build_whole_plan_review_package,
+    )
+    from tests.helpers import minimal_resolved_config
+
+    plan = Plan(
+        id="plan-active-only",
+        revision=2,
+        output_goal="Deliver the output.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            ),
+            "item-live": PlanItem(
+                id="item-live",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Live",
+                kind="work",
+                outcome="Live outcome.",
+            ),
+            "item-old": PlanItem(
+                id="item-old",
+                parent_id="item-root",
+                order_key="0000000100",
+                title="Old",
+                kind="work",
+                planning_status="superseded",
+                superseded_by="item-live",
+            ),
+            "item-gone": PlanItem(
+                id="item-gone",
+                parent_id="item-root",
+                order_key="0000000200",
+                title="Gone",
+                kind="work",
+                planning_status="removed",
+            ),
+        },
+    )
+    inactive_ids = {"item-old", "item-gone"}
+
+    approved = build_compact_approved_plan(plan)
+    approved_ids = {item["id"] for item in approved["items"]}
+    assert approved_ids == {"item-root", "item-live"}
+    assert approved_ids.isdisjoint(inactive_ids)
+
+    review_snapshot = build_plan_review_snapshot(plan, limits=PlanningLimits())
+    assert review_snapshot["view"] == "active"
+    review_ids = {item["id"] for item in review_snapshot["items"]}
+    assert review_ids == {"item-root", "item-live"}
+    assert review_ids.isdisjoint(inactive_ids)
+
+    config = minimal_resolved_config(
+        run={"output_goal": "Deliver the output.", "input_refs": []},
+        provider={"name": "stub"},
+    )
+    config["project"]["workspace"] = str(tmp_path.resolve())
+    run = {"digests": {}, "workspace": str(tmp_path.resolve())}
+    loop = ReviewLoop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=2,
+        scope={"kind": "whole_plan"},
+    )
+    package = build_whole_plan_review_package(
+        "run-20260101T000301-000301",
+        run,
+        config,
+        plan,
+        loop,
+    )
+    package_ids = {item["id"] for item in package["plan"]["items"]}
+    assert package_ids == {"item-root", "item-live"}
+    assert package_ids.isdisjoint(inactive_ids)
+
+    producer = build_producer_context_manifest(
+        "run-20260101T000201-000201",
+        run,
+        config,
+        plan,
+    )
+    producer_ids = {item["id"] for item in producer["approved_plan"]["items"]}
+    assert producer_ids == {"item-root", "item-live"}
+    assert producer_ids.isdisjoint(inactive_ids)
+
+
 def test_plan_check_matches_validator_modes(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
@@ -155,6 +401,59 @@ def test_plan_check_matches_validator_modes(tmp_path: Path) -> None:
     assert approval["ok"] is False
     assert draft["mode"] == "draft"
     assert approval["mode"] == "approval"
+
+
+def test_plan_check_surfaces_overlap_warnings_without_blocking(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    plan = Plan(
+        id="plan-overlap-check",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            ),
+            "item-parent": PlanItem(
+                id="item-parent",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Parent work",
+                kind="work",
+                outcome="Parent.",
+            ),
+            "item-child": PlanItem(
+                id="item-child",
+                parent_id="item-parent",
+                order_key="0000000000",
+                title="Child work",
+                kind="work",
+                outcome="Child.",
+            ),
+        },
+    )
+    store.create_run(
+        "run-20260101T000001-000001",
+        plan=plan,
+        **create_run_kwargs(
+            store.root,
+            resolved_config={
+                "run": {"output_goal": "Deliver the output.", "input_refs": []},
+                "planning": {"max_depth": 4, "max_expansion_per_item": 7},
+            },
+        ),
+    )
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+    draft = service.check(mode="draft")
+    assert draft["ok"] is True
+    assert draft["issues"] == []
+    assert any(
+        "executable descendants" in warning and "item-parent" in warning
+        for warning in draft["warnings"]
+    )
 
 
 def test_apply_requires_capability_token(tmp_path: Path) -> None:
@@ -519,7 +818,7 @@ def test_snapshot_ready_excludes_review_blocked_items(tmp_path: Path) -> None:
     assert ready["not_ready"]["item-child"]["reason"] == "review_blocked"
 
 
-def test_snapshot_tree_includes_scope_boundaries_acceptance(tmp_path: Path) -> None:
+def test_snapshot_active_includes_scope_boundaries_acceptance(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     root = PlanItem(
         id="item-root",
@@ -550,7 +849,7 @@ def test_snapshot_tree_includes_scope_boundaries_acceptance(tmp_path: Path) -> N
     )
 
     service = PlanAgentService(store, "run-20260101T000001-000001")
-    snapshot = service.snapshot(view="tree")
+    snapshot = service.snapshot(view="active")
 
     item = snapshot["items"][0]
     assert item["depth"] == 0
