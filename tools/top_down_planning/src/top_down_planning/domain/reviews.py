@@ -1106,17 +1106,40 @@ def find_active_review_loop(
     return None
 
 
+def claimed_fix_open_findings(loop: ReviewLoop) -> list[ReviewFinding]:
+    """Open findings the primary agent claimed to fix for the active finding set."""
+
+    fix_ids = {
+        action.finding_id
+        for action in loop.finding_actions
+        if action.action == "fix"
+        and (
+            loop.finding_set_id is None
+            or action.finding_set_id is None
+            or action.finding_set_id == loop.finding_set_id
+        )
+    }
+    return [finding for finding in open_findings(loop.findings) if finding.id in fix_ids]
+
+
+def evidence_revision_target_ids_for_loop(loop: ReviewLoop) -> set[str]:
+    """Required open targets plus voluntary claimed-fix targets."""
+
+    targets: set[str] = set()
+    for finding in required_open_findings(loop.findings, loop_revise_at(loop)):
+        targets.update(str(ref) for ref in finding.target_refs)
+    for finding in claimed_fix_open_findings(loop):
+        targets.update(str(ref) for ref in finding.target_refs)
+    return targets
+
+
 def whole_output_revision_target_ids(reviews: list[dict[str, Any]]) -> set[str]:
-    """Plan item ids targeted by unresolved required findings in an active whole-output loop."""
+    """Plan item ids for mandatory + voluntary evidence revision on whole-output."""
 
     loop = find_active_review_loop(reviews, "whole_output")
     if loop is None:
         return set()
-
-    targets: set[str] = set()
-    for finding in required_open_findings(loop.findings, loop_revise_at(loop)):
-        targets.update(finding.target_refs)
-    return targets
+    return evidence_revision_target_ids_for_loop(loop)
 
 
 def focused_output_revision_target_ids(
@@ -1145,13 +1168,11 @@ def focused_output_revision_target_ids(
         return set()
 
     scope_items = {str(item_id) for item_id in (loop.scope.get("item_ids") or [])}
-    required = required_open_findings(loop.findings, loop_revise_at(loop))
-    if not required:
-        return set()
-    targets: set[str] = set()
-    for finding in required:
-        targets.update(str(ref) for ref in finding.target_refs)
+    targets = evidence_revision_target_ids_for_loop(loop)
     if not targets:
+        required = required_open_findings(loop.findings, loop_revise_at(loop))
+        if not required and not claimed_fix_open_findings(loop):
+            return set()
         return scope_items
     return targets & scope_items if scope_items else targets
 
@@ -1910,6 +1931,36 @@ def merge_verification_findings(
         if finding.id not in disposition_by_id:
             raise ValueError(
                 f"finding_results missing required finding_id {finding.id!r}"
+            )
+
+    challenges_by_id = {
+        action.finding_id: action for action in open_challenge_actions(loop)
+    }
+    for finding_id in challenges_by_id:
+        if finding_id not in disposition_by_id:
+            raise ValueError(
+                f"finding_results missing challenged finding_id {finding_id!r}"
+            )
+
+    loop_finding_ids = {finding.id for finding in loop.findings}
+    for entry in entries:
+        challenge = challenges_by_id.get(entry.finding_id)
+        if challenge is None or entry.disposition != "superseded":
+            continue
+        link = str(challenge.superseded_by_finding_id or "").strip()
+        if not link:
+            raise ValueError(
+                f"superseded disposition for challenged finding {entry.finding_id!r} "
+                "requires challenge superseded_by_finding_id"
+            )
+        if link not in loop_finding_ids:
+            raise ValueError(
+                f"superseded_by_finding_id {link!r} must reference a finding in the "
+                "same loop"
+            )
+        if link == entry.finding_id:
+            raise ValueError(
+                f"superseded_by_finding_id must not equal finding {entry.finding_id!r}"
             )
 
     merged: list[ReviewFinding] = []
