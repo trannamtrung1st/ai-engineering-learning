@@ -495,7 +495,10 @@ def script_verification_then_blocker_approval(
                 "direct_side_effects": [],
             }
             for finding in (loop_payload.get("findings") or [])
-            if finding.get("importance") == "blocking"
+            if (
+                finding.get("severity") == "blocker"
+                or finding.get("importance") == "blocking"
+            )
             and finding.get("status") in {"unresolved", "partially_resolved"}
         ]
     respond_review(

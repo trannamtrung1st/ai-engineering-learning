@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
@@ -100,6 +100,7 @@ class FocusedReviewOrchestrator:
                 elif deliver_on_existing_session:
                     emit_reviewer_session_resumed(
                         self._append_event,
+                        self._provider,
                         phase=phase,
                         session_id=session_id,
                         loop_id=loop.id,
@@ -164,28 +165,18 @@ class FocusedReviewOrchestrator:
 
             revision_cycles = loop.revision_cycles + 1
             loop = self._persist_loop(
-                ReviewLoop(
-                    id=loop.id,
-                    type=loop.type,
-                    reviewer_session_id=loop.reviewer_session_id,
-                    target_revision=loop.target_revision,
-                    scope=loop.scope,
+                replace(
+                    loop,
                     status="pending",
-                    findings=loop.findings,
                     revision_cycles=revision_cycles,
                 )
             )
 
             if revision_cycles >= max_revision_cycles:
                 loop = self._persist_loop(
-                    ReviewLoop(
-                        id=loop.id,
-                        type=loop.type,
-                        reviewer_session_id=loop.reviewer_session_id,
-                        target_revision=loop.target_revision,
-                        scope=loop.scope,
+                    replace(
+                        loop,
                         status="blocked",
-                        findings=loop.findings,
                         revision_cycles=revision_cycles,
                     )
                 )
@@ -245,22 +236,14 @@ class FocusedReviewOrchestrator:
         )
         emit_reviewer_session_started(
             self._append_event,
+            self._provider,
             phase=phase,
             session_id=session_id,
             loop_id=loop.id,
             review_type=loop.type,
             scope=loop.scope,
         )
-        updated = ReviewLoop(
-            id=loop.id,
-            type=loop.type,
-            reviewer_session_id=session_id,
-            target_revision=loop.target_revision,
-            scope=loop.scope,
-            status=loop.status,
-            findings=loop.findings,
-            revision_cycles=loop.revision_cycles,
-        )
+        updated = replace(loop, reviewer_session_id=session_id)
         self._persist_loop(updated)
         capability_token = deliver_reviewer_turn(
             self._provider,
@@ -314,6 +297,7 @@ class FocusedReviewOrchestrator:
 
         emit_primary_session_resumed(
             self._append_event,
+            self._provider,
             role=role,
             phase=phase,
             session_id=session_id,
@@ -380,20 +364,17 @@ class FocusedReviewOrchestrator:
         if session_id is None:
             raise ProviderRunError("reviewer session is missing for recheck")
 
-        updated = ReviewLoop(
-            id=loop.id,
-            type=loop.type,
+        updated = replace(
+            loop,
             reviewer_session_id=session_id,
             target_revision=current_revision,
-            scope=loop.scope,
             status="pending",
-            findings=loop.findings,
-            revision_cycles=loop.revision_cycles,
         )
         self._persist_loop(updated)
         phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
         emit_reviewer_session_resumed(
             self._append_event,
+            self._provider,
             phase=phase,
             session_id=session_id,
             loop_id=loop.id,

@@ -39,9 +39,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_expansion_per_item": 7,
     },
     "review": {
-        "focused_plan": {"enabled": True},
-        "focused_output": {"enabled": True},
+        "revise_at": None,
+        "focused_plan": {
+            "enabled": True,
+            "revise_at": None,
+        },
+        "focused_output": {
+            "enabled": True,
+            "revise_at": None,
+        },
         "whole_plan": {
+            "revise_at": None,
             "rubric": [
                 (
                     "Hierarchy: Is every child a genuine decomposition of its parent "
@@ -79,6 +87,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
                     "specific planned outcome and verification path?"
                 ),
             ],
+        },
+        "whole_output": {
+            "revise_at": None,
         },
     },
     "provider": {
@@ -165,9 +176,14 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "planning.stop_hint",
         "planning.max_depth",
         "planning.max_expansion_per_item",
+        "review.revise_at",
         "review.focused_plan.enabled",
+        "review.focused_plan.revise_at",
         "review.focused_output.enabled",
+        "review.focused_output.revise_at",
+        "review.whole_plan.revise_at",
         "review.whole_plan.rubric",
+        "review.whole_output.revise_at",
         "provider.name",
         "provider.binary",
         "provider.skip_probe",

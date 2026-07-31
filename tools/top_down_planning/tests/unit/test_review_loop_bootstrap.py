@@ -17,10 +17,11 @@ def _loop(**overrides) -> ReviewLoop:
         findings=[
             ReviewFinding(
                 id="finding-01",
-                importance="blocking",
+                severity="blocker",
+                category="other",
                 target_refs=["item-a"],
                 issue="Fix path.",
-                required_change="Correct ref.",
+                recommended_change="Correct ref.",
                 status="unresolved",
             )
         ],

@@ -21,10 +21,11 @@ def _loop_with_open_finding() -> ReviewLoop:
         findings=[
             ReviewFinding(
                 id="finding-open",
-                importance="blocking",
+                severity="blocker",
+                category="other",
                 target_refs=["item-api"],
                 issue="Gap in API coverage.",
-                required_change="Add acceptance criteria.",
+                recommended_change="Add acceptance criteria.",
                 status="unresolved",
             )
         ],

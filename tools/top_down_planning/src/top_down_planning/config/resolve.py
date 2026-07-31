@@ -113,6 +113,50 @@ def _validate_context_snapshot(config: dict[str, Any]) -> None:
         )
 
 
+def _validate_revise_at_value(value: Any, *, path: str) -> None:
+    if value is None:
+        return
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(
+            f"{path} must be null or one of: suggestion, minor, major, blocker",
+            path=path,
+        )
+    from top_down_planning.domain.review_policy import SEVERITY_ORDER
+
+    if value.strip() not in SEVERITY_ORDER:
+        raise ConfigError(
+            f"{path} must be null or one of: " + ", ".join(SEVERITY_ORDER),
+            path=path,
+        )
+
+
+def _validate_revise_at_config(config: dict[str, Any]) -> None:
+    review = config.get("review")
+    if review is None:
+        return
+    if not isinstance(review, dict):
+        raise ConfigError("review must be a mapping", path="review")
+    _validate_revise_at_value(review.get("revise_at"), path="review.revise_at")
+    for review_type in (
+        "focused_plan",
+        "focused_output",
+        "whole_plan",
+        "whole_output",
+    ):
+        section = review.get(review_type)
+        if section is None:
+            continue
+        if not isinstance(section, dict):
+            raise ConfigError(
+                f"review.{review_type} must be a mapping",
+                path=f"review.{review_type}",
+            )
+        _validate_revise_at_value(
+            section.get("revise_at"),
+            path=f"review.{review_type}.revise_at",
+        )
+
+
 def finalize_resolved_config(
     config: dict[str, Any],
     *,
@@ -123,6 +167,7 @@ def finalize_resolved_config(
     finalized = copy.deepcopy(config)
     _validate_agent_context_roles(finalized)
     _validate_context_snapshot(finalized)
+    _validate_revise_at_config(finalized)
 
     workspace = resolve_workspace(finalized, cwd=cwd)
 
@@ -150,6 +195,7 @@ def resolve_config(
         yaml_config = load_yaml_config(config_path)
         _validate_agent_context_roles(yaml_config)
         _validate_context_snapshot(yaml_config)
+        _validate_revise_at_config(yaml_config)
         reject_unknown_config_paths(yaml_config, allowed_paths=ALLOWED_OVERRIDE_PATHS)
         resolved = deep_merge(resolved, yaml_config)
     if overrides:
@@ -160,6 +206,7 @@ def resolve_config(
         )
     _validate_agent_context_roles(resolved)
     _validate_context_snapshot(resolved)
+    _validate_revise_at_config(resolved)
     reject_unknown_config_paths(resolved, allowed_paths=ALLOWED_OVERRIDE_PATHS)
     return finalize_resolved_config(resolved, cwd=cwd or Path.cwd())
 

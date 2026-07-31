@@ -23,10 +23,11 @@ def test_merge_blocker_reopen_findings_preserves_prior_audit() -> None:
         findings=[
             ReviewFinding(
                 id="finding-old",
-                importance="blocking",
+                severity="blocker",
+                category="other",
                 target_refs=["item-a"],
                 issue="Old issue",
-                required_change="Was fixed",
+                recommended_change="Was fixed",
                 status="resolved",
             )
         ],
@@ -41,10 +42,11 @@ def test_merge_blocker_reopen_findings_preserves_prior_audit() -> None:
     )
     new_blocker = ReviewFinding(
         id="finding-new",
-        importance="blocking",
+        severity="blocker",
+                category="other",
         target_refs=["item-b"],
         issue="New blocker",
-        required_change="Fix",
+        recommended_change="Fix",
         status="unresolved",
     )
     merged, _ = build_scope_blocker_review_result(
@@ -109,10 +111,11 @@ def test_mandatory_orchestration_decision_reads_stage_results() -> None:
         [
             ReviewFinding(
                 id="finding-new",
-                importance="blocking",
+                severity="blocker",
+                category="other",
                 target_refs=["item-a"],
                 issue="x",
-                required_change="y",
+                recommended_change="y",
             )
         ],
     )[0].id == "finding-new"

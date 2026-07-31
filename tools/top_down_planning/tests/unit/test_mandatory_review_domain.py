@@ -41,10 +41,11 @@ def _finding(
 ) -> ReviewFinding:
     return ReviewFinding(
         id=finding_id,
-        importance=importance,  # type: ignore[arg-type]
+        severity=("blocker" if importance == "blocking" else "minor"),  # type: ignore[arg-type]
+        category="other",
         target_refs=["item-a"],
         issue="Coverage gap",
-        required_change="Add acceptance",
+        recommended_change="Add acceptance",
         status=status,  # type: ignore[arg-type]
     )
 

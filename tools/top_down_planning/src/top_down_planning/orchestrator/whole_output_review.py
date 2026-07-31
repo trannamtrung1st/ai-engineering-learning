@@ -16,6 +16,7 @@ from top_down_planning.domain.production import (
     build_output_traceability,
     build_production_review_snapshot,
 )
+from top_down_planning.domain.review_policy import resolved_revise_at
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     find_whole_plan_approval,
@@ -145,6 +146,7 @@ class WholeOutputReviewOrchestrator:
                 elif deliver_on_existing_session:
                     emit_reviewer_session_resumed(
                         self._append_event,
+                        self._provider,
                         phase=phase,
                         session_id=session_id,
                         loop_id=loop.id,
@@ -458,6 +460,7 @@ class WholeOutputReviewOrchestrator:
     def _create_loop(self) -> ReviewLoop:
         output_revision = int(self._store.load_production(self._run_id)["output_revision"])
         loop_id = self._next_loop_id()
+        config = self._store.load_resolved_config(self._run_id)
         loop = ReviewLoop(
             id=loop_id,
             type="whole_output",
@@ -468,6 +471,7 @@ class WholeOutputReviewOrchestrator:
             lifecycle_status="review_pending",
             active_stage=None,
             blocker_review_rounds=0,
+            revise_at=resolved_revise_at(config, "whole_output"),
         )
         self._store.save_review(self._run_id, loop.to_dict())
         self._append_event(
@@ -508,6 +512,7 @@ class WholeOutputReviewOrchestrator:
         )
         emit_reviewer_session_started(
             self._append_event,
+            self._provider,
             phase=phase,
             session_id=session_id,
             loop_id=loop.id,
@@ -564,6 +569,7 @@ class WholeOutputReviewOrchestrator:
 
         emit_primary_session_resumed(
             self._append_event,
+            self._provider,
             role="producer",
             phase=phase,
             session_id=session_id,
@@ -631,6 +637,7 @@ class WholeOutputReviewOrchestrator:
         phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
         emit_reviewer_session_resumed(
             self._append_event,
+            self._provider,
             phase=phase,
             session_id=session_id,
             loop_id=loop.id,

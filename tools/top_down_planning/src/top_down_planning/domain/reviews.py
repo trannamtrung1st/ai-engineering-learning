@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
+
+from top_down_planning.domain.review_policy import (
+    FindingCategory,
+    ReviewSeverity,
+    validate_finding_category,
+    validate_review_severity,
+)
+
+# Persisted review-record schema version (separate from run-record schema_version).
+CURRENT_REVIEW_SCHEMA_VERSION = 1
 
 _ACTIVE_REVIEW_BLOCKING_STATUSES = frozenset(
     {"changes_requested", "needs_revision", "blockers_found"}
@@ -86,6 +96,21 @@ FINDING_DISPOSITIONS: frozenset[str] = frozenset(
 OPEN_FINDING_DISPOSITIONS: frozenset[str] = frozenset(
     {"unresolved", "partially_resolved"}
 )
+CLOSED_FINDING_DISPOSITIONS: frozenset[str] = frozenset(
+    {"resolved", "superseded", "invalid"}
+)
+
+FindingOwnerAction = Literal["fix", "defer", "accept_as_is", "challenge"]
+FindingActionActorRole = Literal["planner", "producer"]
+ChallengeProposedDisposition = Literal["invalid", "superseded"]
+
+FINDING_OWNER_ACTIONS: frozenset[str] = frozenset(
+    {"fix", "defer", "accept_as_is", "challenge"}
+)
+CHALLENGE_PROPOSED_DISPOSITIONS: frozenset[str] = frozenset({"invalid", "superseded"})
+ACTIONS_REQUIRING_RATIONALE: frozenset[str] = frozenset(
+    {"defer", "accept_as_is", "challenge"}
+)
 
 MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
     "review_pending": frozenset({"findings_open", "blocker_review_pending"}),
@@ -107,31 +132,235 @@ MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
 @dataclass
 class ReviewFinding:
     id: str
-    importance: FindingImportance
+    severity: ReviewSeverity
+    category: FindingCategory
     target_refs: list[str]
     issue: str
-    required_change: str
+    recommended_change: str
     status: FindingStatus = "unresolved"
+    evidence: list[str] = field(default_factory=list)
+    reopens_finding_id: str | None = None
+
+    @property
+    def importance(self) -> FindingImportance:
+        """Legacy derived importance until threshold-aware helpers replace callers."""
+
+        return "blocking" if self.severity == "blocker" else "advisory"
+
+    @property
+    def required_change(self) -> str:
+        """Legacy alias for recommended_change until callers migrate."""
+
+        return self.recommended_change
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "id": self.id,
-            "importance": self.importance,
+            "severity": self.severity,
+            "category": self.category,
             "target_refs": list(self.target_refs),
             "issue": self.issue,
-            "required_change": self.required_change,
+            "evidence": list(self.evidence),
+            "recommended_change": self.recommended_change,
             "status": self.status,
         }
+        if self.reopens_finding_id is not None:
+            payload["reopens_finding_id"] = self.reopens_finding_id
+        return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> ReviewFinding:
+        severity = _severity_from_payload(payload)
+        category_raw = payload.get("category")
+        if category_raw is None or not str(category_raw).strip():
+            category: FindingCategory = "other"
+        else:
+            category = validate_finding_category(str(category_raw))
+
+        if "recommended_change" in payload:
+            recommended_change = str(payload.get("recommended_change") or "")
+        else:
+            recommended_change = str(payload.get("required_change") or "")
+
+        reopens_raw = payload.get("reopens_finding_id")
+        reopens_finding_id = (
+            str(reopens_raw).strip()
+            if reopens_raw is not None and str(reopens_raw).strip()
+            else None
+        )
+        evidence_raw = payload.get("evidence") or []
+        if not isinstance(evidence_raw, list):
+            raise ValueError("finding evidence must be a list")
+        evidence = [str(item) for item in evidence_raw]
+
         return cls(
             id=str(payload["id"]),
-            importance=str(payload.get("importance") or "advisory"),  # type: ignore[arg-type]
+            severity=severity,
+            category=category,
             target_refs=[str(ref) for ref in (payload.get("target_refs") or [])],
             issue=str(payload.get("issue") or ""),
-            required_change=str(payload.get("required_change") or ""),
+            recommended_change=recommended_change,
             status=str(payload.get("status") or "unresolved"),  # type: ignore[arg-type]
+            evidence=evidence,
+            reopens_finding_id=reopens_finding_id,
+        )
+
+
+def _severity_from_payload(payload: Mapping[str, Any]) -> ReviewSeverity:
+    if payload.get("severity") is not None and str(payload.get("severity")).strip():
+        return validate_review_severity(str(payload["severity"]))
+    importance = payload.get("importance")
+    if importance is None or not str(importance).strip():
+        raise ValueError("finding requires severity (or legacy importance)")
+    normalized = str(importance).strip()
+    if normalized == "blocking":
+        return "blocker"
+    if normalized == "advisory":
+        return "minor"
+    raise ValueError(
+        "legacy finding importance must be one of: blocking, advisory"
+    )
+
+
+@dataclass
+class FindingAction:
+    """Primary-agent owner action recorded on a review loop."""
+
+    finding_id: str
+    action: FindingOwnerAction
+    actor_role: FindingActionActorRole
+    artifact_revision: int
+    finding_set_id: str
+    rationale: str | None = None
+    proposed_disposition: ChallengeProposedDisposition | None = None
+    superseded_by_finding_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "finding_id": self.finding_id,
+            "action": self.action,
+            "actor_role": self.actor_role,
+            "artifact_revision": self.artifact_revision,
+            "finding_set_id": self.finding_set_id,
+        }
+        if self.rationale is not None:
+            payload["rationale"] = self.rationale
+        if self.proposed_disposition is not None:
+            payload["proposed_disposition"] = self.proposed_disposition
+        if self.superseded_by_finding_id is not None:
+            payload["superseded_by_finding_id"] = self.superseded_by_finding_id
+        return payload
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> FindingAction:
+        return parse_finding_action(payload)
+
+
+def validate_finding_owner_action(action: str) -> FindingOwnerAction:
+    normalized = str(action).strip()
+    if normalized not in FINDING_OWNER_ACTIONS:
+        raise ValueError(
+            "finding action must be one of: "
+            + ", ".join(sorted(FINDING_OWNER_ACTIONS))
+        )
+    return normalized  # type: ignore[return-value]
+
+
+def parse_finding_action(payload: Mapping[str, Any]) -> FindingAction:
+    """Parse and validate a finding_actions record."""
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("finding_actions entry must be an object")
+    finding_id = str(payload.get("finding_id") or "").strip()
+    if not finding_id:
+        raise ValueError("finding_actions entry requires finding_id")
+    action = validate_finding_owner_action(str(payload.get("action") or ""))
+    actor_role = str(payload.get("actor_role") or "").strip()
+    if actor_role not in {"planner", "producer"}:
+        raise ValueError("finding_actions actor_role must be planner or producer")
+    finding_set_id = str(payload.get("finding_set_id") or "").strip()
+    if not finding_set_id:
+        raise ValueError("finding_actions entry requires finding_set_id")
+    try:
+        artifact_revision = int(payload.get("artifact_revision"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "finding_actions entry requires integer artifact_revision"
+        ) from exc
+
+    rationale_raw = payload.get("rationale")
+    rationale = (
+        str(rationale_raw).strip()
+        if rationale_raw is not None and str(rationale_raw).strip()
+        else None
+    )
+    if action in ACTIONS_REQUIRING_RATIONALE and not rationale:
+        raise ValueError(f"finding action {action!r} requires rationale")
+
+    proposed_raw = payload.get("proposed_disposition")
+    proposed_disposition: ChallengeProposedDisposition | None = None
+    if proposed_raw is not None and str(proposed_raw).strip():
+        proposed = str(proposed_raw).strip()
+        if proposed not in CHALLENGE_PROPOSED_DISPOSITIONS:
+            raise ValueError(
+                "proposed_disposition must be one of: invalid, superseded"
+            )
+        proposed_disposition = proposed  # type: ignore[assignment]
+
+    superseded_raw = payload.get("superseded_by_finding_id")
+    superseded_by_finding_id = (
+        str(superseded_raw).strip()
+        if superseded_raw is not None and str(superseded_raw).strip()
+        else None
+    )
+
+    if action == "challenge":
+        if proposed_disposition is None:
+            raise ValueError("challenge requires proposed_disposition")
+        if proposed_disposition == "superseded" and not superseded_by_finding_id:
+            raise ValueError(
+                "challenge with proposed_disposition superseded requires "
+                "superseded_by_finding_id"
+            )
+    elif proposed_disposition is not None or superseded_by_finding_id is not None:
+        raise ValueError(
+            "proposed_disposition and superseded_by_finding_id are only valid "
+            "for challenge actions"
+        )
+
+    return FindingAction(
+        finding_id=finding_id,
+        action=action,
+        actor_role=actor_role,  # type: ignore[arg-type]
+        artifact_revision=artifact_revision,
+        finding_set_id=finding_set_id,
+        rationale=rationale,
+        proposed_disposition=proposed_disposition,
+        superseded_by_finding_id=superseded_by_finding_id,
+    )
+
+
+def validate_reopens_finding_id(
+    finding: ReviewFinding,
+    existing_findings: Sequence[ReviewFinding],
+) -> None:
+    """Validate reopen lineage against findings already in the loop."""
+
+    if finding.reopens_finding_id is None:
+        return
+    if finding.reopens_finding_id == finding.id:
+        raise ValueError("reopens_finding_id must not reference the finding itself")
+    by_id = {item.id: item for item in existing_findings}
+    referenced = by_id.get(finding.reopens_finding_id)
+    if referenced is None:
+        raise ValueError(
+            f"reopens_finding_id {finding.reopens_finding_id!r} must reference "
+            "a finding in the same loop"
+        )
+    if referenced.status not in CLOSED_FINDING_DISPOSITIONS:
+        raise ValueError(
+            f"reopens_finding_id {finding.reopens_finding_id!r} must reference a "
+            "closed finding (resolved, superseded, or invalid)"
         )
 
 
@@ -154,6 +383,11 @@ class ReviewLoop:
     verification_result: dict[str, Any] | None = None
     blocker_review_result: dict[str, Any] | None = None
     exhausted_budget: ExhaustedReviewBudget | None = None
+    # Severity-threshold review fields (proposal review-record model).
+    review_schema_version: int = CURRENT_REVIEW_SCHEMA_VERSION
+    revise_at: ReviewSeverity | None = None
+    finding_actions: list[FindingAction] = field(default_factory=list)
+    review_incomplete: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -165,7 +399,16 @@ class ReviewLoop:
             "status": self.status,
             "findings": [finding.to_dict() for finding in self.findings],
             "revision_cycles": self.revision_cycles,
+            "review_schema_version": self.review_schema_version,
+            "finding_actions": [action.to_dict() for action in self.finding_actions],
+            "review_incomplete": (
+                dict(self.review_incomplete)
+                if self.review_incomplete is not None
+                else None
+            ),
         }
+        if self.revise_at is not None:
+            payload["revise_at"] = self.revise_at
         if self.approved_digests is not None:
             payload["approved_digests"] = dict(self.approved_digests)
         if self.lifecycle_status is not None:
@@ -233,6 +476,32 @@ class ReviewLoop:
             if exhausted_raw is not None and str(exhausted_raw).strip()
             else None
         )
+        schema_raw = payload.get("review_schema_version")
+        if schema_raw is None:
+            review_schema_version = CURRENT_REVIEW_SCHEMA_VERSION
+        else:
+            try:
+                review_schema_version = int(schema_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "review_schema_version must be an integer"
+                ) from exc
+
+        revise_raw = payload.get("revise_at")
+        revise_at: ReviewSeverity | None = None
+        if revise_raw is not None and str(revise_raw).strip():
+            revise_at = validate_review_severity(str(revise_raw))
+
+        finding_actions = [
+            parse_finding_action(item)
+            for item in (payload.get("finding_actions") or [])
+            if isinstance(item, dict)
+        ]
+        incomplete_raw = payload.get("review_incomplete")
+        review_incomplete = (
+            dict(incomplete_raw) if isinstance(incomplete_raw, dict) else None
+        )
+
         return cls(
             id=str(payload["id"]),
             type=str(raw_type).strip(),  # type: ignore[arg-type]
@@ -250,7 +519,27 @@ class ReviewLoop:
             verification_result=verification_result,
             blocker_review_result=blocker_review_result,
             exhausted_budget=exhausted_budget,
+            review_schema_version=review_schema_version,
+            revise_at=revise_at,
+            finding_actions=finding_actions,
+            review_incomplete=review_incomplete,
         )
+
+
+def with_loop_revise_at(
+    loop: ReviewLoop,
+    revise_at: ReviewSeverity,
+) -> ReviewLoop:
+    """Persist effective revise_at at loop creation; reject later mutation."""
+
+    if loop.revise_at is not None and loop.revise_at != revise_at:
+        raise ValueError(
+            f"revise_at is immutable after loop creation "
+            f"(persisted {loop.revise_at!r}, refused {revise_at!r})"
+        )
+    if loop.revise_at == revise_at:
+        return loop
+    return replace(loop, revise_at=revise_at)
 
 
 def is_mandatory_review_loop(loop: ReviewLoop) -> bool:
@@ -779,14 +1068,7 @@ def merge_verification_findings(
         entry = disposition_by_id.get(finding.id)
         if entry is not None:
             merged.append(
-                ReviewFinding(
-                    id=finding.id,
-                    importance=finding.importance,
-                    target_refs=list(finding.target_refs),
-                    issue=finding.issue,
-                    required_change=finding.required_change,
-                    status=entry.disposition,  # type: ignore[arg-type]
-                )
+                replace(finding, status=entry.disposition)  # type: ignore[arg-type]
             )
             seen_ids.add(finding.id)
         else:
@@ -970,22 +1252,14 @@ def apply_review_response(
         else loop.blocker_review_result
     )
 
-    return ReviewLoop(
-        id=loop.id,
-        type=loop.type,
-        reviewer_session_id=loop.reviewer_session_id,
-        target_revision=loop.target_revision,
-        scope=loop.scope,
+    return replace(
+        loop,
         status=decision,
         findings=findings,
-        revision_cycles=loop.revision_cycles,
         approved_digests=(
             approved_digests if approved_digests is not None else loop.approved_digests
         ),
         lifecycle_status=resolved_lifecycle,  # type: ignore[arg-type]
-        active_stage=loop.active_stage,
-        finding_set_id=loop.finding_set_id,
-        blocker_review_rounds=loop.blocker_review_rounds,
         verification_result=resolved_verification,
         blocker_review_result=resolved_blocker,
     )

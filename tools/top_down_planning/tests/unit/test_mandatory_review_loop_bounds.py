@@ -23,10 +23,11 @@ DIGEST = "artifact-digest-1"
 def _open_finding() -> ReviewFinding:
     return ReviewFinding(
         id="finding-open",
-        importance="blocking",
+        severity="blocker",
+                category="other",
         target_refs=["item-a"],
         issue="Still open",
-        required_change="Fix it",
+        recommended_change="Fix it",
         status="unresolved",
     )
 

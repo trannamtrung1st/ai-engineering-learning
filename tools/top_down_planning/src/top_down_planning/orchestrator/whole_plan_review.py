@@ -9,6 +9,7 @@ from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.views import build_plan_review_snapshot
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.config.defaults import DEFAULT_CONFIG
+from top_down_planning.domain.review_policy import resolved_revise_at
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     is_revision_requested_status,
@@ -136,6 +137,7 @@ class WholePlanReviewOrchestrator:
                 elif deliver_on_existing_session:
                     emit_reviewer_session_resumed(
                         self._append_event,
+                        self._provider,
                         phase=phase,
                         session_id=session_id,
                         loop_id=loop.id,
@@ -413,6 +415,7 @@ class WholePlanReviewOrchestrator:
     def _create_loop(self) -> ReviewLoop:
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])
         loop_id = self._next_loop_id()
+        config = self._store.load_resolved_config(self._run_id)
         loop = ReviewLoop(
             id=loop_id,
             type="whole_plan",
@@ -423,6 +426,7 @@ class WholePlanReviewOrchestrator:
             lifecycle_status="review_pending",
             active_stage=None,
             blocker_review_rounds=0,
+            revise_at=resolved_revise_at(config, "whole_plan"),
         )
         self._store.save_review(self._run_id, loop.to_dict())
         self._append_event(
@@ -462,6 +466,7 @@ class WholePlanReviewOrchestrator:
         )
         emit_reviewer_session_started(
             self._append_event,
+            self._provider,
             phase=phase,
             session_id=session_id,
             loop_id=loop.id,
@@ -518,6 +523,7 @@ class WholePlanReviewOrchestrator:
 
         emit_primary_session_resumed(
             self._append_event,
+            self._provider,
             role="planner",
             phase=phase,
             session_id=session_id,
@@ -562,6 +568,7 @@ class WholePlanReviewOrchestrator:
         phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
         emit_reviewer_session_resumed(
             self._append_event,
+            self._provider,
             phase=phase,
             session_id=session_id,
             loop_id=loop.id,

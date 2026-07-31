@@ -609,22 +609,101 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "review": {
                 "type": "object",
                 "properties": {
+                    "revise_at": {
+                        "oneOf": [
+                            {"type": "null"},
+                            {
+                                "type": "string",
+                                "enum": ["suggestion", "minor", "major", "blocker"],
+                            },
+                        ],
+                        "description": (
+                            "Global revision-threshold override; null inherits "
+                            "BUILTIN_REVISE_AT per review type."
+                        ),
+                    },
                     "focused_plan": {
                         "type": "object",
-                        "properties": {"enabled": {"type": "boolean"}},
+                        "properties": {
+                            "enabled": {"type": "boolean"},
+                            "revise_at": {
+                                "oneOf": [
+                                    {"type": "null"},
+                                    {
+                                        "type": "string",
+                                        "enum": [
+                                            "suggestion",
+                                            "minor",
+                                            "major",
+                                            "blocker",
+                                        ],
+                                    },
+                                ]
+                            },
+                        },
                         "additionalProperties": False,
                     },
                     "focused_output": {
                         "type": "object",
-                        "properties": {"enabled": {"type": "boolean"}},
+                        "properties": {
+                            "enabled": {"type": "boolean"},
+                            "revise_at": {
+                                "oneOf": [
+                                    {"type": "null"},
+                                    {
+                                        "type": "string",
+                                        "enum": [
+                                            "suggestion",
+                                            "minor",
+                                            "major",
+                                            "blocker",
+                                        ],
+                                    },
+                                ]
+                            },
+                        },
                         "additionalProperties": False,
                     },
                     "whole_plan": {
                         "type": "object",
                         "properties": {
+                            "revise_at": {
+                                "oneOf": [
+                                    {"type": "null"},
+                                    {
+                                        "type": "string",
+                                        "enum": [
+                                            "suggestion",
+                                            "minor",
+                                            "major",
+                                            "blocker",
+                                        ],
+                                    },
+                                ]
+                            },
                             "rubric": {
                                 "type": "array",
                                 "items": {"type": "string"},
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                    "whole_output": {
+                        "type": "object",
+                        "properties": {
+                            "revise_at": {
+                                "oneOf": [
+                                    {"type": "null"},
+                                    {
+                                        "type": "string",
+                                        "enum": [
+                                            "suggestion",
+                                            "minor",
+                                            "major",
+                                            "blocker",
+                                        ],
+                                    },
+                                ]
                             }
                         },
                         "additionalProperties": False,

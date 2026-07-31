@@ -126,10 +126,11 @@ def test_stage_decision_validation_and_finding_resolution() -> None:
         findings=[
             ReviewFinding(
                 id="finding-1",
-                importance="blocking",
+                severity="blocker",
+                category="other",
                 target_refs=["item-root"],
                 issue="Gap",
-                required_change="Fix",
+                recommended_change="Fix",
                 status="unresolved",
             )
         ],
@@ -248,10 +249,11 @@ def test_blocker_package_omits_prior_finding_framing(tmp_path: Path) -> None:
         findings=[
             ReviewFinding(
                 id="old",
-                importance="blocking",
+                severity="blocker",
+                category="other",
                 target_refs=["item-api"],
                 issue="old",
-                required_change="fix",
+                recommended_change="fix",
                 status="resolved",
             )
         ],

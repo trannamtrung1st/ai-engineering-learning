@@ -11,6 +11,7 @@ from top_down_planning.domain.approval_digests import (
     OUTPUT_APPROVAL_DIGEST_KEYS,
     PLAN_APPROVAL_DIGEST_KEYS,
 )
+from top_down_planning.domain.review_policy import resolved_revise_at
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     apply_review_response,
@@ -109,6 +110,7 @@ class ReviewAgentService:
             target_revision=target_revision,
             scope=scope,
             status="pending",
+            revise_at=resolved_revise_at(config, review_type),
         )
         self._store.commit(
             self._run_id,

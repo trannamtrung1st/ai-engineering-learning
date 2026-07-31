@@ -154,10 +154,11 @@ def test_core_invariant_requires_verified_clear_blocker_and_digest_match() -> No
                 blocking_findings=[
                     ReviewFinding(
                         id="finding-new",
-                        importance="blocking",
+                        severity="blocker",
+                category="other",
                         target_refs=["item-a"],
                         issue="Still blocked",
-                        required_change="Fix",
+                        recommended_change="Fix",
                     )
                 ],
             ),
@@ -186,10 +187,11 @@ def test_loop_bounds_terminals_never_approve(lifecycle: str) -> None:
         findings=[
             ReviewFinding(
                 id="finding-open",
-                importance="blocking",
+                severity="blocker",
+                category="other",
                 target_refs=["item-a"],
                 issue="Open",
-                required_change="Fix",
+                recommended_change="Fix",
             )
         ],
     )
@@ -514,10 +516,11 @@ def test_mandatory_review_loop_fields_survive_persistence(tmp_path: Path) -> Non
         findings=[
             ReviewFinding(
                 id="finding-1",
-                importance="blocking",
+                severity="blocker",
+                category="other",
                 target_refs=["item-root"],
                 issue="Gap",
-                required_change="Fix",
+                recommended_change="Fix",
                 status="resolved",
             )
         ],
