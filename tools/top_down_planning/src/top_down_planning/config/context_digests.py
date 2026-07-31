@@ -11,6 +11,10 @@ from top_down_planning.config.context import (
     compute_context_spec_digest_from_config,
     validate_guidance_for_binding,
 )
+from top_down_planning.config.snapshot_policy import (
+    CanonicalPathError,
+    canonicalize_workspace_path,
+)
 
 
 class UnauthorizedContextMutationError(ValueError):
@@ -41,7 +45,7 @@ def _format_snapshot_drift_label(key: str) -> str:
         text = key.removeprefix("guidance:inline:")
         preview = text if len(text) <= 40 else f"{text[:37]}..."
         return f"inline guidance ({preview!r})"
-    return short_path_for_observability(key)
+    return key
 
 
 def authorized_production_workspace_paths(
@@ -49,17 +53,22 @@ def authorized_production_workspace_paths(
     *,
     workspace: Path,
 ) -> set[str]:
-    """Workspace paths attributable to persisted production output evidence."""
+    """Workspace-relative paths attributable to persisted production output evidence."""
 
     authorized: set[str] = set()
-    workspace_resolved = workspace.resolve()
 
     def add_ref(ref: object) -> None:
         ref_text = str(ref or "").strip()
         if not ref_text:
             return
-        candidate = (workspace_resolved / ref_text).resolve()
-        authorized.add(str(candidate))
+        try:
+            authorized.add(
+                canonicalize_workspace_path(ref_text, workspace=workspace)
+            )
+        except CanonicalPathError:
+            # Invalid refs are ignored for authorization (they cannot authorize drift).
+            # Evidence capture rejects escapes separately at apply time.
+            return
 
     for entry in production.get("output_evidence") or []:
         if isinstance(entry, dict):
@@ -91,14 +100,21 @@ def diff_snapshot_binding_paths(
     def digest_maps(
         binding: dict[str, Any],
     ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
-        resources: dict[str, str] = {}
-        for entry in binding.get("resource_digests") or []:
-            if isinstance(entry, dict) and entry.get("path"):
-                resources[str(entry["path"])] = str(entry.get("digest") or "")
-        skills: dict[str, str] = {}
-        for entry in binding.get("skill_digests") or []:
-            if isinstance(entry, dict) and entry.get("path"):
-                skills[str(entry["path"])] = str(entry.get("digest") or "")
+        resources_raw = binding.get("resource_digests") or {}
+        skills_raw = binding.get("skill_digests") or {}
+        if isinstance(resources_raw, list) or isinstance(skills_raw, list):
+            raise ValueError(
+                "legacy list-shaped snapshot bindings are not supported; "
+                "recreate the run using the current TDP version"
+            )
+        resources = {
+            str(path): str(digest or "")
+            for path, digest in dict(resources_raw).items()
+        }
+        skills = {
+            str(path): str(digest or "")
+            for path, digest in dict(skills_raw).items()
+        }
         guidance: dict[str, str] = {}
         for entry in binding.get("guidance_digests") or []:
             if not isinstance(entry, dict):
@@ -149,12 +165,11 @@ def validate_production_snapshot_rebase(
 
 
 def short_path_for_observability(path: str) -> str:
-    """Redact absolute paths for audit events."""
+    """Return canonical relative path for audit events (already relative after §9)."""
 
-    parts = Path(path).parts
-    if len(parts) <= 2:
-        return path
-    return str(Path(*parts[-2:]))
+    if path.startswith("guidance:inline:"):
+        return _format_snapshot_drift_label(path)
+    return path
 
 
 def build_initial_context_snapshot_binding(

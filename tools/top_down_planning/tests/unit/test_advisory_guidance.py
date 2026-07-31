@@ -271,7 +271,7 @@ agent_context:
     snapshot = build_context_snapshot_payload(config, workspace=workspace)
     assert any(entry.get("text") == "inline v1" for entry in snapshot["guidance_digests"])
     assert any(
-        entry.get("path") == str(guidance_file.resolve())
+        entry.get("path") == "wf.md"
         for entry in snapshot["guidance_digests"]
     )
 
@@ -566,7 +566,7 @@ agent_context:
     binding, digest = recompute_context_snapshot_binding(config, workspace=workspace)
     assert digest
     corrupt = next(
-        entry for entry in binding["guidance_digests"] if entry.get("path") == str(guidance_file.resolve())
+        entry for entry in binding["guidance_digests"] if entry.get("path") == "wf.md"
     )
     assert corrupt["text"] == ""
     assert corrupt["digest"]
@@ -598,15 +598,15 @@ agent_context:
 def test_production_rebase_reports_inline_guidance_drift_clearly(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     old_binding = {
-        "resource_digests": [],
-        "skill_digests": [],
+        "resource_digests": {},
+        "skill_digests": {},
         "guidance_digests": [
             {"text": "alpha", "digest": "a" * 64},
         ],
     }
     new_binding = {
-        "resource_digests": [],
-        "skill_digests": [],
+        "resource_digests": {},
+        "skill_digests": {},
         "guidance_digests": [
             {"text": "beta", "digest": "b" * 64},
         ],

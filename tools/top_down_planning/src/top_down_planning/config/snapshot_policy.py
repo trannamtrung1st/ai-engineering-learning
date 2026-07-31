@@ -1,10 +1,8 @@
-"""Canonical workspace-relative paths and SnapshotPolicy shell (proposal §§8,10).
+"""Canonical workspace-relative paths and SnapshotPolicy (proposal §§8,10).
 
 Symlink behavior matches the inspected baseline: ``Path.resolve()`` follows
 symlinks; identity uses the resolved target; paths that resolve outside the
-workspace are rejected. Directory collection follows the same resolve/escape
-model. Exclusion matching is stubbed to include-all until pathspec wiring
-(§§4–5) lands; this module is the single future authority for collection.
+workspace are rejected. Exclusion matching uses the pathspec adapter (§§4–5).
 """
 
 from __future__ import annotations
@@ -15,6 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from core_tools.persistence.digests import digest_file
+
+from top_down_planning.config.exclude_matching import (
+    compile_exclude_matcher,
+    effective_exclude_patterns,
+    path_is_excluded,
+)
 
 SNAPSHOT_POLICY_VERSION = "1"
 
@@ -61,7 +65,6 @@ def canonicalize_workspace_path(
             raise CanonicalPathError(
                 f"path rejects unresolved '..' components: {path}"
             )
-        # Normalize away '.' without allowing escape via '..' (already rejected).
         lexical = Path(*[part for part in raw.parts if part != "."])
         candidate = (workspace_resolved / lexical).resolve()
     else:
@@ -112,16 +115,12 @@ class SnapshotCollection:
 
 @dataclass(frozen=True)
 class SnapshotPolicy:
-    """Centralized snapshot path/exclusion policy shell (proposal §10).
-
-    Exclusion compilation and matching land with pathspec (§§4–5). Until then
-    ``is_included`` returns True for all discovered paths so callers can adopt
-    this entry point without changing inclusion behavior.
-    """
+    """Centralized snapshot path/exclusion policy (proposal §10)."""
 
     workspace: Path
     default_excludes_enabled: bool = True
     user_patterns: tuple[str, ...] = ()
+    effective_patterns: tuple[str, ...] = ()
     policy_version: str = SNAPSHOT_POLICY_VERSION
 
     @classmethod
@@ -147,12 +146,17 @@ class SnapshotPolicy:
         patterns_raw = excludes.get("patterns") or []
         if not isinstance(patterns_raw, list):
             patterns_raw = []
-        patterns = tuple(str(item) for item in patterns_raw)
+        user_patterns = tuple(str(item) for item in patterns_raw)
+        patterns = effective_exclude_patterns(
+            defaults_enabled=defaults,
+            user_patterns=user_patterns,
+        )
 
         return cls(
             workspace=workspace.resolve(),
             default_excludes_enabled=defaults,
-            user_patterns=patterns,
+            user_patterns=user_patterns,
+            effective_patterns=patterns,
             policy_version=SNAPSHOT_POLICY_VERSION,
         )
 
@@ -168,12 +172,19 @@ class SnapshotPolicy:
     ) -> bool:
         """Return whether a canonical relative path should enter the snapshot.
 
-        Direct/explicit declarations always win once excludes exist (§6).
-        Until pathspec wiring, every path is included.
+        Direct/explicit file declarations always override exclusions (§6).
         """
 
-        del relative_path, is_directory, explicitly_declared
-        return True
+        if explicitly_declared:
+            return True
+        if not self.effective_patterns:
+            return True
+        matcher = compile_exclude_matcher(self.effective_patterns)
+        return not path_is_excluded(
+            relative_path,
+            matcher=matcher,
+            is_directory=is_directory,
+        )
 
     def collect(
         self,
@@ -184,8 +195,9 @@ class SnapshotPolicy:
         """Expand resources, apply inclusion hooks, canonicalize, hash files.
 
         ``resources`` entries are workspace-relative or absolute paths already
-        known to be under the workspace (configured resource selections). Glob
-        patterns are not expanded here; callers expand globs before collect.
+        known to be under the workspace. Glob patterns are not expanded here;
+        callers expand globs before collect. Declared directories are walked;
+        discovered children are subject to excludes. Declared files always bind.
         """
 
         from top_down_planning.config.context import MISSING_RESOURCE_FILE_DIGEST
@@ -236,23 +248,14 @@ class SnapshotPolicy:
                 continue
 
             if candidate.is_dir():
-                rel_dir = self.canonicalize(candidate)
-                if not self.is_included(
-                    rel_dir,
-                    is_directory=True,
-                    explicitly_declared=True,
-                ):
-                    excluded_dirs += 1
-                    continue
+                # Declared directories are always walked; children use excludes.
                 for file_path in sorted(candidate.rglob("*")):
                     if file_path.is_file():
                         add_file(file_path, explicitly_declared=False)
                 continue
 
-            # Missing direct declaration: retain sentinel under canonical key.
             add_file(candidate, explicitly_declared=True)
 
-        # Deterministic key order for consumers.
         ordered_keys = sorted(included)
         return SnapshotCollection(
             included={key: included[key] for key in ordered_keys},

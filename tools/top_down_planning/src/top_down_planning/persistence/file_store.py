@@ -34,6 +34,7 @@ from top_down_planning.persistence.run_schema import (
     CURRENT_RUN_SCHEMA_VERSION,
     validate_run_schema_version,
 )
+from top_down_planning.config.binding_validation import validate_context_snapshot_binding
 
 _EMPTY_PRODUCTION: dict[str, Any] = {
     "revision": 0,
@@ -144,6 +145,7 @@ class FileRunStore:
             raise PersistenceError(
                 "context_snapshot_digest and context_snapshot_binding are required"
             )
+        validate_context_snapshot_binding(context_snapshot_binding)
         if not workspace or not str(workspace).strip():
             raise PersistenceError("workspace is required")
         if not isinstance(invocation, dict):
@@ -812,6 +814,9 @@ class FileRunStore:
         # Schema-version gate before any nested run-field interpretation (§3).
         payload = self._read_json(self._run_path(run_id))
         validate_run_schema_version(payload)
+        binding = payload.get("context_snapshot_binding")
+        if binding is not None:
+            validate_context_snapshot_binding(binding)
         return payload
 
     def _plan_path(self, run_id: str) -> Path:

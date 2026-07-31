@@ -103,6 +103,7 @@ def test_snapshot_policy_from_config_defaults(tmp_path: Path) -> None:
     assert policy.default_excludes_enabled is True
     assert policy.user_patterns == ()
     assert policy.policy_version == SNAPSHOT_POLICY_VERSION
+    assert policy.effective_patterns  # builtins present
 
     policy2 = SnapshotPolicy.from_config(
         {
@@ -114,6 +115,7 @@ def test_snapshot_policy_from_config_defaults(tmp_path: Path) -> None:
     )
     assert policy2.default_excludes_enabled is False
     assert policy2.user_patterns == ("build/", "!keep")
+    assert policy2.effective_patterns == ("build/", "!keep")
 
 
 def test_snapshot_policy_collect_hashes_and_orders(tmp_path: Path) -> None:

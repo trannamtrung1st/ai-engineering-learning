@@ -49,6 +49,70 @@ def _validate_agent_context_roles(config: dict[str, Any]) -> None:
             )
 
 
+def _validate_context_snapshot(config: dict[str, Any]) -> None:
+    section = config.get("context_snapshot")
+    if section is None:
+        return
+    if not isinstance(section, dict):
+        raise ConfigError(
+            "context_snapshot must be a mapping",
+            path="context_snapshot",
+        )
+    unknown = sorted(set(section) - {"excludes"})
+    if unknown:
+        raise ConfigError(
+            f"unknown context_snapshot field: {unknown[0]!r}",
+            path=f"context_snapshot.{unknown[0]}",
+        )
+    excludes = section.get("excludes")
+    if excludes is None:
+        return
+    if not isinstance(excludes, dict):
+        raise ConfigError(
+            "context_snapshot.excludes must be a mapping",
+            path="context_snapshot.excludes",
+        )
+    unknown_excludes = sorted(set(excludes) - {"defaults", "patterns"})
+    if unknown_excludes:
+        raise ConfigError(
+            f"unknown context_snapshot.excludes field: {unknown_excludes[0]!r}",
+            path=f"context_snapshot.excludes.{unknown_excludes[0]}",
+        )
+    if "defaults" in excludes and not isinstance(excludes["defaults"], bool):
+        raise ConfigError(
+            "context_snapshot.excludes.defaults must be a boolean",
+            path="context_snapshot.excludes.defaults",
+        )
+    if "patterns" in excludes:
+        patterns = excludes["patterns"]
+        if not isinstance(patterns, list):
+            raise ConfigError(
+                "context_snapshot.excludes.patterns must be a list",
+                path="context_snapshot.excludes.patterns",
+            )
+        for index, pattern in enumerate(patterns):
+            if not isinstance(pattern, str) or not pattern.strip():
+                raise ConfigError(
+                    "context_snapshot.excludes.patterns entries must be non-empty strings",
+                    path=f"context_snapshot.excludes.patterns[{index}]",
+                )
+        # Compile once so invalid gitwildmatch patterns fail at config resolve.
+        from top_down_planning.config.exclude_matching import (
+            compile_exclude_matcher,
+            effective_exclude_patterns,
+        )
+
+        defaults = excludes.get("defaults", True)
+        if not isinstance(defaults, bool):
+            defaults = True
+        compile_exclude_matcher(
+            effective_exclude_patterns(
+                defaults_enabled=defaults,
+                user_patterns=[str(item) for item in patterns],
+            )
+        )
+
+
 def finalize_resolved_config(
     config: dict[str, Any],
     *,
@@ -58,6 +122,7 @@ def finalize_resolved_config(
 
     finalized = copy.deepcopy(config)
     _validate_agent_context_roles(finalized)
+    _validate_context_snapshot(finalized)
 
     workspace = resolve_workspace(finalized, cwd=cwd)
 
@@ -84,6 +149,7 @@ def resolve_config(
     if config_path is not None:
         yaml_config = load_yaml_config(config_path)
         _validate_agent_context_roles(yaml_config)
+        _validate_context_snapshot(yaml_config)
         reject_unknown_config_paths(yaml_config, allowed_paths=ALLOWED_OVERRIDE_PATHS)
         resolved = deep_merge(resolved, yaml_config)
     if overrides:
@@ -93,6 +159,7 @@ def resolve_config(
             allowed_paths=ALLOWED_OVERRIDE_PATHS,
         )
     _validate_agent_context_roles(resolved)
+    _validate_context_snapshot(resolved)
     reject_unknown_config_paths(resolved, allowed_paths=ALLOWED_OVERRIDE_PATHS)
     return finalize_resolved_config(resolved, cwd=cwd or Path.cwd())
 

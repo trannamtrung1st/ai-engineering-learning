@@ -923,8 +923,11 @@ agent_context:
     assert "skill_digests" in snapshot_payload
     assert "guidance_digests" in snapshot_payload
     assert snapshot_payload["guidance_digests"] == []
-    guide_paths = {entry["path"] for entry in snapshot_payload["resource_digests"]}
-    assert str(guide.resolve()) in guide_paths
+    guide_paths = set(snapshot_payload["resource_digests"])
+    assert "guide.md" in guide_paths
+    assert "workspace" not in snapshot_payload
+    assert isinstance(snapshot_payload["resource_digests"], dict)
+    assert isinstance(snapshot_payload["skill_digests"], dict)
 
 
 def test_context_spec_digest_stable_when_files_change_under_resource_directory(

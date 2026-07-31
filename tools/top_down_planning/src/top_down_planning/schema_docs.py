@@ -555,6 +555,43 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 },
                 "additionalProperties": False,
             },
+            "context_snapshot": {
+                "type": "object",
+                "description": (
+                    "Snapshot exclusion policy for materialized resource bindings. "
+                    "Omitting this section is equivalent to excludes.defaults: true "
+                    "and excludes.patterns: []. Patterns use gitignore/gitwildmatch "
+                    "semantics matched against canonical workspace-relative POSIX "
+                    "paths. Built-in defaults are applied before user patterns; "
+                    "later patterns override earlier ones. Do not inherit .gitignore."
+                ),
+                "properties": {
+                    "excludes": {
+                        "type": "object",
+                        "properties": {
+                            "defaults": {
+                                "type": "boolean",
+                                "description": (
+                                    "When true, include built-in generated-artifact "
+                                    "excludes (__pycache__, *.py[cod], pytest/mypy/ruff "
+                                    "caches). An empty patterns list does not disable "
+                                    "defaults."
+                                ),
+                            },
+                            "patterns": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": (
+                                    "Ordered user exclude patterns. Negations may "
+                                    "override built-ins."
+                                ),
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "additionalProperties": False,
+            },
             "planning": {
                 "type": "object",
                 "properties": {

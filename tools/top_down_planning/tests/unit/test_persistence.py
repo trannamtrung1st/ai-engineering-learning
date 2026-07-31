@@ -19,19 +19,17 @@ from top_down_planning.persistence import (
 from tests.helpers import minimal_invocation
 
 _EMPTY_SNAPSHOT_BINDING = {
-    "workspace": "/workspace",
-    "resource_digests": [],
-    "skill_digests": [],
+    "resource_digests": {},
+    "skill_digests": {},
+    "guidance_digests": [],
 }
 
 
 def _context_create_kwargs(workspace: Path) -> dict[str, str | dict]:
-    binding = dict(_EMPTY_SNAPSHOT_BINDING)
-    binding["workspace"] = str(workspace.resolve())
     return {
         "context_spec_digest": "0" * 64,
         "context_snapshot_digest": "1" * 64,
-        "context_snapshot_binding": binding,
+        "context_snapshot_binding": dict(_EMPTY_SNAPSHOT_BINDING),
     }
 
 

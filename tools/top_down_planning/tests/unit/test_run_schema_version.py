@@ -18,9 +18,9 @@ from top_down_planning.persistence import (
 from tests.helpers import minimal_invocation
 
 _EMPTY_SNAPSHOT_BINDING = {
-    "workspace": "/workspace",
-    "resource_digests": [],
-    "skill_digests": [],
+    "resource_digests": {},
+    "skill_digests": {},
+    "guidance_digests": [],
 }
 
 
@@ -51,7 +51,6 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000001-000001")
         context_snapshot_digest="1" * 64,
         context_snapshot_binding={
             **_EMPTY_SNAPSHOT_BINDING,
-            "workspace": str(store.root),
         },
         workspace=str(store.root),
         invocation=minimal_invocation(store.root),
@@ -112,12 +111,19 @@ def test_validate_run_schema_version_rejects_non_int() -> None:
         validate_run_schema_version({"schema_version": True})
 
 
-def test_schema_version_alone_does_not_reject_list_binding_shape(tmp_path: Path) -> None:
-    """Completing the schema gate must still load legacy list/absolute bindings."""
+def test_schema_version_gate_still_requires_supported_binding_shape(tmp_path: Path) -> None:
+    """Schema version alone is insufficient; legacy list bindings are rejected at load."""
 
     store = FileRunStore(tmp_path)
     _create_run(store)
-    loaded = store.load_run("run-20260101T000001-000001")
-    binding = loaded["context_snapshot_binding"]
-    assert isinstance(binding["resource_digests"], list)
-    assert isinstance(binding.get("workspace"), str)
+    run_path = tmp_path / "run-20260101T000001-000001" / "run.json"
+    payload = json.loads(run_path.read_text(encoding="utf-8"))
+    payload["context_snapshot_binding"] = {
+        "workspace": str(store.root),
+        "resource_digests": [],
+        "skill_digests": [],
+    }
+    run_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(Exception, match="Unsupported context snapshot binding|legacy|Recreate"):
+        store.load_run("run-20260101T000001-000001")

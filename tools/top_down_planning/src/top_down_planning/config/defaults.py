@@ -18,6 +18,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "boundaries": [],
         "acceptance": [],
     },
+    "context_snapshot": {
+        "excludes": {
+            "defaults": True,
+            "patterns": [],
+        },
+    },
     "agent_context": {
         "default": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
         "planner": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
@@ -138,6 +144,8 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "run.output_goal_file",
         "run.boundaries",
         "run.acceptance",
+        "context_snapshot.excludes.defaults",
+        "context_snapshot.excludes.patterns",
         "agent_context.default.model",
         "agent_context.default.guidance",
         "agent_context.default.resources",

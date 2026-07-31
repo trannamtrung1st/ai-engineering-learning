@@ -437,16 +437,23 @@ def _guidance_declarations_for_role(
     return entries
 
 
-def _guidance_snapshot_entry(entry: GuidanceEntry) -> dict[str, str]:
+def _guidance_snapshot_entry(
+    entry: GuidanceEntry,
+    *,
+    workspace: Path,
+) -> dict[str, str]:
+    from top_down_planning.config.snapshot_policy import canonicalize_workspace_path
+
     if entry.path is not None:
+        relative = canonicalize_workspace_path(entry.path, workspace=workspace)
         if entry.path.is_file():
             return {
-                "path": str(entry.path),
+                "path": relative,
                 "text": entry.text,
                 "digest": digest_file(entry.path),
             }
         return {
-            "path": str(entry.path),
+            "path": relative,
             "text": "",
             "digest": MISSING_GUIDANCE_FILE_DIGEST,
         }
@@ -533,17 +540,24 @@ def _all_skill_digest_entries(
     config: dict[str, Any],
     *,
     workspace: Path,
-) -> list[dict[str, str]]:
-    seen: set[str] = set()
-    entries: list[dict[str, str]] = []
+) -> dict[str, str]:
+    from top_down_planning.config.snapshot_policy import (
+        CanonicalPathCollisionError,
+        canonicalize_workspace_path,
+    )
+
+    digests: dict[str, str] = {}
+    paths_by_key: dict[str, Path] = {}
     for role in ("planner", "producer", "reviewer"):
         for entry in _skills_for_role(config, role, workspace=workspace):
-            key = str(entry.path)
-            if key in seen:
-                continue
-            seen.add(key)
-            entries.append({"path": key, "digest": digest_text(entry.content)})
-    return sorted(entries, key=lambda item: item["path"])
+            key = canonicalize_workspace_path(entry.path, workspace=workspace)
+            prior = paths_by_key.get(key)
+            if prior is not None and prior.resolve() != entry.path.resolve():
+                raise CanonicalPathCollisionError(key, prior, entry.path)
+            if key not in digests:
+                paths_by_key[key] = entry.path
+                digests[key] = digest_text(entry.content)
+    return {key: digests[key] for key in sorted(digests)}
 
 
 def _all_guidance_digest_entries(
@@ -564,13 +578,13 @@ def _all_guidance_digest_entries(
             allow_missing_files=allow_missing_files,
         ):
             if entry.path is not None:
-                key = f"file:{entry.path}"
+                key = f"file:{entry.path.resolve()}"
             else:
                 key = f"text:{entry.text}"
             if key in seen:
                 continue
             seen.add(key)
-            entries.append(_guidance_snapshot_entry(entry))
+            entries.append(_guidance_snapshot_entry(entry, workspace=workspace))
     return sorted(
         entries,
         key=lambda item: (item.get("path") or "", item.get("text") or ""),
@@ -604,19 +618,34 @@ def build_context_snapshot_payload(
     workspace: Path,
     allow_missing_guidance_files: bool = False,
 ) -> dict[str, Any]:
-    """Build materialized context snapshot: resources, skills, and guidance digests."""
+    """Build materialized context snapshot: resources, skills, and guidance digests.
 
-    resource_digests = [
-        {
-            "path": str(path),
-            "digest": digest_file(path) if path.is_file() else MISSING_RESOURCE_FILE_DIGEST,
-        }
-        for path in _collect_materialized_resource_files(config, workspace=workspace)
-    ]
-    resource_digests.sort(key=lambda entry: entry["path"])
+    Resource and skill bindings are compact maps keyed by canonical workspace-relative
+    POSIX paths (proposal §9). Exclusions are not applied here yet (§6 wiring is a
+    later leaf); path identity already uses the shared canonicalize helper.
+    """
+
+    from top_down_planning.config.snapshot_policy import (
+        CanonicalPathCollisionError,
+        canonicalize_workspace_path,
+    )
+
+    resource_digests: dict[str, str] = {}
+    paths_by_key: dict[str, Path] = {}
+    for path in _collect_materialized_resource_files(config, workspace=workspace):
+        key = canonicalize_workspace_path(path, workspace=workspace)
+        prior = paths_by_key.get(key)
+        if prior is not None and prior.resolve() != path.resolve():
+            raise CanonicalPathCollisionError(key, prior, path)
+        if key in resource_digests:
+            continue
+        paths_by_key[key] = path
+        resource_digests[key] = (
+            digest_file(path) if path.is_file() else MISSING_RESOURCE_FILE_DIGEST
+        )
+
     return {
-        "workspace": str(workspace.resolve()),
-        "resource_digests": resource_digests,
+        "resource_digests": {key: resource_digests[key] for key in sorted(resource_digests)},
         "skill_digests": _all_skill_digest_entries(config, workspace=workspace),
         "guidance_digests": _all_guidance_digest_entries(
             config,

@@ -57,10 +57,21 @@ from top_down_planning.config.snapshot_policy import (
     canonicalize_workspace_path,
     detect_canonical_collisions,
 )
+from top_down_planning.config.exclude_matching import (
+    BUILT_IN_EXCLUDE_PATTERNS,
+    compile_exclude_matcher,
+    effective_exclude_patterns,
+    path_is_excluded,
+)
+from top_down_planning.config.binding_validation import (
+    InvalidSnapshotBindingError,
+    validate_context_snapshot_binding,
+)
 
 __all__ = [
     "ALLOWED_AGENT_CONTEXT_ROLES",
     "ALLOWED_OVERRIDE_PATHS",
+    "BUILT_IN_EXCLUDE_PATTERNS",
     "DEFAULT_CONFIG",
     "SNAPSHOT_POLICY_VERSION",
     "AgentRole",
@@ -69,6 +80,7 @@ __all__ = [
     "ConfigError",
     "EffectiveRoleContext",
     "GuidanceEntry",
+    "InvalidSnapshotBindingError",
     "PathResolutionContext",
     "SkillEntry",
     "SnapshotCollection",
@@ -79,6 +91,7 @@ __all__ = [
     "build_context_snapshot_payload",
     "build_initial_context_snapshot_binding",
     "canonicalize_workspace_path",
+    "compile_exclude_matcher",
     "compute_context_snapshot_digest_from_config",
     "compute_context_snapshot_digest_from_payload",
     "compute_context_spec_digest_from_config",
@@ -86,8 +99,11 @@ __all__ = [
     "authorized_production_workspace_paths",
     "detect_canonical_collisions",
     "diff_snapshot_binding_paths",
+    "effective_exclude_patterns",
+    "path_is_excluded",
     "recompute_context_snapshot_binding",
     "short_path_for_observability",
+    "validate_context_snapshot_binding",
     "validate_production_snapshot_rebase",
     "compute_input_digest",
     "compute_output_goal_digest",
