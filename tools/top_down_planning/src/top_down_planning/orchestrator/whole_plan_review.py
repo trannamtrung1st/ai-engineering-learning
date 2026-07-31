@@ -218,6 +218,26 @@ class WholePlanReviewOrchestrator:
                     loop=loop,
                 )
 
+            if stage_decision == "review_incomplete":
+                from top_down_planning.domain.reviews import budgets_snapshot
+
+                budgets = budgets_snapshot(loop)
+                # Operational failure: do not consume revision or scope-review budget.
+                return WholePlanReviewResult(
+                    ok=False,
+                    run_id=self._run_id,
+                    phase=WHOLE_PLAN_REVIEW,
+                    status=str(self._store.load_run(self._run_id).get("status") or "failed"),
+                    outcome=None,
+                    loop_id=loop.id,
+                    reviewer_session_id=loop.reviewer_session_id,
+                    revision_cycles=budgets["revision_cycles"],
+                    reason=str(
+                        (loop.review_incomplete or {}).get("reason")
+                        or "whole-plan review could not be completed"
+                    ),
+                )
+
             if stage_decision not in {
                 "needs_revision",
                 "blockers_found",
@@ -394,6 +414,16 @@ class WholePlanReviewOrchestrator:
         return self._result_from_run(run, ok=False, reason=message)
 
     def _normalize_loop_for_resume(self, loop: ReviewLoop) -> tuple[ReviewLoop, bool]:
+        if loop.status == "review_incomplete":
+            from top_down_planning.domain.reviews import (
+                allocate_discovery_finding_set_id,
+                prepare_review_incomplete_retry,
+            )
+
+            retried = prepare_review_incomplete_retry(loop)
+            retried, _finding_set_id = allocate_discovery_finding_set_id(retried)
+            return self._persist_loop(retried), False
+
         if not is_revision_requested_status(loop.status):
             return loop, False
 

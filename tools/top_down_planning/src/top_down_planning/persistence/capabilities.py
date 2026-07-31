@@ -20,6 +20,7 @@ MUTATING_OPS = frozenset(
         "production_report_blocked",
         "review_request",
         "review_respond",
+        "review_record_finding_actions",
     }
 )
 
@@ -56,7 +57,7 @@ def ops_for_session(
 
     if normalized_role == "planner":
         if normalized_phase in {"planning", "whole_plan_review", "plan_amendment"}:
-            ops = {"plan_apply"}
+            ops = {"plan_apply", "review_record_finding_actions"}
             if normalized_phase == "planning":
                 ops.add("review_request")
             return frozenset(ops)
@@ -70,10 +71,17 @@ def ops_for_session(
                     "production_submit_completion",
                     "production_report_blocked",
                     "review_request",
+                    "review_record_finding_actions",
                 }
             )
         if normalized_phase == "whole_output_review":
-            return frozenset({"production_apply", "production_submit_completion"})
+            return frozenset(
+                {
+                    "production_apply",
+                    "production_submit_completion",
+                    "review_record_finding_actions",
+                }
+            )
 
     return frozenset()
 

@@ -15,6 +15,7 @@ PUBLIC_SCHEMAS: tuple[str, ...] = (
     "plan-transaction",
     "production-apply",
     "review-respond",
+    "review-record-finding-actions",
     "focused-review-request",
     "amendment-request",
     "completion-claim",
@@ -32,6 +33,7 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "review-respond-initial-approved",
     "review-respond-verification",
     "review-respond-blocker",
+    "review-record-finding-actions",
     "focused-review-request",
     "amendment-request",
     "completion-claim",
@@ -1068,6 +1070,56 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         ),
         "oneOf": _REVIEW_RESPOND_ONE_OF,
     },
+    "review-record-finding-actions": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ReviewRecordFindingActionsRequest",
+        "description": (
+            "Primary-agent owner actions for `tdp agent review record-actions`. "
+            "Required findings may only use fix|challenge; optional findings may "
+            "also use defer|accept_as_is. Challenges require proposed_disposition."
+        ),
+        "type": "object",
+        "required": ["loop_id", "finding_actions"],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "artifact_revision": {"type": "integer"},
+            "finding_actions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "finding_id",
+                        "action",
+                        "actor_role",
+                        "artifact_revision",
+                        "finding_set_id",
+                    ],
+                    "properties": {
+                        "finding_id": {"type": "string"},
+                        "action": {
+                            "type": "string",
+                            "enum": ["fix", "defer", "accept_as_is", "challenge"],
+                        },
+                        "actor_role": {
+                            "type": "string",
+                            "enum": ["planner", "producer"],
+                        },
+                        "artifact_revision": {"type": "integer"},
+                        "finding_set_id": {"type": "string"},
+                        "rationale": {"type": "string"},
+                        "proposed_disposition": {
+                            "type": "string",
+                            "enum": ["invalid", "superseded"],
+                        },
+                        "superseded_by_finding_id": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "additionalProperties": False,
+    },
     "focused-review-request": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "FocusedReviewRequest",
@@ -1398,6 +1450,27 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                 "acceptance",
             ],
             "summary": "No remaining approval blockers in current scope.",
+        },
+    },
+    "review-record-finding-actions": {
+        "schema": "review-record-finding-actions",
+        "description": (
+            "Primary agent records defer/accept_as_is/challenge/fix owner actions "
+            "for open findings after an advisory handoff."
+        ),
+        "payload": {
+            "loop_id": "review-focused-plan-01",
+            "artifact_revision": 0,
+            "finding_actions": [
+                {
+                    "finding_id": "finding-opt-01",
+                    "action": "defer",
+                    "actor_role": "planner",
+                    "artifact_revision": 0,
+                    "finding_set_id": "review-focused-plan-01-fs-01",
+                    "rationale": "Useful polish outside current acceptance need.",
+                }
+            ],
         },
     },
     "focused-review-request": {

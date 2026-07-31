@@ -417,6 +417,7 @@ class ReviewLoop:
     revise_at: ReviewSeverity | None = None
     finding_actions: list[FindingAction] = field(default_factory=list)
     review_incomplete: dict[str, Any] | None = None
+    advisory_handoffs_completed: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -435,6 +436,7 @@ class ReviewLoop:
                 if self.review_incomplete is not None
                 else None
             ),
+            "advisory_handoffs_completed": list(self.advisory_handoffs_completed),
         }
         if self.revise_at is not None:
             payload["revise_at"] = self.revise_at
@@ -530,6 +532,11 @@ class ReviewLoop:
         review_incomplete = (
             dict(incomplete_raw) if isinstance(incomplete_raw, dict) else None
         )
+        advisory_handoffs_completed = [
+            str(item).strip()
+            for item in (payload.get("advisory_handoffs_completed") or [])
+            if str(item).strip()
+        ]
 
         return cls(
             id=str(payload["id"]),
@@ -552,6 +559,7 @@ class ReviewLoop:
             revise_at=revise_at,
             finding_actions=finding_actions,
             review_incomplete=review_incomplete,
+            advisory_handoffs_completed=advisory_handoffs_completed,
         )
 
 
@@ -1395,6 +1403,191 @@ def reviewer_package_policy_guidance() -> dict[str, Any]:
     }
 
 
+def needs_advisory_handoff(loop: ReviewLoop) -> bool:
+    """True when open optionals need owner actions and no required findings force revision."""
+
+    threshold = loop_revise_at(loop)
+    if required_open_findings(loop.findings, threshold):
+        return False
+    return bool(
+        open_optional_findings_without_owner_action(
+            loop.findings,
+            loop.finding_actions,
+            threshold,
+            finding_set_id=loop.finding_set_id,
+        )
+    )
+
+
+def advisory_handoff_allowed(loop: ReviewLoop) -> bool:
+    """At most one advisory handoff per finding_set_id (unless a new set is allocated)."""
+
+    if not needs_advisory_handoff(loop):
+        return False
+    finding_set_id = str(loop.finding_set_id or "").strip()
+    if not finding_set_id:
+        return False
+    return finding_set_id not in loop.advisory_handoffs_completed
+
+
+def mark_advisory_handoff_completed(loop: ReviewLoop) -> ReviewLoop:
+    """Record that the current finding_set_id received its advisory handoff."""
+
+    finding_set_id = str(loop.finding_set_id or "").strip()
+    if not finding_set_id:
+        raise ValueError("advisory handoff requires finding_set_id")
+    if finding_set_id in loop.advisory_handoffs_completed:
+        return loop
+    return replace(
+        loop,
+        advisory_handoffs_completed=[*loop.advisory_handoffs_completed, finding_set_id],
+    )
+
+
+def finding_by_id(
+    findings: Sequence[ReviewFinding],
+    finding_id: str,
+) -> ReviewFinding | None:
+    for finding in findings:
+        if finding.id == finding_id:
+            return finding
+    return None
+
+
+def open_challenge_actions(loop: ReviewLoop) -> list[FindingAction]:
+    """Challenge actions whose findings are still open (awaiting verification)."""
+
+    open_ids = {finding.id for finding in open_findings(loop.findings)}
+    return [
+        action
+        for action in loop.finding_actions
+        if action.action == "challenge" and action.finding_id in open_ids
+    ]
+
+
+def owner_actions_require_verification(
+    actions: Sequence[FindingAction],
+) -> bool:
+    return any(action.action in {"fix", "challenge"} for action in actions)
+
+
+def owner_actions_require_revision(actions: Sequence[FindingAction]) -> bool:
+    """True when any claimed fix requires an artifact revision cycle."""
+
+    return any(action.action == "fix" for action in actions)
+
+
+def apply_owner_finding_actions(
+    loop: ReviewLoop,
+    raw_actions: Sequence[Mapping[str, Any]],
+    *,
+    actor_role: str,
+    artifact_revision: int,
+) -> tuple[ReviewLoop, list[FindingAction]]:
+    """Validate and append primary-agent finding_actions without mutating finding status.
+
+    Primary agents cannot directly set invalid/superseded; only reviewer
+    verification may author those dispositions.
+    """
+
+    if actor_role not in {"planner", "producer"}:
+        raise ValueError("actor_role must be planner or producer")
+    threshold = loop_revise_at(loop)
+    finding_set_id = str(loop.finding_set_id or "").strip()
+    parsed: list[FindingAction] = []
+    for item in raw_actions:
+        if not isinstance(item, Mapping):
+            raise ValueError("finding_actions entry must be an object")
+        payload = dict(item)
+        payload.setdefault("actor_role", actor_role)
+        payload.setdefault("artifact_revision", artifact_revision)
+        if finding_set_id and not str(payload.get("finding_set_id") or "").strip():
+            payload["finding_set_id"] = finding_set_id
+        action = parse_finding_action(payload)
+        if action.actor_role != actor_role:
+            raise ValueError(
+                f"finding_actions actor_role must be {actor_role!r} for this session"
+            )
+        finding = finding_by_id(loop.findings, action.finding_id)
+        if finding is None:
+            raise ValueError(
+                f"finding_actions references unknown finding_id {action.finding_id!r}"
+            )
+        if finding.status in {"invalid", "superseded", "resolved"}:
+            raise ValueError(
+                f"finding {finding.id!r} is already closed; owner actions are not allowed"
+            )
+        assert_owner_action_allowed_for_finding(finding, action.action, threshold)
+        # VR18: owner actions never rewrite finding status to invalid/superseded.
+        parsed.append(action)
+
+    merged_actions = list(loop.finding_actions) + parsed
+    updated = replace(loop, finding_actions=merged_actions)
+    if findings_permit_approval(
+        updated.findings,
+        updated.finding_actions,
+        threshold,
+        finding_set_id=updated.finding_set_id,
+    ):
+        if is_mandatory_review_loop(updated) and (
+            updated.active_stage or "initial_review"
+        ) == "scope_blocker_review":
+            updated = replace(updated, status="approve")
+        else:
+            updated = replace(updated, status="approved")
+    elif required_open_findings(updated.findings, threshold):
+        if owner_actions_require_revision(parsed) or open_challenge_actions(updated):
+            status: ReviewLoopStatus = (
+                "changes_requested"
+                if not is_blocker_stage_active(updated)
+                else "blockers_found"
+            )
+            updated = replace(updated, status=status)
+    return updated, parsed
+
+
+def is_blocker_stage_active(loop: ReviewLoop) -> bool:
+    return (loop.active_stage or "") == "scope_blocker_review"
+
+
+def prepare_review_incomplete_retry(loop: ReviewLoop) -> ReviewLoop:
+    """Reset loop to pending for the same stage/finding_set_id without consuming budgets."""
+
+    if loop.review_incomplete is None:
+        return loop
+    stage = str(
+        (loop.review_incomplete or {}).get("stage")
+        or loop.active_stage
+        or "initial_review"
+    ).strip()
+    lifecycle = loop.lifecycle_status
+    if lifecycle == "review_incomplete":
+        if stage == "scope_blocker_review":
+            lifecycle = "blocker_review_pending"
+        elif stage == "finding_verification":
+            lifecycle = "verification_pending"
+        else:
+            lifecycle = "review_pending"
+    return replace(
+        loop,
+        status="pending",
+        lifecycle_status=lifecycle,  # type: ignore[arg-type]
+        active_stage=(
+            None
+            if stage in {"", "initial_review"}
+            else stage  # type: ignore[arg-type]
+        ),
+        # Budgets intentionally unchanged: revision_cycles / blocker_review_rounds.
+    )
+
+
+def budgets_snapshot(loop: ReviewLoop) -> dict[str, int]:
+    return {
+        "revision_cycles": int(loop.revision_cycles),
+        "blocker_review_rounds": int(loop.blocker_review_rounds),
+    }
+
+
 def parse_initial_review_findings(request: dict[str, Any]) -> list[ReviewFinding]:
     """Parse initial_review findings from a mandatory respond payload."""
 
@@ -1481,6 +1674,8 @@ def mandatory_stage_respond_decision(loop: ReviewLoop) -> str:
         return "pending"
     if loop.status == "blocked":
         return "blocked"
+    if loop.status == "review_incomplete":
+        return "review_incomplete"
 
     stage = loop.active_stage or "initial_review"
 

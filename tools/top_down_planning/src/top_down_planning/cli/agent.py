@@ -186,6 +186,16 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
         help="JSON or YAML request file (default: stdin).",
     )
 
+    record_actions_parser = review_sub.add_parser(
+        "record-actions",
+        help="Record primary-agent finding_actions (fix/defer/accept_as_is/challenge).",
+    )
+    _add_run_flags(record_actions_parser)
+    record_actions_parser.add_argument(
+        "--request",
+        help="JSON or YAML request file (default: stdin).",
+    )
+
     run_parser = agent_sub.add_parser("run", help="Run-level agent commands.")
     run_sub = run_parser.add_subparsers(dest="run_command")
     status_parser = run_sub.add_parser("status", help="Return minimal run status.")
@@ -394,7 +404,9 @@ def _handle_production_command(args: argparse.Namespace) -> None:
 def _handle_review_command(args: argparse.Namespace) -> None:
     if args.review_command is None:
         emit_error(
-            AgentToolError("review command required: request or respond"),
+            AgentToolError(
+                "review command required: request, respond, or record-actions"
+            ),
             exit_code=2,
         )
 
@@ -409,6 +421,10 @@ def _handle_review_command(args: argparse.Namespace) -> None:
         elif args.review_command == "request":
             request = load_structured_request(request_path=args.request)
             payload = service.request(request)
+            emit_response(payload)
+        elif args.review_command == "record-actions":
+            request = load_structured_request(request_path=args.request)
+            payload = service.record_finding_actions(request)
             emit_response(payload)
         else:
             emit_error(

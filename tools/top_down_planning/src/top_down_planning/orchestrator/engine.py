@@ -130,6 +130,26 @@ class RunEngine:
                 self._emit_done(result, started_at=started_at)
                 return result
 
+            if status == "failed":
+                from top_down_planning.orchestrator.failure import (
+                    restore_run_after_review_incomplete,
+                )
+
+                if not restore_run_after_review_incomplete(self._store, run_id):
+                    result = RunContinuationResult(
+                        ok=False,
+                        run_id=run_id,
+                        phase=str(run.get("phase") or ""),
+                        status=status,
+                        outcome=run.get("outcome"),
+                        steps=steps,
+                        reason="run failed; resume only allowed for review_incomplete",
+                    )
+                    self._emit_done(result, started_at=started_at)
+                    return result
+                run = self._store.load_run(run_id)
+                status = str(run.get("status") or "")
+
             phase_for_entry = str(run.get("phase") or "")
             self._append_phase_entry_event(
                 run_id,

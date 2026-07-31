@@ -15,6 +15,16 @@ from top_down_planning.domain.production import (
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     allocate_discovery_finding_set_id,
+    advisory_handoff_allowed,
+    budgets_snapshot,
+    loop_revise_at,
+    mark_advisory_handoff_completed,
+    needs_advisory_handoff,
+    optional_open_findings,
+    owner_actions_require_revision,
+    owner_actions_require_verification,
+    prepare_review_incomplete_retry,
+    required_open_findings,
     reviewer_package_policy_guidance,
 )
 from top_down_planning.orchestrator.agent_context import (
@@ -166,6 +176,41 @@ class FocusedReviewOrchestrator:
                     reason="focused reviewer blocked the scoped review",
                 )
 
+            if decision == "review_incomplete" or loop.status == "review_incomplete":
+                marker = loop.review_incomplete or {}
+                return self._result_from_loop(
+                    loop,
+                    ok=False,
+                    reason=str(
+                        marker.get("reason")
+                        or "focused review could not be completed"
+                    ),
+                )
+
+            if decision == "pending" and needs_advisory_handoff(loop):
+                loop = self._handle_advisory_handoff(loop)
+                if loop.status == "approved":
+                    return self._result_from_loop(loop, ok=True)
+                if required_open_findings(loop.findings, loop_revise_at(loop)):
+                    decision = "changes_requested"
+                elif owner_actions_require_verification(loop.finding_actions):
+                    if owner_actions_require_revision(
+                        [
+                            action
+                            for action in loop.finding_actions
+                            if action.finding_set_id == loop.finding_set_id
+                        ]
+                    ):
+                        decision = "changes_requested"
+                    else:
+                        # Challenge-only: recheck without consuming a revision cycle.
+                        loop = self._prepare_recheck(loop)
+                        continue
+                else:
+                    raise ProviderRunError(
+                        "advisory handoff completed without qualifying owner actions"
+                    )
+
             if decision != "changes_requested":
                 raise ProviderRunError(f"unexpected review decision: {decision}")
 
@@ -208,6 +253,11 @@ class FocusedReviewOrchestrator:
             loop = self._prepare_recheck(loop)
 
     def _normalize_loop_for_resume(self, loop: ReviewLoop) -> tuple[ReviewLoop, bool]:
+        if loop.status == "review_incomplete":
+            retried = prepare_review_incomplete_retry(loop)
+            retried, _finding_set_id = allocate_discovery_finding_set_id(retried)
+            return self._persist_loop(retried), False
+
         if loop.status != "changes_requested":
             return loop, False
 
@@ -216,6 +266,101 @@ class FocusedReviewOrchestrator:
             return loop, False
 
         return self._prepare_recheck(loop), True
+
+    def _handle_advisory_handoff(self, loop: ReviewLoop) -> ReviewLoop:
+        if not advisory_handoff_allowed(loop):
+            raise ProviderRunError(
+                f"advisory handoff already completed for finding_set_id "
+                f"{loop.finding_set_id!r}"
+            )
+        before_budgets = budgets_snapshot(loop)
+        loop = self._persist_loop(mark_advisory_handoff_completed(loop))
+        self._append_event(
+            "review_advisory_handoff_started",
+            loop_id=loop.id,
+            review_type=loop.type,
+            finding_set_id=loop.finding_set_id,
+        )
+        self._resume_primary_advisory_handoff(loop)
+        loop = self._reload_loop(loop.id)
+        after_budgets = budgets_snapshot(loop)
+        if after_budgets != before_budgets and not owner_actions_require_revision(
+            loop.finding_actions
+        ):
+            # Defensive: defer/accept/challenge must not consume revision budget.
+            raise ProviderRunError(
+                "advisory handoff must not consume revision budget without a fix"
+            )
+        return loop
+
+    def _resume_primary_advisory_handoff(self, loop: ReviewLoop) -> None:
+        run = self._store.load_run(self._run_id)
+        if loop.type == "focused_plan":
+            session_id = _primary_planner_session_id(run)
+            phase = PLANNING
+            role = "planner"
+        else:
+            session_id = _primary_producer_session_id(run)
+            phase = PRODUCTION
+            role = "producer"
+
+        if session_id is None:
+            raise ProviderRunError(
+                f"primary {role} session is missing for advisory handoff"
+            )
+
+        self._capability_token = issue_session_capability(
+            self._store,
+            self._run_id,
+            role=role,
+            phase=phase,
+            session_id=session_id,
+            session_kind="primary",
+        )
+        bind_provider_capability(self._provider, self._capability_token)
+
+        config = self._store.load_resolved_config(self._run_id)
+        role_context = resolve_role_session_context(config, run, role)
+        threshold = loop_revise_at(loop)
+        optional = [
+            finding.to_dict()
+            for finding in optional_open_findings(loop.findings, threshold)
+        ]
+        resume_primary_session_with_audit(
+            self._append_event,
+            self._provider,
+            role=role,
+            phase=phase,
+            session_id=session_id,
+            request={
+                "action": "address_optional_findings",
+                "phase": phase,
+                "loop_id": loop.id,
+                "review_type": loop.type,
+                "target_revision": loop.target_revision,
+                "finding_set_id": loop.finding_set_id,
+                "revise_at": threshold,
+                "scope": dict(loop.scope),
+                "optional_findings": optional,
+                "tool_instructions": {
+                    "record_actions": (
+                        f"tdp agent review record-actions --run {self._run_id} "
+                        "--request <file>"
+                    ),
+                    "notes": (
+                        "Record fix|defer|accept_as_is|challenge via finding_actions. "
+                        "Required findings cannot defer or accept_as_is. Challenges "
+                        "require proposed_disposition and stay open until verification."
+                    ),
+                },
+            },
+            model=role_context.model,
+            loop_id=loop.id,
+            review_type=loop.type,
+        )
+        self._consume_primary_turn(session_id, loop.type)
+        if loop.type == "focused_output":
+            self._sync_output_digest()
 
     def _start_reviewer_session(self, loop: ReviewLoop) -> tuple[str, str]:
         run = self._store.load_run(self._run_id)

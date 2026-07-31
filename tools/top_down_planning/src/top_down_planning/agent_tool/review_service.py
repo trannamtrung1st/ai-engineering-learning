@@ -16,6 +16,7 @@ from top_down_planning.domain.reviews import (
     ReviewLoop,
     ScopeBlockerReviewResult,
     apply_discovery_response,
+    apply_owner_finding_actions,
     apply_review_response,
     build_scope_blocker_review_result,
     find_overlapping_active_focused_loop,
@@ -422,13 +423,44 @@ class ReviewAgentService:
                 )
             )
 
-        self._store.commit(
-            self._run_id,
-            CommitSpec(
-                reviews=[updated.to_dict()],
-                events=[event],
-            ),
-        )
+        if derived_outcome == "review_incomplete":
+            marker = updated.review_incomplete or {}
+            reason = str(marker.get("reason") or "Review could not be completed.")
+            run = self._store.load_run(self._run_id)
+            if run.get("outcome") is not None:
+                raise RequestError(
+                    "review_incomplete cannot override an existing quality outcome"
+                )
+            expected_run_revision = int(run["revision"])
+            run_patch = dict(run)
+            run_patch["revision"] = expected_run_revision + 1
+            run_patch["status"] = "failed"
+            incomplete_event: dict[str, Any] = {
+                "type": "review_incomplete",
+                "run_id": self._run_id,
+                "loop_id": loop_id,
+                "reason": reason,
+                "phase": run.get("phase"),
+                "finding_set_id": updated.finding_set_id,
+                "stage": marker.get("stage") or stage,
+            }
+            self._store.commit(
+                self._run_id,
+                CommitSpec(
+                    reviews=[updated.to_dict()],
+                    events=[event, incomplete_event],
+                    run=run_patch,
+                    run_expected_revision=expected_run_revision,
+                ),
+            )
+        else:
+            self._store.commit(
+                self._run_id,
+                CommitSpec(
+                    reviews=[updated.to_dict()],
+                    events=[event],
+                ),
+            )
 
         response: dict[str, Any] = {
             "ok": True,
@@ -451,6 +483,110 @@ class ReviewAgentService:
                 )
             )
         return response
+
+    def record_finding_actions(
+        self,
+        request: dict[str, Any],
+        *,
+        capability_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Record primary-agent owner actions for optional/required findings."""
+
+        loop_id = request.get("loop_id")
+        if loop_id is None or not str(loop_id).strip():
+            raise RequestError("record_finding_actions requires loop_id")
+        loop_id = str(loop_id).strip()
+
+        role = authorize_mutation(
+            self._store,
+            self._run_id,
+            operation="review_record_finding_actions",
+            capability_token=capability_token,
+        )
+        if role not in {"planner", "producer"}:
+            raise RequestError(
+                "review_record_finding_actions requires a planner or producer capability"
+            )
+
+        loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+        if is_terminal_review_loop(loop) or loop.status in {"approved", "approve"}:
+            raise RequestError(
+                f"review loop {loop_id} is already closed: {loop.status}"
+            )
+
+        raw_actions = request.get("finding_actions")
+        if not isinstance(raw_actions, list) or not raw_actions:
+            raise RequestError("record_finding_actions requires finding_actions")
+
+        if loop.type in {"whole_output", "focused_output"}:
+            artifact_revision = int(
+                self._store.load_production(self._run_id)["output_revision"]
+            )
+        else:
+            artifact_revision = int(self._store.load_plan(self._run_id)["revision"])
+        if "artifact_revision" in request:
+            try:
+                requested_revision = int(request["artifact_revision"])
+            except (TypeError, ValueError) as exc:
+                raise RequestError(
+                    "artifact_revision must be an integer"
+                ) from exc
+            if requested_revision != artifact_revision:
+                raise RequestError(
+                    f"artifact_revision {requested_revision} does not match current "
+                    f"revision {artifact_revision}"
+                )
+
+        try:
+            updated, parsed = apply_owner_finding_actions(
+                loop,
+                raw_actions,
+                actor_role=role,
+                artifact_revision=artifact_revision,
+            )
+        except ValueError as exc:
+            raise RequestError(str(exc)) from exc
+
+        event: dict[str, Any] = {
+            "type": "review_finding_actions_recorded",
+            "run_id": self._run_id,
+            "loop_id": loop_id,
+            "actor_role": role,
+            "action_count": len(parsed),
+            "actions": [action.action for action in parsed],
+        }
+        if any(action.action == "challenge" for action in parsed):
+            event["type"] = "review_challenge_submitted"
+        event.update(
+            policy_observability_fields(
+                updated.findings,
+                updated.finding_actions,
+                loop_revise_at(updated),
+                finding_set_id=updated.finding_set_id,
+            )
+        )
+
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                reviews=[updated.to_dict()],
+                events=[event],
+            ),
+        )
+
+        return {
+            "ok": True,
+            "loop_id": loop_id,
+            "status": updated.status,
+            "finding_actions": [action.to_dict() for action in updated.finding_actions],
+            "recorded_actions": [action.to_dict() for action in parsed],
+            **policy_observability_fields(
+                updated.findings,
+                updated.finding_actions,
+                loop_revise_at(updated),
+                finding_set_id=updated.finding_set_id,
+            ),
+        }
 
 
 def replace_loop_approved_digests(
