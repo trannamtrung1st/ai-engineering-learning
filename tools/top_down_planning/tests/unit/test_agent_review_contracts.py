@@ -205,7 +205,7 @@ def test_stage_decision_validation_and_finding_resolution() -> None:
                 "summary": "",
             },
         )
-    ) == "blockers_found"
+    ) == "changes_requested"
 
 
 def test_blocker_package_omits_prior_finding_framing(tmp_path: Path) -> None:

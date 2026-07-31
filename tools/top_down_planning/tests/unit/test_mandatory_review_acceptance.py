@@ -234,7 +234,7 @@ def test_whole_plan_approval_requires_fresh_blocker_gate(tmp_path: Path) -> None
     review = store.load_review(run_id, "review-whole-plan-01")
     assert review["status"] == "approved"
     assert review["active_stage"] == "scope_review"
-    assert review["blocker_review_rounds"] == 1
+    assert review["scope_review_rounds"] == 1
     assert review.get("approved_digests")
     assert "plan" in review["approved_digests"]
 
@@ -260,7 +260,7 @@ def test_whole_output_approval_requires_fresh_blocker_gate(tmp_path: Path) -> No
     review = store.load_review(run_id, "review-whole-output-01")
     assert review["status"] == "approved"
     assert review["active_stage"] == "scope_review"
-    assert review["blocker_review_rounds"] == 1
+    assert review["scope_review_rounds"] == 1
     assert review.get("approved_digests")
     assert "output" in review["approved_digests"]
 

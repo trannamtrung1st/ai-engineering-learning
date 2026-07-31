@@ -55,9 +55,18 @@ def test_default_mandatory_review_limits_include_stage_budgets() -> None:
     plan_limits = DEFAULT_CONFIG["limits"]["whole_plan_review"]
     output_limits = DEFAULT_CONFIG["limits"]["whole_output_review"]
     assert plan_limits["max_revision_cycles"] == 5
-    assert plan_limits["max_blocker_review_rounds"] == 3
+    assert plan_limits["max_scope_review_rounds"] == 3
+    assert "max_blocker_review_rounds" not in plan_limits
     assert output_limits["max_revision_cycles"] == 5
-    assert output_limits["max_blocker_review_rounds"] == 3
+    assert output_limits["max_scope_review_rounds"] == 3
+    assert "max_blocker_review_rounds" not in output_limits
+    assert (
+        "limits.whole_plan_review.max_scope_review_rounds" in ALLOWED_OVERRIDE_PATHS
+    )
+    assert (
+        "limits.whole_output_review.max_scope_review_rounds" in ALLOWED_OVERRIDE_PATHS
+    )
+    # Legacy override path remains readable for older configs.
     assert (
         "limits.whole_plan_review.max_blocker_review_rounds" in ALLOWED_OVERRIDE_PATHS
     )
@@ -66,13 +75,14 @@ def test_default_mandatory_review_limits_include_stage_budgets() -> None:
     )
 
 
-def test_config_schema_documents_blocker_review_rounds() -> None:
+def test_config_schema_documents_scope_review_rounds() -> None:
     limits = show_schema("config")["properties"]["limits"]["properties"]
     for key in ("whole_plan_review", "whole_output_review"):
         props = limits[key]["properties"]
         assert "max_revision_cycles" in props
-        assert "max_blocker_review_rounds" in props
-        assert props["max_blocker_review_rounds"]["type"] == "integer"
+        assert "max_scope_review_rounds" in props
+        assert props["max_scope_review_rounds"]["type"] == "integer"
+        assert "max_blocker_review_rounds" in props  # legacy read alias in schema
 
 
 def test_mandatory_review_limits_from_config_defaults_and_overrides() -> None:
@@ -81,7 +91,6 @@ def test_mandatory_review_limits_from_config_defaults_and_overrides() -> None:
     assert defaults.to_dict() == {
         "max_revision_cycles": 5,
         "max_scope_review_rounds": 3,
-        "max_blocker_review_rounds": 3,
     }
 
     loaded = mandatory_review_limits_from_config(

@@ -104,7 +104,7 @@ def test_mandatory_orchestration_decision_reads_stage_results() -> None:
             "summary": "",
         },
     )
-    assert mandatory_orchestration_decision(blocker_loop) == "blockers_found"
+    assert mandatory_orchestration_decision(blocker_loop) == "changes_requested"
 
     assert merge_blocker_reopen_findings(
         verified_loop,

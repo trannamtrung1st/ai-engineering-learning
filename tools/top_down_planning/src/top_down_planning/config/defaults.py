@@ -118,7 +118,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "max_revision_cycles": 5,
             # Fresh scope-complete review rounds per phase.
             "max_scope_review_rounds": 3,
-            "max_blocker_review_rounds": 3,
         },
         "production": {
             "max_batches": 50,
@@ -131,7 +130,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "whole_output_review": {
             "max_revision_cycles": 5,
             "max_scope_review_rounds": 3,
-            "max_blocker_review_rounds": 3,
         },
         "amendment": {
             "max_requests": 3,

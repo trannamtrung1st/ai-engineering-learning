@@ -217,7 +217,6 @@ def mandatory_blocker_respond_request(
         "target_revision": target_revision,
         "stage": "scope_review",
         "decision": "approved",
-        "blocking_findings": findings or [],
         "target_digest": digest,
         "scope_id": scope_id,
         "acceptance_criteria_checked": ["Core Invariant"],
@@ -240,12 +239,30 @@ def mandatory_blocker_found_respond_request(
         else mandatory_output_digest(store, run_id)
     )
     scope_id = "whole_plan" if review_type == "whole_plan" else "whole_output"
+    loop = store.load_review(run_id, loop_id)
+    reported: list[dict[str, Any]] = []
+    for item in findings:
+        finding = dict(item)
+        if not str(finding.get("severity") or "").strip():
+            importance = str(finding.get("importance") or "").strip()
+            if importance == "blocking":
+                finding["severity"] = "blocker"
+            elif importance == "advisory":
+                finding["severity"] = "minor"
+            else:
+                finding["severity"] = "blocker"
+        if not str(finding.get("category") or "").strip():
+            finding["category"] = "other"
+        if "recommended_change" not in finding and "required_change" in finding:
+            finding["recommended_change"] = finding["required_change"]
+        reported.append(finding)
     return {
         "loop_id": loop_id,
         "target_revision": target_revision,
         "stage": "scope_review",
-        "decision": "changes_requested",
-        "blocking_findings": findings,
+        "finding_set_id": str(loop.get("finding_set_id") or ""),
+        "reported_findings": reported,
+        "review_completed": True,
         "target_digest": digest,
         "scope_id": scope_id,
         "summary": "Required findings remain.",

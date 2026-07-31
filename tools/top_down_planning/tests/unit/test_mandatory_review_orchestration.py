@@ -38,7 +38,7 @@ def test_whole_plan_clear_path_requires_blocker_review(tmp_path: Path) -> None:
     assert result.phase == PLAN_VALIDATED
     review = store.load_review(run_id, "review-whole-plan-01")
     assert review["active_stage"] == "scope_review"
-    assert review["blocker_review_rounds"] == 1
+    assert review["scope_review_rounds"] == 1
     assert review["status"] == "approved"
     events = store.load_events(run_id)
     started = [event for event in events if event.get("type") == "reviewer_session_started"]
@@ -125,7 +125,7 @@ def test_whole_plan_blocker_reopen_returns_to_verification(tmp_path: Path) -> No
     assert result.ok is True
     assert result.phase == PLAN_VALIDATED
     review = store.load_review(run_id, "review-whole-plan-01")
-    assert review["blocker_review_rounds"] == 2
+    assert review["scope_review_rounds"] == 2
     assert review["finding_set_id"]
 
 
@@ -256,7 +256,7 @@ def test_whole_output_clear_path_requires_blocker_review(tmp_path: Path) -> None
     assert result.phase == OUTPUT_VALIDATED
     review = store.load_review(run_id, "review-whole-output-01")
     assert review["active_stage"] == "scope_review"
-    assert review["blocker_review_rounds"] == 1
+    assert review["scope_review_rounds"] == 1
     assert review["status"] == "approved"
     events = store.load_events(run_id)
     started = [event for event in events if event.get("type") == "reviewer_session_started"]

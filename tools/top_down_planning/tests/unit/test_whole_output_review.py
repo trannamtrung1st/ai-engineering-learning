@@ -286,7 +286,7 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
     assert result.outcome == "accepted"
     review = store.load_review(run_id, "review-whole-output-01")
     assert review.get("verification_result")
-    assert review.get("blocker_review_result")
+    assert review.get("scope_review_result")
 
 
 def test_missing_goal_assessment_blocks_acceptance(tmp_path: Path) -> None:

@@ -533,15 +533,11 @@ class ReviewLoop:
             payload["finding_set_id"] = self.finding_set_id
         rounds = int(self.blocker_review_rounds)
         if rounds:
-            # Canonical + deprecated dual-write (Phase 4 keeps legacy writers).
             payload["scope_review_rounds"] = rounds
-            payload["blocker_review_rounds"] = rounds
         if self.verification_result is not None:
             payload["verification_result"] = dict(self.verification_result)
         if self.blocker_review_result is not None:
-            result_payload = dict(self.blocker_review_result)
-            payload["scope_review_result"] = result_payload
-            payload["blocker_review_result"] = result_payload
+            payload["scope_review_result"] = dict(self.blocker_review_result)
         if self.exhausted_budget is not None:
             payload["exhausted_budget"] = normalize_exhausted_budget(self.exhausted_budget)
         return payload
@@ -1446,16 +1442,8 @@ def map_discovery_outcome_to_loop_status(
     if outcome == "pending":
         return "advisory_pending"
     if outcome == "changes_requested":
-        if is_scope_review_stage_name(stage):
-            # Prefer canonical changes_requested; legacy stage name may still
-            # surface blockers_found for historical respond contracts.
-            if stage == LEGACY_SCOPE_REVIEW_STAGE:
-                return "blockers_found"
-            return "changes_requested"
         return "changes_requested"
     if is_scope_review_stage_name(stage):
-        if stage == LEGACY_SCOPE_REVIEW_STAGE:
-            return "approve"
         return "approved"
     return "approved"
 
@@ -1715,11 +1703,9 @@ def prepare_review_incomplete_retry(loop: ReviewLoop) -> ReviewLoop:
 
 
 def budgets_snapshot(loop: ReviewLoop) -> dict[str, int]:
-    rounds = int(loop.blocker_review_rounds)
     return {
         "revision_cycles": int(loop.revision_cycles),
-        "scope_review_rounds": rounds,
-        "blocker_review_rounds": rounds,
+        "scope_review_rounds": int(loop.blocker_review_rounds),
     }
 
 
@@ -1866,15 +1852,8 @@ def mandatory_stage_respond_decision(loop: ReviewLoop) -> str:
             raise ValueError("scope_review loop missing scope_review_result")
         raw = str(blocker.get("decision") or "").strip()
         canonical = canonicalize_scope_review_decision(raw)
-        if canonical not in {"approved", "changes_requested", "blocked"} and raw not in {
-            "approve",
-            "blockers_found",
-            "blocked",
-        }:
+        if canonical not in {"approved", "changes_requested", "blocked"}:
             raise ValueError(f"invalid scope_review_result.decision: {raw!r}")
-        # Prefer canonical vocabulary for orchestration.
-        if raw in {"approve", "blockers_found"}:
-            return raw
         return canonical
 
     if stage == "finding_verification":
@@ -2309,8 +2288,6 @@ class ScopeReviewResult:
             "scope_id": self.scope_id,
             "decision": decision,
             "reported_findings": findings_payload,
-            # Deprecated dual-write (Phase 4 keeps legacy writers).
-            "blocking_findings": findings_payload,
             "acceptance_criteria_checked": list(self.acceptance_criteria_checked),
             "summary": self.summary,
         }
@@ -2569,7 +2546,6 @@ class MandatoryReviewLimits:
         return {
             "max_revision_cycles": self.max_revision_cycles,
             "max_scope_review_rounds": self.max_scope_review_rounds,
-            "max_blocker_review_rounds": self.max_scope_review_rounds,
         }
 
 

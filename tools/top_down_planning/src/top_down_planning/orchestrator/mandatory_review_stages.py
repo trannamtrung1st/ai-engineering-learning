@@ -289,8 +289,6 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
                 "unresolved assumptions that prevent execution",
                 "applicable planning acceptance criteria",
             ]
-            # Deprecated dual-write key for older prompt consumers.
-            fields["blocker_scope_guidance"] = fields["scope_review_guidance"]
         else:
             fields["scope_review_guidance"] = [
                 "conformance to the approved plan",
@@ -302,7 +300,6 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
                 "applicable output acceptance criteria",
                 "regressions that prevent use or acceptance",
             ]
-            fields["blocker_scope_guidance"] = fields["scope_review_guidance"]
         fields["respond_contract"] = {
             "stage": SCOPE_REVIEW_STAGE,
             "preferred_fields": [
@@ -313,7 +310,7 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
                 "scope_id",
                 "summary",
             ],
-            "legacy_fields": [
+            "accepted_legacy_fields": [
                 "decision",
                 "blocking_findings",
                 "acceptance_criteria_checked",

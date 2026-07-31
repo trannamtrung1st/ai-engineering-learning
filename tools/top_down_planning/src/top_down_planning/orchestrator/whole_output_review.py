@@ -365,7 +365,6 @@ class WholeOutputReviewOrchestrator:
             "whole_output_scope_review_started",
             loop_id=updated.id,
             scope_review_rounds=updated.blocker_review_rounds,
-            blocker_review_rounds=updated.blocker_review_rounds,
             target_revision=updated.target_revision,
         )
         return updated
