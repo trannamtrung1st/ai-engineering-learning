@@ -53,6 +53,7 @@ def _create_run_in_production_with_sessions(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     first = PlanItem(
         id="item-first",
@@ -60,6 +61,7 @@ def _create_run_in_production_with_sessions(
         order_key="0000000000",
         title="First",
         outcome="First outcome.",
+        kind="work",
     )
     second = PlanItem(
         id="item-second",
@@ -68,6 +70,7 @@ def _create_run_in_production_with_sessions(
         title="Second",
         outcome="Second outcome.",
         depends_on=["item-first"],
+        kind="work",
     )
     plan = Plan(
         id=f"plan-{run_id}",
@@ -180,6 +183,8 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
                     "item": {
+    "kind": "work",
+
                         "title": "Third",
                         "outcome": "Third outcome.",
                     },

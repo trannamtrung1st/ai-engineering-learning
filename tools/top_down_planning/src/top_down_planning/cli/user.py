@@ -694,17 +694,22 @@ def handle_validate_command(args: Namespace) -> None:
 def _initial_plan(run_id: str, config: dict[str, Any], *, output_goal: str) -> Plan:
     run_section = config.get("run") or {}
     input_refs = list(run_section.get("input_refs") or [])
+    boundaries = list(run_section.get("boundaries") or [])
+    acceptance = list(run_section.get("acceptance") or [])
     root = PlanItem(
         id="item-root",
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     return Plan(
         id=f"plan-{run_id}",
         revision=0,
         output_goal=output_goal,
         input_refs=input_refs,
+        boundaries=boundaries,
+        acceptance=acceptance,
         items={"item-root": root},
     )
 

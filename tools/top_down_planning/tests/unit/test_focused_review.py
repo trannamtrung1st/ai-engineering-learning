@@ -76,6 +76,7 @@ def _create_planning_run(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     api = PlanItem(
         id="item-api",
@@ -84,6 +85,7 @@ def _create_planning_run(
         title="API",
         outcome="API exists.",
         acceptance=["API behavior is verifiable."],
+        kind="work",
     )
     plan = Plan(
         id=f"plan-{run_id}",
@@ -433,6 +435,7 @@ def _create_production_run(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     first = PlanItem(
         id="item-first",
@@ -440,6 +443,7 @@ def _create_production_run(
         order_key="0000000000",
         title="First",
         outcome="First outcome.",
+        kind="work",
     )
     plan = Plan(
         id=f"plan-{run_id}",

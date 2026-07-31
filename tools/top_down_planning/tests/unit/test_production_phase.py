@@ -47,6 +47,7 @@ def _create_run_at_plan_validated(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     first = PlanItem(
         id="item-first",
@@ -54,6 +55,7 @@ def _create_run_at_plan_validated(
         order_key="0000000000",
         title="First",
         outcome="First outcome.",
+        kind="work",
     )
     second = PlanItem(
         id="item-second",
@@ -62,6 +64,7 @@ def _create_run_at_plan_validated(
         title="Second",
         outcome="Second outcome.",
         depends_on=["item-first"],
+        kind="work",
     )
     plan = Plan(
         id=f"plan-{run_id}",
@@ -344,7 +347,7 @@ def test_plan_apply_during_production_is_rejected(tmp_path: Path) -> None:
                     "temp_id": "item-x",
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
-                    "item": {"title": "X"},
+                    "item": {"kind": "work", "title": "X"},
                 }
             ],
             role="producer",
@@ -375,8 +378,8 @@ def test_production_apply_rejects_plan_validated_phase(tmp_path: Path) -> None:
 
 def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    root = PlanItem("item-root", None, "0000000000", "Root")
-    first = PlanItem("item-first", "item-root", "0000000000", "First")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
+    first = PlanItem("item-first", "item-root", "0000000000", "First", kind="work")
     plan = Plan(
         id="plan-run-20260101T002101-002101",
         revision=0,
@@ -435,8 +438,8 @@ def test_production_apply_rejects_already_terminal_item(tmp_path: Path) -> None:
 
 def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    root = PlanItem("item-root", None, "0000000000", "Root")
-    first = PlanItem("item-first", "item-root", "0000000000", "First")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
+    first = PlanItem("item-first", "item-root", "0000000000", "First", kind="work")
     plan = Plan(
         id="plan-run-20260101T002101-002101",
         revision=0,

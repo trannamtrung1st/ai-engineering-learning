@@ -27,6 +27,7 @@ def _create_run(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     plan = Plan(
         id=f"plan-{run_id}",
@@ -81,14 +82,14 @@ def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) 
                     "temp_id": "item-api",
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
-                    "item": {"title": "API", "outcome": "API exists."},
+                    "item": {"kind": "work", "title": "API", "outcome": "API exists."},
                 },
                 {
                     "op": "add_item",
                     "temp_id": "item-ui",
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
-                    "item": {"title": "UI", "outcome": "UI exists."},
+                    "item": {"kind": "work", "title": "UI", "outcome": "UI exists."},
                 },
             ],
         ),
@@ -184,7 +185,7 @@ def test_non_planner_apply_during_planning_is_rejected(tmp_path: Path) -> None:
                         "temp_id": "item-x",
                         "parent_id": "item-root",
                         "placement": {"last_child": True},
-                        "item": {"title": "X"},
+                        "item": {"kind": "work", "title": "X"},
                     }
                 ],
             },
@@ -208,7 +209,7 @@ def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -
                     "temp_id": "item-a",
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
-                    "item": {"title": "A"},
+                    "item": {"kind": "work", "title": "A"},
                 }
             ],
         },

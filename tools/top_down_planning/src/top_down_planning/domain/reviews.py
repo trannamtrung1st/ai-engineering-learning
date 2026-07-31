@@ -329,6 +329,44 @@ def whole_output_revision_target_ids(reviews: list[dict[str, Any]]) -> set[str]:
     return targets
 
 
+def focused_output_revision_target_ids(
+    reviews: list[dict[str, Any]],
+    *,
+    loop_id: str | None = None,
+) -> set[str]:
+    """Plan item ids in scope for an active focused_output changes_requested loop."""
+
+    loop: ReviewLoop | None = None
+    if loop_id is not None:
+        for payload in reviews:
+            if payload.get("id") != loop_id:
+                continue
+            candidate = ReviewLoop.from_dict(payload)
+            if candidate.type != "focused_output":
+                return set()
+            loop = candidate
+            break
+    else:
+        loop = find_active_review_loop(reviews, "focused_output")
+
+    if loop is None:
+        return set()
+    if loop.status != "changes_requested":
+        return set()
+
+    scope_items = {str(item_id) for item_id in (loop.scope.get("item_ids") or [])}
+    targets: set[str] = set()
+    for finding in loop.findings:
+        if finding.importance != "blocking":
+            continue
+        if finding.status != "unresolved":
+            continue
+        targets.update(str(ref) for ref in finding.target_refs)
+    if not targets:
+        return scope_items
+    return targets & scope_items if scope_items else targets
+
+
 def find_whole_output_approval(
     reviews: list[dict[str, Any]],
     output_revision: int,

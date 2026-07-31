@@ -17,14 +17,15 @@ from top_down_planning.domain.readiness import (
 
 
 def _plan_with_sibling_deps() -> Plan:
-    root = PlanItem("item-root", None, "0000000000", "Root")
-    first = PlanItem("item-first", "item-root", "0000000000", "First")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
+    first = PlanItem("item-first", "item-root", "0000000000", "First", kind="work")
     second = PlanItem(
         "item-second",
         "item-root",
         "0000000100",
         "Second",
         depends_on=["item-first"],
+        kind="work",
     )
     return Plan(
         id="plan-deps",
@@ -46,6 +47,7 @@ def test_dependency_cycle_returns_full_path() -> None:
         "0000000000",
         "First",
         depends_on=["item-second"],
+        kind="work",
     )
 
     cycle = find_dependency_cycle(plan)
@@ -80,14 +82,15 @@ def test_unsatisfied_dependency_blocks_readiness_until_completed() -> None:
 
 
 def test_cross_branch_dependency_readiness() -> None:
-    root = PlanItem("item-root", None, "0000000000", "Root")
-    branch_a = PlanItem("item-a", "item-root", "0000000000", "Branch A")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
+    branch_a = PlanItem("item-a", "item-root", "0000000000", "Branch A", kind="work")
     branch_b = PlanItem(
         "item-b",
         "item-root",
         "0000000100",
         "Branch B",
         depends_on=["item-a"],
+        kind="work",
     )
     plan = Plan(
         id="plan-cross",
@@ -109,16 +112,17 @@ def test_cross_branch_dependency_readiness() -> None:
 
 
 def test_non_leaf_derives_satisfaction_from_terminal_children() -> None:
-    root = PlanItem("item-root", None, "0000000000", "Root")
-    parent = PlanItem("item-parent", "item-root", "0000000000", "Parent")
-    child_a = PlanItem("item-child-a", "item-parent", "0000000000", "Child A")
-    child_b = PlanItem("item-child-b", "item-parent", "0000000100", "Child B")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
+    parent = PlanItem("item-parent", "item-root", "0000000000", "Parent", kind="work")
+    child_a = PlanItem("item-child-a", "item-parent", "0000000000", "Child A", kind="work")
+    child_b = PlanItem("item-child-b", "item-parent", "0000000100", "Child B", kind="work")
     dependent = PlanItem(
         "item-dependent",
         "item-root",
         "0000000200",
         "Dependent",
         depends_on=["item-parent"],
+        kind="work",
     )
     plan = Plan(
         id="plan-subtree",
@@ -166,6 +170,7 @@ def _cyclic_plan() -> Plan:
         "0000000000",
         "A",
         depends_on=["item-b"],
+        kind="work",
     )
     item_b = PlanItem(
         "item-b",
@@ -173,6 +178,7 @@ def _cyclic_plan() -> Plan:
         "0000000100",
         "B",
         depends_on=["item-a"],
+        kind="work",
     )
     return Plan(
         id="plan-cycle",
@@ -183,13 +189,14 @@ def _cyclic_plan() -> Plan:
 
 
 def _blocked_gate_plan() -> Plan:
-    gate = PlanItem("item-gate", None, "0000000000", "Gate")
+    gate = PlanItem("item-gate", None, "0000000000", "Gate", kind="work")
     worker = PlanItem(
         "item-worker",
         None,
         "0000000100",
         "Worker",
         depends_on=["item-gate"],
+        kind="work",
     )
     return Plan(
         id="plan-blocked",

@@ -107,6 +107,8 @@ def planning_single_leaf_script(store: FileRunStore) -> tuple[list[dict[str, Any
             "parent_id": "item-root",
             "placement": {"last_child": True},
             "item": {
+    "kind": "work",
+
                 "title": "Deliver feature",
                 "outcome": "Feature is delivered and verifiable.",
                 "acceptance": ["Feature behavior is testable."],
@@ -131,6 +133,8 @@ def planning_two_item_script(store: FileRunStore) -> tuple[list[dict[str, Any]],
             "parent_id": "item-root",
             "placement": {"last_child": True},
             "item": {
+    "kind": "work",
+
                 "title": "First",
                 "outcome": "First outcome.",
                 "acceptance": ["First is verifiable."],
@@ -142,6 +146,8 @@ def planning_two_item_script(store: FileRunStore) -> tuple[list[dict[str, Any]],
             "parent_id": "item-root",
             "placement": {"last_child": True},
             "item": {
+    "kind": "work",
+
                 "title": "Second",
                 "outcome": "Second outcome.",
                 "acceptance": ["Second is verifiable."],

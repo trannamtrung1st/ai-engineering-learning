@@ -8,6 +8,7 @@ from typing import Any
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import blocking_focused_findings_for_items
+from top_down_planning.domain.validators import ValidationResult, validate_plan
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
@@ -194,6 +195,36 @@ class PlanningPhaseOrchestrator:
                         },
                     )
                     continue
+                preflight = self._candidate_preflight()
+                if not preflight.ok:
+                    emit_primary_session_resumed(
+                        self._append_event,
+                        role="planner",
+                        phase=PLANNING,
+                        session_id=session_id,
+                    )
+                    self._provider.resume_primary_session(
+                        session_id,
+                        {
+                            "action": "continue",
+                            "phase": PLANNING,
+                            "blocked_reason": (
+                                "candidate_plan_ready ignored: plan failed "
+                                "deterministic draft preflight"
+                            ),
+                            "validation_issues": [
+                                issue.to_dict()
+                                for issue in preflight.issues
+                                if issue.severity == "error"
+                            ],
+                            "warnings": [
+                                issue.message
+                                for issue in preflight.issues
+                                if issue.severity == "warning"
+                            ],
+                        },
+                    )
+                    continue
                 return self._complete_planning(session_id, metrics)
 
             if metrics["agent_turns"] >= loop_limits["max_agent_turns"]:
@@ -249,6 +280,12 @@ class PlanningPhaseOrchestrator:
             item_ids,
         )
         return bool(blocked)
+
+    def _candidate_preflight(self) -> ValidationResult:
+        plan = self._store.load_plan_model(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        limits = planning_limits_from_config(config)
+        return validate_plan(plan, limits=limits, mode="draft")
 
     def _complete_planning(
         self,
@@ -335,7 +372,6 @@ def build_planner_context_manifest(
 ) -> dict[str, Any]:
     """Package planner prompt context and tool usage instructions."""
 
-    run_section = config.get("run") or {}
     planning = config.get("planning") or {}
     limits = planning_limits_from_config(config)
     loop_limits = _planning_loop_limits(config)
@@ -345,8 +381,6 @@ def build_planner_context_manifest(
         {
         "run_id": run_id,
         "phase": PLANNING,
-        "input_refs": list(run_section.get("input_refs") or []),
-        "output_goal": plan.output_goal,
         "stop_hint": planning.get("stop_hint", DEFAULT_CONFIG["planning"]["stop_hint"]),
         "planning_limits": {
             "max_depth": limits.max_depth,
@@ -360,6 +394,7 @@ def build_planner_context_manifest(
         config=config,
         run=run,
         role="planner",
+        output_goal=plan.output_goal,
     )
 
 

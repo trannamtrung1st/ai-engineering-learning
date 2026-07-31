@@ -13,11 +13,15 @@ from top_down_planning.domain.outcome import (
     load_approvals_for_acceptance,
     resolve_quality_outcome,
 )
-from top_down_planning.domain.production import build_production_review_snapshot
+from top_down_planning.domain.production import (
+    build_output_traceability,
+    build_production_review_snapshot,
+)
 from top_down_planning.domain.reviews import ReviewLoop, find_whole_plan_approval
 from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
+    plan_execution_contract_fields,
     resolve_role_session_context,
 )
 from top_down_planning.orchestrator.capability import (
@@ -596,8 +600,8 @@ def build_whole_output_review_package(
 ) -> dict[str, Any]:
     """Package a bounded whole-output review for a fresh reviewer session."""
 
-    run_section = config.get("run") or {}
     digests = dict(run.get("digests") or {})
+    traceability = build_output_traceability(plan, production)
     return attach_role_context_to_manifest(
         {
         "run_id": run_id,
@@ -609,10 +613,9 @@ def build_whole_output_review_package(
         "target_revision": loop.target_revision,
         "output_revision": int(production["output_revision"]),
         "production": build_production_review_snapshot(production),
-        "input_refs": list(run_section.get("input_refs") or []),
-        "output_goal": plan.output_goal,
-        "boundaries": run_section.get("boundaries"),
-        "acceptance": run_section.get("acceptance"),
+        "plan_contracts": traceability["plan_contracts"],
+        "evidence_by_item": traceability["evidence_by_item"],
+        **plan_execution_contract_fields(plan),
         "digests": digests,
         "protocol_instructions": build_reviewer_protocol_instructions(),
         "tool_instructions": build_reviewer_tool_instructions(run_id),
@@ -620,6 +623,7 @@ def build_whole_output_review_package(
         config=config,
         run=run,
         role="reviewer",
+        output_goal=plan.output_goal,
     )
 
 

@@ -28,19 +28,28 @@ def _sample_plan(revision: int = 0) -> Plan:
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
+    )
+    gate = PlanItem(
+        id="item-gate",
+        parent_id="item-root",
+        order_key="0000000000",
+        title="Gate",
+        kind="work",
     )
     child = PlanItem(
         id="item-child",
         parent_id="item-root",
-        order_key="0000000000",
+        order_key="0000000100",
         title="Child",
-        depends_on=["item-root"],
+        depends_on=["item-gate"],
+        kind="work",
     )
     return Plan(
         id="plan-001",
         revision=revision,
         output_goal="Deliver the output.",
-        items={"item-root": root, "item-child": child},
+        items={"item-root": root, "item-gate": gate, "item-child": child},
     )
 
 
@@ -72,7 +81,7 @@ def test_apply_persists_multi_op_transaction(tmp_path: Path) -> None:
                     "temp_id": "item-new",
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
-                    "item": {"title": "API", "outcome": "API exists."},
+                    "item": {"kind": "work", "title": "API", "outcome": "API exists."},
                 },
                 {
                     "op": "add_dependency",
@@ -206,7 +215,7 @@ def test_cli_plan_commands_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                 "temp_id": "item-api",
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
-                "item": {"title": "API"},
+                "item": {"kind": "work", "title": "API"},
             }
         ],
     }
@@ -326,13 +335,14 @@ def test_apply_returns_post_mutation_validation_issues_for_pre_existing_errors(
     tmp_path: Path,
 ) -> None:
     store = FileRunStore(tmp_path)
-    gate = PlanItem("item-gate", None, "0000000000", "Gate")
+    gate = PlanItem("item-gate", None, "0000000000", "Gate", kind="work")
     worker = PlanItem(
         "item-worker",
         None,
         "0000000100",
         "Worker",
         depends_on=["item-gate"],
+        kind="work",
     )
     plan = Plan(
         id="plan-001",
@@ -406,13 +416,14 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = FileRunStore(tmp_path)
-    gate = PlanItem("item-gate", None, "0000000000", "Gate")
+    gate = PlanItem("item-gate", None, "0000000000", "Gate", kind="work")
     worker = PlanItem(
         "item-worker",
         None,
         "0000000100",
         "Worker",
         depends_on=["item-gate"],
+        kind="work",
     )
     plan = Plan(
         id="plan-001",
@@ -518,6 +529,7 @@ def test_snapshot_tree_includes_scope_boundaries_acceptance(tmp_path: Path) -> N
         scope=Scope(includes=["auth"], excludes=["billing"]),
         boundaries=["No external APIs"],
         acceptance=["Login works"],
+        kind="aggregate",
     )
     plan = Plan(
         id="plan-001",

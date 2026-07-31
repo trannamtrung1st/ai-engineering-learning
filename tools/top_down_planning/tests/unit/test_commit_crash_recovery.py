@@ -31,6 +31,7 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000601-000601")
                 parent_id=None,
                 order_key="0000000000",
                 title="Root",
+                kind="aggregate",
             )
         },
     )

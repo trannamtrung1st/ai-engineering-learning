@@ -129,6 +129,25 @@ def item_depth(plan: Plan, item_id: str) -> int:
     return depth
 
 
+def ancestor_path(plan: Plan, item_id: str) -> list[str]:
+    """Return root-to-parent ancestor ids for ``item_id`` (excluding the item itself)."""
+
+    path: list[str] = []
+    seen: set[str] = {item_id}
+    current = plan.items.get(item_id)
+    while current is not None and current.parent_id is not None:
+        parent_id = current.parent_id
+        if parent_id in seen:
+            break
+        seen.add(parent_id)
+        path.append(parent_id)
+        current = plan.items.get(parent_id)
+        if current is None:
+            break
+    path.reverse()
+    return path
+
+
 def children_of(plan: Plan, parent_id: str | None) -> list[PlanItem]:
     """Return active child items in sibling order (proposal §9.3 display view)."""
     return active_children_of(plan, parent_id)

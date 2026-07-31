@@ -30,6 +30,7 @@ def _create_run_at_whole_output_review(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     leaf = PlanItem(
         id="item-leaf",
@@ -37,6 +38,7 @@ def _create_run_at_whole_output_review(
         order_key="0000000000",
         title="Leaf",
         outcome="Leaf outcome.",
+        kind="work",
     )
     plan = Plan(
         id=f"plan-{run_id}",

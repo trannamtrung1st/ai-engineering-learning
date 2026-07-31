@@ -91,6 +91,11 @@ def _build_item(item_id: str, parent_id: str | None, order_key: str, payload: di
     title = payload.get("title")
     if not title or not str(title).strip():
         raise InvalidMutationError("item title is required")
+    kind = payload.get("kind")
+    if kind is None:
+        raise InvalidMutationError("item kind is required")
+    if kind not in ("aggregate", "work"):
+        raise InvalidMutationError(f"invalid plan item kind: {kind!r}")
     return PlanItem(
         id=item_id,
         parent_id=parent_id,
@@ -102,6 +107,7 @@ def _build_item(item_id: str, parent_id: str | None, order_key: str, payload: di
         depends_on=list(payload.get("depends_on") or []),
         acceptance=list(payload.get("acceptance") or []),
         planning_status="open",
+        kind=kind,
     )
 
 
@@ -143,7 +149,7 @@ def _apply_add_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: 
 
 
 _UPDATE_ITEM_PATCH_FIELDS = frozenset(
-    {"title", "outcome", "scope", "boundaries", "acceptance", "planning_status"}
+    {"title", "outcome", "scope", "boundaries", "acceptance", "planning_status", "kind"}
 )
 
 
@@ -172,7 +178,42 @@ def _apply_update_item(plan: Plan, op: Operation, id_map: dict[str, str], change
             setattr(item, field_name, value)
     if "scope" in patch:
         item.scope = Scope.from_dict(patch["scope"])
+    if "kind" in patch:
+        kind = patch["kind"]
+        if kind is None:
+            raise InvalidMutationError("item kind is required")
+        if kind not in ("aggregate", "work"):
+            raise InvalidMutationError(f"invalid plan item kind: {kind!r}")
+        item.kind = kind
     changed.add(item_id)
+
+
+_UPDATE_PLAN_PATCH_FIELDS = frozenset(
+    {"scope", "boundaries", "constraints", "assumptions", "acceptance"}
+)
+
+
+def _apply_update_plan(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
+    del id_map, changed
+    patch = op.get("patch")
+    if not isinstance(patch, dict) or not patch:
+        raise InvalidMutationError("update_plan requires a non-empty patch payload")
+
+    unknown_fields = sorted(set(patch) - _UPDATE_PLAN_PATCH_FIELDS)
+    if unknown_fields:
+        joined = ", ".join(unknown_fields)
+        raise InvalidMutationError(
+            f"update_plan patch contains unsupported fields: {joined}"
+        )
+
+    if "scope" in patch:
+        plan.scope = Scope.from_dict(patch["scope"])
+    for field_name in ("boundaries", "constraints", "assumptions", "acceptance"):
+        if field_name in patch:
+            value = patch[field_name]
+            if not isinstance(value, list):
+                raise InvalidMutationError(f"update_plan {field_name} must be a list")
+            setattr(plan, field_name, list(value))
 
 
 def _apply_move_subtree(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
@@ -214,6 +255,7 @@ def _apply_supersede_item(plan: Plan, op: Operation, id_map: dict[str, str], cha
     payload = op.get("replacement")
     if payload is None:
         raise InvalidMutationError("supersede_item requires a replacement payload")
+    payload = dict(payload)
     replacement = _build_item(
         replacement_id,
         old_item.parent_id,
@@ -314,6 +356,7 @@ def _apply_replace_dependencies(
 _APPLY_HANDLERS = {
     "add_item": _apply_add_item,
     "update_item": _apply_update_item,
+    "update_plan": _apply_update_plan,
     "move_subtree": _apply_move_subtree,
     "supersede_item": _apply_supersede_item,
     "add_dependency": _apply_add_dependency,

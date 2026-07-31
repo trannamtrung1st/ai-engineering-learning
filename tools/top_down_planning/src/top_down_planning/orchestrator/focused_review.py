@@ -8,10 +8,14 @@ from typing import Any
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.views import build_plan_review_snapshot
 from top_down_planning.config.defaults import DEFAULT_CONFIG
-from top_down_planning.domain.production import build_production_review_snapshot
+from top_down_planning.domain.production import (
+    build_output_traceability,
+    build_production_review_snapshot,
+)
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
+    plan_execution_contract_fields,
     resolve_role_session_context,
 )
 from top_down_planning.orchestrator.capability import (
@@ -326,6 +330,25 @@ class FocusedReviewOrchestrator:
                 "target_revision": loop.target_revision,
                 "scope": dict(loop.scope),
                 "findings": [finding.to_dict() for finding in loop.findings],
+                **(
+                    {
+                        "revision_instructions": {
+                            "apply_mode": "evidence_revision",
+                            "evidence_revision": True,
+                            "focused_review_loop_id": loop.id,
+                            "tool": "production_apply",
+                            "notes": (
+                                "Set evidence_revision: true on production apply for "
+                                "terminal plan_items within this focused_output scope. "
+                                "Keep existing dispositions unchanged; attach new "
+                                "output evidence IDs. Output revision advances for "
+                                "reviewer recheck."
+                            ),
+                        }
+                    }
+                    if loop.type == "focused_output"
+                    else {}
+                ),
             },
         )
         self._consume_primary_turn(session_id, loop.type)
@@ -441,7 +464,6 @@ def build_focused_review_package(
 ) -> dict[str, Any]:
     """Package a bounded focused review for a fresh reviewer session."""
 
-    run_section = config.get("run") or {}
     digests = dict(run.get("digests") or {})
     phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
     revision_label = "plan" if loop.type == "focused_plan" else "output"
@@ -466,10 +488,7 @@ def build_focused_review_package(
         "purpose": f"Optional focused {revision_label} review within declared scope",
         "scope": dict(loop.scope),
         "target_revision": loop.target_revision,
-        "input_refs": list(run_section.get("input_refs") or []),
-        "output_goal": plan.output_goal,
-        "boundaries": run_section.get("boundaries"),
-        "acceptance": run_section.get("acceptance"),
+        **plan_execution_contract_fields(plan),
         "digests": digests,
         "protocol_instructions": build_reviewer_protocol_instructions(),
         "tool_instructions": tool_instructions,
@@ -477,6 +496,7 @@ def build_focused_review_package(
         config=config,
         run=run,
         role="reviewer",
+        output_goal=plan.output_goal,
     )
     if loop.type == "focused_plan":
         limits = planning_limits_from_config(config)
@@ -485,6 +505,18 @@ def build_focused_review_package(
     if production is not None:
         package["output_revision"] = int(production["output_revision"])
         package["production"] = build_production_review_snapshot(production)
+        if loop.type == "focused_output":
+            scope_item_ids = [
+                str(item_id)
+                for item_id in (loop.scope.get("item_ids") or [])
+            ]
+            traceability = build_output_traceability(
+                plan,
+                production,
+                item_ids=scope_item_ids,
+            )
+            package["plan_contracts"] = traceability["plan_contracts"]
+            package["evidence_by_item"] = traceability["evidence_by_item"]
     return package
 
 

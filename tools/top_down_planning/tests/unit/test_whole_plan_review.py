@@ -29,6 +29,7 @@ def _create_run_at_whole_plan_review(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     api = PlanItem(
         id="item-api",
@@ -37,6 +38,7 @@ def _create_run_at_whole_plan_review(
         title="API",
         outcome="API exists.",
         acceptance=["API behavior is verifiable."],
+        kind="work",
     )
     plan = Plan(
         id=f"plan-{run_id}",
@@ -456,3 +458,91 @@ def test_non_reviewer_respond_is_rejected(tmp_path: Path) -> None:
             _review_respond_request(decision="approved"),
             capability_token=token,
         )
+
+
+def test_whole_plan_package_includes_default_rubric(tmp_path: Path) -> None:
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+    from top_down_planning.domain.reviews import ReviewLoop
+    from top_down_planning.orchestrator.whole_plan_review import (
+        build_whole_plan_review_package,
+    )
+    from tests.helpers import create_run_kwargs, minimal_resolved_config
+
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_plan_review(store)
+    plan = store.load_plan_model("run-20260101T000301-000301")
+    config = minimal_resolved_config()
+    loop = ReviewLoop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+    )
+    package = build_whole_plan_review_package(
+        "run-20260101T000301-000301",
+        store.load_run("run-20260101T000301-000301"),
+        config,
+        plan,
+        loop,
+    )
+    assert package["rubric"] == DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
+    assert package["plan_revision"] == 0
+    assert "plan" in package
+
+
+def test_whole_plan_package_preserves_custom_rubric(tmp_path: Path) -> None:
+    from top_down_planning.domain.reviews import ReviewLoop
+    from top_down_planning.orchestrator.whole_plan_review import (
+        build_whole_plan_review_package,
+    )
+    from tests.helpers import minimal_resolved_config
+
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_plan_review(store)
+    plan = store.load_plan_model("run-20260101T000301-000301")
+    config = minimal_resolved_config()
+    config["review"] = {
+        "focused_plan": {"enabled": True},
+        "focused_output": {"enabled": True},
+        "whole_plan": {"rubric": ["coverage", "custom-quality"]},
+    }
+    loop = ReviewLoop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+    )
+    package = build_whole_plan_review_package(
+        "run-20260101T000301-000301",
+        store.load_run("run-20260101T000301-000301"),
+        config,
+        plan,
+        loop,
+    )
+    assert package["rubric"] == ["coverage", "custom-quality"]
+
+
+def test_review_whole_plan_rubric_config_path_is_allowed(tmp_path: Path) -> None:
+    from top_down_planning.config import resolve_config
+    from tests.helpers import write_config
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+review:
+  whole_plan:
+    rubric:
+      - coverage
+      - custom
+""",
+        ),
+        cwd=workspace,
+    )
+    assert config["review"]["whole_plan"]["rubric"] == ["coverage", "custom"]

@@ -32,6 +32,7 @@ def _create_planning_run(store: FileRunStore, run_id: str = "run-20260101T000901
                 parent_id=None,
                 order_key="0000000000",
                 title="Root",
+                kind="aggregate",
             )
         },
     )

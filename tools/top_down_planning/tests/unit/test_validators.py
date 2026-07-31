@@ -20,6 +20,7 @@ def _chain_plan(depth: int) -> Plan:
             parent_id=parent_id,
             order_key="0000000000",
             title=f"Level {level}",
+            kind="work",
         )
         parent_id = item_id
 
@@ -50,9 +51,9 @@ def test_approval_mode_fails_on_depth_overflow_draft_mode_warns() -> None:
 
 
 def test_hierarchy_cycle_and_dependency_cycle_have_distinct_codes_and_paths() -> None:
-    root = PlanItem("item-root", None, "0000000000", "Root")
-    first = PlanItem("item-first", "item-root", "0000000000", "First")
-    second = PlanItem("item-second", "item-root", "0000000100", "Second")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
+    first = PlanItem("item-first", "item-root", "0000000000", "First", kind="work")
+    second = PlanItem("item-second", "item-root", "0000000100", "Second", kind="work")
     plan = Plan(
         id="plan-cycles",
         revision=1,
@@ -70,6 +71,7 @@ def test_hierarchy_cycle_and_dependency_cycle_have_distinct_codes_and_paths() ->
         "0000000000",
         "First",
         depends_on=["item-second"],
+        kind="work",
     )
     plan.items["item-second"] = PlanItem(
         "item-second",
@@ -77,6 +79,7 @@ def test_hierarchy_cycle_and_dependency_cycle_have_distinct_codes_and_paths() ->
         "0000000100",
         "Second",
         depends_on=["item-first"],
+        kind="work",
     )
 
     result = validate_plan(plan)
@@ -98,7 +101,7 @@ def test_approval_mode_detects_input_digest_tampering() -> None:
         validate_digest_hooks,
     )
 
-    root = PlanItem("item-root", None, "0000000000", "Root")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
     plan = Plan(
         id="plan-digest",
         revision=1,
@@ -153,14 +156,15 @@ def test_review_loop_round_trips_approved_digests() -> None:
 
 
 def test_orphan_parent_and_duplicate_item_id_are_reported() -> None:
-    root = PlanItem("item-root", None, "0000000000", "Root")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
     orphan = PlanItem(
         "item-orphan",
         "item-missing",
         "0000000000",
         "Orphan",
+        kind="work",
     )
-    duplicate = PlanItem("item-root", "item-root", "0000000100", "Duplicate key")
+    duplicate = PlanItem("item-root", "item-root", "0000000100", "Duplicate key", kind="aggregate")
     plan = Plan(
         id="plan-orphan",
         revision=1,

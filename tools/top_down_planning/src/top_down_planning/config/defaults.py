@@ -11,9 +11,7 @@ _AGENT_CONTEXT_ROLE_DEFAULT: dict[str, Any] = {
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "version": 1,
-    "project": {
-        "resources": [],
-    },
+    "project": {},
     "run": {
         "input_refs": [],
         "boundaries": [],
@@ -36,6 +34,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "review": {
         "focused_plan": {"enabled": True},
         "focused_output": {"enabled": True},
+        "whole_plan": {
+            "rubric": [
+                "coverage",
+                "granularity",
+                "dependencies",
+                "contracts",
+                "hierarchy",
+                "traceability",
+            ],
+        },
     },
     "provider": {
         "name": "cursor",
@@ -91,7 +99,6 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "version",
         "runtime.runs_dir",
         "project.workspace",
-        "project.resources",
         "run.input_refs",
         "run.output_goal",
         "run.output_goal_file",
@@ -114,6 +121,7 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "planning.max_expansion_per_item",
         "review.focused_plan.enabled",
         "review.focused_output.enabled",
+        "review.whole_plan.rubric",
         "provider.name",
         "provider.binary",
         "provider.skip_probe",

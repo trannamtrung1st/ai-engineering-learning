@@ -26,6 +26,7 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "batch-result",
     "empty-output",
     "evidence-revision",
+    "evidence-revision-focused",
     "review-respond",
     "focused-review-request",
     "amendment-request",
@@ -35,10 +36,11 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
 
 _PLAN_ITEM_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["title"],
+    "required": ["title", "kind"],
     "properties": {
         "title": {"type": "string", "minLength": 1},
         "outcome": {"type": "string"},
+        "kind": {"type": "string", "enum": ["aggregate", "work"]},
         "scope": {
             "type": "object",
             "properties": {
@@ -60,8 +62,22 @@ _PLAN_ITEM_PATCH_SCHEMA: dict[str, Any] = {
     "properties": {
         "title": {"type": "string", "minLength": 1},
         "outcome": {"type": "string"},
+        "kind": {"type": "string", "enum": ["aggregate", "work"]},
         "scope": _PLAN_ITEM_INPUT_SCHEMA["properties"]["scope"],
         "boundaries": {"type": "array", "items": {"type": "string"}},
+        "acceptance": {"type": "array", "items": {"type": "string"}},
+    },
+    "additionalProperties": False,
+}
+
+_PLAN_METADATA_PATCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "minProperties": 1,
+    "properties": {
+        "scope": _PLAN_ITEM_INPUT_SCHEMA["properties"]["scope"],
+        "boundaries": {"type": "array", "items": {"type": "string"}},
+        "constraints": {"type": "array", "items": {"type": "string"}},
+        "assumptions": {"type": "array", "items": {"type": "string"}},
         "acceptance": {"type": "array", "items": {"type": "string"}},
     },
     "additionalProperties": False,
@@ -88,6 +104,15 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
                 "op": {"const": "update_item"},
                 "item_id": {"type": "string"},
                 "patch": _PLAN_ITEM_PATCH_SCHEMA,
+            },
+            "additionalProperties": True,
+        },
+        {
+            "type": "object",
+            "required": ["op", "patch"],
+            "properties": {
+                "op": {"const": "update_plan"},
+                "patch": _PLAN_METADATA_PATCH_SCHEMA,
             },
             "additionalProperties": True,
         },
@@ -233,9 +258,8 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "project": {
                 "type": "object",
                 "description": (
-                    "Shared project context. project.workspace is the canonical "
-                    "workspace root. project.resources resolve against "
-                    "project.workspace."
+                    "Project workspace. project.workspace is the canonical "
+                    "workspace root for path resolution."
                 ),
                 "properties": {
                     "workspace": {
@@ -245,18 +269,17 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                             "against the process working directory."
                         ),
                     },
-                    "resources": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
                 },
                 "additionalProperties": False,
             },
             "agent_context": {
                 "type": "object",
                 "description": (
-                    "Per-role model, resources, and skills. Resources and skills "
-                    "are additive with agent_context.default and project.resources."
+                    "Per-role model, supporting resources, and skills. "
+                    "Supporting resources and skills are additive with "
+                    "agent_context.default. Run contracts (run.input_refs, "
+                    "run.output_goal / run.output_goal_file) are supplied "
+                    "automatically and must not be repeated here."
                 ),
                 "properties": {
                     role: {
@@ -327,6 +350,16 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                     "focused_output": {
                         "type": "object",
                         "properties": {"enabled": {"type": "boolean"}},
+                        "additionalProperties": False,
+                    },
+                    "whole_plan": {
+                        "type": "object",
+                        "properties": {
+                            "rubric": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            }
+                        },
                         "additionalProperties": False,
                     },
                 },
@@ -522,9 +555,17 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "evidence_revision": {
                 "type": "boolean",
                 "description": (
-                    "During whole_output_review only: revise outputs for terminal "
-                    "plan_items targeted by unresolved blocking findings without "
-                    "changing dispositions."
+                    "Revise outputs for terminal plan_items targeted by unresolved "
+                    "blocking findings without changing dispositions. Allowed during "
+                    "whole_output_review, or during production when an active "
+                    "focused_output review has status changes_requested."
+                ),
+            },
+            "focused_review_loop_id": {
+                "type": "string",
+                "description": (
+                    "Optional focused_output loop id binding for evidence_revision "
+                    "during production."
                 ),
             },
             "intent": {"type": "string"},
@@ -623,6 +664,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
                     "item": {
+                        "kind": "work",
                         "title": "API layer",
                         "outcome": "HTTP API exists with documented endpoints.",
                         "acceptance": ["Endpoints are testable."],
@@ -634,6 +676,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
                     "item": {
+                        "kind": "work",
                         "title": "UI layer",
                         "outcome": "UI consumes the API.",
                     },
@@ -726,6 +769,41 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                 }
             ],
             "summary": "Evidence revision for whole-output review finding.",
+        },
+    },
+    "evidence-revision-focused": {
+        "schema": "production-apply",
+        "description": (
+            "During production, revise evidence for terminal items targeted by an "
+            "active focused_output review loop. The loop id and target_revision must "
+            "match the current output revision."
+        ),
+        "payload": {
+            "production_revision": 1,
+            "evidence_revision": True,
+            "focused_review_loop_id": "review-focused-output-01",
+            "plan_items": ["item-api"],
+            "dispositions": {
+                "item-api": {
+                    "disposition": "completed",
+                    "evidence": "Addressed focused reviewer finding.",
+                }
+            },
+            "outputs": [
+                {
+                    "id": "output-api-v2",
+                    "type": "artifact",
+                    "ref": "src/api/routes.py",
+                }
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-api",
+                    "output_refs": ["output-api-v2"],
+                    "summary": "Focused evidence revision.",
+                }
+            ],
+            "summary": "Evidence revision for focused-output review finding.",
         },
     },
     "review-respond": {
@@ -865,11 +943,17 @@ Fresh planner and producer sessions receive a context manifest. Reviewer session
 receive a review package on the first turn (and on cold resume). Each package may
 include:
 
+- `input_refs` — resolved authoritative input paths (from `run.input_refs`)
+- `output_goal` — frozen deliverable contract text (from `plan.output_goal`)
 - `protocol_instructions` — role behavior rules surfaced at the top of the
   provider prompt (for example: mutate run state only through `tdp agent` commands;
   do not use host planning modes or planning-only artifacts)
 - `tool_instructions` — concrete `tdp agent` command templates for the active role
-- `agent_context` — resolved role resources and optional skill bundles
+- `agent_context` — supporting `resources` and optional `skills` only (do not repeat
+  `run.input_refs` or the output-goal file under `resources`; overlaps are rejected)
+- Producer packages include `approved_plan` (compact plan metadata + items with `kind`)
+- Review packages include `plan_scope`, `boundaries`, and `acceptance` from persisted
+  plan metadata (not static run config)
 
 The provider adapter formats these payloads for the agent. Follow
 `protocol_instructions` and `tool_instructions`; host IDE planning artifacts are
@@ -878,17 +962,23 @@ not consumed by the orchestrator.
 ## Workflow
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.
+   Each `add_item` requires `kind`: `work` for batchable leaves, `aggregate` for
+   grouping-only parents. The seeded root is `aggregate`. Use `update_plan` to
+   revise plan-level `scope`, `boundaries`, `constraints`, `assumptions`, and
+   `acceptance` (seeded from `run.boundaries` / `run.acceptance` at run creation).
 2. Mandatory whole-plan review (`review respond`) must approve before production.
-   Review packages include an embedded plan tree; refresh with
+   Review packages include an embedded plan tree and optional `rubric`; refresh with
    `plan snapshot --view tree` when revising after `changes_requested`.
 3. Producer records batches with `production apply`, then `submit-completion` with
-   `goal_met: true` and a `goal_assessment` rationale.
+   `goal_met: true` and a `goal_assessment` rationale. Production `ready` snapshots
+   expose `ready_items` (contracts per ready leaf) alongside `ready_item_ids`.
 4. Mandatory whole-output review must approve before `outcome: accepted`. After
    `changes_requested`, the producer must use `production apply` with
    `evidence_revision: true` and **new** output evidence IDs on terminal items
    targeted by unresolved blocking findings (dispositions unchanged), then
-   re-submit completion with `goal_met: true`.
-   Plan amendment is not available during whole-output review.
+   re-submit completion with `goal_met: true`. During production, focused-output
+   evidence revision also requires `focused_review_loop_id` bound to the loop's
+   `target_revision`. Plan amendment is not available during whole-output review.
 5. Optional focused reviews use `review request` with bounded `scope.item_ids`.
    Focused plan reviewers receive the same embedded plan snapshot guidance as
    whole-plan review.
@@ -924,6 +1014,8 @@ error with instructions to refresh the snapshot.
 Completion claims require `goal_met: true` plus non-empty `goal_assessment`. During
 `whole_output_review`, set `evidence_revision: true` on `production apply` with new
 output evidence IDs when revising terminal items after reviewer `changes_requested`.
+During `production`, focused-output evidence revision requires `focused_review_loop_id`
+and matches the loop `target_revision` to the current `output_revision`.
 
 Plan `snapshot` and `check` responses separate validation `issues` (errors with
 `code`, `message`, optional `path`) from `warnings` (human-readable strings).

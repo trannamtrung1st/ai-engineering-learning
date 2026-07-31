@@ -37,6 +37,7 @@ def _create_run(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     plan = Plan(
         id=f"plan-{run_id}",

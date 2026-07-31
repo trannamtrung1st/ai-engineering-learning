@@ -41,14 +41,14 @@ planning:
                     "temp_id": "item-api",
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
-                    "item": {"title": "API", "outcome": "API exists."},
+                    "item": {"kind": "work", "title": "API", "outcome": "API exists."},
                 },
                 {
                     "op": "add_item",
                     "temp_id": "item-ui",
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
-                    "item": {"title": "UI", "outcome": "UI exists."},
+                    "item": {"kind": "work", "title": "UI", "outcome": "UI exists."},
                 },
             ]
         )

@@ -121,21 +121,44 @@ Configuration precedence: built-in defaults → YAML file → repeated `--set pa
 Config files may live anywhere. `project.workspace` is the canonical workspace root for a run.
 
 - `project.workspace` resolves against the **process working directory** (defaults to process cwd when omitted).
-- `project.resources`, `run.input_refs`, `run.output_goal_file`, and all `agent_context.*.resources` / `agent_context.*.skills` resolve against the resolved `project.workspace`.
+- `run.input_refs`, `run.output_goal_file`, and all `agent_context.*.resources` / `agent_context.*.skills` resolve against the resolved `project.workspace`.
 - `runtime.runs_dir` resolves against the process working directory.
 
 Absolute paths are used directly. Launch `tdp` from the intended working directory (for example the repository root).
 
 Use either `run.output_goal` (inline text) or `run.output_goal_file` (path to a UTF-8 file), not both. File-backed goals resolve against `project.workspace`. At run start the file contents are loaded into `plan.output_goal`; the path stays in resolved config. Resume re-reads the file and rejects digest mismatches if the content changed.
 
-### Project and agent context
+### Run contracts and agent context
+
+Each field has one responsibility:
+
+```text
+run.input_refs
+    Authoritative problem and specification inputs.
+
+run.output_goal / run.output_goal_file
+    Authoritative deliverable contract.
+
+agent_context.default
+    Supporting context shared by all roles.
+
+agent_context.<role>
+    Supporting context unique to one role.
+
+project.workspace
+    Canonical workspace root.
+```
+
+`run.input_refs` and the resolved output goal are supplied automatically to planner, producer, and reviewer sessions. Do not repeat them under `agent_context.*.resources`.
 
 ```yaml
 project:
   workspace: .
-  resources:
-    - README.md
-    - docs/
+
+run:
+  input_refs:
+    - configs/task.md
+  output_goal_file: configs/output-goal.md
 
 agent_context:
   default:
@@ -159,7 +182,9 @@ agent_context:
     model: review-model
 ```
 
-`project.resources` are shared context for every role. Role `resources` and `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. The effective context is attached to fresh planner, producer, and reviewer sessions and bound by a context digest at run creation.
+Role `resources` and `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. Effective context is attached to fresh planner, producer, and reviewer sessions.
+
+Run contracts bind via `digests.input` and `digests.output_goal` at run creation. Supporting agent context binds via `digests.context` (model, resources, and skills only — not `run.input_refs` or the output goal).
 
 Example from a repository root:
 
@@ -219,7 +244,7 @@ Persistence uses journaled `RunStore.commit()` for multi-file mutations: staged 
 
 `tdp run` creates the run store and drives the run until the requested milestone or a limit/failure. On the default `plan` target, success means phase `whole_plan_review`. `tdp resume` validates digests and session references before continuing.
 
-Whole-plan review (proposal §5.2, §11): the orchestrator allocates a fresh reviewer session id, binds a capability token, delivers the bounded review package, and consumes the review turn. Each loop binds findings to the current plan revision, resumes the same primary planner for revisions after `changes_requested`, and requires the same reviewer to recheck (via `recheck_revision` delivery with a fresh token) before approval. After approval, deterministic `validate_plan(..., mode="approval")` must pass before the run advances to `plan_validated`. Revision cycles are capped by `limits.whole_plan_review.max_revision_cycles`; limit exhaustion yields `rejected` or `blocked`, never silent acceptance.
+Whole-plan review (proposal §5.2, §11): the orchestrator allocates a fresh reviewer session id, binds a capability token, delivers the bounded review package, and consumes the review turn. Each loop binds findings to the current plan revision, resumes the same primary planner for revisions after `changes_requested`, and requires the same reviewer to recheck (via `recheck_revision` delivery with a fresh token) before approval. Review packages include an optional `rubric` from `review.whole_plan.rubric` in config (defaults apply when omitted). After approval, deterministic `validate_plan(..., mode="approval")` must pass before the run advances to `plan_validated`. Revision cycles are capped by `limits.whole_plan_review.max_revision_cycles`; limit exhaustion yields `rejected` or `blocked`, never silent acceptance.
 
 Focused reviews (proposal §4.3, §5.1): during `planning` or `production`, the primary planner or producer may request optional `focused_plan` or `focused_output` reviews via `tdp agent review request` with bounded `scope.item_ids`. Each request starts a fresh reviewer session; the same reviewer rechecks within the loop. Focused approval does not substitute for mandatory whole-plan or whole-output gates. Limits use `review.focused_plan.enabled`, `review.focused_output.enabled`, and `limits.focused_plan_review` / `limits.focused_output_review`. Unresolved blocking findings in an active focused loop block `candidate_plan_ready`, `production_apply`, and `submit-completion` for overlapping items. Plan `ready` snapshots block on `focused_plan` / `whole_plan` findings; production `ready` snapshots block on `focused_output` / `whole_output` findings.
 
@@ -227,7 +252,7 @@ Production (proposal §10): after `plan_validated`, `tdp resume` starts the prim
 
 Plan amendment (proposal §10.4): when production exposes a material plan defect, the producer requests amendment with evidence and affected plan refs. The orchestrator pauses production (`status: paused`, phase `plan_amendment`), resumes the same primary planner to revise the plan, runs mandatory whole-plan review on the amended revision, reconciles production evidence against the prior plan snapshot (clearing dispositions for changed/removed items, marking overlapping batches `invalidated_by_reconciliation`, dropping related `output_evidence`, and recording `invalidated_item_ids` on the reconciliation report), then resumes the same primary producer with the reconciliation report. Output digests bind live evidence only — invalidated batches remain in the audit history but are excluded from digest and reviewer snapshots. Amendment limits use `limits.amendment.max_requests` and `limits.amendment.max_revision_cycles_per_request`. Production batches, completion claims, and blocker reports are rejected while an amendment is pending. `tdp resume` routes in-flight amendments through `PlanAmendmentOrchestrator` when `pending_amendment_id` is set and the run is in `plan_amendment`, `whole_plan_review`, or `plan_validated`; production-phase resume with a pending amendment is handled inside `ProductionPhaseOrchestrator`.
 
-Whole-output review (proposal §5.3, §12.2, §15, §21): after production completion, `tdp resume` starts a fresh reviewer session bound to the current `output_revision`, resumes the same primary producer for revisions after `changes_requested` with instructions to use `production apply`, `evidence_revision: true`, and new evidence IDs on terminal items targeted by unresolved blocking findings (dispositions unchanged), then re-submit completion with `goal_met: true`. Deterministic output validation plus the acceptance invariant must pass before the orchestrator sets `outcome: accepted`. Revision cycles are capped by `limits.whole_output_review.max_revision_cycles`. Deterministic validation failures after reviewer approval yield `blocked`; limit exhaustion yields `rejected`. Provider/orchestrator operational failures set `status: failed` without a quality outcome — `failed` is operational only and is not conflated with `rejected`; `tdp resume` can continue those runs after the underlying issue is fixed.
+Whole-output review (proposal §5.3, §12.2, §15, §21): after production completion, `tdp resume` starts a fresh reviewer session bound to the current `output_revision`, resumes the same primary producer for revisions after `changes_requested` with instructions to use `production apply`, `evidence_revision: true`, and new evidence IDs on terminal items targeted by unresolved blocking findings (dispositions unchanged), then re-submit completion with `goal_met: true`. During production, focused-output evidence revision uses the same `evidence_revision` path with `focused_review_loop_id` and requires the loop `target_revision` to match the current `output_revision`. Deterministic output validation plus the acceptance invariant must pass before the orchestrator sets `outcome: accepted`. Revision cycles are capped by `limits.whole_output_review.max_revision_cycles`. Deterministic validation failures after reviewer approval yield `blocked`; limit exhaustion yields `rejected`. Provider/orchestrator operational failures set `status: failed` without a quality outcome — `failed` is operational only and is not conflated with `rejected`; `tdp resume` can continue those runs after the underlying issue is fixed.
 
 `tdp validate` runs deterministic plan validation and, when a completion claim or whole-output review exists, output validation as well.
 
@@ -252,7 +277,9 @@ tdp agent review respond --run <run-id> --request review.json
 tdp agent run status --run <run-id>
 ```
 
-Production apply requires `production_revision` from the latest snapshot. `submit-completion` requires `goal_met: true` plus `goal_assessment` and records a completion claim only; the orchestrator advances to whole-output review after a valid claim and sets final `outcome` only after whole-output review. During `whole_output_review`, use `evidence_revision: true` on `production apply` to revise terminal items targeted by unresolved blocking findings with **new** evidence IDs (see `tdp agent example evidence-revision`).
+Production apply requires `production_revision` from the latest snapshot. `submit-completion` requires `goal_met: true` plus `goal_assessment` and records a completion claim only; the orchestrator advances to whole-output review after a valid claim and sets final `outcome` only after whole-output review. Use `evidence_revision: true` on `production apply` to revise terminal items targeted by unresolved blocking findings with **new** evidence IDs (dispositions unchanged): during `whole_output_review` without a loop id, or during `production` with `focused_review_loop_id` bound to the active focused-output loop (see `tdp agent example evidence-revision` and `evidence-revision-focused`).
+
+Plan items require explicit `kind` (`work` or `aggregate`). The run seeds a root `aggregate` item; only `work` leaves appear in `ready_item_ids`. Use `update_plan` to revise plan-level metadata (`scope`, `boundaries`, `constraints`, `assumptions`, `acceptance`). Producer sessions receive `approved_plan`; production `ready` snapshots include `ready_items` with per-item contracts.
 
 Agent plan `snapshot`/`check`/`apply` and production `snapshot` (tree/ready) share the same
 plan validation contract: structured `issues` for errors, string `warnings` for

@@ -25,6 +25,7 @@ def _sample_plan(revision: int = 0) -> Plan:
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     return Plan(
         id="plan-001",

@@ -7,6 +7,7 @@ from typing import Any, Literal
 from top_down_planning.domain.dispositions import DispositionMap
 from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits
 from top_down_planning.domain.plan_tree import (
+    ancestor_path,
     compute_planning_budget,
     descendants_of,
     display_traversal,
@@ -28,6 +29,7 @@ def item_snapshot(item: PlanItem, display_number: str, *, depth: int) -> dict[st
         "depth": depth,
         "title": item.title,
         "outcome": item.outcome,
+        "kind": item.kind,
         "scope": item.scope.to_dict(),
         "boundaries": list(item.boundaries),
         "acceptance": list(item.acceptance),
@@ -89,6 +91,11 @@ def build_tree_view(
         "revision": plan.revision,
         "items": items,
         "planning_budget": budgets,
+        "scope": plan.scope.to_dict(),
+        "boundaries": list(plan.boundaries),
+        "constraints": list(plan.constraints),
+        "assumptions": list(plan.assumptions),
+        "acceptance": list(plan.acceptance),
     }
 
 
@@ -104,6 +111,23 @@ def build_plan_review_snapshot(
     return snapshot
 
 
+def ready_item_contract(plan: Plan, item_id: str) -> dict[str, Any]:
+    """Compact work-item contract for production ready snapshots."""
+
+    item = plan.items[item_id]
+    return {
+        "id": item.id,
+        "title": item.title,
+        "outcome": item.outcome,
+        "kind": item.kind,
+        "scope": item.scope.to_dict(),
+        "boundaries": list(item.boundaries),
+        "acceptance": list(item.acceptance),
+        "depends_on": list(item.depends_on),
+        "ancestor_path": ancestor_path(plan, item_id),
+    }
+
+
 def build_ready_view(
     plan: Plan,
     dispositions: DispositionMap | None = None,
@@ -117,11 +141,15 @@ def build_ready_view(
         dispositions,
         is_review_blocked=is_review_blocked,
     )
-    return {
+    payload = {
         "view": "ready",
         "revision": plan.revision,
         **ready.to_dict(),
     }
+    payload["ready_items"] = [
+        ready_item_contract(plan, item_id) for item_id in ready.ready_item_ids
+    ]
+    return payload
 
 
 def build_changed_subtree_view(

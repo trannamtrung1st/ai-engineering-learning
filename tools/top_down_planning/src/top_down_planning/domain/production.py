@@ -261,6 +261,107 @@ def build_production_review_snapshot(production: dict[str, Any]) -> dict[str, An
     return snapshot
 
 
+def build_output_traceability(
+    plan: Plan,
+    production: dict[str, Any],
+    *,
+    item_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build plan_contracts and evidence_by_item for output review packages.
+
+    Uses live (non-invalidated) batches and evidence only. Shared artifacts may
+    appear under multiple item mappings.
+    """
+
+    from top_down_planning.domain.plan_tree import is_active_item, walk_active_tree
+
+    snapshot = build_production_review_snapshot(production)
+    evidence_by_id = {
+        str(entry["id"]): entry
+        for entry in snapshot["output_evidence"]
+        if entry.get("id")
+    }
+
+    evidence_by_item: dict[str, list[dict[str, Any]]] = {}
+    for batch in snapshot["batches"]:
+        result = batch.get("result") or {}
+        for contrib in result.get("contributions") or []:
+            if not isinstance(contrib, dict):
+                continue
+            item_id = str(contrib.get("item_id") or "")
+            if not item_id:
+                continue
+            if item_ids is not None and item_id not in item_ids:
+                continue
+            for ref in contrib.get("output_refs") or []:
+                evidence = evidence_by_id.get(str(ref))
+                if evidence is None:
+                    continue
+                entry = {
+                    "evidence_id": str(evidence["id"]),
+                    "ref": evidence.get("ref"),
+                    "snapshot_ref": evidence.get("snapshot_ref"),
+                    "sha256": evidence.get("sha256"),
+                }
+                evidence_by_item.setdefault(item_id, []).append(entry)
+
+    if item_ids is not None:
+        contract_ids = [item_id for item_id in item_ids if item_id in plan.items]
+    else:
+        contract_ids = [
+            item_id
+            for item_id, _, _ in walk_active_tree(plan).rows
+            if is_active_item(plan.items[item_id])
+        ]
+
+    plan_contracts: dict[str, dict[str, Any]] = {}
+    for item_id in contract_ids:
+        item = plan.items[item_id]
+        plan_contracts[item_id] = {
+            "title": item.title,
+            "outcome": item.outcome,
+            "acceptance": list(item.acceptance),
+        }
+
+    return {
+        "plan_contracts": plan_contracts,
+        "evidence_by_item": {
+            item_id: list(entries)
+            for item_id, entries in evidence_by_item.items()
+            if item_id in plan_contracts
+        },
+    }
+
+
+def build_compact_approved_plan(plan: Plan) -> dict[str, Any]:
+    """Compact approved-plan representation for producer session manifests."""
+
+    from top_down_planning.domain.plan_tree import walk_active_tree
+
+    items: list[dict[str, Any]] = []
+    for item_id, _, _ in walk_active_tree(plan).rows:
+        item = plan.items[item_id]
+        items.append(
+            {
+                "id": item.id,
+                "title": item.title,
+                "outcome": item.outcome,
+                "kind": item.kind,
+                "acceptance": list(item.acceptance),
+                "depends_on": list(item.depends_on),
+            }
+        )
+    return {
+        "revision": int(plan.revision),
+        "scope": plan.scope.to_dict(),
+        "boundaries": list(plan.boundaries),
+        "constraints": list(plan.constraints),
+        "assumptions": list(plan.assumptions),
+        "acceptance": list(plan.acceptance),
+        "items": items,
+    }
+
+
 def build_production_digest_payload(production: dict[str, Any]) -> dict[str, Any]:
     """Live output fields for digest binding (excludes invalidated reconciliation evidence)."""
 
@@ -285,14 +386,15 @@ def validate_evidence_revision_request(
     outputs: list[OutputEvidence],
     empty_output: bool,
     empty_output_reason: str | None,
+    target_label: str = "unresolved whole-output findings",
 ) -> list[str]:
-    """Validate a whole-output evidence revision batch for already-terminal items."""
+    """Validate an evidence revision batch for already-terminal items."""
 
     issues: list[str] = []
     if not plan_items:
         issues.append("plan_items must not be empty")
     if not revision_target_ids:
-        issues.append("no unresolved whole-output findings define revision targets")
+        issues.append(f"no {target_label} define revision targets")
 
     seen: set[str] = set()
     for item_id in plan_items:
@@ -305,7 +407,7 @@ def validate_evidence_revision_request(
             continue
         if item_id not in revision_target_ids:
             issues.append(
-                f"item {item_id} is not targeted by unresolved whole-output findings"
+                f"item {item_id} is not targeted by {target_label}"
             )
         if item_id not in current_dispositions:
             issues.append(f"item {item_id} has no disposition to revise")
@@ -359,6 +461,11 @@ def validate_batch_request(
         if item_id not in plan.items:
             issues.append(f"unknown plan item: {item_id}")
             continue
+
+        if plan.items[item_id].kind == "aggregate":
+            issues.append(
+                f"item {item_id} is an aggregate and cannot be disposed in a production batch"
+            )
 
         if item_id not in ready_item_ids:
             issues.append(f"item {item_id} is not in the ready set")

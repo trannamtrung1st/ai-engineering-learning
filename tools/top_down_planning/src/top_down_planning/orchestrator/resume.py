@@ -143,8 +143,7 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
     actual_context = stored.get("context")
     if actual_context != expected_context:
         raise ResumeError(
-            "context digest mismatch; refusing to resume with changed "
-            "project resources or agent context",
+            "context digest mismatch; refusing to resume with changed agent context",
             code="digest_mismatch",
         )
 

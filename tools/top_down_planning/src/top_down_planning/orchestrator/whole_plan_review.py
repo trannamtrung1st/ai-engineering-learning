@@ -17,6 +17,7 @@ from top_down_planning.domain.validators import (
 )
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
+    plan_execution_contract_fields,
     resolve_role_session_context,
 )
 from top_down_planning.orchestrator.capability import (
@@ -506,9 +507,13 @@ def build_whole_plan_review_package(
 ) -> dict[str, Any]:
     """Package a bounded whole-plan review for a fresh reviewer session."""
 
-    run_section = config.get("run") or {}
     digests = dict(run.get("digests") or {})
     limits = planning_limits_from_config(config)
+    review_cfg = (config.get("review") or {}).get("whole_plan") or {}
+    rubric = list(
+        review_cfg.get("rubric")
+        or DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
+    )
     return attach_role_context_to_manifest(
         {
         "run_id": run_id,
@@ -520,10 +525,8 @@ def build_whole_plan_review_package(
         "target_revision": loop.target_revision,
         "plan_revision": plan.revision,
         "plan": build_plan_review_snapshot(plan, limits=limits),
-        "input_refs": list(run_section.get("input_refs") or []),
-        "output_goal": plan.output_goal,
-        "boundaries": run_section.get("boundaries"),
-        "acceptance": run_section.get("acceptance"),
+        "rubric": rubric,
+        **plan_execution_contract_fields(plan),
         "digests": digests,
         "protocol_instructions": build_reviewer_protocol_instructions(),
         "tool_instructions": {
@@ -538,6 +541,7 @@ def build_whole_plan_review_package(
         config=config,
         run=run,
         role="reviewer",
+        output_goal=plan.output_goal,
     )
 
 

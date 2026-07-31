@@ -5,7 +5,7 @@
 #
 # Path resolution:
 #   project.workspace resolves against the process working directory.
-#   project.resources, run.input_refs, run.output_goal_file, and all
+#   run.input_refs, run.output_goal_file, and all
 #   agent_context resources/skills resolve against project.workspace.
 #   runtime.runs_dir continues to resolve against the process working directory.
 #
@@ -24,7 +24,6 @@ runtime:
 
 project:
   workspace: .
-  resources: []
 
 run:
   input_refs:
@@ -66,6 +65,11 @@ review:
     enabled: true
   focused_output:
     enabled: true
+  whole_plan:
+    rubric:
+      - "Plan items have clear outcomes and acceptance criteria."
+      - "Dependencies are minimal and acyclic."
+      - "Aggregate parents group work without duplicating batchable scope."
 
 observability:
   log_level: normal

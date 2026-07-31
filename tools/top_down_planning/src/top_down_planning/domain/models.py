@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 PlanningStatus = Literal["open", "superseded", "removed"]
+ItemKind = Literal["aggregate", "work"]
 
 
 PLAN_SCHEMA_VERSION = 1
@@ -35,6 +36,7 @@ class PlanItem:
     parent_id: str | None
     order_key: str
     title: str
+    kind: ItemKind
     outcome: str = ""
     scope: Scope = field(default_factory=Scope)
     boundaries: list[str] = field(default_factory=list)
@@ -55,6 +57,7 @@ class PlanItem:
             "depends_on": list(self.depends_on),
             "acceptance": list(self.acceptance),
             "planning_status": self.planning_status,
+            "kind": self.kind,
         }
         if self.superseded_by is not None:
             payload["superseded_by"] = self.superseded_by
@@ -62,6 +65,11 @@ class PlanItem:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PlanItem:
+        kind = data.get("kind")
+        if kind is None:
+            raise ValueError("plan item kind is required")
+        if kind not in ("aggregate", "work"):
+            raise ValueError(f"invalid plan item kind: {kind!r}")
         return cls(
             id=data["id"],
             parent_id=data.get("parent_id"),
@@ -74,6 +82,7 @@ class PlanItem:
             acceptance=list(data.get("acceptance") or []),
             planning_status=data.get("planning_status", "open"),
             superseded_by=data.get("superseded_by"),
+            kind=kind,
         )
 
 

@@ -9,7 +9,7 @@ from top_down_planning.persistence.digests import compute_config_digest, compute
 
 
 def _sample_plan() -> Plan:
-    root = PlanItem("item-root", None, "0000000000", "Root")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
     leaf = PlanItem(
         "item-leaf",
         "item-root",
@@ -17,6 +17,7 @@ def _sample_plan() -> Plan:
         "Leaf",
         outcome="Done.",
         acceptance=["Verifiable."],
+        kind="work",
     )
     return Plan(
         id="plan-1",

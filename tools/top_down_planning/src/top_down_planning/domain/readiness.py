@@ -132,6 +132,8 @@ def is_applicable_item(
     item = plan.items.get(item_id)
     if item is None or not is_active_item(item):
         return False
+    if item.kind == "aggregate":
+        return False
     return not is_terminal_item(plan, item_id, dispositions)
 
 
@@ -155,7 +157,11 @@ def resolve_satisfaction(
 
     explicit = dispositions.get(item_id)
     if explicit is not None:
-        if explicit == "blocked":
+        if item.kind == "aggregate":
+            # Aggregates ignore explicit production dispositions for satisfaction;
+            # derived subtree state remains authoritative.
+            pass
+        elif explicit == "blocked":
             return SatisfactionResult(
                 item_id,
                 "blocked",
@@ -164,15 +170,24 @@ def resolve_satisfaction(
                 blocker_item_id=item_id,
                 blocker_reason="blocked_disposition",
             )
-        return SatisfactionResult(
-            item_id,
-            "satisfied",
-            "explicit",
-            disposition=explicit,
-        )
+        else:
+            return SatisfactionResult(
+                item_id,
+                "satisfied",
+                "explicit",
+                disposition=explicit,
+            )
 
     children = active_children_of(plan, item_id)
     if not children:
+        if item.kind == "aggregate":
+            return SatisfactionResult(
+                item_id,
+                "unresolved",
+                "none",
+                blocker_item_id=item_id,
+                blocker_reason="aggregate_without_descendants",
+            )
         return SatisfactionResult(
             item_id,
             "unresolved",

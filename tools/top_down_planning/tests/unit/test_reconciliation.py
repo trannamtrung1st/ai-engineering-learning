@@ -12,10 +12,10 @@ from top_down_planning.persistence.digests import compute_output_digest
 
 
 def test_build_reconciliation_report_classifies_items() -> None:
-    root = PlanItem("item-root", None, "0000000000", "Root")
-    first = PlanItem("item-first", "item-root", "0000000000", "First", outcome="A.")
-    changed = PlanItem("item-changed", "item-root", "0000000100", "Changed", outcome="Old.")
-    removed = PlanItem("item-removed", "item-root", "0000000200", "Removed", outcome="Gone.")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
+    first = PlanItem("item-first", "item-root", "0000000000", "First", kind="work", outcome="A.")
+    changed = PlanItem("item-changed", "item-root", "0000000100", "Changed", kind="work", outcome="Old.")
+    removed = PlanItem("item-removed", "item-root", "0000000200", "Removed", kind="work", outcome="Gone.")
     prior_plan = Plan(
         id="plan-test",
         revision=0,
@@ -33,8 +33,9 @@ def test_build_reconciliation_report_classifies_items() -> None:
         "0000000100",
         "Changed",
         outcome="New.",
+        kind="work",
     )
-    added = PlanItem("item-added", "item-root", "0000000300", "Added", outcome="Fresh.")
+    added = PlanItem("item-added", "item-root", "0000000300", "Added", kind="work", outcome="Fresh.")
     new_plan = Plan(
         id="plan-test",
         revision=1,
@@ -269,9 +270,9 @@ def test_output_digest_ignores_invalidated_reconciliation_evidence() -> None:
 
 
 def test_sibling_insert_renumbers_without_marking_survivors_changed() -> None:
-    root = PlanItem("item-root", None, "0000000000", "Root")
-    first = PlanItem("item-first", "item-root", "0000000000", "First", outcome="A.")
-    second = PlanItem("item-second", "item-root", "0000000100", "Second", outcome="B.")
+    root = PlanItem("item-root", None, "0000000000", "Root", kind="aggregate")
+    first = PlanItem("item-first", "item-root", "0000000000", "First", kind="work", outcome="A.")
+    second = PlanItem("item-second", "item-root", "0000000100", "Second", kind="work", outcome="B.")
     prior_plan = Plan(
         id="plan-test",
         revision=0,
@@ -282,13 +283,14 @@ def test_sibling_insert_renumbers_without_marking_survivors_changed() -> None:
             "item-second": second,
         },
     )
-    inserted = PlanItem("item-inserted", "item-root", "0000000050", "Inserted", outcome="New.")
+    inserted = PlanItem("item-inserted", "item-root", "0000000050", "Inserted", kind="work", outcome="New.")
     renumbered_second = PlanItem(
         "item-second",
         "item-root",
         "0000000200",
         "Second",
         outcome="B.",
+        kind="work",
     )
     new_plan = Plan(
         id="plan-test",

@@ -246,6 +246,39 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     [item.id, "title"],
                 )
             )
+        if item.kind not in ("aggregate", "work"):
+            issues.append(
+                _issue(
+                    "invalid_item_kind",
+                    "error",
+                    f"active item kind must be aggregate or work, got {item.kind!r}",
+                    [item.id, "kind"],
+                )
+            )
+        elif item.kind == "aggregate":
+            from top_down_planning.domain.plan_tree import active_children_of
+
+            if not active_children_of(plan, item.id):
+                issues.append(
+                    _issue(
+                        "aggregate_without_descendants",
+                        "warning",
+                        f"aggregate item {item.id} has no active descendants",
+                        [item.id, "kind"],
+                    )
+                )
+
+    for field_name in ("boundaries", "constraints", "assumptions", "acceptance"):
+        value = getattr(plan, field_name)
+        if not isinstance(value, list):
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    f"plan {field_name} must be a list",
+                    ["plan", field_name],
+                )
+            )
 
     return issues
 

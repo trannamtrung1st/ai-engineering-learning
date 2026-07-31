@@ -24,6 +24,7 @@ def _create_review_run(store: FileRunStore, run_id: str) -> None:
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     plan = Plan(
         id=f"plan-{run_id}",

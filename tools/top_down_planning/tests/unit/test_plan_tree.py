@@ -24,18 +24,21 @@ def _sample_plan() -> Plan:
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     first = PlanItem(
         id="item-first",
         parent_id="item-root",
         order_key="0000000000",
         title="First",
+        kind="work",
     )
     second = PlanItem(
         id="item-second",
         parent_id="item-root",
         order_key="0000000100",
         title="Second",
+        kind="work",
     )
     return Plan(
         id="plan-001",
@@ -91,7 +94,7 @@ def test_add_sibling_after_preserves_order_under_parent() -> None:
                 "temp_id": "item-middle",
                 "parent_id": "item-root",
                 "placement": {"after": "item-first"},
-                "item": {"title": "Middle"},
+                "item": {"kind": "work", "title": "Middle"},
             }
         ],
     )
@@ -113,6 +116,7 @@ def test_move_subtree_rejects_descendant_parent() -> None:
         parent_id="item-first",
         order_key="0000000000",
         title="Child",
+        kind="work",
     )
     plan.items["item-child"] = child
 
@@ -160,7 +164,7 @@ def test_temp_ids_resolve_within_transaction() -> None:
                 "temp_id": "temp-api",
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
-                "item": {"title": "API"},
+                "item": {"kind": "work", "title": "API"},
             },
             {
                 "op": "add_dependency",
@@ -186,7 +190,7 @@ def test_add_item_resolves_depends_on_temp_ids_in_same_transaction() -> None:
                 "temp_id": "temp-api",
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
-                "item": {"title": "API"},
+                "item": {"kind": "work", "title": "API"},
             },
             {
                 "op": "add_item",
@@ -194,6 +198,8 @@ def test_add_item_resolves_depends_on_temp_ids_in_same_transaction() -> None:
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
                 "item": {
+    "kind": "work",
+
                     "title": "UI",
                     "depends_on": ["temp-api"],
                 },
@@ -212,7 +218,7 @@ def test_exceeding_max_depth_warns_without_rejecting() -> None:
         revision=1,
         output_goal="Deep tree",
         items={
-            "item-a": PlanItem("item-a", None, "0000000000", "A"),
+            "item-a": PlanItem("item-a", None, "0000000000", "A", kind="work"),
         },
     )
     current_parent = "item-a"
@@ -223,6 +229,7 @@ def test_exceeding_max_depth_warns_without_rejecting() -> None:
             current_parent,
             "0000000000",
             f"Depth {index}",
+        kind="work",
         )
         current_parent = child_id
 
@@ -234,7 +241,7 @@ def test_exceeding_max_depth_warns_without_rejecting() -> None:
                 "op": "add_item",
                 "parent_id": current_parent,
                 "placement": {"last_child": True},
-                "item": {"title": "Too deep"},
+                "item": {"kind": "work", "title": "Too deep"},
             }
         ],
         limits=PlanningLimits(max_depth=3),
@@ -256,7 +263,7 @@ def test_superseded_items_excluded_from_active_traversal() -> None:
                 "op": "supersede_item",
                 "item_id": "item-first",
                 "temp_id": "item-first-v2",
-                "replacement": {"title": "First revised"},
+                "replacement": {"kind": "work", "title": "First revised"},
             }
         ],
     )
@@ -279,7 +286,7 @@ def test_budget_warnings_are_not_duplicated() -> None:
                 "op": "add_item",
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
-                "item": {"title": "Another sibling"},
+                "item": {"kind": "work", "title": "Another sibling"},
             }
         ],
         limits=PlanningLimits(max_expansion_per_item=2),
@@ -290,9 +297,9 @@ def test_budget_warnings_are_not_duplicated() -> None:
 
 def test_dependency_cycle_rejects_transaction() -> None:
     plan = _sample_plan()
-    plan.items["item-a"] = PlanItem("item-a", "item-root", "0000000200", "A")
-    plan.items["item-b"] = PlanItem("item-b", "item-root", "0000000300", "B", depends_on=["item-a"])
-    plan.items["item-c"] = PlanItem("item-c", "item-root", "0000000400", "C", depends_on=["item-b"])
+    plan.items["item-a"] = PlanItem("item-a", "item-root", "0000000200", "A", kind="work")
+    plan.items["item-b"] = PlanItem("item-b", "item-root", "0000000300", "B", kind="work", depends_on=["item-a"])
+    plan.items["item-c"] = PlanItem("item-c", "item-root", "0000000400", "C", kind="work", depends_on=["item-b"])
 
     with pytest.raises(DependencyCycleError):
         apply_operations(
@@ -326,6 +333,24 @@ def test_add_item_rejects_missing_title() -> None:
         )
 
 
+def test_supersede_item_rejects_missing_kind() -> None:
+    plan = _sample_plan()
+
+    with pytest.raises(InvalidMutationError, match="item kind is required"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "supersede_item",
+                    "item_id": "item-first",
+                    "temp_id": "item-first-v2",
+                    "replacement": {"title": "First revised"},
+                }
+            ],
+        )
+
+
 def test_supersede_item_rejects_items_with_active_children() -> None:
     plan = _sample_plan()
 
@@ -337,7 +362,7 @@ def test_supersede_item_rejects_items_with_active_children() -> None:
                 {
                     "op": "supersede_item",
                     "item_id": "item-root",
-                    "replacement": {"title": "Replacement root"},
+                    "replacement": {"kind": "aggregate", "title": "Replacement root"},
                 }
             ],
         )
@@ -355,7 +380,7 @@ def test_add_item_rejects_non_open_planning_status() -> None:
                     "op": "add_item",
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
-                    "item": {"title": "Bad", "planning_status": "removed"},
+                    "item": {"kind": "work", "title": "Bad", "planning_status": "removed"},
                 }
             ],
         )

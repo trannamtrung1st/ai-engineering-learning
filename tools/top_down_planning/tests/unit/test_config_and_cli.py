@@ -147,6 +147,7 @@ def _create_validate_run(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     if plan is None:
         plan = Plan(
@@ -175,6 +176,7 @@ def test_cli_validate_reports_plan_issues(tmp_path: Path) -> None:
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     child = PlanItem(
         id="item-child",
@@ -182,6 +184,7 @@ def test_cli_validate_reports_plan_issues(tmp_path: Path) -> None:
         order_key="0000000000",
         title="Child",
         depends_on=["item-missing"],
+        kind="work",
     )
     plan = Plan(
         id=f"plan-{run_id}",
@@ -338,6 +341,7 @@ def test_resume_rejects_changed_output_goal_file(tmp_path: Path) -> None:
                 parent_id=None,
                 order_key="0000000000",
                 title="Root",
+                kind="aggregate",
             )
         },
     )
@@ -351,3 +355,49 @@ def test_resume_rejects_changed_output_goal_file(tmp_path: Path) -> None:
     goal_file.write_text("Changed goal content.", encoding="utf-8")
     with pytest.raises(ResumeError, match="output goal digest mismatch"):
         validate_resume_preconditions(store, "run-20260101T002201-002201")
+
+
+def test_resume_rejects_changed_input_refs(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    input_file = workspace / "task.md"
+    input_file.write_text("Original task.", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "base.yaml",
+            """
+project:
+  workspace: .
+run:
+  input_refs:
+    - task.md
+  output_goal: Goal.
+""",
+        ),
+        cwd=workspace,
+    )
+    plan = Plan(
+        id="plan-run-20260101T002202-002202",
+        revision=0,
+        output_goal="Goal.",
+        input_refs=["task.md"],
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            )
+        },
+    )
+    store = FileRunStore(tmp_path / "runs")
+    store.create_run(
+        "run-20260101T002202-002202",
+        plan=plan,
+        **create_run_kwargs(workspace, resolved_config=config),
+    )
+
+    input_file.write_text("Changed task content.", encoding="utf-8")
+    with pytest.raises(ResumeError, match="input digest mismatch"):
+        validate_resume_preconditions(store, "run-20260101T002202-002202")

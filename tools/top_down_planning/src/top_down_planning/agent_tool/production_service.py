@@ -16,13 +16,21 @@ from top_down_planning.agent_tool.views import (
     validation_issues,
     validation_warnings,
 )
-from top_down_planning.domain.reviews import blocking_focused_findings_for_items
+from top_down_planning.domain.reviews import (
+    OUTPUT_REVIEW_TYPES,
+    ReviewLoop,
+    blocking_focused_findings_for_items,
+    find_whole_plan_approval,
+    focused_output_revision_target_ids,
+    whole_output_revision_target_ids,
+)
 from top_down_planning.domain.production import (
     BatchResult,
     Contribution,
     ItemDispositionRecord,
     OutputEvidence,
     ProductionBatch,
+    PRODUCTION_PHASE,
     WHOLE_OUTPUT_REVIEW_PHASE,
     all_applicable_items_processed,
     allows_production_mutations,
@@ -39,11 +47,6 @@ from top_down_planning.domain.production import (
     validate_production_checks,
 )
 from top_down_planning.domain.readiness import is_applicable_item
-from top_down_planning.domain.reviews import (
-    OUTPUT_REVIEW_TYPES,
-    find_whole_plan_approval,
-    whole_output_revision_target_ids,
-)
 from top_down_planning.domain.validators import validate_plan
 from core_tools.persistence import StoreRevisionConflictError
 from top_down_planning.persistence.commit import CommitSpec
@@ -146,16 +149,17 @@ class ProductionAgentService:
         reviews = self._store.list_reviews(self._run_id)
         evidence_revision = bool(request.get("evidence_revision"))
         plan_item_ids = [str(item_id) for item_id in plan_items]
-        blocked = blocking_focused_findings_for_items(
-            reviews,
-            "focused_output",
-            plan_item_ids,
-        )
-        if blocked:
-            joined = ", ".join(blocked)
-            raise RequestError(
-                f"production blocked by unresolved focused output findings: {joined}"
+        if not evidence_revision:
+            blocked = blocking_focused_findings_for_items(
+                reviews,
+                "focused_output",
+                plan_item_ids,
             )
+            if blocked:
+                joined = ", ".join(blocked)
+                raise RequestError(
+                    f"production blocked by unresolved focused output findings: {joined}"
+                )
 
         disposition_records = parse_disposition_records(request.get("dispositions") or {})
         empty_output = bool(request.get("empty_output"))
@@ -169,11 +173,51 @@ class ProductionAgentService:
         if evidence_revision:
             run = self._store.load_run(self._run_id)
             phase = str(run.get("phase") or "")
-            if phase != WHOLE_OUTPUT_REVIEW_PHASE:
-                raise RequestError(
-                    "evidence_revision apply is only allowed during whole_output_review"
+            focused_loop_id = request.get("focused_review_loop_id")
+            if focused_loop_id is not None:
+                focused_loop_id = str(focused_loop_id).strip() or None
+            if phase == WHOLE_OUTPUT_REVIEW_PHASE:
+                revision_targets = whole_output_revision_target_ids(reviews)
+                target_label = "unresolved whole-output findings"
+            elif phase == PRODUCTION_PHASE:
+                revision_targets = focused_output_revision_target_ids(
+                    reviews,
+                    loop_id=focused_loop_id,
                 )
-            revision_targets = whole_output_revision_target_ids(reviews)
+                target_label = "unresolved focused-output findings"
+                if not revision_targets:
+                    raise RequestError(
+                        "evidence_revision during production requires an active "
+                        "focused_output review with status changes_requested"
+                    )
+                if focused_loop_id is None:
+                    raise RequestError(
+                        "evidence_revision during production requires focused_review_loop_id"
+                    )
+                loop = next(
+                    (
+                        ReviewLoop.from_dict(payload)
+                        for payload in reviews
+                        if payload.get("id") == focused_loop_id
+                    ),
+                    None,
+                )
+                if loop is None or loop.type != "focused_output":
+                    raise RequestError(
+                        f"focused review loop not found: {focused_loop_id}"
+                    )
+                output_revision = int(production["output_revision"])
+                if loop.target_revision != output_revision:
+                    raise RequestError(
+                        "focused evidence revision target_revision "
+                        f"{loop.target_revision} does not match current output revision "
+                        f"{output_revision}"
+                    )
+            else:
+                raise RequestError(
+                    "evidence_revision apply is only allowed during production "
+                    "(focused_output) or whole_output_review"
+                )
             issues = validate_evidence_revision_request(
                 plan,
                 plan_items=plan_item_ids,
@@ -183,6 +227,7 @@ class ProductionAgentService:
                 outputs=outputs,
                 empty_output=empty_output,
                 empty_output_reason=empty_output_reason,
+                target_label=target_label,
             )
             if issues:
                 raise RequestError("; ".join(issues))

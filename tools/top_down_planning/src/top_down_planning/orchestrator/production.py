@@ -7,7 +7,13 @@ from typing import Any
 
 from top_down_planning.agent_tool.production_service import ProductionAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
-from top_down_planning.domain.production import all_applicable_items_processed, has_pending_amendment, latest_reconciliation_report
+from top_down_planning.domain.models import Plan
+from top_down_planning.domain.production import (
+    all_applicable_items_processed,
+    build_compact_approved_plan,
+    has_pending_amendment,
+    latest_reconciliation_report,
+)
 from top_down_planning.domain.readiness import detect_deadlock
 from top_down_planning.domain.reviews import find_whole_plan_approval
 from top_down_planning.orchestrator.producer_session import (
@@ -99,7 +105,6 @@ class ProductionPhaseOrchestrator:
                 run_record,
                 config,
                 self._store.load_plan_model(self._run_id),
-                plan_revision=int(self._store.load_plan(self._run_id)["revision"]),
                 production=self._store.load_production(self._run_id),
             )
             role_context = resolve_role_session_context(config, run_record, "producer")
@@ -407,26 +412,21 @@ def build_producer_context_manifest(
     run_id: str,
     run: dict[str, Any],
     config: dict[str, Any],
-    plan: Any,
+    plan: Plan,
     *,
-    plan_revision: int,
     production: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Package producer prompt context and tool usage instructions."""
 
-    run_section = config.get("run") or {}
     limits = _production_loop_limits(config)
     digests = dict(run.get("digests") or {})
+    approved_plan = build_compact_approved_plan(plan)
 
     manifest: dict[str, Any] = attach_role_context_to_manifest(
         {
         "run_id": run_id,
         "phase": PRODUCTION,
-        "input_refs": list(run_section.get("input_refs") or []),
-        "output_goal": plan.output_goal,
-        "boundaries": run_section.get("boundaries"),
-        "acceptance": run_section.get("acceptance"),
-        "approved_plan_revision": plan_revision,
+        "approved_plan": approved_plan,
         "loop_limits": limits,
         "digests": digests,
         "protocol_instructions": build_producer_protocol_instructions(),
@@ -435,6 +435,7 @@ def build_producer_context_manifest(
         config=config,
         run=run,
         role="producer",
+        output_goal=plan.output_goal,
     )
     if production is not None:
         reconciliation = latest_reconciliation_report(production)

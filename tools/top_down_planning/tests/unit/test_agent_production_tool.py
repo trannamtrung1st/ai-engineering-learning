@@ -50,6 +50,7 @@ def _create_production_run(
         parent_id=None,
         order_key="0000000000",
         title="Root",
+        kind="aggregate",
     )
     first = PlanItem(
         id="item-first",
@@ -57,6 +58,7 @@ def _create_production_run(
         order_key="0000000000",
         title="First",
         outcome="First outcome.",
+        kind="work",
     )
     second = PlanItem(
         id="item-second",
@@ -65,6 +67,7 @@ def _create_production_run(
         title="Second",
         outcome="Second outcome.",
         depends_on=["item-first"],
+        kind="work",
     )
     plan = Plan(
         id=f"plan-{run_id}",
@@ -456,6 +459,129 @@ def test_production_ready_snapshot_includes_plan_validation_fields(tmp_path: Pat
     assert "issues" in ready
     assert "warnings" in ready
     assert ready["ok"] is True
+
+
+def test_production_ready_snapshot_includes_ready_item_contracts(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+
+    ready = service.snapshot(view="ready")
+
+    assert "item-first" in ready["ready_item_ids"]
+    assert "item-root" not in ready["ready_item_ids"]
+    by_id = {item["id"]: item for item in ready["ready_items"]}
+    assert set(by_id) == set(ready["ready_item_ids"])
+    first = by_id["item-first"]
+    assert first["title"] == "First"
+    assert first["outcome"] == "First outcome."
+    assert first["scope"] == {"includes": [], "excludes": []}
+    assert first["boundaries"] == []
+    assert first["acceptance"] == []
+    assert first["depends_on"] == []
+    assert first["ancestor_path"] == ["item-root"]
+    assert "item-second" not in by_id
+
+
+def test_production_ready_snapshot_preserves_blocker_behavior_with_ready_items(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+    service = ProductionAgentService(store, "run-20260101T000201-000201")
+    ready = service.snapshot(view="ready")
+
+    assert "item-second" not in ready["ready_item_ids"]
+    assert ready["not_ready"]["item-second"]["reason"] == "unsatisfied_dependency"
+    assert all(item["id"] in ready["ready_item_ids"] for item in ready["ready_items"])
+
+
+def test_multi_item_batch_still_works_with_ready_items(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
+    a = PlanItem(
+        id="item-a",
+        parent_id="item-root",
+        order_key="0000000000",
+        title="A",
+        outcome="A done.",
+        acceptance=["A ok"],
+        kind="work",
+    )
+    b = PlanItem(
+        id="item-b",
+        parent_id="item-root",
+        order_key="0000000100",
+        title="B",
+        outcome="B done.",
+        kind="work",
+    )
+    plan = Plan(
+        id="plan-multi",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root, "item-a": a, "item-b": b},
+    )
+    config = {
+        "run": {"output_goal": "Deliver.", "input_refs": ["README.md"]},
+        "planning": {
+            "stop_hint": "Stop.",
+            "max_depth": 4,
+            "max_expansion_per_item": 7,
+        },
+        "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
+        "provider": {"name": "stub"},
+    }
+    store.create_run(
+        "run-20260101T000211-000211",
+        plan=plan,
+        **create_run_kwargs(store.root, resolved_config=config),
+        phase=PRODUCTION,
+    )
+    store.save_review(
+        "run-20260101T000211-000211",
+        whole_plan_approval_record(store, "run-20260101T000211-000211"),
+    )
+    service = ProductionAgentService(store, "run-20260101T000211-000211")
+    ready = service.snapshot(view="ready")
+    assert "item-a" in ready["ready_item_ids"]
+    assert "item-b" in ready["ready_item_ids"]
+    token = grant_capability(
+        store, "run-20260101T000211-000211", role="producer", phase=PRODUCTION
+    )
+    result = service.apply(
+        {
+            "production_revision": 0,
+            "plan_items": ["item-a", "item-b"],
+            "dispositions": {
+                "item-a": {"disposition": "completed", "evidence": "A done"},
+                "item-b": {"disposition": "completed", "evidence": "B done"},
+            },
+            "outputs": [],
+            "contributions": [],
+            "summary": "both items",
+            "empty_output": True,
+            "empty_output_reason": "no artifacts required",
+        },
+        capability_token=token,
+    )
+    assert result["ok"] is True
+    assert result["production_revision"] == 1
+
+
+def test_ready_items_equivalent_after_reload(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+    first = ProductionAgentService(store, "run-20260101T000201-000201").snapshot(
+        view="ready"
+    )
+    reloaded = FileRunStore(tmp_path)
+    second = ProductionAgentService(reloaded, "run-20260101T000201-000201").snapshot(
+        view="ready"
+    )
+    assert first["ready_item_ids"] == second["ready_item_ids"]
+    assert first["ready_items"] == second["ready_items"]
+    assert first["not_ready"] == second["not_ready"]
 
 
 def test_cli_production_snapshot_exits_nonzero_when_plan_validation_fails(

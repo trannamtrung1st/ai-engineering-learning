@@ -22,6 +22,26 @@ def write_config(path: Path, body: str) -> Path:
     return path
 
 
+def ensure_input_ref_files(workspace: Path, config: dict[str, Any]) -> None:
+    """Create stub files for configured input refs when tests reference paths."""
+
+    run_section = config.get("run")
+    if not isinstance(run_section, dict):
+        return
+
+    for ref in run_section.get("input_refs") or []:
+        ref_text = str(ref).strip()
+        if not ref_text or any(char in ref_text for char in "*?[]"):
+            continue
+        target = workspace / ref_text
+        if target.is_file():
+            continue
+        if target.is_dir():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"fixture content for {ref_text}\n", encoding="utf-8")
+
+
 def minimal_resolved_config(**overrides: Any) -> dict[str, Any]:
     """Return a minimal resolved config snapshot for test runs."""
 
@@ -84,6 +104,7 @@ def create_run_kwargs(
     if isinstance(config.get("project"), dict):
         config = copy.deepcopy(config)
         config["project"]["workspace"] = str(workspace.resolve())
+    ensure_input_ref_files(workspace, config)
     input_digest, output_goal_digest, context_digest = run_digests_for_config(
         workspace,
         config,

@@ -65,7 +65,7 @@ def test_turn_text_accumulator_resolves_assistant_only_signal() -> None:
 def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000901-000901"
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root")
+    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
     plan = Plan(
         id=f"plan-{run_id}",
         revision=0,
@@ -100,7 +100,7 @@ def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
 def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000902-000902"
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root")
+    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
     plan = Plan(
         id=f"plan-{run_id}",
         revision=0,
@@ -148,7 +148,7 @@ def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:
 def test_planning_accepts_assistant_text_completion_signal(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000903-000903"
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root")
+    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
     plan = Plan(
         id=f"plan-{run_id}",
         revision=0,
@@ -182,7 +182,7 @@ def test_planning_runs_store_created_focused_review_before_advancing(
 ) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000904-000904"
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root")
+    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
     api = PlanItem(
         id="item-api",
         parent_id="item-root",
@@ -190,6 +190,7 @@ def test_planning_runs_store_created_focused_review_before_advancing(
         title="API",
         outcome="API exists.",
         acceptance=["API behavior is verifiable."],
+        kind="work",
     )
     plan = Plan(
         id=f"plan-{run_id}",

@@ -252,6 +252,8 @@ def test_amendment_mid_production_finishes_accepted(
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
                     "item": {
+    "kind": "work",
+
                         "title": "Third",
                         "outcome": "Third outcome.",
                         "acceptance": ["Third is verifiable."],
@@ -456,3 +458,206 @@ def test_example_config_and_stub_instructions_are_present(tmp_path: Path) -> Non
 
     assert result.exit_code == 0, result.stderr
     assert result.json()["phase"] == WHOLE_PLAN_REVIEW
+
+
+@pytest.mark.integration
+def test_enhancement_scenarios_multi_batch_traceability_and_focused_revision(
+    tmp_path: Path,
+) -> None:
+    """Cover multi-batch production, shared artifacts, focused revision, and traceability."""
+
+    from top_down_planning.agent_tool import ProductionAgentService
+    from top_down_planning.domain.models import Plan, PlanItem
+    from top_down_planning.domain.production import build_output_traceability
+    from top_down_planning.domain.readiness import compute_ready_view, resolve_satisfaction
+    from top_down_planning.orchestrator.phases import PRODUCTION
+    from top_down_planning.orchestrator.whole_output_review import (
+        build_whole_output_review_package,
+    )
+    from top_down_planning.domain.reviews import ReviewLoop
+    from tests.helpers import create_run_kwargs, grant_capability, whole_plan_approval_record
+
+    store = FileRunStore(tmp_path / "runs")
+    docs = PlanItem(
+        id="item-docs",
+        parent_id=None,
+        order_key="0000000000",
+        title="Documentation",
+        kind="aggregate",
+        outcome="Docs complete.",
+    )
+    concepts = PlanItem(
+        id="item-concepts",
+        parent_id="item-docs",
+        order_key="0000000000",
+        title="Concepts",
+        kind="work",
+        outcome="Concepts written.",
+        acceptance=["Concepts file exists"],
+    )
+    architecture = PlanItem(
+        id="item-architecture",
+        parent_id="item-docs",
+        order_key="0000000100",
+        title="Architecture",
+        kind="work",
+        outcome="Architecture written.",
+        acceptance=["Architecture file exists"],
+    )
+    plan = Plan(
+        id="plan-enh",
+        revision=0,
+        output_goal="Ship docs.",
+        items={
+            "item-docs": docs,
+            "item-concepts": concepts,
+            "item-architecture": architecture,
+        },
+    )
+    store.create_run(
+        "run-20260101T001001-001001",
+        plan=plan,
+        **create_run_kwargs(store.root),
+        phase=PRODUCTION,
+    )
+    store.save_review(
+        "run-20260101T001001-001001",
+        whole_plan_approval_record(store, "run-20260101T001001-001001"),
+    )
+    (store.root / "concepts.md").write_text("concepts", encoding="utf-8")
+    (store.root / "architecture.md").write_text("architecture", encoding="utf-8")
+    (store.root / "shared.md").write_text("shared", encoding="utf-8")
+
+    ready = compute_ready_view(plan)
+    assert "item-docs" not in ready.ready_item_ids
+    assert set(ready.ready_item_ids) == {"item-concepts", "item-architecture"}
+
+    service = ProductionAgentService(store, "run-20260101T001001-001001")
+    token = grant_capability(
+        store, "run-20260101T001001-001001", role="producer", phase=PRODUCTION
+    )
+    first = service.apply(
+        {
+            "production_revision": 0,
+            "plan_items": ["item-concepts", "item-architecture"],
+            "dispositions": {
+                "item-concepts": {"disposition": "completed", "evidence": "concepts"},
+                "item-architecture": {
+                    "disposition": "completed",
+                    "evidence": "architecture",
+                },
+            },
+            "outputs": [
+                {"id": "output-concepts", "type": "artifact", "ref": "concepts.md"},
+                {"id": "output-arch", "type": "artifact", "ref": "architecture.md"},
+                {"id": "output-shared", "type": "artifact", "ref": "shared.md"},
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-concepts",
+                    "output_refs": ["output-concepts", "output-shared"],
+                    "summary": "concepts batch",
+                },
+                {
+                    "item_id": "item-architecture",
+                    "output_refs": ["output-arch", "output-shared"],
+                    "summary": "architecture batch",
+                },
+            ],
+            "summary": "multi-item batch with shared artifact",
+        },
+        capability_token=token,
+    )
+    assert first["ok"] is True
+    assert resolve_satisfaction(
+        store.load_plan_model("run-20260101T001001-001001"),
+        "item-docs",
+        store.load_production("run-20260101T001001-001001")["dispositions"],
+    ).state == "satisfied"
+
+    store.save_review(
+        "run-20260101T001001-001001",
+        {
+            "id": "review-focused-output-01",
+            "type": "focused_output",
+            "reviewer_session_id": "stub-session-reviewer",
+            "target_revision": 1,
+            "scope": {"kind": "focused_output", "item_ids": ["item-concepts"]},
+            "status": "changes_requested",
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "importance": "blocking",
+                    "target_refs": ["item-concepts"],
+                    "issue": "Need clearer concepts.",
+                    "required_change": "Revise concepts.md",
+                    "status": "unresolved",
+                }
+            ],
+            "revision_cycles": 1,
+        },
+    )
+    (store.root / "concepts-v2.md").write_text("concepts v2", encoding="utf-8")
+    token = grant_capability(
+        store, "run-20260101T001001-001001", role="producer", phase=PRODUCTION
+    )
+    revised = service.apply(
+        {
+            "production_revision": first["production_revision"],
+            "evidence_revision": True,
+            "focused_review_loop_id": "review-focused-output-01",
+            "plan_items": ["item-concepts"],
+            "dispositions": {
+                "item-concepts": {"disposition": "completed", "evidence": "revised"}
+            },
+            "outputs": [
+                {"id": "output-concepts-v2", "type": "artifact", "ref": "concepts-v2.md"}
+            ],
+            "contributions": [
+                {
+                    "item_id": "item-concepts",
+                    "output_refs": ["output-concepts-v2"],
+                    "summary": "focused revision",
+                }
+            ],
+            "summary": "addressed focused finding",
+        },
+        capability_token=token,
+    )
+    assert revised["ok"] is True
+    production = store.load_production("run-20260101T001001-001001")
+    assert production["output_revision"] == 2
+    assert production["completion_claim"] is None
+
+    trace = build_output_traceability(
+        store.load_plan_model("run-20260101T001001-001001"),
+        production,
+    )
+    assert "item-concepts" in trace["plan_contracts"]
+    assert "item-docs" in trace["plan_contracts"]
+    shared = [
+        e
+        for entries in trace["evidence_by_item"].values()
+        for e in entries
+        if e["evidence_id"] == "output-shared"
+    ]
+    assert len(shared) == 2
+
+    package = build_whole_output_review_package(
+        "run-20260101T001001-001001",
+        store.load_run("run-20260101T001001-001001"),
+        store.load_resolved_config("run-20260101T001001-001001"),
+        store.load_plan_model("run-20260101T001001-001001"),
+        production,
+        ReviewLoop(
+            id="review-whole-output-01",
+            type="whole_output",
+            reviewer_session_id="sess",
+            target_revision=2,
+            scope={"kind": "whole_output"},
+        ),
+    )
+    assert package["plan_contracts"]["item-architecture"]["acceptance"]
+    assert "output-concepts-v2" in [
+        e["evidence_id"] for e in package["evidence_by_item"].get("item-concepts", [])
+    ]
