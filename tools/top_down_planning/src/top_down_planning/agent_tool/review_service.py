@@ -14,6 +14,8 @@ from top_down_planning.domain.approval_digests import (
 from top_down_planning.domain.review_policy import resolved_revise_at
 from top_down_planning.domain.reviews import (
     ReviewLoop,
+    ScopeBlockerReviewResult,
+    apply_discovery_response,
     apply_review_response,
     build_scope_blocker_review_result,
     find_overlapping_active_focused_loop,
@@ -21,10 +23,14 @@ from top_down_planning.domain.reviews import (
     is_discovery_respond_payload,
     is_review_respond_closed,
     is_terminal_review_loop,
+    loop_revise_at,
+    map_discovery_outcome_to_loop_status,
     merge_verification_findings,
     parse_discovery_respond_findings,
     parse_initial_review_findings,
     focused_loop_count,
+    policy_observability_fields,
+    required_open_findings,
     require_review_respond_stage,
     validate_decision,
     validate_findings_within_scope,
@@ -164,14 +170,12 @@ class ReviewAgentService:
             raise RequestError("respond requires target_revision")
         target_revision = int(request["target_revision"])
 
-        if "decision" not in request:
-            raise RequestError("respond requires decision")
-
         loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
         if is_review_respond_closed(loop):
             raise RequestError(f"review loop {loop_id} is already terminal: {loop.status}")
 
         stage: str | None = None
+        discovery_mode = is_discovery_respond_payload(request)
         try:
             if loop.type in {"whole_plan", "whole_output"}:
                 stage = require_review_respond_stage(request)
@@ -181,17 +185,92 @@ class ReviewAgentService:
                         f"respond stage {stage!r} does not match loop active_stage "
                         f"{loop.active_stage!r}"
                     )
-                decision = validate_mandatory_stage_decision(
-                    stage,
-                    str(request["decision"]),
-                )
+                if discovery_mode and stage in {
+                    "initial_review",
+                    "scope_blocker_review",
+                }:
+                    decision = None
+                else:
+                    if "decision" not in request:
+                        raise RequestError("respond requires decision")
+                    decision = validate_mandatory_stage_decision(
+                        stage,
+                        str(request["decision"]),
+                    )
             else:
                 validate_review_respond_stage(request)
-                decision = validate_decision(str(request["decision"]))
+                if discovery_mode:
+                    decision = None
+                else:
+                    if "decision" not in request:
+                        raise RequestError("respond requires decision")
+                    decision = validate_decision(str(request["decision"]))
         except ValueError as exc:
             raise RequestError(str(exc)) from exc
 
-        if loop.type in {"whole_plan", "whole_output"}:
+        verification_payload = None
+        blocker_payload = None
+        derived_outcome = None
+        updated: ReviewLoop | None = None
+        findings: list = []
+
+        if discovery_mode and (
+            loop.type in {"focused_plan", "focused_output"}
+            or stage in {"initial_review", "scope_blocker_review"}
+        ):
+            try:
+                updated, findings, derived_outcome = apply_discovery_response(
+                    loop,
+                    request,
+                    stage=stage,
+                )
+            except ValueError as exc:
+                raise RequestError(str(exc)) from exc
+            if loop.type in {"focused_plan", "focused_output"}:
+                try:
+                    validate_findings_within_scope(findings, loop.scope)
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
+            decision = map_discovery_outcome_to_loop_status(
+                derived_outcome,
+                stage=stage,
+            )
+            if stage == "scope_blocker_review" and derived_outcome in {
+                "approved",
+                "changes_requested",
+            }:
+                from dataclasses import replace as dc_replace
+
+                target_digest = str(request.get("target_digest") or "").strip()
+                scope_id = str(
+                    request.get("scope_id") or loop.scope.get("kind") or ""
+                ).strip()
+                required = required_open_findings(
+                    findings,
+                    loop_revise_at(updated),
+                )
+                blocker_payload = ScopeBlockerReviewResult(
+                    target_digest=target_digest,
+                    decision=(
+                        "approve"
+                        if derived_outcome == "approved"
+                        else "blockers_found"
+                    ),
+                    scope_id=scope_id or str(loop.scope.get("kind") or ""),
+                    acceptance_criteria_checked=[
+                        str(item)
+                        for item in (request.get("acceptance_criteria_checked") or [])
+                    ],
+                    blocking_findings=(
+                        required if derived_outcome == "changes_requested" else []
+                    ),
+                    summary=str(request.get("summary") or ""),
+                ).to_dict()
+                updated = dc_replace(
+                    updated,
+                    blocker_review_result=blocker_payload,
+                )
+        elif loop.type in {"whole_plan", "whole_output"}:
             if stage == "finding_verification":
                 try:
                     findings, verification_result = merge_verification_findings(
@@ -200,51 +279,27 @@ class ReviewAgentService:
                 except ValueError as exc:
                     raise RequestError(str(exc)) from exc
                 verification_payload = verification_result.to_dict()
-                blocker_payload = None
             elif stage == "scope_blocker_review":
                 try:
-                    if is_discovery_respond_payload(request):
-                        reported = parse_discovery_respond_findings(loop, request)
-                        # Bridge to legacy builder until naming migration lands.
-                        bridged = dict(request)
-                        bridged["blocking_findings"] = [
-                            finding.to_dict() for finding in reported
-                        ]
-                        findings, blocker_result = build_scope_blocker_review_result(
-                            bridged, loop
-                        )
-                    else:
-                        findings, blocker_result = build_scope_blocker_review_result(
-                            request, loop
-                        )
+                    findings, blocker_result = build_scope_blocker_review_result(
+                        request, loop
+                    )
                 except ValueError as exc:
                     raise RequestError(str(exc)) from exc
                 verification_payload = loop.verification_result
                 blocker_payload = blocker_result.to_dict()
             elif stage == "initial_review":
                 try:
-                    if is_discovery_respond_payload(request):
-                        findings = parse_discovery_respond_findings(loop, request)
-                    else:
-                        findings = parse_initial_review_findings(request)
+                    findings = parse_initial_review_findings(request)
                 except ValueError as exc:
                     raise RequestError(str(exc)) from exc
-                verification_payload = None
-                blocker_payload = None
             else:
                 raise RequestError(f"unsupported mandatory review stage: {stage}")
         else:
             try:
-                if is_discovery_respond_payload(request):
-                    findings = parse_discovery_respond_findings(loop, request)
-                else:
-                    findings = findings_from_focused_respond(request)
+                findings = findings_from_focused_respond(request)
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
-            verification_payload = None
-            blocker_payload = None
-
-        if loop.type in {"focused_plan", "focused_output"}:
             try:
                 validate_findings_within_scope(findings, loop.scope)
             except ValueError as exc:
@@ -260,6 +315,11 @@ class ReviewAgentService:
             raise RequestError(
                 f"target_revision {target_revision} does not match current {revision_label} "
                 f"revision {current_revision}"
+            )
+        if loop.target_revision != target_revision:
+            raise RequestError(
+                f"target_revision {target_revision} does not match loop target "
+                f"{loop.target_revision}"
             )
 
         approved_digests: dict[str, str] | None = None
@@ -320,20 +380,26 @@ class ReviewAgentService:
                         f"target_digest does not match current {artifact_key} digest"
                     )
 
-        try:
-            updated = apply_review_response(
-                loop,
-                target_revision=target_revision,
-                decision=decision,
-                findings=findings,
-                approved_digests=(
-                    approved_digests if decision in {"approved", "approve"} else None
-                ),
-                verification_result=verification_payload,
-                blocker_review_result=blocker_payload,
-            )
-        except ValueError as exc:
-            raise RequestError(str(exc)) from exc
+        if updated is None:
+            assert decision is not None
+            try:
+                updated = apply_review_response(
+                    loop,
+                    target_revision=target_revision,
+                    decision=decision,
+                    findings=findings,
+                    approved_digests=(
+                        approved_digests
+                        if decision in {"approved", "approve"}
+                        else None
+                    ),
+                    verification_result=verification_payload,
+                    blocker_review_result=blocker_payload,
+                )
+            except ValueError as exc:
+                raise RequestError(str(exc)) from exc
+        elif decision in {"approved", "approve"} and approved_digests is not None:
+            updated = replace_loop_approved_digests(updated, approved_digests)
 
         event: dict[str, Any] = {
             "type": "review_responded",
@@ -341,10 +407,20 @@ class ReviewAgentService:
             "loop_id": loop_id,
             "decision": decision,
             "target_revision": target_revision,
-            "finding_count": len(findings),
+            "finding_count": len(updated.findings),
         }
         if stage is not None:
             event["stage"] = stage
+        if derived_outcome is not None:
+            event["derived_outcome"] = derived_outcome
+            event.update(
+                policy_observability_fields(
+                    updated.findings,
+                    updated.finding_actions,
+                    loop_revise_at(updated),
+                    finding_set_id=updated.finding_set_id,
+                )
+            )
 
         self._store.commit(
             self._run_id,
@@ -364,7 +440,26 @@ class ReviewAgentService:
         }
         if stage is not None:
             response["stage"] = stage
+        if derived_outcome is not None:
+            response["derived_outcome"] = derived_outcome
+            response.update(
+                policy_observability_fields(
+                    updated.findings,
+                    updated.finding_actions,
+                    loop_revise_at(updated),
+                    finding_set_id=updated.finding_set_id,
+                )
+            )
         return response
+
+
+def replace_loop_approved_digests(
+    loop: ReviewLoop,
+    approved_digests: dict[str, str],
+) -> ReviewLoop:
+    from dataclasses import replace
+
+    return replace(loop, approved_digests=dict(approved_digests))
 
 
 def _focused_max_loops(config: dict[str, Any], review_type: str) -> int:

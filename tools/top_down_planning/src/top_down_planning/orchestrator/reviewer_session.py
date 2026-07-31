@@ -65,10 +65,10 @@ def build_reviewer_protocol_instructions(
         instructions.extend(
             [
                 (
-                    "Stage: finding_verification (Verify revisions). Confirm each "
-                    "finding was addressed, evidence supports closure, and direct "
-                    "revision side effects are handled. Do not search broadly for "
-                    "unrelated or previously missed issues."
+                    "Stage: finding_verification (Verify revisions). Verify the "
+                    "disposition of prior findings and direct revision side "
+                    "effects. Do not perform a broad discovery pass; the next "
+                    "fresh scope review handles newly discovered unrelated issues."
                 ),
                 (
                     "Respond with stage finding_verification. Prefer decision "
@@ -82,21 +82,26 @@ def build_reviewer_protocol_instructions(
         instructions.extend(
             [
                 (
-                    "Stage: scope_blocker_review (Check remaining blockers). This "
-                    "is a fresh discovery pass: do not anchor on prior finding "
-                    "lists or revision discussion. Search for remaining approval "
-                    "blockers within the current scope only."
+                    "Stage: scope_blocker_review (fresh scope review). This is a "
+                    "fresh discovery pass: do not anchor on prior finding lists "
+                    "or revision discussion. Review the complete current scope "
+                    "and report every material issue you find."
                 ),
                 (
-                    "Cover all approval-relevant surfaces in scope — not only "
-                    "last-changed areas. Do not raise optional style or out-of-scope "
-                    "improvements. Do not call this a full, confirmation, holistic, "
-                    "or spot-check review."
+                    "Classify each finding by severity and category using the "
+                    "provided review_policy definitions. Report every material "
+                    "issue you discover; do not omit lower-severity issues "
+                    "because they may not force revision. Do not report purely "
+                    "subjective preferences unless they are clearly marked as "
+                    "suggestions. Do not raise out-of-scope issues. Do not call "
+                    "this a full, confirmation, holistic, or spot-check review."
                 ),
                 (
-                    "Respond with stage scope_blocker_review. Prefer decision "
-                    "approve|blockers_found|blocked and blocking_findings. "
-                    "Finding closure alone must not approve the artifact."
+                    "Respond with stage scope_blocker_review using finding_set_id, "
+                    "reported_findings, review_completed, target_digest, and "
+                    "summary. Echo finding_set_id unchanged. Do not decide whether "
+                    "policy forces revision; the service derives that. Finding "
+                    "closure alone must not approve the artifact."
                 ),
             ]
         )
@@ -104,9 +109,23 @@ def build_reviewer_protocol_instructions(
         instructions.extend(
             [
                 (
-                    "Initial mandatory review: raise blocking findings when needed, "
-                    "or approve the candidate so a fresh scope_blocker_review can "
-                    "run. Approval of the run still requires that blocker gate."
+                    "Review the complete current scope and report every material "
+                    "issue you find. Classify each finding by severity and "
+                    "category using the provided review_policy definitions. "
+                    "Report every material issue you discover; do not omit "
+                    "lower-severity issues because they may not force revision. "
+                    "Do not report purely subjective preferences unless they are "
+                    "clearly marked as suggestions. Do not raise out-of-scope "
+                    "issues."
+                ),
+                (
+                    "Respond with finding_set_id, reported_findings, "
+                    "review_completed, and summary. Echo finding_set_id unchanged. "
+                    "Do not decide whether policy forces revision; the service "
+                    "derives lifecycle outcomes from findings. Set "
+                    "review_completed false only when inputs prevent a reliable "
+                    "review. For mandatory whole_* reviews, clear discovery still "
+                    "requires a later fresh scope review before run approval."
                 ),
             ]
         )

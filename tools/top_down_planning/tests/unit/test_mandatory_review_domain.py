@@ -163,14 +163,19 @@ def test_review_loop_round_trip_preserves_lifecycle_fields() -> None:
 
 def test_mandatory_lifecycle_transitions_match_state_model() -> None:
     expected = {
-        "review_pending": {"findings_open", "blocker_review_pending"},
-        "findings_open": {"revision_in_progress", "blocked"},
+        "review_pending": {
+            "findings_open",
+            "blocker_review_pending",
+            "review_incomplete",
+        },
+        "findings_open": {"revision_in_progress", "blocked", "review_incomplete"},
         "revision_in_progress": {"verification_pending", "limit_reached"},
         "verification_pending": {
             "findings_closed",
             "revision_in_progress",
             "blocked",
             "limit_reached",
+            "review_incomplete",
         },
         "findings_closed": {"blocker_review_pending", "limit_reached"},
         "blocker_review_pending": {
@@ -178,10 +183,17 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
             "findings_open",
             "blocked",
             "limit_reached",
+            "review_incomplete",
         },
         "approved": set(),
         "blocked": set(),
         "limit_reached": set(),
+        "review_incomplete": {
+            "review_pending",
+            "findings_open",
+            "blocker_review_pending",
+            "verification_pending",
+        },
     }
     assert {key: set(value) for key, value in MANDATORY_REVIEW_TRANSITIONS.items()} == (
         expected

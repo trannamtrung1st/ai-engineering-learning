@@ -16,6 +16,7 @@ from top_down_planning.domain.reviews import (
     loop_revise_at,
     mandatory_stage_respond_decision,
     next_finding_set_id,
+    reviewer_package_policy_guidance,
 )
 
 ReviewArtifactKind = Literal["plan", "output"]
@@ -235,6 +236,7 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "stage": stage,
         "lifecycle_status": loop.lifecycle_status or "review_pending",
+        "review_policy": reviewer_package_policy_guidance(),
     }
     if stage == "scope_blocker_review":
         # Freshness: omit prior finding lists from framing; include allocated id.
@@ -244,9 +246,9 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             "omit_prior_finding_framing": True,
             "include_prior_findings": False,
             "purpose": (
-                "Scope-complete blocker review: search for remaining approval "
-                "blockers within the current scope without anchoring on prior "
-                "finding discussion."
+                "Fresh scope review: report every material issue in the current "
+                "scope without anchoring on prior finding discussion. Do not omit "
+                "lower-severity issues because they may not force revision."
             ),
         }
         if loop.type == "whole_plan":
@@ -273,23 +275,28 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             ]
         fields["respond_contract"] = {
             "stage": "scope_blocker_review",
-            "decisions": ["approve", "blockers_found", "blocked"],
-            "required_fields": [
-                "blocking_findings",
-                "acceptance_criteria_checked",
+            "preferred_fields": [
+                "finding_set_id",
+                "reported_findings",
+                "review_completed",
                 "target_digest",
                 "scope_id",
                 "summary",
+            ],
+            "legacy_fields": [
+                "decision",
+                "blocking_findings",
+                "acceptance_criteria_checked",
             ],
         }
     elif stage == "finding_verification":
         if loop.finding_set_id is not None:
             fields["finding_set_id"] = loop.finding_set_id
         fields["verification_guidance"] = [
-            "Verify each finding was addressed",
+            "Verify disposition of prior findings",
             "Confirm required outcomes and evidence",
             "Check direct revision side effects only",
-            "Do not search broadly for unrelated issues",
+            "Do not perform a broad discovery pass",
         ]
         fields["respond_contract"] = {
             "stage": "finding_verification",
@@ -307,20 +314,21 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             fields["finding_set_id"] = loop.finding_set_id
         fields["respond_contract"] = {
             "stage": "initial_review",
-            "decisions": ["approved", "changes_requested", "blocked"],
-            "required_fields": [
+            "preferred_fields": [
                 "finding_set_id",
                 "reported_findings",
                 "review_completed",
                 "target_digest",
                 "summary",
             ],
+            "legacy_fields": ["decision", "findings"],
         }
         fields["initial_review_guidance"] = [
-            "Mandatory review gate: initial discovery may raise findings",
-            "Clear initial approval still requires a separate scope_blocker_review",
+            "Mandatory review gate: report every material issue with severity and category",
+            "Clear initial discovery still requires a separate fresh scope review",
             "Do not treat this pass as final approval",
-            "Echo finding_set_id unchanged; report every material issue with severity and category",
+            "Echo finding_set_id unchanged; service derives lifecycle outcomes",
+            "Do not omit lower-severity issues because they may not force revision",
         ]
     return fields
 

@@ -34,6 +34,7 @@ ReviewLoopStatus = Literal[
     "needs_revision",
     "approve",
     "blockers_found",
+    "review_incomplete",
 ]
 MandatoryStageDecision = Literal[
     "approved",
@@ -43,6 +44,7 @@ MandatoryStageDecision = Literal[
     "needs_revision",
     "approve",
     "blockers_found",
+    "review_incomplete",
 ]
 REVISION_REQUESTED_STATUSES = frozenset(
     {"changes_requested", "needs_revision", "blockers_found"}
@@ -83,6 +85,7 @@ MandatoryReviewLifecycleStatus = Literal[
     "approved",
     "blocked",
     "limit_reached",
+    "review_incomplete",
 ]
 
 FINDING_DISPOSITIONS: frozenset[str] = frozenset(
@@ -121,19 +124,37 @@ OPTIONAL_FINDING_OWNER_ACTIONS: frozenset[str] = frozenset(
 )
 
 MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
-    "review_pending": frozenset({"findings_open", "blocker_review_pending"}),
-    "findings_open": frozenset({"revision_in_progress", "blocked"}),
+    "review_pending": frozenset(
+        {"findings_open", "blocker_review_pending", "review_incomplete"}
+    ),
+    "findings_open": frozenset(
+        {"revision_in_progress", "blocked", "review_incomplete"}
+    ),
     "revision_in_progress": frozenset({"verification_pending", "limit_reached"}),
     "verification_pending": frozenset(
-        {"findings_closed", "revision_in_progress", "blocked", "limit_reached"}
+        {
+            "findings_closed",
+            "revision_in_progress",
+            "blocked",
+            "limit_reached",
+            "review_incomplete",
+        }
     ),
     "findings_closed": frozenset({"blocker_review_pending", "limit_reached"}),
     "blocker_review_pending": frozenset(
-        {"approved", "findings_open", "blocked", "limit_reached"}
+        {"approved", "findings_open", "blocked", "limit_reached", "review_incomplete"}
     ),
     "approved": frozenset(),
     "blocked": frozenset(),
     "limit_reached": frozenset(),
+    "review_incomplete": frozenset(
+        {
+            "review_pending",
+            "findings_open",
+            "blocker_review_pending",
+            "verification_pending",
+        }
+    ),
 }
 
 
@@ -1215,6 +1236,163 @@ def parse_discovery_respond_findings(
     reported = parse_reported_findings(request)
     assert_reported_finding_ids_unused(loop, reported)
     return reported
+
+
+def merge_discovery_findings(
+    loop: ReviewLoop,
+    reported: Sequence[ReviewFinding],
+) -> list[ReviewFinding]:
+    """Append-only merge of discovery findings into loop history.
+
+    Existing finding records are never mutated. Reused IDs are rejected.
+    """
+
+    assert_reported_finding_ids_unused(loop, reported)
+    return list(loop.findings) + list(reported)
+
+
+def parse_request_finding_actions(
+    request: Mapping[str, Any],
+) -> list[FindingAction]:
+    """Parse optional finding_actions from a respond payload."""
+
+    if "finding_actions" not in request:
+        return []
+    raw = request.get("finding_actions")
+    if not isinstance(raw, list):
+        raise ValueError("finding_actions must be a list")
+    return [
+        parse_finding_action(item)
+        for item in raw
+        if isinstance(item, dict)
+    ]
+
+
+DiscoveryDerivedOutcome = Literal[
+    "approved",
+    "changes_requested",
+    "review_incomplete",
+    "pending",
+]
+
+
+def derive_discovery_outcome(
+    findings: Sequence[ReviewFinding],
+    finding_actions: Sequence[FindingAction],
+    threshold: ReviewSeverity,
+    *,
+    review_completed: bool,
+    finding_set_id: str | None = None,
+) -> DiscoveryDerivedOutcome:
+    """Derive lifecycle outcome from findings and revise_at (service-owned)."""
+
+    if not review_completed:
+        return "review_incomplete"
+    if required_open_findings(findings, threshold):
+        return "changes_requested"
+    if open_optional_findings_without_owner_action(
+        findings,
+        finding_actions,
+        threshold,
+        finding_set_id=finding_set_id,
+    ):
+        # Optional findings need owner actions; do not force revision.
+        return "pending"
+    return "approved"
+
+
+def map_discovery_outcome_to_loop_status(
+    outcome: DiscoveryDerivedOutcome,
+    *,
+    stage: str | None = None,
+) -> ReviewLoopStatus:
+    """Map derived discovery outcome onto persisted loop status vocabulary."""
+
+    if outcome == "review_incomplete":
+        return "review_incomplete"
+    if outcome == "pending":
+        return "pending"
+    if outcome == "changes_requested":
+        if stage == "scope_blocker_review":
+            return "blockers_found"
+        return "changes_requested"
+    if stage == "scope_blocker_review":
+        return "approve"
+    return "approved"
+
+
+def build_review_incomplete_marker(
+    *,
+    stage: str | None,
+    finding_set_id: str,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "stage": stage or "discovery",
+        "finding_set_id": finding_set_id,
+        "reason": reason,
+    }
+
+
+def apply_discovery_response(
+    loop: ReviewLoop,
+    request: Mapping[str, Any],
+    *,
+    stage: str | None = None,
+) -> tuple[ReviewLoop, list[ReviewFinding], DiscoveryDerivedOutcome]:
+    """Validate, merge, and derive outcome for a discovery respond payload."""
+
+    reported = parse_discovery_respond_findings(loop, request)
+    review_completed = bool(request.get("review_completed"))
+    finding_set_id = validate_finding_set_id_echo(loop, request)
+    merged = merge_discovery_findings(loop, reported)
+    incoming_actions = parse_request_finding_actions(request)
+    finding_actions = list(loop.finding_actions) + incoming_actions
+    threshold = loop_revise_at(loop)
+    outcome = derive_discovery_outcome(
+        merged,
+        finding_actions,
+        threshold,
+        review_completed=review_completed,
+        finding_set_id=finding_set_id,
+    )
+    incomplete: dict[str, Any] | None = None
+    if outcome == "review_incomplete":
+        reason = str(request.get("summary") or "").strip() or (
+            "Review could not be completed."
+        )
+        incomplete = build_review_incomplete_marker(
+            stage=stage or (loop.active_stage or "initial_review"),
+            finding_set_id=finding_set_id,
+            reason=reason,
+        )
+    status = map_discovery_outcome_to_loop_status(outcome, stage=stage)
+    updated = replace(
+        loop,
+        findings=merged,
+        finding_actions=finding_actions,
+        review_incomplete=incomplete,
+        status=status,
+    )
+    if is_mandatory_review_loop(loop) and outcome == "review_incomplete":
+        updated = replace(updated, lifecycle_status="review_incomplete")
+    return updated, merged, outcome
+
+
+def reviewer_package_policy_guidance() -> dict[str, Any]:
+    """Severity guidance for reviewer packages (never includes revise_at)."""
+
+    from top_down_planning.domain.review_policy import (
+        BUILTIN_FINDING_CATEGORIES,
+        SEVERITY_DEFINITIONS,
+        SEVERITY_ORDER,
+    )
+
+    return {
+        "severity_order": list(SEVERITY_ORDER),
+        "severity_definitions": dict(SEVERITY_DEFINITIONS),
+        "categories": sorted(BUILTIN_FINDING_CATEGORIES),
+    }
 
 
 def parse_initial_review_findings(request: dict[str, Any]) -> list[ReviewFinding]:

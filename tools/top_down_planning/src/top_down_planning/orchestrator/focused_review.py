@@ -12,7 +12,11 @@ from top_down_planning.domain.production import (
     build_output_traceability,
     build_production_review_snapshot,
 )
-from top_down_planning.domain.reviews import ReviewLoop, allocate_discovery_finding_set_id
+from top_down_planning.domain.reviews import (
+    ReviewLoop,
+    allocate_discovery_finding_set_id,
+    reviewer_package_policy_guidance,
+)
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     plan_execution_contract_fields,
@@ -481,6 +485,7 @@ def build_focused_review_package(
         "target_revision": loop.target_revision,
         **plan_execution_contract_fields(plan),
         "digests": digests,
+        "review_policy": reviewer_package_policy_guidance(),
         "protocol_instructions": build_reviewer_protocol_instructions(),
         "tool_instructions": tool_instructions,
         },
