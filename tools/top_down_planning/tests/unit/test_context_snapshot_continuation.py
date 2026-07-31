@@ -515,7 +515,7 @@ def test_engine_enters_whole_output_review_after_production_resource_mutation(
     event_types = [event.get("type") for event in events]
     assert "phase_entry_attempted" in event_types
     assert "whole_output_review_started" in event_types
-    assert "whole_output_blocker_review_started" in event_types
+    assert "whole_output_scope_review_started" in event_types
     started = [event for event in events if event.get("type") == "reviewer_session_started"]
     resumed = [event for event in events if event.get("type") == "reviewer_session_resumed"]
     assert len(started) == 2

@@ -80,6 +80,7 @@ def test_mandatory_review_limits_from_config_defaults_and_overrides() -> None:
     assert defaults == MandatoryReviewLimits()
     assert defaults.to_dict() == {
         "max_revision_cycles": 5,
+        "max_scope_review_rounds": 3,
         "max_blocker_review_rounds": 3,
     }
 
@@ -130,7 +131,7 @@ def test_limit_reached_preserves_findings_and_rejects_approval() -> None:
         findings=findings,
     )
     assert blocker_exhausted is not None
-    assert blocker_exhausted.exhausted_budget == "blocker_review"
+    assert blocker_exhausted.exhausted_budget == "scope_review"
 
 
 def test_exhausted_budget_never_approves_even_when_stages_clear() -> None:

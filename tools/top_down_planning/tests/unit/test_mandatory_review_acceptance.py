@@ -109,7 +109,7 @@ def test_core_invariant_finding_closure_alone_never_approves() -> None:
     assert approved_means_start_blocker_review(initial) is True
 
     blocker_pending = prepare_blocker_review_loop(initial)
-    assert blocker_pending.active_stage == "scope_blocker_review"
+    assert blocker_pending.active_stage == "scope_review"
     assert blocker_pending.status == "pending"
     assert approved_means_final_approval(blocker_pending) is True
     fields = stage_package_fields(blocker_pending)
@@ -232,8 +232,8 @@ def test_whole_plan_approval_requires_fresh_blocker_gate(tmp_path: Path) -> None
     assert result.ok is True
     assert result.phase == PLAN_VALIDATED
     review = store.load_review(run_id, "review-whole-plan-01")
-    assert review["status"] == "approve"
-    assert review["active_stage"] == "scope_blocker_review"
+    assert review["status"] == "approved"
+    assert review["active_stage"] == "scope_review"
     assert review["blocker_review_rounds"] == 1
     assert review.get("approved_digests")
     assert "plan" in review["approved_digests"]
@@ -258,8 +258,8 @@ def test_whole_output_approval_requires_fresh_blocker_gate(tmp_path: Path) -> No
     assert result.ok is True
     assert result.phase == OUTPUT_VALIDATED
     review = store.load_review(run_id, "review-whole-output-01")
-    assert review["status"] == "approve"
-    assert review["active_stage"] == "scope_blocker_review"
+    assert review["status"] == "approved"
+    assert review["active_stage"] == "scope_review"
     assert review["blocker_review_rounds"] == 1
     assert review.get("approved_digests")
     assert "output" in review["approved_digests"]
@@ -415,7 +415,7 @@ def test_whole_output_blocker_round_limit_rejects_without_approval(
 
     assert result.ok is False
     assert result.outcome == "rejected"
-    assert "max_blocker_review_rounds" in (result.reason or "")
+    assert "max_scope_review_rounds" in (result.reason or "")
     run = store.load_run(run_id)
     assert run.get("phase") != OUTPUT_VALIDATED
 

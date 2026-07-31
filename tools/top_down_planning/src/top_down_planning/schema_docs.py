@@ -884,11 +884,17 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                     "finding set for mandatory whole-plan review."
                                 ),
                             },
+                            "max_scope_review_rounds": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum fresh scope-complete review "
+                                    "rounds per whole-plan review phase."
+                                ),
+                            },
                             "max_blocker_review_rounds": {
                                 "type": "integer",
                                 "description": (
-                                    "Maximum fresh scope-complete blocker-review "
-                                    "rounds per whole-plan review phase."
+                                    "Legacy alias for max_scope_review_rounds."
                                 ),
                             },
                         },
@@ -920,11 +926,17 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                     "finding set for mandatory whole-output review."
                                 ),
                             },
+                            "max_scope_review_rounds": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum fresh scope-complete review "
+                                    "rounds per whole-output review phase."
+                                ),
+                            },
                             "max_blocker_review_rounds": {
                                 "type": "integer",
                                 "description": (
-                                    "Maximum fresh scope-complete blocker-review "
-                                    "rounds per whole-output review phase."
+                                    "Legacy alias for max_scope_review_rounds."
                                 ),
                             },
                         },

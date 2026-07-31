@@ -37,15 +37,15 @@ def test_whole_plan_clear_path_requires_blocker_review(tmp_path: Path) -> None:
     assert result.ok is True
     assert result.phase == PLAN_VALIDATED
     review = store.load_review(run_id, "review-whole-plan-01")
-    assert review["active_stage"] == "scope_blocker_review"
+    assert review["active_stage"] == "scope_review"
     assert review["blocker_review_rounds"] == 1
-    assert review["status"] == "approve"
+    assert review["status"] == "approved"
     events = store.load_events(run_id)
     started = [event for event in events if event.get("type") == "reviewer_session_started"]
     resumed = [event for event in events if event.get("type") == "reviewer_session_resumed"]
     assert len(started) == 2
     assert len(resumed) == 0
-    assert any(event.get("type") == "whole_plan_blocker_review_started" for event in events)
+    assert any(event.get("type") == "whole_plan_scope_review_started" for event in events)
 
 
 def test_whole_plan_blocker_reopen_returns_to_verification(tmp_path: Path) -> None:
@@ -236,7 +236,7 @@ def test_whole_plan_blocker_round_limit_rejects(tmp_path: Path) -> None:
 
     assert result.ok is False
     assert result.outcome == "rejected"
-    assert "max_blocker_review_rounds" in (result.reason or "")
+    assert "max_scope_review_rounds" in (result.reason or "")
     review = store.load_review(run_id, "review-whole-plan-01")
     assert review.get("lifecycle_status") == "limit_reached"
 
@@ -255,12 +255,12 @@ def test_whole_output_clear_path_requires_blocker_review(tmp_path: Path) -> None
     assert result.ok is True
     assert result.phase == OUTPUT_VALIDATED
     review = store.load_review(run_id, "review-whole-output-01")
-    assert review["active_stage"] == "scope_blocker_review"
+    assert review["active_stage"] == "scope_review"
     assert review["blocker_review_rounds"] == 1
-    assert review["status"] == "approve"
+    assert review["status"] == "approved"
     events = store.load_events(run_id)
     started = [event for event in events if event.get("type") == "reviewer_session_started"]
     resumed = [event for event in events if event.get("type") == "reviewer_session_resumed"]
     assert len(started) == 2
     assert len(resumed) == 0
-    assert any(event.get("type") == "whole_output_blocker_review_started" for event in events)
+    assert any(event.get("type") == "whole_output_scope_review_started" for event in events)

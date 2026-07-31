@@ -9,10 +9,12 @@ from top_down_planning.domain.reviews import (
     ExhaustedReviewBudget,
     MandatoryReviewLimits,
     ReviewLoop,
+    SCOPE_REVIEW_STAGE,
     allocate_discovery_finding_set_id,
     blocking_unresolved_finding_ids,
     build_limit_reached_terminal,
     assert_mandatory_review_transition,
+    is_scope_review_stage_name,
     loop_revise_at,
     mandatory_stage_respond_decision,
     next_finding_set_id,
@@ -23,11 +25,17 @@ ReviewArtifactKind = Literal["plan", "output"]
 
 _INITIAL_STAGES = frozenset({None, "initial_review"})
 _VERIFICATION_STAGES = frozenset({"finding_verification"})
-_BLOCKER_STAGES = frozenset({"scope_blocker_review"})
+_SCOPE_REVIEW_STAGES = frozenset({"scope_review", "scope_blocker_review"})
+
+
+def is_scope_review_stage(loop: ReviewLoop) -> bool:
+    return is_scope_review_stage_name(loop.active_stage)
 
 
 def is_blocker_stage(loop: ReviewLoop) -> bool:
-    return loop.active_stage in _BLOCKER_STAGES
+    """Legacy alias for :func:`is_scope_review_stage`."""
+
+    return is_scope_review_stage(loop)
 
 
 def is_verification_or_initial_stage(loop: ReviewLoop) -> bool:
@@ -49,12 +57,12 @@ def seed_mandatory_loop_fields(loop: ReviewLoop) -> ReviewLoop:
 
 
 def mark_findings_open(loop: ReviewLoop) -> ReviewLoop:
-    """Enter Stage-1 after findings (or blockers) are raised."""
+    """Enter Stage-1 after findings (or scope-review reopen) are raised."""
 
     current = loop.lifecycle_status or "review_pending"
-    from_blocker = loop.active_stage == "scope_blocker_review"
+    from_scope = is_scope_review_stage(loop)
 
-    if from_blocker:
+    if from_scope:
         assert_mandatory_review_transition(current, "findings_open")
         finding_set_id = next_finding_set_id(loop)
         revision_cycles = 0
@@ -100,7 +108,7 @@ def mark_revision_in_progress(loop: ReviewLoop) -> ReviewLoop:
 
 
 def enter_planner_revision_cycle(loop: ReviewLoop) -> ReviewLoop:
-    """Enter planner revision after needs_revision / blockers_found / changes_requested."""
+    """Enter planner revision after needs_revision / changes_requested."""
 
     current = loop.lifecycle_status or "findings_open"
     if current == "revision_in_progress":
@@ -141,8 +149,8 @@ def mark_findings_closed(loop: ReviewLoop) -> ReviewLoop:
     )
 
 
-def prepare_blocker_review_loop(loop: ReviewLoop) -> ReviewLoop:
-    """Reset for a fresh scope-complete blocker review (approval gate).
+def prepare_scope_review_loop(loop: ReviewLoop) -> ReviewLoop:
+    """Reset for a fresh scope-complete review (approval gate).
 
     Clears reviewer session so the orchestrator allocates a new context.
     Does not frame the discovery pass with prior finding discussion; findings
@@ -156,14 +164,14 @@ def prepare_blocker_review_loop(loop: ReviewLoop) -> ReviewLoop:
     if current == "verification_pending":
         loop = mark_findings_closed(loop)
         current = loop.lifecycle_status or "findings_closed"
-    assert_mandatory_review_transition(current, "blocker_review_pending")
+    assert_mandatory_review_transition(current, "scope_review_pending")
 
     prepared = replace(
         loop,
         status="pending",
         reviewer_session_id=None,
-        lifecycle_status="blocker_review_pending",
-        active_stage="scope_blocker_review",
+        lifecycle_status="scope_review_pending",
+        active_stage=SCOPE_REVIEW_STAGE,
         blocker_review_rounds=loop.blocker_review_rounds + 1,
         approved_digests=None,
         blocker_review_result=None,
@@ -172,21 +180,27 @@ def prepare_blocker_review_loop(loop: ReviewLoop) -> ReviewLoop:
     return prepared
 
 
+def prepare_blocker_review_loop(loop: ReviewLoop) -> ReviewLoop:
+    """Legacy alias for :func:`prepare_scope_review_loop`."""
+
+    return prepare_scope_review_loop(loop)
+
+
 def mark_mandatory_approved(loop: ReviewLoop) -> ReviewLoop:
     if loop.lifecycle_status == "approved":
         return replace(
             loop,
             lifecycle_status="approved",
-            status="approve",
-            active_stage="scope_blocker_review",
+            status="approved",
+            active_stage=SCOPE_REVIEW_STAGE,
         )
-    current = loop.lifecycle_status or "blocker_review_pending"
+    current = loop.lifecycle_status or "scope_review_pending"
     assert_mandatory_review_transition(current, "approved")
     return replace(
         loop,
         lifecycle_status="approved",
-        status="approve",
-        active_stage="scope_blocker_review",
+        status="approved",
+        active_stage=SCOPE_REVIEW_STAGE,
     )
 
 
@@ -208,20 +222,20 @@ def mark_limit_reached_loop(
         status="blocked",
         lifecycle_status="limit_reached",
         findings=list(terminal.findings),
-        exhausted_budget=exhausted,
+        exhausted_budget=terminal.exhausted_budget,
     )
 
 
 def approved_means_final_approval(loop: ReviewLoop) -> bool:
-    """True when ``approved`` may complete the mandatory gate (blocker clear)."""
+    """True when ``approved`` may complete the mandatory gate (scope clear)."""
 
-    return is_blocker_stage(loop)
+    return is_scope_review_stage(loop)
 
 
-def approved_means_start_blocker_review(loop: ReviewLoop) -> bool:
-    """True when ``approved`` means findings closed / no findings → blocker gate."""
+def approved_means_start_scope_review(loop: ReviewLoop) -> bool:
+    """True when ``approved`` means findings closed / no findings → scope gate."""
 
-    if is_blocker_stage(loop):
+    if is_scope_review_stage(loop):
         return False
     return not blocking_unresolved_finding_ids(
         loop.findings,
@@ -229,16 +243,29 @@ def approved_means_start_blocker_review(loop: ReviewLoop) -> bool:
     )
 
 
+def approved_means_start_blocker_review(loop: ReviewLoop) -> bool:
+    """Legacy alias for :func:`approved_means_start_scope_review`."""
+
+    return approved_means_start_scope_review(loop)
+
+
 def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
     """Fields embedded in reviewer packages for stage awareness."""
 
-    stage = loop.active_stage or "initial_review"
+    from top_down_planning.domain.reviews import canonicalize_review_stage
+
+    stage = canonicalize_review_stage(loop.active_stage) or "initial_review"
     fields: dict[str, Any] = {
         "stage": stage,
-        "lifecycle_status": loop.lifecycle_status or "review_pending",
+        "lifecycle_status": (
+            # Prefer canonical lifecycle names in packages.
+            "scope_review_pending"
+            if str(loop.lifecycle_status or "") == "blocker_review_pending"
+            else (loop.lifecycle_status or "review_pending")
+        ),
         "review_policy": reviewer_package_policy_guidance(),
     }
-    if stage == "scope_blocker_review":
+    if is_scope_review_stage_name(stage):
         # Freshness: omit prior finding lists from framing; include allocated id.
         if loop.finding_set_id is not None:
             fields["finding_set_id"] = loop.finding_set_id
@@ -252,7 +279,7 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             ),
         }
         if loop.type == "whole_plan":
-            fields["blocker_scope_guidance"] = [
+            fields["scope_review_guidance"] = [
                 "coverage of the original request",
                 "required deliverables",
                 "actionable completeness",
@@ -262,8 +289,10 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
                 "unresolved assumptions that prevent execution",
                 "applicable planning acceptance criteria",
             ]
+            # Deprecated dual-write key for older prompt consumers.
+            fields["blocker_scope_guidance"] = fields["scope_review_guidance"]
         else:
-            fields["blocker_scope_guidance"] = [
+            fields["scope_review_guidance"] = [
                 "conformance to the approved plan",
                 "required deliverables",
                 "correctness",
@@ -273,8 +302,9 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
                 "applicable output acceptance criteria",
                 "regressions that prevent use or acceptance",
             ]
+            fields["blocker_scope_guidance"] = fields["scope_review_guidance"]
         fields["respond_contract"] = {
-            "stage": "scope_blocker_review",
+            "stage": SCOPE_REVIEW_STAGE,
             "preferred_fields": [
                 "finding_set_id",
                 "reported_findings",
@@ -361,7 +391,7 @@ def verification_recheck_request(
 def limit_message(
     limits: MandatoryReviewLimits,
     *,
-    exhausted: Literal["verification_revision", "blocker_review"],
+    exhausted: Literal["verification_revision", "scope_review", "blocker_review"],
     review_label: str,
 ) -> str:
     if exhausted == "verification_revision":
@@ -370,6 +400,6 @@ def limit_message(
             f"({limits.max_revision_cycles})"
         )
     return (
-        f"{review_label} exceeded max_blocker_review_rounds "
-        f"({limits.max_blocker_review_rounds})"
+        f"{review_label} exceeded max_scope_review_rounds "
+        f"({limits.max_scope_review_rounds})"
     )

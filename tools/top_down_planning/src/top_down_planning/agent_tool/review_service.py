@@ -14,15 +14,17 @@ from top_down_planning.domain.approval_digests import (
 from top_down_planning.domain.review_policy import resolved_revise_at
 from top_down_planning.domain.reviews import (
     ReviewLoop,
-    ScopeBlockerReviewResult,
+    ScopeReviewResult,
     apply_discovery_response,
     apply_owner_finding_actions,
     apply_review_response,
-    build_scope_blocker_review_result,
+    build_scope_review_result,
+    canonicalize_review_stage,
     find_overlapping_active_focused_loop,
     findings_from_focused_respond,
     is_discovery_respond_payload,
     is_review_respond_closed,
+    is_scope_review_stage_name,
     is_terminal_review_loop,
     loop_revise_at,
     map_discovery_outcome_to_loop_status,
@@ -181,15 +183,16 @@ class ReviewAgentService:
             if loop.type in {"whole_plan", "whole_output"}:
                 stage = require_review_respond_stage(request)
                 expected_stage = loop.active_stage or "initial_review"
-                if stage != expected_stage:
+                if canonicalize_review_stage(stage) != canonicalize_review_stage(
+                    expected_stage
+                ):
                     raise ValueError(
                         f"respond stage {stage!r} does not match loop active_stage "
                         f"{loop.active_stage!r}"
                     )
-                if discovery_mode and stage in {
-                    "initial_review",
-                    "scope_blocker_review",
-                }:
+                if discovery_mode and (
+                    stage == "initial_review" or is_scope_review_stage_name(stage)
+                ):
                     decision = None
                 else:
                     if "decision" not in request:
@@ -217,7 +220,8 @@ class ReviewAgentService:
 
         if discovery_mode and (
             loop.type in {"focused_plan", "focused_output"}
-            or stage in {"initial_review", "scope_blocker_review"}
+            or stage == "initial_review"
+            or is_scope_review_stage_name(stage)
         ):
             try:
                 updated, findings, derived_outcome = apply_discovery_response(
@@ -236,7 +240,7 @@ class ReviewAgentService:
                 derived_outcome,
                 stage=stage,
             )
-            if stage == "scope_blocker_review" and derived_outcome in {
+            if is_scope_review_stage_name(stage) and derived_outcome in {
                 "approved",
                 "changes_requested",
             }:
@@ -250,19 +254,19 @@ class ReviewAgentService:
                     findings,
                     loop_revise_at(updated),
                 )
-                blocker_payload = ScopeBlockerReviewResult(
+                blocker_payload = ScopeReviewResult(
                     target_digest=target_digest,
                     decision=(
-                        "approve"
+                        "approved"
                         if derived_outcome == "approved"
-                        else "blockers_found"
+                        else "changes_requested"
                     ),
                     scope_id=scope_id or str(loop.scope.get("kind") or ""),
                     acceptance_criteria_checked=[
                         str(item)
                         for item in (request.get("acceptance_criteria_checked") or [])
                     ],
-                    blocking_findings=(
+                    reported_findings=(
                         required if derived_outcome == "changes_requested" else []
                     ),
                     summary=str(request.get("summary") or ""),
@@ -280,9 +284,9 @@ class ReviewAgentService:
                 except ValueError as exc:
                     raise RequestError(str(exc)) from exc
                 verification_payload = verification_result.to_dict()
-            elif stage == "scope_blocker_review":
+            elif is_scope_review_stage_name(stage):
                 try:
-                    findings, blocker_result = build_scope_blocker_review_result(
+                    findings, blocker_result = build_scope_review_result(
                         request, loop
                     )
                 except ValueError as exc:
@@ -353,10 +357,9 @@ class ReviewAgentService:
 
             mandatory_stage = stage or (loop.active_stage or "initial_review")
             request_digest = str(request.get("target_digest") or "").strip()
-            stages_requiring_digest = frozenset(
-                {"finding_verification", "scope_blocker_review"}
-            )
-            if mandatory_stage in stages_requiring_digest:
+            if mandatory_stage == "finding_verification" or is_scope_review_stage_name(
+                mandatory_stage
+            ):
                 if not request_digest:
                     raise RequestError(
                         f"{mandatory_stage} respond requires target_digest"

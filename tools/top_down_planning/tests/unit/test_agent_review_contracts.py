@@ -266,13 +266,13 @@ def test_blocker_package_omits_prior_finding_framing(tmp_path: Path) -> None:
         plan,
         loop,
     )
-    assert package["stage"] == "scope_blocker_review"
+    assert package["stage"] == "scope_review"
     assert package["freshness"]["omit_prior_finding_framing"] is True
     assert package["freshness"]["include_prior_findings"] is False
     assert "findings" not in package
     assert package["finding_set_id"] == "review-whole-plan-01-fs-01"
     protocol = " ".join(package["protocol_instructions"]).lower()
-    assert "scope_blocker_review" in protocol
+    assert "scope_review" in protocol
     assert "fresh discovery" in protocol
     for banned in _FORBIDDEN_STAGE_LABELS:
         # Allowed only as negation in the freshness instruction.
@@ -280,7 +280,7 @@ def test_blocker_package_omits_prior_finding_framing(tmp_path: Path) -> None:
             assert "do not call this a full" in protocol
             continue
         assert banned not in protocol
-    assert package["respond_contract"]["stage"] == "scope_blocker_review"
+    assert package["respond_contract"]["stage"] == "scope_review"
 
 
 def test_verification_package_and_recheck_include_finding_guidance() -> None:

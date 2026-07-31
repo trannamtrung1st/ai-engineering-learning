@@ -215,13 +215,13 @@ def mandatory_blocker_respond_request(
     return {
         "loop_id": loop_id,
         "target_revision": target_revision,
-        "stage": "scope_blocker_review",
-        "decision": "approve",
+        "stage": "scope_review",
+        "decision": "approved",
         "blocking_findings": findings or [],
         "target_digest": digest,
         "scope_id": scope_id,
         "acceptance_criteria_checked": ["Core Invariant"],
-        "summary": "No remaining blockers.",
+        "summary": "No remaining required findings.",
     }
 
 
@@ -243,12 +243,12 @@ def mandatory_blocker_found_respond_request(
     return {
         "loop_id": loop_id,
         "target_revision": target_revision,
-        "stage": "scope_blocker_review",
-        "decision": "blockers_found",
+        "stage": "scope_review",
+        "decision": "changes_requested",
         "blocking_findings": findings,
         "target_digest": digest,
         "scope_id": scope_id,
-        "summary": "Blockers remain.",
+        "summary": "Required findings remain.",
     }
 
 

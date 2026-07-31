@@ -206,9 +206,9 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
     assert review.get("blocker_review_result")
 
     review = store.load_review("run-20260101T000301-000301", "review-whole-plan-01")
-    assert review["status"] == "approve"
+    assert review["status"] == "approved"
     assert review["target_revision"] == 1
-    assert review.get("active_stage") == "scope_blocker_review"
+    assert review.get("active_stage") == "scope_review"
     assert review.get("blocker_review_rounds", 0) >= 1
 
     run = store.load_run("run-20260101T000301-000301")

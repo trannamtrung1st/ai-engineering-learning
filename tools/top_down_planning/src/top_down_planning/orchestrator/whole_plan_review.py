@@ -332,19 +332,19 @@ class WholePlanReviewOrchestrator:
         loop: ReviewLoop,
         limits: Any,
     ) -> ReviewLoop | WholePlanReviewResult:
-        if loop.blocker_review_rounds >= limits.max_blocker_review_rounds:
+        if loop.blocker_review_rounds >= limits.max_scope_review_rounds:
             loop = self._persist_loop(
                 mark_limit_reached_loop(
                     loop,
                     limits=limits,
-                    exhausted="blocker_review",
+                    exhausted="scope_review",
                 )
             )
             return self._terminate(
                 "rejected",
                 limit_message(
                     limits,
-                    exhausted="blocker_review",
+                    exhausted="scope_review",
                     review_label="whole-plan review",
                 ),
                 loop=loop,
@@ -353,8 +353,9 @@ class WholePlanReviewOrchestrator:
             revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
         updated = self._persist_loop(prepare_blocker_review_loop(loop))
         self._append_event(
-            "whole_plan_blocker_review_started",
+            "whole_plan_scope_review_started",
             loop_id=updated.id,
+            scope_review_rounds=updated.blocker_review_rounds,
             blocker_review_rounds=updated.blocker_review_rounds,
             target_revision=updated.target_revision,
         )
@@ -522,7 +523,7 @@ class WholePlanReviewOrchestrator:
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
         stage = loop.active_stage or "initial_review"
-        if stage in {None, "initial_review", "scope_blocker_review"}:
+        if stage in {None, "initial_review", "scope_review", "scope_blocker_review"}:
             loop, _finding_set_id = allocate_discovery_finding_set_id(loop)
             loop = self._persist_loop(loop)
         package = build_whole_plan_review_package(
@@ -804,8 +805,8 @@ def build_whole_plan_review_package(
         "type": "whole_plan",
         "loop_id": loop.id,
         "purpose": (
-            "Mandatory whole-plan scope-complete blocker review before production"
-            if loop.active_stage == "scope_blocker_review"
+            "Mandatory whole-plan fresh scope review before production"
+            if loop.active_stage in {"scope_review", "scope_blocker_review"}
             else "Mandatory whole-plan review before production"
         ),
         "scope": dict(loop.scope),
@@ -828,7 +829,7 @@ def build_whole_plan_review_package(
             ),
         },
     }
-    if loop.active_stage != "scope_blocker_review":
+    if loop.active_stage not in {"scope_review", "scope_blocker_review"}:
         package["rubric"] = rubric
     return attach_role_context_to_manifest(
         package,

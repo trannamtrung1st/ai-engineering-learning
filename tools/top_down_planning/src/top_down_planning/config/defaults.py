@@ -116,7 +116,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "whole_plan_review": {
             # Verification/revision cycles per finding set (Loop Bounds).
             "max_revision_cycles": 5,
-            # Fresh scope-complete blocker-review rounds per phase.
+            # Fresh scope-complete review rounds per phase.
+            "max_scope_review_rounds": 3,
             "max_blocker_review_rounds": 3,
         },
         "production": {
@@ -129,6 +130,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
         "whole_output_review": {
             "max_revision_cycles": 5,
+            "max_scope_review_rounds": 3,
             "max_blocker_review_rounds": 3,
         },
         "amendment": {
@@ -192,12 +194,14 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "limits.focused_plan_review.max_loops",
         "limits.focused_plan_review.max_revision_cycles_per_loop",
         "limits.whole_plan_review.max_revision_cycles",
+        "limits.whole_plan_review.max_scope_review_rounds",
         "limits.whole_plan_review.max_blocker_review_rounds",
         "limits.production.max_batches",
         "limits.production.max_agent_turns_per_batch",
         "limits.focused_output_review.max_loops",
         "limits.focused_output_review.max_revision_cycles_per_loop",
         "limits.whole_output_review.max_revision_cycles",
+        "limits.whole_output_review.max_scope_review_rounds",
         "limits.whole_output_review.max_blocker_review_rounds",
         "limits.amendment.max_requests",
         "limits.amendment.max_revision_cycles_per_request",

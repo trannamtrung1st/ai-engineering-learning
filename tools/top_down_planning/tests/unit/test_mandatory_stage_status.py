@@ -35,7 +35,7 @@ def test_mandatory_stage_respond_decision_requires_result_payloads() -> None:
         active_stage="scope_blocker_review",
         blocker_review_result=None,
     )
-    with pytest.raises(ValueError, match="missing blocker_review_result"):
+    with pytest.raises(ValueError, match="missing scope_review_result"):
         mandatory_stage_respond_decision(blocker_loop)
 
 

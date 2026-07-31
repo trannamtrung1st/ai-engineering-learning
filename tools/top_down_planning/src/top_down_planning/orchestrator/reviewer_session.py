@@ -78,11 +78,11 @@ def build_reviewer_protocol_instructions(
                 ),
             ]
         )
-    elif normalized == "scope_blocker_review":
+    elif normalized in {"scope_review", "scope_blocker_review"}:
         instructions.extend(
             [
                 (
-                    "Stage: scope_blocker_review (fresh scope review). This is a "
+                    "Stage: scope_review (fresh scope review). This is a "
                     "fresh discovery pass: do not anchor on prior finding lists "
                     "or revision discussion. Review the complete current scope "
                     "and report every material issue you find."
@@ -97,7 +97,7 @@ def build_reviewer_protocol_instructions(
                     "this a full, confirmation, holistic, or spot-check review."
                 ),
                 (
-                    "Respond with stage scope_blocker_review using finding_set_id, "
+                    "Respond with stage scope_review using finding_set_id, "
                     "reported_findings, review_completed, target_digest, and "
                     "summary. Echo finding_set_id unchanged. Do not decide whether "
                     "policy forces revision; the service derives that. Finding "
