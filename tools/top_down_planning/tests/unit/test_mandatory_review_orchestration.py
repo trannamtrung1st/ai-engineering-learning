@@ -1,4 +1,4 @@
-"""Two-stage mandatory review orchestration coverage."""
+"""Mandatory review gate orchestration coverage."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from tests.helpers import (
     mandatory_initial_respond_request,
     mandatory_verification_respond_request,
     respond_review,
-    script_mandatory_clear_approval,
     script_reviewer_allocate,
     script_verification_then_blocker_approval,
 )
@@ -29,14 +28,9 @@ def test_whole_plan_clear_path_requires_blocker_review(tmp_path: Path) -> None:
     provider = StubProvider()
     _create_run_at_whole_plan_review(store, provider=provider)
     run_id = "run-20260101T000301-000301"
-    script_mandatory_clear_approval(
-        provider,
-        store,
-        run_id,
-        loop_id="review-whole-plan-01",
-        phase=WHOLE_PLAN_REVIEW,
-        target_revision=0,
-    )
+    from tests.integration.e2e_helpers import script_whole_plan_review
+
+    script_whole_plan_review(provider, store, run_id, decision="approved")
 
     result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 
@@ -46,6 +40,12 @@ def test_whole_plan_clear_path_requires_blocker_review(tmp_path: Path) -> None:
     assert review["active_stage"] == "scope_blocker_review"
     assert review["blocker_review_rounds"] == 1
     assert review["status"] == "approve"
+    events = store.load_events(run_id)
+    started = [event for event in events if event.get("type") == "reviewer_session_started"]
+    resumed = [event for event in events if event.get("type") == "reviewer_session_resumed"]
+    assert len(started) == 2
+    assert len(resumed) == 0
+    assert any(event.get("type") == "whole_plan_blocker_review_started" for event in events)
 
 
 def test_whole_plan_blocker_reopen_returns_to_verification(tmp_path: Path) -> None:
@@ -246,16 +246,9 @@ def test_whole_output_clear_path_requires_blocker_review(tmp_path: Path) -> None
     provider = StubProvider()
     _create_run_at_whole_output_review(store, provider=provider)
     run_id = "run-20260101T000801-000801"
-    from top_down_planning.orchestrator.phases import WHOLE_OUTPUT_REVIEW
+    from tests.integration.e2e_helpers import script_whole_output_review
 
-    script_mandatory_clear_approval(
-        provider,
-        store,
-        run_id,
-        loop_id="review-whole-output-01",
-        phase=WHOLE_OUTPUT_REVIEW,
-        target_revision=1,
-    )
+    script_whole_output_review(provider, store, run_id, decision="approved")
 
     result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
 
@@ -264,3 +257,10 @@ def test_whole_output_clear_path_requires_blocker_review(tmp_path: Path) -> None
     review = store.load_review(run_id, "review-whole-output-01")
     assert review["active_stage"] == "scope_blocker_review"
     assert review["blocker_review_rounds"] == 1
+    assert review["status"] == "approve"
+    events = store.load_events(run_id)
+    started = [event for event in events if event.get("type") == "reviewer_session_started"]
+    resumed = [event for event in events if event.get("type") == "reviewer_session_resumed"]
+    assert len(started) == 2
+    assert len(resumed) == 0
+    assert any(event.get("type") == "whole_output_blocker_review_started" for event in events)

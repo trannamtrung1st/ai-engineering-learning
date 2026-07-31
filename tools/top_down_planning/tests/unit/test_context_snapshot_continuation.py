@@ -1,4 +1,4 @@
-"""Freeze-intent continuation/resume: contracts stay bound; working resources may change."""
+"""Context snapshot rebase and resume: authorized production mutations vs drift blocking."""
 
 from __future__ import annotations
 
@@ -252,7 +252,6 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
         done_events(signal="batch_complete", text="batch 1"),
         mutate_store=lambda: (
             module.write_text("v2\n", encoding="utf-8"),
-            obsolete.unlink(),
             apply_production(
                 store,
                 run_id,
@@ -264,11 +263,17 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
                             "id": "output-feature-v2",
                             "type": "artifact",
                             "ref": "src/feature.py",
-                        }
+                        },
+                        {
+                            "id": "output-obsolete",
+                            "type": "artifact",
+                            "ref": "src/obsolete.py",
+                        },
                     ],
                 ),
                 handler="apply",
             )(),
+            obsolete.unlink(),
         ),
     )
     provider.script_turn(
@@ -370,8 +375,15 @@ def test_resume_still_rejects_contract_and_context_selection_drift(
         validate_resume_preconditions(store, run_id)
     config_path.write_text(dump_yaml(original_resolved) + "\n", encoding="utf-8")
 
-    skill_file.write_text("skill-b\n", encoding="utf-8")
-    with pytest.raises(ResumeError, match="context digest mismatch"):
+    run = store.load_run(run_id)
+    expected_rev = int(run["revision"])
+    run = dict(run)
+    digests = dict(run.get("digests") or {})
+    digests["context_spec"] = "f" * 64
+    run["digests"] = digests
+    run["revision"] = expected_rev + 1
+    store.save_run(run_id, run, expected_rev)
+    with pytest.raises(ResumeError, match="context spec digest mismatch"):
         validate_resume_preconditions(store, run_id)
 
 
@@ -418,4 +430,165 @@ def test_approved_evidence_snapshot_immutable_under_workspace_change(
     # Corrupting the stored snapshot blocks resume.
     snapshot_path.write_text("tampered\n", encoding="utf-8")
     with pytest.raises(ResumeError, match="evidence snapshot"):
+        validate_resume_preconditions(store, run_id)
+
+
+def test_engine_enters_whole_output_review_after_production_resource_mutation(
+    tmp_path: Path,
+) -> None:
+    """Regression: production mutates configured resources; engine must start WOR."""
+
+    from top_down_planning.orchestrator.engine import RunEngine
+    from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
+    from tests.integration.e2e_helpers import script_whole_output_review
+
+    store = FileRunStore(tmp_path)
+    src = tmp_path / "src"
+    src.mkdir()
+    module = src / "feature.py"
+    module.write_text("v1\n", encoding="utf-8")
+    (tmp_path / "task.md").write_text("task\n", encoding="utf-8")
+
+    config = minimal_resolved_config(
+        run={
+            "output_goal": "Deliver the feature.",
+            "input_refs": ["task.md"],
+        },
+        provider={"name": "stub"},
+        limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
+        agent_context={
+            "default": {"resources": [], "skills": []},
+            "planner": {"resources": [], "skills": []},
+            "producer": {"resources": ["src/"], "skills": []},
+            "reviewer": {"resources": ["src/"], "skills": []},
+        },
+    )
+    run_id = "run-20260101T009905-009905"
+    _create_production_ready_run(store, run_id=run_id, config=config)
+
+    provider = StubProvider()
+    provider.script_turn(done_events(text="producer session start"))
+    provider.script_turn(
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=lambda: (
+            module.write_text("v2-produced\n", encoding="utf-8"),
+            apply_production(
+                store,
+                run_id,
+                _batch_request(
+                    plan_items=["item-leaf"],
+                    dispositions={"item-leaf": {"disposition": "completed"}},
+                    outputs=[
+                        {
+                            "id": "output-feature",
+                            "type": "artifact",
+                            "ref": "src/feature.py",
+                        }
+                    ],
+                ),
+                handler="apply",
+            )(),
+            apply_production(
+                store,
+                run_id,
+                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                handler="submit_completion",
+            )(),
+        ),
+    )
+
+    prod_result = ProductionPhaseOrchestrator(store, run_id, provider).run()
+    assert prod_result.ok is True
+    assert prod_result.phase == WHOLE_OUTPUT_REVIEW
+
+    script_whole_output_review(provider, store, run_id, decision="approved")
+
+    engine = RunEngine(
+        store,
+        create_provider=lambda cfg, workspace: provider,
+    )
+    result = engine.continue_run(run_id, single_step=True)
+
+    assert result.ok is True
+    assert result.phase == OUTPUT_VALIDATED
+    events = store.load_events(run_id)
+    event_types = [event.get("type") for event in events]
+    assert "phase_entry_attempted" in event_types
+    assert "whole_output_review_started" in event_types
+    assert "whole_output_blocker_review_started" in event_types
+    started = [event for event in events if event.get("type") == "reviewer_session_started"]
+    resumed = [event for event in events if event.get("type") == "reviewer_session_resumed"]
+    assert len(started) == 2
+    assert len(resumed) == 0
+    assert "whole_output_review_approved" in event_types
+
+
+def test_unauthorized_resource_drift_after_production_blocks_resume(tmp_path: Path) -> None:
+    """Post-production edits outside evidence must block whole-output review entry."""
+
+    store = FileRunStore(tmp_path)
+    src = tmp_path / "src"
+    docs = tmp_path / "docs"
+    src.mkdir()
+    docs.mkdir()
+    module = src / "feature.py"
+    guide = docs / "guide.md"
+    module.write_text("v1\n", encoding="utf-8")
+    guide.write_text("guide-v1\n", encoding="utf-8")
+    (tmp_path / "task.md").write_text("task\n", encoding="utf-8")
+
+    config = minimal_resolved_config(
+        run={
+            "output_goal": "Deliver the feature.",
+            "input_refs": ["task.md"],
+        },
+        provider={"name": "stub"},
+        limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
+        agent_context={
+            "default": {"resources": ["docs/"], "skills": []},
+            "planner": {"resources": [], "skills": []},
+            "producer": {"resources": ["src/"], "skills": []},
+            "reviewer": {"resources": ["src/", "docs/"], "skills": []},
+        },
+    )
+    run_id = "run-20260101T009906-009906"
+    _create_production_ready_run(store, run_id=run_id, config=config)
+
+    provider = StubProvider()
+    provider.script_turn(done_events(text="producer session start"))
+    provider.script_turn(
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=lambda: (
+            module.write_text("v2-produced\n", encoding="utf-8"),
+            apply_production(
+                store,
+                run_id,
+                _batch_request(
+                    plan_items=["item-leaf"],
+                    dispositions={"item-leaf": {"disposition": "completed"}},
+                    outputs=[
+                        {
+                            "id": "output-feature",
+                            "type": "artifact",
+                            "ref": "src/feature.py",
+                        }
+                    ],
+                ),
+                handler="apply",
+            )(),
+            apply_production(
+                store,
+                run_id,
+                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                handler="submit_completion",
+            )(),
+        ),
+    )
+
+    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
+    assert result.ok is True
+    assert store.load_run(run_id)["phase"] == WHOLE_OUTPUT_REVIEW
+
+    guide.write_text("guide-tampered\n", encoding="utf-8")
+    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
         validate_resume_preconditions(store, run_id)

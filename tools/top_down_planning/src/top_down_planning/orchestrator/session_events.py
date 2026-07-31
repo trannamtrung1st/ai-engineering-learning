@@ -113,7 +113,7 @@ def sync_reviewer_loop_session_id(
     loop_id: str,
     session_id: str,
 ) -> str:
-    """Persist a migrated reviewer session id on the review loop record."""
+    """Persist the provider canonical reviewer session id on the review loop record."""
 
     resolved = provider.canonical_session_id(session_id)
     if resolved == session_id:

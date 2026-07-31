@@ -8,7 +8,7 @@ from core_tools.persistence import (
 
 from top_down_planning.persistence.digests import (
     compute_config_digest,
-    compute_context_digest,
+    digest_binding_payload,
     compute_output_digest,
     compute_plan_digest,
     semantic_config_projection,
@@ -23,7 +23,7 @@ __all__ = [
     "RunStore",
     "StoreRevisionConflictError",
     "compute_config_digest",
-    "compute_context_digest",
+    "digest_binding_payload",
     "compute_output_digest",
     "compute_plan_digest",
     "semantic_config_projection",

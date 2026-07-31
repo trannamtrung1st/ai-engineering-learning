@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
+from top_down_planning.domain.approval_digests import (
+    OUTPUT_APPROVAL_DIGEST_KEYS,
+    PLAN_APPROVAL_DIGEST_KEYS,
+)
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence.capabilities import CAPABILITY_ENV_VAR
 
@@ -58,20 +62,35 @@ def minimal_resolved_config(**overrides: Any) -> dict[str, Any]:
     return config
 
 
+def run_context_digests_for_config(
+    workspace: Path,
+    config: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    from top_down_planning.config.context_digests import build_initial_context_snapshot_binding
+
+    binding, spec_digest, snapshot_digest = build_initial_context_snapshot_binding(
+        config,
+        workspace=workspace,
+    )
+    return spec_digest, snapshot_digest, binding
+
+
 def run_digests_for_config(
     workspace: Path,
     config: dict[str, Any],
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str, dict[str, Any]]:
     from top_down_planning.config import (
-        compute_context_digest_from_config,
         compute_input_digest,
         compute_output_goal_digest,
     )
 
+    spec_digest, snapshot_digest, binding = run_context_digests_for_config(workspace, config)
     return (
         compute_input_digest(config, base_dir=workspace),
         compute_output_goal_digest(config, base_dir=workspace),
-        compute_context_digest_from_config(config, workspace=workspace),
+        spec_digest,
+        snapshot_digest,
+        binding,
     )
 
 
@@ -105,30 +124,37 @@ def create_run_kwargs(
         config = copy.deepcopy(config)
         config["project"]["workspace"] = str(workspace.resolve())
     ensure_input_ref_files(workspace, config)
-    input_digest, output_goal_digest, context_digest = run_digests_for_config(
-        workspace,
-        config,
+    input_digest, output_goal_digest, context_spec_digest, context_snapshot_digest, binding = (
+        run_digests_for_config(workspace, config)
     )
     return {
         "resolved_config": config,
         "input_digest": input_digest,
         "output_goal_digest": output_goal_digest,
-        "context_digest": context_digest,
+        "context_spec_digest": context_spec_digest,
+        "context_snapshot_digest": context_snapshot_digest,
+        "context_snapshot_binding": binding,
         "workspace": str(workspace.resolve()),
         "invocation": minimal_invocation(workspace),
     }
 
 
-def approved_digests_from_run(store: Any, run_id: str) -> dict[str, str]:
+def approved_digests_from_run(
+    store: Any,
+    run_id: str,
+    *,
+    keys: frozenset[str] | None = None,
+) -> dict[str, str]:
     from top_down_planning.persistence import FileRunStore
 
     if not isinstance(store, FileRunStore):
         raise TypeError("store must be a FileRunStore")
     run = store.load_run(run_id)
+    allowed = keys or PLAN_APPROVAL_DIGEST_KEYS
     return {
         str(key): str(value)
         for key, value in (run.get("digests") or {}).items()
-        if value is not None
+        if key in allowed and value is not None
     }
 
 
@@ -319,7 +345,7 @@ def whole_plan_approval_record(store: Any, run_id: str, **fields: Any) -> dict[s
 def whole_output_approval_record(store: Any, run_id: str, **fields: Any) -> dict[str, Any]:
     from top_down_planning.persistence.digests import compute_output_digest
 
-    digests = approved_digests_from_run(store, run_id)
+    digests = approved_digests_from_run(store, run_id, keys=OUTPUT_APPROVAL_DIGEST_KEYS)
     production = store.load_production(run_id)
     digests["output"] = compute_output_digest(production)
     payload: dict[str, Any] = {

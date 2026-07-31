@@ -7,6 +7,10 @@ from typing import Any
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import RequestError
 from top_down_planning.config.defaults import DEFAULT_CONFIG
+from top_down_planning.domain.approval_digests import (
+    OUTPUT_APPROVAL_DIGEST_KEYS,
+    PLAN_APPROVAL_DIGEST_KEYS,
+)
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     apply_review_response,
@@ -241,10 +245,16 @@ class ReviewAgentService:
         artifact_digest: str | None = None
         if loop.type in {"whole_plan", "whole_output"}:
             run = self._store.load_run(self._run_id)
+            run_digests = run.get("digests") or {}
+            allowed_keys = (
+                PLAN_APPROVAL_DIGEST_KEYS
+                if loop.type == "whole_plan"
+                else OUTPUT_APPROVAL_DIGEST_KEYS
+            )
             approved_digests = {
                 str(key): str(value)
-                for key, value in (run.get("digests") or {}).items()
-                if value is not None
+                for key, value in run_digests.items()
+                if key in allowed_keys and value is not None
             }
             if loop.type == "whole_output":
                 from top_down_planning.persistence.digests import compute_output_digest

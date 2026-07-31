@@ -18,6 +18,22 @@ from top_down_planning.persistence import (
 )
 from tests.helpers import minimal_invocation
 
+_EMPTY_SNAPSHOT_BINDING = {
+    "workspace": "/workspace",
+    "resource_digests": [],
+    "skill_digests": [],
+}
+
+
+def _context_create_kwargs(workspace: Path) -> dict[str, str | dict]:
+    binding = dict(_EMPTY_SNAPSHOT_BINDING)
+    binding["workspace"] = str(workspace.resolve())
+    return {
+        "context_spec_digest": "0" * 64,
+        "context_snapshot_digest": "1" * 64,
+        "context_snapshot_binding": binding,
+    }
+
 
 def _sample_plan(revision: int = 0) -> Plan:
     root = PlanItem(
@@ -46,7 +62,9 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
         workspace=str(store.root),
         invocation=minimal_invocation(store.root),
     )
@@ -82,7 +100,9 @@ def test_load_resolved_config_round_trip(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
         workspace=str(store.root),
         invocation=minimal_invocation(store.root),
     )
@@ -103,7 +123,9 @@ def test_create_run_persists_invocation_metadata(tmp_path: Path) -> None:
         resolved_config={"run": {"output_goal": "Goal."}},
         input_digest="input-a",
         output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
         workspace=str(store.root),
         invocation=invocation,
     )
@@ -115,14 +137,16 @@ def test_create_run_persists_invocation_metadata(tmp_path: Path) -> None:
 
 def test_create_run_requires_digests(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    with pytest.raises(PersistenceError, match="context_digest are required"):
+    with pytest.raises(PersistenceError, match="context_spec_digest are required"):
         store.create_run(
             "run-20260101T000001-000001",
             plan=_sample_plan(),
             resolved_config={},
             input_digest="",
             output_goal_digest="goal-b",
-            context_digest="0" * 64,
+            context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
             workspace=str(store.root),
             invocation=minimal_invocation(store.root),
         )
@@ -137,7 +161,9 @@ def test_create_run_requires_invocation(tmp_path: Path) -> None:
             resolved_config={},
             input_digest="input-a",
             output_goal_digest="goal-b",
-            context_digest="0" * 64,
+            context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
             workspace=str(store.root),
             invocation=None,
         )
@@ -152,7 +178,9 @@ def test_create_run_requires_workspace(tmp_path: Path) -> None:
             resolved_config={},
             input_digest="input-a",
             output_goal_digest="goal-b",
-            context_digest="0" * 64,
+            context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
             workspace="",
             invocation=minimal_invocation(store.root),
         )
@@ -167,7 +195,9 @@ def test_save_plan_revision_conflict(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
         workspace=str(store.root),
         invocation=minimal_invocation(store.root),
     )
@@ -191,7 +221,9 @@ def test_save_plan_requires_explicit_revision(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
         workspace=str(store.root),
         invocation=minimal_invocation(store.root),
     )
@@ -211,7 +243,9 @@ def test_save_plan_model_round_trip(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
         workspace=str(store.root),
         invocation=minimal_invocation(store.root),
     )
@@ -232,7 +266,9 @@ def test_reload_after_new_store_instance(tmp_path: Path) -> None:
         resolved_config=config,
         input_digest="input-a",
         output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
         workspace=str(store.root),
         invocation=minimal_invocation(store.root),
     )
@@ -254,7 +290,9 @@ def test_append_event_is_append_only(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
         workspace=str(store.root),
         invocation=minimal_invocation(store.root),
     )
@@ -310,7 +348,9 @@ def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
         resolved_config={},
         input_digest="input-a",
         output_goal_digest="goal-b",
-        context_digest="0" * 64,
+        context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
         workspace=str(store.root),
         invocation=minimal_invocation(store.root),
     )
@@ -321,7 +361,9 @@ def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
             resolved_config={},
             input_digest="input-a",
             output_goal_digest="goal-b",
-            context_digest="0" * 64,
+            context_spec_digest="0" * 64,
+        context_snapshot_digest="1" * 64,
+        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
             workspace=str(store.root),
             invocation=minimal_invocation(store.root),
         )

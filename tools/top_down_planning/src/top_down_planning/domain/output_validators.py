@@ -50,8 +50,10 @@ class OutputDigestBundle:
     expected_output_goal_digest: str | None = None
     config_digest: str | None = None
     expected_config_digest: str | None = None
-    context_digest: str | None = None
-    expected_context_digest: str | None = None
+    context_spec_digest: str | None = None
+    expected_context_spec_digest: str | None = None
+    context_snapshot_digest: str | None = None
+    expected_context_snapshot_digest: str | None = None
 
 
 def build_output_approval_validation_context(
@@ -63,7 +65,8 @@ def build_output_approval_validation_context(
     actual_config_digest: str,
     actual_input_digest: str,
     actual_output_goal_digest: str,
-    actual_context_digest: str | None = None,
+    actual_context_spec_digest: str | None = None,
+    actual_context_snapshot_digest: str | None = None,
 ) -> tuple[OutputReviewState, OutputDigestBundle]:
     approved_digests = approval.get("approved_digests")
     expected_digests: dict[str, str] = (
@@ -89,8 +92,10 @@ def build_output_approval_validation_context(
         expected_output_goal_digest=expected_digests.get("output_goal"),
         config_digest=actual_config_digest,
         expected_config_digest=expected_digests.get("config"),
-        context_digest=actual_context_digest,
-        expected_context_digest=expected_digests.get("context"),
+        context_spec_digest=actual_context_spec_digest,
+        expected_context_spec_digest=expected_digests.get("context_spec"),
+        context_snapshot_digest=actual_context_snapshot_digest,
+        expected_context_snapshot_digest=expected_digests.get("context_snapshot"),
     )
     return review_state, digest_bundle
 
@@ -192,7 +197,12 @@ def validate_output_digest_hooks(
         ("input", digests.input_digest, digests.expected_input_digest),
         ("output_goal", digests.output_goal_digest, digests.expected_output_goal_digest),
         ("config", digests.config_digest, digests.expected_config_digest),
-        ("context", digests.context_digest, digests.expected_context_digest),
+        ("context_spec", digests.context_spec_digest, digests.expected_context_spec_digest),
+        (
+            "context_snapshot",
+            digests.context_snapshot_digest,
+            digests.expected_context_snapshot_digest,
+        ),
     ):
         if actual is None and expected is None:
             continue

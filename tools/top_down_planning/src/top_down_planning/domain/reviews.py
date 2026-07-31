@@ -1,4 +1,4 @@
-"""Review loop models and helpers (proposal §11; two-stage mandatory review)."""
+"""Review loop models and helpers (proposal §11; mandatory review gates)."""
 
 from __future__ import annotations
 
@@ -146,7 +146,7 @@ class ReviewLoop:
     findings: list[ReviewFinding] = field(default_factory=list)
     revision_cycles: int = 0
     approved_digests: dict[str, str] | None = None
-    # Two-stage mandatory loop fields (optional; focused loops leave unset).
+    # Mandatory review loop fields (optional; focused loops leave unset).
     lifecycle_status: MandatoryReviewLifecycleStatus | None = None
     active_stage: ReviewStage | None = None
     finding_set_id: str | None = None
@@ -572,7 +572,7 @@ def find_whole_output_approval(
 
 
 def is_mandatory_gate_approval_record(payload: Mapping[str, Any]) -> bool:
-    """True when a persisted mandatory loop completed the two-stage approval gate."""
+    """True when a persisted mandatory loop completed the mandatory approval gate."""
 
     if payload.get("status") != "approve":
         return False

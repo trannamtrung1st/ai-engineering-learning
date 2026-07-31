@@ -11,8 +11,10 @@ from top_down_planning.config import (
     ALLOWED_OVERRIDE_PATHS,
     DEFAULT_CONFIG,
     build_agent_context_manifest_payload,
-    build_context_digest_payload,
-    compute_context_digest_from_config,
+    build_context_spec_payload,
+    build_context_snapshot_payload,
+    compute_context_spec_digest_from_config,
+    compute_context_snapshot_digest_from_config,
     compute_input_digest,
     compute_output_goal_digest,
     resolve_config,
@@ -519,7 +521,7 @@ def test_reviewer_packages_include_contracts(tmp_path: Path) -> None:
     assert whole_output["output_goal"] == "Goal."
 
 
-def test_context_digest_stable_for_equivalent_context(tmp_path: Path) -> None:
+def test_context_spec_digest_stable_for_equivalent_context(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     readme = workspace / "README.md"
     readme.write_text("alpha", encoding="utf-8")
@@ -537,12 +539,12 @@ agent_context:
         ),
         cwd=workspace,
     )
-    digest_a = compute_context_digest_from_config(config, workspace=workspace)
-    digest_b = compute_context_digest_from_config(config, workspace=workspace)
+    digest_a = compute_context_spec_digest_from_config(config, workspace=workspace)
+    digest_b = compute_context_spec_digest_from_config(config, workspace=workspace)
     assert digest_a == digest_b
 
 
-def test_context_digest_stable_when_supporting_resource_content_changes(
+def test_context_spec_digest_stable_when_supporting_resource_content_changes(
     tmp_path: Path,
 ) -> None:
     workspace = _workspace(tmp_path)
@@ -562,13 +564,39 @@ agent_context:
         ),
         cwd=workspace,
     )
-    before = compute_context_digest_from_config(config, workspace=workspace)
+    before = compute_context_spec_digest_from_config(config, workspace=workspace)
     readme.write_text("beta", encoding="utf-8")
-    after = compute_context_digest_from_config(config, workspace=workspace)
+    after = compute_context_spec_digest_from_config(config, workspace=workspace)
     assert before == after
 
 
-def test_context_digest_changes_when_resource_path_selection_changes(
+def test_context_snapshot_digest_changes_when_supporting_resource_content_changes(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path)
+    readme = workspace / "README.md"
+    readme.write_text("alpha", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "base-snapshot.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  default:
+    resources:
+      - README.md
+""",
+        ),
+        cwd=workspace,
+    )
+    before = compute_context_snapshot_digest_from_config(config, workspace=workspace)
+    readme.write_text("beta", encoding="utf-8")
+    after = compute_context_snapshot_digest_from_config(config, workspace=workspace)
+    assert before != after
+
+
+def test_context_spec_digest_changes_when_resource_path_selection_changes(
     tmp_path: Path,
 ) -> None:
     workspace = _workspace(tmp_path)
@@ -602,12 +630,12 @@ agent_context:
         ),
         cwd=workspace,
     )
-    digest_a = compute_context_digest_from_config(config_a, workspace=workspace)
-    digest_b = compute_context_digest_from_config(config_b, workspace=workspace)
+    digest_a = compute_context_spec_digest_from_config(config_a, workspace=workspace)
+    digest_b = compute_context_spec_digest_from_config(config_b, workspace=workspace)
     assert digest_a != digest_b
 
 
-def test_context_digest_changes_when_resource_order_changes(tmp_path: Path) -> None:
+def test_context_spec_digest_changes_when_resource_order_changes(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     (workspace / "a.md").write_text("a", encoding="utf-8")
     (workspace / "b.md").write_text("b", encoding="utf-8")
@@ -641,12 +669,12 @@ agent_context:
         ),
         cwd=workspace,
     )
-    digest_ab = compute_context_digest_from_config(config_ab, workspace=workspace)
-    digest_ba = compute_context_digest_from_config(config_ba, workspace=workspace)
+    digest_ab = compute_context_spec_digest_from_config(config_ab, workspace=workspace)
+    digest_ba = compute_context_spec_digest_from_config(config_ba, workspace=workspace)
     assert digest_ab != digest_ba
 
 
-def test_context_digest_changes_when_role_model_changes(tmp_path: Path) -> None:
+def test_context_spec_digest_changes_when_role_model_changes(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     config_a = resolve_config(
         write_config(
@@ -674,12 +702,12 @@ agent_context:
         ),
         cwd=workspace,
     )
-    digest_a = compute_context_digest_from_config(config_a, workspace=workspace)
-    digest_b = compute_context_digest_from_config(config_b, workspace=workspace)
+    digest_a = compute_context_spec_digest_from_config(config_a, workspace=workspace)
+    digest_b = compute_context_spec_digest_from_config(config_b, workspace=workspace)
     assert digest_a != digest_b
 
 
-def test_context_digest_changes_when_skill_content_changes(tmp_path: Path) -> None:
+def test_context_snapshot_digest_changes_when_skill_content_changes(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     skill_dir = workspace / ".agents" / "skills" / "demo"
     skill_dir.mkdir(parents=True)
@@ -699,13 +727,13 @@ agent_context:
         ),
         cwd=workspace,
     )
-    before = compute_context_digest_from_config(config, workspace=workspace)
+    before = compute_context_snapshot_digest_from_config(config, workspace=workspace)
     skill_file.write_text("skill-b", encoding="utf-8")
-    after = compute_context_digest_from_config(config, workspace=workspace)
+    after = compute_context_snapshot_digest_from_config(config, workspace=workspace)
     assert before != after
 
 
-def test_context_digest_persisted_and_blocks_resume_on_skill_content_change(
+def test_context_snapshot_persisted_and_blocks_resume_on_skill_content_change(
     tmp_path: Path,
 ) -> None:
     workspace = _workspace(tmp_path)
@@ -743,11 +771,11 @@ agent_context:
     )
 
     skill_file.write_text("skill-b", encoding="utf-8")
-    with pytest.raises(ResumeError, match="context digest mismatch"):
+    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
         validate_resume_preconditions(store, "run-20260101T002301-002301")
 
 
-def test_context_digest_content_change_does_not_block_resume(tmp_path: Path) -> None:
+def test_context_snapshot_content_change_blocks_resume(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     readme = workspace / "README.md"
     readme.write_text("alpha", encoding="utf-8")
@@ -781,10 +809,11 @@ agent_context:
     )
 
     readme.write_text("beta", encoding="utf-8")
-    validate_resume_preconditions(store, "run-20260101T002301-002301")
+    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
+        validate_resume_preconditions(store, "run-20260101T002301-002301")
 
 
-def test_context_digest_recompute_when_configured_resource_deleted(
+def test_context_spec_digest_stable_when_configured_resource_deleted(
     tmp_path: Path,
 ) -> None:
     workspace = _workspace(tmp_path)
@@ -804,13 +833,53 @@ agent_context:
         ),
         cwd=workspace,
     )
-    before = compute_context_digest_from_config(config, workspace=workspace)
+    before = compute_context_spec_digest_from_config(config, workspace=workspace)
     guide.unlink()
-    after = compute_context_digest_from_config(config, workspace=workspace)
+    after = compute_context_spec_digest_from_config(config, workspace=workspace)
     assert before == after
 
 
-def test_context_digest_payload_covers_supporting_context_only(
+def test_context_snapshot_blocks_resume_when_configured_resource_deleted(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path)
+    guide = workspace / "guide.md"
+    guide.write_text("guide", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "base.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  default:
+    resources:
+      - guide.md
+""",
+        ),
+        cwd=workspace,
+    )
+    store = FileRunStore(tmp_path / "runs")
+    store.root.mkdir(parents=True)
+    plan_payload = {
+        "schema_version": 1,
+        "id": "plan-context-test",
+        "revision": 0,
+        "output_goal": "Goal.",
+        "items": [],
+    }
+    store.create_run(
+        "run-20260101T002302-002302",
+        plan=plan_payload,
+        **create_run_kwargs(workspace, resolved_config=config),
+    )
+
+    guide.unlink()
+    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
+        validate_resume_preconditions(store, "run-20260101T002302-002302")
+
+
+def test_context_spec_and_snapshot_payloads_cover_supporting_context_only(
     tmp_path: Path,
 ) -> None:
     workspace = _workspace(tmp_path)
@@ -834,22 +903,29 @@ agent_context:
         ),
         cwd=workspace,
     )
-    payload = build_context_digest_payload(config, workspace=workspace)
-    planner = payload["roles"]["planner"]
-    assert "project_resources" not in payload
+    spec_payload = build_context_spec_payload(config, workspace=workspace)
+    planner = spec_payload["roles"]["planner"]
+    assert "project_resources" not in spec_payload
     assert "input_refs" not in planner
     assert "output_goal_digest" not in planner
     assert str(guide.resolve()) in planner["resources"]
     assert "resource_digests" not in planner
-    assert "skill_digests" in planner
-    # Regression lock: resource *contents* must never re-enter digests.context.
-    allowed_role_keys = {"model", "resources", "skills", "skill_digests"}
-    for role_name, role_payload in payload["roles"].items():
+    assert "skill_digests" not in planner
+    allowed_role_keys = {"model", "resources", "skills"}
+    for role_name, role_payload in spec_payload["roles"].items():
         assert "resource_digests" not in role_payload, role_name
+        assert "skill_digests" not in role_payload, role_name
         assert set(role_payload) <= allowed_role_keys, role_name
 
+    snapshot_payload = build_context_snapshot_payload(config, workspace=workspace)
+    assert "roles" not in snapshot_payload
+    assert "resource_digests" in snapshot_payload
+    assert "skill_digests" in snapshot_payload
+    guide_paths = {entry["path"] for entry in snapshot_payload["resource_digests"]}
+    assert str(guide.resolve()) in guide_paths
 
-def test_context_digest_stable_when_files_change_under_resource_directory(
+
+def test_context_spec_digest_stable_when_files_change_under_resource_directory(
     tmp_path: Path,
 ) -> None:
     workspace = _workspace(tmp_path)
@@ -870,15 +946,44 @@ agent_context:
         ),
         cwd=workspace,
     )
-    before = compute_context_digest_from_config(config, workspace=workspace)
+    before = compute_context_spec_digest_from_config(config, workspace=workspace)
     (src / "a.py").write_text("a2\n", encoding="utf-8")
     (src / "b.py").write_text("new\n", encoding="utf-8")
     (src / "a.py").unlink()
-    after = compute_context_digest_from_config(config, workspace=workspace)
+    after = compute_context_spec_digest_from_config(config, workspace=workspace)
     assert before == after
 
 
-def test_context_digest_unchanged_when_input_ref_content_changes(tmp_path: Path) -> None:
+def test_context_snapshot_digest_changes_when_files_change_under_resource_directory(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path)
+    src = workspace / "src"
+    src.mkdir()
+    (src / "a.py").write_text("a1\n", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "base-snapshot-dir.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  producer:
+    resources:
+      - src/
+""",
+        ),
+        cwd=workspace,
+    )
+    before = compute_context_snapshot_digest_from_config(config, workspace=workspace)
+    (src / "a.py").write_text("a2\n", encoding="utf-8")
+    (src / "b.py").write_text("new\n", encoding="utf-8")
+    (src / "a.py").unlink()
+    after = compute_context_snapshot_digest_from_config(config, workspace=workspace)
+    assert before != after
+
+
+def test_context_spec_digest_unchanged_when_input_ref_content_changes(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     task = workspace / "task.md"
     task.write_text("alpha", encoding="utf-8")
@@ -894,9 +999,9 @@ run:
         ),
         cwd=workspace,
     )
-    before = compute_context_digest_from_config(config, workspace=workspace)
+    before = compute_context_spec_digest_from_config(config, workspace=workspace)
     task.write_text("beta", encoding="utf-8")
-    after = compute_context_digest_from_config(config, workspace=workspace)
+    after = compute_context_spec_digest_from_config(config, workspace=workspace)
     assert before == after
 
 

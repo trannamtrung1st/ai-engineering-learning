@@ -295,7 +295,7 @@ def script_whole_plan_review(
     decision: str,
     loop_id: str = "review-whole-plan-01",
 ) -> None:
-    """Queue allocate + respond turns for whole-plan review (two-stage when approved)."""
+    """Queue allocate + respond turns for whole-plan review (mandatory gate when approved)."""
 
     target_revision = current_plan_revision(store, run_id)
     if decision == "approved":
@@ -381,7 +381,7 @@ def script_whole_output_review(
     decision: str,
     loop_id: str = "review-whole-output-01",
 ) -> None:
-    """Queue allocate + respond turns for whole-output review (two-stage when approved)."""
+    """Queue allocate + respond turns for whole-output review (mandatory gate when approved)."""
 
     production = store.load_production(run_id)
     target_revision = int(production["output_revision"])
@@ -487,7 +487,8 @@ def assert_acceptance_invariant_for_run(store: FileRunStore, run_id: str) -> Non
             config,
             base_dir=run_workspace(run),
         ),
-        actual_context_digest=(run.get("digests") or {}).get("context"),
+        actual_context_spec_digest=(run.get("digests") or {}).get("context_spec"),
+        actual_context_snapshot_digest=(run.get("digests") or {}).get("context_snapshot"),
     )
 
     assert invariant.satisfied is True

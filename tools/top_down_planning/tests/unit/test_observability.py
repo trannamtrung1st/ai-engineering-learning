@@ -57,6 +57,23 @@ def test_map_audit_event_maps_run_created_to_run_start() -> None:
     assert mapped.run_id == "run-20260101T000001-000001"
 
 
+def test_map_audit_event_maps_phase_entry_blocked() -> None:
+    mapped = map_audit_event(
+        {
+            "type": "phase_entry_blocked",
+            "phase": "whole_output_review",
+            "error_code": "digest_mismatch",
+            "digest_kind": "context_spec",
+            "expected_digest": "abcd1234...",
+            "actual_digest": "00000000...",
+        }
+    )
+    assert mapped is not None
+    assert mapped.category == "error"
+    assert mapped.message == "phase entry blocked"
+    assert mapped.fields["digest_kind"] == "context_spec"
+
+
 def test_map_audit_event_maps_planner_session_started_with_phase_and_role() -> None:
     mapped = map_audit_event(
         {

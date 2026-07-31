@@ -93,7 +93,8 @@ def evaluate_acceptance_invariant(
     actual_output_digest: str,
     actual_input_digest: str,
     actual_output_goal_digest: str,
-    actual_context_digest: str | None = None,
+    actual_context_spec_digest: str | None = None,
+    actual_context_snapshot_digest: str | None = None,
 ) -> tuple[AcceptanceInvariant, ValidationResult, ValidationResult]:
     plan_review_state: ReviewState | None = None
     plan_digest_bundle: DigestBundle | None = None
@@ -105,7 +106,7 @@ def evaluate_acceptance_invariant(
             actual_config_digest=actual_config_digest,
             actual_input_digest=actual_input_digest,
             actual_output_goal_digest=actual_output_goal_digest,
-            actual_context_digest=actual_context_digest,
+            actual_context_spec_digest=actual_context_spec_digest,
         )
 
     dispositions = dict(production.get("dispositions") or {})
@@ -131,7 +132,8 @@ def evaluate_acceptance_invariant(
             actual_config_digest=actual_config_digest,
             actual_input_digest=actual_input_digest,
             actual_output_goal_digest=actual_output_goal_digest,
-            actual_context_digest=actual_context_digest,
+            actual_context_spec_digest=actual_context_spec_digest,
+            actual_context_snapshot_digest=actual_context_snapshot_digest,
         )
 
     output_validation = validate_output(

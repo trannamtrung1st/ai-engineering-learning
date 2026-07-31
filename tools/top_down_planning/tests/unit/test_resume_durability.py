@@ -27,7 +27,6 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.orchestrator.planning import build_planner_context_manifest
 from top_down_planning.orchestrator.production import build_producer_context_manifest
 from top_down_planning.config import (
-    compute_context_digest_from_config,
     compute_input_digest,
     compute_output_goal_digest,
 )
@@ -57,7 +56,7 @@ def _bind_config_workspace(config: dict, workspace: Path) -> dict:
     return bound
 
 
-def _run_digests(config: dict, workspace: Path) -> tuple[str, str, str]:
+def _run_digests(config: dict, workspace: Path) -> tuple[str, str]:
     merged = minimal_resolved_config()
     for key, value in config.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
@@ -69,7 +68,6 @@ def _run_digests(config: dict, workspace: Path) -> tuple[str, str, str]:
     return (
         compute_input_digest(bound, base_dir=workspace),
         compute_output_goal_digest(bound, base_dir=workspace),
-        compute_context_digest_from_config(bound, workspace=workspace),
     )
 
 
@@ -188,7 +186,7 @@ def _create_production_run(
         provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
-    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
+    input_digest, output_goal_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
@@ -459,7 +457,7 @@ def test_resume_cli_stream_json_for_completed_run(tmp_path: Path) -> None:
         provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
-    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
+    input_digest, output_goal_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
@@ -500,7 +498,7 @@ def test_resume_completed_rejected_whole_plan_review_does_not_restart(
         provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
-    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
+    input_digest, output_goal_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
@@ -575,7 +573,7 @@ def test_resume_plan_validated_allows_missing_producer_session(tmp_path: Path) -
         provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
-    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
+    input_digest, output_goal_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,
@@ -635,7 +633,7 @@ def test_resume_plan_amendment_without_pending_request_fails(tmp_path: Path) -> 
         provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
-    input_digest, output_goal_digest, context_digest = _run_digests(config, store.root)
+    input_digest, output_goal_digest = _run_digests(config, store.root)
     store.create_run(
         run_id,
         plan=plan,

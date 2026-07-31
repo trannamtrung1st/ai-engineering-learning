@@ -480,7 +480,7 @@ def test_review_respond_rejects_stale_target_digest(tmp_path: Path) -> None:
         )
 
 
-def test_two_stage_loop_fields_survive_persistence(tmp_path: Path) -> None:
+def test_mandatory_review_loop_fields_survive_persistence(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T003601-003601"
     from top_down_planning.domain.models import Plan, PlanItem

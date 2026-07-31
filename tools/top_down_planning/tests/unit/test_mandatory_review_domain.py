@@ -1,4 +1,4 @@
-"""Domain models for two-stage mandatory review (proposal Result Contracts / State Model)."""
+"""Domain models for mandatory review gates (proposal Result Contracts / State Model)."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def _verified_result(
             FindingVerificationEntry(
                 finding_id="finding-1",
                 disposition=disposition,  # type: ignore[arg-type]
-                evidence=["tests/unit/test_two_stage_review_domain.py"],
+                evidence=["tests/unit/test_mandatory_review_domain.py"],
             )
         ],
         summary="Findings closed.",

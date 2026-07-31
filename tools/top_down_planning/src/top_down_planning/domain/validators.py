@@ -75,8 +75,8 @@ class DigestBundle:
     expected_output_goal_digest: str | None = None
     config_digest: str | None = None
     expected_config_digest: str | None = None
-    context_digest: str | None = None
-    expected_context_digest: str | None = None
+    context_spec_digest: str | None = None
+    expected_context_spec_digest: str | None = None
 
 
 def build_plan_approval_validation_context(
@@ -87,7 +87,7 @@ def build_plan_approval_validation_context(
     actual_config_digest: str,
     actual_input_digest: str,
     actual_output_goal_digest: str,
-    actual_context_digest: str | None = None,
+    actual_context_spec_digest: str | None = None,
 ) -> tuple[ReviewState, DigestBundle]:
     """Build approval-mode review and digest bindings for the current plan revision."""
 
@@ -115,8 +115,8 @@ def build_plan_approval_validation_context(
         expected_output_goal_digest=expected_digests.get("output_goal"),
         config_digest=actual_config_digest,
         expected_config_digest=expected_digests.get("config"),
-        context_digest=actual_context_digest,
-        expected_context_digest=expected_digests.get("context"),
+        context_spec_digest=actual_context_spec_digest,
+        expected_context_spec_digest=expected_digests.get("context_spec"),
     )
     return review_state, digest_bundle
 
@@ -726,7 +726,7 @@ def validate_digest_hooks(
         ("input", digests.input_digest, digests.expected_input_digest),
         ("output_goal", digests.output_goal_digest, digests.expected_output_goal_digest),
         ("config", digests.config_digest, digests.expected_config_digest),
-        ("context", digests.context_digest, digests.expected_context_digest),
+        ("context_spec", digests.context_spec_digest, digests.expected_context_spec_digest),
     ):
         digest_issue = _validate_digest_pair(label, actual, expected, mode=mode)
         if digest_issue is not None:

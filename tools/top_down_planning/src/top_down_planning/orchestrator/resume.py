@@ -8,9 +8,10 @@ from typing import Any
 from top_down_planning.agent_tool.artifacts import verify_evidence_snapshot
 from top_down_planning.agent_tool.errors import RequestError
 from top_down_planning.config import (
+    compute_context_snapshot_digest_from_config,
+    compute_context_spec_digest_from_config,
     compute_input_digest,
     compute_output_goal_digest,
-    compute_context_digest_from_config,
 )
 from top_down_planning.domain.production import has_pending_amendment
 from top_down_planning.domain.reviews import (
@@ -36,11 +37,33 @@ from top_down_planning.persistence.interface import RunStore
 from top_down_planning.workspace import run_workspace
 
 
+def short_digest_for_observability(digest: str | None) -> str | None:
+    """Return a shortened digest suitable for durable audit events."""
+
+    if digest is None:
+        return None
+    text = str(digest)
+    if len(text) <= 12:
+        return text
+    return f"{text[:8]}..."
+
+
 class ResumeError(OrchestratorError):
     """Resume blocked by missing session refs, digest mismatch, or invalid phase binding."""
 
-    def __init__(self, message: str, *, code: str = "resume_error") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "resume_error",
+        digest_kind: str | None = None,
+        expected_digest: str | None = None,
+        actual_digest: str | None = None,
+    ) -> None:
         super().__init__(message, code=code)
+        self.digest_kind = digest_kind
+        self.expected_digest = expected_digest
+        self.actual_digest = actual_digest
 
 
 @dataclass(frozen=True)
@@ -77,7 +100,7 @@ def validate_resume_preconditions(store: RunStore, run_id: str) -> ResumePrecond
             outcome=terminal_outcome,
         )
 
-    _validate_digests(store, run_id, run)
+    _validate_digests(store, run_id, run, phase=phase)
     production = store.load_production(run_id)
     _validate_phase_binding(production, phase)
     _validate_session_refs(store, run_id, run, production, phase)
@@ -91,25 +114,62 @@ def validate_resume_preconditions(store: RunStore, run_id: str) -> ResumePrecond
     )
 
 
-def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None:
+def _raise_digest_mismatch(
+    digest_kind: str,
+    message: str,
+    expected: str,
+    actual: object,
+) -> None:
+    actual_text = str(actual) if actual is not None else None
+    raise ResumeError(
+        message,
+        code="digest_mismatch",
+        digest_kind=digest_kind,
+        expected_digest=expected,
+        actual_digest=actual_text,
+    )
+
+
+def _validate_digests(
+    store: RunStore,
+    run_id: str,
+    run: dict[str, Any],
+    *,
+    phase: str,
+) -> None:
     stored = dict(run.get("digests") or {})
+    if stored.get("context_spec") is None or stored.get("context_snapshot") is None:
+        raise ResumeError(
+            "run store is missing context_spec or context_snapshot digests",
+            code="resume_error",
+        )
+    if not isinstance(run.get("context_snapshot_binding"), dict):
+        raise ResumeError(
+            "run store is missing context_snapshot_binding",
+            code="resume_error",
+        )
+
     config = store.load_resolved_config(run_id)
     plan = store.load_plan(run_id)
 
     expected_config = compute_config_digest(config)
     actual_config = stored.get("config")
     if actual_config != expected_config:
-        raise ResumeError(
+        _raise_digest_mismatch(
+            "config",
             "semantic config digest mismatch; refusing to resume with changed configuration",
-            code="digest_mismatch",
+            expected_config,
+            actual_config,
         )
 
     expected_plan = compute_plan_digest(plan)
     actual_plan = stored.get("plan")
     if actual_plan != expected_plan:
-        raise ResumeError(
+        _raise_digest_mismatch(
+            "plan",
             "plan digest mismatch; refusing to resume with divergent plan.json",
-            code="digest_mismatch",
+            expected_plan,
+            actual_plan,
         )
 
     try:
@@ -123,37 +183,59 @@ def _validate_digests(store: RunStore, run_id: str, run: dict[str, Any]) -> None
     expected_goal = compute_output_goal_digest(config, base_dir=base_dir)
     actual_goal = stored.get("output_goal")
     if actual_goal != expected_goal:
-        raise ResumeError(
+        _raise_digest_mismatch(
+            "output_goal",
             "output goal digest mismatch; refusing to resume with changed goal",
-            code="digest_mismatch",
+            expected_goal,
+            actual_goal,
         )
 
     expected_input = compute_input_digest(config, base_dir=base_dir)
     actual_input = stored.get("input")
     if actual_input != expected_input:
-        raise ResumeError(
+        _raise_digest_mismatch(
+            "input",
             "input digest mismatch; refusing to resume with changed input refs",
-            code="digest_mismatch",
+            expected_input,
+            actual_input,
         )
 
-    expected_context = compute_context_digest_from_config(
+    expected_spec = compute_context_spec_digest_from_config(
         config,
         workspace=base_dir,
     )
-    actual_context = stored.get("context")
-    if actual_context != expected_context:
-        raise ResumeError(
-            "context digest mismatch; refusing to resume with changed agent context",
-            code="digest_mismatch",
+    actual_spec = stored.get("context_spec")
+    if actual_spec != expected_spec:
+        _raise_digest_mismatch(
+            "context_spec",
+            "context spec digest mismatch; refusing to resume with changed agent context declarations",
+            expected_spec,
+            actual_spec,
         )
+
+    if phase != PRODUCTION:
+        expected_snapshot = compute_context_snapshot_digest_from_config(
+            config,
+            workspace=base_dir,
+        )
+        actual_snapshot = stored.get("context_snapshot")
+        if actual_snapshot != expected_snapshot:
+            _raise_digest_mismatch(
+                "context_snapshot",
+                "context snapshot digest mismatch; refusing to resume with changed workspace binding",
+                expected_snapshot,
+                actual_snapshot,
+            )
 
     production = store.load_production(run_id)
     expected_output = compute_output_digest(production)
     actual_output = stored.get("output")
     if actual_output is not None and actual_output != expected_output:
-        raise ResumeError(
+        _raise_digest_mismatch(
+            "output",
             "output digest mismatch; refusing to resume with divergent production.json",
-            code="digest_mismatch",
+            expected_output,
+            actual_output,
         )
     _validate_output_evidence_snapshots(store, run_id, production)
 

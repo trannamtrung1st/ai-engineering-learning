@@ -24,7 +24,7 @@ def compute_plan_approval_actual_digests(
     run: dict[str, Any],
     plan: Plan,
 ) -> tuple[str, str, str, str, str | None]:
-    """Recompute digests for approval-mode comparison against reviewed bindings."""
+    """Recompute digests for whole-plan approval-mode comparison."""
 
     config = store.load_resolved_config(run_id)
     base_dir = run_workspace(run)
@@ -34,7 +34,7 @@ def compute_plan_approval_actual_digests(
         compute_config_digest(config),
         compute_input_digest(config, base_dir=base_dir),
         compute_output_goal_digest(config, base_dir=base_dir),
-        run_digests.get("context"),
+        run_digests.get("context_spec"),
     )
 
 
@@ -59,7 +59,7 @@ def plan_approval_validation_context(
         actual_config_digest,
         actual_input_digest,
         actual_output_goal_digest,
-        actual_context_digest,
+        actual_context_spec_digest,
     ) = compute_plan_approval_actual_digests(store, run_id, run, plan)
     return build_plan_approval_validation_context(
         plan=plan,
@@ -68,7 +68,7 @@ def plan_approval_validation_context(
         actual_config_digest=actual_config_digest,
         actual_input_digest=actual_input_digest,
         actual_output_goal_digest=actual_output_goal_digest,
-        actual_context_digest=actual_context_digest,
+        actual_context_spec_digest=actual_context_spec_digest,
     )
 
 
@@ -93,8 +93,8 @@ def _approval_hooks_not_checked_context(
             expected_output_goal_digest=None,
             config_digest=compute_config_digest(store.load_resolved_config(run_id)),
             expected_config_digest=None,
-            context_digest=digests.get("context"),
-            expected_context_digest=None,
+            context_spec_digest=digests.get("context_spec"),
+            expected_context_spec_digest=None,
         ),
     )
 
@@ -116,7 +116,7 @@ def user_validate_mode_and_context(
         actual_config_digest,
         actual_input_digest,
         actual_output_goal_digest,
-        actual_context_digest,
+        actual_context_spec_digest,
     ) = compute_plan_approval_actual_digests(store, run_id, run, plan)
     review_state, digest_bundle = build_plan_approval_validation_context(
         plan=plan,
@@ -125,6 +125,6 @@ def user_validate_mode_and_context(
         actual_config_digest=actual_config_digest,
         actual_input_digest=actual_input_digest,
         actual_output_goal_digest=actual_output_goal_digest,
-        actual_context_digest=actual_context_digest,
+        actual_context_spec_digest=actual_context_spec_digest,
     )
     return "approval", review_state, digest_bundle

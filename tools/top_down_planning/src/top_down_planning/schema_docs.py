@@ -1263,7 +1263,8 @@ not consumed by the orchestrator.
    `goal_met: true` and a `goal_assessment` rationale. Production `ready` snapshots
    expose `ready_items` (contracts per ready leaf) alongside `ready_item_ids`.
 4. Mandatory whole-output review must complete the gate before `outcome: accepted`.
-   Same three-stage model as whole-plan review. After `needs_revision` or initial
+   Same two-mode mandatory gate as whole-plan review (`initial_review`, then
+   repeatable verification and fresh blocker rounds). After `needs_revision` or initial
    `changes_requested`, the producer must use `production apply` with
    `evidence_revision: true` and **new** output evidence IDs on terminal items
    targeted by unresolved blocking findings (dispositions unchanged), then
@@ -1284,6 +1285,12 @@ so in-agent commands typically need only `--run <run-id>`. Run ids use
 
 `plan.json` items include `depth` (0-based from the tree root, derived from
 `parent_id`). Depth is required on load and recomputed on save.
+
+`digests.context_spec` binds agent-context **declarations** at run creation: role models,
+configured resource path selection, and skill paths. `digests.context_snapshot` binds
+materialized resource bytes and skill contents via `context_snapshot_binding`. Production
+completion rebases the snapshot when drift is attributable to production evidence;
+unauthorized drift blocks completion or resume.
 
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
 The service captures content hashes and stores immutable snapshots under

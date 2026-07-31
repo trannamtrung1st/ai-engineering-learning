@@ -1,4 +1,4 @@
-"""Agent review contracts, prompts, and package freshness for two-stage gates."""
+"""Agent review contracts, prompts, and package freshness for mandatory review gates."""
 
 from __future__ import annotations
 

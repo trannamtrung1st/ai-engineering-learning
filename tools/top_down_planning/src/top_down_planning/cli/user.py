@@ -24,7 +24,7 @@ from top_down_planning.cli.common import (
 from top_down_planning.persistence.path_ids import new_run_id
 from top_down_planning.config import (
     ConfigError,
-    compute_context_digest_from_config,
+    build_initial_context_snapshot_binding,
     compute_input_digest,
     compute_output_goal_digest,
     resolve_config,
@@ -208,7 +208,10 @@ def handle_run_command(args: Namespace) -> None:
 
     input_digest = compute_input_digest(resolved, base_dir=workspace)
     output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
-    context_digest = compute_context_digest_from_config(resolved, workspace=workspace)
+    binding, context_spec_digest, context_snapshot_digest = build_initial_context_snapshot_binding(
+        resolved,
+        workspace=workspace,
+    )
     plan = _initial_plan(run_id, resolved, output_goal=output_goal)
 
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
@@ -234,7 +237,9 @@ def handle_run_command(args: Namespace) -> None:
         resolved_config=resolved,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
-        context_digest=context_digest,
+        context_spec_digest=context_spec_digest,
+        context_snapshot_digest=context_snapshot_digest,
+        context_snapshot_binding=binding,
         workspace=str(workspace),
         invocation=invocation_to_dict(invocation),
     )
@@ -636,7 +641,7 @@ def handle_validate_command(args: Namespace) -> None:
                 actual_config_digest,
                 actual_input_digest,
                 actual_output_goal_digest,
-                actual_context_digest,
+                actual_context_spec_digest,
             ) = compute_plan_approval_actual_digests(store, args.run, run, plan)
             output_review_state, output_digest_bundle = build_output_approval_validation_context(
                 production=production,
@@ -646,7 +651,10 @@ def handle_validate_command(args: Namespace) -> None:
                 actual_config_digest=actual_config_digest,
                 actual_input_digest=actual_input_digest,
                 actual_output_goal_digest=actual_output_goal_digest,
-                actual_context_digest=actual_context_digest,
+                actual_context_spec_digest=actual_context_spec_digest,
+                actual_context_snapshot_digest=(run.get("digests") or {}).get(
+                    "context_snapshot"
+                ),
             )
         output_validation = validate_output(
             plan,

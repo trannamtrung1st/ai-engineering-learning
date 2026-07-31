@@ -1,4 +1,4 @@
-"""Config Loop Bounds for mandatory two-stage review."""
+"""Config loop bounds for mandatory review gates."""
 
 from __future__ import annotations
 

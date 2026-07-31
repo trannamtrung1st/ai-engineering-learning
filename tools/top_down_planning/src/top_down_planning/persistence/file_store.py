@@ -61,7 +61,9 @@ def new_run_record(
     output_goal_digest: str,
     config_digest: str,
     plan_digest: str,
-    context_digest: str,
+    context_spec_digest: str,
+    context_snapshot_digest: str,
+    context_snapshot_binding: dict[str, Any],
     phase: str = "planning",
     workspace: str,
 ) -> dict[str, Any]:
@@ -77,8 +79,10 @@ def new_run_record(
             "output_goal": output_goal_digest,
             "config": config_digest,
             "plan": plan_digest,
-            "context": context_digest,
+            "context_spec": context_spec_digest,
+            "context_snapshot": context_snapshot_digest,
         },
+        "context_snapshot_binding": context_snapshot_binding,
         "sessions": {
             "primary_planner_session_id": None,
             "primary_producer_session_id": None,
@@ -118,16 +122,22 @@ class FileRunStore:
         resolved_config: dict[str, Any],
         input_digest: str,
         output_goal_digest: str,
-        context_digest: str,
+        context_spec_digest: str,
+        context_snapshot_digest: str,
+        context_snapshot_binding: dict[str, Any],
         phase: str = "planning",
         production: dict[str, Any] | None = None,
         workspace: str,
         invocation: dict[str, Any],
     ) -> dict[str, Any]:
         validated_run_id = validate_run_id(run_id)
-        if not input_digest or not output_goal_digest or not context_digest:
+        if not input_digest or not output_goal_digest or not context_spec_digest:
             raise PersistenceError(
-                "input_digest, output_goal_digest, and context_digest are required"
+                "input_digest, output_goal_digest, and context_spec_digest are required"
+            )
+        if not context_snapshot_digest or not isinstance(context_snapshot_binding, dict):
+            raise PersistenceError(
+                "context_snapshot_digest and context_snapshot_binding are required"
             )
         if not workspace or not str(workspace).strip():
             raise PersistenceError("workspace is required")
@@ -151,7 +161,9 @@ class FileRunStore:
             output_goal_digest=output_goal_digest,
             config_digest=config_digest,
             plan_digest=plan_digest,
-            context_digest=context_digest,
+            context_spec_digest=context_spec_digest,
+            context_snapshot_digest=context_snapshot_digest,
+            context_snapshot_binding=context_snapshot_binding,
             phase=phase,
             workspace=workspace,
         )

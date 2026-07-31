@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.agent_tool.production_service import ProductionAgentService
+from top_down_planning.config.context_digests import (
+    recompute_context_snapshot_binding,
+    short_path_for_observability,
+    validate_production_snapshot_rebase,
+)
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.production import (
@@ -32,6 +37,7 @@ from top_down_planning.orchestrator.capability import (
     rotate_session_capability,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.resume import short_digest_for_observability
 from top_down_planning.orchestrator.phases import (
     PLAN_VALIDATED,
     PRODUCTION,
@@ -41,6 +47,7 @@ from top_down_planning.orchestrator.provider_turns import (
     consume_provider_turn,
     run_pending_focused_review,
 )
+from top_down_planning.workspace import run_workspace
 from top_down_planning.orchestrator.session_events import (
     emit_primary_session_resumed,
     emit_primary_session_started,
@@ -311,15 +318,57 @@ class ProductionPhaseOrchestrator:
     def _complete_production(self, session_id: str) -> ProductionPhaseResult:
         run = self._store.load_run(self._run_id)
         production = self._store.load_production(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        workspace = run_workspace(run)
         expected_revision = int(run["revision"])
         revoke_capabilities_for_phase(self._store, self._run_id, PRODUCTION)
+
+        digests = dict(run.get("digests") or {})
+        old_binding = dict(run.get("context_snapshot_binding") or {})
+        old_snapshot_digest = str(digests.get("context_snapshot") or "")
+
+        try:
+            new_binding, new_snapshot_digest = recompute_context_snapshot_binding(
+                config,
+                workspace=workspace,
+            )
+            changed_paths: list[str] = []
+            if new_snapshot_digest != old_snapshot_digest:
+                changed_paths = validate_production_snapshot_rebase(
+                    old_binding,
+                    new_binding,
+                    production,
+                    workspace=workspace,
+                )
+        except ValueError as exc:
+            return self._terminate(
+                "blocked",
+                str(exc),
+                session_id=session_id,
+            )
+
+        snapshot_rebased = new_snapshot_digest != old_snapshot_digest
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = WHOLE_OUTPUT_REVIEW
-        digests = dict(run.get("digests") or {})
         digests["output"] = compute_output_digest(production)
+        if snapshot_rebased:
+            digests["context_snapshot"] = new_snapshot_digest
+            run["context_snapshot_binding"] = new_binding
         run["digests"] = digests
         self._store.save_run(self._run_id, run, expected_revision)
+        if snapshot_rebased:
+            self._append_event(
+                "context_snapshot_rebased",
+                session_id=session_id,
+                phase_transition=f"{PRODUCTION}->{WHOLE_OUTPUT_REVIEW}",
+                prior_snapshot_digest=short_digest_for_observability(old_snapshot_digest),
+                new_snapshot_digest=short_digest_for_observability(new_snapshot_digest),
+                changed_path_count=len(changed_paths),
+                changed_paths=[
+                    short_path_for_observability(path) for path in changed_paths[:10]
+                ],
+            )
         self._append_event(
             "production_completed",
             session_id=session_id,

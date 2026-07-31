@@ -1,4 +1,4 @@
-"""Shared two-stage mandatory review transitions (proposal lifecycle)."""
+"""Shared mandatory review stage transitions (proposal lifecycle)."""
 
 from __future__ import annotations
 
@@ -311,7 +311,7 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             "required_fields": ["findings", "target_digest"],
         }
         fields["initial_review_guidance"] = [
-            "Mandatory two-stage gate: initial discovery may raise findings",
+            "Mandatory review gate: initial discovery may raise findings",
             "Clear initial approval still requires a separate scope_blocker_review",
             "Do not treat this pass as final approval",
         ]

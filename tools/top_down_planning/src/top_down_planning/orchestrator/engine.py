@@ -18,7 +18,11 @@ from top_down_planning.orchestrator.failure import mark_run_failed, sanitize_ope
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.production import ProductionPhaseOrchestrator
-from top_down_planning.orchestrator.resume import ResumeError, validate_resume_preconditions
+from top_down_planning.orchestrator.resume import (
+    ResumeError,
+    short_digest_for_observability,
+    validate_resume_preconditions,
+)
 from top_down_planning.orchestrator.whole_output_review import WholeOutputReviewOrchestrator
 from top_down_planning.orchestrator.whole_plan_review import WholePlanReviewOrchestrator
 from top_down_planning.orchestrator.phases import (
@@ -126,13 +130,37 @@ class RunEngine:
                 self._emit_done(result, started_at=started_at)
                 return result
 
+            phase_for_entry = str(run.get("phase") or "")
+            self._append_phase_entry_event(
+                run_id,
+                "phase_entry_attempted",
+                phase=phase_for_entry,
+            )
+
             try:
                 preconditions = validate_resume_preconditions(self._store, run_id)
             except ResumeError as exc:
+                blocked_fields: dict[str, Any] = {
+                    "phase": phase_for_entry,
+                    "error_code": exc.code,
+                }
+                if exc.digest_kind is not None:
+                    blocked_fields["digest_kind"] = exc.digest_kind
+                expected = short_digest_for_observability(exc.expected_digest)
+                actual = short_digest_for_observability(exc.actual_digest)
+                if expected is not None:
+                    blocked_fields["expected_digest"] = expected
+                if actual is not None:
+                    blocked_fields["actual_digest"] = actual
+                self._append_phase_entry_event(
+                    run_id,
+                    "phase_entry_blocked",
+                    **blocked_fields,
+                )
                 result = RunContinuationResult(
                     ok=False,
                     run_id=run_id,
-                    phase=str(run.get("phase") or ""),
+                    phase=phase_for_entry,
                     status=status,
                     outcome=run.get("outcome"),
                     steps=steps,
@@ -308,6 +336,15 @@ class RunEngine:
                 )
                 self._emit_done(result, started_at=started_at)
                 return result
+
+    def _append_phase_entry_event(
+        self,
+        run_id: str,
+        event_type: str,
+        **fields: Any,
+    ) -> None:
+        payload = {"type": event_type, **fields}
+        self._store.append_event(run_id, payload)
 
     def _emit(self, event: ConsoleEvent) -> None:
         if self._observability is not None:

@@ -330,7 +330,7 @@ class WholePlanReviewOrchestrator:
                 config,
                 base_dir=run_workspace(run),
             ),
-            actual_context_digest=(run.get("digests") or {}).get("context"),
+            actual_context_spec_digest=(run.get("digests") or {}).get("context_spec"),
         )
         validation = validate_plan(
             plan,

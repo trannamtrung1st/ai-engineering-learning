@@ -13,7 +13,7 @@ from top_down_planning.domain.production import build_production_digest_payload
 
 __all__ = [
     "compute_config_digest",
-    "compute_context_digest",
+    "digest_binding_payload",
     "compute_output_digest",
     "compute_plan_digest",
     "semantic_config_projection",
@@ -49,8 +49,10 @@ def compute_config_digest(config: dict[str, Any]) -> str:
     return digest_json(semantic_config_projection(config))
 
 
-def compute_context_digest(context: dict[str, Any]) -> str:
-    return digest_json(context)
+def digest_binding_payload(payload: dict[str, Any]) -> str:
+    """Deterministic digest of a canonical context spec or snapshot payload."""
+
+    return digest_json(payload)
 
 
 def compute_output_digest(production: dict[str, Any]) -> str:
