@@ -9,6 +9,7 @@ from typing import Any, Literal
 from top_down_planning.domain.review_policy import (
     FindingCategory,
     ReviewSeverity,
+    severity_at_or_above,
     validate_finding_category,
     validate_review_severity,
 )
@@ -110,6 +111,13 @@ FINDING_OWNER_ACTIONS: frozenset[str] = frozenset(
 CHALLENGE_PROPOSED_DISPOSITIONS: frozenset[str] = frozenset({"invalid", "superseded"})
 ACTIONS_REQUIRING_RATIONALE: frozenset[str] = frozenset(
     {"defer", "accept_as_is", "challenge"}
+)
+QUALIFYING_OPTIONAL_OWNER_ACTIONS: frozenset[str] = frozenset(
+    {"defer", "accept_as_is"}
+)
+REQUIRED_FINDING_OWNER_ACTIONS: frozenset[str] = frozenset({"fix", "challenge"})
+OPTIONAL_FINDING_OWNER_ACTIONS: frozenset[str] = frozenset(
+    {"fix", "defer", "accept_as_is", "challenge"}
 )
 
 MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
@@ -578,7 +586,7 @@ def is_item_blocked_by_unresolved_review_findings(
     *,
     review_types: frozenset[str] | None = None,
 ) -> bool:
-    """Return whether unresolved blocking findings target ``item_id``."""
+    """Return whether unresolved required findings target ``item_id``."""
 
     allowed_types = review_types or PLAN_REVIEW_TYPES
     for payload in reviews:
@@ -587,11 +595,8 @@ def is_item_blocked_by_unresolved_review_findings(
         loop = ReviewLoop.from_dict(payload)
         if loop.status not in _ACTIVE_REVIEW_BLOCKING_STATUSES:
             continue
-        for finding in loop.findings:
-            if finding.importance != "blocking":
-                continue
-            if not is_open_finding_status(finding.status):
-                continue
+        threshold = loop_revise_at(loop)
+        for finding in required_open_findings(loop.findings, threshold):
             if item_id in finding.target_refs:
                 return True
     return False
@@ -637,15 +642,179 @@ def is_open_finding_status(status: str) -> bool:
     return str(status).strip() in OPEN_FINDING_DISPOSITIONS
 
 
-def blocking_unresolved_finding_ids(findings: list[ReviewFinding]) -> list[str]:
-    unresolved: list[str] = []
-    for finding in findings:
-        if finding.importance != "blocking":
-            continue
-        if not is_open_finding_status(finding.status):
-            continue
-        unresolved.append(finding.id)
-    return unresolved
+def loop_revise_at(loop: ReviewLoop) -> ReviewSeverity:
+    """Return the loop's persisted revise_at, or blocker for legacy loops."""
+
+    if loop.revise_at is not None:
+        return loop.revise_at
+    return "blocker"
+
+
+def open_findings(findings: Sequence[ReviewFinding]) -> list[ReviewFinding]:
+    return [
+        finding
+        for finding in findings
+        if is_open_finding_status(finding.status)
+    ]
+
+
+def required_open_findings(
+    findings: Sequence[ReviewFinding],
+    threshold: ReviewSeverity,
+) -> list[ReviewFinding]:
+    """Open findings at or above the effective revision threshold."""
+
+    return [
+        finding
+        for finding in open_findings(findings)
+        if severity_at_or_above(finding.severity, threshold)
+    ]
+
+
+def optional_open_findings(
+    findings: Sequence[ReviewFinding],
+    threshold: ReviewSeverity,
+) -> list[ReviewFinding]:
+    """Open findings below the effective revision threshold."""
+
+    return [
+        finding
+        for finding in open_findings(findings)
+        if not severity_at_or_above(finding.severity, threshold)
+    ]
+
+
+def required_open_finding_ids(
+    findings: Sequence[ReviewFinding],
+    threshold: ReviewSeverity,
+) -> list[str]:
+    return [finding.id for finding in required_open_findings(findings, threshold)]
+
+
+def optional_open_finding_ids(
+    findings: Sequence[ReviewFinding],
+    threshold: ReviewSeverity,
+) -> list[str]:
+    return [finding.id for finding in optional_open_findings(findings, threshold)]
+
+
+def open_optional_findings_without_owner_action(
+    findings: Sequence[ReviewFinding],
+    finding_actions: Sequence[FindingAction],
+    threshold: ReviewSeverity,
+    *,
+    finding_set_id: str | None = None,
+) -> list[ReviewFinding]:
+    """Optional open findings lacking a qualifying defer/accept_as_is action."""
+
+    acknowledged = {
+        action.finding_id
+        for action in finding_actions
+        if action.action in QUALIFYING_OPTIONAL_OWNER_ACTIONS
+        and (
+            finding_set_id is None
+            or action.finding_set_id == finding_set_id
+        )
+    }
+    return [
+        finding
+        for finding in optional_open_findings(findings, threshold)
+        if finding.id not in acknowledged
+    ]
+
+
+def unacknowledged_optional_finding_ids(
+    findings: Sequence[ReviewFinding],
+    finding_actions: Sequence[FindingAction],
+    threshold: ReviewSeverity,
+    *,
+    finding_set_id: str | None = None,
+) -> list[str]:
+    return [
+        finding.id
+        for finding in open_optional_findings_without_owner_action(
+            findings,
+            finding_actions,
+            threshold,
+            finding_set_id=finding_set_id,
+        )
+    ]
+
+
+def findings_permit_approval(
+    findings: Sequence[ReviewFinding],
+    finding_actions: Sequence[FindingAction],
+    threshold: ReviewSeverity,
+    *,
+    finding_set_id: str | None = None,
+) -> bool:
+    """True when required findings are clear and optionals have owner actions."""
+
+    if required_open_findings(findings, threshold):
+        return False
+    if open_optional_findings_without_owner_action(
+        findings,
+        finding_actions,
+        threshold,
+        finding_set_id=finding_set_id,
+    ):
+        return False
+    return True
+
+
+def assert_owner_action_allowed_for_finding(
+    finding: ReviewFinding,
+    action: str,
+    threshold: ReviewSeverity,
+) -> FindingOwnerAction:
+    """Validate owner action against required/optional policy for a finding."""
+
+    normalized = validate_finding_owner_action(action)
+    is_required = severity_at_or_above(finding.severity, threshold)
+    if is_required:
+        if normalized not in REQUIRED_FINDING_OWNER_ACTIONS:
+            raise ValueError(
+                f"required finding {finding.id!r} cannot use action "
+                f"{normalized!r}; allowed: fix, challenge"
+            )
+    elif normalized not in OPTIONAL_FINDING_OWNER_ACTIONS:
+        raise ValueError(
+            f"optional finding {finding.id!r} cannot use action {normalized!r}"
+        )
+    return normalized
+
+
+def policy_observability_fields(
+    findings: Sequence[ReviewFinding],
+    finding_actions: Sequence[FindingAction],
+    threshold: ReviewSeverity,
+    *,
+    finding_set_id: str | None = None,
+) -> dict[str, Any]:
+    """Derived threshold/requirement state for review responses and events."""
+
+    return {
+        "revise_at": threshold,
+        "required_open_finding_ids": required_open_finding_ids(findings, threshold),
+        "optional_open_finding_ids": optional_open_finding_ids(findings, threshold),
+        "unacknowledged_optional_finding_ids": unacknowledged_optional_finding_ids(
+            findings,
+            finding_actions,
+            threshold,
+            finding_set_id=finding_set_id,
+        ),
+    }
+
+
+def blocking_unresolved_finding_ids(
+    findings: list[ReviewFinding],
+    *,
+    revise_at: ReviewSeverity | None = None,
+) -> list[str]:
+    """Return open finding ids at or above ``revise_at`` (default: blocker)."""
+
+    threshold: ReviewSeverity = revise_at if revise_at is not None else "blocker"
+    return required_open_finding_ids(findings, threshold)
 
 
 def needs_primary_revision_resume(
@@ -659,7 +828,12 @@ def needs_primary_revision_resume(
         return False
     if current_revision > loop.target_revision:
         return False
-    return bool(blocking_unresolved_finding_ids(loop.findings))
+    return bool(
+        blocking_unresolved_finding_ids(
+            loop.findings,
+            revise_at=loop_revise_at(loop),
+        )
+    )
 
 
 _WHOLE_SCOPE_KINDS = frozenset({"whole_plan", "whole_output"})
@@ -755,7 +929,12 @@ def blocking_focused_findings_for_items(
             continue
         if loop.status not in {"changes_requested", "blocked"}:
             continue
-        blocked.extend(blocking_unresolved_finding_ids(loop.findings))
+        blocked.extend(
+            blocking_unresolved_finding_ids(
+                loop.findings,
+                revise_at=loop_revise_at(loop),
+            )
+        )
 
     return blocked
 
@@ -766,7 +945,11 @@ def blocking_unresolved_finding_ids_from_payload(review: dict[str, Any]) -> list
         for item in (review.get("findings") or [])
         if isinstance(item, dict)
     ]
-    return blocking_unresolved_finding_ids(findings)
+    revise_raw = review.get("revise_at")
+    revise_at: ReviewSeverity | None = None
+    if revise_raw is not None and str(revise_raw).strip():
+        revise_at = validate_review_severity(str(revise_raw))
+    return blocking_unresolved_finding_ids(findings, revise_at=revise_at)
 
 
 def find_active_review_loop(
@@ -786,18 +969,14 @@ def find_active_review_loop(
 
 
 def whole_output_revision_target_ids(reviews: list[dict[str, Any]]) -> set[str]:
-    """Plan item ids targeted by unresolved blocking findings in an active whole-output loop."""
+    """Plan item ids targeted by unresolved required findings in an active whole-output loop."""
 
     loop = find_active_review_loop(reviews, "whole_output")
     if loop is None:
         return set()
 
     targets: set[str] = set()
-    for finding in loop.findings:
-        if finding.importance != "blocking":
-            continue
-        if not is_open_finding_status(finding.status):
-            continue
+    for finding in required_open_findings(loop.findings, loop_revise_at(loop)):
         targets.update(finding.target_refs)
     return targets
 
@@ -829,11 +1008,7 @@ def focused_output_revision_target_ids(
 
     scope_items = {str(item_id) for item_id in (loop.scope.get("item_ids") or [])}
     targets: set[str] = set()
-    for finding in loop.findings:
-        if finding.importance != "blocking":
-            continue
-        if not is_open_finding_status(finding.status):
-            continue
+    for finding in required_open_findings(loop.findings, loop_revise_at(loop)):
         targets.update(str(ref) for ref in finding.target_refs)
     if not targets:
         return scope_items
@@ -1051,12 +1226,11 @@ def merge_verification_findings(
     side_effects = parse_findings(request.get("new_direct_side_effect_findings") or [])
     disposition_by_id = {entry.finding_id: entry for entry in entries}
 
-    prior_blocking_open = [
-        finding
-        for finding in loop.findings
-        if finding.importance == "blocking" and is_open_finding_status(finding.status)
-    ]
-    for finding in prior_blocking_open:
+    prior_required_open = required_open_findings(
+        loop.findings,
+        loop_revise_at(loop),
+    )
+    for finding in prior_required_open:
         if finding.id not in disposition_by_id:
             raise ValueError(
                 f"finding_results missing required finding_id {finding.id!r}"
@@ -1168,10 +1342,13 @@ def validate_verification_closure(
     if result.decision != "verified":
         return
 
-    unresolved = blocking_unresolved_finding_ids(merged_findings)
+    unresolved = blocking_unresolved_finding_ids(
+        merged_findings,
+        revise_at=loop_revise_at(loop),
+    )
     if unresolved:
         raise ValueError(
-            "verified decision requires all blocking findings to be resolved "
+            "verified decision requires all required findings to be resolved "
             f"or superseded; unresolved: {', '.join(unresolved)}"
         )
 
@@ -1190,16 +1367,11 @@ def validate_verification_closure(
     if not verification_findings_closed(
         result.finding_results,
         require_all=bool(
-            [
-                finding
-                for finding in loop.findings
-                if finding.importance == "blocking"
-                and is_open_finding_status(finding.status)
-            ]
+            required_open_findings(loop.findings, loop_revise_at(loop))
         ),
     ):
         raise ValueError(
-            "verified decision requires closed dispositions for all open blocking findings"
+            "verified decision requires closed dispositions for all open required findings"
         )
 
 
@@ -1233,11 +1405,33 @@ def apply_review_response(
         )
 
     if decision in CLEAR_APPROVAL_STATUSES:
-        unresolved = blocking_unresolved_finding_ids(findings)
-        if unresolved:
+        threshold = loop_revise_at(loop)
+        if not findings_permit_approval(
+            findings,
+            loop.finding_actions,
+            threshold,
+            finding_set_id=loop.finding_set_id,
+        ):
+            required_ids = required_open_finding_ids(findings, threshold)
+            unacked = unacknowledged_optional_finding_ids(
+                findings,
+                loop.finding_actions,
+                threshold,
+                finding_set_id=loop.finding_set_id,
+            )
+            details: list[str] = []
+            if required_ids:
+                details.append(
+                    "open required findings: " + ", ".join(required_ids)
+                )
+            if unacked:
+                details.append(
+                    "unacknowledged optional findings: " + ", ".join(unacked)
+                )
             raise ValueError(
-                f"{decision!r} decision requires all blocking findings to be resolved "
-                f"or superseded; unresolved: {', '.join(unresolved)}"
+                f"{decision!r} decision requires no open required findings and "
+                "qualifying owner actions on every open optional finding; "
+                + "; ".join(details)
             )
 
     resolved_lifecycle = lifecycle_status if lifecycle_status is not None else loop.lifecycle_status

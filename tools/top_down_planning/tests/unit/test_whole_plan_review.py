@@ -243,7 +243,7 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
         session_id="stub-session-reviewer",
         loop_id="review-whole-plan-01",
     )
-    with pytest.raises(RequestError, match="blocking findings"):
+    with pytest.raises(RequestError, match="open required findings"):
         service.respond(
             _review_respond_request(
                 decision="approved",

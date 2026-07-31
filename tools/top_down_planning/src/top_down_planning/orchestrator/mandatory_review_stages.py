@@ -12,6 +12,7 @@ from top_down_planning.domain.reviews import (
     blocking_unresolved_finding_ids,
     build_limit_reached_terminal,
     assert_mandatory_review_transition,
+    loop_revise_at,
     mandatory_stage_respond_decision,
 )
 
@@ -229,7 +230,10 @@ def approved_means_start_blocker_review(loop: ReviewLoop) -> bool:
 
     if is_blocker_stage(loop):
         return False
-    return not blocking_unresolved_finding_ids(loop.findings)
+    return not blocking_unresolved_finding_ids(
+        loop.findings,
+        revise_at=loop_revise_at(loop),
+    )
 
 
 def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
