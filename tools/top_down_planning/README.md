@@ -205,10 +205,41 @@ Role `guidance`, `resources`, and `skills` are additive with `agent_context.defa
 
 Run contracts bind via `digests.input` and `digests.output_goal` at run creation. Supporting agent context uses a **spec vs snapshot** split:
 
-- `digests.context_spec` — stable declarations (role models, guidance entries, resource path selection, skill paths).
+- `digests.context_spec` — stable declarations (role models, guidance entries, resource path selection, skill paths) plus the resolved snapshot exclusion policy (`context_snapshot.excludes` and built-in policy version).
 - `digests.context_snapshot` — materialized resource file bytes, skill contents, and guidance text/file digests, persisted in `context_snapshot_binding` on the run record.
 
 Resume always validates `context_spec`. `context_snapshot` is skipped only during the `production` phase so in-flight authorized mutations are allowed. Production completion atomically validates snapshot drift against production evidence, rebases `context_snapshot` when authorized, emits `context_snapshot_rebased` after the run record is persisted, then enters `whole_output_review`. Unauthorized workspace changes block completion or later phase entry.
+
+### Context snapshot exclusions and binding
+
+The context snapshot protects supporting agent resources from silent drift: each included file keeps a per-file SHA-256 digest so production can attribute intentional edits to evidence without treating unrelated workspace noise as authorized. Skill digests (and guidance digests when configured) stay in the binding because those surfaces are snapshot-bound today; exclusions apply only to **resource** materialization, not to skills or guidance.
+
+Without exclusions, directory resources that include `__pycache__` / `*.pyc` / tool caches cause false-positive unauthorized mutations at production completion after imports or tests. Configure exclusions under `context_snapshot` (default-on when omitted):
+
+```yaml
+context_snapshot:
+  excludes:
+    defaults: true   # built-ins: **/__pycache__/, **/*.py[cod], **/.pytest_cache/, **/.mypy_cache/, **/.ruff_cache/
+    patterns:        # ordered gitignore/gitwildmatch patterns; later entries override earlier ones
+      - "generated/"
+      - "!generated/schema.json"
+```
+
+- Empty `patterns: []` does **not** disable defaults; set `defaults: false` to turn built-ins off.
+- Patterns match canonical workspace-relative POSIX paths. Negations (including overrides of built-ins), `*`, `**`, root anchors (`/rooted.txt`), and directory-only patterns (`dir/`) follow the gitignore dialect via a pathspec adapter.
+- TDP does **not** inherit `.gitignore`. Exclusion policy participates in `context_spec` identity, so changing defaults, patterns, pattern order, or the built-in policy version changes the context-spec digest.
+- Direct file resources always bind (including missing files with a missing-resource sentinel digest), even when they match an exclude pattern. Files discovered through directory or glob expansion are filtered. Glob expansion stays file-only / non-recursive as before.
+- Binding keys are workspace-relative POSIX paths (`/`); digests are bare lowercase hex (no `sha256:` prefix). Production evidence `ref` values use the same canonical relative path model. The persisted binding is a compact map:
+
+```json
+{
+  "resource_digests": {"src/a.py": "<64-hex>"},
+  "skill_digests": {"skills/demo/SKILL.md": "<64-hex>"},
+  "guidance_digests": [{"path": "docs/g.md", "text": "...", "digest": "<64-hex>"}]
+}
+```
+
+List-shaped `{path, digest}` entries, absolute path keys, and a binding-level `workspace` field are rejected; recreate the run. Config document `version` is unrelated to run-record `schema_version` (currently `2`). Unsupported or missing run `schema_version` fails load with a recreate message — there is no automatic migrator. `PYTHONDONTWRITEBYTECODE=1` may still suppress local bytecode during older workflows, but it is not the permanent fix; use snapshot excludes instead.
 
 Phase-entry audit events distinguish precondition failures from orchestrator start:
 

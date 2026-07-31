@@ -34,6 +34,15 @@ run:
   boundaries: []
   acceptance: []
 
+# Snapshot exclusions (default-on when this section is omitted).
+# Built-ins cover __pycache__, *.py[cod], and common tool caches.
+# User patterns use gitignore/gitwildmatch order; .gitignore is not inherited.
+# Exclusion policy is part of context_spec identity. See package README.
+context_snapshot:
+  excludes:
+    defaults: true
+    patterns: []
+
 agent_context:
   default:
     model: auto

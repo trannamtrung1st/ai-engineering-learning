@@ -563,7 +563,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "and excludes.patterns: []. Patterns use gitignore/gitwildmatch "
                     "semantics matched against canonical workspace-relative POSIX "
                     "paths. Built-in defaults are applied before user patterns; "
-                    "later patterns override earlier ones. Do not inherit .gitignore."
+                    "later patterns override earlier ones. Policy participates in "
+                    "context_spec identity. Exclusions do not apply to skills or "
+                    "guidance. Direct file resources always bind; discovered "
+                    "directory/glob matches are filtered. Do not inherit .gitignore. "
+                    "Distinct from run-record schema_version (recreate old runs)."
                 ),
                 "properties": {
                     "excludes": {
@@ -575,15 +579,16 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                     "When true, include built-in generated-artifact "
                                     "excludes (__pycache__, *.py[cod], pytest/mypy/ruff "
                                     "caches). An empty patterns list does not disable "
-                                    "defaults."
+                                    "defaults; set defaults: false to turn built-ins off."
                                 ),
                             },
                             "patterns": {
                                 "type": "array",
                                 "items": {"type": "string"},
                                 "description": (
-                                    "Ordered user exclude patterns. Negations may "
-                                    "override built-ins."
+                                    "Ordered user exclude patterns (negations, *, **, "
+                                    "root anchors, directory-only). Later entries "
+                                    "override earlier ones, including built-ins."
                                 ),
                             },
                         },
@@ -1372,10 +1377,21 @@ so in-agent commands typically need only `--run <run-id>`. Run ids use
 `parent_id`). Depth is required on load and recomputed on save.
 
 `digests.context_spec` binds agent-context **declarations** at run creation: role models,
-configured guidance entries, resource path selection, and skill paths. `digests.context_snapshot` binds
-materialized resource bytes, skill contents, and guidance text/file digests via `context_snapshot_binding`. Production
-completion rebases the snapshot when drift is attributable to production evidence;
-unauthorized drift blocks completion or resume.
+configured guidance entries, resource path selection, skill paths, and the resolved
+`context_snapshot` exclusion policy (defaults, ordered patterns, built-in policy version).
+`digests.context_snapshot` binds materialized resource bytes, skill contents, and guidance
+text/file digests via `context_snapshot_binding` (compact relative-path → bare SHA-256 hex
+maps; guidance remains a list of digest entries). Exclusions apply to resource collection
+only — skills and guidance stay bound. Direct file resources always bind; directory/glob
+discoveries are filtered. Production completion rebases the snapshot when drift is
+attributable to production evidence (same canonical relative paths as evidence `ref`);
+unauthorized drift blocks completion or resume. `.gitignore` is not inherited. Omitting
+`context_snapshot` equals `excludes.defaults: true` with empty user patterns.
+
+Run records carry top-level `schema_version` (currently `2`), distinct from config document
+`version`. Old absolute-path or list-shaped bindings and unsupported schema versions are
+rejected — recreate the run; there is no migrator. Prefer snapshot excludes over
+`PYTHONDONTWRITEBYTECODE=1` as the durable fix for bytecode false positives.
 
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
 The service captures content hashes and stores immutable snapshots under
@@ -1429,7 +1445,6 @@ use `production snapshot` or `production check` for plan validation.
 ## Further reading
 
 Package README: tools/top_down_planning/README.md
-Specification: tools/top_down_planning/docs/spec.md
 """
 
 
