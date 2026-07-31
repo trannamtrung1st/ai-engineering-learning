@@ -480,60 +480,117 @@ def _role_context_spec_from_config(
     }
 
 
-def _collect_materialized_resource_files(
+def _configured_resource_entries(
+    config: dict[str, Any],
+) -> list[tuple[str, str]]:
+    """Return ordered (field, configured_value) resource declarations across roles."""
+
+    entries: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for role in ("planner", "producer", "reviewer"):
+        default_section, role_section = _agent_context_sections(config, role)
+        for source_field, raw_entries in (
+            ("agent_context.default.resources", list(default_section.get("resources") or [])),
+            (f"agent_context.{role}.resources", list(role_section.get("resources") or [])),
+        ):
+            for entry in raw_entries:
+                configured_value = str(entry).strip()
+                if not configured_value or configured_value in seen:
+                    continue
+                seen.add(configured_value)
+                entries.append((source_field, configured_value))
+    return entries
+
+
+def _materialize_resource_digests(
     config: dict[str, Any],
     *,
     workspace: Path,
-) -> list[Path]:
-    """Union of supporting resource file paths for snapshot binding.
+) -> dict[str, str]:
+    """Materialize resource snapshot digests with §6 exclusion semantics.
 
-    Expands globs and directories like effective agent context. Missing file
-    paths are retained so drift (including deletions) is detectable at resume.
+    - Direct files (including missing) always bind; exclusions do not apply.
+    - Directory declarations are walked recursively; discovered files are filtered.
+    - Glob declarations keep file-only non-recursive expansion; matches are filtered.
+    - Skills/guidance are not handled here.
+
+    Directory walks post-filter after ``rglob`` (no prune) so later negated exclude
+    patterns can still re-include descendants (proposal §5).
     """
 
+    from top_down_planning.config.snapshot_policy import (
+        CanonicalPathCollisionError,
+        SnapshotPolicy,
+        canonicalize_workspace_path,
+    )
+
+    policy = SnapshotPolicy.from_config(config, workspace=workspace)
     workspace_resolved = workspace.resolve()
-    seen: set[str] = set()
-    collected: list[Path] = []
+    digests: dict[str, str] = {}
+    paths_by_key: dict[str, Path] = {}
 
-    def add_path(path: Path) -> None:
-        key = str(path.resolve())
-        if key in seen:
+    def bind(path: Path, *, explicitly_declared: bool) -> None:
+        key = canonicalize_workspace_path(path, workspace=workspace)
+        if not policy.is_included(
+            key,
+            is_directory=False,
+            explicitly_declared=explicitly_declared,
+        ):
             return
-        seen.add(key)
-        collected.append(path.resolve())
+        prior = paths_by_key.get(key)
+        if prior is not None and prior.resolve() != path.resolve():
+            raise CanonicalPathCollisionError(key, prior, path)
+        if key in digests:
+            return
+        paths_by_key[key] = path
+        digests[key] = (
+            digest_file(path) if path.is_file() else MISSING_RESOURCE_FILE_DIGEST
+        )
 
-    for role in ("planner", "producer", "reviewer"):
-        default_section, role_section = _agent_context_sections(config, role)
-        entries: list[Any] = []
-        entries.extend(default_section.get("resources") or [])
-        entries.extend(role_section.get("resources") or [])
-        field = f"agent_context.{role}.resources"
-        for entry in entries:
-            configured_value = str(entry).strip()
-            if not configured_value:
-                continue
-            if _path_has_glob_metacharacters(configured_value):
-                for match in sorted(workspace_resolved.glob(configured_value)):
-                    if match.is_file():
-                        add_path(match)
-                continue
-            candidate = resolve_workspace_path(configured_value, workspace=workspace)
-            assert_path_within_workspace(
-                candidate,
-                workspace=workspace,
-                field=field,
-                configured_value=configured_value,
-            )
-            if candidate.is_file():
-                add_path(candidate)
-                continue
-            if candidate.is_dir():
-                for file_path in sorted(candidate.rglob("*")):
-                    if file_path.is_file():
-                        add_path(file_path)
-                continue
-            add_path(candidate)
-    return collected
+    for field, configured_value in _configured_resource_entries(config):
+        if _path_has_glob_metacharacters(configured_value):
+            for match in sorted(workspace_resolved.glob(configured_value)):
+                if match.is_file():
+                    bind(match, explicitly_declared=False)
+            continue
+
+        candidate = resolve_workspace_path(configured_value, workspace=workspace)
+        assert_path_within_workspace(
+            candidate,
+            workspace=workspace,
+            field=field,
+            configured_value=configured_value,
+        )
+        if candidate.is_file():
+            bind(candidate, explicitly_declared=True)
+            continue
+        if candidate.is_dir():
+            for file_path in sorted(candidate.rglob("*")):
+                if file_path.is_file():
+                    bind(file_path, explicitly_declared=False)
+            continue
+        bind(candidate, explicitly_declared=True)
+
+    return {key: digests[key] for key in sorted(digests)}
+
+
+def _exclusion_policy_for_context_spec(
+    config: dict[str, Any],
+    *,
+    workspace: Path,
+) -> dict[str, Any]:
+    """Normalized exclusion policy fragment for context-spec identity (§7)."""
+
+    from top_down_planning.config.snapshot_policy import SnapshotPolicy
+
+    policy = SnapshotPolicy.from_config(config, workspace=workspace)
+    return {
+        "excludes": {
+            "defaults": policy.default_excludes_enabled,
+            "patterns": list(policy.user_patterns),
+        },
+        "policy_version": policy.policy_version,
+    }
 
 
 def _all_skill_digest_entries(
@@ -609,6 +666,10 @@ def build_context_spec_payload(
     return {
         "workspace": str(workspace.resolve()),
         "roles": roles_payload,
+        "context_snapshot": _exclusion_policy_for_context_spec(
+            config,
+            workspace=workspace,
+        ),
     }
 
 
@@ -621,31 +682,12 @@ def build_context_snapshot_payload(
     """Build materialized context snapshot: resources, skills, and guidance digests.
 
     Resource and skill bindings are compact maps keyed by canonical workspace-relative
-    POSIX paths (proposal §9). Exclusions are not applied here yet (§6 wiring is a
-    later leaf); path identity already uses the shared canonicalize helper.
+    POSIX paths (proposal §9). Resource materialization applies §6 exclusion semantics;
+    skill and guidance surfaces are not filtered by snapshot excludes.
     """
 
-    from top_down_planning.config.snapshot_policy import (
-        CanonicalPathCollisionError,
-        canonicalize_workspace_path,
-    )
-
-    resource_digests: dict[str, str] = {}
-    paths_by_key: dict[str, Path] = {}
-    for path in _collect_materialized_resource_files(config, workspace=workspace):
-        key = canonicalize_workspace_path(path, workspace=workspace)
-        prior = paths_by_key.get(key)
-        if prior is not None and prior.resolve() != path.resolve():
-            raise CanonicalPathCollisionError(key, prior, path)
-        if key in resource_digests:
-            continue
-        paths_by_key[key] = path
-        resource_digests[key] = (
-            digest_file(path) if path.is_file() else MISSING_RESOURCE_FILE_DIGEST
-        )
-
     return {
-        "resource_digests": {key: resource_digests[key] for key in sorted(resource_digests)},
+        "resource_digests": _materialize_resource_digests(config, workspace=workspace),
         "skill_digests": _all_skill_digest_entries(config, workspace=workspace),
         "guidance_digests": _all_guidance_digest_entries(
             config,

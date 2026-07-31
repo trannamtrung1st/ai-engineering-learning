@@ -20,7 +20,7 @@ from top_down_planning.config.exclude_matching import (
     path_is_excluded,
 )
 
-SNAPSHOT_POLICY_VERSION = "1"
+SNAPSHOT_POLICY_VERSION = "snapshot-excludes-v1"
 
 
 class CanonicalPathError(ValueError):
@@ -198,6 +198,11 @@ class SnapshotPolicy:
         known to be under the workspace. Glob patterns are not expanded here;
         callers expand globs before collect. Declared directories are walked;
         discovered children are subject to excludes. Declared files always bind.
+
+        Traversal tradeoff (proposal §5): directory expansion uses post-filter
+        after ``rglob`` rather than pruning ignored directories. Safe pruning is
+        deferred because later negated patterns can re-include descendants;
+        correctness of matching semantics takes priority over traversal cost.
         """
 
         from top_down_planning.config.context import MISSING_RESOURCE_FILE_DIGEST
