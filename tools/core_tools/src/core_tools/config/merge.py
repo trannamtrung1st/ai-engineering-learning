@@ -45,6 +45,14 @@ def parse_override_value(raw: str) -> Any:
     if stripped == "[]":
         return []
     if stripped.startswith("[") and stripped.endswith("]"):
+        # Prefer JSON for structured list overrides (guidance entries, etc.).
+        if "{" in stripped:
+            import json
+
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                pass
         inner = stripped[1:-1].strip()
         if not inner:
             return []
@@ -52,6 +60,13 @@ def parse_override_value(raw: str) -> Any:
         yaml_list = "\n".join(f"- {item}" for item in items)
         return load_yaml(yaml_list)
     if stripped.startswith("{") and stripped.endswith("}"):
+        if '"' in stripped:
+            import json
+
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                pass
         return load_yaml(stripped)
     if stripped[0] in {'"', "'"} or "\n" in stripped or ":" in stripped:
         return load_yaml(stripped)

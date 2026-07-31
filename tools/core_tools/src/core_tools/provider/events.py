@@ -59,6 +59,19 @@ def _format_protocol_instructions(protocol: Any) -> str | None:
     return None
 
 
+def _format_advisory_guidance(payload: dict[str, Any]) -> str | None:
+    """Render agent_context.guidance as an advisory section (not protocol)."""
+
+    agent_context = payload.get("agent_context")
+    if not isinstance(agent_context, dict):
+        return None
+    guidance = agent_context.get("guidance")
+    if not isinstance(guidance, list):
+        return None
+    lines = [f"- {str(item).strip()}" for item in guidance if str(item).strip()]
+    return "\n".join(lines) if lines else None
+
+
 def _resolve_prompt_role(payload: dict[str, Any], *, role: str | None = None) -> str | None:
     if role is not None and str(role).strip():
         return str(role).strip()
@@ -85,6 +98,9 @@ def format_provider_payload_prompt(
     protocol = _format_protocol_instructions(payload.get("protocol_instructions"))
     if protocol:
         parts.append(f"\nProtocol:\n{protocol}")
+    advisory = _format_advisory_guidance(payload)
+    if advisory:
+        parts.append(f"\nAdvisory role guidance:\n{advisory}")
     body = json.dumps(payload, indent=2, sort_keys=True)
     parts.append(f"\n{body_label}:\n{body}")
     return "\n".join(parts)

@@ -911,7 +911,7 @@ agent_context:
     assert str(guide.resolve()) in planner["resources"]
     assert "resource_digests" not in planner
     assert "skill_digests" not in planner
-    allowed_role_keys = {"model", "resources", "skills"}
+    allowed_role_keys = {"model", "resources", "skills", "guidance"}
     for role_name, role_payload in spec_payload["roles"].items():
         assert "resource_digests" not in role_payload, role_name
         assert "skill_digests" not in role_payload, role_name
@@ -921,6 +921,8 @@ agent_context:
     assert "roles" not in snapshot_payload
     assert "resource_digests" in snapshot_payload
     assert "skill_digests" in snapshot_payload
+    assert "guidance_digests" in snapshot_payload
+    assert snapshot_payload["guidance_digests"] == []
     guide_paths = {entry["path"] for entry in snapshot_payload["resource_digests"]}
     assert str(guide.resolve()) in guide_paths
 

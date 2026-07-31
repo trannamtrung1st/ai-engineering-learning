@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 _AGENT_CONTEXT_ROLE_DEFAULT: dict[str, Any] = {
+    "guidance": [],
     "resources": [],
     "skills": [],
 }
@@ -138,15 +139,19 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "run.boundaries",
         "run.acceptance",
         "agent_context.default.model",
+        "agent_context.default.guidance",
         "agent_context.default.resources",
         "agent_context.default.skills",
         "agent_context.planner.model",
+        "agent_context.planner.guidance",
         "agent_context.planner.resources",
         "agent_context.planner.skills",
         "agent_context.producer.model",
+        "agent_context.producer.guidance",
         "agent_context.producer.resources",
         "agent_context.producer.skills",
         "agent_context.reviewer.model",
+        "agent_context.reviewer.guidance",
         "agent_context.reviewer.resources",
         "agent_context.reviewer.skills",
         "planning.stop_hint",

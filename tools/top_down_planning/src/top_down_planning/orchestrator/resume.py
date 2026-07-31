@@ -217,6 +217,7 @@ def _validate_digests(
         expected_snapshot = compute_context_snapshot_digest_from_config(
             config,
             workspace=base_dir,
+            allow_missing_guidance_files=True,
         )
         actual_snapshot = stored.get("context_snapshot")
         if actual_snapshot != expected_snapshot:

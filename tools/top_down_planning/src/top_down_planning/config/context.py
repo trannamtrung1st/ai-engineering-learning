@@ -22,10 +22,13 @@ from top_down_planning.config.resolve import resolve_output_goal_text
 AgentRole = Literal["planner", "producer", "reviewer"]
 
 MISSING_RESOURCE_FILE_DIGEST = digest_text("<missing-resource-file>")
+MISSING_GUIDANCE_FILE_DIGEST = digest_text("<missing-guidance-file>")
+_GUIDANCE_ENTRY_KEYS = frozenset({"text", "file"})
 
 __all__ = [
     "AgentRole",
     "EffectiveRoleContext",
+    "GuidanceEntry",
     "build_agent_context_manifest_payload",
     "build_context_spec_payload",
     "build_context_snapshot_payload",
@@ -34,7 +37,16 @@ __all__ = [
     "compute_context_spec_digest_from_config",
     "resolve_effective_role_context",
     "resolve_provider_model",
+    "validate_guidance_for_binding",
 ]
+
+
+@dataclass(frozen=True)
+class GuidanceEntry:
+    """One resolved advisory guidance string, optionally bound to a source file."""
+
+    text: str
+    path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +55,7 @@ class EffectiveRoleContext:
     model: str | None
     input_refs: tuple[Path, ...]
     output_goal: str
+    guidance: tuple[str, ...]
     resources: tuple[Path, ...]
     skills: tuple[SkillEntry, ...]
 
@@ -221,17 +234,240 @@ def _skills_for_role(
     )
 
 
+def _validate_guidance_entry(
+    entry: object,
+    *,
+    entry_field: str,
+) -> tuple[bool, str]:
+    """Return (is_text, normalized text or configured file path)."""
+
+    if not isinstance(entry, dict):
+        raise ConfigError(
+            f"{entry_field} must be an object",
+            path=entry_field,
+        )
+
+    extra_keys = sorted(set(entry) - _GUIDANCE_ENTRY_KEYS)
+    if extra_keys:
+        joined = ", ".join(extra_keys)
+        raise ConfigError(
+            f"{entry_field} has unsupported properties: {joined}",
+            path=entry_field,
+        )
+
+    has_text = "text" in entry
+    has_file = "file" in entry
+    if has_text == has_file:
+        raise ConfigError(
+            f"{entry_field} must contain exactly one of text or file",
+            path=entry_field,
+        )
+
+    if has_text:
+        raw_text = entry.get("text")
+        if not isinstance(raw_text, str) or not raw_text.strip():
+            raise ConfigError(
+                f"{entry_field}.text must not be empty",
+                path=f"{entry_field}.text",
+            )
+        return True, raw_text.strip()
+
+    raw_file = entry.get("file")
+    if not isinstance(raw_file, str) or not raw_file.strip():
+        raise ConfigError(
+            f"{entry_field}.file must not be empty",
+            path=f"{entry_field}.file",
+        )
+    return False, raw_file.strip()
+
+
+def _resolve_guidance_file_path(
+    configured_value: str,
+    *,
+    workspace: Path,
+    field: str,
+) -> Path:
+    candidate = resolve_workspace_path(configured_value, workspace=workspace)
+    assert_path_within_workspace(
+        candidate,
+        workspace=workspace,
+        field=field,
+        configured_value=configured_value,
+    )
+    return candidate.resolve()
+
+
+def _read_guidance_file_content(
+    path: Path,
+    *,
+    entry_field: str,
+) -> str:
+    if not path.is_file():
+        raise ConfigError(
+            f"{entry_field}.file does not exist: {path}",
+            path=f"{entry_field}.file",
+        )
+    try:
+        content = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ConfigError(
+            f"{entry_field}.file must be UTF-8 text: {path}",
+            path=f"{entry_field}.file",
+        ) from exc
+    normalized = content.strip()
+    if not normalized:
+        raise ConfigError(
+            f"{entry_field}.file must not be empty after trimming",
+            path=f"{entry_field}.file",
+        )
+    return normalized
+
+
+def _resolve_guidance_entries(
+    entries: list[Any],
+    *,
+    workspace: Path,
+    field: str,
+    allow_missing_files: bool = False,
+) -> tuple[GuidanceEntry, ...]:
+    """Validate and resolve guidance entries as exactly one of text|file each.
+
+    When ``allow_missing_files`` is true, missing or unreadable file entries are
+    retained with empty text so snapshot digest comparison can surface drift.
+    """
+
+    if not isinstance(entries, list):
+        raise ConfigError(f"{field} must be a list", path=field)
+
+    resolved: list[GuidanceEntry] = []
+    for index, entry in enumerate(entries):
+        entry_field = f"{field}[{index}]"
+        is_text, value = _validate_guidance_entry(entry, entry_field=entry_field)
+        if is_text:
+            resolved.append(GuidanceEntry(text=value))
+            continue
+
+        candidate = _resolve_guidance_file_path(
+            value,
+            workspace=workspace,
+            field=f"{entry_field}.file",
+        )
+        if allow_missing_files:
+            if not candidate.is_file():
+                resolved.append(GuidanceEntry(text="", path=candidate))
+                continue
+            try:
+                content = _read_guidance_file_content(candidate, entry_field=entry_field)
+            except ConfigError:
+                resolved.append(GuidanceEntry(text="", path=candidate))
+                continue
+            resolved.append(GuidanceEntry(text=content, path=candidate))
+            continue
+        content = _read_guidance_file_content(candidate, entry_field=entry_field)
+        resolved.append(GuidanceEntry(text=content, path=candidate))
+    return tuple(resolved)
+
+
+def _guidance_entries_for_role(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    workspace: Path,
+    allow_missing_files: bool = False,
+) -> tuple[GuidanceEntry, ...]:
+    """Combine default then role guidance, preserving order (§7)."""
+
+    default_section, role_section = _agent_context_sections(config, role)
+    return _resolve_guidance_entries(
+        list(default_section.get("guidance") or []),
+        workspace=workspace,
+        field="agent_context.default.guidance",
+        allow_missing_files=allow_missing_files,
+    ) + _resolve_guidance_entries(
+        list(role_section.get("guidance") or []),
+        workspace=workspace,
+        field=f"agent_context.{role}.guidance",
+        allow_missing_files=allow_missing_files,
+    )
+
+
+def validate_guidance_for_binding(
+    config: dict[str, Any],
+    *,
+    workspace: Path,
+) -> None:
+    """Strictly validate all configured guidance before persisting a new run binding."""
+
+    for role in ("planner", "producer", "reviewer"):
+        _guidance_entries_for_role(
+            config,
+            role,
+            workspace=workspace,
+            allow_missing_files=False,
+        )
+
+
+def _guidance_declarations_for_role(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    workspace: Path,
+) -> list[dict[str, str]]:
+    """Declaration shape for context_spec: inline text or resolved file path."""
+
+    default_section, role_section = _agent_context_sections(config, role)
+    sections = (
+        ("agent_context.default.guidance", list(default_section.get("guidance") or [])),
+        (f"agent_context.{role}.guidance", list(role_section.get("guidance") or [])),
+    )
+    entries: list[dict[str, str]] = []
+    for field, configured in sections:
+        for index, entry in enumerate(configured):
+            entry_field = f"{field}[{index}]"
+            is_text, value = _validate_guidance_entry(entry, entry_field=entry_field)
+            if is_text:
+                entries.append({"text": value})
+                continue
+            path = _resolve_guidance_file_path(
+                value,
+                workspace=workspace,
+                field=f"{entry_field}.file",
+            )
+            entries.append({"file": str(path)})
+    return entries
+
+
+def _guidance_snapshot_entry(entry: GuidanceEntry) -> dict[str, str]:
+    if entry.path is not None:
+        if entry.path.is_file():
+            return {
+                "path": str(entry.path),
+                "text": entry.text,
+                "digest": digest_file(entry.path),
+            }
+        return {
+            "path": str(entry.path),
+            "text": "",
+            "digest": MISSING_GUIDANCE_FILE_DIGEST,
+        }
+    return {
+        "text": entry.text,
+        "digest": digest_text(entry.text),
+    }
+
+
 def _role_context_spec_from_config(
     config: dict[str, Any],
     role: AgentRole,
     *,
     workspace: Path,
 ) -> dict[str, Any]:
-    """Stable agent-context declaration: models, resource selection, skill paths."""
+    """Stable agent-context declaration: models, guidance, resource selection, skill paths."""
 
     skills = _skills_for_role(config, role, workspace=workspace)
     return {
         "model": resolve_provider_model(config, role),
+        "guidance": _guidance_declarations_for_role(config, role, workspace=workspace),
         "resources": list(_resource_selection_for_role(config, role, workspace=workspace)),
         "skills": [str(entry.path) for entry in skills],
     }
@@ -310,6 +546,37 @@ def _all_skill_digest_entries(
     return sorted(entries, key=lambda item: item["path"])
 
 
+def _all_guidance_digest_entries(
+    config: dict[str, Any],
+    *,
+    workspace: Path,
+    allow_missing_files: bool = False,
+) -> list[dict[str, str]]:
+    """Snapshot binding for guidance: normalized text plus file path/digest when applicable."""
+
+    entries: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for role in ("planner", "producer", "reviewer"):
+        for entry in _guidance_entries_for_role(
+            config,
+            role,
+            workspace=workspace,
+            allow_missing_files=allow_missing_files,
+        ):
+            if entry.path is not None:
+                key = f"file:{entry.path}"
+            else:
+                key = f"text:{entry.text}"
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(_guidance_snapshot_entry(entry))
+    return sorted(
+        entries,
+        key=lambda item: (item.get("path") or "", item.get("text") or ""),
+    )
+
+
 def build_context_spec_payload(
     config: dict[str, Any],
     *,
@@ -335,8 +602,9 @@ def build_context_snapshot_payload(
     config: dict[str, Any],
     *,
     workspace: Path,
+    allow_missing_guidance_files: bool = False,
 ) -> dict[str, Any]:
-    """Build materialized context snapshot: resource file digests and skill contents."""
+    """Build materialized context snapshot: resources, skills, and guidance digests."""
 
     resource_digests = [
         {
@@ -350,6 +618,11 @@ def build_context_snapshot_payload(
         "workspace": str(workspace.resolve()),
         "resource_digests": resource_digests,
         "skill_digests": _all_skill_digest_entries(config, workspace=workspace),
+        "guidance_digests": _all_guidance_digest_entries(
+            config,
+            workspace=workspace,
+            allow_missing_files=allow_missing_guidance_files,
+        ),
     }
 
 
@@ -374,8 +647,13 @@ def compute_context_snapshot_digest_from_config(
     config: dict[str, Any],
     *,
     workspace: Path,
+    allow_missing_guidance_files: bool = False,
 ) -> str:
-    payload = build_context_snapshot_payload(config, workspace=workspace)
+    payload = build_context_snapshot_payload(
+        config,
+        workspace=workspace,
+        allow_missing_guidance_files=allow_missing_guidance_files,
+    )
     return compute_context_snapshot_digest_from_payload(payload)
 
 
@@ -417,12 +695,14 @@ def resolve_effective_role_context(
     )
     resources = default_resources + role_resources
     skills = _skills_for_role(config, role, workspace=workspace)
+    guidance_entries = _guidance_entries_for_role(config, role, workspace=workspace)
 
     return EffectiveRoleContext(
         role=role,
         model=resolve_provider_model(config, role),
         input_refs=input_refs,
         output_goal=goal_text,
+        guidance=tuple(entry.text for entry in guidance_entries),
         resources=resources,
         skills=skills,
     )
@@ -436,6 +716,7 @@ def build_agent_context_manifest_payload(
     return {
         "agent_context": {
             "role": context.role,
+            "guidance": list(context.guidance),
             "resources": [str(path) for path in context.resources],
             "skills": [
                 {"path": str(entry.path), "content": entry.content}

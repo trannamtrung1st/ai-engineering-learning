@@ -121,7 +121,7 @@ Configuration precedence: built-in defaults → YAML file → repeated `--set pa
 Config files may live anywhere. `project.workspace` is the canonical workspace root for a run.
 
 - `project.workspace` resolves against the **process working directory** (defaults to process cwd when omitted).
-- `run.input_refs`, `run.output_goal_file`, and all `agent_context.*.resources` / `agent_context.*.skills` resolve against the resolved `project.workspace`.
+- `run.input_refs`, `run.output_goal_file`, and all `agent_context.*.resources` / `agent_context.*.skills` / `agent_context.*.guidance` file entries resolve against the resolved `project.workspace`.
 - `runtime.runs_dir` resolves against the process working directory.
 
 Absolute paths are used directly. Launch `tdp` from the intended working directory (for example the repository root).
@@ -140,16 +140,30 @@ run.output_goal / run.output_goal_file
     Authoritative deliverable contract.
 
 agent_context.default
-    Supporting context shared by all roles.
+    Shared supporting context inherited by every role (model, guidance, resources, skills).
 
 agent_context.<role>
-    Supporting context unique to one role.
+    Role-specific supporting context. Each role section may override the shared model and
+    add guidance, resources, and skills on top of agent_context.default.
 
 project.workspace
     Canonical workspace root.
 ```
 
 `run.input_refs` and the resolved output goal are supplied automatically to planner, producer, and reviewer sessions. Do not repeat them under `agent_context.*.resources`.
+
+Use guidance for role behavior preferences. Use `run.input_refs`, boundaries, acceptance, and output_goal for authoritative work contracts. Use resources for supporting reference material and skills for reusable methods.
+
+Guidance is additive with `agent_context.default`, attached to fresh role sessions, and included in the supporting-context digest. It does not change run acceptance, create runtime enforcement, or introduce new lifecycle transitions. Each guidance entry is exactly one of `{text: ...}` or `{file: ...}`.
+
+`--set agent_context.<role>.guidance=…` must be a JSON array of objects (the `--set` parser does not accept YAML mapping syntax inside list items). Use double quotes and escaped JSON, for example:
+
+```bash
+tdp run --config config.yaml \
+  --set 'agent_context.producer.guidance=[{"text":"Work in coherent batches."},{"file":"docs/producer-guidance.md"}]'
+```
+
+In YAML config files, use normal list-of-mappings syntax (`- text: >` or `- file: path`).
 
 ```yaml
 project:
@@ -163,6 +177,7 @@ run:
 agent_context:
   default:
     model: auto
+    guidance: []
     resources:
       - AGENTS.md
     skills:
@@ -177,17 +192,21 @@ agent_context:
 
   producer:
     model: coding-model
+    guidance:
+      - text: >
+          Work in coherent batches. Consider focused review and useful
+          Git checkpoints; skip a commit when that is better judgment.
 
   reviewer:
     model: review-model
 ```
 
-Role `resources` and `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. Effective context is attached to fresh planner, producer, and reviewer sessions.
+Role `guidance`, `resources`, and `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. Effective context is attached to fresh planner, producer, and reviewer sessions.
 
 Run contracts bind via `digests.input` and `digests.output_goal` at run creation. Supporting agent context uses a **spec vs snapshot** split:
 
-- `digests.context_spec` — stable declarations (role models, resource path selection, skill paths).
-- `digests.context_snapshot` — materialized resource file bytes and skill contents, persisted in `context_snapshot_binding` on the run record.
+- `digests.context_spec` — stable declarations (role models, guidance entries, resource path selection, skill paths).
+- `digests.context_snapshot` — materialized resource file bytes, skill contents, and guidance text/file digests, persisted in `context_snapshot_binding` on the run record.
 
 Resume always validates `context_spec`. `context_snapshot` is skipped only during the `production` phase so in-flight authorized mutations are allowed. Production completion atomically validates snapshot drift against production evidence, rebases `context_snapshot` when authorized, emits `context_snapshot_rebased` after the run record is persisted, then enters `whole_output_review`. Unauthorized workspace changes block completion or later phase entry.
 

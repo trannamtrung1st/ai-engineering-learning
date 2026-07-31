@@ -454,17 +454,63 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "agent_context": {
                 "type": "object",
                 "description": (
-                    "Per-role model, supporting resources, and skills. "
-                    "Supporting resources and skills are additive with "
-                    "agent_context.default. Run contracts (run.input_refs, "
-                    "run.output_goal / run.output_goal_file) are supplied "
-                    "automatically and must not be repeated here."
+                    "Per-role model, advisory guidance, supporting resources, and "
+                    "skills. Guidance, resources, and skills are additive with "
+                    "agent_context.default. Guidance is advisory only and does not "
+                    "change acceptance, enforcement, or lifecycle transitions. "
+                    "Run contracts (run.input_refs, run.output_goal / "
+                    "run.output_goal_file) are supplied automatically and must not "
+                    "be repeated here."
                 ),
                 "properties": {
                     role: {
                         "type": "object",
                         "properties": {
                             "model": {"type": "string"},
+                            "guidance": {
+                                "type": "array",
+                                "description": (
+                                    "Advisory working preferences. Each entry is "
+                                    "exactly one of {text: ...} or {file: ...}. "
+                                    "Text and file values must be non-empty after "
+                                    "trimming whitespace."
+                                ),
+                                "items": {
+                                    "oneOf": [
+                                        {
+                                            "type": "object",
+                                            "required": ["text"],
+                                            "properties": {
+                                                "text": {
+                                                    "type": "string",
+                                                    "pattern": "\\S",
+                                                    "description": (
+                                                        "Inline guidance; must contain "
+                                                        "at least one non-whitespace character."
+                                                    ),
+                                                },
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                        {
+                                            "type": "object",
+                                            "required": ["file"],
+                                            "properties": {
+                                                "file": {
+                                                    "type": "string",
+                                                    "pattern": "\\S",
+                                                    "description": (
+                                                        "Workspace-relative guidance file path; "
+                                                        "must contain at least one non-whitespace "
+                                                        "character."
+                                                    ),
+                                                },
+                                            },
+                                            "additionalProperties": False,
+                                        },
+                                    ],
+                                },
+                            },
                             "resources": {
                                 "type": "array",
                                 "items": {"type": "string"},
@@ -1232,8 +1278,10 @@ include:
   provider prompt (for example: mutate run state only through `tdp agent` commands;
   do not use host planning modes or planning-only artifacts)
 - `tool_instructions` — concrete `tdp agent` command templates for the active role
-- `agent_context` — supporting `resources` and optional `skills` only (do not repeat
-  `run.input_refs` or the output-goal file under `resources`; overlaps are rejected)
+- `agent_context` — supporting `guidance`, `resources`, and optional `skills`
+  (do not repeat `run.input_refs` or the output-goal file under `resources`;
+  overlaps are rejected). Guidance is advisory and not merged into
+  `protocol_instructions`.
 - Producer packages include `approved_plan` (compact plan metadata + items with `kind`)
 - Review packages include `plan_scope`, `boundaries`, and `acceptance` from persisted
   plan metadata (not static run config)
@@ -1287,8 +1335,8 @@ so in-agent commands typically need only `--run <run-id>`. Run ids use
 `parent_id`). Depth is required on load and recomputed on save.
 
 `digests.context_spec` binds agent-context **declarations** at run creation: role models,
-configured resource path selection, and skill paths. `digests.context_snapshot` binds
-materialized resource bytes and skill contents via `context_snapshot_binding`. Production
+configured guidance entries, resource path selection, and skill paths. `digests.context_snapshot` binds
+materialized resource bytes, skill contents, and guidance text/file digests via `context_snapshot_binding`. Production
 completion rebases the snapshot when drift is attributable to production evidence;
 unauthorized drift blocks completion or resume.
 

@@ -9,6 +9,7 @@ from top_down_planning.config.context import (
     build_context_snapshot_payload,
     compute_context_snapshot_digest_from_payload,
     compute_context_spec_digest_from_config,
+    validate_guidance_for_binding,
 )
 
 
@@ -23,6 +24,24 @@ class UnauthorizedContextMutationError(ValueError):
     ) -> None:
         super().__init__(message)
         self.unauthorized_paths = unauthorized_paths
+
+
+def _guidance_digest_key(entry: dict[str, Any]) -> str | None:
+    path = entry.get("path")
+    if path:
+        return str(path)
+    text = str(entry.get("text") or "")
+    if text:
+        return f"guidance:inline:{text}"
+    return None
+
+
+def _format_snapshot_drift_label(key: str) -> str:
+    if key.startswith("guidance:inline:"):
+        text = key.removeprefix("guidance:inline:")
+        preview = text if len(text) <= 40 else f"{text[:37]}..."
+        return f"inline guidance ({preview!r})"
+    return short_path_for_observability(key)
 
 
 def authorized_production_workspace_paths(
@@ -65,11 +84,13 @@ def diff_snapshot_binding_paths(
     old_binding: dict[str, Any],
     new_binding: dict[str, Any],
 ) -> list[str]:
-    """Return sorted paths whose resource or skill digest changed between bindings."""
+    """Return sorted paths whose resource, skill, or guidance digest changed."""
 
     changed: set[str] = set()
 
-    def digest_maps(binding: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
+    def digest_maps(
+        binding: dict[str, Any],
+    ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
         resources: dict[str, str] = {}
         for entry in binding.get("resource_digests") or []:
             if isinstance(entry, dict) and entry.get("path"):
@@ -78,15 +99,25 @@ def diff_snapshot_binding_paths(
         for entry in binding.get("skill_digests") or []:
             if isinstance(entry, dict) and entry.get("path"):
                 skills[str(entry["path"])] = str(entry.get("digest") or "")
-        return resources, skills
+        guidance: dict[str, str] = {}
+        for entry in binding.get("guidance_digests") or []:
+            if not isinstance(entry, dict):
+                continue
+            key = _guidance_digest_key(entry)
+            if key:
+                guidance[key] = str(entry.get("digest") or "")
+        return resources, skills, guidance
 
-    old_resources, old_skills = digest_maps(old_binding)
-    new_resources, new_skills = digest_maps(new_binding)
+    old_resources, old_skills, old_guidance = digest_maps(old_binding)
+    new_resources, new_skills, new_guidance = digest_maps(new_binding)
     for path in sorted(set(old_resources) | set(new_resources)):
         if old_resources.get(path) != new_resources.get(path):
             changed.add(path)
     for path in sorted(set(old_skills) | set(new_skills)):
         if old_skills.get(path) != new_skills.get(path):
+            changed.add(path)
+    for path in sorted(set(old_guidance) | set(new_guidance)):
+        if old_guidance.get(path) != new_guidance.get(path):
             changed.add(path)
     return sorted(changed)
 
@@ -105,13 +136,9 @@ def validate_production_snapshot_rebase(
         return []
 
     authorized = authorized_production_workspace_paths(production, workspace=workspace)
-    unauthorized = [
-        path
-        for path in changed_paths
-        if path not in authorized
-    ]
+    unauthorized = [path for path in changed_paths if path not in authorized]
     if unauthorized:
-        joined = ", ".join(unauthorized[:5])
+        joined = ", ".join(_format_snapshot_drift_label(path) for path in unauthorized[:5])
         suffix = "" if len(unauthorized) <= 5 else f" (+{len(unauthorized) - 5} more)"
         raise UnauthorizedContextMutationError(
             "production completion cannot rebase context snapshot: "
@@ -137,6 +164,7 @@ def build_initial_context_snapshot_binding(
 ) -> tuple[dict[str, Any], str, str]:
     """Return binding payload, context_spec digest, and context_snapshot digest."""
 
+    validate_guidance_for_binding(config, workspace=workspace)
     binding = build_context_snapshot_payload(config, workspace=workspace)
     spec_digest = compute_context_spec_digest_from_config(config, workspace=workspace)
     snapshot_digest = compute_context_snapshot_digest_from_payload(binding)
@@ -148,7 +176,11 @@ def recompute_context_snapshot_binding(
     *,
     workspace: Path,
 ) -> tuple[dict[str, Any], str]:
-    binding = build_context_snapshot_payload(config, workspace=workspace)
+    binding = build_context_snapshot_payload(
+        config,
+        workspace=workspace,
+        allow_missing_guidance_files=True,
+    )
     return binding, compute_context_snapshot_digest_from_payload(binding)
 
 

@@ -46,6 +46,32 @@ def test_format_manifest_prompt_surfaces_protocol_instructions() -> None:
     assert '"phase": "planning"' in prompt
 
 
+def test_format_manifest_prompt_surfaces_advisory_guidance() -> None:
+    prompt = format_manifest_prompt(
+        "producer",
+        {
+            "phase": "production",
+            "protocol_instructions": ["Record batches through tdp agent production."],
+            "agent_context": {
+                "role": "producer",
+                "guidance": [
+                    "Work in coherent batches.",
+                    "Commit when the checkpoint is useful.",
+                ],
+                "resources": [],
+                "skills": [],
+            },
+        },
+    )
+
+    assert "\nProtocol:\n" in prompt
+    assert "\nAdvisory role guidance:\n" in prompt
+    assert "- Work in coherent batches." in prompt
+    assert "- Commit when the checkpoint is useful." in prompt
+    assert prompt.index("Advisory role guidance:") < prompt.index("Context manifest:")
+    assert '"guidance"' in prompt
+
+
 def test_format_request_prompt_surfaces_protocol_and_role_from_agent_context() -> None:
     prompt = format_request_prompt(
         {

@@ -16,6 +16,7 @@ from core_tools.config import (
 from top_down_planning.config.context import (
     AgentRole,
     EffectiveRoleContext,
+    GuidanceEntry,
     build_agent_context_manifest_payload,
     build_context_spec_payload,
     build_context_snapshot_payload,
@@ -24,6 +25,7 @@ from top_down_planning.config.context import (
     compute_context_spec_digest_from_config,
     resolve_effective_role_context,
     resolve_provider_model,
+    validate_guidance_for_binding,
 )
 from top_down_planning.config.context_digests import (
     UnauthorizedContextMutationError,
@@ -54,6 +56,7 @@ __all__ = [
     "AgentRole",
     "ConfigError",
     "EffectiveRoleContext",
+    "GuidanceEntry",
     "PathResolutionContext",
     "SkillEntry",
     "assert_path_within_workspace",
@@ -83,4 +86,5 @@ __all__ = [
     "resolve_provider_model",
     "resolve_workspace",
     "resolve_workspace_path",
+    "validate_guidance_for_binding",
 ]
