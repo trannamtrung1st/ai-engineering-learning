@@ -30,6 +30,10 @@ from top_down_planning.persistence.capabilities import new_capability_record
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
 from top_down_planning.persistence.path_ids import validate_run_id, validate_store_id
+from top_down_planning.persistence.run_schema import (
+    CURRENT_RUN_SCHEMA_VERSION,
+    validate_run_schema_version,
+)
 
 _EMPTY_PRODUCTION: dict[str, Any] = {
     "revision": 0,
@@ -70,6 +74,7 @@ def new_run_record(
     now = _utc_now()
     return {
         "id": run_id,
+        "schema_version": CURRENT_RUN_SCHEMA_VERSION,
         "revision": 0,
         "status": "running",
         "phase": phase,
@@ -804,7 +809,10 @@ class FileRunStore:
         return path
 
     def _read_run(self, run_id: str) -> dict[str, Any]:
-        return self._read_json(self._run_path(run_id))
+        # Schema-version gate before any nested run-field interpretation (§3).
+        payload = self._read_json(self._run_path(run_id))
+        validate_run_schema_version(payload)
+        return payload
 
     def _plan_path(self, run_id: str) -> Path:
         path = self.run_dir(run_id) / "plan.json"
