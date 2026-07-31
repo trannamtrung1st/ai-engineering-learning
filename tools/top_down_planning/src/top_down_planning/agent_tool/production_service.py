@@ -178,13 +178,13 @@ class ProductionAgentService:
                 focused_loop_id = str(focused_loop_id).strip() or None
             if phase == WHOLE_OUTPUT_REVIEW_PHASE:
                 revision_targets = whole_output_revision_target_ids(reviews)
-                target_label = "unresolved whole-output findings"
+                target_label = "open required whole-output findings"
             elif phase == PRODUCTION_PHASE:
                 revision_targets = focused_output_revision_target_ids(
                     reviews,
                     loop_id=focused_loop_id,
                 )
-                target_label = "unresolved focused-output findings"
+                target_label = "open required focused-output findings"
                 if not revision_targets:
                     raise RequestError(
                         "evidence_revision during production requires an active "

@@ -27,6 +27,7 @@ ReviewLoopType = Literal["whole_plan", "whole_output", "focused_plan", "focused_
 ReviewDecision = Literal["approved", "changes_requested", "blocked"]
 ReviewLoopStatus = Literal[
     "pending",
+    "advisory_pending",
     "approved",
     "changes_requested",
     "blocked",
@@ -1036,8 +1037,11 @@ def focused_output_revision_target_ids(
         return set()
 
     scope_items = {str(item_id) for item_id in (loop.scope.get("item_ids") or [])}
+    required = required_open_findings(loop.findings, loop_revise_at(loop))
+    if not required:
+        return set()
     targets: set[str] = set()
-    for finding in required_open_findings(loop.findings, loop_revise_at(loop)):
+    for finding in required:
         targets.update(str(ref) for ref in finding.target_refs)
     if not targets:
         return scope_items
@@ -1319,7 +1323,7 @@ def map_discovery_outcome_to_loop_status(
     if outcome == "review_incomplete":
         return "review_incomplete"
     if outcome == "pending":
-        return "pending"
+        return "advisory_pending"
     if outcome == "changes_requested":
         if stage == "scope_blocker_review":
             return "blockers_found"
@@ -1588,6 +1592,45 @@ def budgets_snapshot(loop: ReviewLoop) -> dict[str, int]:
     }
 
 
+def primary_review_resume_fields(loop: ReviewLoop) -> dict[str, Any]:
+    """Fields for primary-agent revision/advisory packages (includes revise_at)."""
+
+    threshold = loop_revise_at(loop)
+    required = required_open_findings(loop.findings, threshold)
+    optional = optional_open_findings(loop.findings, threshold)
+    return {
+        "revise_at": threshold,
+        "finding_set_id": loop.finding_set_id,
+        "findings": [finding.to_dict() for finding in loop.findings],
+        "required_findings": [finding.to_dict() for finding in required],
+        "optional_findings": [finding.to_dict() for finding in optional],
+        "finding_actions": [action.to_dict() for action in loop.finding_actions],
+        **policy_observability_fields(
+            loop.findings,
+            loop.finding_actions,
+            threshold,
+            finding_set_id=loop.finding_set_id,
+        ),
+    }
+
+
+def verification_required_for_loop(loop: ReviewLoop) -> bool:
+    """True when artifact change, claimed fix, or open challenge requires verification."""
+
+    if owner_actions_require_verification(loop.finding_actions):
+        # Prefer actions for the active finding set when present.
+        active = [
+            action
+            for action in loop.finding_actions
+            if loop.finding_set_id is None
+            or action.finding_set_id == loop.finding_set_id
+        ]
+        if active:
+            return owner_actions_require_verification(active)
+        return True
+    return False
+
+
 def parse_initial_review_findings(request: dict[str, Any]) -> list[ReviewFinding]:
     """Parse initial_review findings from a mandatory respond payload."""
 
@@ -1672,6 +1715,8 @@ def mandatory_stage_respond_decision(loop: ReviewLoop) -> str:
 
     if loop.status == "pending":
         return "pending"
+    if loop.status == "advisory_pending":
+        return "advisory_pending"
     if loop.status == "blocked":
         return "blocked"
     if loop.status == "review_incomplete":

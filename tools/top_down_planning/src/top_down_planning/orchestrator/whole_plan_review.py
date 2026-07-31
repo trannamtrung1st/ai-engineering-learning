@@ -13,10 +13,19 @@ from top_down_planning.domain.review_policy import resolved_revise_at
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     allocate_discovery_finding_set_id,
+    advisory_handoff_allowed,
+    budgets_snapshot,
     is_revision_requested_status,
     is_terminal_review_loop,
+    loop_revise_at,
     mandatory_review_limits_from_config,
     mandatory_approval_allowed,
+    mark_advisory_handoff_completed,
+    needs_advisory_handoff,
+    owner_actions_require_revision,
+    primary_review_resume_fields,
+    required_open_findings,
+    verification_required_for_loop,
 )
 from top_down_planning.orchestrator.mandatory_review_stages import (
     approved_means_final_approval,
@@ -219,13 +228,10 @@ class WholePlanReviewOrchestrator:
                 )
 
             if stage_decision == "review_incomplete":
-                from top_down_planning.domain.reviews import budgets_snapshot
-
                 budgets = budgets_snapshot(loop)
                 # Operational failure: do not consume revision or scope-review budget.
                 return WholePlanReviewResult(
                     ok=False,
-                    run_id=self._run_id,
                     phase=WHOLE_PLAN_REVIEW,
                     status=str(self._store.load_run(self._run_id).get("status") or "failed"),
                     outcome=None,
@@ -237,6 +243,39 @@ class WholePlanReviewOrchestrator:
                         or "whole-plan review could not be completed"
                     ),
                 )
+
+            if stage_decision == "advisory_pending":
+                loop = self._handle_advisory_handoff(loop)
+                if loop.status in {"approved", "approve"}:
+                    if approved_means_final_approval(loop):
+                        return self._complete_with_approval(loop)
+                    if approved_means_start_blocker_review(loop):
+                        transition = self._begin_blocker_review(loop, limits)
+                        if isinstance(transition, WholePlanReviewResult):
+                            return transition
+                        loop = transition
+                        deliver_on_existing_session = False
+                        continue
+                if required_open_findings(loop.findings, loop_revise_at(loop)):
+                    stage_decision = "changes_requested"
+                elif verification_required_for_loop(loop):
+                    active = [
+                        action
+                        for action in loop.finding_actions
+                        if action.finding_set_id == loop.finding_set_id
+                    ]
+                    if owner_actions_require_revision(active or loop.finding_actions):
+                        stage_decision = "changes_requested"
+                    else:
+                        # Challenge-only: verification without revision-cycle spend.
+                        loop = self._persist_loop(mark_findings_open(loop))
+                        loop = self._persist_loop(enter_planner_revision_cycle(loop))
+                        loop = self._prepare_recheck(loop)
+                        continue
+                else:
+                    raise ProviderRunError(
+                        "advisory handoff completed without qualifying owner actions"
+                    )
 
             if stage_decision not in {
                 "needs_revision",
@@ -572,7 +611,89 @@ class WholePlanReviewOrchestrator:
                 "phase": WHOLE_PLAN_REVIEW,
                 "loop_id": loop.id,
                 "target_revision": loop.target_revision,
-                "findings": [finding.to_dict() for finding in loop.findings],
+                **primary_review_resume_fields(loop),
+                "tool_instructions": {
+                    "record_actions": (
+                        f"tdp agent review record-actions --run {self._run_id} "
+                        "--request <file>"
+                    ),
+                    "notes": (
+                        "Revise the plan for open required findings. Optional findings "
+                        "may be fixed, deferred, accepted as-is, or challenged via "
+                        "record-actions. Required findings cannot defer or accept_as_is."
+                    ),
+                },
+            },
+            model=role_context.model,
+            loop_id=loop.id,
+        )
+        self._consume_planner_turn(session_id)
+
+    def _handle_advisory_handoff(self, loop: ReviewLoop) -> ReviewLoop:
+        if not needs_advisory_handoff(loop):
+            return loop
+        if not advisory_handoff_allowed(loop):
+            raise ProviderRunError(
+                f"advisory handoff already completed for finding_set_id "
+                f"{loop.finding_set_id!r}"
+            )
+        before = budgets_snapshot(loop)
+        loop = self._persist_loop(mark_advisory_handoff_completed(loop))
+        self._append_event(
+            "review_advisory_handoff_started",
+            loop_id=loop.id,
+            finding_set_id=loop.finding_set_id,
+            revise_at=loop_revise_at(loop),
+        )
+        self._resume_planner_advisory_handoff(loop)
+        loop = self._reload_loop(loop.id)
+        after = budgets_snapshot(loop)
+        if after != before and not owner_actions_require_revision(loop.finding_actions):
+            raise ProviderRunError(
+                "advisory handoff must not consume revision budget without a fix"
+            )
+        return loop
+
+    def _resume_planner_advisory_handoff(self, loop: ReviewLoop) -> None:
+        run = self._store.load_run(self._run_id)
+        session_id = _primary_planner_session_id(run)
+        if session_id is None:
+            raise ProviderRunError("primary planner session is missing for advisory handoff")
+
+        phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
+        self._capability_token = issue_session_capability(
+            self._store,
+            self._run_id,
+            role="planner",
+            phase=phase,
+            session_id=session_id,
+            session_kind="primary",
+        )
+        bind_provider_capability(self._provider, self._capability_token)
+        config = self._store.load_resolved_config(self._run_id)
+        role_context = resolve_role_session_context(config, run, "planner")
+        resume_primary_session_with_audit(
+            self._append_event,
+            self._provider,
+            role="planner",
+            phase=phase,
+            session_id=session_id,
+            request={
+                "action": "address_optional_findings",
+                "phase": WHOLE_PLAN_REVIEW,
+                "loop_id": loop.id,
+                "target_revision": loop.target_revision,
+                **primary_review_resume_fields(loop),
+                "tool_instructions": {
+                    "record_actions": (
+                        f"tdp agent review record-actions --run {self._run_id} "
+                        "--request <file>"
+                    ),
+                    "notes": (
+                        "Record fix|defer|accept_as_is|challenge for optional findings. "
+                        "defer/accept_as_is consume no revision cycle."
+                    ),
+                },
             },
             model=role_context.model,
             loop_id=loop.id,

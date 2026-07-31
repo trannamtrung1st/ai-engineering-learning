@@ -216,6 +216,7 @@ def test_legacy_importance_findings_remain_readable_after_merge() -> None:
     assert findings[0].importance == "blocking"
     assert findings[0].required_change == "Fix"
     assert updated.findings[0].id == "legacy-1"
+    assert updated.status == "advisory_pending"
 
 
 def _seed_focused_run(tmp_path: Path) -> tuple[FileRunStore, str, ReviewLoop, str]:

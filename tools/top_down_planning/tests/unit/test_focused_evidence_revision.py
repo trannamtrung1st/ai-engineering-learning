@@ -225,7 +225,7 @@ def test_focused_evidence_revision_rejects_out_of_scope(tmp_path: Path) -> None:
         store, "run-20260101T000551-000551", role="producer", phase=PRODUCTION
     )
 
-    with pytest.raises(RequestError, match="not targeted by unresolved focused-output"):
+    with pytest.raises(RequestError, match="not targeted by open required focused-output"):
         service.apply(
             {
                 "production_revision": 1,

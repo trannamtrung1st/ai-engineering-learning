@@ -24,6 +24,7 @@ from top_down_planning.domain.reviews import (
     owner_actions_require_revision,
     owner_actions_require_verification,
     prepare_review_incomplete_retry,
+    primary_review_resume_fields,
     required_open_findings,
     reviewer_package_policy_guidance,
 )
@@ -187,23 +188,24 @@ class FocusedReviewOrchestrator:
                     ),
                 )
 
-            if decision == "pending" and needs_advisory_handoff(loop):
+            if decision in {"advisory_pending", "pending"} and needs_advisory_handoff(
+                loop
+            ):
                 loop = self._handle_advisory_handoff(loop)
                 if loop.status == "approved":
                     return self._result_from_loop(loop, ok=True)
                 if required_open_findings(loop.findings, loop_revise_at(loop)):
                     decision = "changes_requested"
                 elif owner_actions_require_verification(loop.finding_actions):
-                    if owner_actions_require_revision(
-                        [
-                            action
-                            for action in loop.finding_actions
-                            if action.finding_set_id == loop.finding_set_id
-                        ]
-                    ):
+                    active_actions = [
+                        action
+                        for action in loop.finding_actions
+                        if action.finding_set_id == loop.finding_set_id
+                    ]
+                    if owner_actions_require_revision(active_actions or loop.finding_actions):
                         decision = "changes_requested"
                     else:
-                        # Challenge-only: recheck without consuming a revision cycle.
+                        # Challenge-only: verification/recheck without revision budget.
                         loop = self._prepare_recheck(loop)
                         continue
                 else:
@@ -321,11 +323,6 @@ class FocusedReviewOrchestrator:
 
         config = self._store.load_resolved_config(self._run_id)
         role_context = resolve_role_session_context(config, run, role)
-        threshold = loop_revise_at(loop)
-        optional = [
-            finding.to_dict()
-            for finding in optional_open_findings(loop.findings, threshold)
-        ]
         resume_primary_session_with_audit(
             self._append_event,
             self._provider,
@@ -338,10 +335,8 @@ class FocusedReviewOrchestrator:
                 "loop_id": loop.id,
                 "review_type": loop.type,
                 "target_revision": loop.target_revision,
-                "finding_set_id": loop.finding_set_id,
-                "revise_at": threshold,
                 "scope": dict(loop.scope),
-                "optional_findings": optional,
+                **primary_review_resume_fields(loop),
                 "tool_instructions": {
                     "record_actions": (
                         f"tdp agent review record-actions --run {self._run_id} "
@@ -350,7 +345,8 @@ class FocusedReviewOrchestrator:
                     "notes": (
                         "Record fix|defer|accept_as_is|challenge via finding_actions. "
                         "Required findings cannot defer or accept_as_is. Challenges "
-                        "require proposed_disposition and stay open until verification."
+                        "require proposed_disposition and stay open until verification. "
+                        "defer/accept_as_is consume no revision cycle."
                     ),
                 },
             },
@@ -463,7 +459,7 @@ class FocusedReviewOrchestrator:
                 "review_type": loop.type,
                 "target_revision": loop.target_revision,
                 "scope": dict(loop.scope),
-                "findings": [finding.to_dict() for finding in loop.findings],
+                **primary_review_resume_fields(loop),
                 **(
                     {
                         "revision_instructions": {
@@ -473,9 +469,11 @@ class FocusedReviewOrchestrator:
                             "tool": "production_apply",
                             "notes": (
                                 "Set evidence_revision: true on production apply for "
-                                "terminal plan_items within this focused_output scope. "
-                                "Keep existing dispositions unchanged; attach new "
-                                "output evidence IDs. Output revision advances for "
+                                "terminal plan_items targeted by open required findings "
+                                "within this focused_output scope. Keep existing "
+                                "dispositions unchanged; attach new output evidence IDs. "
+                                "Voluntary optional fixes are allowed; deferred optionals "
+                                "need record-actions. Output revision advances for "
                                 "reviewer recheck."
                             ),
                         }
