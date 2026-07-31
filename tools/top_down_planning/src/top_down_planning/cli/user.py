@@ -24,7 +24,7 @@ from top_down_planning.cli.common import (
 from top_down_planning.persistence.path_ids import new_run_id
 from top_down_planning.config import (
     ConfigError,
-    build_initial_context_snapshot_binding,
+    build_initial_context_snapshot_binding_with_diagnostics,
     compute_input_digest,
     compute_output_goal_digest,
     resolve_config,
@@ -208,9 +208,11 @@ def handle_run_command(args: Namespace) -> None:
 
     input_digest = compute_input_digest(resolved, base_dir=workspace)
     output_goal_digest = compute_output_goal_digest(resolved, base_dir=workspace)
-    binding, context_spec_digest, context_snapshot_digest = build_initial_context_snapshot_binding(
-        resolved,
-        workspace=workspace,
+    binding, context_spec_digest, context_snapshot_digest, snapshot_diag = (
+        build_initial_context_snapshot_binding_with_diagnostics(
+            resolved,
+            workspace=workspace,
+        )
     )
     plan = _initial_plan(run_id, resolved, output_goal=output_goal)
 
@@ -242,6 +244,13 @@ def handle_run_command(args: Namespace) -> None:
         context_snapshot_binding=binding,
         workspace=str(workspace),
         invocation=invocation_to_dict(invocation),
+    )
+    store.append_event(
+        run_id,
+        {
+            "type": "context_snapshot_collected",
+            **snapshot_diag.to_event_fields(),
+        },
     )
 
     diagnostics = run_startup_diagnostics_payload(

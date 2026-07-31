@@ -6,10 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.config.context import (
-    build_context_snapshot_payload,
+    build_context_snapshot_payload_with_diagnostics,
     compute_context_snapshot_digest_from_payload,
     compute_context_spec_digest_from_config,
     validate_guidance_for_binding,
+)
+from top_down_planning.config.snapshot_diagnostics import (
+    format_unauthorized_mutation_message,
 )
 from top_down_planning.config.snapshot_policy import (
     CanonicalPathError,
@@ -155,11 +158,8 @@ def validate_production_snapshot_rebase(
     authorized = authorized_production_workspace_paths(production, workspace=workspace)
     unauthorized = [path for path in changed_paths if path not in authorized]
     if unauthorized:
-        joined = ", ".join(_format_snapshot_drift_label(path) for path in unauthorized[:5])
-        suffix = "" if len(unauthorized) <= 5 else f" (+{len(unauthorized) - 5} more)"
         raise UnauthorizedContextMutationError(
-            "production completion cannot rebase context snapshot: "
-            f"unauthorized workspace changes detected ({joined}{suffix})",
+            format_unauthorized_mutation_message(unauthorized),
             unauthorized_paths=tuple(unauthorized),
         )
     return changed_paths
@@ -181,10 +181,30 @@ def build_initial_context_snapshot_binding(
     """Return binding payload, context_spec digest, and context_snapshot digest."""
 
     validate_guidance_for_binding(config, workspace=workspace)
-    binding = build_context_snapshot_payload(config, workspace=workspace)
+    binding, _diagnostics = build_context_snapshot_payload_with_diagnostics(
+        config,
+        workspace=workspace,
+    )
     spec_digest = compute_context_spec_digest_from_config(config, workspace=workspace)
     snapshot_digest = compute_context_snapshot_digest_from_payload(binding)
     return binding, spec_digest, snapshot_digest
+
+
+def build_initial_context_snapshot_binding_with_diagnostics(
+    config: dict[str, Any],
+    *,
+    workspace: Path,
+) -> tuple[dict[str, Any], str, str, Any]:
+    """Like build_initial_context_snapshot_binding, also returning §14 diagnostics."""
+
+    validate_guidance_for_binding(config, workspace=workspace)
+    binding, diagnostics = build_context_snapshot_payload_with_diagnostics(
+        config,
+        workspace=workspace,
+    )
+    spec_digest = compute_context_spec_digest_from_config(config, workspace=workspace)
+    snapshot_digest = compute_context_snapshot_digest_from_payload(binding)
+    return binding, spec_digest, snapshot_digest, diagnostics
 
 
 def recompute_context_snapshot_binding(
@@ -192,7 +212,7 @@ def recompute_context_snapshot_binding(
     *,
     workspace: Path,
 ) -> tuple[dict[str, Any], str]:
-    binding = build_context_snapshot_payload(
+    binding, _diagnostics = build_context_snapshot_payload_with_diagnostics(
         config,
         workspace=workspace,
         allow_missing_guidance_files=True,
@@ -200,12 +220,27 @@ def recompute_context_snapshot_binding(
     return binding, compute_context_snapshot_digest_from_payload(binding)
 
 
+def recompute_context_snapshot_binding_with_diagnostics(
+    config: dict[str, Any],
+    *,
+    workspace: Path,
+) -> tuple[dict[str, Any], str, Any]:
+    binding, diagnostics = build_context_snapshot_payload_with_diagnostics(
+        config,
+        workspace=workspace,
+        allow_missing_guidance_files=True,
+    )
+    return binding, compute_context_snapshot_digest_from_payload(binding), diagnostics
+
+
 __all__ = [
     "UnauthorizedContextMutationError",
     "authorized_production_workspace_paths",
     "build_initial_context_snapshot_binding",
+    "build_initial_context_snapshot_binding_with_diagnostics",
     "diff_snapshot_binding_paths",
     "recompute_context_snapshot_binding",
+    "recompute_context_snapshot_binding_with_diagnostics",
     "short_path_for_observability",
     "validate_production_snapshot_rebase",
 ]

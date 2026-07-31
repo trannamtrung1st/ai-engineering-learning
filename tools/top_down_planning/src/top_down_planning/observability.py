@@ -371,6 +371,7 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         "phase_entry_attempted": ("state", "phase entry attempted"),
         "phase_entry_blocked": ("error", "phase entry blocked"),
         "context_snapshot_rebased": ("state", "context snapshot rebased"),
+        "context_snapshot_collected": ("state", "context snapshot collected"),
         "whole_plan_review_started": ("phase:start", "whole plan review started"),
         "whole_plan_blocker_review_started": ("phase:start", "whole plan blocker review started"),
         "whole_plan_review_approved": ("review", "whole plan review approved"),
@@ -394,6 +395,11 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
     if mapped is None:
         return None
     category, message = mapped
+    if event_type == "context_snapshot_collected":
+        summary = fields.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            # Concise multi-line summary stays in fields; console uses first line.
+            message = summary.splitlines()[0]
     session_id = fields.get("session_id")
     run_id = fields.get("run_id")
     return ConsoleEvent(

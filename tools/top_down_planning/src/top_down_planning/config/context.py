@@ -32,6 +32,7 @@ __all__ = [
     "build_agent_context_manifest_payload",
     "build_context_spec_payload",
     "build_context_snapshot_payload",
+    "build_context_snapshot_payload_with_diagnostics",
     "compute_context_snapshot_digest_from_config",
     "compute_context_snapshot_digest_from_payload",
     "compute_context_spec_digest_from_config",
@@ -506,7 +507,7 @@ def _materialize_resource_digests(
     config: dict[str, Any],
     *,
     workspace: Path,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], "SnapshotDiagnostics"]:
     """Materialize resource snapshot digests with §6 exclusion semantics.
 
     - Direct files (including missing) always bind; exclusions do not apply.
@@ -515,9 +516,11 @@ def _materialize_resource_digests(
     - Skills/guidance are not handled here.
 
     Directory walks post-filter after ``rglob`` (no prune) so later negated exclude
-    patterns can still re-include descendants (proposal §5).
+    patterns can still re-include descendants (proposal §5). ``pruned_directories``
+    in diagnostics therefore remains 0; excluded counts reflect enumerated files only.
     """
 
+    from top_down_planning.config.snapshot_diagnostics import SnapshotDiagnostics
     from top_down_planning.config.snapshot_policy import (
         CanonicalPathCollisionError,
         SnapshotPolicy,
@@ -528,14 +531,17 @@ def _materialize_resource_digests(
     workspace_resolved = workspace.resolve()
     digests: dict[str, str] = {}
     paths_by_key: dict[str, Path] = {}
+    excluded_files = 0
 
     def bind(path: Path, *, explicitly_declared: bool) -> None:
+        nonlocal excluded_files
         key = canonicalize_workspace_path(path, workspace=workspace)
         if not policy.is_included(
             key,
             is_directory=False,
             explicitly_declared=explicitly_declared,
         ):
+            excluded_files += 1
             return
         prior = paths_by_key.get(key)
         if prior is not None and prior.resolve() != path.resolve():
@@ -571,7 +577,14 @@ def _materialize_resource_digests(
             continue
         bind(candidate, explicitly_declared=True)
 
-    return {key: digests[key] for key in sorted(digests)}
+    ordered = {key: digests[key] for key in sorted(digests)}
+    diagnostics = SnapshotDiagnostics(
+        included_files=len(ordered),
+        excluded_files=excluded_files,
+        pruned_directories=0,
+        policy_version=policy.policy_version,
+    )
+    return ordered, diagnostics
 
 
 def _exclusion_policy_for_context_spec(
@@ -686,8 +699,33 @@ def build_context_snapshot_payload(
     skill and guidance surfaces are not filtered by snapshot excludes.
     """
 
-    return {
-        "resource_digests": _materialize_resource_digests(config, workspace=workspace),
+    binding, _diagnostics = build_context_snapshot_payload_with_diagnostics(
+        config,
+        workspace=workspace,
+        allow_missing_guidance_files=allow_missing_guidance_files,
+    )
+    return binding
+
+
+def build_context_snapshot_payload_with_diagnostics(
+    config: dict[str, Any],
+    *,
+    workspace: Path,
+    allow_missing_guidance_files: bool = False,
+) -> tuple[dict[str, Any], Any]:
+    """Build snapshot binding plus §14 diagnostics from the same materialization pass."""
+
+    from top_down_planning.config.snapshot_diagnostics import (
+        SnapshotDiagnostics,
+        binding_payload_size_bytes,
+    )
+
+    resource_digests, resource_diag = _materialize_resource_digests(
+        config,
+        workspace=workspace,
+    )
+    binding = {
+        "resource_digests": resource_digests,
         "skill_digests": _all_skill_digest_entries(config, workspace=workspace),
         "guidance_digests": _all_guidance_digest_entries(
             config,
@@ -695,6 +733,14 @@ def build_context_snapshot_payload(
             allow_missing_files=allow_missing_guidance_files,
         ),
     }
+    diagnostics = SnapshotDiagnostics(
+        included_files=resource_diag.included_files,
+        excluded_files=resource_diag.excluded_files,
+        pruned_directories=resource_diag.pruned_directories,
+        policy_version=resource_diag.policy_version,
+        binding_size_bytes=binding_payload_size_bytes(binding),
+    )
+    return binding, diagnostics
 
 
 def compute_context_spec_digest_from_config(

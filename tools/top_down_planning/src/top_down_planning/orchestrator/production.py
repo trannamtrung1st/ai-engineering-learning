@@ -7,7 +7,7 @@ from typing import Any
 
 from top_down_planning.agent_tool.production_service import ProductionAgentService
 from top_down_planning.config.context_digests import (
-    recompute_context_snapshot_binding,
+    recompute_context_snapshot_binding_with_diagnostics,
     short_path_for_observability,
     validate_production_snapshot_rebase,
 )
@@ -328,9 +328,11 @@ class ProductionPhaseOrchestrator:
         old_snapshot_digest = str(digests.get("context_snapshot") or "")
 
         try:
-            new_binding, new_snapshot_digest = recompute_context_snapshot_binding(
-                config,
-                workspace=workspace,
+            new_binding, new_snapshot_digest, diagnostics = (
+                recompute_context_snapshot_binding_with_diagnostics(
+                    config,
+                    workspace=workspace,
+                )
             )
             changed_paths: list[str] = []
             if new_snapshot_digest != old_snapshot_digest:
@@ -357,6 +359,11 @@ class ProductionPhaseOrchestrator:
             run["context_snapshot_binding"] = new_binding
         run["digests"] = digests
         self._store.save_run(self._run_id, run, expected_revision)
+        self._append_event(
+            "context_snapshot_collected",
+            session_id=session_id,
+            **diagnostics.to_event_fields(),
+        )
         if snapshot_rebased:
             self._append_event(
                 "context_snapshot_rebased",
@@ -368,6 +375,7 @@ class ProductionPhaseOrchestrator:
                 changed_paths=[
                     short_path_for_observability(path) for path in changed_paths[:10]
                 ],
+                **diagnostics.to_event_fields(),
             )
         self._append_event(
             "production_completed",
