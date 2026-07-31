@@ -19,6 +19,7 @@ from top_down_planning.domain.production import (
 from top_down_planning.domain.review_policy import resolved_revise_at
 from top_down_planning.domain.reviews import (
     ReviewLoop,
+    allocate_discovery_finding_set_id,
     find_whole_plan_approval,
     is_revision_requested_status,
     is_terminal_review_loop,
@@ -495,6 +496,10 @@ class WholeOutputReviewOrchestrator:
     def _start_reviewer_session(self, loop: ReviewLoop) -> tuple[str, str]:
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
+        stage = loop.active_stage or "initial_review"
+        if stage in {None, "initial_review", "scope_blocker_review"}:
+            loop, _finding_set_id = allocate_discovery_finding_set_id(loop)
+            loop = self._persist_loop(loop)
         package = build_whole_output_review_package(
             self._run_id,
             run,

@@ -199,6 +199,42 @@ _DISPOSITION_RECORD_SCHEMA: dict[str, Any] = {
 
 _REVIEW_FINDING_SCHEMA: dict[str, Any] = {
     "type": "object",
+    "required": [
+        "id",
+        "severity",
+        "category",
+        "target_refs",
+        "issue",
+        "recommended_change",
+    ],
+    "properties": {
+        "id": {"type": "string"},
+        "severity": {
+            "type": "string",
+            "enum": ["suggestion", "minor", "major", "blocker"],
+        },
+        "category": {"type": "string"},
+        "target_refs": {"type": "array", "items": {"type": "string"}},
+        "issue": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "recommended_change": {"type": "string"},
+        "reopens_finding_id": {"type": "string"},
+        "status": {
+            "type": "string",
+            "enum": [
+                "unresolved",
+                "partially_resolved",
+                "resolved",
+                "superseded",
+                "invalid",
+            ],
+        },
+    },
+    "additionalProperties": False,
+}
+
+_LEGACY_REVIEW_FINDING_SCHEMA: dict[str, Any] = {
+    "type": "object",
     "required": ["id", "importance", "target_refs", "issue", "required_change"],
     "properties": {
         "id": {"type": "string"},
@@ -218,6 +254,10 @@ _REVIEW_FINDING_SCHEMA: dict[str, Any] = {
         },
     },
     "additionalProperties": False,
+}
+
+_ANY_REVIEW_FINDING_SCHEMA: dict[str, Any] = {
+    "oneOf": [_REVIEW_FINDING_SCHEMA, _LEGACY_REVIEW_FINDING_SCHEMA]
 }
 
 _FINDING_VERIFICATION_ENTRY_SCHEMA: dict[str, Any] = {
@@ -279,6 +319,78 @@ _FOCUSED_REVIEW_BRANCH_SCHEMAS = [
 
 _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
     {
+        "title": "FocusedDiscoveryRespond",
+        "type": "object",
+        "required": [
+            "loop_id",
+            "target_revision",
+            "finding_set_id",
+            "reported_findings",
+            "review_completed",
+            "summary",
+        ],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "finding_set_id": {"type": "string"},
+            "target_digest": {"type": "string"},
+            "reported_findings": {
+                "type": "array",
+                "items": _REVIEW_FINDING_SCHEMA,
+            },
+            "review_completed": {"type": "boolean"},
+            "summary": {"type": "string"},
+            "decision": {
+                "type": "string",
+                "enum": ["approved", "changes_requested", "blocked"],
+                "description": (
+                    "Legacy optional during transition; service derives outcomes "
+                    "from reported_findings and revise_at."
+                ),
+            },
+        },
+        "additionalProperties": False,
+    },
+    {
+        "title": "MandatoryDiscoveryRespond",
+        "type": "object",
+        "required": [
+            "loop_id",
+            "target_revision",
+            "stage",
+            "finding_set_id",
+            "reported_findings",
+            "review_completed",
+            "summary",
+        ],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "stage": {
+                "type": "string",
+                "enum": ["initial_review", "scope_blocker_review"],
+            },
+            "finding_set_id": {"type": "string"},
+            "target_digest": {"type": "string"},
+            "reported_findings": {
+                "type": "array",
+                "items": _REVIEW_FINDING_SCHEMA,
+            },
+            "review_completed": {"type": "boolean"},
+            "summary": {"type": "string"},
+            "decision": {
+                "type": "string",
+                "description": "Legacy optional during transition.",
+            },
+            "scope_id": {"type": "string"},
+            "acceptance_criteria_checked": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+        "additionalProperties": False,
+    },
+    {
         "title": "FocusedReviewRespond",
         "type": "object",
         "required": ["loop_id", "target_revision", "decision"],
@@ -291,7 +403,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             },
             "findings": {
                 "type": "array",
-                "items": _REVIEW_FINDING_SCHEMA,
+                "items": _ANY_REVIEW_FINDING_SCHEMA,
             },
         },
         "additionalProperties": False,
@@ -314,7 +426,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             "decision": {"const": "approved"},
             "findings": {
                 "type": "array",
-                "items": _REVIEW_FINDING_SCHEMA,
+                "items": _ANY_REVIEW_FINDING_SCHEMA,
             },
             "target_digest": {
                 "type": "string",
@@ -340,7 +452,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             },
             "findings": {
                 "type": "array",
-                "items": _REVIEW_FINDING_SCHEMA,
+                "items": _ANY_REVIEW_FINDING_SCHEMA,
             },
         },
         "additionalProperties": False,
@@ -378,7 +490,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             },
             "new_direct_side_effect_findings": {
                 "type": "array",
-                "items": _REVIEW_FINDING_SCHEMA,
+                "items": _ANY_REVIEW_FINDING_SCHEMA,
             },
             "summary": {"type": "string"},
         },
@@ -413,7 +525,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             "scope_id": {"type": "string"},
             "blocking_findings": {
                 "type": "array",
-                "items": _REVIEW_FINDING_SCHEMA,
+                "items": _ANY_REVIEW_FINDING_SCHEMA,
             },
             "acceptance_criteria_checked": {
                 "type": "array",
@@ -1173,43 +1285,57 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
     },
     "review-respond": {
         "schema": "review-respond",
-        "description": "Focused plan review: request changes with one blocking finding.",
+        "description": (
+            "Focused plan discovery: report findings with orchestrator-allocated "
+            "finding_set_id echo."
+        ),
         "payload": {
             "loop_id": "review-focused-plan-01",
             "target_revision": 0,
-            "decision": "changes_requested",
-            "findings": [
+            "finding_set_id": "review-focused-plan-01-fs-01",
+            "reported_findings": [
                 {
                     "id": "finding-001",
-                    "importance": "blocking",
+                    "severity": "blocker",
+                    "category": "acceptance",
                     "target_refs": ["item-api"],
                     "issue": "Acceptance criteria are not testable.",
-                    "required_change": "Add concrete acceptance checks for API behavior.",
+                    "evidence": ["No measurable acceptance checks on item-api."],
+                    "recommended_change": "Add concrete acceptance checks for API behavior.",
                     "status": "unresolved",
                 }
             ],
+            "review_completed": True,
+            "summary": "One blocker finding in scope.",
+            "decision": "changes_requested",
         },
     },
     "review-respond-initial": {
         "schema": "review-respond",
         "description": (
-            "Mandatory initial_review: raise blocking findings before verification."
+            "Mandatory initial_review discovery: report findings with finding_set_id echo."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
             "target_revision": 0,
             "stage": "initial_review",
-            "decision": "changes_requested",
-            "findings": [
+            "finding_set_id": "review-whole-plan-01-fs-01",
+            "target_digest": "plan-digest-placeholder",
+            "reported_findings": [
                 {
                     "id": "finding-001",
-                    "importance": "blocking",
+                    "severity": "major",
+                    "category": "acceptance",
                     "target_refs": ["item-api"],
                     "issue": "Acceptance criteria are not testable.",
-                    "required_change": "Add concrete acceptance checks for API behavior.",
+                    "evidence": ["Acceptance text is qualitative only."],
+                    "recommended_change": "Add concrete acceptance checks for API behavior.",
                     "status": "unresolved",
                 }
             ],
+            "review_completed": True,
+            "summary": "Material acceptance gap found.",
+            "decision": "changes_requested",
         },
     },
     "review-respond-initial-approved": {

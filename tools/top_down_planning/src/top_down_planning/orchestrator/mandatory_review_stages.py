@@ -9,11 +9,13 @@ from top_down_planning.domain.reviews import (
     ExhaustedReviewBudget,
     MandatoryReviewLimits,
     ReviewLoop,
+    allocate_discovery_finding_set_id,
     blocking_unresolved_finding_ids,
     build_limit_reached_terminal,
     assert_mandatory_review_transition,
     loop_revise_at,
     mandatory_stage_respond_decision,
+    next_finding_set_id,
 )
 
 ReviewArtifactKind = Literal["plan", "output"]
@@ -43,18 +45,6 @@ def seed_mandatory_loop_fields(loop: ReviewLoop) -> ReviewLoop:
         finding_set_id=loop.finding_set_id,
         blocker_review_rounds=loop.blocker_review_rounds,
     )
-
-
-def next_finding_set_id(loop: ReviewLoop) -> str:
-    base = loop.id
-    existing = loop.finding_set_id or ""
-    suffix = 1
-    if existing.startswith(f"{base}-fs-"):
-        try:
-            suffix = int(existing.rsplit("-", 1)[-1]) + 1
-        except ValueError:
-            suffix = 1
-    return f"{base}-fs-{suffix:02d}"
 
 
 def mark_findings_open(loop: ReviewLoop) -> ReviewLoop:
@@ -167,7 +157,7 @@ def prepare_blocker_review_loop(loop: ReviewLoop) -> ReviewLoop:
         current = loop.lifecycle_status or "findings_closed"
     assert_mandatory_review_transition(current, "blocker_review_pending")
 
-    return replace(
+    prepared = replace(
         loop,
         status="pending",
         reviewer_session_id=None,
@@ -177,6 +167,8 @@ def prepare_blocker_review_loop(loop: ReviewLoop) -> ReviewLoop:
         approved_digests=None,
         blocker_review_result=None,
     )
+    prepared, _finding_set_id = allocate_discovery_finding_set_id(prepared)
+    return prepared
 
 
 def mark_mandatory_approved(loop: ReviewLoop) -> ReviewLoop:
@@ -245,7 +237,9 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
         "lifecycle_status": loop.lifecycle_status or "review_pending",
     }
     if stage == "scope_blocker_review":
-        # Freshness: omit finding_set_id and prior finding lists from framing.
+        # Freshness: omit prior finding lists from framing; include allocated id.
+        if loop.finding_set_id is not None:
+            fields["finding_set_id"] = loop.finding_set_id
         fields["freshness"] = {
             "omit_prior_finding_framing": True,
             "include_prior_findings": False,
@@ -309,15 +303,24 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             ],
         }
     else:
+        if loop.finding_set_id is not None:
+            fields["finding_set_id"] = loop.finding_set_id
         fields["respond_contract"] = {
             "stage": "initial_review",
             "decisions": ["approved", "changes_requested", "blocked"],
-            "required_fields": ["findings", "target_digest"],
+            "required_fields": [
+                "finding_set_id",
+                "reported_findings",
+                "review_completed",
+                "target_digest",
+                "summary",
+            ],
         }
         fields["initial_review_guidance"] = [
             "Mandatory review gate: initial discovery may raise findings",
             "Clear initial approval still requires a separate scope_blocker_review",
             "Do not treat this pass as final approval",
+            "Echo finding_set_id unchanged; report every material issue with severity and category",
         ]
     return fields
 

@@ -115,7 +115,8 @@ def test_core_invariant_finding_closure_alone_never_approves() -> None:
     fields = stage_package_fields(blocker_pending)
     assert fields["freshness"]["omit_prior_finding_framing"] is True
     assert "findings" not in fields
-    assert "finding_set_id" not in fields
+    assert fields["finding_set_id"] == blocker_pending.finding_set_id
+    assert blocker_pending.finding_set_id is not None
 
 
 def test_core_invariant_requires_verified_clear_blocker_and_digest_match() -> None:

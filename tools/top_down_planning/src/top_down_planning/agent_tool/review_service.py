@@ -18,9 +18,11 @@ from top_down_planning.domain.reviews import (
     build_scope_blocker_review_result,
     find_overlapping_active_focused_loop,
     findings_from_focused_respond,
+    is_discovery_respond_payload,
     is_review_respond_closed,
     is_terminal_review_loop,
     merge_verification_findings,
+    parse_discovery_respond_findings,
     parse_initial_review_findings,
     focused_loop_count,
     require_review_respond_stage,
@@ -201,16 +203,30 @@ class ReviewAgentService:
                 blocker_payload = None
             elif stage == "scope_blocker_review":
                 try:
-                    findings, blocker_result = build_scope_blocker_review_result(
-                        request, loop
-                    )
+                    if is_discovery_respond_payload(request):
+                        reported = parse_discovery_respond_findings(loop, request)
+                        # Bridge to legacy builder until naming migration lands.
+                        bridged = dict(request)
+                        bridged["blocking_findings"] = [
+                            finding.to_dict() for finding in reported
+                        ]
+                        findings, blocker_result = build_scope_blocker_review_result(
+                            bridged, loop
+                        )
+                    else:
+                        findings, blocker_result = build_scope_blocker_review_result(
+                            request, loop
+                        )
                 except ValueError as exc:
                     raise RequestError(str(exc)) from exc
                 verification_payload = loop.verification_result
                 blocker_payload = blocker_result.to_dict()
             elif stage == "initial_review":
                 try:
-                    findings = parse_initial_review_findings(request)
+                    if is_discovery_respond_payload(request):
+                        findings = parse_discovery_respond_findings(loop, request)
+                    else:
+                        findings = parse_initial_review_findings(request)
                 except ValueError as exc:
                     raise RequestError(str(exc)) from exc
                 verification_payload = None
@@ -219,7 +235,10 @@ class ReviewAgentService:
                 raise RequestError(f"unsupported mandatory review stage: {stage}")
         else:
             try:
-                findings = findings_from_focused_respond(request)
+                if is_discovery_respond_payload(request):
+                    findings = parse_discovery_respond_findings(loop, request)
+                else:
+                    findings = findings_from_focused_respond(request)
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
             verification_payload = None

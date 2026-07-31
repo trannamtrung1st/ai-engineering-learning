@@ -12,7 +12,7 @@ from top_down_planning.domain.production import (
     build_output_traceability,
     build_production_review_snapshot,
 )
-from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.reviews import ReviewLoop, allocate_discovery_finding_set_id
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     plan_execution_contract_fields,
@@ -216,6 +216,8 @@ class FocusedReviewOrchestrator:
     def _start_reviewer_session(self, loop: ReviewLoop) -> tuple[str, str]:
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
+        loop, _finding_set_id = allocate_discovery_finding_set_id(loop)
+        loop = self._persist_loop(loop)
         package = build_focused_review_package(
             self._run_id,
             run,
@@ -372,6 +374,7 @@ class FocusedReviewOrchestrator:
             target_revision=current_revision,
             status="pending",
         )
+        updated, _finding_set_id = allocate_discovery_finding_set_id(updated)
         self._persist_loop(updated)
         phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
         run = self._store.load_run(self._run_id)
@@ -472,6 +475,7 @@ def build_focused_review_package(
         "phase": phase,
         "type": loop.type,
         "loop_id": loop.id,
+        "finding_set_id": loop.finding_set_id,
         "purpose": f"Optional focused {revision_label} review within declared scope",
         "scope": dict(loop.scope),
         "target_revision": loop.target_revision,

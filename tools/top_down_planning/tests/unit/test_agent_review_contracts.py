@@ -270,7 +270,7 @@ def test_blocker_package_omits_prior_finding_framing(tmp_path: Path) -> None:
     assert package["freshness"]["omit_prior_finding_framing"] is True
     assert package["freshness"]["include_prior_findings"] is False
     assert "findings" not in package
-    assert "finding_set_id" not in package
+    assert package["finding_set_id"] == "review-whole-plan-01-fs-01"
     protocol = " ".join(package["protocol_instructions"]).lower()
     assert "scope_blocker_review" in protocol
     assert "fresh discovery" in protocol

@@ -1089,6 +1089,163 @@ def parse_findings(raw_findings: Any) -> list[ReviewFinding]:
     return findings
 
 
+def is_discovery_respond_payload(request: Mapping[str, Any]) -> bool:
+    """True when the respond payload uses the unified discovery contract."""
+
+    return "reported_findings" in request or "review_completed" in request
+
+
+def next_finding_set_id(loop: ReviewLoop) -> str:
+    """Allocate the next orchestrator-owned finding_set_id for ``loop``."""
+
+    base = loop.id
+    existing = loop.finding_set_id or ""
+    suffix = 1
+    if existing.startswith(f"{base}-fs-"):
+        try:
+            suffix = int(existing.rsplit("-", 1)[-1]) + 1
+        except ValueError:
+            suffix = 1
+    return f"{base}-fs-{suffix:02d}"
+
+
+def allocate_discovery_finding_set_id(loop: ReviewLoop) -> tuple[ReviewLoop, str]:
+    """Ensure a discovery finding_set_id is allocated on the loop.
+
+    Reuses the existing id when the loop is marked review_incomplete so retries
+    echo the same identifier. Otherwise allocates a new id for a fresh discovery
+    pass.
+    """
+
+    if loop.review_incomplete is not None and loop.finding_set_id:
+        return loop, loop.finding_set_id
+    if loop.finding_set_id and loop.active_stage == "finding_verification":
+        return loop, loop.finding_set_id
+    finding_set_id = next_finding_set_id(loop)
+    return replace(loop, finding_set_id=finding_set_id), finding_set_id
+
+
+def validate_finding_set_id_echo(
+    loop: ReviewLoop,
+    request: Mapping[str, Any],
+) -> str:
+    """Require the reviewer to echo the orchestrator-allocated finding_set_id."""
+
+    expected = str(loop.finding_set_id or "").strip()
+    if not expected:
+        raise ValueError(
+            "review loop is missing orchestrator-allocated finding_set_id"
+        )
+    echoed = str(request.get("finding_set_id") or "").strip()
+    if not echoed:
+        raise ValueError("discovery respond requires finding_set_id")
+    if echoed != expected:
+        raise ValueError(
+            f"finding_set_id mismatch: expected {expected!r}, got {echoed!r}"
+        )
+    return echoed
+
+
+def parse_reported_finding(payload: Mapping[str, Any]) -> ReviewFinding:
+    """Parse one discovery finding; severity and category are required."""
+
+    if payload.get("severity") is None or not str(payload.get("severity")).strip():
+        raise ValueError("discovery finding requires severity")
+    if payload.get("category") is None or not str(payload.get("category")).strip():
+        raise ValueError("discovery finding requires category")
+    finding = ReviewFinding.from_dict(dict(payload))
+    if finding.status != "unresolved":
+        raise ValueError(
+            f"discovery finding {finding.id!r} must have status unresolved"
+        )
+    return finding
+
+
+def parse_reported_findings(request: Mapping[str, Any]) -> list[ReviewFinding]:
+    """Parse ``reported_findings`` from a discovery respond payload."""
+
+    if "reported_findings" not in request:
+        raise ValueError("discovery respond requires reported_findings")
+    raw = request.get("reported_findings")
+    if not isinstance(raw, list):
+        raise ValueError("reported_findings must be a list")
+    findings: list[ReviewFinding] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("each reported_findings entry must be an object")
+        finding = parse_reported_finding(item)
+        if finding.id in seen:
+            raise ValueError(
+                f"duplicate finding id {finding.id!r} in reported_findings"
+            )
+        seen.add(finding.id)
+        findings.append(finding)
+    return findings
+
+
+def assert_reported_finding_ids_unused(
+    loop: ReviewLoop,
+    reported: Sequence[ReviewFinding],
+) -> None:
+    """Reject discovery payloads that reuse an existing loop finding id."""
+
+    existing_ids = {finding.id for finding in loop.findings}
+    for finding in reported:
+        if finding.id in existing_ids:
+            raise ValueError(
+                f"discovery finding id {finding.id!r} already exists in the loop; "
+                "rediscovery must use a new id (optionally with reopens_finding_id)"
+            )
+        validate_reopens_finding_id(finding, loop.findings)
+
+
+def parse_discovery_respond_findings(
+    loop: ReviewLoop,
+    request: Mapping[str, Any],
+) -> list[ReviewFinding]:
+    """Validate discovery contract fields and return reported findings."""
+
+    validate_finding_set_id_echo(loop, request)
+    if "review_completed" not in request:
+        raise ValueError("discovery respond requires review_completed")
+    completed = request.get("review_completed")
+    if not isinstance(completed, bool):
+        raise ValueError("review_completed must be a boolean")
+    reported = parse_reported_findings(request)
+    assert_reported_finding_ids_unused(loop, reported)
+    return reported
+
+
+def parse_initial_review_findings(request: dict[str, Any]) -> list[ReviewFinding]:
+    """Parse initial_review findings from a mandatory respond payload."""
+
+    if "finding_results" in request or "blocking_findings" in request:
+        raise ValueError(
+            "initial_review respond must use findings, not stage Result Contract fields"
+        )
+    if is_discovery_respond_payload(request):
+        # Caller must supply the loop for full discovery validation.
+        raise ValueError(
+            "initial_review discovery payloads must be parsed with "
+            "parse_discovery_respond_findings"
+        )
+    return parse_findings(request.get("findings") or [])
+
+
+def findings_from_focused_respond(request: dict[str, Any]) -> list[ReviewFinding]:
+    """Parse findings from a focused review respond payload."""
+
+    if request.get("stage") is not None:
+        raise ValueError("focused review respond must not include stage")
+    if is_discovery_respond_payload(request):
+        raise ValueError(
+            "focused discovery payloads must be parsed with "
+            "parse_discovery_respond_findings"
+        )
+    return parse_findings(request.get("findings") or [])
+
+
 def validate_decision(decision: str) -> ReviewDecision:
     """Validate a focused-review decision (approved|changes_requested|blocked)."""
 
@@ -1180,24 +1337,6 @@ def mandatory_stage_respond_decision(loop: ReviewLoop) -> str:
     raise ValueError(
         f"initial_review loop has invalid status for orchestration: {loop.status!r}"
     )
-
-
-def parse_initial_review_findings(request: dict[str, Any]) -> list[ReviewFinding]:
-    """Parse initial_review findings from a mandatory respond payload."""
-
-    if "finding_results" in request or "blocking_findings" in request:
-        raise ValueError(
-            "initial_review respond must use findings, not stage Result Contract fields"
-        )
-    return parse_findings(request.get("findings") or [])
-
-
-def findings_from_focused_respond(request: dict[str, Any]) -> list[ReviewFinding]:
-    """Parse findings from a focused review respond payload."""
-
-    if request.get("stage") is not None:
-        raise ValueError("focused review respond must not include stage")
-    return parse_findings(request.get("findings") or [])
 
 
 def merge_verification_findings(
