@@ -1,7 +1,8 @@
 ---
 name: tools-dev
 description: >-
-  Develop and test packages under tools/ (core_tools, top_down_planning). Generate
+  Develop and test packages under tools/ (core_tools, top_down_planning). Prefer
+  YAML + --set path=value for CLI config; avoid redundant dedicated flags. Generate
   fast unit tests using fakes, stubs, and mocks instead of live I/O, providers, or
   long sleeps. Use when working in tools/, writing pytest files, or when the user
   asks for unit test coverage.
@@ -48,6 +49,24 @@ store.create_run(run_id, **kwargs)
 
 Do not invoke live Cursor in orchestration tests. Metadata strings like `provider="cursor"` are fine.
 
+### CLI design
+
+Prefer **YAML + `--set path=value`**. Do not add dedicated `--param` flags that mirror config leaves.
+
+| Tier | Override surface |
+| --- | --- |
+| **Semantic** (`planning.*`, `limits.*`, `agent_context.*`, `run.*`, …) | defaults → YAML → `--set` only |
+| **Presentation** (`observability.*`, `runtime.runs_dir`) | defaults → YAML → `--set` → explicit dedicated flag |
+
+`--set` is on `tdp run` and `tdp resume` only. Dedicated flags are for command routing (`--run`, `--until`), store bootstrap (`--runs-dir`), output mode (`--stream-json`), presentation toggles in `invocation.py` (`--log-level`, `--no-color`), or agent per-request args (`tdp agent … --depth`). Omitted presentation flags must not override YAML/`--set`.
+
+New config paths: `ALLOWED_OVERRIDE_PATHS`, `defaults.py`, `schema_docs.py`. Presentation paths under `observability.*` auto-join `RESUME_PRESENTATION_ALLOWLIST`; new presentation sections need `resume_policy.py` updates.
+
+```bash
+tdp run --config cfg.yaml --set planning.max_depth=5
+# not: tdp run --max-depth 5
+```
+
 ### CLI tests
 
 Use in-process `run_cli()` from `tests/conftest.py` — not `subprocess.run(["tdp", ...])`.
@@ -58,6 +77,9 @@ from tests.conftest import run_cli
 
 with patch("top_down_planning.cli.user.emit_message"):
     result = run_cli(["status", "--run", run_id, ...])
+
+# Config overrides — prefer --set in tests too
+result = run_cli(["run", "--config", str(config_path), "--set", "limits.planning.max_agent_turns=3"])
 ```
 
 ### Shared helpers
@@ -133,6 +155,9 @@ result = run_cli(["run", "--config", str(config_path)])
 
 ## Checklist
 
+- [ ] Semantic config via YAML + `--set` only; no mirrored `--param` flags
+- [ ] New paths in `ALLOWED_OVERRIDE_PATHS`, `defaults.py`, `schema_docs.py`
+- [ ] Presentation fields wired through `invocation.py` if dedicated flags added
 - [ ] No live Cursor CLI, agent subprocess, or network in unit tests
 - [ ] Provider orchestration uses `StubProvider.script_turn()` (or `fake_runner` for adapter tests)
 - [ ] Reused package test helpers where applicable

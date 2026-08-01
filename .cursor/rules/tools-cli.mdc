@@ -1,0 +1,76 @@
+---
+description: Tools CLI — prefer --set path=value; avoid redundant dedicated flags
+globs: "tools/**/src/**/*.{py,yaml,md}"
+alwaysApply: false
+---
+
+# Tools CLI Parameters
+
+Packages under `tools/` share a config-first CLI model (`core_tools.config.apply_cli_overrides`).
+
+## Two config tiers
+
+| Tier | Examples | Override surface |
+| --- | --- | --- |
+| **Semantic** (orchestration) | `planning.*`, `limits.*`, `agent_context.*`, `run.*`, `provider.*` | YAML + `--set` **only** — no mirrored `--param` flags |
+| **Presentation** (invocation) | `observability.*`, `runtime.runs_dir` | YAML + `--set`; optional dedicated flags/env for frequent toggles |
+
+Precedence:
+
+- **Semantic**: defaults → YAML → `--set`
+- **Presentation**: defaults → YAML → `--set` → explicit dedicated CLI flag (omitted flags do not override YAML/`--set`)
+
+`--set` is exposed on `tdp run` and `tdp resume` only.
+
+## Default: YAML + `--set`
+
+Do **not** add a dedicated flag per config leaf. Examples:
+
+```bash
+# GOOD
+tdp run --config cfg.yaml --set planning.max_depth=5
+tdp resume --run abc --config cfg.yaml --set limits.planning.max_agent_turns=20
+tdp run --config cfg.yaml --set observability.log_level=verbose
+
+# BAD — flags that duplicate config paths
+tdp run --max-depth 5 --max-agent-turns 20
+```
+
+When adding a configurable field:
+
+- Add defaults in `config/defaults.py`
+- Register the dotted path in `ALLOWED_OVERRIDE_PATHS`
+- Extend `schema_docs.py` / README; reject unknown keys
+- **Presentation** paths under `observability.*` are auto-included in `RESUME_PRESENTATION_ALLOWLIST`; new presentation sections need an update in `config/resume_policy.py`
+- **Semantic** limit paths under `limits.*` map to `RESUME_EXECUTION_POLICY_ALLOWLIST` (also derived)
+- Test with in-process `run_cli([..., "--set", "path=value"])`
+
+## When dedicated CLI flags are justified
+
+Add a separate argparse flag only when `--set` is insufficient or the knob is not a config leaf:
+
+| Category | Examples | Why not only `--set` |
+| --- | --- | --- |
+| Command routing | `--run`, `--config`, `--check`, `--view`, `--until` | Selects behavior/target, not config values |
+| Store bootstrap | `--runs-dir` | Resolved with env/config before store open (`TDP_RUNS_DIR`) |
+| Output mode | `--stream-json` | Invocation transport, stored in `invocation.json`, not semantic config |
+| Presentation toggles | `--log-level`, `--no-color`, `--no-agent-text` | Ergonomic overrides; wire in `invocation.py`, `default=None` |
+| Agent operation args | `tdp agent plan snapshot --depth N` | Per-request API parameters, not resolved-config overrides |
+
+Do not pass semantic config through argparse into `resolve_config` — use YAML or `--set`.
+
+Presentation fields live in resolved config for YAML/`--set` but are excluded from resume contract/execution digests; persist invocation choices via `invocation.py` / `invocation.json`.
+
+## Anti-patterns
+
+```python
+# BAD — flag per semantic config field
+parser.add_argument("--max-depth", type=int)
+
+# BAD — flag per presentation leaf when --set suffices
+parser.add_argument("--notify-progress", action="store_true")
+
+# GOOD — semantic via --set
+run_parser.add_argument("--set", action="append", metavar="PATH=VALUE", ...)
+# e.g. --set notifications.progress=true (after registering notifications.progress)
+```
