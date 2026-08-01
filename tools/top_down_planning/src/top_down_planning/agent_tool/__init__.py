@@ -1,4 +1,4 @@
-"""Structured agent tool service (proposal §17.3).
+"""Structured agent tool service.
 
 Exposes atomic domain operations to agents with revision checks and concise
 response shaping.
@@ -8,6 +8,8 @@ from top_down_planning.agent_tool.errors import (
     AgentToolError,
     CapabilityDeniedError,
     OperationError,
+    ProductionContextMutationError,
+    ProductionEvidenceIncompleteError,
     RequestError,
     RevisionConflictError,
 )
@@ -22,6 +24,8 @@ __all__ = [
     "CapabilityDeniedError",
     "OperationError",
     "PlanAgentService",
+    "ProductionContextMutationError",
+    "ProductionEvidenceIncompleteError",
     "ProductionAgentService",
     "RequestError",
     "ReviewAgentService",

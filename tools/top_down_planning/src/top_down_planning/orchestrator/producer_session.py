@@ -35,6 +35,23 @@ def build_producer_protocol_instructions() -> list[str]:
             "state advances only through persisted tdp agent commands."
         ),
         (
+            "Include every changed snapshot-bound artifact in each batch's "
+            "outputs before calling production apply. Git diff may help "
+            "discovery, but only declared output refs authorize snapshot drift."
+        ),
+        (
+            "When production apply reports production_evidence_incomplete, "
+            "add every listed workspace path to outputs and retry with the current "
+            "production_revision."
+        ),
+        (
+            "When production apply reports "
+            "production_context_mutation_unauthorized, revert or reconcile "
+            "unauthorized snapshot-bound context changes (skills, file or inline "
+            "guidance, and similar binding keys). Those paths cannot be "
+            "authorized through outputs."
+        ),
+        (
             "Emit batch_complete_signal after each recorded batch when more "
             "work remains. Submit completion with goal_met and "
             "goal_assessment when the output goal is met."

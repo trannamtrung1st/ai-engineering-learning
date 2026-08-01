@@ -43,8 +43,10 @@ def test_whole_plan_clear_path_requires_scope_review(tmp_path: Path) -> None:
     events = store.load_events(run_id)
     started = [event for event in events if event.get("type") == "reviewer_session_started"]
     resumed = [event for event in events if event.get("type") == "reviewer_session_resumed"]
+    ended = [event for event in events if event.get("type") == "reviewer_session_ended"]
     assert len(started) == 2
     assert len(resumed) == 0
+    assert len(ended) == 2
     assert any(event.get("type") == "whole_plan_scope_review_started" for event in events)
 
 
@@ -256,6 +258,8 @@ def test_whole_output_clear_path_requires_scope_review(tmp_path: Path) -> None:
     events = store.load_events(run_id)
     started = [event for event in events if event.get("type") == "reviewer_session_started"]
     resumed = [event for event in events if event.get("type") == "reviewer_session_resumed"]
+    ended = [event for event in events if event.get("type") == "reviewer_session_ended"]
     assert len(started) == 2
     assert len(resumed) == 0
+    assert len(ended) == 2
     assert any(event.get("type") == "whole_output_scope_review_started" for event in events)

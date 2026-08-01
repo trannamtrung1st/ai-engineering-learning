@@ -1,4 +1,4 @@
-"""CLI-discoverable schemas, examples, and agent help for ``tdp agent`` (proposal §8, §20)."""
+"""CLI-discoverable schemas, examples, and agent help for ``tdp agent``."""
 
 from __future__ import annotations
 
@@ -410,7 +410,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "config": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "TopDownPlanningConfig",
-        "description": "Resolved run configuration (proposal §14).",
+        "description": "Resolved run configuration.",
         "type": "object",
         "required": ["version", "project", "run", "agent_context", "planning", "review", "provider", "limits"],
         "properties": {
@@ -855,7 +855,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "`id`, `type`, and workspace `ref`; the service captures sha256, "
             "size, media_type, captured_at, and an immutable snapshot under "
             "artifacts/<snapshot-uuid>/<filename>. Evidence IDs are unique "
-            "across the full run history."
+            "across the full run history. When snapshot-bound workspace paths "
+            "drift, every changed workspace path must appear in this batch's "
+            "outputs; otherwise apply fails with production_evidence_incomplete "
+            "or production_context_mutation_unauthorized before production.json "
+            "is updated. Artifact capture runs only after snapshot validation "
+            "passes."
         ),
         "type": "object",
         "required": ["production_revision", "plan_items", "dispositions"],
@@ -1528,9 +1533,10 @@ configured guidance entries, resource path selection, skill paths, and the resol
 text/file digests via `context_snapshot_binding` (compact relative-path → bare SHA-256 hex
 maps; guidance remains a list of digest entries). Exclusions apply to resource collection
 only — skills and guidance stay bound. Direct file resources always bind; directory/glob
-discoveries are filtered. Production completion rebases the snapshot when drift is
-attributable to production evidence (same canonical relative paths as evidence `ref`);
-unauthorized drift blocks completion or resume. Resource paths and evidence refs must
+discoveries are filtered. Each `production apply` validates cumulative snapshot drift
+against the candidate batch outputs; production completion re-validates and rebases the
+snapshot when drift is attributable to production evidence (same canonical relative paths
+as evidence `ref`); unauthorized drift blocks apply retry, completion, or resume. Resource paths and evidence refs must
 resolve inside the workspace; escapes and absolute refs fail explicitly. Invalid
 persisted evidence refs fail rebase validation rather than masquerading as unauthorized
 drift. `.gitignore` is not inherited. Omitting
@@ -1552,13 +1558,13 @@ when paused or failed, otherwise null); `phase_action_id` (stable logical action
 the current provider step, or null). Paused stops use `category: operational` with
 `code` in `limit_exhausted`, `review_incomplete`, `provider_unavailable`,
 `provider_turn_failed`, `user_cancelled`, or `amendment_pending` (internal amendment
-checkpoint beyond proposal §5.1); failed stops use `category: invariant` with
+checkpoint); failed stops use `category: invariant` with
 `code` in `state_integrity_failure`, `evidence_integrity_failure`,
 `unsupported_phase_state`, `orchestrator_invariant_failure`, or
 `session_recovery_exhausted`. Each stop record includes `phase`, `message`, `role`
 (null when unset), and optional `details`.
 
-## Resume (proposal §9–§16)
+## Resume
 
 Paused runs resume through `prepare_resume()` (read-only) and
 `apply_resume_plan_atomically()` (config + status transition). The CLI wraps both:
@@ -1576,7 +1582,13 @@ current `phase_action_id` blocks resume until the action completes or the run fa
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
 The service captures content hashes and stores immutable snapshots under
 `artifacts/<snapshot-uuid>/<filename>` in the run store. Reusing an evidence ID
-across batches is rejected.
+across batches is rejected. When snapshot-bound paths drift during production,
+every changed path must be declared in the batch `outputs`; otherwise apply
+returns `production_evidence_incomplete` (workspace paths — add to outputs and
+retry) or `production_context_mutation_unauthorized` (skills, file or inline
+guidance, and similar non-output binding keys). Snapshot validation runs before artifact capture
+and before `production.json` is updated. Production completion re-validates the
+same authorization model before rebasing the context snapshot.
 
 ## Discoverability
 

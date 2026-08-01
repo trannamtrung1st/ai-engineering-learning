@@ -117,6 +117,6 @@ agent_context:
         )
     message = str(exc_info.value)
     assert "- src/other.py" in message
-    assert "src/feature.py" not in message.split("unauthorized workspace changes detected:")[-1]
+    assert "src/feature.py" not in message.split("unauthorized snapshot-bound changes detected:")[-1]
     assert "__pycache__" not in message
     assert ".pyc" not in message

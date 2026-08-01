@@ -1,4 +1,4 @@
-"""Audit events for provider session lifecycle (start/resume)."""
+"""Audit events for provider session lifecycle (start, resume, end)."""
 
 from __future__ import annotations
 
@@ -114,6 +114,51 @@ def emit_reviewer_session_resumed(
         **_session_model_fields(provider, session_id),
         **fields,
     )
+
+
+def _reviewer_session_is_active(provider: Provider, session_id: str) -> bool:
+    canonical_session_id = provider.canonical_session_id(session_id)
+    active_ids = {
+        str(session["session_id"])
+        for session in provider.list_active_sessions()
+    }
+    return canonical_session_id in active_ids or session_id in active_ids
+
+
+def end_reviewer_session_with_audit(
+    append_event: Callable[..., None],
+    provider: Provider,
+    *,
+    phase: str,
+    session_id: str,
+    **fields: Any,
+) -> str:
+    """Terminate a bounded reviewer session and record reviewer_session_ended.
+
+    Idempotent: when the session is already absent from the provider registry,
+    termination and the durable audit event are skipped.
+    """
+
+    canonical_session_id = provider.canonical_session_id(session_id)
+    if not _reviewer_session_is_active(provider, session_id):
+        return canonical_session_id
+
+    model_fields = _session_model_fields(provider, canonical_session_id)
+
+    try:
+        provider.terminate_session(canonical_session_id)
+    except Exception:
+        pass
+
+    append_event(
+        "reviewer_session_ended",
+        session_id=canonical_session_id,
+        role="reviewer",
+        phase=phase,
+        **model_fields,
+        **fields,
+    )
+    return canonical_session_id
 
 
 def resume_primary_session_with_audit(
@@ -290,6 +335,39 @@ def sync_reviewer_loop_session_id(
     store.save_review(run_id, updated.to_dict())
     _emit_reviewer_provider_id_bound(store, run_id, updated)
     return resolved
+
+
+def release_reviewer_session_after_decision(
+    append_event: Callable[..., None],
+    provider: Provider,
+    store: RunStore,
+    run_id: str,
+    *,
+    phase: str,
+    loop_id: str,
+    review_type: str,
+    session_id: str,
+) -> str | None:
+    """Return the review decision and release the reviewer session when terminal.
+
+    Releases only when ``review_decision_from_store`` returns a non-pending
+    decision (approved, changes_requested, etc.). Pending reviews keep the
+    session registered for follow-up turns.
+    """
+
+    from top_down_planning.orchestrator.provider_turns import review_decision_from_store
+
+    decision = review_decision_from_store(store, run_id, loop_id)
+    if decision is not None:
+        end_reviewer_session_with_audit(
+            append_event,
+            provider,
+            phase=phase,
+            session_id=session_id,
+            loop_id=loop_id,
+            review_type=review_type,
+        )
+    return decision
 
 
 def commit_reviewer_loop_provider_session(

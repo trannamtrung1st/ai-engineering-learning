@@ -25,16 +25,94 @@ from top_down_planning.config.snapshot_policy import (
 
 
 class UnauthorizedContextMutationError(ValueError):
-    """Production completion cannot rebase context snapshot for unexplained drift."""
+    """Snapshot-bound drift is not authorized by production evidence."""
 
     def __init__(
         self,
         message: str,
         *,
         unauthorized_paths: tuple[str, ...] = (),
+        changed_paths: tuple[str, ...] = (),
+        authorized_changed_paths: tuple[str, ...] = (),
     ) -> None:
         super().__init__(message)
         self.unauthorized_paths = unauthorized_paths
+        self.changed_paths = changed_paths
+        self.authorized_changed_paths = authorized_changed_paths
+
+
+def _skill_binding_keys(binding: dict[str, Any]) -> set[str]:
+    skills_raw = binding.get("skill_digests") or {}
+    if isinstance(skills_raw, dict):
+        return {str(path) for path in skills_raw}
+    return set()
+
+
+def _guidance_binding_keys(binding: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for entry in binding.get("guidance_digests") or []:
+        if not isinstance(entry, dict):
+            continue
+        key = _guidance_digest_key(entry)
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _resource_binding_keys(binding: dict[str, Any]) -> set[str]:
+    resources_raw = binding.get("resource_digests") or {}
+    if isinstance(resources_raw, dict):
+        return {str(path) for path in resources_raw}
+    return set()
+
+
+def is_evidence_authorizable_binding_key(
+    path: str,
+    *,
+    binding: dict[str, Any],
+    other_binding: dict[str, Any] | None = None,
+) -> bool:
+    """Return whether snapshot drift on ``path`` can be authorized via outputs.
+
+    Only resource-digest keys (workspace artifacts declared in agent resources)
+    are output-authorizable. Skill and guidance binding keys are not.
+    """
+
+    bindings = [binding]
+    if other_binding is not None:
+        bindings.append(other_binding)
+    for snapshot_binding in bindings:
+        if (
+            path in _skill_binding_keys(snapshot_binding)
+            or path in _guidance_binding_keys(snapshot_binding)
+        ):
+            return False
+    for snapshot_binding in bindings:
+        if path in _resource_binding_keys(snapshot_binding):
+            return True
+    return False
+
+
+def split_unauthorized_snapshot_paths(
+    unauthorized_paths: tuple[str, ...] | list[str],
+    *,
+    binding: dict[str, Any],
+    other_binding: dict[str, Any] | None = None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Partition unauthorized paths into evidence gaps vs context mutations."""
+
+    evidence_gaps: list[str] = []
+    context_mutations: list[str] = []
+    for path in unauthorized_paths:
+        if is_evidence_authorizable_binding_key(
+            path,
+            binding=binding,
+            other_binding=other_binding,
+        ):
+            evidence_gaps.append(path)
+        else:
+            context_mutations.append(path)
+    return tuple(evidence_gaps), tuple(context_mutations)
 
 
 class InvalidProductionEvidenceError(ValueError):
@@ -113,7 +191,7 @@ def authorized_production_workspace_paths(
     """Canonical relative paths attributable to persisted production evidence.
 
     Uses the same evidence-ref canonicalization as artifact capture so authorized
-    paths compare equal to snapshot binding keys (proposal §§8,10–11).
+    paths compare equal to snapshot resource binding keys.
     """
 
     authorized: set[str] = set()
@@ -191,17 +269,56 @@ def validate_production_snapshot_rebase(
         raise InvalidProductionEvidenceError(invalid_refs)
 
     authorized = authorized_production_workspace_paths(production, workspace=workspace)
+    authorized_changed = [path for path in changed_paths if path in authorized]
     unauthorized = [path for path in changed_paths if path not in authorized]
     if unauthorized:
         raise UnauthorizedContextMutationError(
             format_unauthorized_mutation_message(unauthorized),
             unauthorized_paths=tuple(unauthorized),
+            changed_paths=tuple(changed_paths),
+            authorized_changed_paths=tuple(authorized_changed),
         )
     return changed_paths
 
 
+def validate_run_production_snapshot_drift(
+    run: dict[str, Any],
+    config: dict[str, Any],
+    production: dict[str, Any],
+    *,
+    workspace: Path,
+    new_binding: dict[str, Any] | None = None,
+    new_snapshot_digest: str | None = None,
+) -> list[str] | None:
+    """Authorize cumulative production evidence for snapshot drift on a run.
+
+    Returns changed_paths when drift exists and is fully authorized.
+    Returns None when the stored context_snapshot digest is unchanged.
+
+    Callers that already materialized the candidate binding may pass
+    ``new_binding`` and ``new_snapshot_digest`` to avoid a second traversal.
+    """
+
+    old_binding = dict(run.get("context_snapshot_binding") or {})
+    digests = run.get("digests") or {}
+    stored_snapshot_digest = str(digests.get("context_snapshot") or "")
+    if new_binding is None or new_snapshot_digest is None:
+        new_binding, new_snapshot_digest = recompute_context_snapshot_binding(
+            config,
+            workspace=workspace,
+        )
+    if new_snapshot_digest == stored_snapshot_digest:
+        return None
+    return validate_production_snapshot_rebase(
+        old_binding,
+        new_binding,
+        production,
+        workspace=workspace,
+    )
+
+
 def short_path_for_observability(path: str) -> str:
-    """Return canonical relative path for audit events (already relative after §9)."""
+    """Return canonical relative path for audit events."""
 
     if path.startswith("guidance:inline:"):
         return _format_snapshot_drift_label(path)
@@ -230,7 +347,7 @@ def build_initial_context_snapshot_binding_with_diagnostics(
     *,
     workspace: Path,
 ) -> tuple[dict[str, Any], str, str, Any]:
-    """Like build_initial_context_snapshot_binding, also returning §14 diagnostics."""
+    """Like build_initial_context_snapshot_binding, also returning diagnostics."""
 
     validate_guidance_for_binding(config, workspace=workspace)
     binding, diagnostics = build_context_snapshot_payload_with_diagnostics(
@@ -275,7 +392,7 @@ def validate_resume_context_bindings(
     *,
     workspace: Path,
 ) -> str | None:
-    """Read-only resume guard for context_spec and context_snapshot drift (§21 test 14)."""
+    """Read-only resume guard for context_spec and context_snapshot drift."""
 
     digests = run.get("digests") or {}
     if not isinstance(digests, dict):
@@ -322,9 +439,12 @@ __all__ = [
     "build_initial_context_snapshot_binding_with_diagnostics",
     "diff_snapshot_binding_paths",
     "invalid_production_evidence_refs",
+    "is_evidence_authorizable_binding_key",
     "recompute_context_snapshot_binding",
     "recompute_context_snapshot_binding_with_diagnostics",
     "short_path_for_observability",
+    "split_unauthorized_snapshot_paths",
     "validate_production_snapshot_rebase",
+    "validate_run_production_snapshot_drift",
     "validate_resume_context_bindings",
 ]

@@ -38,11 +38,15 @@ from top_down_planning.config.context_digests import (
     recompute_context_snapshot_binding,
     recompute_context_snapshot_binding_with_diagnostics,
     short_path_for_observability,
+    split_unauthorized_snapshot_paths,
     validate_production_snapshot_rebase,
+    validate_run_production_snapshot_drift,
 )
 from top_down_planning.config.snapshot_diagnostics import (
     SnapshotDiagnostics,
     binding_payload_size_bytes,
+    format_apply_context_mutation_message,
+    format_apply_snapshot_evidence_message,
     format_unauthorized_mutation_message,
 )
 from top_down_planning.config.defaults import (
@@ -125,13 +129,17 @@ __all__ = [
     "authorized_production_workspace_paths",
     "diff_snapshot_binding_paths",
     "effective_exclude_patterns",
+    "format_apply_context_mutation_message",
+    "format_apply_snapshot_evidence_message",
     "format_unauthorized_mutation_message",
     "path_is_excluded",
     "recompute_context_snapshot_binding",
     "recompute_context_snapshot_binding_with_diagnostics",
     "short_path_for_observability",
+    "split_unauthorized_snapshot_paths",
     "validate_context_snapshot_binding",
     "validate_production_snapshot_rebase",
+    "validate_run_production_snapshot_drift",
     "compute_input_digest",
     "compute_output_goal_digest",
     "finalize_resolved_config",

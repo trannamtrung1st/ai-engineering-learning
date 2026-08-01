@@ -84,12 +84,12 @@ from top_down_planning.orchestrator.provider_turns import (
     build_planner_turn_recovery,
     build_reviewer_turn_recovery,
     consume_provider_turn_with_session_recovery,
-    review_decision_from_store,
 )
 from top_down_planning.orchestrator.session_events import (
     commit_reviewer_loop_provider_session,
     emit_reviewer_session_resumed,
     emit_reviewer_session_started,
+    release_reviewer_session_after_decision,
     resume_primary_session_with_audit,
     sync_persisted_session_id,
     sync_reviewer_loop_session_id,
@@ -670,7 +670,16 @@ class WholePlanReviewOrchestrator:
             loop_id,
             session_id,
         )
-        return review_decision_from_store(self._store, self._run_id, loop_id)
+        return release_reviewer_session_after_decision(
+            self._append_event,
+            self._provider,
+            self._store,
+            self._run_id,
+            phase=phase,
+            loop_id=loop_id,
+            review_type=loop.type,
+            session_id=session_id,
+        )
 
     def _resume_interrupted_planner_revision(self, loop: ReviewLoop) -> ReviewLoop:
         self._resume_planner_with_findings(loop)

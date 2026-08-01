@@ -1,7 +1,8 @@
-"""Agent production snapshot/apply/check service (proposal §10, §17.3)."""
+"""Agent production snapshot/apply/check service."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from pathlib import Path
@@ -9,13 +10,28 @@ from pathlib import Path
 from top_down_planning.agent_tool.artifacts import capture_output_artifact
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.config import planning_limits_from_config
-from top_down_planning.agent_tool.errors import RequestError, RevisionConflictError
+from top_down_planning.agent_tool.errors import (
+    ProductionContextMutationError,
+    ProductionEvidenceIncompleteError,
+    RequestError,
+    RevisionConflictError,
+)
 from top_down_planning.agent_tool.views import (
     build_hierarchy_snapshot,
     build_ready_view,
     validation_issues,
     validation_warnings,
 )
+from top_down_planning.config import (
+    InvalidProductionEvidenceError,
+    UnauthorizedContextMutationError,
+    format_apply_context_mutation_message,
+    format_apply_snapshot_evidence_message,
+    recompute_context_snapshot_binding,
+    split_unauthorized_snapshot_paths,
+    validate_run_production_snapshot_drift,
+)
+from top_down_planning.workspace import run_workspace
 from top_down_planning.domain.reviews import (
     OUTPUT_REVIEW_TYPES,
     ReviewLoop,
@@ -166,9 +182,17 @@ class ProductionAgentService:
         empty_output_reason = request.get("empty_output_reason")
         if empty_output_reason is not None:
             empty_output_reason = str(empty_output_reason).strip() or None
-        outputs = _parse_outputs(self._store, self._run_id, request.get("outputs") or [])
+        run = self._store.load_run(self._run_id)
+        workspace = run_workspace(run)
+        output_specs = _parse_output_specs(
+            self._store,
+            self._run_id,
+            request.get("outputs") or [],
+            workspace=workspace,
+        )
+        provisional_outputs = _provisional_outputs_from_specs(output_specs)
         contributions = _parse_contributions(request.get("contributions") or [])
-        _validate_contributions(outputs, contributions, plan_item_ids)
+        _validate_contributions(provisional_outputs, contributions, plan_item_ids)
 
         if evidence_revision:
             run = self._store.load_run(self._run_id)
@@ -224,7 +248,7 @@ class ProductionAgentService:
                 dispositions=disposition_records,
                 current_dispositions=current_dispositions,
                 revision_target_ids=revision_targets,
-                outputs=outputs,
+                outputs=provisional_outputs,
                 empty_output=empty_output,
                 empty_output_reason=empty_output_reason,
                 target_label=target_label,
@@ -258,22 +282,48 @@ class ProductionAgentService:
                 raise RequestError("; ".join(issues))
 
         batch_id = str(request.get("batch_id") or next_batch_id(production.get("batches") or []))
-        result = BatchResult(
-            outputs=outputs,
-            contributions=contributions,
-            dispositions=disposition_records,
-            summary=str(request.get("summary") or ""),
-            empty_output=empty_output,
-            empty_output_reason=empty_output_reason,
-            goal_assessment=str(request.get("goal_assessment") or ""),
-        )
         batch = ProductionBatch(
             id=batch_id,
             plan_items=[str(item_id) for item_id in plan_items],
             status="completed",
             agent_turns=int(request.get("agent_turns") or 1),
             intent=_optional_text(request.get("intent")),
-            result=result,
+            result=BatchResult(
+                outputs=[],
+                contributions=contributions,
+                dispositions=disposition_records,
+                summary=str(request.get("summary") or ""),
+                empty_output=empty_output,
+                empty_output_reason=empty_output_reason,
+                goal_assessment=str(request.get("goal_assessment") or ""),
+            ),
+        )
+
+        candidate = _build_apply_candidate(
+            production,
+            batch,
+            disposition_records,
+            output_specs,
+        )
+        if evidence_revision:
+            candidate["completion_claim"] = None
+        self._validate_apply_snapshot_evidence(candidate, current_revision=current_revision)
+        outputs = _capture_output_specs(self._store, self._run_id, workspace, output_specs)
+        batch = ProductionBatch(
+            id=batch_id,
+            plan_items=batch.plan_items,
+            status=batch.status,
+            agent_turns=batch.agent_turns,
+            intent=batch.intent,
+            result=BatchResult(
+                outputs=outputs,
+                contributions=contributions,
+                dispositions=disposition_records,
+                summary=str(request.get("summary") or ""),
+                empty_output=empty_output,
+                empty_output_reason=empty_output_reason,
+                goal_assessment=str(request.get("goal_assessment") or ""),
+            ),
         )
 
         updated = self._merge_batch(production, batch, disposition_records, outputs)
@@ -647,20 +697,160 @@ class ProductionAgentService:
         raw = production.get("dispositions") or {}
         return dict(raw)
 
+    def _validate_apply_snapshot_evidence(
+        self,
+        candidate_production: dict[str, Any],
+        *,
+        current_revision: int,
+    ) -> None:
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        workspace = run_workspace(run)
+        old_binding = dict(run.get("context_snapshot_binding") or {})
+        new_binding, new_snapshot_digest = recompute_context_snapshot_binding(
+            config,
+            workspace=workspace,
+        )
 
-def _parse_outputs(store: RunStore, run_id: str, raw_outputs: Any) -> list[OutputEvidence]:
+        try:
+            validate_run_production_snapshot_drift(
+                run,
+                config,
+                candidate_production,
+                workspace=workspace,
+                new_binding=new_binding,
+                new_snapshot_digest=new_snapshot_digest,
+            )
+        except UnauthorizedContextMutationError as exc:
+            drift_counts = _snapshot_drift_count_fields(exc)
+            evidence_gaps, context_mutations = split_unauthorized_snapshot_paths(
+                exc.unauthorized_paths,
+                binding=old_binding,
+                other_binding=new_binding,
+            )
+            if context_mutations:
+                raise ProductionContextMutationError(
+                    format_apply_context_mutation_message(
+                        list(context_mutations),
+                        production_revision=current_revision,
+                        evidence_gap_paths=list(evidence_gaps) or None,
+                    ),
+                    context_mutation_paths=context_mutations,
+                    production_revision=current_revision,
+                    unauthorized_changed_paths=exc.unauthorized_paths,
+                    evidence_gap_paths=evidence_gaps,
+                    **drift_counts,
+                ) from exc
+            raise ProductionEvidenceIncompleteError(
+                format_apply_snapshot_evidence_message(
+                    list(evidence_gaps),
+                    production_revision=current_revision,
+                ),
+                unauthorized_paths=evidence_gaps,
+                production_revision=current_revision,
+                **drift_counts,
+            ) from exc
+        except InvalidProductionEvidenceError as exc:
+            raise RequestError(str(exc)) from exc
+
+
+def _snapshot_drift_count_fields(
+    exc: UnauthorizedContextMutationError,
+) -> dict[str, int]:
+    changed = exc.changed_paths or exc.unauthorized_paths
+    authorized_changed = exc.authorized_changed_paths
+    return {
+        "changed_snapshot_paths": len(changed),
+        "authorized_changed_paths": len(authorized_changed),
+    }
+
+
+@dataclass(frozen=True)
+class OutputSpec:
+    id: str
+    type: str
+    ref: str
+
+
+def _provisional_outputs_from_specs(specs: list[OutputSpec]) -> list[OutputEvidence]:
+    return [
+        OutputEvidence(
+            id=spec.id,
+            type=spec.type,
+            ref=spec.ref,
+            sha256="0" * 64,
+            size=0,
+            media_type="application/octet-stream",
+            captured_at="",
+            snapshot_ref="",
+        )
+        for spec in specs
+    ]
+
+
+def _build_apply_candidate(
+    production: dict[str, Any],
+    batch: ProductionBatch,
+    disposition_records: dict[str, ItemDispositionRecord],
+    output_specs: list[OutputSpec],
+) -> dict[str, Any]:
+    expected_revision = int(production["revision"])
+    updated = dict(production)
+    updated["revision"] = expected_revision + 1
+
+    batch_dict = batch.to_dict()
+    result = dict(batch_dict.get("result") or {})
+    result["outputs"] = [
+        {"id": spec.id, "type": spec.type, "ref": spec.ref}
+        for spec in output_specs
+    ]
+    batch_dict["result"] = result
+
+    batches = list(updated.get("batches") or [])
+    batches.append(batch_dict)
+    updated["batches"] = batches
+
+    flat_dispositions = dict(updated.get("dispositions") or {})
+    flat_dispositions.update(disposition_map_from_records(disposition_records))
+    updated["dispositions"] = flat_dispositions
+
+    evidence = list(updated.get("output_evidence") or [])
+    for spec in output_specs:
+        evidence.append(
+            {
+                "id": spec.id,
+                "type": spec.type,
+                "ref": spec.ref,
+            }
+        )
+    updated["output_evidence"] = evidence
+    updated["output_revision"] = int(updated.get("output_revision") or 0) + 1
+    return updated
+
+
+def _parse_output_specs(
+    store: RunStore,
+    run_id: str,
+    raw_outputs: Any,
+    *,
+    workspace: Path,
+) -> list[OutputSpec]:
+    from top_down_planning.config.snapshot_policy import (
+        CanonicalPathError,
+        canonicalize_evidence_ref,
+    )
+
     if not isinstance(raw_outputs, list):
         raise RequestError("outputs must be a list")
-    run = store.load_run(run_id)
-    workspace = Path(str(run.get("workspace") or "")).resolve()
     production = store.load_production(run_id)
     existing_ids = {
         str(entry.get("id") or "")
         for entry in (production.get("output_evidence") or [])
         if entry.get("id")
     }
-    outputs: list[OutputEvidence] = []
+    specs: list[OutputSpec] = []
     seen_ids: set[str] = set()
+    workspace_root = workspace.resolve()
     for item in raw_outputs:
         if not isinstance(item, dict):
             raise RequestError("each output must be an object")
@@ -673,23 +863,51 @@ def _parse_outputs(store: RunStore, run_id: str, raw_outputs: Any) -> list[Outpu
         if evidence_id in seen_ids:
             raise RequestError(f"duplicate output id: {evidence_id}")
         seen_ids.add(evidence_id)
+        try:
+            canonical_ref = canonicalize_evidence_ref(ref, workspace=workspace_root)
+        except CanonicalPathError as exc:
+            raise RequestError(str(exc)) from exc
+        artifact_path = (workspace_root / canonical_ref).resolve()
+        if not artifact_path.is_relative_to(workspace_root):
+            raise RequestError(f"artifact ref escapes workspace: {ref!r}")
+        if not artifact_path.is_file():
+            raise RequestError(f"artifact ref does not exist: {ref!r}")
+        specs.append(
+            OutputSpec(
+                id=evidence_id,
+                type=str(item.get("type") or "artifact"),
+                ref=canonical_ref,
+            )
+        )
+    return specs
+
+
+def _capture_output_specs(
+    store: RunStore,
+    run_id: str,
+    workspace: Path,
+    specs: list[OutputSpec],
+) -> list[OutputEvidence]:
+    outputs: list[OutputEvidence] = []
+    for spec in specs:
         captured = capture_output_artifact(
             store,  # type: ignore[arg-type]
             run_id,
             workspace=workspace,
-            ref=ref,
+            ref=spec.ref,
         )
-        output = OutputEvidence(
-            id=evidence_id,
-            type=str(item.get("type") or "artifact"),
-            ref=str(captured["ref"]),
-            sha256=str(captured["sha256"]),
-            size=int(captured["size"]),
-            media_type=str(captured["media_type"]),
-            captured_at=str(captured["captured_at"]),
-            snapshot_ref=str(captured["snapshot_ref"]),
+        outputs.append(
+            OutputEvidence(
+                id=spec.id,
+                type=spec.type,
+                ref=str(captured["ref"]),
+                sha256=str(captured["sha256"]),
+                size=int(captured["size"]),
+                media_type=str(captured["media_type"]),
+                captured_at=str(captured["captured_at"]),
+                snapshot_ref=str(captured["snapshot_ref"]),
+            )
         )
-        outputs.append(output)
     return outputs
 
 

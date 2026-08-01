@@ -52,6 +52,12 @@ _SESSION_RESUME_EVENT_TYPES = frozenset(
     }
 )
 
+_SESSION_END_EVENT_TYPES = frozenset(
+    {
+        "reviewer_session_ended",
+    }
+)
+
 
 def session_lifecycle_event(
     *,
@@ -364,6 +370,27 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         }
         return session_lifecycle_event(
             category="session:resume",
+            role=role,
+            phase=phase,
+            session_id=session_id,
+            run_id=str(run_id) if isinstance(run_id, str) else None,
+            **extra,
+        )
+
+    if event_type in _SESSION_END_EVENT_TYPES:
+        session_id = fields.get("session_id")
+        role = fields.get("role")
+        phase = fields.get("phase")
+        if not all(isinstance(value, str) and value for value in (session_id, role, phase)):
+            return None
+        run_id = fields.get("run_id")
+        extra = {
+            k: v
+            for k, v in fields.items()
+            if k not in {"session_id", "role", "phase", "run_id"}
+        }
+        return session_lifecycle_event(
+            category="session:end",
             role=role,
             phase=phase,
             session_id=session_id,

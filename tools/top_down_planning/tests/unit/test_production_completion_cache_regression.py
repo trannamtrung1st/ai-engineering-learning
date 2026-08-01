@@ -192,7 +192,6 @@ def test_production_completion_fails_on_unauthorized_source_not_caches(
         done_events(signal="batch_complete", text="production turn"),
         mutate_store=lambda: (
             feature.write_text("v2-produced\n", encoding="utf-8"),
-            helper.write_text("helper-unauthorized\n", encoding="utf-8"),
             _cache_noise(feature.parent),
             apply_production(
                 store,
@@ -210,6 +209,7 @@ def test_production_completion_fails_on_unauthorized_source_not_caches(
                 ),
                 handler="apply",
             )(),
+            helper.write_text("helper-unauthorized\n", encoding="utf-8"),
             apply_production(
                 store,
                 run_id,
@@ -229,7 +229,7 @@ def test_production_completion_fails_on_unauthorized_source_not_caches(
     assert ".pytest_cache" not in reason
     assert ".pyc" not in reason
     # Authorized feature edit must not be reported as unauthorized.
-    unauthorized_section = reason.split("unauthorized workspace changes detected:")[-1]
+    unauthorized_section = reason.split("unauthorized snapshot-bound changes detected:")[-1]
     assert "src/feature.py" not in unauthorized_section
 
 
@@ -244,7 +244,6 @@ def test_production_completion_fails_on_unauthorized_deletion(tmp_path: Path) ->
         done_events(signal="batch_complete", text="production turn"),
         mutate_store=lambda: (
             feature.write_text("v2-produced\n", encoding="utf-8"),
-            helper.unlink(),
             apply_production(
                 store,
                 run_id,
@@ -261,6 +260,7 @@ def test_production_completion_fails_on_unauthorized_deletion(tmp_path: Path) ->
                 ),
                 handler="apply",
             )(),
+            helper.unlink(),
             apply_production(
                 store,
                 run_id,
@@ -288,7 +288,6 @@ def test_production_completion_fails_on_unauthorized_addition(tmp_path: Path) ->
         done_events(signal="batch_complete", text="production turn"),
         mutate_store=lambda: (
             feature.write_text("v2-produced\n", encoding="utf-8"),
-            (feature.parent / "extra.py").write_text("new\n", encoding="utf-8"),
             apply_production(
                 store,
                 run_id,
@@ -305,6 +304,7 @@ def test_production_completion_fails_on_unauthorized_addition(tmp_path: Path) ->
                 ),
                 handler="apply",
             )(),
+            (feature.parent / "extra.py").write_text("new\n", encoding="utf-8"),
             apply_production(
                 store,
                 run_id,

@@ -1,4 +1,4 @@
-"""Agent tool response errors (proposal §8, §17.3)."""
+"""Agent tool response errors."""
 
 from __future__ import annotations
 
@@ -87,3 +87,94 @@ class CapabilityDeniedError(AgentToolError):
 
 class OperationError(AgentToolError):
     code = "operation_error"
+
+
+class ProductionEvidenceIncompleteError(RequestError):
+    code = "production_evidence_incomplete"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        unauthorized_paths: tuple[str, ...],
+        production_revision: int,
+        changed_snapshot_paths: int | None = None,
+        authorized_changed_paths: int | None = None,
+        action: str | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            action=action
+            or (
+                "Include every changed snapshot-bound workspace path in outputs and retry "
+                f"with production_revision={production_revision}."
+            ),
+        )
+        self.unauthorized_paths = unauthorized_paths
+        self.production_revision = production_revision
+        self.retryable = True
+        self.changed_snapshot_paths = changed_snapshot_paths
+        self.authorized_changed_paths = authorized_changed_paths
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = super().to_dict()
+        payload["unauthorized_paths"] = list(self.unauthorized_paths)
+        payload["production_revision"] = self.production_revision
+        payload["retryable"] = self.retryable
+        if self.changed_snapshot_paths is not None:
+            payload["changed_snapshot_paths"] = self.changed_snapshot_paths
+        if self.authorized_changed_paths is not None:
+            payload["authorized_changed_paths"] = self.authorized_changed_paths
+        if self.changed_snapshot_paths is not None:
+            payload["unauthorized_changed_paths"] = list(self.unauthorized_paths)
+        return payload
+
+
+class ProductionContextMutationError(RequestError):
+    code = "production_context_mutation_unauthorized"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        context_mutation_paths: tuple[str, ...],
+        production_revision: int,
+        changed_snapshot_paths: int | None = None,
+        authorized_changed_paths: int | None = None,
+        unauthorized_changed_paths: tuple[str, ...] | None = None,
+        evidence_gap_paths: tuple[str, ...] | None = None,
+        action: str | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            action=action
+            or (
+                "Revert or reconcile unauthorized snapshot-bound context changes. "
+                "Skills, file or inline guidance, and similar binding keys cannot "
+                f"be authorized through production outputs (production_revision="
+                f"{production_revision})."
+            ),
+        )
+        self.context_mutation_paths = context_mutation_paths
+        self.production_revision = production_revision
+        self.retryable = False
+        self.changed_snapshot_paths = changed_snapshot_paths
+        self.authorized_changed_paths = authorized_changed_paths
+        self.unauthorized_changed_paths = (
+            unauthorized_changed_paths or context_mutation_paths
+        )
+        self.evidence_gap_paths = evidence_gap_paths or ()
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = super().to_dict()
+        payload["context_mutation_paths"] = list(self.context_mutation_paths)
+        payload["production_revision"] = self.production_revision
+        payload["retryable"] = self.retryable
+        if self.changed_snapshot_paths is not None:
+            payload["changed_snapshot_paths"] = self.changed_snapshot_paths
+        if self.authorized_changed_paths is not None:
+            payload["authorized_changed_paths"] = self.authorized_changed_paths
+        payload["unauthorized_changed_paths"] = list(self.unauthorized_changed_paths)
+        if self.evidence_gap_paths:
+            payload["evidence_gap_paths"] = list(self.evidence_gap_paths)
+        return payload

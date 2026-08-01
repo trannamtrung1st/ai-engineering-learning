@@ -14,10 +14,12 @@ from top_down_planning.config import (
     authorized_production_workspace_paths,
     build_context_snapshot_payload,
     canonicalize_evidence_ref,
+    compute_context_snapshot_digest_from_payload,
     diff_snapshot_binding_paths,
     recompute_context_snapshot_binding,
     resolve_config,
     validate_production_snapshot_rebase,
+    validate_run_production_snapshot_drift,
 )
 from top_down_planning.config.snapshot_policy import CanonicalPathError
 from top_down_planning.persistence import FileRunStore
@@ -101,6 +103,88 @@ def test_capture_output_artifact_stores_canonical_ref(tmp_path: Path) -> None:
             workspace=workspace,
             ref=str(target.resolve()),
         )
+
+
+def test_validate_run_production_snapshot_drift_returns_none_without_drift(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "ws"
+    src = workspace / "src"
+    src.mkdir(parents=True)
+    module = src / "feature.py"
+    module.write_text("v1\n", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  producer:
+    resources:
+      - src/
+""",
+        ),
+        cwd=workspace,
+    )
+    binding = build_context_snapshot_payload(config, workspace=workspace)
+    run = {
+        "context_snapshot_binding": binding,
+        "digests": {"context_snapshot": compute_context_snapshot_digest_from_payload(binding)},
+    }
+    production = {"output_evidence": [], "batches": []}
+
+    assert (
+        validate_run_production_snapshot_drift(
+            run,
+            config,
+            production,
+            workspace=workspace,
+        )
+        is None
+    )
+
+
+def test_validate_run_production_snapshot_drift_authorizes_evidence(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    src = workspace / "src"
+    src.mkdir(parents=True)
+    module = src / "feature.py"
+    module.write_text("v1\n", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  producer:
+    resources:
+      - src/
+""",
+        ),
+        cwd=workspace,
+    )
+    old_binding = build_context_snapshot_payload(config, workspace=workspace)
+    module.write_text("v2\n", encoding="utf-8")
+    run = {
+        "context_snapshot_binding": old_binding,
+        "digests": {
+            "context_snapshot": compute_context_snapshot_digest_from_payload(old_binding)
+        },
+    }
+    production = {
+        "output_evidence": [{"id": "o1", "ref": "src/feature.py"}],
+        "batches": [],
+    }
+
+    changed = validate_run_production_snapshot_drift(
+        run,
+        config,
+        production,
+        workspace=workspace,
+    )
+    assert changed == ["src/feature.py"]
 
 
 def test_cache_noise_does_not_block_authorized_rebase(tmp_path: Path) -> None:
