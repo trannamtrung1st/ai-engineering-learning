@@ -319,3 +319,34 @@ def validation_issues(validation: ValidationResult) -> list[dict[str, Any]]:
         for issue in validation.issues
         if issue.severity == "error"
     ]
+
+
+def build_run_status_view(
+    run: dict[str, Any],
+    *,
+    plan_revision: int | None = None,
+) -> dict[str, Any]:
+    """Agent-facing run status projection (proposal §8, §22)."""
+
+    digests = dict(run.get("digests") or {})
+    payload: dict[str, Any] = {
+        "id": run["id"],
+        "revision": run["revision"],
+        "schema_version": run.get("schema_version"),
+        "status": run.get("status"),
+        "phase": run.get("phase"),
+        "outcome": run.get("outcome"),
+        "phase_action_id": run.get("phase_action_id"),
+        "digests": {
+            "config_contract": digests.get("config_contract"),
+            "config_execution": digests.get("config_execution"),
+            "plan": digests.get("plan"),
+            "output": digests.get("output"),
+        },
+    }
+    if plan_revision is not None:
+        payload["plan_revision"] = plan_revision
+    stop = run.get("stop")
+    if isinstance(stop, dict):
+        payload["stop"] = dict(stop)
+    return payload

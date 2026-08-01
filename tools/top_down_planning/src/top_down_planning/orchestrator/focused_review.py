@@ -40,6 +40,8 @@ from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_loop,
     rotate_session_capability,
 )
+from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
+from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
 from top_down_planning.orchestrator.reviewer_session import (
     allocate_reviewer_session,
     build_reviewer_protocol_instructions,
@@ -47,18 +49,24 @@ from top_down_planning.orchestrator.reviewer_session import (
     deliver_reviewer_turn,
     resume_reviewer_session_with_package,
     reviewer_decision_missing_error,
+    reviewer_loop_provider_session_id,
 )
 from top_down_planning.orchestrator.mandatory_review_stages import (
     prepare_focused_verification_recheck,
     verification_recheck_request,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryPaused
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
+from top_down_planning.orchestrator.run_transitions import pause_for_limit_exhausted
 from top_down_planning.orchestrator.provider_turns import (
-    consume_provider_turn,
+    build_planner_turn_recovery,
+    build_producer_turn_recovery,
+    build_reviewer_turn_recovery,
+    consume_provider_turn_with_session_recovery,
     review_decision_from_store,
 )
 from top_down_planning.orchestrator.session_events import (
+    commit_reviewer_loop_provider_session,
     emit_reviewer_session_resumed,
     emit_reviewer_session_started,
     resume_primary_session_with_audit,
@@ -106,12 +114,13 @@ class FocusedReviewOrchestrator:
         max_revision_cycles = _focused_revision_limit(config, loop.type)
         loop, reviewer_turn_delivered = self._normalize_loop_for_resume(loop)
         deliver_on_existing_session = (
-            loop.reviewer_session_id is not None and not reviewer_turn_delivered
+            reviewer_loop_provider_session_id(loop) is not None
+            and not reviewer_turn_delivered
         )
 
         while True:
             if loop.status == "pending":
-                session_id = loop.reviewer_session_id
+                session_id = reviewer_loop_provider_session_id(loop)
                 phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
                 if session_id is None:
                     session_id, self._capability_token = self._start_reviewer_session(loop)
@@ -242,22 +251,40 @@ class FocusedReviewOrchestrator:
                         revision_cycles=revision_cycles,
                     )
                 )
-                self._append_event(
-                    "focused_review_failed",
+                phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
+                limit_name = "max_revision_cycles_per_loop"
+                message = (
+                    "focused review exceeded max_revision_cycles_per_loop "
+                    f"({max_revision_cycles})"
+                )
+                pause_for_limit_exhausted(
+                    self._store,
+                    self._run_id,
+                    phase=phase,
+                    message=message,
+                    limit=limit_name,
+                    consumed=revision_cycles,
+                    configured=max_revision_cycles,
+                    role="reviewer",
+                    revoke_phase=phase,
                     loop_id=loop.id,
                     review_type=loop.type,
-                    reason=(
-                        "focused review exceeded max_revision_cycles_per_loop "
-                        f"({max_revision_cycles})"
-                    ),
                 )
-                return self._result_from_loop(
-                    loop,
+                self._append_event(
+                    "focused_review_limit_exceeded",
+                    loop_id=loop.id,
+                    review_type=loop.type,
+                    reason=message,
+                )
+                run = self._store.load_run(self._run_id)
+                revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
+                return FocusedReviewResult(
                     ok=False,
-                    reason=(
-                        "focused review exceeded max_revision_cycles_per_loop "
-                        f"({max_revision_cycles})"
-                    ),
+                    loop_id=loop.id,
+                    status=str(run.get("status") or "paused"),
+                    reviewer_session_id=reviewer_loop_provider_session_id(loop),
+                    revision_cycles=loop.revision_cycles,
+                    reason=message,
                 )
 
             self._resume_primary_with_findings(loop)
@@ -316,11 +343,11 @@ class FocusedReviewOrchestrator:
     def _resume_primary_advisory_handoff(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
         if loop.type == "focused_plan":
-            session_id = _primary_planner_session_id(run)
+            session_id = primary_planner_provider_session_id(run)
             phase = PLANNING
             role = "planner"
         else:
-            session_id = _primary_producer_session_id(run)
+            session_id = primary_producer_provider_session_id(run)
             phase = PRODUCTION
             role = "producer"
 
@@ -410,8 +437,8 @@ class FocusedReviewOrchestrator:
             review_type=loop.type,
             scope=loop.scope,
         )
-        updated = replace(loop, reviewer_session_id=session_id)
-        self._persist_loop(updated)
+        updated = loop.with_reviewer_provider_session_id(session_id)
+        commit_reviewer_loop_provider_session(self._store, self._run_id, updated)
         capability_token = deliver_reviewer_turn(
             self._provider,
             self._store,
@@ -424,11 +451,44 @@ class FocusedReviewOrchestrator:
         return session_id, capability_token
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
-        consume_provider_turn(
-            self._provider,
-            session_id,
-            allowed_signals=_NO_COMPLETION_SIGNALS,
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
+        package = build_focused_review_package(
+            self._run_id,
+            run,
+            config,
+            loop,
+            plan=self._store.load_plan_model(self._run_id),
+            production=(
+                self._store.load_production(self._run_id)
+                if loop.type == "focused_output"
+                else None
+            ),
         )
+        role_context = resolve_role_session_context(config, run, "reviewer")
+        try:
+            turn_outcome = consume_provider_turn_with_session_recovery(
+                self._store,
+                self._run_id,
+                self._provider,
+                session_id,
+                allowed_signals=_NO_COMPLETION_SIGNALS,
+                recovery=build_reviewer_turn_recovery(
+                    self._store,
+                    self._run_id,
+                    loop_id=loop_id,
+                    phase=phase,
+                    expected_next_action="continue reviewer turn",
+                    append_event=self._append_event,
+                    model=role_context.model,
+                    review_package=package,
+                ),
+            )
+        except SessionRecoveryPaused as exc:
+            raise ProviderRunError(str(exc)) from exc
+        session_id = turn_outcome.session_id
         sync_reviewer_loop_session_id(
             self._provider,
             self._store,
@@ -441,11 +501,11 @@ class FocusedReviewOrchestrator:
     def _resume_primary_with_findings(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
         if loop.type == "focused_plan":
-            session_id = _primary_planner_session_id(run)
+            session_id = primary_planner_provider_session_id(run)
             phase = PLANNING
             role = "planner"
         else:
-            session_id = _primary_producer_session_id(run)
+            session_id = primary_producer_provider_session_id(run)
             phase = PRODUCTION
             role = "producer"
 
@@ -509,12 +569,39 @@ class FocusedReviewOrchestrator:
             self._sync_output_digest()
 
     def _consume_primary_turn(self, session_id: str, review_type: str) -> None:
-        del review_type
-        consume_provider_turn(
-            self._provider,
-            session_id,
-            allowed_signals=_NO_COMPLETION_SIGNALS,
-        )
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        if review_type == "focused_plan":
+            role_context = resolve_role_session_context(config, run, "planner")
+            recovery = build_planner_turn_recovery(
+                self._store,
+                self._run_id,
+                phase=PLANNING,
+                expected_next_action="address focused plan findings",
+                append_event=self._append_event,
+                model=role_context.model,
+            )
+        else:
+            role_context = resolve_role_session_context(config, run, "producer")
+            recovery = build_producer_turn_recovery(
+                self._store,
+                self._run_id,
+                phase=PRODUCTION,
+                expected_next_action="address focused output findings",
+                append_event=self._append_event,
+                model=role_context.model,
+            )
+        try:
+            consume_provider_turn_with_session_recovery(
+                self._store,
+                self._run_id,
+                self._provider,
+                session_id,
+                allowed_signals=_NO_COMPLETION_SIGNALS,
+                recovery=recovery,
+            )
+        except SessionRecoveryPaused as exc:
+            raise ProviderRunError(str(exc)) from exc
 
     def _sync_output_digest(self) -> None:
         run = self._store.load_run(self._run_id)
@@ -529,7 +616,7 @@ class FocusedReviewOrchestrator:
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         current_revision = _current_target_revision(self._store, self._run_id, loop.type)
-        session_id = loop.reviewer_session_id
+        session_id = reviewer_loop_provider_session_id(loop)
         if session_id is None:
             raise ProviderRunError("reviewer session is missing for recheck")
 
@@ -537,7 +624,7 @@ class FocusedReviewOrchestrator:
             loop,
             target_revision=current_revision,
         )
-        updated = replace(updated, reviewer_session_id=session_id)
+        updated = updated.with_reviewer_provider_session_id(session_id)
         self._persist_loop(updated)
         phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
         run = self._store.load_run(self._run_id)
@@ -593,7 +680,7 @@ class FocusedReviewOrchestrator:
             ok=ok,
             loop_id=loop.id,
             status=loop.status,
-            reviewer_session_id=loop.reviewer_session_id,
+            reviewer_session_id=reviewer_loop_provider_session_id(loop),
             revision_cycles=loop.revision_cycles,
             reason=reason,
         )
@@ -695,18 +782,3 @@ def _current_target_revision(store: RunStore, run_id: str, review_type: str) -> 
         return int(store.load_production(run_id)["output_revision"])
     return int(store.load_plan(run_id)["revision"])
 
-
-def _primary_planner_session_id(run: dict[str, Any]) -> str | None:
-    sessions = run.get("sessions") or {}
-    session_id = sessions.get("primary_planner_session_id")
-    if session_id is None:
-        return None
-    return str(session_id)
-
-
-def _primary_producer_session_id(run: dict[str, Any]) -> str | None:
-    sessions = run.get("sessions") or {}
-    session_id = sessions.get("primary_producer_session_id")
-    if session_id is None:
-        return None
-    return str(session_id)

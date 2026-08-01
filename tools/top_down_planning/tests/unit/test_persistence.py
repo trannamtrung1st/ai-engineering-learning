@@ -10,10 +10,17 @@ import pytest
 from core_tools.persistence import atomic_write_json, digest_text
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import (
+    CURRENT_RUN_SCHEMA_VERSION,
     FileRunStore,
     PersistenceError,
     StoreRevisionConflictError,
-    compute_config_digest,
+    UNSUPPORTED_RUN_SCHEMA_MESSAGE,
+    UnsupportedRunSchemaVersionError,
+    validate_run_schema_version,
+)
+from top_down_planning.persistence.digests import (
+    compute_config_contract_digest,
+    compute_config_execution_digest,
     compute_plan_digest,
 )
 from tests.helpers import minimal_invocation
@@ -71,7 +78,9 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
     assert run["revision"] == 0
     assert run["status"] == "running"
     assert run["workspace"] == str(store.root)
-    assert run["digests"]["config"] == compute_config_digest(config)
+    assert run["digests"]["config_contract"] == compute_config_contract_digest(config)
+    assert run["digests"]["config_execution"] == compute_config_execution_digest(config)
+    assert "config" not in run["digests"]
     assert run["digests"]["plan"] == compute_plan_digest(plan)
     assert (run_dir / "resolved-config.yaml").exists()
     assert (run_dir / "run.json").exists()

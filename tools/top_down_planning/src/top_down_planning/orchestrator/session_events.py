@@ -5,7 +5,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.session_bindings import (
+    is_transient_provider_session_id,
+)
+from top_down_planning.orchestrator.session_lineage import emit_session_provider_id_bound
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.session_bindings import (
+    get_primary_binding,
+    update_primary_binding,
+)
 from core_tools.provider import Provider
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
@@ -144,6 +153,54 @@ def send_reviewer_session_with_audit(
     )
 
 
+def commit_primary_provider_session_binding(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    provider_session_id: str,
+    provider: str | None = "cursor",
+    phase_action_id: str | None = None,
+) -> dict[str, Any]:
+    """Persist a durable primary provider session id and emit session_provider_id_bound."""
+
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    phase = str(run.get("phase") or "")
+    existing = get_primary_binding(run, role)
+    if (
+        existing is not None
+        and existing.provider_session_id == provider_session_id
+        and existing.state == "bound"
+    ):
+        return run
+
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["sessions"] = update_primary_binding(
+        dict(run.get("sessions") or {}),
+        role=role,
+        provider_session_id=provider_session_id,
+        provider=provider,
+    )
+    store.save_run(run_id, run, expected_revision)
+    saved = store.load_run(run_id)
+    binding = get_primary_binding(saved, role)
+    if binding is not None and binding.provider_session_id:
+        emit_session_provider_id_bound(
+            store,
+            run_id,
+            phase=phase,
+            role=role,
+            session_instance_id=binding.session_instance_id,
+            generation=binding.generation,
+            provider_session_id=binding.provider_session_id,
+            provider=binding.provider,
+            phase_action_id=phase_action_id,
+        )
+    return store.load_run(run_id)
+
+
 def sync_persisted_session_id(
     provider: Provider,
     store: RunStore,
@@ -155,18 +212,55 @@ def sync_persisted_session_id(
     """Persist the provider-native session id when it differs from the stored ref."""
 
     resolved = provider.canonical_session_id(session_id)
+    role = "planner" if field == "primary_planner_session_id" else "producer"
     run = store.load_run(run_id)
     sessions = dict(run.get("sessions") or {})
-    if sessions.get(field) == resolved:
+    current = sessions.get(field) if field in sessions else None
+    slot_key = "primary_planner" if role == "planner" else "primary_producer"
+    slot_payload = sessions.get(slot_key)
+    if isinstance(slot_payload, dict):
+        current = slot_payload.get("provider_session_id")
+    if current == resolved:
+        return resolved
+    if is_transient_provider_session_id(resolved):
         return resolved
 
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    sessions[field] = resolved
-    run["sessions"] = sessions
-    store.save_run(run_id, run, expected_revision)
+    commit_primary_provider_session_binding(
+        store,
+        run_id,
+        role=role,
+        provider_session_id=resolved,
+        provider="cursor",
+    )
     return resolved
+
+
+def _emit_reviewer_provider_id_bound(
+    store: RunStore,
+    run_id: str,
+    loop: ReviewLoop,
+    *,
+    phase_action_id: str | None = None,
+) -> None:
+    binding = loop.reviewer_binding
+    if binding is None or not binding.provider_session_id:
+        return
+    if is_transient_provider_session_id(binding.provider_session_id):
+        return
+    run = store.load_run(run_id)
+    phase = str(run.get("phase") or "")
+    emit_session_provider_id_bound(
+        store,
+        run_id,
+        phase=phase,
+        role="reviewer",
+        session_instance_id=binding.session_instance_id,
+        generation=binding.generation,
+        provider_session_id=binding.provider_session_id,
+        provider=binding.provider,
+        loop_id=loop.id,
+        phase_action_id=phase_action_id,
+    )
 
 
 def sync_reviewer_loop_session_id(
@@ -179,10 +273,37 @@ def sync_reviewer_loop_session_id(
     """Persist the provider canonical reviewer session id on the review loop record."""
 
     resolved = provider.canonical_session_id(session_id)
-    if resolved == session_id:
+    if resolved == session_id and is_transient_provider_session_id(resolved):
+        return resolved
+    if is_transient_provider_session_id(resolved):
         return resolved
 
     review = dict(store.load_review(run_id, loop_id))
-    review["reviewer_session_id"] = resolved
-    store.save_review(run_id, review)
+    loop = ReviewLoop.from_dict(review)
+    prior_provider_id = loop.reviewer_binding.provider_session_id if loop.reviewer_binding else None
+    if prior_provider_id == resolved:
+        return resolved
+
+    updated = loop.with_reviewer_provider_session_id(resolved, provider="cursor")
+    store.save_review(run_id, updated.to_dict())
+    _emit_reviewer_provider_id_bound(store, run_id, updated)
     return resolved
+
+
+def commit_reviewer_loop_provider_session(
+    store: RunStore,
+    run_id: str,
+    loop: ReviewLoop,
+    *,
+    phase_action_id: str | None = None,
+) -> ReviewLoop:
+    """Persist reviewer loop binding and emit session_provider_id_bound when durable."""
+
+    store.save_review(run_id, loop.to_dict())
+    _emit_reviewer_provider_id_bound(
+        store,
+        run_id,
+        loop,
+        phase_action_id=phase_action_id,
+    )
+    return loop

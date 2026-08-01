@@ -14,7 +14,7 @@ from top_down_planning.domain.validators import (
     build_plan_approval_validation_context,
 )
 from top_down_planning.workspace import run_workspace
-from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
+from top_down_planning.persistence.digests import compute_config_contract_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 
 
@@ -31,7 +31,7 @@ def compute_plan_approval_actual_digests(
     run_digests = run.get("digests") or {}
     return (
         compute_plan_digest(plan),
-        compute_config_digest(config),
+        compute_config_contract_digest(config),
         compute_input_digest(config, base_dir=base_dir),
         compute_output_goal_digest(config, base_dir=base_dir),
         run_digests.get("context_spec"),
@@ -91,7 +91,7 @@ def _approval_hooks_not_checked_context(
             expected_input_digest=None,
             output_goal_digest=digests.get("output_goal"),
             expected_output_goal_digest=None,
-            config_digest=compute_config_digest(store.load_resolved_config(run_id)),
+            config_digest=compute_config_contract_digest(store.load_resolved_config(run_id)),
             expected_config_digest=None,
             context_spec_digest=digests.get("context_spec"),
             expected_context_spec_digest=None,

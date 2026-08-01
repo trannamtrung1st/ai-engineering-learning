@@ -441,6 +441,7 @@ def grant_capability(
     """Issue a session capability token and return its serialized value."""
 
     from top_down_planning.orchestrator.capability import issue_session_capability
+    from top_down_planning.persistence.session_bindings import update_primary_binding
 
     if phase is None:
         phase = PLANNING if role == "planner" else PRODUCTION
@@ -452,25 +453,35 @@ def grant_capability(
         if session_id is not None:
             resolved_session_id = session_id
         else:
-            resolved_session_id = sessions.get("primary_planner_session_id") or "test-planner-session"
+            resolved_session_id = (
+                sessions.get("primary_planner_session_id") or "test-planner-session"
+            )
         if sessions.get("primary_planner_session_id") is None:
-            sessions["primary_planner_session_id"] = resolved_session_id
-            run = dict(run)
-            run["sessions"] = sessions
             expected = int(run["revision"])
+            run = dict(run)
             run["revision"] = expected + 1
+            run["sessions"] = update_primary_binding(
+                sessions,
+                role="planner",
+                provider_session_id=resolved_session_id,
+            )
             store.save_run(run_id, run, expected)
     elif role == "producer":
         if session_id is not None:
             resolved_session_id = session_id
         else:
-            resolved_session_id = sessions.get("primary_producer_session_id") or "test-producer-session"
+            resolved_session_id = (
+                sessions.get("primary_producer_session_id") or "test-producer-session"
+            )
         if sessions.get("primary_producer_session_id") is None:
-            sessions["primary_producer_session_id"] = resolved_session_id
-            run = dict(run)
-            run["sessions"] = sessions
             expected = int(run["revision"])
+            run = dict(run)
             run["revision"] = expected + 1
+            run["sessions"] = update_primary_binding(
+                sessions,
+                role="producer",
+                provider_session_id=resolved_session_id,
+            )
             store.save_run(run_id, run, expected)
     else:
         resolved_session_id = session_id or "test-reviewer-session"
@@ -479,10 +490,15 @@ def grant_capability(
     if session_kind == "reviewer" or role == "reviewer":
         resolved_loop_id = loop_id or "review-test-loop"
         try:
-            loop = dict(store.load_review(run_id, resolved_loop_id))
-            if loop.get("reviewer_session_id") != resolved_session_id:
-                loop["reviewer_session_id"] = resolved_session_id
-                store.save_review(run_id, loop)
+            from top_down_planning.domain.reviews import ReviewLoop
+
+            loop = ReviewLoop.from_dict(store.load_review(run_id, resolved_loop_id))
+            if loop.reviewer_session_id != resolved_session_id:
+                updated = loop.with_reviewer_provider_session_id(
+                    resolved_session_id,
+                    allow_transient=resolved_session_id.startswith("cursor-pending-"),
+                )
+                store.save_review(run_id, updated.to_dict())
         except Exception:
             pass
 

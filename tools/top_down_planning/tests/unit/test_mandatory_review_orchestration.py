@@ -227,8 +227,11 @@ def test_whole_plan_scope_review_round_limit_rejects(tmp_path: Path) -> None:
     result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is False
-    assert result.outcome == "rejected"
+    assert result.status == "paused"
+    assert result.outcome is None
     assert "max_scope_review_rounds" in (result.reason or "")
+    run = store.load_run(run_id)
+    assert run.get("stop", {}).get("code") == "limit_exhausted"
     review = store.load_review(run_id, "review-whole-plan-01")
     assert review.get("lifecycle_status") == "limit_reached"
 

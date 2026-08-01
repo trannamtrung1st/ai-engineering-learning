@@ -116,11 +116,28 @@ def build_parser() -> argparse.ArgumentParser:
             "cwd) when locating the store."
         ),
     )
+    resume_parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="PATH=VALUE",
+        help="Resolved-config override for resume candidate (repeatable; proposal §16).",
+    )
+    resume_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Build and print the resume plan without mutating the run (proposal §16.3).",
+    )
     _add_operational_flags(resume_parser)
     resume_parser.add_argument(
         "--until",
         choices=["plan", "validated", "completed"],
-        help="Continue until the target lifecycle milestone (default: one phase step).",
+        help=(
+            "Continue until the target lifecycle milestone. "
+            "Omit to advance one orchestrator step (default). "
+            "Targets: plan (past planning), validated (plan_validated+), "
+            "completed (output_validated or terminal completed)."
+        ),
     )
 
     status_parser = subparsers.add_parser("status", help="Show run status.")

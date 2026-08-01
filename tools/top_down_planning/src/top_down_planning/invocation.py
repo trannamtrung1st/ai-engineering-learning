@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from argparse import Namespace
 from dataclasses import dataclass
 from typing import Any
@@ -118,6 +119,44 @@ def invocation_options_from_args(
         until=until,
         command=getattr(args, "command", None),
     )
+
+
+def merge_invocation_metadata(
+    stored: dict[str, Any],
+    candidate: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge resume candidate invocation metadata over stored values."""
+
+    merged = copy.deepcopy(stored)
+    for key, value in candidate.items():
+        if key == "observability" and isinstance(value, dict):
+            observability = dict(merged.get("observability") or {})
+            observability.update(value)
+            merged["observability"] = observability
+            continue
+        if key == "runs_dir" and isinstance(value, dict):
+            runs_dir = dict(merged.get("runs_dir") or {})
+            runs_dir.update(value)
+            merged["runs_dir"] = runs_dir
+            continue
+        merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def sync_invocation_observability_from_config(
+    invocation: dict[str, Any],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Mirror resolved observability settings into invocation metadata."""
+
+    updated = copy.deepcopy(invocation)
+    observability_cfg = config.get("observability")
+    if not isinstance(observability_cfg, dict):
+        return updated
+    observability = dict(updated.get("observability") or {})
+    observability.update(observability_cfg)
+    updated["observability"] = observability
+    return updated
 
 
 def invocation_to_dict(invocation: InvocationOptions) -> dict[str, Any]:

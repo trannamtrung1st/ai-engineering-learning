@@ -71,6 +71,30 @@ def capture_output_artifact(
     }
 
 
+class EvidenceIntegrityError(RequestError):
+    """Production evidence no longer matches persisted snapshot hashes."""
+
+
+def validate_production_evidence_integrity(
+    store: RunStore,
+    run_id: str,
+    production: dict[str, Any],
+) -> None:
+    """Verify every recorded output-evidence snapshot still matches its hash."""
+
+    evidence_items = production.get("output_evidence") or []
+    if not isinstance(evidence_items, list):
+        raise EvidenceIntegrityError("production output_evidence must be a list")
+
+    for entry in evidence_items:
+        if not isinstance(entry, dict):
+            raise EvidenceIntegrityError("output evidence entry must be a mapping")
+        try:
+            verify_evidence_snapshot(store, run_id, entry)
+        except RequestError as exc:
+            raise EvidenceIntegrityError(str(exc)) from exc
+
+
 def verify_evidence_snapshot(
     store: RunStore,
     run_id: str,

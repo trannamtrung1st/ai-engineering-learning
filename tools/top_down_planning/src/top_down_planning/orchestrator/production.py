@@ -25,6 +25,7 @@ from top_down_planning.orchestrator.producer_session import (
     PRODUCER_BATCH_COMPLETE_SIGNAL,
     build_producer_protocol_instructions,
     build_producer_tool_instructions,
+    primary_producer_provider_session_id,
 )
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
@@ -36,19 +37,25 @@ from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_phase,
     rotate_session_capability,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryExhausted, SessionRecoveryPaused
 from top_down_planning.orchestrator.resume import short_digest_for_observability
 from top_down_planning.orchestrator.phases import (
     PLAN_VALIDATED,
     PRODUCTION,
     WHOLE_OUTPUT_REVIEW,
 )
+from top_down_planning.orchestrator.run_transitions import (
+    complete_run_with_outcome,
+    pause_for_limit_exhausted,
+)
 from top_down_planning.orchestrator.provider_turns import (
-    consume_provider_turn,
+    build_producer_turn_recovery,
+    consume_provider_turn_with_session_recovery,
     run_pending_focused_review,
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.orchestrator.session_events import (
+    commit_primary_provider_session_binding,
     emit_primary_session_started,
     resume_primary_session_with_audit,
     sync_persisted_session_id,
@@ -105,7 +112,7 @@ class ProductionPhaseOrchestrator:
         loop_limits = _production_loop_limits(config)
         role_context = resolve_role_session_context(config, run, "producer")
 
-        session_id = _primary_producer_session_id(run)
+        session_id = primary_producer_provider_session_id(run)
         if session_id is None:
             run_record = self._store.load_run(self._run_id)
             manifest = build_producer_context_manifest(
@@ -192,12 +199,14 @@ class ProductionPhaseOrchestrator:
 
             batch_count = self._batch_count()
             if batch_count >= loop_limits["max_batches"]:
-                return self._terminate(
-                    "blocked",
-                    (
+                return self._pause_for_limit(
+                    limit="max_batches",
+                    message=(
                         "production exceeded max_batches "
                         f"({loop_limits['max_batches']})"
                     ),
+                    consumed=batch_count,
+                    configured=int(loop_limits["max_batches"]),
                     session_id=session_id,
                 )
 
@@ -208,11 +217,51 @@ class ProductionPhaseOrchestrator:
                 review_type="focused_output",
             )
 
-            turn_signal = consume_provider_turn(
-                self._provider,
-                session_id,
-                allowed_signals=_COMPLETION_SIGNALS,
-            )
+            try:
+                turn_outcome = consume_provider_turn_with_session_recovery(
+                    self._store,
+                    self._run_id,
+                    self._provider,
+                    session_id,
+                    allowed_signals=_COMPLETION_SIGNALS,
+                    recovery=build_producer_turn_recovery(
+                        self._store,
+                        self._run_id,
+                        phase=PRODUCTION,
+                        expected_next_action="continue production turn",
+                        append_event=self._append_event,
+                        model=role_context.model,
+                    ),
+                )
+            except SessionRecoveryPaused as exc:
+                return self._result_from_run(
+                    self._store.load_run(self._run_id),
+                    ok=False,
+                    session_id=session_id,
+                    reason=str(exc),
+                )
+            except SessionRecoveryExhausted as exc:
+                return self._result_from_run(
+                    self._store.load_run(self._run_id),
+                    ok=False,
+                    session_id=session_id,
+                    reason=str(exc),
+                )
+            session_id = turn_outcome.session_id
+            turn_signal = turn_outcome.signal
+            if turn_outcome.replaced:
+                run = self._store.load_run(self._run_id)
+                phase = str(run.get("phase") or PRODUCTION)
+                self._capability_token = rotate_session_capability(
+                    self._store,
+                    self._run_id,
+                    current_token=self._capability_token,
+                    role="producer",
+                    phase=phase,
+                    session_id=session_id,
+                    session_kind="primary",
+                )
+                bind_provider_capability(self._provider, self._capability_token)
             session_id = sync_persisted_session_id(
                 self._provider,
                 self._store,
@@ -226,7 +275,7 @@ class ProductionPhaseOrchestrator:
                 self._provider,
                 review_type="focused_output",
             )
-            agent_turns = 1
+            agent_turns = 1 if turn_outcome.domain_budget_committed else 0
             batch_agent_turns += agent_turns
             _persist_batch_agent_turns(self._store, self._run_id, batch_agent_turns)
 
@@ -236,12 +285,14 @@ class ProductionPhaseOrchestrator:
                 continue
 
             if batch_agent_turns > loop_limits["max_agent_turns_per_batch"]:
-                return self._terminate(
-                    "blocked",
-                    (
+                return self._pause_for_limit(
+                    limit="max_agent_turns_per_batch",
+                    message=(
                         "production exceeded max_agent_turns_per_batch "
                         f"({loop_limits['max_agent_turns_per_batch']})"
                     ),
+                    consumed=batch_agent_turns,
+                    configured=int(loop_limits["max_agent_turns_per_batch"]),
                     session_id=session_id,
                 )
 
@@ -385,6 +436,36 @@ class ProductionPhaseOrchestrator:
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, session_id=session_id)
 
+    def _pause_for_limit(
+        self,
+        *,
+        limit: str,
+        message: str,
+        consumed: int,
+        configured: int,
+        session_id: str | None,
+    ) -> ProductionPhaseResult:
+        pause_for_limit_exhausted(
+            self._store,
+            self._run_id,
+            phase=PRODUCTION,
+            message=message,
+            limit=limit,
+            consumed=consumed,
+            configured=configured,
+            role="producer",
+            revoke_phase=PRODUCTION,
+            session_id=session_id,
+        )
+        self._append_event(
+            "production_limit_exceeded",
+            limit=limit,
+            message=message,
+            session_id=session_id,
+        )
+        run = self._store.load_run(self._run_id)
+        return self._result_from_run(run, ok=False, session_id=session_id, reason=message)
+
     def _terminate(
         self,
         outcome: str,
@@ -392,17 +473,12 @@ class ProductionPhaseOrchestrator:
         *,
         session_id: str | None,
     ) -> ProductionPhaseResult:
-        revoke_capabilities_for_phase(self._store, self._run_id, PRODUCTION)
-        run = self._store.load_run(self._run_id)
-        expected_revision = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["status"] = "completed"
-        run["outcome"] = outcome
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event(
-            "production_failed",
-            outcome=outcome,
+        complete_run_with_outcome(
+            self._store,
+            self._run_id,
+            outcome,
+            revoke_phase=PRODUCTION,
+            event_type="production_failed",
             message=message,
             session_id=session_id,
         )
@@ -518,29 +594,18 @@ def _production_loop_limits(config: dict[str, Any]) -> dict[str, int]:
         ),
     }
 
-
-def _primary_producer_session_id(run: dict[str, Any]) -> str | None:
-    sessions = run.get("sessions") or {}
-    session_id = sessions.get("primary_producer_session_id")
-    if session_id is None:
-        return None
-    return str(session_id)
-
-
 def _persist_session_id(
     store: RunStore,
     run_id: str,
     session_id: str,
 ) -> dict[str, Any]:
-    run = store.load_run(run_id)
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    sessions = dict(run.get("sessions") or {})
-    sessions["primary_producer_session_id"] = session_id
-    run["sessions"] = sessions
-    store.save_run(run_id, run, expected_revision)
-    return store.load_run(run_id)
+    return commit_primary_provider_session_binding(
+        store,
+        run_id,
+        role="producer",
+        provider_session_id=session_id,
+        provider="cursor",
+    )
 
 
 def _load_batch_agent_turns(store: RunStore, run_id: str) -> int:

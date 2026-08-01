@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from top_down_planning.domain.capability_binding import (
+    CapabilitySessionBinding,
+    capability_binding_from_session_binding,
+    resolve_primary_capability_binding,
+    resolve_reviewer_capability_binding,
+)
 from top_down_planning.persistence.capabilities import (
     capability_token_value,
     ops_for_session,
@@ -57,6 +63,81 @@ def revoke_capabilities_for_loop(store: RunStore, run_id: str, loop_id: str) -> 
             store.revoke_capability(run_id, capability_id)
 
 
+def revoke_capabilities_for_session_binding(
+    store: RunStore,
+    run_id: str,
+    *,
+    session_instance_id: str,
+    generation: int,
+) -> None:
+    """Revoke live capabilities for stale generations of an internal session identity."""
+
+    normalized_instance_id = str(session_instance_id).strip()
+    if not normalized_instance_id:
+        return
+    target_generation = int(generation)
+    for record in store.list_capabilities(run_id):
+        if record.get("revoked") is True:
+            continue
+        if str(record.get("session_instance_id") or "").strip() != normalized_instance_id:
+            continue
+        record_generation = record.get("generation")
+        if record_generation is None:
+            continue
+        if int(record_generation) == target_generation:
+            continue
+        capability_id = str(record.get("id") or "")
+        if capability_id:
+            store.revoke_capability(run_id, capability_id)
+
+
+def _resolve_capability_binding(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    session_id: str,
+    session_kind: str,
+    loop_id: str | None,
+) -> CapabilitySessionBinding:
+    normalized_session_id = str(session_id).strip()
+    if role == "reviewer" or session_kind == "reviewer":
+        if loop_id is None or not str(loop_id).strip():
+            raise ValueError("loop_id is required for reviewer capabilities")
+        normalized_loop_id = str(loop_id).strip()
+        try:
+            loop = store.load_review(run_id, normalized_loop_id)
+            return resolve_reviewer_capability_binding(
+                loop,
+                provider_session_id=normalized_session_id,
+                loop_id=normalized_loop_id,
+            )
+        except Exception:
+            from top_down_planning.domain.session_bindings import (
+                reviewer_binding_from_legacy_session_id,
+            )
+
+            binding = reviewer_binding_from_legacy_session_id(
+                normalized_session_id,
+                instance_seed=normalized_loop_id,
+            )
+            if binding is None:
+                raise ValueError(
+                    "reviewer session binding is required for capability issuance"
+                ) from None
+            return capability_binding_from_session_binding(
+                binding,
+                provider_session_id=normalized_session_id,
+            )
+
+    run = store.load_run(run_id)
+    return resolve_primary_capability_binding(
+        run,
+        role,
+        provider_session_id=normalized_session_id,
+    )
+
+
 def issue_session_capability(
     store: RunStore,
     run_id: str,
@@ -70,8 +151,23 @@ def issue_session_capability(
 ) -> str:
     """Create and return a capability token for a provider session."""
 
+    binding = _resolve_capability_binding(
+        store,
+        run_id,
+        role=role,
+        session_id=session_id,
+        session_kind=session_kind,
+        loop_id=loop_id,
+    )
+
     if revoke_existing:
-        store.revoke_capabilities_for_session(run_id, session_id)
+        store.revoke_capabilities_for_session(run_id, binding.provider_session_id)
+        revoke_capabilities_for_session_binding(
+            store,
+            run_id,
+            session_instance_id=binding.session_instance_id,
+            generation=binding.generation,
+        )
 
     allowed_ops = ops_for_session(role, phase, session_kind=session_kind)
     capability_id, _record, raw_secret = store.create_capability(
@@ -79,9 +175,11 @@ def issue_session_capability(
         role=role,
         phase=phase,
         allowed_ops=allowed_ops,
-        session_id=session_id,
+        session_id=binding.provider_session_id,
         session_kind=session_kind,
         loop_id=loop_id,
+        session_instance_id=binding.session_instance_id,
+        generation=binding.generation,
     )
     return capability_token_value(capability_id, raw_secret)
 

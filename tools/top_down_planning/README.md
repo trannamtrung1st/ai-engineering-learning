@@ -2,7 +2,9 @@
 
 Planning and production orchestration: receive an input and output goal, build a top-down plan, review and validate it, produce output in coherent batches, and resolve a final quality outcome.
 
-Specification: [`docs/spec.md`](docs/spec.md)
+Specification: [`docs/spec.md`](docs/spec.md) · Resume ops:
+[`docs/resume-batch-checklist.md`](docs/resume-batch-checklist.md) · §19 crosswalk:
+[`docs/implementation-plan-crosswalk.md`](docs/implementation-plan-crosswalk.md)
 
 ## Quickstart
 
@@ -240,7 +242,7 @@ context_snapshot:
 }
 ```
 
-List-shaped `{path, digest}` entries, absolute path keys, and a binding-level `workspace` field are rejected; recreate the run. Config document `version` is unrelated to run-record `schema_version` (currently `2`). Unsupported or missing run `schema_version` fails load with a recreate message — there is no automatic migrator. `PYTHONDONTWRITEBYTECODE=1` may still suppress local bytecode during older workflows, but it is not the permanent fix; use snapshot excludes instead.
+List-shaped `{path, digest}` entries, absolute path keys, and a binding-level `workspace` field are rejected; recreate the run. Config document `version` is unrelated to run-record `schema_version` (currently `3`). Unsupported or missing run `schema_version` fails load with a recreate message — there is no automatic migrator. See [`docs/resume-batch-checklist.md`](docs/resume-batch-checklist.md) for the coordinated v3 deployment gate. Prefer snapshot excludes over
 
 Snapshot excludes apply only to **context snapshot** resource materialization (`SnapshotPolicy.collect`). Agent session resource manifests still expand directories recursively and may list `__pycache__` / `.pyc` paths from `resolve_expanded_path_list`; that packaging surface is intentionally unchanged — use snapshot excludes for integrity binding, not for agent manifest hygiene.
 
@@ -305,6 +307,8 @@ Planner, producer, and reviewer packages include `protocol_instructions` (role b
 Agents mutate run state only through `tdp agent …` shell commands (which persist to the run store). The orchestrator does not intercept provider tool events for plan/production/review mutations. After each provider turn it observes store changes (pending focused reviews, applied batches, review decisions) and resolves phase completion from explicit signal tokens (`candidate_plan_ready`, `batch_complete`, `amendment_revision_ready`, etc.) in assistant text or `done.signal` metadata.
 
 `tdp run` supports `--until plan|validated|completed` (default `plan`). `tdp resume` advances one phase step by default, or loops to `--until` when set. Both use the central `RunEngine` continuation loop.
+
+`tdp resume --check` builds and prints the same structured resume plan summary as apply mode without mutating the run, saving config, appending events, or contacting the provider. Use `--config` and/or repeatable `--set path=value` to evaluate limit increases; diagnostics include consumed usage, stored limit, candidate limit, and remaining budget for exhausted limits. Interrupt taxonomy: graceful Ctrl+C stops provider subprocesses and leaves the run `running` for resume; abrupt process loss does the same on disk. Paused runs require accepted `prepare_resume` / `apply_resume_plan_atomically` before `RunEngine.continue_run` proceeds.
 
 Persistence uses journaled `RunStore.commit()` for multi-file mutations: staged writes, per-file digests and backups, journal records replacements only after successful `Path.replace()`, digest-verified recovery, per-run `.commit.lock` serialization around commits and commit-managed reads (`load_run`, `load_plan`, `load_production`, `load_events`, `load_review`, `list_reviews`), and rollback or completion of pending event appends after a crash. Each run directory includes `invocation.json` (latest CLI invocation metadata, not part of semantic config digests). Output evidence records bind artifact content (`sha256`, `size`, `media_type`, `captured_at`) and snapshot approved files under immutable UUID paths in the run store. Evidence IDs are unique across the full run history.
 

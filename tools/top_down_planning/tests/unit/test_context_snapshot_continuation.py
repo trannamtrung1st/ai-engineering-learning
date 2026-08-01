@@ -4,17 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from core_tools.persistence import dump_yaml
 from core_tools.provider import StubProvider
 from top_down_planning.agent_tool import ProductionAgentService
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator import (
-    ProductionPhaseOrchestrator,
-    ResumeError,
-    validate_resume_preconditions,
-)
+from top_down_planning.orchestrator import ProductionPhaseOrchestrator
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.orchestrator.production import build_producer_context_manifest
 from top_down_planning.persistence import FileRunStore
@@ -154,8 +147,6 @@ def test_continuation_into_whole_output_succeeds_after_working_resource_mutation
     assert result.ok is True
     assert result.phase == WHOLE_OUTPUT_REVIEW
     assert store.load_run(run_id)["phase"] == WHOLE_OUTPUT_REVIEW
-    # Next engine continuation / user resume must accept mutated working resources.
-    validate_resume_preconditions(store, run_id)
 
     # Fresh package build still resolves current resource path selection.
     run = store.load_run(run_id)
@@ -312,79 +303,6 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
     assert result.batch_count == 2
     assert not obsolete.exists()
     assert (tests_dir / "test_feature.py").is_file()
-    validate_resume_preconditions(store, run_id)
-
-
-def test_resume_still_rejects_contract_and_context_selection_drift(
-    tmp_path: Path,
-) -> None:
-    import copy
-
-    store = FileRunStore(tmp_path)
-    skill_dir = tmp_path / ".agents" / "skills" / "demo"
-    skill_dir.mkdir(parents=True)
-    skill_file = skill_dir / "SKILL.md"
-    skill_file.write_text("skill-a\n", encoding="utf-8")
-    goal_file = tmp_path / "goal.md"
-    goal_file.write_text("Deliver the feature.\n", encoding="utf-8")
-    task = tmp_path / "task.md"
-    task.write_text("task-a\n", encoding="utf-8")
-
-    config = minimal_resolved_config(
-        run={
-            "output_goal_file": "goal.md",
-            "input_refs": ["task.md"],
-        },
-        provider={"name": "stub"},
-        agent_context={
-            "default": {"resources": [], "skills": [".agents/skills/demo/"]},
-            "planner": {"resources": [], "skills": []},
-            "producer": {"resources": [], "skills": []},
-            "reviewer": {"resources": [], "skills": []},
-        },
-    )
-    # Drop inline goal when using file-backed goal.
-    config["run"].pop("output_goal", None)
-
-    run_id = "run-20260101T009902-009902"
-    _create_production_ready_run(store, run_id=run_id, config=config)
-    run = store.load_run(run_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected + 1
-    run["phase"] = PRODUCTION
-    store.save_run(run_id, run, expected)
-
-    original_resolved = copy.deepcopy(store.load_resolved_config(run_id))
-    config_path = tmp_path / run_id / "resolved-config.yaml"
-
-    task.write_text("task-b\n", encoding="utf-8")
-    with pytest.raises(ResumeError, match="input digest mismatch"):
-        validate_resume_preconditions(store, run_id)
-    task.write_text("task-a\n", encoding="utf-8")
-
-    goal_file.write_text("Changed goal content.\n", encoding="utf-8")
-    with pytest.raises(ResumeError, match="output goal digest mismatch"):
-        validate_resume_preconditions(store, run_id)
-    goal_file.write_text("Deliver the feature.\n", encoding="utf-8")
-
-    drifted = copy.deepcopy(original_resolved)
-    drifted["planning"]["max_depth"] = 99
-    config_path.write_text(dump_yaml(drifted) + "\n", encoding="utf-8")
-    with pytest.raises(ResumeError, match="semantic config digest mismatch"):
-        validate_resume_preconditions(store, run_id)
-    config_path.write_text(dump_yaml(original_resolved) + "\n", encoding="utf-8")
-
-    run = store.load_run(run_id)
-    expected_rev = int(run["revision"])
-    run = dict(run)
-    digests = dict(run.get("digests") or {})
-    digests["context_spec"] = "f" * 64
-    run["digests"] = digests
-    run["revision"] = expected_rev + 1
-    store.save_run(run_id, run, expected_rev)
-    with pytest.raises(ResumeError, match="context spec digest mismatch"):
-        validate_resume_preconditions(store, run_id)
 
 
 def test_approved_evidence_snapshot_immutable_under_workspace_change(
@@ -425,12 +343,6 @@ def test_approved_evidence_snapshot_immutable_under_workspace_change(
     # Later workspace edits must not rewrite historical evidence.
     artifact.write_text("workspace-v2\n", encoding="utf-8")
     assert snapshot_path.read_text(encoding="utf-8") == "captured-v1\n"
-    validate_resume_preconditions(store, run_id)
-
-    # Corrupting the stored snapshot blocks resume.
-    snapshot_path.write_text("tampered\n", encoding="utf-8")
-    with pytest.raises(ResumeError, match="evidence snapshot"):
-        validate_resume_preconditions(store, run_id)
 
 
 def test_engine_enters_whole_output_review_after_production_resource_mutation(
@@ -517,74 +429,3 @@ def test_engine_enters_whole_output_review_after_production_resource_mutation(
     assert len(started) == 2
     assert len(resumed) == 0
     assert "whole_output_review_approved" in event_types
-
-
-def test_unauthorized_resource_drift_after_production_blocks_resume(tmp_path: Path) -> None:
-    """Post-production edits outside evidence must block whole-output review entry."""
-
-    store = FileRunStore(tmp_path)
-    src = tmp_path / "src"
-    docs = tmp_path / "docs"
-    src.mkdir()
-    docs.mkdir()
-    module = src / "feature.py"
-    guide = docs / "guide.md"
-    module.write_text("v1\n", encoding="utf-8")
-    guide.write_text("guide-v1\n", encoding="utf-8")
-    (tmp_path / "task.md").write_text("task\n", encoding="utf-8")
-
-    config = minimal_resolved_config(
-        run={
-            "output_goal": "Deliver the feature.",
-            "input_refs": ["task.md"],
-        },
-        provider={"name": "stub"},
-        limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
-        agent_context={
-            "default": {"resources": ["docs/"], "skills": []},
-            "planner": {"resources": [], "skills": []},
-            "producer": {"resources": ["src/"], "skills": []},
-            "reviewer": {"resources": ["src/", "docs/"], "skills": []},
-        },
-    )
-    run_id = "run-20260101T009906-009906"
-    _create_production_ready_run(store, run_id=run_id, config=config)
-
-    provider = StubProvider()
-    provider.script_turn(done_events(text="producer session start"))
-    provider.script_turn(
-        done_events(signal="batch_complete", text="production turn"),
-        mutate_store=lambda: (
-            module.write_text("v2-produced\n", encoding="utf-8"),
-            apply_production(
-                store,
-                run_id,
-                _batch_request(
-                    plan_items=["item-leaf"],
-                    dispositions={"item-leaf": {"disposition": "completed"}},
-                    outputs=[
-                        {
-                            "id": "output-feature",
-                            "type": "artifact",
-                            "ref": "src/feature.py",
-                        }
-                    ],
-                ),
-                handler="apply",
-            )(),
-            apply_production(
-                store,
-                run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-                handler="submit_completion",
-            )(),
-        ),
-    )
-
-    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
-    assert result.ok is True
-    assert store.load_run(run_id)["phase"] == WHOLE_OUTPUT_REVIEW
-
-    guide.write_text("guide-tampered\n", encoding="utf-8")
-    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
-        validate_resume_preconditions(store, run_id)

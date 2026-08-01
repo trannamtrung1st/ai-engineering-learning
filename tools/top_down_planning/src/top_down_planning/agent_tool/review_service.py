@@ -10,6 +10,7 @@ from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.approval_digests import (
     OUTPUT_APPROVAL_DIGEST_KEYS,
     PLAN_APPROVAL_DIGEST_KEYS,
+    reject_legacy_approved_config_digest,
 )
 from top_down_planning.domain.review_policy import resolved_revise_at
 from top_down_planning.domain.reviews import (
@@ -354,6 +355,7 @@ class ReviewAgentService:
                 for key, value in run_digests.items()
                 if key in allowed_keys and value is not None
             }
+            reject_legacy_approved_config_digest(approved_digests)
             if loop.type == "whole_output":
                 from top_down_planning.persistence.digests import compute_output_digest
 

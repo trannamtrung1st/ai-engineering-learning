@@ -51,6 +51,17 @@ from top_down_planning.domain.readiness import (
     is_terminal_item,
     resolve_satisfaction,
 )
+from top_down_planning.domain.run_lifecycle import (
+    RunLifecycleError,
+    RunStatus,
+    StopRecord,
+    validate_run_lifecycle_invariants,
+)
+from top_down_planning.domain.session_bindings import (
+    SessionBinding,
+    SessionBindingError,
+    is_transient_provider_session_id,
+)
 from top_down_planning.domain.validators import (
     DigestBundle,
     ReviewState,
@@ -75,9 +86,14 @@ __all__ = [
     "ReadyView",
     "ReviewState",
     "RevisionConflictError",
+    "RunLifecycleError",
+    "RunStatus",
     "SATISFIED_DISPOSITIONS",
     "SatisfactionResult",
     "Scope",
+    "SessionBinding",
+    "SessionBindingError",
+    "StopRecord",
     "TERMINAL_DISPOSITIONS",
     "TerminalDisposition",
     "UnknownItemError",
@@ -96,8 +112,10 @@ __all__ = [
     "is_dependency_satisfied",
     "is_satisfied_disposition",
     "is_terminal_disposition",
+    "is_transient_provider_session_id",
     "is_terminal_item",
     "resolve_satisfaction",
     "validate_plan",
+    "validate_run_lifecycle_invariants",
     "walk_active_tree",
 ]

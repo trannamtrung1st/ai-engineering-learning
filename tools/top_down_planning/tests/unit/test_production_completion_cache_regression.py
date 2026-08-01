@@ -6,10 +6,7 @@ from pathlib import Path
 
 from core_tools.provider import StubProvider
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator import (
-    ProductionPhaseOrchestrator,
-    validate_resume_preconditions,
-)
+from top_down_planning.orchestrator import ProductionPhaseOrchestrator
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
@@ -180,8 +177,6 @@ def test_production_completion_succeeds_despite_cache_noise(tmp_path: Path) -> N
     collected = [e for e in events if e.get("type") == "context_snapshot_collected"]
     assert collected
     assert collected[-1].get("policy_version") == "snapshot-excludes-v1"
-
-    validate_resume_preconditions(store, run_id)
 
 
 def test_production_completion_fails_on_unauthorized_source_not_caches(

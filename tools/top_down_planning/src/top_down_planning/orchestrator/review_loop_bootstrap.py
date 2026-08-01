@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from top_down_planning.domain.reviews import ReviewLoop, needs_primary_revision_resume
+from top_down_planning.orchestrator.reviewer_session import reviewer_loop_provider_session_id
 
 
 def bootstrap_whole_review_loop(
@@ -23,7 +24,7 @@ def bootstrap_whole_review_loop(
 
     loop, reviewer_turn_delivered = normalize_loop_for_resume(loop)
     deliver_on_existing_session = (
-        loop.reviewer_session_id is not None
+        reviewer_loop_provider_session_id(loop) is not None
         and not reviewer_turn_delivered
         and not interrupted_revision_resumed
     )

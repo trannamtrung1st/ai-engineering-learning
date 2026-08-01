@@ -268,6 +268,52 @@ def recompute_context_snapshot_binding_with_diagnostics(
     return binding, compute_context_snapshot_digest_from_payload(binding), diagnostics
 
 
+def validate_resume_context_bindings(
+    run: dict[str, Any],
+    production: dict[str, Any],
+    candidate_config: dict[str, Any],
+    *,
+    workspace: Path,
+) -> str | None:
+    """Read-only resume guard for context_spec and context_snapshot drift (§21 test 14)."""
+
+    digests = run.get("digests") or {}
+    if not isinstance(digests, dict):
+        return "run digests missing"
+
+    from top_down_planning.config.context import compute_context_spec_digest_from_config
+
+    spec_digest = compute_context_spec_digest_from_config(
+        candidate_config,
+        workspace=workspace,
+    )
+    if str(digests.get("context_spec") or "") != spec_digest:
+        return "context_spec digest mismatch blocks resume"
+
+    old_binding = run.get("context_snapshot_binding")
+    if not isinstance(old_binding, dict):
+        return "context_snapshot_binding missing on run record"
+
+    new_binding, new_snapshot_digest = recompute_context_snapshot_binding(
+        candidate_config,
+        workspace=workspace,
+    )
+    stored_snapshot_digest = str(digests.get("context_snapshot") or "")
+    if new_snapshot_digest == stored_snapshot_digest:
+        return None
+
+    try:
+        validate_production_snapshot_rebase(
+            old_binding,
+            new_binding,
+            production,
+            workspace=workspace,
+        )
+    except (UnauthorizedContextMutationError, InvalidProductionEvidenceError) as exc:
+        return str(exc)
+    return None
+
+
 __all__ = [
     "InvalidProductionEvidenceError",
     "UnauthorizedContextMutationError",
@@ -280,4 +326,5 @@ __all__ = [
     "recompute_context_snapshot_binding_with_diagnostics",
     "short_path_for_observability",
     "validate_production_snapshot_rebase",
+    "validate_resume_context_bindings",
 ]

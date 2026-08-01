@@ -6,6 +6,13 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
+from top_down_planning.domain.session_bindings import (
+    SessionBinding,
+    binding_provider_session_id,
+    new_session_binding,
+    reviewer_binding_from_legacy_session_id,
+)
+
 from top_down_planning.domain.review_policy import (
     BUILTIN_REVISE_AT,
     FindingCategory,
@@ -482,6 +489,7 @@ class ReviewLoop:
     findings: list[ReviewFinding] = field(default_factory=list)
     revision_cycles: int = 0
     approved_digests: dict[str, str] | None = None
+    reviewer_binding: SessionBinding | None = None
     # Mandatory review loop fields (optional; focused loops leave unset).
     lifecycle_status: MandatoryReviewLifecycleStatus | None = None
     active_stage: ReviewStage | None = None
@@ -498,10 +506,10 @@ class ReviewLoop:
     advisory_handoffs_completed: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        binding = self._resolved_reviewer_binding()
         payload: dict[str, Any] = {
             "id": self.id,
             "type": self.type,
-            "reviewer_session_id": self.reviewer_session_id,
             "target_revision": self.target_revision,
             "scope": dict(self.scope),
             "status": self.status,
@@ -516,6 +524,8 @@ class ReviewLoop:
             ),
             "advisory_handoffs_completed": list(self.advisory_handoffs_completed),
         }
+        if binding is not None:
+            payload["reviewer_binding"] = binding.to_dict()
         if self.revise_at is not None:
             payload["revise_at"] = self.revise_at
         if self.approved_digests is not None:
@@ -536,6 +546,43 @@ class ReviewLoop:
         if self.exhausted_budget is not None:
             payload["exhausted_budget"] = normalize_exhausted_budget(self.exhausted_budget)
         return payload
+
+    def _resolved_reviewer_binding(self) -> SessionBinding | None:
+        if self.reviewer_binding is not None:
+            return self.reviewer_binding
+        if self.reviewer_session_id is None or not str(self.reviewer_session_id).strip():
+            return None
+        return reviewer_binding_from_legacy_session_id(
+            str(self.reviewer_session_id).strip(),
+            instance_seed=self.id,
+        )
+
+    def with_reviewer_provider_session_id(
+        self,
+        provider_session_id: str,
+        *,
+        provider: str | None = "cursor",
+        model: str | None = None,
+        allow_transient: bool = False,
+    ) -> ReviewLoop:
+        binding = self._resolved_reviewer_binding()
+        if binding is None:
+            binding = new_session_binding(
+                role="reviewer",
+                kind="reviewer",
+                state="starting",
+            )
+        updated_binding = binding.with_provider_session_id(
+            provider_session_id,
+            provider=provider,
+            model=model,
+            allow_transient=allow_transient,
+        )
+        return replace(
+            self,
+            reviewer_binding=updated_binding,
+            reviewer_session_id=updated_binding.provider_session_id,
+        )
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> ReviewLoop:
@@ -638,17 +685,32 @@ class ReviewLoop:
             for item in (payload.get("advisory_handoffs_completed") or [])
             if str(item).strip()
         ]
+        binding_raw = payload.get("reviewer_binding")
+        reviewer_binding: SessionBinding | None = None
+        if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
+            reviewer_binding = SessionBinding.from_dict(binding_raw)
+        legacy_reviewer_session_id = payload.get("reviewer_session_id")
+        if reviewer_binding is None and legacy_reviewer_session_id is not None:
+            reviewer_binding = reviewer_binding_from_legacy_session_id(
+                str(legacy_reviewer_session_id).strip() or None,
+                instance_seed=str(payload.get("id") or "").strip() or None,
+            )
+        reviewer_session_id = binding_provider_session_id(reviewer_binding)
+        if reviewer_session_id is None and legacy_reviewer_session_id is not None:
+            legacy_text = str(legacy_reviewer_session_id).strip()
+            reviewer_session_id = legacy_text or None
 
         return cls(
             id=str(payload["id"]),
             type=str(raw_type).strip(),  # type: ignore[arg-type]
-            reviewer_session_id=payload.get("reviewer_session_id"),
+            reviewer_session_id=reviewer_session_id,
             target_revision=int(payload.get("target_revision") or 0),
             scope=dict(payload.get("scope") or {}),
             status=status_raw,  # type: ignore[arg-type]
             findings=findings,
             revision_cycles=int(payload.get("revision_cycles") or 0),
             approved_digests=approved_digests,
+            reviewer_binding=reviewer_binding,
             lifecycle_status=lifecycle_status,  # type: ignore[arg-type]
             active_stage=active_stage,  # type: ignore[arg-type]
             finding_set_id=finding_set_id,
@@ -1116,6 +1178,30 @@ def find_active_review_loop(
             continue
         return loop
     return None
+
+
+_ACTIVE_REVIEW_LOOP_TYPES = frozenset(
+    {"whole_plan", "whole_output", "focused_plan", "focused_output"}
+)
+
+
+def find_conflicting_active_review_loops(
+    reviews: list[dict[str, Any]],
+) -> list[str]:
+    """Return active non-terminal loop ids when more than one concurrent loop exists."""
+
+    active_ids: list[str] = []
+    for payload in reviews:
+        loop_type = str(payload.get("type") or "")
+        if loop_type not in _ACTIVE_REVIEW_LOOP_TYPES:
+            continue
+        loop = ReviewLoop.from_dict(payload)
+        if is_terminal_review_loop(loop):
+            continue
+        active_ids.append(loop.id)
+    if len(active_ids) > 1:
+        return active_ids
+    return []
 
 
 def claimed_fix_open_findings(loop: ReviewLoop) -> list[ReviewFinding]:
@@ -1760,7 +1846,7 @@ def prepare_review_incomplete_retry(loop: ReviewLoop) -> ReviewLoop:
         lifecycle_status=lifecycle,  # type: ignore[arg-type]
         active_stage=(
             None
-            if stage in {"", "initial_review"}
+            if stage in {"", "initial_review", "discovery"}
             else validate_review_stage(stage)  # type: ignore[arg-type]
         ),
         # Budgets intentionally unchanged: revision_cycles / scope_review_rounds.

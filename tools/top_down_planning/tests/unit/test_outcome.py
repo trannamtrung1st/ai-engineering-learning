@@ -33,7 +33,7 @@ def _sample_run() -> dict:
         "digests": {
             "input": "input-a",
             "output_goal": "goal-b",
-            "config": "config-c",
+            "config_contract": "config-c",
             "plan": compute_plan_digest(plan),
             "output": "output-d",
         }

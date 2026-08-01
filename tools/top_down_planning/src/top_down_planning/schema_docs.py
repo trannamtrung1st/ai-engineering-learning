@@ -1536,10 +1536,36 @@ persisted evidence refs fail rebase validation rather than masquerading as unaut
 drift. `.gitignore` is not inherited. Omitting
 `context_snapshot` equals `excludes.defaults: true` with empty user patterns.
 
-Run records carry top-level `schema_version` (currently `2`), distinct from config document
+Run records carry top-level `schema_version` (currently `3`), distinct from config document
 `version`. Old absolute-path or list-shaped bindings and unsupported schema versions are
 rejected — recreate the run; there is no migrator. Prefer snapshot excludes over
 `PYTHONDONTWRITEBYTECODE=1` as the durable fix for bytecode false positives.
+
+`digests.config_contract` binds approval-meaning configuration (input/output goal semantics,
+boundaries, acceptance, review policy, context declarations). `digests.config_execution`
+binds operational limits and execution budgets. Approvals bind to `config_contract`, not
+`config_execution`. The monolithic `digests.config` field is not accepted on schema v3.
+
+Run lifecycle fields on `run.json`: `status` (`running`, `paused`, `completed`, `failed`);
+`outcome` (non-null only when `status` is `completed`); `stop` (structured stop record
+when paused or failed, otherwise null); `phase_action_id` (stable logical action id for
+the current provider step, or null). Paused stops use `category: operational`; failed
+stops use `category: invariant`.
+
+## Resume (proposal §9–§16)
+
+Paused runs resume through `prepare_resume()` (read-only) and
+`apply_resume_plan_atomically()` (config + status transition). The CLI wraps both:
+
+- `tdp resume --run <id> --config <yaml>` — apply candidate config and continue
+- `tdp resume --run <id> --set limits.planning.max_agent_turns=40` — limit-only override
+- `tdp resume --run <id> --check ...` — print the resume plan; no writes or provider calls
+- `tdp resume --run <id> --until plan|validated|completed` — loop `RunEngine` after apply
+  (default: one orchestrator step)
+
+Limit-only increases update `digests.config_execution` only; approvals remain bound to
+`digests.config_contract`. Failed runs cannot be resumed. Replacement exhausted for the
+current `phase_action_id` blocks resume until the action completes or the run fails.
 
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
 The service captures content hashes and stores immutable snapshots under

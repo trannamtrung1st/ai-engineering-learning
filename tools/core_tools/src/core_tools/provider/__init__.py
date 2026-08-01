@@ -14,6 +14,7 @@ from core_tools.provider.errors import (
     ProviderBinaryNotFoundError,
     ProviderError,
     ProviderSessionError,
+    ProviderSessionNotFoundError,
     ProviderTurnError,
 )
 from core_tools.provider.events import normalize_cursor_event
@@ -28,6 +29,7 @@ __all__ = [
     "ProviderBinaryNotFoundError",
     "ProviderError",
     "ProviderSessionError",
+    "ProviderSessionNotFoundError",
     "ProviderTurnError",
     "StubProvider",
     "build_agent_argv",

@@ -11,25 +11,35 @@ from top_down_planning.domain.reconciliation import (
     build_reconciliation_report,
 )
 from top_down_planning.domain.reviews import find_whole_plan_approval
+from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
     revoke_capabilities_for_phase,
     rotate_session_capability,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.run_transitions import (
+    complete_run_with_outcome,
+    pause_for_limit_exhausted,
+)
+from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryPaused
 from top_down_planning.orchestrator.phases import (
     PLAN_AMENDMENT,
     PLAN_VALIDATED,
     PRODUCTION,
     WHOLE_PLAN_REVIEW,
 )
-from top_down_planning.orchestrator.provider_turns import consume_provider_turn
+from top_down_planning.orchestrator.provider_turns import (
+    build_planner_turn_recovery,
+    consume_provider_turn_with_session_recovery,
+)
 from top_down_planning.orchestrator.agent_context import resolve_role_session_context
 from top_down_planning.orchestrator.session_events import (
     resume_primary_session_with_audit,
     sync_persisted_session_id,
 )
+from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
+from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
 from top_down_planning.orchestrator.whole_plan_review import WholePlanReviewOrchestrator
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
@@ -82,8 +92,8 @@ class PlanAmendmentOrchestrator:
         if phase not in {PRODUCTION, PLAN_AMENDMENT, WHOLE_PLAN_REVIEW, PLAN_VALIDATED}:
             raise ProviderRunError(f"run is not ready for plan amendment: {phase}")
 
-        planner_session_id = _primary_planner_session_id(run)
-        producer_session_id = _primary_producer_session_id(run)
+        planner_session_id = primary_planner_provider_session_id(run)
+        producer_session_id = primary_producer_provider_session_id(run)
         if planner_session_id is None:
             raise ProviderRunError("primary planner session is missing for amendment")
         if producer_session_id is None:
@@ -102,7 +112,7 @@ class PlanAmendmentOrchestrator:
             prior_plan = _require_prior_plan_snapshot(amendment)
 
         if str(run.get("phase") or "") == PLAN_AMENDMENT:
-            run = self._store.load_run(self._run_id)
+            run = self._activate_amendment_execution()
             phase = str(run.get("phase") or PLAN_AMENDMENT)
             self._capability_token = issue_session_capability(
                 self._store,
@@ -130,12 +140,14 @@ class PlanAmendmentOrchestrator:
                 if signal == _AMENDMENT_REVISION_READY_SIGNAL:
                     break
                 if revision_cycles >= max_revision_cycles:
-                    return self._terminate(
-                        "blocked",
-                        (
+                    return self._pause_for_amendment_limit(
+                        message=(
                             "plan amendment exceeded max_revision_cycles_per_request "
                             f"({max_revision_cycles})"
                         ),
+                        limit="max_revision_cycles_per_request",
+                        consumed=revision_cycles,
+                        configured=max_revision_cycles,
                         amendment_id=amendment_id,
                         planner_session_id=planner_session_id,
                         producer_session_id=producer_session_id,
@@ -158,9 +170,11 @@ class PlanAmendmentOrchestrator:
                 bind_provider_capability(self._provider, self._capability_token)
 
             run = self._transition_to_whole_plan_review()
+            run = self._activate_amendment_execution()
 
         phase = str(run.get("phase") or "")
         if phase in {WHOLE_PLAN_REVIEW, PLAN_VALIDATED}:
+            run = self._activate_amendment_execution()
             review_result = WholePlanReviewOrchestrator(
                 self._store,
                 self._run_id,
@@ -247,9 +261,38 @@ class PlanAmendmentOrchestrator:
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = PLAN_AMENDMENT
+        stop = StopRecord(
+            code="amendment_pending",
+            category="operational",
+            phase=PLAN_AMENDMENT,
+            message="plan amendment requested",
+            details={"pending_amendment_id": amendment_id},
+        )
         run["status"] = "paused"
+        run["outcome"] = None
+        run["stop"] = stop.to_dict()
         self._store.save_run(self._run_id, run, expected_revision)
+        self._append_event(
+            "run_paused",
+            amendment_id=amendment_id,
+            stop=stop.to_dict(),
+        )
         self._append_event("plan_amendment_started", amendment_id=amendment_id)
+        return self._store.load_run(self._run_id)
+
+    def _activate_amendment_execution(self) -> dict[str, Any]:
+        """Resume active amendment orchestration after recording amendment_pending pause."""
+
+        run = self._store.load_run(self._run_id)
+        if str(run.get("status") or "") == "running" and run.get("stop") is None:
+            return run
+        expected_revision = int(run["revision"])
+        run = dict(run)
+        run["revision"] = expected_revision + 1
+        run["status"] = "running"
+        run["outcome"] = None
+        run["stop"] = None
+        self._store.save_run(self._run_id, run, expected_revision)
         return self._store.load_run(self._run_id)
 
     def _transition_to_whole_plan_review(self) -> dict[str, Any]:
@@ -278,6 +321,7 @@ class PlanAmendmentOrchestrator:
         run["revision"] = expected_revision + 1
         run["phase"] = PRODUCTION
         run["status"] = "running"
+        run["stop"] = None
         digests = dict(run.get("digests") or {})
         plan = self._store.load_plan(self._run_id)
         digests["plan"] = compute_plan_digest(plan)
@@ -317,11 +361,30 @@ class PlanAmendmentOrchestrator:
         )
 
     def _consume_planner_turn(self, session_id: str) -> str | None:
-        signal = consume_provider_turn(
-            self._provider,
-            session_id,
-            allowed_signals=_COMPLETION_SIGNALS,
-        )
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        role_context = resolve_role_session_context(config, run, "planner")
+        phase = str(run.get("phase") or PLAN_AMENDMENT)
+        try:
+            turn_outcome = consume_provider_turn_with_session_recovery(
+                self._store,
+                self._run_id,
+                self._provider,
+                session_id,
+                allowed_signals=_COMPLETION_SIGNALS,
+                recovery=build_planner_turn_recovery(
+                    self._store,
+                    self._run_id,
+                    phase=phase,
+                    expected_next_action="revise plan for pending amendment",
+                    append_event=self._append_event,
+                    model=role_context.model,
+                ),
+            )
+        except SessionRecoveryPaused as exc:
+            raise ProviderRunError(str(exc)) from exc
+        session_id = turn_outcome.session_id
+        signal = turn_outcome.signal
         sync_persisted_session_id(
             self._provider,
             self._store,
@@ -360,6 +423,47 @@ class PlanAmendmentOrchestrator:
         self._store.save_production(self._run_id, updated, expected_revision)
         return amendment
 
+    def _pause_for_amendment_limit(
+        self,
+        *,
+        message: str,
+        limit: str,
+        consumed: int,
+        configured: int,
+        amendment_id: str,
+        planner_session_id: str,
+        producer_session_id: str,
+    ) -> PlanAmendmentResult:
+        pause_for_limit_exhausted(
+            self._store,
+            self._run_id,
+            phase=PLAN_AMENDMENT,
+            message=message,
+            limit=limit,
+            consumed=consumed,
+            configured=configured,
+            role="planner",
+            revoke_phase=PLAN_AMENDMENT,
+            amendment_id=amendment_id,
+        )
+        self._append_event(
+            "plan_amendment_limit_exceeded",
+            amendment_id=amendment_id,
+            limit=limit,
+            message=message,
+        )
+        run = self._store.load_run(self._run_id)
+        return PlanAmendmentResult(
+            ok=False,
+            phase=str(run.get("phase") or PLAN_AMENDMENT),
+            status=str(run.get("status") or "paused"),
+            outcome=None,
+            amendment_id=amendment_id,
+            planner_session_id=planner_session_id,
+            producer_session_id=producer_session_id,
+            reason=message,
+        )
+
     def _terminate(
         self,
         outcome: str,
@@ -369,17 +473,13 @@ class PlanAmendmentOrchestrator:
         planner_session_id: str,
         producer_session_id: str,
     ) -> PlanAmendmentResult:
-        run = self._store.load_run(self._run_id)
-        expected_revision = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["status"] = "completed"
-        run["outcome"] = outcome
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event(
-            "plan_amendment_failed",
+        complete_run_with_outcome(
+            self._store,
+            self._run_id,
+            outcome,
+            revoke_phase=PLAN_AMENDMENT,
+            event_type="plan_amendment_failed",
             amendment_id=amendment_id,
-            outcome=outcome,
             message=message,
         )
         run = self._store.load_run(self._run_id)
@@ -432,18 +532,3 @@ def _find_amendment_request(
             return request
     return None
 
-
-def _primary_planner_session_id(run: dict[str, Any]) -> str | None:
-    sessions = run.get("sessions") or {}
-    session_id = sessions.get("primary_planner_session_id")
-    if session_id is None:
-        return None
-    return str(session_id)
-
-
-def _primary_producer_session_id(run: dict[str, Any]) -> str | None:
-    sessions = run.get("sessions") or {}
-    session_id = sessions.get("primary_producer_session_id")
-    if session_id is None:
-        return None
-    return str(session_id)

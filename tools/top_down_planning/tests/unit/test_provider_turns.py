@@ -9,6 +9,8 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.provider_turns import (
     TurnTextAccumulator,
+    clear_phase_action_id,
+    ensure_phase_action_id,
     extract_completion_signal_from_text,
     find_pending_focused_review_loop_id,
     resolve_turn_signal,
@@ -17,6 +19,37 @@ from top_down_planning.orchestrator.provider_turns import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.helpers import create_run_kwargs, done_events, grant_capability, respond_review, script_reviewer_allocate
+
+
+def test_ensure_phase_action_id_assigns_and_reuses(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000905-000905"
+    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the feature.",
+        items={"item-root": root},
+    )
+    config = {
+        "run": {"output_goal": "Deliver the feature.", "input_refs": ["README.md"]},
+        "planning": {"stop_hint": "Stop when ready.", "max_depth": 4, "max_expansion_per_item": 7},
+        "limits": {"planning": {"max_items_added": 20, "max_agent_turns": 40}},
+        "provider": {"name": "stub"},
+    }
+    store.create_run(run_id, plan=plan, **create_run_kwargs(store.root, resolved_config=config))
+
+    first = ensure_phase_action_id(store, run_id)
+    assert first.startswith("action-")
+    assert store.load_run(run_id)["phase_action_id"] == first
+
+    second = ensure_phase_action_id(store, run_id)
+    assert second == first
+
+    clear_phase_action_id(store, run_id)
+    assert store.load_run(run_id)["phase_action_id"] is None
+    events = store.load_events(run_id)
+    assert any(event["type"] == "phase_action_assigned" for event in events)
 
 
 def test_extract_completion_signal_from_exact_text() -> None:

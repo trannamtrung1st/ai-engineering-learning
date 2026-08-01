@@ -319,14 +319,15 @@ def test_max_batches_exhaustion_yields_blocked_not_accepted(tmp_path: Path) -> N
     result = ProductionPhaseOrchestrator(store, run_id, provider).run()
 
     assert result.ok is False
-    assert result.outcome == "blocked"
+    assert result.outcome is None
     assert result.reason is not None
     assert "max_batches" in result.reason
 
     run = store.load_run("run-20260101T000201-000201")
     assert run["phase"] == PRODUCTION
-    assert run["status"] == "completed"
-    assert run["outcome"] == "blocked"
+    assert run["status"] == "paused"
+    assert run["outcome"] is None
+    assert run["stop"]["code"] == "limit_exhausted"
 
 
 def test_plan_apply_during_production_is_rejected(tmp_path: Path) -> None:
@@ -480,6 +481,10 @@ def test_resume_preserves_batch_agent_turn_budget(tmp_path: Path) -> None:
     result = ProductionPhaseOrchestrator(store, "run-20260101T000201-000201", provider).run()
 
     assert result.ok is False
-    assert result.outcome == "blocked"
+    assert result.outcome is None
     assert result.reason is not None
     assert "max_agent_turns_per_batch" in result.reason
+
+    run = store.load_run("run-20260101T000201-000201")
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "limit_exhausted"

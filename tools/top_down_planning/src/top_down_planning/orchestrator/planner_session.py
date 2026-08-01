@@ -2,7 +2,23 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from top_down_planning.domain.session_bindings import SessionBinding
+from top_down_planning.persistence.session_bindings import (
+    get_primary_binding,
+    primary_provider_session_id,
+)
+
 PLANNER_CANDIDATE_READY_SIGNAL = "candidate_plan_ready"
+
+
+def primary_planner_provider_session_id(run: dict[str, Any]) -> str | None:
+    return primary_provider_session_id(run, "planner")
+
+
+def primary_planner_binding(run: dict[str, Any]) -> SessionBinding | None:
+    return get_primary_binding(run, "planner")
 
 
 def build_planner_protocol_instructions() -> list[str]:
@@ -57,4 +73,6 @@ __all__ = [
     "PLANNER_CANDIDATE_READY_SIGNAL",
     "build_planner_protocol_instructions",
     "build_planner_tool_instructions",
+    "primary_planner_binding",
+    "primary_planner_provider_session_id",
 ]

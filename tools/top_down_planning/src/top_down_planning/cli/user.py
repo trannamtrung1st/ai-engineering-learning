@@ -42,14 +42,24 @@ from top_down_planning.domain.output_validators import (
     validate_output,
 )
 from top_down_planning.domain.validators import validate_plan
-from top_down_planning.orchestrator import (
-    ResumeError,
-    RunEngine,
-    validate_resume_preconditions,
-)
+from top_down_planning.orchestrator import RunEngine
 from top_down_planning.orchestrator.phases import (
     OUTPUT_VALIDATED,
     WHOLE_OUTPUT_REVIEW,
+)
+from top_down_planning.cli.resume_diagnostics import (
+    build_resume_plan_summary,
+    consumed_limits_from_run,
+    format_resume_plan_summary_text,
+)
+from top_down_planning.config.resume_policy import resolve_resume_candidate_for_run
+from top_down_planning.orchestrator.resume import (
+    ApplyResumeError,
+    PrepareResumeBlockedError,
+    apply_resume_plan_atomically,
+    is_terminal_resume_snapshot,
+    load_run_resume_snapshot,
+    prepare_resume,
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.invocation import (
@@ -60,6 +70,7 @@ from top_down_planning.observability import (
     ObservabilityContext,
     build_observability_context,
     cancel_console_event,
+    emit_resume_plan_diagnostics,
     wrap_store_with_observability,
 )
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
@@ -305,7 +316,8 @@ def handle_run_command(args: Namespace) -> None:
         "phase": continuation.phase,
         "status": continuation.status,
         "outcome": continuation.outcome,
-        "config_digest": run_record["digests"]["config"],
+        "config_contract_digest": run_record["digests"]["config_contract"],
+        "config_execution_digest": run_record["digests"]["config_execution"],
         "until": until,
         "steps": [
             {
@@ -367,30 +379,39 @@ def handle_resume_command(args: Namespace) -> None:
         )
 
     try:
-        preconditions = validate_resume_preconditions(store, args.run)
-    except ResumeError as exc:
+        snapshot = load_run_resume_snapshot(store, args.run)
+    except RunNotFoundError as exc:
         emit_error_message(
-            exc.message,
+            str(exc),
             exit_code=1,
             stream_json=args.stream_json,
-            code=exc.code,
+            code="run_not_found",
         )
 
-    phase = preconditions.phase
-    if phase == OUTPUT_VALIDATED or preconditions.status == "completed":
-        if phase == OUTPUT_VALIDATED and preconditions.status == "completed":
+    if snapshot.status == "failed":
+        emit_error_message(
+            "failed runs cannot be resumed",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="failed_run_not_resumable",
+        )
+        return
+
+    phase = snapshot.phase
+    if is_terminal_resume_snapshot(snapshot) or snapshot.status == "completed":
+        if phase == OUTPUT_VALIDATED and snapshot.status == "completed":
             message = "run already completed with final outcome"
         else:
             message = (
                 f"run already terminated "
-                f"(status={preconditions.status}, outcome={preconditions.outcome})"
+                f"(status={snapshot.status}, outcome={snapshot.outcome})"
             )
         payload = {
             "ok": True,
             "run_id": args.run,
             "phase": phase,
-            "status": preconditions.status,
-            "outcome": preconditions.outcome,
+            "status": snapshot.status,
+            "outcome": snapshot.outcome,
             "message": message,
         }
         if args.stream_json:
@@ -401,16 +422,117 @@ def handle_resume_command(args: Namespace) -> None:
         return
 
     until = getattr(args, "until", None)
+    check_only = bool(getattr(args, "check", False))
+    config_overrides = list(getattr(args, "set", None) or [])
+    config_path = Path(args.config).resolve() if getattr(args, "config", None) else None
+
     try:
-        resolved = store.load_resolved_config(args.run)
+        stored = store.load_resolved_config(args.run)
     except RunNotFoundError:
-        resolved = None
+        emit_error_message(
+            f"run {args.run} is missing resolved configuration",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="run_not_found",
+        )
+        return
+
+    try:
+        candidate = resolve_resume_candidate_for_run(
+            stored,
+            config_path=config_path,
+            overrides=config_overrides,
+        )
+    except ConfigError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="config_error",
+        )
+        return
+
     invocation = invocation_options_from_args(
         args,
-        resolved_config=resolved,
+        resolved_config=candidate,
         resolved_runs=resolved_runs,
     )
-    store.save_invocation(args.run, invocation_to_dict(invocation))
+    invocation_payload = invocation_to_dict(invocation)
+
+    try:
+        resume_plan = prepare_resume(
+            store,
+            args.run,
+            candidate,
+            consumed_limits=consumed_limits_from_run(run),
+        )
+    except PrepareResumeBlockedError as exc:
+        emit_error_message(
+            exc.message,
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=exc.code,
+        )
+        return
+
+    plan_summary = build_resume_plan_summary(
+        resume_plan,
+        run=run,
+        snapshot=snapshot,
+        stored_config=stored,
+        candidate_config=candidate,
+        invocation=invocation_payload,
+        config_path=str(config_path) if config_path is not None else None,
+        config_overrides=config_overrides,
+    )
+
+    if resume_plan.already_completed:
+        message = resume_plan.message or "run already completed"
+        payload = {
+            "ok": True,
+            "run_id": args.run,
+            "phase": phase,
+            "status": snapshot.status,
+            "outcome": snapshot.outcome,
+            "message": message,
+            "already_completed": True,
+            "resume_plan": plan_summary,
+        }
+        if args.stream_json:
+            emit_payload(payload)
+        else:
+            emit_message(f"Run {args.run}: {message}")
+        return
+
+    if check_only:
+        plan_summary["check_only"] = True
+        if args.stream_json:
+            emit_payload(plan_summary)
+        else:
+            emit_message(format_resume_plan_summary_text(plan_summary))
+        return
+
+    if args.stream_json:
+        emit_payload({**plan_summary, "check_only": False})
+    else:
+        emit_message(format_resume_plan_summary_text(plan_summary))
+
+    try:
+        apply_resume_plan_atomically(
+            store,
+            resume_plan,
+            resolved_config=candidate,
+            invocation=invocation_payload,
+        )
+    except ApplyResumeError as exc:
+        emit_error_message(
+            exc.message,
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=exc.code,
+        )
+        return
+
     observability = build_observability_context(
         options=invocation.observability,
         run_id=args.run,
@@ -423,16 +545,26 @@ def handle_resume_command(args: Namespace) -> None:
             run_id=args.run,
         )
     )
+    emit_resume_plan_diagnostics(
+        observability,
+        message=f"Applying resume plan for {args.run}",
+        run_id=args.run,
+    )
     try:
         try:
             engine = _build_run_engine(store, resolved_runs, observability=observability)
             if until:
-                continuation = engine.continue_run(args.run, until=until)
+                continuation = engine.continue_run(
+                    args.run,
+                    until=until,
+                    session_policy=resume_plan.session_policy,
+                )
             else:
                 continuation = engine.continue_run(
                     args.run,
                     until="completed",
                     single_step=True,
+                    session_policy=resume_plan.session_policy,
                 )
         except KeyboardInterrupt:
             _handle_blocking_run_interrupt(
@@ -516,17 +648,39 @@ def handle_status_command(args: Namespace) -> None:
         "run": {
             "id": run["id"],
             "revision": run["revision"],
+            "schema_version": run.get("schema_version"),
             "status": run.get("status"),
             "phase": run.get("phase"),
             "outcome": run.get("outcome"),
             "plan_revision": plan.get("revision"),
+            "phase_action_id": run.get("phase_action_id"),
             "digests": dict(run.get("digests") or {}),
             "workspace": workspace,
         },
         **diagnostics,
     }
+    stop = run.get("stop")
+    if isinstance(stop, dict):
+        payload["run"]["stop"] = dict(stop)
+    digests = dict(run.get("digests") or {})
+    digest_lines: list[str] = []
+    for key in (
+        "input",
+        "output_goal",
+        "config_contract",
+        "config_execution",
+        "plan",
+        "context_spec",
+        "context_snapshot",
+        "output",
+    ):
+        value = digests.get(key)
+        if value:
+            digest_lines.append(f"  digests.{key}: {value}")
+
     if args.stream_json:
         emit_payload(payload)
+        return
 
     lines = [
         f"Run {run['id']}",
@@ -534,12 +688,18 @@ def handle_status_command(args: Namespace) -> None:
         f"  phase: {run.get('phase')}",
         f"  outcome: {run.get('outcome')}",
         f"  revision: {run['revision']}",
+        f"  schema_version: {run.get('schema_version')}",
         f"  plan_revision: {plan.get('revision')}",
         f"  workspace: {workspace}",
         f"  runs_root: {resolved_runs.path}",
         f"  runs_root_source: {resolved_runs.source}",
         f"  run_path: {resolved_runs.path / args.run}",
+        *digest_lines,
     ]
+    if isinstance(stop, dict):
+        lines.append(f"  stop: {stop.get('code')} ({stop.get('category')})")
+        if stop.get("message"):
+            lines.append(f"  stop_message: {stop.get('message')}")
     emit_message("\n".join(lines))
 
 

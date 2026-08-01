@@ -15,3 +15,25 @@ class OrchestratorError(Exception):
 class ProviderRunError(OrchestratorError):
     def __init__(self, message: str) -> None:
         super().__init__(message, code="provider_run_error")
+
+
+class SessionRecoveryPaused(OrchestratorError):
+    """Raised after pausing a run during session replacement."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code="session_recovery_paused")
+
+
+class SessionRecoveryExhausted(OrchestratorError):
+    """Raised after marking the run failed with session_recovery_exhausted."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code="session_recovery_exhausted")
+
+
+class ProducerReplacementBlocked(ProviderRunError):
+    """Producer replacement blocked by workspace or evidence integrity checks."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.code = "producer_replacement_blocked"

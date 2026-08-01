@@ -23,7 +23,6 @@ from top_down_planning.config import (
     resolve_effective_role_context,
     validate_production_snapshot_rebase,
 )
-from top_down_planning.orchestrator import ResumeError, validate_resume_preconditions
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import create_run_kwargs, write_config
 
@@ -303,43 +302,6 @@ agent_context:
     assert before_spec != after_spec
 
 
-def test_resume_rejects_file_backed_guidance_drift(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-    guidance_file = workspace / "wf.md"
-    guidance_file.write_text("guidance-a", encoding="utf-8")
-    config = resolve_config(
-        write_config(
-            tmp_path / "resume.yaml",
-            """
-run:
-  output_goal: Goal.
-agent_context:
-  producer:
-    guidance:
-      - file: wf.md
-""",
-        ),
-        cwd=workspace,
-    )
-    store = FileRunStore(tmp_path / "runs")
-    store.root.mkdir(parents=True)
-    store.create_run(
-        "run-20260101T003001-003001",
-        plan={
-            "schema_version": 1,
-            "id": "plan-guidance-test",
-            "revision": 0,
-            "output_goal": "Goal.",
-            "items": [],
-        },
-        **create_run_kwargs(workspace, resolved_config=config),
-    )
-
-    guidance_file.write_text("guidance-b", encoding="utf-8")
-    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
-        validate_resume_preconditions(store, "run-20260101T003001-003001")
-
-
 def test_set_override_accepts_producer_guidance(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     guidance_file = workspace / "producer-guidance.md"
@@ -453,91 +415,6 @@ agent_context:
     guidance_file.unlink()
     after = compute_context_spec_digest_from_config(config, workspace=workspace)
     assert before == after
-
-
-def test_resume_rejects_deleted_file_backed_guidance(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-    guidance_file = workspace / "wf.md"
-    guidance_file.write_text("guidance-a", encoding="utf-8")
-    config = resolve_config(
-        write_config(
-            tmp_path / "resume-deleted.yaml",
-            """
-run:
-  output_goal: Goal.
-agent_context:
-  producer:
-    guidance:
-      - file: wf.md
-""",
-        ),
-        cwd=workspace,
-    )
-    store = FileRunStore(tmp_path / "runs")
-    store.root.mkdir(parents=True)
-    store.create_run(
-        "run-20260101T003002-003002",
-        plan={
-            "schema_version": 1,
-            "id": "plan-guidance-deleted",
-            "revision": 0,
-            "output_goal": "Goal.",
-            "items": [],
-        },
-        **create_run_kwargs(workspace, resolved_config=config),
-    )
-
-    guidance_file.unlink()
-    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
-        validate_resume_preconditions(store, "run-20260101T003002-003002")
-
-
-@pytest.mark.parametrize(
-    "mutate_file",
-    [
-        lambda path: path.write_text("   \n", encoding="utf-8"),
-        lambda path: path.write_bytes(b"\xff\xfe"),
-    ],
-    ids=["whitespace", "non_utf8"],
-)
-def test_resume_rejects_corrupt_file_backed_guidance(
-    tmp_path: Path,
-    mutate_file: object,
-) -> None:
-    workspace = _workspace(tmp_path)
-    guidance_file = workspace / "wf.md"
-    guidance_file.write_text("guidance-a", encoding="utf-8")
-    config = resolve_config(
-        write_config(
-            tmp_path / "resume-corrupt.yaml",
-            """
-run:
-  output_goal: Goal.
-agent_context:
-  producer:
-    guidance:
-      - file: wf.md
-""",
-        ),
-        cwd=workspace,
-    )
-    store = FileRunStore(tmp_path / "runs")
-    store.root.mkdir(parents=True)
-    store.create_run(
-        "run-20260101T003003-003003",
-        plan={
-            "schema_version": 1,
-            "id": "plan-guidance-corrupt",
-            "revision": 0,
-            "output_goal": "Goal.",
-            "items": [],
-        },
-        **create_run_kwargs(workspace, resolved_config=config),
-    )
-
-    mutate_file(guidance_file)
-    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
-        validate_resume_preconditions(store, "run-20260101T003003-003003")
 
 
 def test_recompute_binding_tolerates_corrupt_guidance_files(tmp_path: Path) -> None:

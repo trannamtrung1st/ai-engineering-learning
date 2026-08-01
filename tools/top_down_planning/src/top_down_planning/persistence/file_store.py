@@ -28,13 +28,30 @@ from core_tools.persistence import (
 )
 from top_down_planning.persistence.capabilities import new_capability_record
 from top_down_planning.persistence.commit import CommitSpec
-from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
+from top_down_planning.persistence.digests import (
+    compute_config_contract_digest,
+    compute_config_execution_digest,
+    compute_plan_digest,
+)
 from top_down_planning.persistence.path_ids import validate_run_id, validate_store_id
 from top_down_planning.persistence.run_schema import (
     CURRENT_RUN_SCHEMA_VERSION,
+    validate_run_digests,
     validate_run_schema_version,
 )
 from top_down_planning.config.binding_validation import validate_context_snapshot_binding
+from top_down_planning.domain.run_lifecycle import (
+    RunLifecycleError,
+    validate_run_lifecycle_invariants,
+)
+from top_down_planning.domain.session_recovery_state import validate_session_recovery_fields
+from top_down_planning.persistence.session_bindings import (
+    enrich_sessions_for_runtime,
+    initial_structured_sessions,
+    normalize_review_record_for_runtime,
+    review_record_for_persistence,
+    sessions_for_persistence,
+)
 
 _EMPTY_PRODUCTION: dict[str, Any] = {
     "revision": 0,
@@ -64,7 +81,8 @@ def new_run_record(
     *,
     input_digest: str,
     output_goal_digest: str,
-    config_digest: str,
+    config_contract_digest: str,
+    config_execution_digest: str,
     plan_digest: str,
     context_spec_digest: str,
     context_snapshot_digest: str,
@@ -80,19 +98,21 @@ def new_run_record(
         "status": "running",
         "phase": phase,
         "outcome": None,
+        "stop": None,
+        "phase_action_id": None,
+        "session_replacement_phase_action_id": None,
+        "phase_action_domain_committed_id": None,
         "digests": {
             "input": input_digest,
             "output_goal": output_goal_digest,
-            "config": config_digest,
+            "config_contract": config_contract_digest,
+            "config_execution": config_execution_digest,
             "plan": plan_digest,
             "context_spec": context_spec_digest,
             "context_snapshot": context_snapshot_digest,
         },
         "context_snapshot_binding": context_snapshot_binding,
-        "sessions": {
-            "primary_planner_session_id": None,
-            "primary_producer_session_id": None,
-        },
+        "sessions": initial_structured_sessions(),
         "planning": {
             "agent_turns": 0,
             "items_added": 0,
@@ -160,13 +180,15 @@ class FileRunStore:
             shutil.rmtree(staging_dir)
 
         plan_payload = _canonical_plan_payload(plan)
-        config_digest = compute_config_digest(resolved_config)
+        config_contract_digest = compute_config_contract_digest(resolved_config)
+        config_execution_digest = compute_config_execution_digest(resolved_config)
         plan_digest = compute_plan_digest(plan_payload)
         run_record = new_run_record(
             validated_run_id,
             input_digest=input_digest,
             output_goal_digest=output_goal_digest,
-            config_digest=config_digest,
+            config_contract_digest=config_contract_digest,
+            config_execution_digest=config_execution_digest,
             plan_digest=plan_digest,
             context_spec_digest=context_spec_digest,
             context_snapshot_digest=context_snapshot_digest,
@@ -266,6 +288,7 @@ class FileRunStore:
             run_payload = dict(spec.run)
             run_payload["revision"] = next_revision
             run_payload["updated_at"] = _utc_now()
+            run_payload["sessions"] = sessions_for_persistence(run_payload.get("sessions"))
         else:
             run_payload = None
 
@@ -305,7 +328,9 @@ class FileRunStore:
             if not review_id:
                 raise PersistenceError("review record requires id")
             validated_review_id = validate_store_id(str(review_id), label="review_id")
-            review_payloads.append((validated_review_id, dict(review)))
+            review_payloads.append(
+                (validated_review_id, review_record_for_persistence(dict(review)))
+            )
 
         txn_id = uuid.uuid4().hex
         staging_dir = self._assert_contained(run_dir / f".txn-{txn_id}")
@@ -350,6 +375,31 @@ class FileRunStore:
                     {
                         "kind": "production",
                         "name": "production.json",
+                        "digest": digest_file(staged_path),
+                    }
+                )
+
+            if spec.resolved_config is not None:
+                staged_path = staging_dir / "resolved-config.yaml"
+                atomic_write_text(
+                    staged_path,
+                    dump_yaml(spec.resolved_config) + "\n",
+                )
+                staged_files.append(
+                    {
+                        "kind": "resolved_config",
+                        "name": "resolved-config.yaml",
+                        "digest": digest_file(staged_path),
+                    }
+                )
+
+            if spec.invocation is not None:
+                staged_path = staging_dir / "invocation.json"
+                atomic_write_json(staged_path, spec.invocation)
+                staged_files.append(
+                    {
+                        "kind": "invocation",
+                        "name": "invocation.json",
                         "digest": digest_file(staged_path),
                     }
                 )
@@ -430,6 +480,7 @@ class FileRunStore:
         binding = payload.get("context_snapshot_binding")
         if binding is not None:
             validate_context_snapshot_binding(binding)
+        payload["sessions"] = sessions_for_persistence(payload.get("sessions"))
         next_revision = require_revision_field(payload, "run")
         assert_next_revision(expected_revision, next_revision)
         self.commit(
@@ -531,6 +582,8 @@ class FileRunStore:
         session_id: str,
         session_kind: str = "primary",
         loop_id: str | None = None,
+        session_instance_id: str | None = None,
+        generation: int | None = None,
     ) -> tuple[str, dict[str, Any], str]:
         capability_id, record, raw_secret = new_capability_record(
             run_id=run_id,
@@ -540,6 +593,8 @@ class FileRunStore:
             session_id=session_id,
             session_kind=session_kind,
             loop_id=loop_id,
+            session_instance_id=session_instance_id,
+            generation=generation,
         )
         capabilities_dir = self.capabilities_dir(run_id)
         capabilities_dir.mkdir(parents=True, exist_ok=True)
@@ -610,7 +665,7 @@ class FileRunStore:
         review_id = review.get("id")
         if not review_id:
             raise PersistenceError("review record requires id")
-        self.commit(run_id, CommitSpec(reviews=[dict(review)]))
+        self.commit(run_id, CommitSpec(reviews=[review_record_for_persistence(dict(review))]))
 
     def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
         validated_review_id = validate_store_id(review_id, label="review_id")
@@ -622,7 +677,7 @@ class FileRunStore:
                     f"review {validated_review_id} missing",
                     runs_root=self._root,
                 )
-            return self._read_json(path)
+            return normalize_review_record_for_runtime(self._read_json(path))
 
     def list_reviews(self, run_id: str) -> list[dict[str, Any]]:
         with self._with_recovered_run(run_id) as validated_run_id:
@@ -631,7 +686,7 @@ class FileRunStore:
                 return []
             reviews: list[dict[str, Any]] = []
             for path in sorted(reviews_dir.glob("*.json")):
-                reviews.append(self._read_json(path))
+                reviews.append(normalize_review_record_for_runtime(self._read_json(path)))
             return reviews
 
     def _recover_incomplete_transactions(self, run_id: str) -> None:
@@ -817,9 +872,17 @@ class FileRunStore:
         # Schema-version gate before any nested run-field interpretation (§3).
         payload = self._read_json(self._run_path(run_id))
         validate_run_schema_version(payload)
+        validate_run_digests(payload)
         binding = payload.get("context_snapshot_binding")
         if binding is not None:
             validate_context_snapshot_binding(binding)
+        try:
+            validate_run_lifecycle_invariants(payload)
+            validate_session_recovery_fields(payload)
+        except RunLifecycleError as exc:
+            raise PersistenceError(str(exc)) from exc
+        payload = dict(payload)
+        payload["sessions"] = enrich_sessions_for_runtime(payload.get("sessions"))
         return payload
 
     def _plan_path(self, run_id: str) -> Path:

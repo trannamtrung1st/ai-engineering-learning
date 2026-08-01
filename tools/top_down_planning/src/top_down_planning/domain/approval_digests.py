@@ -3,10 +3,26 @@
 from __future__ import annotations
 
 PLAN_APPROVAL_DIGEST_KEYS = frozenset(
-    {"plan", "config", "input", "output_goal", "context_spec"}
+    {"plan", "config_contract", "input", "output_goal", "context_spec"}
 )
 OUTPUT_APPROVAL_DIGEST_KEYS = PLAN_APPROVAL_DIGEST_KEYS | frozenset(
     {"output", "context_snapshot"}
 )
 
-__all__ = ["PLAN_APPROVAL_DIGEST_KEYS", "OUTPUT_APPROVAL_DIGEST_KEYS"]
+_LEGACY_APPROVED_CONFIG_DIGEST_KEY = "config"
+
+
+def reject_legacy_approved_config_digest(approved_digests: dict[str, str] | None) -> None:
+    """Reject approval records that still bind the monolithic config digest key."""
+
+    if isinstance(approved_digests, dict) and _LEGACY_APPROVED_CONFIG_DIGEST_KEY in approved_digests:
+        raise ValueError(
+            "legacy approved digest key 'config' is not accepted; use config_contract"
+        )
+
+
+__all__ = [
+    "OUTPUT_APPROVAL_DIGEST_KEYS",
+    "PLAN_APPROVAL_DIGEST_KEYS",
+    "reject_legacy_approved_config_digest",
+]

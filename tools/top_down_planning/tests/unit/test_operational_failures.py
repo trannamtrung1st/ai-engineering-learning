@@ -18,12 +18,39 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.observability import ObservabilityContext
 from top_down_planning.orchestrator import mark_run_failed, sanitize_operational_error
 from top_down_planning.orchestrator.engine import RunEngine
-from top_down_planning.orchestrator.resume import validate_resume_preconditions
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import create_run_kwargs, minimal_resolved_config
+
+
+def _set_planner_session_for_resume(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    session_id: str = "stub-planner-session",
+) -> None:
+    from top_down_planning.persistence.session_bindings import update_primary_binding
+
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "user_cancelled",
+        "category": "operational",
+        "phase": "planning",
+        "message": "cancelled by user",
+        "details": {},
+    }
+    run["sessions"] = update_primary_binding(
+        dict(run.get("sessions") or {}),
+        role="planner",
+        provider_session_id=session_id,
+    )
+    store.save_run(run_id, run, expected_revision)
 
 
 def _create_run(
@@ -67,6 +94,7 @@ def test_mark_run_failed_persists_status(tmp_path: Path) -> None:
 
     run = store.load_run("run-20260101T001701-001701")
     assert run["status"] == "failed"
+    assert run["stop"]["code"] == "orchestrator_invariant_failure"
     events = store.load_events("run-20260101T001701-001701")
     assert any(event.get("type") == "run_failed" for event in events)
 
@@ -84,6 +112,7 @@ def test_cli_status_reports_persisted_run_fields(tmp_path: Path) -> None:
     _create_run(store, run_id="run-20260101T001801-001801")
 
     with patch("top_down_planning.cli.user.emit_payload") as emit_payload:
+        emit_payload.side_effect = lambda payload, **kwargs: (_ for _ in ()).throw(SystemExit(0))
         with pytest.raises(SystemExit) as exit_info:
             handle_status_command(
                 Namespace(run="run-20260101T001801-001801", runs_dir=str(store.root), stream_json=True)
@@ -95,7 +124,8 @@ def test_cli_status_reports_persisted_run_fields(tmp_path: Path) -> None:
     assert payload["run"]["id"] == "run-20260101T001801-001801"
     assert payload["run"]["phase"] == WHOLE_PLAN_REVIEW
     assert payload["run"]["status"] == "running"
-    assert "config" in payload["run"]["digests"]
+    assert "config_contract" in payload["run"]["digests"]
+    assert "config_execution" in payload["run"]["digests"]
 
 
 def test_engine_provider_run_error_sets_failed_status(tmp_path: Path) -> None:
@@ -114,9 +144,11 @@ def test_engine_provider_run_error_sets_failed_status(tmp_path: Path) -> None:
         result = engine.continue_run("run-20260101T001701-001701", single_step=True)
 
     assert result.ok is False
-    assert store.load_run("run-20260101T001701-001701")["status"] == "failed"
+    run = store.load_run("run-20260101T001701-001701")
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "provider_turn_failed"
     events = store.load_events("run-20260101T001701-001701")
-    assert any(event.get("type") == "run_failed" for event in events)
+    assert any(event.get("type") == "run_paused" for event in events)
 
 
 def test_engine_operational_exception_sets_failed_status(tmp_path: Path) -> None:
@@ -199,7 +231,10 @@ def test_engine_keyboard_interrupt_terminates_provider_sessions(tmp_path: Path) 
     assert len(cancel_events) == 1
     assert cancel_events[0].fields["phase"] == PLANNING
     assert "run-20260101T001701-001701" in cancel_events[0].message
-    assert store.load_run("run-20260101T001701-001701")["status"] == "running"
+    assert store.load_run("run-20260101T001701-001701")["status"] == "paused"
+    assert (
+        store.load_run("run-20260101T001701-001701")["stop"]["code"] == "user_cancelled"
+    )
 
 
 def test_engine_emits_session_end_before_terminate(tmp_path: Path) -> None:
@@ -246,46 +281,52 @@ def test_engine_emits_session_end_before_terminate(tmp_path: Path) -> None:
 def test_resume_keyboard_interrupt_exits_without_marking_failed(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store, phase=PLANNING)
+    _set_planner_session_for_resume(store, "run-20260101T001701-001701")
+
+    with patch("top_down_planning.cli.user.emit_message"):
+        with patch("top_down_planning.cli.user._build_run_engine") as build_engine:
+            build_engine.return_value.continue_run.side_effect = KeyboardInterrupt
+            with pytest.raises(SystemExit) as exit_info:
+                handle_resume_command(
+                    Namespace(
+                        run="run-20260101T001701-001701",
+                        runs_dir=str(store.root),
+                        stream_json=False,
+                        check=False,
+                        set=[],
+                        config=None,
+                        command="resume",
+                    )
+                )
+            assert exit_info.value.code == 130
+
     run = store.load_run("run-20260101T001701-001701")
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    run["sessions"] = {"primary_planner_session_id": "stub-planner-session"}
-    store.save_run("run-20260101T001701-001701", run, expected_revision)
-
-    with patch.object(
-        PlanningPhaseOrchestrator,
-        "run",
-        side_effect=KeyboardInterrupt,
-    ):
-        with pytest.raises(SystemExit) as exit_info:
-            handle_resume_command(
-                Namespace(run="run-20260101T001701-001701", runs_dir=str(store.root), stream_json=False)
-            )
-        assert exit_info.value.code == 130
-
-    assert store.load_run("run-20260101T001701-001701")["status"] == "running"
+    assert run["status"] != "failed"
+    assert run.get("stop") in (None, {})
 
 
 def test_resume_keyboard_interrupt_stream_json_payload(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store, phase=PLANNING)
-    run = store.load_run("run-20260101T001701-001701")
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    run["sessions"] = {"primary_planner_session_id": "stub-planner-session"}
-    store.save_run("run-20260101T001701-001701", run, expected_revision)
+    _set_planner_session_for_resume(store, "run-20260101T001701-001701")
 
     with patch.object(
-        PlanningPhaseOrchestrator,
-        "run",
+        RunEngine,
+        "continue_run",
         side_effect=KeyboardInterrupt,
     ):
         with patch("top_down_planning.cli.user.emit_payload") as emit_payload:
             with pytest.raises(SystemExit) as exit_info:
                 handle_resume_command(
-                    Namespace(run="run-20260101T001701-001701", runs_dir=str(store.root), stream_json=True)
+                    Namespace(
+                        run="run-20260101T001701-001701",
+                        runs_dir=str(store.root),
+                        stream_json=True,
+                        check=False,
+                        set=[],
+                        config=None,
+                        command="resume",
+                    )
                 )
             assert exit_info.value.code == 130
             payload = emit_payload.call_args.args[0]
@@ -298,34 +339,84 @@ def test_resume_keyboard_interrupt_stream_json_payload(tmp_path: Path) -> None:
 def test_provider_run_error_resume_exits_nonzero(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store, phase=PLANNING)
-    run = store.load_run("run-20260101T001701-001701")
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    run["sessions"] = {"primary_planner_session_id": "stub-planner-session"}
-    store.save_run("run-20260101T001701-001701", run, expected_revision)
+    _set_planner_session_for_resume(store, "run-20260101T001701-001701")
 
-    with patch.object(
-        PlanningPhaseOrchestrator,
-        "run",
-        side_effect=ProviderRunError("provider crashed"),
-    ):
-        with pytest.raises(SystemExit) as exit_info:
-            handle_resume_command(
-                Namespace(run="run-20260101T001701-001701", runs_dir=str(store.root), stream_json=False)
+    with patch("top_down_planning.cli.user.emit_message"):
+        with patch("top_down_planning.cli.user._build_run_engine") as build_engine:
+            build_engine.return_value.continue_run.side_effect = ProviderRunError(
+                "provider crashed"
             )
-        assert exit_info.value.code == 1
+            with pytest.raises(ProviderRunError, match="provider crashed"):
+                handle_resume_command(
+                    Namespace(
+                        run="run-20260101T001701-001701",
+                        runs_dir=str(store.root),
+                        stream_json=False,
+                        check=False,
+                        set=[],
+                        config=None,
+                        command="resume",
+                    )
+                )
 
-    assert store.load_run("run-20260101T001701-001701")["status"] == "failed"
+    run = store.load_run("run-20260101T001701-001701")
+    assert run["status"] != "failed"
 
 
-def test_operational_failed_run_remains_resumable(tmp_path: Path) -> None:
+def test_operational_failed_run_cannot_be_resumed(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store, phase=PLANNING)
     mark_run_failed(store, "run-20260101T001701-001701", message="provider crashed")
 
-    preconditions = validate_resume_preconditions(store, "run-20260101T001701-001701")
+    engine = RunEngine(
+        store,
+        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+    )
+    result = engine.continue_run("run-20260101T001701-001701", single_step=True)
 
-    assert preconditions.status == "failed"
-    assert preconditions.outcome is None
-    assert preconditions.phase == PLANNING
+    assert result.ok is False
+    assert result.reason == "failed runs cannot be resumed"
+    run = store.load_run("run-20260101T001701-001701")
+    assert run["status"] == "failed"
+    assert run["stop"]["category"] == "invariant"
+
+
+def test_operational_paused_run_cannot_be_resumed(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    run = store.load_run("run-20260101T001701-001701")
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "limit_exhausted",
+        "category": "operational",
+        "phase": PLANNING,
+        "message": "limit reached",
+        "details": {"limit": "max_agent_turns", "consumed": 1, "configured": 1},
+    }
+    store.save_run("run-20260101T001701-001701", run, expected_revision)
+
+    engine = RunEngine(
+        store,
+        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+    )
+    result = engine.continue_run("run-20260101T001701-001701", single_step=True)
+
+    assert result.ok is False
+    assert "paused" in (result.reason or "")
+    assert store.load_run("run-20260101T001701-001701")["status"] == "paused"
+
+
+def test_resume_cli_rejects_failed_run(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    mark_run_failed(store, "run-20260101T001701-001701", message="provider crashed")
+
+    with patch("top_down_planning.cli.user.emit_error_message") as emit_error:
+        handle_resume_command(
+            Namespace(run="run-20260101T001701-001701", runs_dir=str(store.root), stream_json=False)
+        )
+        emit_error.assert_called_once()
+        assert emit_error.call_args.kwargs["code"] == "failed_run_not_resumable"

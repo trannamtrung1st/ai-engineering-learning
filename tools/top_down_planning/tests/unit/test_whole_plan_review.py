@@ -376,14 +376,15 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
     result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is False
-    assert result.outcome == "rejected"
+    assert result.outcome is None
     assert result.reason is not None
     assert "max_revision_cycles" in result.reason
 
     run = store.load_run("run-20260101T000301-000301")
     assert run["phase"] == WHOLE_PLAN_REVIEW
-    assert run["status"] == "completed"
-    assert run["outcome"] == "rejected"
+    assert run["status"] == "paused"
+    assert run["outcome"] is None
+    assert run["stop"]["code"] == "limit_exhausted"
 
 
 def test_unapproved_plan_cannot_leave_whole_plan_review_phase(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from top_down_planning.agent_tool.views import build_run_status_view
 from top_down_planning.persistence.interface import RunStore
 
 
@@ -17,12 +18,8 @@ class RunAgentService:
         plan = self._store.load_plan(self._run_id)
         return {
             "ok": True,
-            "run": {
-                "id": run["id"],
-                "revision": run["revision"],
-                "status": run.get("status"),
-                "phase": run.get("phase"),
-                "outcome": run.get("outcome"),
-                "plan_revision": plan.get("revision"),
-            },
+            "run": build_run_status_view(
+                run,
+                plan_revision=plan.get("revision"),
+            ),
         }

@@ -1,0 +1,394 @@
+"""Resume-then-replace orchestration for missing provider sessions (§12.3)."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any, Literal
+
+from core_tools.provider import Provider
+from core_tools.provider.errors import ProviderError, ProviderSessionNotFoundError, ProviderTurnError
+from top_down_planning.agent_tool.artifacts import (
+    EvidenceIntegrityError,
+    validate_production_evidence_integrity,
+)
+from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.run_lifecycle import StopRecord
+from top_down_planning.domain.run_ownership import (
+    assert_expected_run_revision,
+    resolve_run_dir,
+    run_ownership,
+)
+from top_down_planning.orchestrator.capability import revoke_capabilities_for_session_binding
+from top_down_planning.orchestrator.errors import (
+    ProducerReplacementBlocked,
+    ProviderRunError,
+    SessionRecoveryPaused,
+)
+from top_down_planning.orchestrator.reviewer_session import allocate_reviewer_session
+from top_down_planning.orchestrator.run_transitions import pause_run
+from top_down_planning.orchestrator.session_events import (
+    commit_primary_provider_session_binding,
+    commit_reviewer_loop_provider_session,
+    emit_primary_session_started,
+    emit_reviewer_session_started,
+)
+from top_down_planning.orchestrator.session_lineage import (
+    emit_session_replaced,
+    emit_session_replacement_failed,
+    emit_session_replacement_started,
+    emit_session_resume_failed,
+)
+from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.session_bindings import (
+    bump_primary_binding_generation,
+    get_primary_binding,
+)
+from top_down_planning.workspace import (
+    WorkspaceIntegrityError,
+    validate_run_workspace_integrity,
+)
+
+
+@dataclass(frozen=True)
+class PrimarySessionRecoverySpec:
+    role: Literal["planner", "producer"]
+    phase: str
+    expected_next_action: str
+    append_event: Callable[..., None]
+    model: str | None
+    build_recovery_manifest: Callable[[str], dict[str, Any]]
+    workspace: Path | None = None
+
+
+@dataclass(frozen=True)
+class ReviewerSessionRecoverySpec:
+    phase: str
+    loop_id: str
+    expected_next_action: str
+    append_event: Callable[..., None]
+    model: str | None
+    build_recovery_manifest: Callable[[str], dict[str, Any]]
+
+
+def _validate_producer_replacement(
+    store: RunStore,
+    run_id: str,
+    *,
+    workspace: Path | None = None,
+) -> None:
+    run = store.load_run(run_id)
+    try:
+        validate_run_workspace_integrity(run, workspace=workspace)
+    except WorkspaceIntegrityError as exc:
+        raise ProducerReplacementBlocked(str(exc)) from exc
+
+    production = store.load_production(run_id)
+    try:
+        validate_production_evidence_integrity(store, run_id, production)
+    except EvidenceIntegrityError as exc:
+        raise ProducerReplacementBlocked(str(exc)) from exc
+
+
+def _pause_for_provider_unavailable(
+    store: RunStore,
+    run_id: str,
+    *,
+    phase: str,
+    role: str,
+    message: str,
+) -> None:
+    stop = StopRecord(
+        code="provider_unavailable",
+        category="operational",
+        phase=phase,
+        role=role,
+        message=message,
+    )
+    pause_run(store, run_id, stop=stop, role=role, phase=phase)
+
+
+def _run_with_ownership(
+    store: RunStore,
+    run_id: str,
+    operation: Callable[[], str],
+) -> str:
+    run_dir = resolve_run_dir(store, run_id)
+    if run_dir is None:
+        return operation()
+    with run_ownership(run_id, run_dir=run_dir):
+        return operation()
+
+
+def replace_primary_session(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    *,
+    role: Literal["planner", "producer"],
+    phase: str,
+    old_provider_session_id: str,
+    phase_action_id: str,
+    append_event: Callable[..., None],
+    model: str | None,
+    manifest: dict[str, Any],
+    workspace: Path | None = None,
+) -> str:
+    """Perform one primary-session replacement with lease/revision CAS."""
+
+    if role == "producer":
+        _validate_producer_replacement(store, run_id, workspace=workspace)
+
+    def _replace() -> str:
+        run = store.load_run(run_id)
+        expected_revision = int(run["revision"])
+        binding = get_primary_binding(run, role)
+        if binding is None:
+            raise ProviderRunError(f"missing {role} session binding for replacement")
+
+        emit_session_resume_failed(
+            store,
+            run_id,
+            phase=phase,
+            role=role,
+            session_instance_id=binding.session_instance_id,
+            generation=binding.generation,
+            reason="provider_session_not_found",
+            provider_session_id=old_provider_session_id,
+            phase_action_id=phase_action_id,
+        )
+
+        updated_sessions = bump_primary_binding_generation(
+            dict(run.get("sessions") or {}),
+            role=role,
+        )
+        new_binding = get_primary_binding({**run, "sessions": updated_sessions}, role)
+        if new_binding is None:
+            raise ProviderRunError(f"failed to bump {role} session binding generation")
+
+        revoke_capabilities_for_session_binding(
+            store,
+            run_id,
+            session_instance_id=new_binding.session_instance_id,
+            generation=new_binding.generation,
+        )
+
+        run = dict(run)
+        run["revision"] = expected_revision + 1
+        run["sessions"] = updated_sessions
+        store.save_run(run_id, run, expected_revision)
+        assert_expected_run_revision(store.load_run(run_id), expected_revision + 1)
+
+        emit_session_replacement_started(
+            store,
+            run_id,
+            phase=phase,
+            role=role,
+            session_instance_id=new_binding.session_instance_id,
+            generation=new_binding.generation,
+            reason="provider_session_not_found",
+            old_provider_session_id=old_provider_session_id,
+            phase_action_id=phase_action_id,
+        )
+
+        try:
+            new_session_id = provider.start_primary_session(role, manifest, model=model)
+            emit_primary_session_started(
+                append_event,
+                provider,
+                role=role,
+                phase=phase,
+                session_id=new_session_id,
+                replacement=True,
+            )
+        except (ProviderTurnError, ProviderError) as exc:
+            emit_session_replacement_failed(
+                store,
+                run_id,
+                phase=phase,
+                role=role,
+                session_instance_id=new_binding.session_instance_id,
+                generation=new_binding.generation,
+                reason="provider_unavailable",
+                provider_session_id=old_provider_session_id,
+                phase_action_id=phase_action_id,
+            )
+            _pause_for_provider_unavailable(
+                store,
+                run_id,
+                phase=phase,
+                role=role,
+                message=str(exc),
+            )
+            raise SessionRecoveryPaused(str(exc)) from exc
+
+        saved_binding = get_primary_binding(
+            commit_primary_provider_session_binding(
+                store,
+                run_id,
+                role=role,
+                provider_session_id=new_session_id,
+                phase_action_id=phase_action_id,
+            ),
+            role,
+        )
+        if saved_binding is None:
+            raise ProviderRunError(f"failed to bind replacement {role} session")
+
+        emit_session_replaced(
+            store,
+            run_id,
+            phase=phase,
+            role=role,
+            old_session_instance_id=binding.session_instance_id,
+            new_session_instance_id=saved_binding.session_instance_id,
+            generation=saved_binding.generation,
+            reason="provider_session_not_found",
+            old_provider_session_id=old_provider_session_id,
+            new_provider_session_id=new_session_id,
+            phase_action_id=phase_action_id,
+        )
+        return new_session_id
+
+    return _run_with_ownership(store, run_id, _replace)
+
+
+def replace_reviewer_session(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    *,
+    loop: ReviewLoop,
+    phase: str,
+    old_provider_session_id: str,
+    phase_action_id: str,
+    append_event: Callable[..., None],
+    model: str | None,
+    manifest: dict[str, Any],
+) -> str:
+    """Perform one reviewer-session replacement for a review loop."""
+
+    def _replace() -> str:
+        run = store.load_run(run_id)
+        expected_revision = int(run["revision"])
+        assert_expected_run_revision(run, expected_revision)
+
+        binding = loop.reviewer_binding
+        if binding is None:
+            raise ProviderRunError("missing reviewer session binding for replacement")
+
+        emit_session_resume_failed(
+            store,
+            run_id,
+            phase=phase,
+            role="reviewer",
+            session_instance_id=binding.session_instance_id,
+            generation=binding.generation,
+            reason="provider_session_not_found",
+            provider_session_id=old_provider_session_id,
+            phase_action_id=phase_action_id,
+            loop_id=loop.id,
+        )
+
+        updated_binding = binding.with_next_generation()
+        updated_loop = replace(
+            loop,
+            reviewer_binding=updated_binding,
+            reviewer_session_id=None,
+        )
+        store.save_review(run_id, updated_loop.to_dict())
+
+        revoke_capabilities_for_session_binding(
+            store,
+            run_id,
+            session_instance_id=updated_binding.session_instance_id,
+            generation=updated_binding.generation,
+        )
+
+        emit_session_replacement_started(
+            store,
+            run_id,
+            phase=phase,
+            role="reviewer",
+            session_instance_id=updated_binding.session_instance_id,
+            generation=updated_binding.generation,
+            reason="provider_session_not_found",
+            old_provider_session_id=old_provider_session_id,
+            phase_action_id=phase_action_id,
+            loop_id=loop.id,
+        )
+
+        try:
+            new_session_id = allocate_reviewer_session(
+                provider,
+                run_id=run_id,
+                loop_id=loop.id,
+                model=model,
+            )
+            provider.send(new_session_id, manifest, model=model)
+            emit_reviewer_session_started(
+                append_event,
+                provider,
+                phase=phase,
+                session_id=new_session_id,
+                loop_id=loop.id,
+                replacement=True,
+            )
+        except (ProviderTurnError, ProviderError) as exc:
+            emit_session_replacement_failed(
+                store,
+                run_id,
+                phase=phase,
+                role="reviewer",
+                session_instance_id=updated_binding.session_instance_id,
+                generation=updated_binding.generation,
+                reason="provider_unavailable",
+                provider_session_id=old_provider_session_id,
+                phase_action_id=phase_action_id,
+                loop_id=loop.id,
+            )
+            _pause_for_provider_unavailable(
+                store,
+                run_id,
+                phase=phase,
+                role="reviewer",
+                message=str(exc),
+            )
+            raise SessionRecoveryPaused(str(exc)) from exc
+
+        committed_loop = commit_reviewer_loop_provider_session(
+            store,
+            run_id,
+            updated_loop.with_reviewer_provider_session_id(new_session_id),
+            phase_action_id=phase_action_id,
+        )
+        committed_binding = committed_loop.reviewer_binding
+        if committed_binding is None:
+            raise ProviderRunError("failed to bind replacement reviewer session")
+
+        emit_session_replaced(
+            store,
+            run_id,
+            phase=phase,
+            role="reviewer",
+            old_session_instance_id=binding.session_instance_id,
+            new_session_instance_id=committed_binding.session_instance_id,
+            generation=committed_binding.generation,
+            reason="provider_session_not_found",
+            old_provider_session_id=old_provider_session_id,
+            new_provider_session_id=new_session_id,
+            phase_action_id=phase_action_id,
+            loop_id=loop.id,
+        )
+        return new_session_id
+
+    return _run_with_ownership(store, run_id, _replace)
+
+
+__all__ = [
+    "PrimarySessionRecoverySpec",
+    "ReviewerSessionRecoverySpec",
+    "replace_primary_session",
+    "replace_reviewer_session",
+]

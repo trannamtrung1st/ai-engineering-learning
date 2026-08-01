@@ -262,30 +262,12 @@ def test_amendment_mid_production_finishes_accepted(
             phase="plan_amendment",
         ),
     )
-    amended_revision = current_plan_revision(store, run_id) + 1
-    from tests.helpers import script_reviewer_allocate
-
-    script_reviewer_allocate(patch_provider)
-    queue_turn(
+    script_whole_plan_review(
         patch_provider,
-        review_respond_script(
-            store,
-            run_id,
-            decision="approved",
-            loop_id="review-whole-plan-02",
-            target_revision=amended_revision,
-        ),
-    )
-    script_reviewer_allocate(patch_provider)
-    queue_turn(
-        patch_provider,
-        review_respond_script(
-            store,
-            run_id,
-            decision="approved",
-            loop_id="review-whole-plan-02",
-            target_revision=amended_revision,
-        ),
+        store,
+        run_id,
+        decision="approved",
+        loop_id="review-whole-plan-02",
     )
     amendment_resume = _resume(run_id, runs_dir)
     assert amendment_resume["ok"] is True
@@ -408,7 +390,7 @@ def test_capability_guardrails_reject_missing_token(
 
 
 @pytest.mark.integration
-def test_planning_turn_limit_yields_blocked_not_accepted(
+def test_planning_turn_limit_yields_paused_not_accepted(
     tmp_path: Path,
     patch_provider: E2EStubProvider,
 ) -> None:
@@ -432,7 +414,8 @@ def test_planning_turn_limit_yields_blocked_not_accepted(
     assert run_result.exit_code == 1
     payload = run_result.json()
     assert payload["ok"] is False
-    assert payload["outcome"] == "blocked"
+    assert payload["outcome"] is None
+    assert payload.get("status") == "paused"
 
 
 @pytest.mark.integration

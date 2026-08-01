@@ -57,6 +57,17 @@ from top_down_planning.config.resolve import (
     resolve_config,
     resolve_output_goal_text,
 )
+from top_down_planning.config.resume_policy import (
+    RESUME_EXECUTION_POLICY_ALLOWLIST,
+    RESUME_PRESENTATION_ALLOWLIST,
+    RESUME_SESSION_STRATEGY_BLOCKED_PATHS,
+    ResumeConfigChange,
+    ResumeConfigComparison,
+    compare_resume_configs,
+    get_config_value,
+    resolve_resume_candidate_config,
+    validate_resume_config_comparison,
+)
 from top_down_planning.config.snapshot_policy import (
     SNAPSHOT_POLICY_VERSION,
     CanonicalPathCollisionError,
@@ -127,6 +138,15 @@ __all__ = [
     "invalid_production_evidence_refs",
     "is_path_within_workspace",
     "load_skills",
+    "RESUME_EXECUTION_POLICY_ALLOWLIST",
+    "RESUME_PRESENTATION_ALLOWLIST",
+    "RESUME_SESSION_STRATEGY_BLOCKED_PATHS",
+    "ResumeConfigChange",
+    "ResumeConfigComparison",
+    "compare_resume_configs",
+    "get_config_value",
+    "resolve_resume_candidate_config",
+    "validate_resume_config_comparison",
     "resolve_config",
     "resolve_effective_role_context",
     "resolve_expanded_path_list",

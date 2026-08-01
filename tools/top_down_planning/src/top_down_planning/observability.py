@@ -411,6 +411,14 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         "plan_amendment_failed": ("error", "plan amendment failed"),
         "outcome_resolved": ("state", "outcome resolved"),
         "run_failed": ("error", "run failed"),
+        "run_paused": ("warning", "run paused"),
+        "resume_applied": ("run:resume", "resume applied"),
+        "resume_limit_extended": ("run:resume", "resume limit extended"),
+        "session_provider_id_bound": ("session:lineage", "session provider id bound"),
+        "session_replaced": ("session:lineage", "session replaced"),
+        "session_replacement_started": ("session:lineage", "session replacement started"),
+        "session_replacement_failed": ("session:lineage", "session replacement failed"),
+        "session_resume_failed": ("session:lineage", "session resume failed"),
     }
     mapped = mapping.get(event_type)
     if mapped is None:
@@ -456,6 +464,25 @@ class ObservingRunStore:
                     session_id=mapped.session_id,
                 )
             )
+
+
+def emit_resume_plan_diagnostics(
+    context: ObservabilityContext | None,
+    *,
+    message: str,
+    run_id: str,
+) -> None:
+    """Emit incremental resume diagnostics to stderr."""
+
+    event = ConsoleEvent(
+        category="run:resume",
+        message=message,
+        run_id=run_id,
+    )
+    if context is not None:
+        context.emit(event)
+        return
+    print(f"[run:resume] {message}", file=sys.stderr)
 
 
 def wrap_store_with_observability(

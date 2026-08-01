@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.session_bindings import (
+    SessionBinding,
+    binding_provider_session_id,
+    reviewer_binding_from_legacy_session_id,
+)
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
@@ -25,6 +31,31 @@ _FORBIDDEN_STAGE_LABELS = (
     "holistic review",
     "spot check",
 )
+
+
+def reviewer_loop_provider_session_id(loop: ReviewLoop | dict[str, Any]) -> str | None:
+    if isinstance(loop, ReviewLoop):
+        return loop.reviewer_session_id
+    binding_raw = loop.get("reviewer_binding")
+    if isinstance(binding_raw, dict):
+        return binding_provider_session_id(binding_raw)
+    legacy = loop.get("reviewer_session_id")
+    if legacy is None or not str(legacy).strip():
+        return None
+    return str(legacy).strip()
+
+
+def reviewer_loop_binding(loop: ReviewLoop | dict[str, Any]) -> SessionBinding | None:
+    if isinstance(loop, ReviewLoop):
+        if loop.reviewer_binding is not None:
+            return loop.reviewer_binding
+        return reviewer_binding_from_legacy_session_id(loop.reviewer_session_id)
+    binding_raw = loop.get("reviewer_binding")
+    if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
+        return SessionBinding.from_dict(binding_raw)
+    return reviewer_binding_from_legacy_session_id(
+        str(loop.get("reviewer_session_id") or "").strip() or None
+    )
 
 
 def build_reviewer_allocation_request(*, run_id: str, loop_id: str) -> dict[str, Any]:
@@ -269,4 +300,6 @@ __all__ = [
     "deliver_reviewer_turn",
     "resume_reviewer_session_with_package",
     "reviewer_decision_missing_error",
+    "reviewer_loop_binding",
+    "reviewer_loop_provider_session_id",
 ]

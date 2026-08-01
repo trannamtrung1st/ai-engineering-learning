@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from top_down_planning.domain.approval_digests import reject_legacy_approved_config_digest
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.production import (
     completion_claim_asserts_goal_met,
@@ -74,6 +75,7 @@ def build_output_approval_validation_context(
         if isinstance(approved_digests, dict)
         else {}
     )
+    reject_legacy_approved_config_digest(expected_digests or None)
     review_state = OutputReviewState(
         approved_output_revision=int(approval["target_revision"]),
         unresolved_required_findings=required_unresolved_finding_ids_from_payload(
@@ -91,7 +93,7 @@ def build_output_approval_validation_context(
         output_goal_digest=actual_output_goal_digest,
         expected_output_goal_digest=expected_digests.get("output_goal"),
         config_digest=actual_config_digest,
-        expected_config_digest=expected_digests.get("config"),
+        expected_config_digest=expected_digests.get("config_contract"),
         context_spec_digest=actual_context_spec_digest,
         expected_context_spec_digest=expected_digests.get("context_spec"),
         context_snapshot_digest=actual_context_snapshot_digest,
@@ -196,7 +198,7 @@ def validate_output_digest_hooks(
     for label, actual, expected in (
         ("input", digests.input_digest, digests.expected_input_digest),
         ("output_goal", digests.output_goal_digest, digests.expected_output_goal_digest),
-        ("config", digests.config_digest, digests.expected_config_digest),
+        ("config_contract", digests.config_digest, digests.expected_config_digest),
         ("context_spec", digests.context_spec_digest, digests.expected_context_spec_digest),
         (
             "context_snapshot",

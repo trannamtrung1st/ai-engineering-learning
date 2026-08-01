@@ -2,7 +2,23 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from top_down_planning.domain.session_bindings import SessionBinding
+from top_down_planning.persistence.session_bindings import (
+    get_primary_binding,
+    primary_provider_session_id,
+)
+
 PRODUCER_BATCH_COMPLETE_SIGNAL = "batch_complete"
+
+
+def primary_producer_provider_session_id(run: dict[str, Any]) -> str | None:
+    return primary_provider_session_id(run, "producer")
+
+
+def primary_producer_binding(run: dict[str, Any]) -> SessionBinding | None:
+    return get_primary_binding(run, "producer")
 
 
 def build_producer_protocol_instructions() -> list[str]:
@@ -60,4 +76,6 @@ __all__ = [
     "PRODUCER_BATCH_COMPLETE_SIGNAL",
     "build_producer_protocol_instructions",
     "build_producer_tool_instructions",
+    "primary_producer_binding",
+    "primary_producer_provider_session_id",
 ]

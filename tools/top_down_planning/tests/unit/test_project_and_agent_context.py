@@ -24,13 +24,11 @@ from top_down_planning.config import (
 )
 from top_down_planning.config import ConfigError
 from top_down_planning.orchestrator import (
-    ResumeError,
     build_focused_review_package,
     build_planner_context_manifest,
     build_producer_context_manifest,
     build_whole_output_review_package,
     build_whole_plan_review_package,
-    validate_resume_preconditions,
 )
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.reviews import ReviewLoop
@@ -733,86 +731,6 @@ agent_context:
     assert before != after
 
 
-def test_context_snapshot_persisted_and_blocks_resume_on_skill_content_change(
-    tmp_path: Path,
-) -> None:
-    workspace = _workspace(tmp_path)
-    skill_dir = workspace / ".agents" / "skills" / "demo"
-    skill_dir.mkdir(parents=True)
-    skill_file = skill_dir / "SKILL.md"
-    skill_file.write_text("skill-a", encoding="utf-8")
-    config = resolve_config(
-        write_config(
-            tmp_path / "base.yaml",
-            """
-run:
-  output_goal: Goal.
-agent_context:
-  default:
-    skills:
-      - .agents/skills/demo/
-""",
-        ),
-        cwd=workspace,
-    )
-    store = FileRunStore(tmp_path / "runs")
-    store.root.mkdir(parents=True)
-    plan_payload = {
-        "schema_version": 1,
-        "id": "plan-context-test",
-        "revision": 0,
-        "output_goal": "Goal.",
-        "items": [],
-    }
-    store.create_run(
-        "run-20260101T002301-002301",
-        plan=plan_payload,
-        **create_run_kwargs(workspace, resolved_config=config),
-    )
-
-    skill_file.write_text("skill-b", encoding="utf-8")
-    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
-        validate_resume_preconditions(store, "run-20260101T002301-002301")
-
-
-def test_context_snapshot_content_change_blocks_resume(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-    readme = workspace / "README.md"
-    readme.write_text("alpha", encoding="utf-8")
-    config = resolve_config(
-        write_config(
-            tmp_path / "base.yaml",
-            """
-run:
-  output_goal: Goal.
-agent_context:
-  default:
-    resources:
-      - README.md
-""",
-        ),
-        cwd=workspace,
-    )
-    store = FileRunStore(tmp_path / "runs")
-    store.root.mkdir(parents=True)
-    plan_payload = {
-        "schema_version": 1,
-        "id": "plan-context-test",
-        "revision": 0,
-        "output_goal": "Goal.",
-        "items": [],
-    }
-    store.create_run(
-        "run-20260101T002301-002301",
-        plan=plan_payload,
-        **create_run_kwargs(workspace, resolved_config=config),
-    )
-
-    readme.write_text("beta", encoding="utf-8")
-    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
-        validate_resume_preconditions(store, "run-20260101T002301-002301")
-
-
 def test_context_spec_digest_stable_when_configured_resource_deleted(
     tmp_path: Path,
 ) -> None:
@@ -837,46 +755,6 @@ agent_context:
     guide.unlink()
     after = compute_context_spec_digest_from_config(config, workspace=workspace)
     assert before == after
-
-
-def test_context_snapshot_blocks_resume_when_configured_resource_deleted(
-    tmp_path: Path,
-) -> None:
-    workspace = _workspace(tmp_path)
-    guide = workspace / "guide.md"
-    guide.write_text("guide", encoding="utf-8")
-    config = resolve_config(
-        write_config(
-            tmp_path / "base.yaml",
-            """
-run:
-  output_goal: Goal.
-agent_context:
-  default:
-    resources:
-      - guide.md
-""",
-        ),
-        cwd=workspace,
-    )
-    store = FileRunStore(tmp_path / "runs")
-    store.root.mkdir(parents=True)
-    plan_payload = {
-        "schema_version": 1,
-        "id": "plan-context-test",
-        "revision": 0,
-        "output_goal": "Goal.",
-        "items": [],
-    }
-    store.create_run(
-        "run-20260101T002302-002302",
-        plan=plan_payload,
-        **create_run_kwargs(workspace, resolved_config=config),
-    )
-
-    guide.unlink()
-    with pytest.raises(ResumeError, match="context snapshot digest mismatch"):
-        validate_resume_preconditions(store, "run-20260101T002302-002302")
 
 
 def test_context_spec_and_snapshot_payloads_cover_supporting_context_only(

@@ -1,0 +1,371 @@
+"""Session recovery tests (proposal §21 tests 25–30)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from top_down_planning.agent_tool.artifacts import (
+    EvidenceIntegrityError,
+    capture_output_artifact,
+    validate_production_evidence_integrity,
+)
+from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.orchestrator import PlanningPhaseOrchestrator
+from top_down_planning.orchestrator.errors import ProducerReplacementBlocked
+from top_down_planning.orchestrator.focused_review import build_focused_review_package
+from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
+from top_down_planning.orchestrator.planning import build_planner_context_manifest
+from top_down_planning.orchestrator.production import build_producer_context_manifest
+from top_down_planning.orchestrator.provider_turns import (
+    build_reviewer_turn_recovery,
+    consume_provider_turn_with_session_recovery,
+)
+from top_down_planning.orchestrator.recovery_manifest import (
+    REPLACEMENT_SESSION_NOTICE,
+    build_planner_recovery_manifest,
+    build_producer_recovery_manifest,
+)
+from top_down_planning.orchestrator.reviewer_session import allocate_reviewer_session
+from top_down_planning.orchestrator.session_recovery import replace_primary_session
+from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence.session_bindings import update_primary_binding
+from top_down_planning.workspace import WorkspaceIntegrityError, validate_run_workspace_integrity
+from core_tools.provider import StubProvider
+from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, whole_plan_approval_record
+
+
+def _sample_plan() -> Plan:
+    return Plan(
+        id="plan-run-test",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            )
+        },
+    )
+
+
+def _create_planning_run(store: FileRunStore, run_id: str = "run-20260101T006001-006001") -> None:
+    store.create_run(
+        run_id,
+        plan=_sample_plan(),
+        **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
+    )
+
+
+def _bind_primary_session(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    role: str,
+    session_id: str,
+) -> None:
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["sessions"] = update_primary_binding(
+        dict(run.get("sessions") or {}),
+        role=role,
+        provider_session_id=session_id,
+        provider="cursor",
+    )
+    store.save_run(run_id, run, expected_revision)
+
+
+def _event_types(store: FileRunStore, run_id: str) -> list[str]:
+    return [str(event.get("type") or "") for event in store.load_events(run_id)]
+
+
+def test_planner_session_resumes_successfully(tmp_path: Path) -> None:
+    """§21 test 25: existing planner session resumes without replacement."""
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    provider = StubProvider()
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    plan = store.load_plan_model(run_id)
+    provider.script_turn(done_events(signal="continue", text="planning turn"))
+    session_id = provider.start_primary_session(
+        "planner",
+        build_planner_context_manifest(run_id, run, config, plan),
+    )
+    list(provider.stream_events(session_id))
+    _bind_primary_session(store, run_id, role="planner", session_id=session_id)
+
+    provider.script_session_turn(
+        session_id,
+        done_events(signal="candidate_plan_ready", text="done"),
+    )
+    result = PlanningPhaseOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.session_id == session_id
+    assert "session_replaced" not in _event_types(store, run_id)
+
+
+def test_planner_session_missing_and_replaced(tmp_path: Path) -> None:
+    """§21 test 26: missing planner session is replaced once with recovery manifest."""
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    provider = StubProvider()
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    plan = store.load_plan_model(run_id)
+    provider.script_turn(done_events(text="initial planner start"))
+    session_id = provider.start_primary_session(
+        "planner",
+        build_planner_context_manifest(run_id, run, config, plan),
+    )
+    list(provider.stream_events(session_id))
+    _bind_primary_session(store, run_id, role="planner", session_id=session_id)
+
+    provider.mark_session_not_found(session_id)
+    provider.script_turn(done_events(text="replacement planner start"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="replacement turn"))
+    result = PlanningPhaseOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.session_id != session_id
+    events = _event_types(store, run_id)
+    assert "session_resume_failed" in events
+    assert "session_replacement_started" in events
+    assert "session_replaced" in events
+    assert "session_provider_id_bound" in events
+
+
+def test_reviewer_session_missing_and_replaced(tmp_path: Path) -> None:
+    """§21 test 27: missing reviewer session is replaced once."""
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["phase"] = PLANNING
+    store.save_run(run_id, run, expected_revision)
+
+    loop = ReviewLoop(
+        id="loop-focused-01",
+        type="focused_plan",
+        reviewer_session_id=None,
+        target_revision=0,
+        scope={"item_ids": ["item-root"]},
+        status="pending",
+        revise_at="blocker",
+    )
+    store.save_review(run_id, loop.to_dict())
+
+    provider = StubProvider()
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop.id))
+    package = build_focused_review_package(
+        run_id,
+        run,
+        config,
+        loop,
+        plan=store.load_plan_model(run_id),
+    )
+    provider.script_turn(done_events(text="allocation"))
+    session_id = allocate_reviewer_session(provider, run_id=run_id, loop_id=loop.id)
+    list(provider.stream_events(session_id))
+    updated = loop.with_reviewer_provider_session_id(session_id)
+    store.save_review(run_id, updated.to_dict())
+
+    provider.mark_session_not_found(session_id)
+    provider.script_turn(done_events(text="replacement reviewer alloc"))
+    provider.script_turn(done_events(text="replacement reviewer turn"))
+    outcome = consume_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        session_id,
+        allowed_signals=frozenset(),
+        recovery=build_reviewer_turn_recovery(
+            store,
+            run_id,
+            loop_id=loop.id,
+            phase=PLANNING,
+            expected_next_action="continue reviewer turn",
+            append_event=lambda *_args, **_kwargs: None,
+            model=None,
+            review_package=package,
+        ),
+    )
+
+    assert outcome.replaced is True
+    assert outcome.session_id != session_id
+    events = _event_types(store, run_id)
+    assert "session_resume_failed" in events
+    assert "session_replaced" in events
+
+
+def test_producer_session_missing_and_replaced(tmp_path: Path) -> None:
+    """§21 test 28: missing producer session is replaced once."""
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+
+    provider = StubProvider()
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    plan = store.load_plan_model(run_id)
+    provider.script_turn(done_events(text="initial producer start"))
+    session_id = provider.start_primary_session(
+        "producer",
+        build_producer_context_manifest(run_id, run, config, plan),
+    )
+    list(provider.stream_events(session_id))
+    _bind_primary_session(store, run_id, role="producer", session_id=session_id)
+
+    provider.mark_session_not_found(session_id)
+    provider.script_turn(done_events(text="replacement producer start"))
+    provider.script_turn(done_events(text="replacement producer turn"))
+    from top_down_planning.orchestrator.provider_turns import build_producer_turn_recovery
+
+    outcome = consume_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        session_id,
+        allowed_signals=frozenset(),
+        recovery=build_producer_turn_recovery(
+            store,
+            run_id,
+            phase=PRODUCTION,
+            expected_next_action="continue production turn",
+            append_event=lambda *_args, **_kwargs: None,
+            model=None,
+        ),
+    )
+
+    assert outcome.replaced is True
+    assert outcome.session_id != session_id
+    events = _event_types(store, run_id)
+    assert "session_replaced" in events
+
+
+def test_producer_replacement_blocked_by_workspace_mismatch(tmp_path: Path) -> None:
+    """§21 test 29: producer replacement blocked when workspace drifts."""
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    run = store.load_run(run_id)
+    other_workspace = tmp_path / "other-workspace"
+    other_workspace.mkdir()
+
+    with pytest.raises(WorkspaceIntegrityError):
+        validate_run_workspace_integrity(run, workspace=other_workspace)
+
+    _bind_primary_session(store, run_id, role="producer", session_id="stub-session-1")
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    manifest = build_producer_recovery_manifest(
+        store,
+        run_id,
+        config,
+        store.load_plan_model(run_id),
+        phase_action_id="action-test",
+        expected_next_action="continue production",
+    )
+    assert REPLACEMENT_SESSION_NOTICE in manifest["replacement_session_notice"]
+
+    provider = StubProvider()
+    with pytest.raises(ProducerReplacementBlocked, match="workspace mismatch"):
+        replace_primary_session(
+            store,
+            run_id,
+            provider,
+            role="producer",
+            phase=PRODUCTION,
+            old_provider_session_id="stub-session-1",
+            phase_action_id="action-test",
+            append_event=lambda *_args, **_kwargs: None,
+            model=None,
+            manifest=manifest,
+            workspace=other_workspace,
+        )
+
+
+def test_producer_replacement_blocked_by_evidence_mismatch(tmp_path: Path) -> None:
+    """§21 test 30: producer replacement blocked when evidence hash drifts."""
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    artifact = store.root / "artifact.txt"
+    artifact.write_text("original\n", encoding="utf-8")
+    evidence = capture_output_artifact(
+        store,
+        run_id,
+        workspace=store.root,
+        ref="artifact.txt",
+    )
+    production = store.load_production(run_id)
+    expected_production_revision = int(production["revision"])
+    production = dict(production)
+    production["revision"] = expected_production_revision + 1
+    production["output_evidence"] = [evidence]
+    store.save_production(
+        run_id,
+        production,
+        expected_revision=expected_production_revision,
+    )
+
+    artifact.write_text("mutated\n", encoding="utf-8")
+    stored_production = store.load_production(run_id)
+    snapshot_ref = str(evidence["snapshot_ref"])
+    _prefix, snapshot_id, filename = Path(snapshot_ref).parts
+    artifact_path = store.artifact_path(run_id, snapshot_id, filename)
+    artifact_path.write_bytes(b"corrupted snapshot bytes\n")
+    with pytest.raises(EvidenceIntegrityError):
+        validate_production_evidence_integrity(store, run_id, stored_production)
+
+
+def test_planner_recovery_manifest_includes_required_fields(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    config = store.load_resolved_config(run_id)
+    manifest = build_planner_recovery_manifest(
+        store,
+        run_id,
+        config,
+        store.load_plan_model(run_id),
+        phase_action_id="action-abc",
+        expected_next_action="continue planning",
+    )
+
+    for key in (
+        "run_id",
+        "phase",
+        "role",
+        "session_kind",
+        "phase_action_id",
+        "expected_next_action",
+        "plan_snapshot",
+        "digests",
+        "replacement_session_notice",
+        "recent_durable_events",
+        "output_goal",
+    ):
+        assert key in manifest

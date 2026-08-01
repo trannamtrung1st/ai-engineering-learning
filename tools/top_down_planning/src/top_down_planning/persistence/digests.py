@@ -12,14 +12,19 @@ from top_down_planning.domain.models import Plan
 from top_down_planning.domain.production import build_production_digest_payload
 
 __all__ = [
+    "compute_config_contract_digest",
     "compute_config_digest",
+    "compute_config_execution_digest",
+    "contract_config_projection",
     "digest_binding_payload",
     "compute_output_digest",
     "compute_plan_digest",
+    "execution_config_projection",
     "semantic_config_projection",
 ]
 
 _INVOCATION_ONLY_CONFIG_KEYS = frozenset({"observability"})
+_EXECUTION_ONLY_TOP_LEVEL_KEYS = frozenset({"limits"})
 
 
 def semantic_config_projection(config: dict[str, Any]) -> dict[str, Any]:
@@ -36,6 +41,24 @@ def semantic_config_projection(config: dict[str, Any]) -> dict[str, Any]:
     return projected
 
 
+def contract_config_projection(config: dict[str, Any]) -> dict[str, Any]:
+    """Return approval-binding config projection (excludes execution limits)."""
+
+    projected = semantic_config_projection(config)
+    for key in _EXECUTION_ONLY_TOP_LEVEL_KEYS:
+        projected.pop(key, None)
+    return projected
+
+
+def execution_config_projection(config: dict[str, Any]) -> dict[str, Any]:
+    """Return execution-policy config projection (operational limits only)."""
+
+    limits = config.get("limits")
+    if not isinstance(limits, dict) or not limits:
+        return {}
+    return {"limits": copy.deepcopy(limits)}
+
+
 def compute_plan_digest(plan: Plan | dict[str, Any]) -> str:
     """Deterministic digest of canonical plan content."""
     if isinstance(plan, Plan):
@@ -45,8 +68,18 @@ def compute_plan_digest(plan: Plan | dict[str, Any]) -> str:
     return digest_json(payload)
 
 
+def compute_config_contract_digest(config: dict[str, Any]) -> str:
+    return digest_json(contract_config_projection(config))
+
+
+def compute_config_execution_digest(config: dict[str, Any]) -> str:
+    return digest_json(execution_config_projection(config))
+
+
 def compute_config_digest(config: dict[str, Any]) -> str:
-    return digest_json(semantic_config_projection(config))
+    """Compatibility alias for contract digest semantics."""
+
+    return compute_config_contract_digest(config)
 
 
 def digest_binding_payload(payload: dict[str, Any]) -> str:

@@ -20,9 +20,11 @@ from top_down_planning.config import (
 )
 from core_tools.persistence.digests import digest_text
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator import ResumeError, validate_resume_preconditions
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.persistence.digests import compute_config_digest
+from top_down_planning.persistence.digests import (
+    compute_config_contract_digest,
+    compute_config_execution_digest,
+)
 from tests.conftest import run_cli
 from tests.helpers import create_run_kwargs, run_digests_for_config, whole_plan_approval_record, write_config
 
@@ -59,7 +61,20 @@ def test_override_digest_changes_when_cli_set_applied(tmp_path: Path) -> None:
     base = resolve_config(config_path)
     overridden = resolve_config(config_path, ["planning.max_depth=5"])
 
-    assert compute_config_digest(base) != compute_config_digest(overridden)
+    assert compute_config_contract_digest(base) != compute_config_contract_digest(overridden)
+    assert compute_config_execution_digest(base) == compute_config_execution_digest(overridden)
+
+
+def test_limit_only_override_changes_execution_digest_not_contract(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "base.yaml",
+        "run:\n  output_goal: Goal.\nplanning:\n  max_depth: 4\n",
+    )
+    base = resolve_config(config_path)
+    overridden = resolve_config(config_path, ["limits.production.max_batches=80"])
+
+    assert compute_config_contract_digest(base) == compute_config_contract_digest(overridden)
+    assert compute_config_execution_digest(base) != compute_config_execution_digest(overridden)
 
 
 def test_unknown_override_path_fails_explicitly(tmp_path: Path) -> None:
@@ -326,78 +341,3 @@ run:
     assert "output_goal" not in run_section
     assert run_section["output_goal_file"] == "goal.md"
     assert resolve_output_goal_text(resolved, base_dir=workspace) == "Goal from file."
-
-
-def test_resume_rejects_changed_output_goal_file(tmp_path: Path) -> None:
-    workspace, goal_file, config = _workspace_with_goal_file(tmp_path)
-    goal_text = resolve_output_goal_text(config, base_dir=workspace)
-    plan = Plan(
-        id="plan-run-20260101T002201-002201",
-        revision=0,
-        output_goal=goal_text,
-        items={
-            "item-root": PlanItem(
-                id="item-root",
-                parent_id=None,
-                order_key="0000000000",
-                title="Root",
-                kind="aggregate",
-            )
-        },
-    )
-    store = FileRunStore(tmp_path / "runs")
-    store.create_run(
-        "run-20260101T002201-002201",
-        plan=plan,
-        **create_run_kwargs(workspace, resolved_config=config),
-    )
-
-    goal_file.write_text("Changed goal content.", encoding="utf-8")
-    with pytest.raises(ResumeError, match="output goal digest mismatch"):
-        validate_resume_preconditions(store, "run-20260101T002201-002201")
-
-
-def test_resume_rejects_changed_input_refs(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    input_file = workspace / "task.md"
-    input_file.write_text("Original task.", encoding="utf-8")
-    config = resolve_config(
-        write_config(
-            tmp_path / "base.yaml",
-            """
-project:
-  workspace: .
-run:
-  input_refs:
-    - task.md
-  output_goal: Goal.
-""",
-        ),
-        cwd=workspace,
-    )
-    plan = Plan(
-        id="plan-run-20260101T002202-002202",
-        revision=0,
-        output_goal="Goal.",
-        input_refs=["task.md"],
-        items={
-            "item-root": PlanItem(
-                id="item-root",
-                parent_id=None,
-                order_key="0000000000",
-                title="Root",
-                kind="aggregate",
-            )
-        },
-    )
-    store = FileRunStore(tmp_path / "runs")
-    store.create_run(
-        "run-20260101T002202-002202",
-        plan=plan,
-        **create_run_kwargs(workspace, resolved_config=config),
-    )
-
-    input_file.write_text("Changed task content.", encoding="utf-8")
-    with pytest.raises(ResumeError, match="input digest mismatch"):
-        validate_resume_preconditions(store, "run-20260101T002202-002202")

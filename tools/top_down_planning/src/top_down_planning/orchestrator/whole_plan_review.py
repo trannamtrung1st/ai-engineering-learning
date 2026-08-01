@@ -62,6 +62,7 @@ from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_phase,
     rotate_session_capability,
 )
+from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
 from top_down_planning.orchestrator.reviewer_session import (
     allocate_reviewer_session,
     build_reviewer_protocol_instructions,
@@ -69,14 +70,23 @@ from top_down_planning.orchestrator.reviewer_session import (
     deliver_reviewer_turn,
     resume_reviewer_session_with_package,
     reviewer_decision_missing_error,
+    reviewer_loop_provider_session_id,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryPaused
+from top_down_planning.orchestrator.failure import apply_review_incomplete_run_transition
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.run_transitions import (
+    complete_run_with_outcome,
+    pause_for_limit_exhausted,
+)
 from top_down_planning.orchestrator.provider_turns import (
-    consume_provider_turn,
+    build_planner_turn_recovery,
+    build_reviewer_turn_recovery,
+    consume_provider_turn_with_session_recovery,
     review_decision_from_store,
 )
 from top_down_planning.orchestrator.session_events import (
+    commit_reviewer_loop_provider_session,
     emit_reviewer_session_resumed,
     emit_reviewer_session_started,
     resume_primary_session_with_audit,
@@ -84,7 +94,7 @@ from top_down_planning.orchestrator.session_events import (
     sync_reviewer_loop_session_id,
 )
 from top_down_planning.workspace import run_workspace
-from top_down_planning.persistence.digests import compute_config_digest, compute_plan_digest
+from top_down_planning.persistence.digests import compute_config_contract_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
@@ -138,7 +148,7 @@ class WholePlanReviewOrchestrator:
 
         while True:
             if loop.status == "pending":
-                session_id = loop.reviewer_session_id
+                session_id = reviewer_loop_provider_session_id(loop)
                 run = self._store.load_run(self._run_id)
                 phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
                 if session_id is None:
@@ -213,14 +223,15 @@ class WholePlanReviewOrchestrator:
                 revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
                 if loop.lifecycle_status == "limit_reached":
                     exhausted = loop.exhausted_budget or "verification_revision"
-                    return self._terminate(
-                        "rejected",
+                    return self._pause_for_limit(
                         limit_message(
                             limits,
                             exhausted=exhausted,
                             review_label="whole-plan review",
                         ),
                         loop=loop,
+                        exhausted=exhausted,
+                        limits=limits,
                     )
                 return self._terminate(
                     "blocked",
@@ -230,19 +241,29 @@ class WholePlanReviewOrchestrator:
 
             if stage_decision == "review_incomplete":
                 budgets = budgets_snapshot(loop)
-                # Operational failure: do not consume revision or scope-review budget.
+                marker = loop.review_incomplete or {}
+                reason = str(
+                    marker.get("reason")
+                    or "whole-plan review could not be completed"
+                )
+                apply_review_incomplete_run_transition(
+                    self._store,
+                    self._run_id,
+                    loop_id=loop.id,
+                    reason=reason,
+                    finding_set_id=marker.get("finding_set_id"),
+                    stage=marker.get("stage"),
+                )
+                run = self._store.load_run(self._run_id)
                 return WholePlanReviewResult(
                     ok=False,
                     phase=WHOLE_PLAN_REVIEW,
-                    status=str(self._store.load_run(self._run_id).get("status") or "failed"),
+                    status=str(run.get("status") or "paused"),
                     outcome=None,
                     loop_id=loop.id,
-                    reviewer_session_id=loop.reviewer_session_id,
+                    reviewer_session_id=reviewer_loop_provider_session_id(loop),
                     revision_cycles=budgets["revision_cycles"],
-                    reason=str(
-                        (loop.review_incomplete or {}).get("reason")
-                        or "whole-plan review could not be completed"
-                    ),
+                    reason=reason,
                 )
 
             if stage_decision == "advisory_pending":
@@ -315,14 +336,15 @@ class WholePlanReviewOrchestrator:
                         exhausted="verification_revision",
                     )
                 )
-                return self._terminate(
-                    "rejected",
+                return self._pause_for_limit(
                     limit_message(
                         limits,
                         exhausted="verification_revision",
                         review_label="whole-plan review",
                     ),
                     loop=loop,
+                    exhausted="verification_revision",
+                    limits=limits,
                 )
 
             self._resume_planner_with_findings(loop)
@@ -341,16 +363,17 @@ class WholePlanReviewOrchestrator:
                     exhausted="scope_review",
                 )
             )
-            return self._terminate(
-                "rejected",
+            return self._pause_for_limit(
                 limit_message(
                     limits,
                     exhausted="scope_review",
                     review_label="whole-plan review",
                 ),
                 loop=loop,
+                exhausted="scope_review",
+                limits=limits,
             )
-        if loop.reviewer_session_id is not None:
+        if reviewer_loop_provider_session_id(loop) is not None:
             revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
         updated = self._persist_loop(prepare_scope_review_loop(loop))
         self._append_event(
@@ -387,7 +410,7 @@ class WholePlanReviewOrchestrator:
             plan=plan,
             approval=loop.to_dict(),
             actual_plan_digest=compute_plan_digest(plan),
-            actual_config_digest=compute_config_digest(config),
+            actual_config_digest=compute_config_contract_digest(config),
             actual_input_digest=compute_input_digest(
                 config,
                 base_dir=run_workspace(run),
@@ -423,10 +446,50 @@ class WholePlanReviewOrchestrator:
             "whole_plan_review_approved",
             loop_id=loop.id,
             target_revision=plan.revision,
-            reviewer_session_id=loop.reviewer_session_id,
+            reviewer_session_id=reviewer_loop_provider_session_id(loop),
         )
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, loop=loop)
+
+    def _pause_for_limit(
+        self,
+        message: str,
+        *,
+        loop: ReviewLoop | None,
+        exhausted: str,
+        limits: Any,
+    ) -> WholePlanReviewResult:
+        if exhausted == "verification_revision":
+            limit = "max_revision_cycles"
+            consumed = int(loop.revision_cycles if loop is not None else limits.max_revision_cycles)
+            configured = int(limits.max_revision_cycles)
+        else:
+            limit = "max_scope_review_rounds"
+            consumed = int(
+                loop.scope_review_rounds if loop is not None else limits.max_scope_review_rounds
+            )
+            configured = int(limits.max_scope_review_rounds)
+        pause_for_limit_exhausted(
+            self._store,
+            self._run_id,
+            phase=WHOLE_PLAN_REVIEW,
+            message=message,
+            limit=limit,
+            consumed=consumed,
+            configured=configured,
+            role="reviewer",
+            revoke_phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop.id if loop is not None else None,
+            exhausted_budget=exhausted,
+        )
+        self._append_event(
+            "whole_plan_review_limit_exceeded",
+            message=message,
+            loop_id=loop.id if loop is not None else None,
+            exhausted_budget=exhausted,
+        )
+        run = self._store.load_run(self._run_id)
+        return self._result_from_run(run, ok=False, reason=message)
 
     def _terminate(
         self,
@@ -435,17 +498,12 @@ class WholePlanReviewOrchestrator:
         *,
         loop: ReviewLoop | None = None,
     ) -> WholePlanReviewResult:
-        revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_PLAN_REVIEW)
-        run = self._store.load_run(self._run_id)
-        expected_revision = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["status"] = "completed"
-        run["outcome"] = outcome
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event(
-            "whole_plan_review_failed",
-            outcome=outcome,
+        complete_run_with_outcome(
+            self._store,
+            self._run_id,
+            outcome,
+            revoke_phase=WHOLE_PLAN_REVIEW,
+            event_type="whole_plan_review_failed",
             message=message,
             loop_id=loop.id if loop is not None else None,
             lifecycle_status=loop.lifecycle_status if loop is not None else None,
@@ -549,8 +607,8 @@ class WholePlanReviewOrchestrator:
             session_id=session_id,
             loop_id=loop.id,
         )
-        updated = replace(loop, reviewer_session_id=session_id)
-        self._persist_loop(updated)
+        updated = loop.with_reviewer_provider_session_id(session_id)
+        commit_reviewer_loop_provider_session(self._store, self._run_id, updated)
         self._capability_token = deliver_reviewer_turn(
             self._provider,
             self._store,
@@ -563,11 +621,39 @@ class WholePlanReviewOrchestrator:
         return session_id, self._capability_token
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
-        consume_provider_turn(
-            self._provider,
-            session_id,
-            allowed_signals=_NO_COMPLETION_SIGNALS,
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+        package = build_whole_plan_review_package(
+            self._run_id,
+            run,
+            config,
+            self._store.load_plan_model(self._run_id),
+            loop,
         )
+        role_context = resolve_role_session_context(config, run, "reviewer")
+        phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
+        try:
+            turn_outcome = consume_provider_turn_with_session_recovery(
+                self._store,
+                self._run_id,
+                self._provider,
+                session_id,
+                allowed_signals=_NO_COMPLETION_SIGNALS,
+                recovery=build_reviewer_turn_recovery(
+                    self._store,
+                    self._run_id,
+                    loop_id=loop_id,
+                    phase=phase,
+                    expected_next_action="continue whole-plan reviewer turn",
+                    append_event=self._append_event,
+                    model=role_context.model,
+                    review_package=package,
+                ),
+            )
+        except SessionRecoveryPaused as exc:
+            raise ProviderRunError(str(exc)) from exc
+        session_id = turn_outcome.session_id
         sync_reviewer_loop_session_id(
             self._provider,
             self._store,
@@ -583,7 +669,7 @@ class WholePlanReviewOrchestrator:
 
     def _resume_planner_with_findings(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
-        session_id = _primary_planner_session_id(run)
+        session_id = primary_planner_provider_session_id(run)
         if session_id is None:
             raise ProviderRunError("primary planner session is missing for revision")
 
@@ -665,7 +751,7 @@ class WholePlanReviewOrchestrator:
 
     def _resume_planner_advisory_handoff(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
-        session_id = _primary_planner_session_id(run)
+        session_id = primary_planner_provider_session_id(run)
         if session_id is None:
             raise ProviderRunError("primary planner session is missing for advisory handoff")
 
@@ -710,11 +796,28 @@ class WholePlanReviewOrchestrator:
         self._consume_planner_turn(session_id)
 
     def _consume_planner_turn(self, session_id: str) -> None:
-        consume_provider_turn(
-            self._provider,
-            session_id,
-            allowed_signals=_NO_COMPLETION_SIGNALS,
-        )
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        role_context = resolve_role_session_context(config, run, "planner")
+        phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
+        try:
+            consume_provider_turn_with_session_recovery(
+                self._store,
+                self._run_id,
+                self._provider,
+                session_id,
+                allowed_signals=_NO_COMPLETION_SIGNALS,
+                recovery=build_planner_turn_recovery(
+                    self._store,
+                    self._run_id,
+                    phase=phase,
+                    expected_next_action="revise plan after whole-plan review",
+                    append_event=self._append_event,
+                    model=role_context.model,
+                ),
+            )
+        except SessionRecoveryPaused as exc:
+            raise ProviderRunError(str(exc)) from exc
         sync_persisted_session_id(
             self._provider,
             self._store,
@@ -725,7 +828,7 @@ class WholePlanReviewOrchestrator:
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])
-        session_id = loop.reviewer_session_id
+        session_id = reviewer_loop_provider_session_id(loop)
         if session_id is None:
             raise ProviderRunError("reviewer session is missing for recheck")
 
@@ -780,7 +883,7 @@ class WholePlanReviewOrchestrator:
             status=str(run.get("status") or "running"),
             outcome=run.get("outcome"),
             loop_id=loop.id if loop is not None else None,
-            reviewer_session_id=loop.reviewer_session_id if loop is not None else None,
+            reviewer_session_id=reviewer_loop_provider_session_id(loop) if loop is not None else None,
             revision_cycles=loop.revision_cycles if loop is not None else 0,
             reason=reason,
         )
@@ -847,10 +950,3 @@ def build_whole_plan_review_package(
         output_goal=plan.output_goal,
     )
 
-
-def _primary_planner_session_id(run: dict[str, Any]) -> str | None:
-    sessions = run.get("sessions") or {}
-    session_id = sessions.get("primary_planner_session_id")
-    if session_id is None:
-        return None
-    return str(session_id)

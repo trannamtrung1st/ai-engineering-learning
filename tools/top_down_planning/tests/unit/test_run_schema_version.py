@@ -11,6 +11,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import (
     CURRENT_RUN_SCHEMA_VERSION,
     FileRunStore,
+    PersistenceError,
     UNSUPPORTED_RUN_SCHEMA_MESSAGE,
     UnsupportedRunSchemaVersionError,
     validate_run_schema_version,
@@ -106,9 +107,33 @@ def test_schema_version_gate_runs_before_nested_field_errors(tmp_path: Path) -> 
 
 def test_validate_run_schema_version_rejects_non_int() -> None:
     with pytest.raises(UnsupportedRunSchemaVersionError):
-        validate_run_schema_version({"schema_version": "2"})
+        validate_run_schema_version({"schema_version": "3"})
     with pytest.raises(UnsupportedRunSchemaVersionError):
         validate_run_schema_version({"schema_version": True})
+
+
+def test_v3_run_rejects_legacy_config_digest(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    run_path = tmp_path / "run-20260101T000001-000001" / "run.json"
+    payload = json.loads(run_path.read_text(encoding="utf-8"))
+    payload["digests"]["config"] = payload["digests"].pop("config_contract")
+    run_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(PersistenceError, match="digests.config is not supported"):
+        store.load_run("run-20260101T000001-000001")
+
+
+def test_v3_run_requires_split_config_digests(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    run_path = tmp_path / "run-20260101T000001-000001" / "run.json"
+    payload = json.loads(run_path.read_text(encoding="utf-8"))
+    del payload["digests"]["config_execution"]
+    run_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(PersistenceError, match="digests.config_execution is required"):
+        store.load_run("run-20260101T000001-000001")
 
 
 def test_schema_version_gate_still_requires_supported_binding_shape(tmp_path: Path) -> None:

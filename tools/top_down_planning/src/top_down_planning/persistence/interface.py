@@ -72,6 +72,8 @@ class RunStore(Protocol):
         session_id: str,
         session_kind: str = "primary",
         loop_id: str | None = None,
+        session_instance_id: str | None = None,
+        generation: int | None = None,
     ) -> tuple[str, dict[str, Any], str]:
         """Create a session capability token for agent mutations."""
 

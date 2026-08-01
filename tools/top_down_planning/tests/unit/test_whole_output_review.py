@@ -377,8 +377,12 @@ def test_revision_cycle_limit_yields_rejected_not_accepted(tmp_path: Path) -> No
     result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is False
-    assert result.outcome == "rejected"
+    assert result.outcome is None
     assert "max_revision_cycles" in (result.reason or "")
+
+    run = store.load_run(run_id)
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "limit_exhausted"
 
 
 def test_provider_exception_does_not_set_outcome(tmp_path: Path) -> None:
@@ -477,7 +481,8 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["status"] = "failed"
+    run["status"] = "running"
+    run["stop"] = None
     run["sessions"] = {"primary_producer_session_id": producer_session_id}
     store.save_run(run_id, run, expected_revision)
 

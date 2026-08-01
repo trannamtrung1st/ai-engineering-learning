@@ -165,12 +165,15 @@ def test_focused_orchestrator_advisory_handoff_defer_completes(
     )
     run = store.load_run(run_id)
     expected = int(run["revision"])
+    from top_down_planning.persistence.session_bindings import update_primary_binding
+
     run = dict(run)
     run["revision"] = expected + 1
-    run["sessions"] = {
-        **dict(run.get("sessions") or {}),
-        "primary_planner_session_id": "planner-sess",
-    }
+    run["sessions"] = update_primary_binding(
+        dict(run.get("sessions") or {}),
+        role="planner",
+        provider_session_id="planner-sess",
+    )
     store.save_run(run_id, run, expected)
 
     loop = ReviewLoop(

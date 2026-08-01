@@ -42,10 +42,8 @@ from top_down_planning.orchestrator.engine import RunEngine
 from top_down_planning.orchestrator.failure import (
     apply_review_incomplete_run_transition,
     mark_run_failed,
-    restore_run_after_review_incomplete,
     sanitize_operational_error,
 )
-from top_down_planning.orchestrator.resume import ResumeError, ResumePreconditions, validate_resume_preconditions
 from top_down_planning.orchestrator.whole_plan_review import (
     WholePlanReviewOrchestrator,
     WholePlanReviewResult,
@@ -69,8 +67,6 @@ __all__ = [
     "ProductionPhaseOrchestrator",
     "ProductionPhaseResult",
     "ProviderRunError",
-    "ResumeError",
-    "ResumePreconditions",
     "RunEngine",
     "WHOLE_OUTPUT_REVIEW",
     "WHOLE_PLAN_REVIEW",
@@ -85,7 +81,5 @@ __all__ = [
     "build_whole_plan_review_package",
     "mark_run_failed",
     "apply_review_incomplete_run_transition",
-    "restore_run_after_review_incomplete",
     "sanitize_operational_error",
-    "validate_resume_preconditions",
 ]

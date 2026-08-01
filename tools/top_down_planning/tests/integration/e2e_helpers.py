@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW, WHOLE_OUTPU
 from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import (
-    compute_config_digest,
+    compute_config_contract_digest,
     compute_output_digest,
     compute_plan_digest,
 )
@@ -194,31 +194,37 @@ def review_respond_script(
     else:
         review_type = None
 
-    if review_type is not None:
-        request = mandatory_initial_respond_request(
+    def _mutate_at_runtime() -> None:
+        if review_type is not None:
+            if review_type == "whole_plan":
+                resolved_revision = int(store.load_plan(run_id)["revision"])
+            else:
+                resolved_revision = int(store.load_production(run_id)["revision"])
+            request = mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=resolved_revision,
+                review_type=review_type,
+                decision=decision,
+                findings=findings,
+            )
+        else:
+            request = {
+                "loop_id": loop_id,
+                "target_revision": target_revision,
+                "decision": decision,
+                "findings": findings or [],
+            }
+        respond_review(
             store,
             run_id,
+            request,
+            phase=phase,
             loop_id=loop_id,
-            target_revision=target_revision,
-            review_type=review_type,
-            decision=decision,
-            findings=findings,
-        )
-    else:
-        request = {
-            "loop_id": loop_id,
-            "target_revision": target_revision,
-            "decision": decision,
-            "findings": findings or [],
-        }
+        )()
 
-    return done_events(text="review turn"), respond_review(
-        store,
-        run_id,
-        request,
-        phase=phase,
-        loop_id=loop_id,
-    )
+    return done_events(text="review turn"), _mutate_at_runtime
 
 
 def production_batch_script(
@@ -297,48 +303,43 @@ def script_whole_plan_review(
 ) -> None:
     """Queue allocate + respond turns for whole-plan review (mandatory gate when approved)."""
 
-    target_revision = current_plan_revision(store, run_id)
     if decision == "approved":
-        script_reviewer_allocate(provider)
-        queue_turn(
-            provider,
-            (
-                done_events(text="review turn"),
-                respond_review(
+        def _initial_mutate() -> None:
+            revision = current_plan_revision(store, run_id)
+            respond_review(
+                store,
+                run_id,
+                mandatory_initial_respond_request(
                     store,
                     run_id,
-                    mandatory_initial_respond_request(
-                        store,
-                        run_id,
-                        loop_id=loop_id,
-                        target_revision=target_revision,
-                        review_type="whole_plan",
-                    ),
-                    phase=WHOLE_PLAN_REVIEW,
                     loop_id=loop_id,
+                    target_revision=revision,
+                    review_type="whole_plan",
                 ),
-            ),
-        )
-        script_reviewer_allocate(provider)
-        queue_turn(
-            provider,
-            (
-                done_events(text="blocker review turn"),
-                respond_review(
+                phase=WHOLE_PLAN_REVIEW,
+                loop_id=loop_id,
+            )()
+
+        def _scope_mutate() -> None:
+            revision = current_plan_revision(store, run_id)
+            respond_review(
+                store,
+                run_id,
+                mandatory_scope_review_respond_request(
                     store,
                     run_id,
-                    mandatory_scope_review_respond_request(
-                        store,
-                        run_id,
-                        loop_id=loop_id,
-                        target_revision=target_revision,
-                        review_type="whole_plan",
-                    ),
-                    phase=WHOLE_PLAN_REVIEW,
                     loop_id=loop_id,
+                    target_revision=revision,
+                    review_type="whole_plan",
                 ),
-            ),
-        )
+                phase=WHOLE_PLAN_REVIEW,
+                loop_id=loop_id,
+            )()
+
+        script_reviewer_allocate(provider)
+        queue_turn(provider, (done_events(text="review turn"), _initial_mutate))
+        script_reviewer_allocate(provider)
+        queue_turn(provider, (done_events(text="blocker review turn"), _scope_mutate))
         return
 
     script_reviewer_allocate(provider)
@@ -349,7 +350,7 @@ def script_whole_plan_review(
             run_id,
             decision=decision,
             loop_id=loop_id,
-            target_revision=target_revision,
+            target_revision=current_plan_revision(store, run_id),
             phase=WHOLE_PLAN_REVIEW,
         ),
     )
@@ -477,7 +478,7 @@ def assert_acceptance_invariant_for_run(store: FileRunStore, run_id: str) -> Non
         plan_approval=plan_approval,
         output_approval=output_approval,
         actual_plan_digest=compute_plan_digest(plan),
-        actual_config_digest=compute_config_digest(config),
+        actual_config_digest=compute_config_contract_digest(config),
         actual_output_digest=compute_output_digest(production),
         actual_input_digest=compute_input_digest(
             config,

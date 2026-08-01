@@ -21,7 +21,6 @@ from top_down_planning.domain.reviews import (
 )
 from top_down_planning.orchestrator.failure import (
     apply_review_incomplete_run_transition,
-    restore_run_after_review_incomplete,
 )
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.schema_docs import show_example, show_schema
@@ -264,16 +263,13 @@ def test_review_incomplete_run_transition_and_resume(tmp_path: Path) -> None:
         stage="discovery",
     )
     run = store.load_run(run_id)
-    assert result["status"] == "failed"
-    assert run["status"] == "failed"
+    assert result["status"] == "paused"
+    assert run["status"] == "paused"
     assert run.get("outcome") is None
+    assert run["stop"]["code"] == "review_incomplete"
     events = store.load_events(run_id)
     assert any(event.get("type") == "review_incomplete" for event in events)
-
-    assert restore_run_after_review_incomplete(store, run_id) is True
-    resumed = store.load_run(run_id)
-    assert resumed["status"] == "running"
-    assert resumed.get("outcome") is None
+    assert run["stop"]["details"]["loop_id"] == loop.id
 
 
 def test_review_service_incomplete_does_not_fail_run_for_focused(tmp_path: Path) -> None:

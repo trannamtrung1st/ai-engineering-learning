@@ -10,7 +10,7 @@ from top_down_planning.agent_tool import ProductionAgentService, RequestError
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import PlanAmendmentOrchestrator, ProductionPhaseOrchestrator, ProviderRunError
-from top_down_planning.orchestrator.phases import PLAN_AMENDMENT, PRODUCTION
+from top_down_planning.orchestrator.phases import PLAN_AMENDMENT, PRODUCTION, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.helpers import (
@@ -412,11 +412,19 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
     )
 
     run = store.load_run("run-20260101T001901-001901")
+    production = store.load_production("run-20260101T001901-001901")
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["phase"] = "whole_plan_review"
+    run["phase"] = WHOLE_PLAN_REVIEW
     run["status"] = "paused"
+    run["stop"] = {
+        "code": "amendment_pending",
+        "category": "operational",
+        "phase": WHOLE_PLAN_REVIEW,
+        "message": "test fixture pause",
+        "details": {"pending_amendment_id": production.get("pending_amendment_id")},
+    }
     store.save_run("run-20260101T001901-001901", run, expected_revision)
 
     production = store.load_production("run-20260101T001901-001901")
@@ -486,11 +494,19 @@ def test_resume_amendment_requires_prior_plan_snapshot(tmp_path: Path) -> None:
     )
 
     run = store.load_run("run-20260101T001901-001901")
+    production = store.load_production("run-20260101T001901-001901")
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
     run["phase"] = "plan_amendment"
     run["status"] = "paused"
+    run["stop"] = {
+        "code": "amendment_pending",
+        "category": "operational",
+        "phase": "plan_amendment",
+        "message": "test fixture pause",
+        "details": {"pending_amendment_id": production.get("pending_amendment_id")},
+    }
     store.save_run("run-20260101T001901-001901", run, expected_revision)
 
     with pytest.raises(ProviderRunError, match="prior_plan_snapshot"):

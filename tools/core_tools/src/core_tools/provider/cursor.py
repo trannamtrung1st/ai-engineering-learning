@@ -14,9 +14,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core_tools.provider.cursor_session_errors import (
+    classify_cursor_session_failure,
+    reclassify_provider_turn_error,
+)
 from core_tools.provider.errors import (
     ProviderBinaryNotFoundError,
     ProviderSessionError,
+    ProviderSessionNotFoundError,
     ProviderTurnError,
 )
 from core_tools.provider.events import (
@@ -509,9 +514,15 @@ class CursorProvider:
     ) -> None:
         try:
             self._collect_turn_once(session_id, session, argv)
-        except ProviderTurnError as exc:
+        except ProviderSessionNotFoundError as exc:
             with session.condition:
                 session.turn_error = exc
+        except ProviderTurnError as exc:
+            with session.condition:
+                session.turn_error = reclassify_provider_turn_error(
+                    exc,
+                    session_id=session_id,
+                )
         finally:
             with session.condition:
                 session.turn_running = False
@@ -531,7 +542,10 @@ class CursorProvider:
                 self._collect_turn_stream(session_id, session, argv)
                 return
             except ProviderTurnError as exc:
-                last_error = exc
+                classified = reclassify_provider_turn_error(exc, session_id=session_id)
+                if isinstance(classified, ProviderSessionNotFoundError):
+                    raise classified from exc
+                last_error = classified
                 if attempt < max_retries:
                     self._emit_provider_event(
                         enrich_provider_observability_event(
@@ -558,7 +572,15 @@ class CursorProvider:
     ) -> None:
         provider_session_id: str | None = None
 
-        for line in self._runner(argv, self._workspace):
+        try:
+            stream = self._runner(argv, self._workspace)
+        except ProviderTurnError as exc:
+            classified = reclassify_provider_turn_error(exc, session_id=session_id)
+            if isinstance(classified, ProviderSessionNotFoundError):
+                raise classified from exc
+            raise
+
+        for line in stream:
             try:
                 raw = json.loads(line)
             except json.JSONDecodeError as exc:
@@ -567,6 +589,26 @@ class CursorProvider:
                 ) from exc
             if not isinstance(raw, dict):
                 continue
+            if raw.get("type") == "error":
+                detail = str(raw.get("text") or raw.get("message") or raw)
+                classified = classify_cursor_session_failure(
+                    detail,
+                    session_id=session_id,
+                )
+                if classified is not None:
+                    raise classified
+                raise ProviderTurnError(
+                    f"Cursor CLI error event: {detail}",
+                    session_id=session_id,
+                )
+            if raw.get("type") == "result" and raw.get("is_error"):
+                detail = str(raw.get("result") or raw.get("message") or raw)
+                classified = classify_cursor_session_failure(
+                    detail,
+                    session_id=session_id,
+                )
+                if classified is not None:
+                    raise classified
             if raw.get("session_id"):
                 provider_session_id = str(raw["session_id"])
                 session_id = self._maybe_migrate_session(session_id, provider_session_id)

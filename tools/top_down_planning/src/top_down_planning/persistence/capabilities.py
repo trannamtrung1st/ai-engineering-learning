@@ -95,6 +95,8 @@ def new_capability_record(
     session_id: str,
     session_kind: str = "primary",
     loop_id: str | None = None,
+    session_instance_id: str | None = None,
+    generation: int | None = None,
 ) -> tuple[str, dict[str, Any], str]:
     """Create a capability token id, persisted record, and one-time raw secret."""
 
@@ -120,6 +122,10 @@ def new_capability_record(
         "created_at": _utc_now(),
         "revoked": False,
     }
+    if session_instance_id is not None and str(session_instance_id).strip():
+        record["session_instance_id"] = str(session_instance_id).strip()
+    if generation is not None:
+        record["generation"] = int(generation)
     if loop_id is not None:
         record["loop_id"] = str(loop_id).strip()
     return token_id, record, raw_secret

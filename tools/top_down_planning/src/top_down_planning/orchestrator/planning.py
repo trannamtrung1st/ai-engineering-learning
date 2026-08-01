@@ -15,23 +15,27 @@ from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_phase,
     rotate_session_capability,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryExhausted, SessionRecoveryPaused
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     resolve_role_session_context,
 )
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.run_transitions import pause_for_limit_exhausted
 from top_down_planning.orchestrator.planner_session import (
     PLANNER_CANDIDATE_READY_SIGNAL,
     build_planner_protocol_instructions,
     build_planner_tool_instructions,
+    primary_planner_provider_session_id,
 )
 from top_down_planning.orchestrator.provider_turns import (
-    consume_provider_turn,
+    build_planner_turn_recovery,
+    consume_provider_turn_with_session_recovery,
     run_pending_focused_review,
     sync_planning_items_added,
 )
 from top_down_planning.orchestrator.session_events import (
+    commit_primary_provider_session_binding,
     emit_primary_session_started,
     resume_primary_session_with_audit,
     sync_persisted_session_id,
@@ -82,7 +86,7 @@ class PlanningPhaseOrchestrator:
         loop_limits = _planning_loop_limits(config)
         role_context = resolve_role_session_context(config, run, "planner")
 
-        session_id = _primary_planner_session_id(run)
+        session_id = primary_planner_provider_session_id(run)
         if session_id is None:
             manifest = build_planner_context_manifest(
                 self._run_id,
@@ -138,11 +142,49 @@ class PlanningPhaseOrchestrator:
             plan_item_ids_before = set(
                 self._store.load_plan_model(self._run_id).items.keys()
             )
-            turn_signal = consume_provider_turn(
-                self._provider,
-                session_id,
-                allowed_signals=_COMPLETION_SIGNALS,
-            )
+            try:
+                turn_outcome = consume_provider_turn_with_session_recovery(
+                    self._store,
+                    self._run_id,
+                    self._provider,
+                    session_id,
+                    allowed_signals=_COMPLETION_SIGNALS,
+                    recovery=build_planner_turn_recovery(
+                        self._store,
+                        self._run_id,
+                        phase=PLANNING,
+                        expected_next_action="continue planning turn",
+                        append_event=self._append_event,
+                        model=role_context.model,
+                    ),
+                )
+            except SessionRecoveryPaused as exc:
+                return self._result_from_run(
+                    self._store.load_run(self._run_id),
+                    ok=False,
+                    reason=str(exc),
+                )
+            except SessionRecoveryExhausted as exc:
+                return self._result_from_run(
+                    self._store.load_run(self._run_id),
+                    ok=False,
+                    reason=str(exc),
+                )
+            session_id = turn_outcome.session_id
+            turn_signal = turn_outcome.signal
+            if turn_outcome.replaced:
+                run = self._store.load_run(self._run_id)
+                phase = str(run.get("phase") or PLANNING)
+                self._capability_token = rotate_session_capability(
+                    self._store,
+                    self._run_id,
+                    current_token=self._capability_token,
+                    role="planner",
+                    phase=phase,
+                    session_id=session_id,
+                    session_kind="primary",
+                )
+                bind_provider_capability(self._provider, self._capability_token)
             session_id = sync_persisted_session_id(
                 self._provider,
                 self._store,
@@ -169,12 +211,13 @@ class PlanningPhaseOrchestrator:
             )
             run = self._store.load_run(self._run_id)
             metrics = _planning_metrics(run)
-            metrics["agent_turns"] += 1
-            run = _persist_planning_metrics(
-                self._store,
-                self._run_id,
-                metrics,
-            )
+            if turn_outcome.domain_budget_committed:
+                metrics["agent_turns"] += 1
+                run = _persist_planning_metrics(
+                    self._store,
+                    self._run_id,
+                    metrics,
+                )
 
             if turn_signal == PLANNER_CANDIDATE_READY_SIGNAL:
                 if self._has_blocking_focused_plan_findings():
@@ -324,14 +367,28 @@ class PlanningPhaseOrchestrator:
         limit: str,
         message: str,
     ) -> PlanningPhaseResult:
-        revoke_capabilities_for_phase(self._store, self._run_id, PLANNING)
         run = self._store.load_run(self._run_id)
-        expected_revision = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["status"] = "completed"
-        run["outcome"] = "blocked"
-        self._store.save_run(self._run_id, run, expected_revision)
+        metrics = _planning_metrics(run)
+        config = self._store.load_resolved_config(self._run_id)
+        loop_limits = _planning_loop_limits(config)
+        if limit == "max_agent_turns":
+            consumed = int(metrics["agent_turns"])
+            configured = int(loop_limits["max_agent_turns"])
+        else:
+            consumed = int(metrics["items_added"])
+            configured = int(loop_limits["max_items_added"])
+        pause_for_limit_exhausted(
+            self._store,
+            self._run_id,
+            phase=PLANNING,
+            message=message,
+            limit=limit,
+            consumed=consumed,
+            configured=configured,
+            role="planner",
+            revoke_phase=PLANNING,
+            session_id=session_id,
+        )
         self._append_event(
             "planning_limit_exceeded",
             session_id=session_id,
@@ -431,29 +488,18 @@ def _planning_metrics(run: dict[str, Any]) -> dict[str, int]:
         "items_added": int(planning.get("items_added") or 0),
     }
 
-
-def _primary_planner_session_id(run: dict[str, Any]) -> str | None:
-    sessions = run.get("sessions") or {}
-    session_id = sessions.get("primary_planner_session_id")
-    if session_id is None:
-        return None
-    return str(session_id)
-
-
 def _persist_session_id(
     store: RunStore,
     run_id: str,
     session_id: str,
 ) -> dict[str, Any]:
-    run = store.load_run(run_id)
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    sessions = dict(run.get("sessions") or {})
-    sessions["primary_planner_session_id"] = session_id
-    run["sessions"] = sessions
-    store.save_run(run_id, run, expected_revision)
-    return store.load_run(run_id)
+    return commit_primary_provider_session_binding(
+        store,
+        run_id,
+        role="planner",
+        provider_session_id=session_id,
+        provider="cursor",
+    )
 
 
 def _persist_planning_metrics(

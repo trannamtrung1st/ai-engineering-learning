@@ -13,16 +13,19 @@ from top_down_planning.observability import (
     cancel_console_event,
     session_lifecycle_event,
 )
+from top_down_planning.domain.run_lifecycle import StopRecord
+from top_down_planning.domain.run_ownership import resolve_run_dir, run_ownership
 from top_down_planning.orchestrator.errors import ProviderRunError
-from top_down_planning.orchestrator.failure import mark_run_failed, sanitize_operational_error
+from top_down_planning.orchestrator.failure import (
+    mark_run_failed,
+    sanitize_operational_error,
+)
+from top_down_planning.orchestrator.run_transitions import pause_run
+from top_down_planning.orchestrator.session_policy import execute_session_policy_if_registered
+import top_down_planning.orchestrator.session_policy_execution  # noqa: F401 — registers executor
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.production import ProductionPhaseOrchestrator
-from top_down_planning.orchestrator.resume import (
-    ResumeError,
-    short_digest_for_observability,
-    validate_resume_preconditions,
-)
 from top_down_planning.orchestrator.whole_output_review import WholeOutputReviewOrchestrator
 from top_down_planning.orchestrator.whole_plan_review import WholePlanReviewOrchestrator
 from top_down_planning.orchestrator.phases import (
@@ -99,7 +102,38 @@ class RunEngine:
         *,
         until: str = "plan",
         single_step: bool = False,
+        session_policy: dict[str, Any] | None = None,
     ) -> RunContinuationResult:
+        run_dir = resolve_run_dir(self._store, run_id)
+        if run_dir is not None:
+            with run_ownership(run_id, run_dir=run_dir):
+                return self._continue_run_unlocked(
+                    run_id,
+                    until=until,
+                    single_step=single_step,
+                    session_policy=session_policy,
+                )
+        return self._continue_run_unlocked(
+            run_id,
+            until=until,
+            single_step=single_step,
+            session_policy=session_policy,
+        )
+
+    def _continue_run_unlocked(
+        self,
+        run_id: str,
+        *,
+        until: str = "plan",
+        single_step: bool = False,
+        session_policy: dict[str, Any] | None = None,
+    ) -> RunContinuationResult:
+        if session_policy is not None:
+            execute_session_policy_if_registered(
+                self._store,
+                run_id,
+                session_policy,
+            )
         started_at = time.monotonic()
         steps: list[RunStepResult] = []
         while True:
@@ -131,24 +165,32 @@ class RunEngine:
                 return result
 
             if status == "failed":
-                from top_down_planning.orchestrator.failure import (
-                    restore_run_after_review_incomplete,
+                result = RunContinuationResult(
+                    ok=False,
+                    run_id=run_id,
+                    phase=str(run.get("phase") or ""),
+                    status=status,
+                    outcome=run.get("outcome"),
+                    steps=steps,
+                    reason="failed runs cannot be resumed",
                 )
+                self._emit_done(result, started_at=started_at)
+                return result
 
-                if not restore_run_after_review_incomplete(self._store, run_id):
-                    result = RunContinuationResult(
-                        ok=False,
-                        run_id=run_id,
-                        phase=str(run.get("phase") or ""),
-                        status=status,
-                        outcome=run.get("outcome"),
-                        steps=steps,
-                        reason="run failed; resume only allowed for review_incomplete",
-                    )
-                    self._emit_done(result, started_at=started_at)
-                    return result
-                run = self._store.load_run(run_id)
-                status = str(run.get("status") or "")
+            if status == "paused":
+                stop = run.get("stop")
+                stop_code = stop.get("code") if isinstance(stop, dict) else None
+                result = RunContinuationResult(
+                    ok=False,
+                    run_id=run_id,
+                    phase=str(run.get("phase") or ""),
+                    status=status,
+                    outcome=run.get("outcome"),
+                    steps=steps,
+                    reason=f"run is paused ({stop_code or 'unknown'})",
+                )
+                self._emit_done(result, started_at=started_at)
+                return result
 
             phase_for_entry = str(run.get("phase") or "")
             self._append_phase_entry_event(
@@ -157,40 +199,8 @@ class RunEngine:
                 phase=phase_for_entry,
             )
 
-            try:
-                preconditions = validate_resume_preconditions(self._store, run_id)
-            except ResumeError as exc:
-                blocked_fields: dict[str, Any] = {
-                    "phase": phase_for_entry,
-                    "error_code": exc.code,
-                }
-                if exc.digest_kind is not None:
-                    blocked_fields["digest_kind"] = exc.digest_kind
-                expected = short_digest_for_observability(exc.expected_digest)
-                actual = short_digest_for_observability(exc.actual_digest)
-                if expected is not None:
-                    blocked_fields["expected_digest"] = expected
-                if actual is not None:
-                    blocked_fields["actual_digest"] = actual
-                self._append_phase_entry_event(
-                    run_id,
-                    "phase_entry_blocked",
-                    **blocked_fields,
-                )
-                result = RunContinuationResult(
-                    ok=False,
-                    run_id=run_id,
-                    phase=phase_for_entry,
-                    status=status,
-                    outcome=run.get("outcome"),
-                    steps=steps,
-                    reason=exc.message,
-                )
-                self._emit_done(result, started_at=started_at)
-                return result
-
             production = self._store.load_production(run_id)
-            phase = preconditions.phase
+            phase = phase_for_entry
             config = self._store.load_resolved_config(run_id)
             workspace = run_workspace(run)
             provider = self._create_provider(config, workspace)
@@ -278,13 +288,20 @@ class RunEngine:
                     self._emit_done(result, started_at=started_at)
                     return result
             except ProviderRunError as exc:
-                mark_run_failed(self._store, run_id, message=str(exc))
+                stop = StopRecord(
+                    code="provider_turn_failed",
+                    category="operational",
+                    phase=phase,
+                    message=str(exc),
+                )
+                pause_run(self._store, run_id, stop=stop)
+                run = self._store.load_run(run_id)
                 result = RunContinuationResult(
                     ok=False,
                     run_id=run_id,
                     phase=phase,
-                    status=str(self._store.load_run(run_id).get("status") or ""),
-                    outcome=self._store.load_run(run_id).get("outcome"),
+                    status=str(run.get("status") or ""),
+                    outcome=run.get("outcome"),
                     steps=steps,
                     reason=str(exc),
                 )
@@ -292,12 +309,20 @@ class RunEngine:
                 return result
             except KeyboardInterrupt:
                 self._emit(cancel_console_event(run_id=run_id, phase=phase))
+                stop = StopRecord(
+                    code="user_cancelled",
+                    category="operational",
+                    phase=phase,
+                    message="cancelled by user",
+                )
+                pause_run(self._store, run_id, stop=stop)
+                run = self._store.load_run(run_id)
                 result = RunContinuationResult(
                     ok=False,
                     run_id=run_id,
                     phase=phase,
-                    status=str(self._store.load_run(run_id).get("status") or ""),
-                    outcome=self._store.load_run(run_id).get("outcome"),
+                    status=str(run.get("status") or ""),
+                    outcome=run.get("outcome"),
                     steps=steps,
                     reason="cancelled by user",
                     cancelled=True,

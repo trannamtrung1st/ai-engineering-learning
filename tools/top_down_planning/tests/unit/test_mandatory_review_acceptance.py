@@ -415,9 +415,11 @@ def test_whole_output_scope_review_round_limit_rejects_without_approval(
     result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
 
     assert result.ok is False
-    assert result.outcome == "rejected"
+    assert result.status == "paused"
+    assert result.outcome is None
     assert "max_scope_review_rounds" in (result.reason or "")
     run = store.load_run(run_id)
+    assert run.get("stop", {}).get("code") == "limit_exhausted"
     assert run.get("phase") != OUTPUT_VALIDATED
 
 

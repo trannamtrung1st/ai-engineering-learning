@@ -128,13 +128,14 @@ def test_planning_turn_limit_yields_blocked_not_accepted(tmp_path: Path) -> None
     result = PlanningPhaseOrchestrator(store, "run-20260101T000101-000101", provider).run()
 
     assert result.ok is False
-    assert result.outcome == "blocked"
+    assert result.outcome is None
     assert result.reason is not None
     assert "max_agent_turns" in result.reason
 
     run = store.load_run("run-20260101T000101-000101")
-    assert run["outcome"] == "blocked"
-    assert run["status"] == "completed"
+    assert run["outcome"] is None
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "limit_exhausted"
     assert run["phase"] == PLANNING
 
 

@@ -10,6 +10,7 @@ import pytest
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.agent_tool.review_service import ReviewAgentService
+from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
@@ -66,8 +67,13 @@ def test_wrong_session_is_denied(tmp_path: Path) -> None:
         session_id="other-planner",
     )
     run = store.load_run("run-20260101T000901-000901")
-    sessions = dict(run.get("sessions") or {})
-    sessions["primary_planner_session_id"] = "active-planner"
+    from top_down_planning.persistence.session_bindings import update_primary_binding
+
+    sessions = update_primary_binding(
+        dict(run.get("sessions") or {}),
+        role="planner",
+        provider_session_id="active-planner",
+    )
     run = dict(run)
     run["sessions"] = sessions
     expected = int(run["revision"])
@@ -171,10 +177,11 @@ def test_planner_cannot_use_reviewer_authority_from_disk(tmp_path: Path) -> None
     )
     store.save_review(
         "run-20260101T000901-000901",
-        {
-            **store.load_review("run-20260101T000901-000901", "review-whole-plan-01"),
-            "reviewer_session_id": "reviewer-session-01",
-        },
+        ReviewLoop.from_dict(
+            store.load_review("run-20260101T000901-000901", "review-whole-plan-01")
+        )
+        .with_reviewer_provider_session_id("reviewer-session-01")
+        .to_dict(),
     )
     with pytest.raises(CapabilityDeniedError, match="session"):
         service.respond(

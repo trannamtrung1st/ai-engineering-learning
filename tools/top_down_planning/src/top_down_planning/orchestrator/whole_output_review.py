@@ -65,6 +65,7 @@ from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_phase,
     rotate_session_capability,
 )
+from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
 from top_down_planning.orchestrator.reviewer_session import (
     allocate_reviewer_session,
     build_reviewer_protocol_instructions,
@@ -72,14 +73,23 @@ from top_down_planning.orchestrator.reviewer_session import (
     deliver_reviewer_turn,
     resume_reviewer_session_with_package,
     reviewer_decision_missing_error,
+    reviewer_loop_provider_session_id,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryPaused
+from top_down_planning.orchestrator.failure import apply_review_incomplete_run_transition
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
+from top_down_planning.orchestrator.run_transitions import (
+    complete_run_with_outcome,
+    pause_for_limit_exhausted,
+)
 from top_down_planning.orchestrator.provider_turns import (
-    consume_provider_turn,
+    build_producer_turn_recovery,
+    build_reviewer_turn_recovery,
+    consume_provider_turn_with_session_recovery,
     review_decision_from_store,
 )
 from top_down_planning.orchestrator.session_events import (
+    commit_reviewer_loop_provider_session,
     emit_reviewer_session_resumed,
     emit_reviewer_session_started,
     resume_primary_session_with_audit,
@@ -88,7 +98,7 @@ from top_down_planning.orchestrator.session_events import (
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence.digests import (
-    compute_config_digest,
+    compute_config_contract_digest,
     compute_output_digest,
     compute_plan_digest,
 )
@@ -147,7 +157,7 @@ class WholeOutputReviewOrchestrator:
 
         while True:
             if loop.status == "pending":
-                session_id = loop.reviewer_session_id
+                session_id = reviewer_loop_provider_session_id(loop)
                 run = self._store.load_run(self._run_id)
                 phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
                 if session_id is None:
@@ -223,14 +233,15 @@ class WholeOutputReviewOrchestrator:
                 revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
                 if loop.lifecycle_status == "limit_reached":
                     exhausted = loop.exhausted_budget or "verification_revision"
-                    return self._terminate(
-                        "rejected",
+                    return self._pause_for_limit(
                         limit_message(
                             limits,
                             exhausted=exhausted,
                             review_label="whole-output review",
                         ),
                         loop=loop,
+                        exhausted=exhausted,
+                        limits=limits,
                     )
                 return self._terminate(
                     "blocked",
@@ -240,18 +251,29 @@ class WholeOutputReviewOrchestrator:
 
             if stage_decision == "review_incomplete":
                 budgets = budgets_snapshot(loop)
+                marker = loop.review_incomplete or {}
+                reason = str(
+                    marker.get("reason")
+                    or "whole-output review could not be completed"
+                )
+                apply_review_incomplete_run_transition(
+                    self._store,
+                    self._run_id,
+                    loop_id=loop.id,
+                    reason=reason,
+                    finding_set_id=marker.get("finding_set_id"),
+                    stage=marker.get("stage"),
+                )
+                run = self._store.load_run(self._run_id)
                 return WholeOutputReviewResult(
                     ok=False,
                     phase=WHOLE_OUTPUT_REVIEW,
-                    status=str(self._store.load_run(self._run_id).get("status") or "failed"),
+                    status=str(run.get("status") or "paused"),
                     outcome=None,
                     loop_id=loop.id,
-                    reviewer_session_id=loop.reviewer_session_id,
+                    reviewer_session_id=reviewer_loop_provider_session_id(loop),
                     revision_cycles=budgets["revision_cycles"],
-                    reason=str(
-                        (loop.review_incomplete or {}).get("reason")
-                        or "whole-output review could not be completed"
-                    ),
+                    reason=reason,
                 )
 
             if stage_decision == "advisory_pending":
@@ -323,14 +345,15 @@ class WholeOutputReviewOrchestrator:
                         exhausted="verification_revision",
                     )
                 )
-                return self._terminate(
-                    "rejected",
+                return self._pause_for_limit(
                     limit_message(
                         limits,
                         exhausted="verification_revision",
                         review_label="whole-output review",
                     ),
                     loop=loop,
+                    exhausted="verification_revision",
+                    limits=limits,
                 )
 
             self._resume_producer_with_findings(loop)
@@ -349,16 +372,17 @@ class WholeOutputReviewOrchestrator:
                     exhausted="scope_review",
                 )
             )
-            return self._terminate(
-                "rejected",
+            return self._pause_for_limit(
                 limit_message(
                     limits,
                     exhausted="scope_review",
                     review_label="whole-output review",
                 ),
                 loop=loop,
+                exhausted="scope_review",
+                limits=limits,
             )
-        if loop.reviewer_session_id is not None:
+        if reviewer_loop_provider_session_id(loop) is not None:
             revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
         updated = self._persist_loop(prepare_scope_review_loop(loop))
         self._append_event(
@@ -413,7 +437,7 @@ class WholeOutputReviewOrchestrator:
             plan_approval=plan_approval,
             output_approval=output_approval,
             actual_plan_digest=compute_plan_digest(plan),
-            actual_config_digest=compute_config_digest(config),
+            actual_config_digest=compute_config_contract_digest(config),
             actual_output_digest=compute_output_digest(production),
             actual_input_digest=compute_input_digest(
                 config,
@@ -459,7 +483,7 @@ class WholeOutputReviewOrchestrator:
             "whole_output_review_approved",
             loop_id=loop.id,
             target_revision=int(production["output_revision"]),
-            reviewer_session_id=loop.reviewer_session_id,
+            reviewer_session_id=reviewer_loop_provider_session_id(loop),
             outcome=outcome,
         )
         self._append_event(
@@ -470,6 +494,46 @@ class WholeOutputReviewOrchestrator:
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, loop=loop)
 
+    def _pause_for_limit(
+        self,
+        message: str,
+        *,
+        loop: ReviewLoop | None,
+        exhausted: str,
+        limits: Any,
+    ) -> WholeOutputReviewResult:
+        if exhausted == "verification_revision":
+            limit = "max_revision_cycles"
+            consumed = int(loop.revision_cycles if loop is not None else limits.max_revision_cycles)
+            configured = int(limits.max_revision_cycles)
+        else:
+            limit = "max_scope_review_rounds"
+            consumed = int(
+                loop.scope_review_rounds if loop is not None else limits.max_scope_review_rounds
+            )
+            configured = int(limits.max_scope_review_rounds)
+        pause_for_limit_exhausted(
+            self._store,
+            self._run_id,
+            phase=WHOLE_OUTPUT_REVIEW,
+            message=message,
+            limit=limit,
+            consumed=consumed,
+            configured=configured,
+            role="reviewer",
+            revoke_phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=loop.id if loop is not None else None,
+            exhausted_budget=exhausted,
+        )
+        self._append_event(
+            "whole_output_review_limit_exceeded",
+            message=message,
+            loop_id=loop.id if loop is not None else None,
+            exhausted_budget=exhausted,
+        )
+        run = self._store.load_run(self._run_id)
+        return self._result_from_run(run, ok=False, reason=message)
+
     def _terminate(
         self,
         outcome: str,
@@ -477,17 +541,12 @@ class WholeOutputReviewOrchestrator:
         *,
         loop: ReviewLoop | None = None,
     ) -> WholeOutputReviewResult:
-        revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_OUTPUT_REVIEW)
-        run = self._store.load_run(self._run_id)
-        expected_revision = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["status"] = "completed"
-        run["outcome"] = outcome
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event(
-            "whole_output_review_failed",
-            outcome=outcome,
+        complete_run_with_outcome(
+            self._store,
+            self._run_id,
+            outcome,
+            revoke_phase=WHOLE_OUTPUT_REVIEW,
+            event_type="whole_output_review_failed",
             message=message,
             loop_id=loop.id if loop is not None else None,
             lifecycle_status=loop.lifecycle_status if loop is not None else None,
@@ -592,8 +651,8 @@ class WholeOutputReviewOrchestrator:
             session_id=session_id,
             loop_id=loop.id,
         )
-        updated = replace(loop, reviewer_session_id=session_id)
-        self._persist_loop(updated)
+        updated = loop.with_reviewer_provider_session_id(session_id)
+        commit_reviewer_loop_provider_session(self._store, self._run_id, updated)
         self._capability_token = deliver_reviewer_turn(
             self._provider,
             self._store,
@@ -606,11 +665,40 @@ class WholeOutputReviewOrchestrator:
         return session_id, self._capability_token
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
-        consume_provider_turn(
-            self._provider,
-            session_id,
-            allowed_signals=_NO_COMPLETION_SIGNALS,
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+        package = build_whole_output_review_package(
+            self._run_id,
+            run,
+            config,
+            self._store.load_plan_model(self._run_id),
+            self._store.load_production(self._run_id),
+            loop,
         )
+        role_context = resolve_role_session_context(config, run, "reviewer")
+        phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
+        try:
+            turn_outcome = consume_provider_turn_with_session_recovery(
+                self._store,
+                self._run_id,
+                self._provider,
+                session_id,
+                allowed_signals=_NO_COMPLETION_SIGNALS,
+                recovery=build_reviewer_turn_recovery(
+                    self._store,
+                    self._run_id,
+                    loop_id=loop_id,
+                    phase=phase,
+                    expected_next_action="continue whole-output reviewer turn",
+                    append_event=self._append_event,
+                    model=role_context.model,
+                    review_package=package,
+                ),
+            )
+        except SessionRecoveryPaused as exc:
+            raise ProviderRunError(str(exc)) from exc
+        session_id = turn_outcome.session_id
         sync_reviewer_loop_session_id(
             self._provider,
             self._store,
@@ -626,7 +714,7 @@ class WholeOutputReviewOrchestrator:
 
     def _resume_producer_with_findings(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
-        session_id = _primary_producer_session_id(run)
+        session_id = primary_producer_provider_session_id(run)
         if session_id is None:
             raise ProviderRunError("primary producer session is missing for revision")
 
@@ -716,7 +804,7 @@ class WholeOutputReviewOrchestrator:
 
     def _resume_producer_advisory_handoff(self, loop: ReviewLoop) -> None:
         run = self._store.load_run(self._run_id)
-        session_id = _primary_producer_session_id(run)
+        session_id = primary_producer_provider_session_id(run)
         if session_id is None:
             raise ProviderRunError(
                 "primary producer session is missing for advisory handoff"
@@ -773,11 +861,29 @@ class WholeOutputReviewOrchestrator:
         self._store.save_run(self._run_id, run, expected_revision)
 
     def _consume_producer_turn(self, session_id: str) -> None:
-        consume_provider_turn(
-            self._provider,
-            session_id,
-            allowed_signals=_NO_COMPLETION_SIGNALS,
-        )
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        role_context = resolve_role_session_context(config, run, "producer")
+        phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
+        try:
+            turn_outcome = consume_provider_turn_with_session_recovery(
+                self._store,
+                self._run_id,
+                self._provider,
+                session_id,
+                allowed_signals=_NO_COMPLETION_SIGNALS,
+                recovery=build_producer_turn_recovery(
+                    self._store,
+                    self._run_id,
+                    phase=phase,
+                    expected_next_action="revise output after whole-output review",
+                    append_event=self._append_event,
+                    model=role_context.model,
+                ),
+            )
+        except SessionRecoveryPaused as exc:
+            raise ProviderRunError(str(exc)) from exc
+        session_id = turn_outcome.session_id
         sync_persisted_session_id(
             self._provider,
             self._store,
@@ -788,7 +894,7 @@ class WholeOutputReviewOrchestrator:
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         output_revision = int(self._store.load_production(self._run_id)["output_revision"])
-        session_id = loop.reviewer_session_id
+        session_id = reviewer_loop_provider_session_id(loop)
         if session_id is None:
             raise ProviderRunError("reviewer session is missing for recheck")
 
@@ -843,7 +949,7 @@ class WholeOutputReviewOrchestrator:
             status=str(run.get("status") or "running"),
             outcome=run.get("outcome"),
             loop_id=loop.id if loop is not None else None,
-            reviewer_session_id=loop.reviewer_session_id if loop is not None else None,
+            reviewer_session_id=reviewer_loop_provider_session_id(loop) if loop is not None else None,
             revision_cycles=loop.revision_cycles if loop is not None else 0,
             reason=reason,
         )
@@ -917,10 +1023,3 @@ def build_whole_output_review_package(
         output_goal=plan.output_goal,
     )
 
-
-def _primary_producer_session_id(run: dict[str, Any]) -> str | None:
-    sessions = run.get("sessions") or {}
-    session_id = sessions.get("primary_producer_session_id")
-    if session_id is None:
-        return None
-    return str(session_id)
