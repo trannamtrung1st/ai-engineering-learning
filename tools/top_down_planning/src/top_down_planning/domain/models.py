@@ -5,11 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from top_down_planning.domain.plan_schema import PLAN_SCHEMA_VERSION, normalize_plan_payload
+
 PlanningStatus = Literal["open", "superseded", "removed"]
 ItemKind = Literal["aggregate", "work"]
-
-
-PLAN_SCHEMA_VERSION = 1
 
 
 @dataclass
@@ -42,6 +41,8 @@ class PlanItem:
     boundaries: list[str] = field(default_factory=list)
     depends_on: list[str] = field(default_factory=list)
     acceptance: list[str] = field(default_factory=list)
+    risks: list[str] = field(default_factory=list)
+    source_refs: list[str] = field(default_factory=list)
     planning_status: PlanningStatus = "open"
     superseded_by: str | None = None
 
@@ -56,6 +57,8 @@ class PlanItem:
             "boundaries": list(self.boundaries),
             "depends_on": list(self.depends_on),
             "acceptance": list(self.acceptance),
+            "risks": list(self.risks),
+            "source_refs": list(self.source_refs),
             "planning_status": self.planning_status,
             "kind": self.kind,
         }
@@ -80,6 +83,8 @@ class PlanItem:
             boundaries=list(data.get("boundaries") or []),
             depends_on=list(data.get("depends_on") or []),
             acceptance=list(data.get("acceptance") or []),
+            risks=list(data.get("risks") or []),
+            source_refs=list(data.get("source_refs") or []),
             planning_status=data.get("planning_status", "open"),
             superseded_by=data.get("superseded_by"),
             kind=kind,
@@ -98,6 +103,7 @@ class Plan:
     constraints: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     acceptance: list[str] = field(default_factory=list)
+    risks: list[str] = field(default_factory=list)
     schema_version: int = PLAN_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -114,6 +120,7 @@ class Plan:
             "constraints": list(self.constraints),
             "assumptions": list(self.assumptions),
             "acceptance": list(self.acceptance),
+            "risks": list(self.risks),
             "items": serialized_plan_items(self),
         }
 
@@ -121,12 +128,10 @@ class Plan:
     def from_dict(cls, data: dict[str, Any]) -> Plan:
         from top_down_planning.domain.plan_tree import validate_persisted_item_depths
 
-        if "schema_version" not in data:
-            raise ValueError("plan schema_version is required")
-        if "revision" not in data:
-            raise ValueError("plan revision is required")
+        normalized = normalize_plan_payload(data)
+        schema_version = int(normalized["schema_version"])
 
-        items_list = data.get("items") or []
+        items_list = normalized.get("items") or []
         items: dict[str, PlanItem] = {}
         for raw_item in items_list:
             if not isinstance(raw_item, dict):
@@ -136,17 +141,18 @@ class Plan:
                 raise ValueError(f"duplicate plan item id: {item.id}")
             items[item.id] = item
         plan = cls(
-            id=data["id"],
-            revision=int(data["revision"]),
-            output_goal=data.get("output_goal", ""),
+            id=normalized["id"],
+            revision=int(normalized["revision"]),
+            output_goal=normalized.get("output_goal", ""),
             items=items,
-            input_refs=list(data.get("input_refs") or []),
-            scope=Scope.from_dict(data.get("scope")),
-            boundaries=list(data.get("boundaries") or []),
-            constraints=list(data.get("constraints") or []),
-            assumptions=list(data.get("assumptions") or []),
-            acceptance=list(data.get("acceptance") or []),
-            schema_version=int(data["schema_version"]),
+            input_refs=list(normalized.get("input_refs") or []),
+            scope=Scope.from_dict(normalized.get("scope")),
+            boundaries=list(normalized.get("boundaries") or []),
+            constraints=list(normalized.get("constraints") or []),
+            assumptions=list(normalized.get("assumptions") or []),
+            acceptance=list(normalized.get("acceptance") or []),
+            risks=list(normalized.get("risks") or []),
+            schema_version=schema_version,
         )
         validate_persisted_item_depths(plan, items_list)
         return plan

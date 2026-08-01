@@ -16,6 +16,24 @@ from top_down_planning.persistence import FileRunStore
 from tests.helpers import create_run_kwargs, minimal_resolved_config, make_review_loop
 
 
+def test_whole_plan_protocol_flags_risk_field_placement() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(review_type="whole_plan")
+    ).lower()
+    assert "scope.includes" in protocol
+    assert "source_refs" in protocol
+    assert "requirements placed in risks instead of acceptance" in protocol
+
+
+def test_focused_plan_protocol_includes_risk_field_placement_guidance() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(review_type="focused_plan")
+    ).lower()
+    assert "focused plan review" in protocol
+    assert "scope.includes" in protocol
+    assert "source_refs" in protocol
+
+
 def test_whole_plan_protocol_prioritizes_correctness_and_consistency() -> None:
     protocol = " ".join(
         build_reviewer_protocol_instructions(review_type="whole_plan")

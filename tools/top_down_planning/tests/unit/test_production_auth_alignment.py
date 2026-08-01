@@ -80,10 +80,11 @@ def test_capture_output_artifact_stores_canonical_ref(tmp_path: Path) -> None:
     store.create_run(
         "run-20260101T000601-000601",
         plan={
-            "schema_version": 1,
+            "schema_version": 2,
             "id": "plan-ev",
             "revision": 0,
             "output_goal": "Goal.",
+            "risks": [],
             "items": [],
         },
         **create_run_kwargs(workspace, resolved_config=config),

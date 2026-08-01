@@ -58,6 +58,8 @@ _PLAN_ITEM_INPUT_SCHEMA: dict[str, Any] = {
         "boundaries": {"type": "array", "items": {"type": "string"}},
         "depends_on": {"type": "array", "items": {"type": "string"}},
         "acceptance": {"type": "array", "items": {"type": "string"}},
+        "risks": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "source_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
     },
     "additionalProperties": False,
 }
@@ -72,6 +74,8 @@ _PLAN_ITEM_PATCH_SCHEMA: dict[str, Any] = {
         "scope": _PLAN_ITEM_INPUT_SCHEMA["properties"]["scope"],
         "boundaries": {"type": "array", "items": {"type": "string"}},
         "acceptance": {"type": "array", "items": {"type": "string"}},
+        "risks": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "source_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
     },
     "additionalProperties": False,
 }
@@ -85,6 +89,7 @@ _PLAN_METADATA_PATCH_SCHEMA: dict[str, Any] = {
         "constraints": {"type": "array", "items": {"type": "string"}},
         "assumptions": {"type": "array", "items": {"type": "string"}},
         "acceptance": {"type": "array", "items": {"type": "string"}},
+        "risks": {"type": "array", "items": {"type": "string", "minLength": 1}},
     },
     "additionalProperties": False,
 }
@@ -1108,7 +1113,13 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                         "kind": "work",
                         "title": "API layer",
                         "outcome": "HTTP API exists with documented endpoints.",
-                        "acceptance": ["Endpoints are testable."],
+                        "acceptance": [
+                            "Endpoints are testable from a clean checkout."
+                        ],
+                        "risks": [
+                            "Route registration order may shadow existing handlers."
+                        ],
+                        "source_refs": ["spec.md → API endpoints"],
                     },
                 },
                 {
@@ -1556,20 +1567,38 @@ include:
   overlaps are rejected). Guidance is advisory and not merged into
   `protocol_instructions`.
 - Producer packages include `approved_plan` (compact plan metadata + items with `kind`)
-- Review packages include `plan_scope`, `boundaries`, and `acceptance` from persisted
+- Review packages include `plan_scope`, `boundaries`, `acceptance`, and `risks` from persisted
   plan metadata (not static run config)
 
 The provider adapter formats these payloads for the agent. Follow
 `protocol_instructions` and `tool_instructions`; host IDE planning artifacts are
 not consumed by the orchestrator.
 
+## Plan field semantics
+
+Required resulting truth → `acceptance`. Material uncertainty or failure mode →
+`risks` (plan-level for cross-cutting threats; item-level for owned outcomes).
+Believed premise → `assumptions`. Mandatory solution condition → `constraints`.
+Operational guardrail → `boundaries`. Owned work → `scope` (`includes` /
+`excludes`). Execution prerequisite → `depends_on`. Requirement origin →
+`source_refs` on items (plan-level inputs stay in `input_refs`). Non-binding
+advice stays in guidance, resources, skills, or authoritative inputs — not plan
+fields.
+
+Do not place architecture suggestions in `acceptance`. Do not place source-document
+section names in `scope.includes` — use item-level `source_refs` for requirement
+traceability when needed. Do not convert every possible defect into a risk. Attach
+each risk to the lowest item that owns it; avoid duplicating the same risk
+at plan and item level.
+
 ## Workflow
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.
    Each `add_item` requires `kind`: `work` for batchable leaves, `aggregate` for
    grouping-only parents. The seeded root is `aggregate`. Use `update_plan` to
-   revise plan-level `scope`, `boundaries`, `constraints`, `assumptions`, and
-   `acceptance` (seeded from `run.boundaries` / `run.acceptance` at run creation).
+   revise plan-level `scope`, `boundaries`, `constraints`, `assumptions`,
+   `acceptance`, and `risks` (seeded from `run.boundaries` / `run.acceptance` at run creation).
+   Item-level `risks` and `source_refs` use `add_item` / `update_item`.
 2. Mandatory whole-plan review (`review respond`) must complete the gate before production.
    Stages: `initial_review` (discovery), optional `finding_verification` (close known
    findings after revisions), then fresh `scope_review` (complete-scope discovery).
@@ -1702,11 +1731,12 @@ and leave the plan revision unchanged. `ok` is true only when validation has no
 error-severity issues after a persisted apply (inspect `issues` after apply even
 when `applied: true` for pre-existing draft issues). Production `snapshot` uses the same plan validation shape;
 use `production check` for batch/disposition-specific checks. Tree item
-snapshots include `scope`, `boundaries`, and `acceptance` alongside core
-planning fields. Plan `ready` views exclude items blocked by unresolved
+snapshots include `scope`, `boundaries`, `acceptance`, `risks`, and item-level
+`source_refs` alongside core planning fields. Plan `ready` views exclude items blocked by unresolved
 `focused_plan` / `whole_plan` findings; production `ready` views exclude items
 blocked by unresolved `focused_output` / `whole_output` findings. Plans carry
-`schema_version` (currently 1). `check --mode approval` always runs
+`schema_version` (currently 2). Unsupported or missing plan `schema_version`
+fails load with a recreate message — there is no plan migrator. `check --mode approval` always runs
 approval-mode soft limits; digest and whole-plan review hooks compare against a
 stored approval when one exists for the current revision, otherwise surface
 `*_not_checked` warnings. Prefer dependency edges on the narrowest meaningful

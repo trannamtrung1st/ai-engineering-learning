@@ -106,6 +106,8 @@ def _build_item(item_id: str, parent_id: str | None, order_key: str, payload: di
         boundaries=list(payload.get("boundaries") or []),
         depends_on=list(payload.get("depends_on") or []),
         acceptance=list(payload.get("acceptance") or []),
+        risks=list(payload.get("risks") or []),
+        source_refs=list(payload.get("source_refs") or []),
         planning_status="open",
         kind=kind,
     )
@@ -149,7 +151,17 @@ def _apply_add_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: 
 
 
 _UPDATE_ITEM_PATCH_FIELDS = frozenset(
-    {"title", "outcome", "scope", "boundaries", "acceptance", "planning_status", "kind"}
+    {
+        "title",
+        "outcome",
+        "scope",
+        "boundaries",
+        "acceptance",
+        "risks",
+        "source_refs",
+        "planning_status",
+        "kind",
+    }
 )
 
 
@@ -170,11 +182,15 @@ def _apply_update_item(plan: Plan, op: Operation, id_map: dict[str, str], change
     if "planning_status" in patch:
         raise InvalidMutationError("update_item cannot change planning_status; use supersede_item or remove_item")
 
-    for field_name in ("title", "outcome", "boundaries", "acceptance"):
+    for field_name in ("title", "outcome", "boundaries", "acceptance", "risks", "source_refs"):
         if field_name in patch:
             value = patch[field_name]
             if field_name == "title" and (not value or not str(value).strip()):
                 raise InvalidMutationError("item title is required")
+            if field_name in ("boundaries", "acceptance", "risks", "source_refs"):
+                if not isinstance(value, list):
+                    raise InvalidMutationError(f"update_item {field_name} must be a list")
+                value = list(value)
             setattr(item, field_name, value)
     if "scope" in patch:
         item.scope = Scope.from_dict(patch["scope"])
@@ -189,7 +205,7 @@ def _apply_update_item(plan: Plan, op: Operation, id_map: dict[str, str], change
 
 
 _UPDATE_PLAN_PATCH_FIELDS = frozenset(
-    {"scope", "boundaries", "constraints", "assumptions", "acceptance"}
+    {"scope", "boundaries", "constraints", "assumptions", "acceptance", "risks"}
 )
 
 
@@ -208,7 +224,7 @@ def _apply_update_plan(plan: Plan, op: Operation, id_map: dict[str, str], change
 
     if "scope" in patch:
         plan.scope = Scope.from_dict(patch["scope"])
-    for field_name in ("boundaries", "constraints", "assumptions", "acceptance"):
+    for field_name in ("boundaries", "constraints", "assumptions", "acceptance", "risks"):
         if field_name in patch:
             value = patch[field_name]
             if not isinstance(value, list):

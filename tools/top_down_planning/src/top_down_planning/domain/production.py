@@ -321,6 +321,7 @@ def build_output_traceability(
             "title": item.title,
             "outcome": item.outcome,
             "acceptance": list(item.acceptance),
+            "risks": list(item.risks),
         }
 
     return {
@@ -348,6 +349,8 @@ def build_compact_approved_plan(plan: Plan) -> dict[str, Any]:
                 "outcome": item.outcome,
                 "kind": item.kind,
                 "acceptance": list(item.acceptance),
+                "risks": list(item.risks),
+                "source_refs": list(item.source_refs),
                 "depends_on": list(item.depends_on),
             }
         )
@@ -358,6 +361,7 @@ def build_compact_approved_plan(plan: Plan) -> dict[str, Any]:
         "constraints": list(plan.constraints),
         "assumptions": list(plan.assumptions),
         "acceptance": list(plan.acceptance),
+        "risks": list(plan.risks),
         "items": items,
     }
 

@@ -55,6 +55,19 @@ def build_planner_protocol_instructions() -> list[str]:
             "Do not create .tdp-* or .review-* dotfiles in the project workspace "
             "or harness folders. Do not modify orchestrator-owned run files."
         ),
+        (
+            "Plan field classification: required resulting truth → acceptance; "
+            "material uncertainty or failure mode → risks; believed premise → "
+            "assumptions; mandatory solution condition → constraints; operational "
+            "guardrail → boundaries; owned work → scope; execution prerequisite → "
+            "depends_on; requirement origin → source_refs on items (not scope.includes); "
+            "non-binding advice → guidance/resources/skills or authoritative inputs. "
+            "Do not place architecture suggestions in acceptance. Attach each risk "
+            "to the lowest item that owns it; use plan-level risks only for "
+            "cross-cutting threats. Do not duplicate the same risk at plan and item level. "
+            "Do not convert every possible defect into a risk. "
+            "Do not place source-document section names in scope.includes — use source_refs."
+        ),
     ]
 
 

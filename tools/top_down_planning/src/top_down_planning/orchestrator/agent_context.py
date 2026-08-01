@@ -45,6 +45,7 @@ def plan_execution_contract_fields(plan: Plan) -> dict[str, Any]:
         "plan_scope": plan.scope.to_dict(),
         "boundaries": list(plan.boundaries),
         "acceptance": list(plan.acceptance),
+        "risks": list(plan.risks),
     }
 
 

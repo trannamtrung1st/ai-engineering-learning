@@ -309,6 +309,7 @@ def test_whole_plan_and_producer_packages_remain_active_only(tmp_path: Path) -> 
         id="plan-active-only",
         revision=2,
         output_goal="Deliver the output.",
+        risks=["Plan-level risk."],
         items={
             "item-root": PlanItem(
                 id="item-root",
@@ -324,6 +325,8 @@ def test_whole_plan_and_producer_packages_remain_active_only(tmp_path: Path) -> 
                 title="Live",
                 kind="work",
                 outcome="Live outcome.",
+                risks=["Item-level risk."],
+                source_refs=["spec.md → Live section"],
             ),
             "item-old": PlanItem(
                 id="item-old",
@@ -350,9 +353,14 @@ def test_whole_plan_and_producer_packages_remain_active_only(tmp_path: Path) -> 
     approved_ids = {item["id"] for item in approved["items"]}
     assert approved_ids == {"item-root", "item-live"}
     assert approved_ids.isdisjoint(inactive_ids)
+    assert approved["risks"] == ["Plan-level risk."]
+    live_item = next(item for item in approved["items"] if item["id"] == "item-live")
+    assert live_item["risks"] == ["Item-level risk."]
+    assert live_item["source_refs"] == ["spec.md → Live section"]
 
     review_snapshot = build_plan_review_snapshot(plan, limits=PlanningLimits())
     assert review_snapshot["view"] == "active"
+    assert review_snapshot["risks"] == ["Plan-level risk."]
     review_ids = {item["id"] for item in review_snapshot["items"]}
     assert review_ids == {"item-root", "item-live"}
     assert review_ids.isdisjoint(inactive_ids)

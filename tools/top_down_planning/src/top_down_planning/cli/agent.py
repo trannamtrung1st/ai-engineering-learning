@@ -28,6 +28,7 @@ from top_down_planning.cli.common import (
     open_run_store,
 )
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
+from top_down_planning.domain.plan_schema import UnsupportedPlanSchemaVersionError
 from top_down_planning import schema_docs
 
 
@@ -234,6 +235,14 @@ def emit_error(exc: Exception, *, exit_code: int = 1) -> None:
             "ok": False,
             "error": {
                 "code": "run_not_found",
+                "message": str(exc),
+            },
+        }
+    elif isinstance(exc, UnsupportedPlanSchemaVersionError):
+        payload = {
+            "ok": False,
+            "error": {
+                "code": exc.code,
                 "message": str(exc),
             },
         }

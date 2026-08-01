@@ -358,13 +358,13 @@ tdp agent run status --run <run-id>
 
 Production apply requires `production_revision` from the latest snapshot. `submit-completion` requires `goal_met: true` plus `goal_assessment` and records a completion claim only; the orchestrator advances to whole-output review after a valid claim and sets final `outcome` only after whole-output review. Use `evidence_revision: true` on `production apply` to revise terminal items targeted by unresolved required findings with **new** evidence IDs (dispositions unchanged): during `whole_output_review` without a loop id, or during `production` with `focused_review_loop_id` bound to the active focused-output loop (see `tdp agent example evidence-revision` and `evidence-revision-focused`).
 
-Plan items require explicit `kind` (`work` or `aggregate`). The run seeds a root `aggregate` item; only `work` leaves appear in `ready_item_ids`. Use `update_plan` to revise plan-level metadata (`scope`, `boundaries`, `constraints`, `assumptions`, `acceptance`). Producer sessions receive `approved_plan`; production `ready` snapshots include `ready_items` with per-item contracts.
+Plan items require explicit `kind` (`work` or `aggregate`). The run seeds a root `aggregate` item; only `work` leaves appear in `ready_item_ids`. Use `update_plan` to revise plan-level metadata (`scope`, `boundaries`, `constraints`, `assumptions`, `acceptance`, `risks`). Item-level `risks` and `source_refs` (always present; populate for requirement traceability when needed) use `add_item` / `update_item`. Producer sessions receive `approved_plan`; production `ready` snapshots include `ready_items` with per-item contracts. Plans carry `schema_version` `2`; unsupported or missing plan `schema_version` fails load with a recreate message — there is no plan migrator.
 
 Agent plan `snapshot`/`check`/`apply` and production `snapshot` (`active`/`audit`/`ready`/`issues` for plan; `tree`/`ready` for production) share the same
 plan validation contract: structured `issues` for errors, string `warnings` for
 non-blocking findings, and `ok` when validation has no error-severity issues.
 Production-specific batch checks use `production check`. Active plan snapshots include
-`scope`, `boundaries`, and `acceptance` on each item. `plan apply` sets
+`scope`, `boundaries`, `acceptance`, `risks`, and item-level `source_refs`. `plan apply` sets
 `applied: true` only when the mutation batch was persisted (exit code still reflects
 `ok`, not whether the batch was saved). Invalid operations and mutations that would
 introduce new hard validation errors are rejected before persistence with

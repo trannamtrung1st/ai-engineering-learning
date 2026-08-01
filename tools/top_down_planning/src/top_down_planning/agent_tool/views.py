@@ -34,6 +34,8 @@ def item_snapshot(item: PlanItem, display_number: str, *, depth: int) -> dict[st
         "scope": item.scope.to_dict(),
         "boundaries": list(item.boundaries),
         "acceptance": list(item.acceptance),
+        "risks": list(item.risks),
+        "source_refs": list(item.source_refs),
         "depends_on": list(item.depends_on),
         "planning_status": item.planning_status,
     }
@@ -77,6 +79,7 @@ def _plan_metadata(plan: Plan) -> dict[str, Any]:
         "constraints": list(plan.constraints),
         "assumptions": list(plan.assumptions),
         "acceptance": list(plan.acceptance),
+        "risks": list(plan.risks),
     }
 
 
@@ -215,6 +218,8 @@ def ready_item_contract(plan: Plan, item_id: str) -> dict[str, Any]:
         "scope": item.scope.to_dict(),
         "boundaries": list(item.boundaries),
         "acceptance": list(item.acceptance),
+        "risks": list(item.risks),
+        "source_refs": list(item.source_refs),
         "depends_on": list(item.depends_on),
         "ancestor_path": ancestor_path(plan, item_id),
     }

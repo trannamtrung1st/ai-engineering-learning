@@ -25,6 +25,12 @@ from top_down_planning.persistence.run_schema import (
     validate_run_digests,
     validate_run_schema_version,
 )
+from top_down_planning.domain.plan_schema import (
+    PLAN_SCHEMA_VERSION,
+    UNSUPPORTED_PLAN_SCHEMA_MESSAGE,
+    UnsupportedPlanSchemaVersionError,
+    validate_plan_schema_version,
+)
 
 __all__ = [
     "AGENT_REQUESTS_DIR",
@@ -34,7 +40,10 @@ __all__ = [
     "RunStore",
     "StoreRevisionConflictError",
     "CURRENT_RUN_SCHEMA_VERSION",
+    "PLAN_SCHEMA_VERSION",
+    "UNSUPPORTED_PLAN_SCHEMA_MESSAGE",
     "UNSUPPORTED_RUN_SCHEMA_MESSAGE",
+    "UnsupportedPlanSchemaVersionError",
     "UnsupportedRunSchemaVersionError",
     "compute_config_contract_digest",
     "compute_config_execution_digest",
@@ -45,6 +54,7 @@ __all__ = [
     "execution_config_projection",
     "semantic_config_projection",
     "new_run_record",
+    "validate_plan_schema_version",
     "validate_run_digests",
     "validate_run_schema_version",
 ]

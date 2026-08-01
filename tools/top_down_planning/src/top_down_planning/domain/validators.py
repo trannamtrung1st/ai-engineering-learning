@@ -8,7 +8,11 @@ from typing import Any, Literal
 from top_down_planning.domain.approval_digests import reject_legacy_approved_config_digest
 from top_down_planning.domain.dependencies import dependency_cycle_issue
 from top_down_planning.domain.dispositions import DispositionMap, SATISFIED_DISPOSITIONS
-from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits, PLAN_SCHEMA_VERSION
+from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits
+from top_down_planning.domain.plan_schema import (
+    PLAN_SCHEMA_VERSION,
+    UNSUPPORTED_PLAN_SCHEMA_MESSAGE,
+)
 from top_down_planning.domain.plan_tree import (
     compute_planning_budget,
     find_hierarchy_cycle,
@@ -135,6 +139,36 @@ def _issue(
         message=message,
         path=list(path or []),
     )
+
+
+def _validate_string_list_issues(
+    value: Any,
+    *,
+    path: list[str],
+    field_name: str,
+) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    if not isinstance(value, list):
+        issues.append(
+            _issue(
+                "invalid_plan_field",
+                "error",
+                f"{field_name} must be a list",
+                path,
+            )
+        )
+        return issues
+    for index, entry in enumerate(value):
+        if not isinstance(entry, str) or not entry.strip():
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    f"{field_name} entries must be non-empty strings",
+                    [*path, str(index)],
+                )
+            )
+    return issues
 
 
 def validation_issue(
@@ -298,10 +332,7 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
             _issue(
                 "invalid_schema_version",
                 "error",
-                (
-                    f"plan schema_version {plan.schema_version} is not supported; "
-                    f"expected {PLAN_SCHEMA_VERSION}"
-                ),
+                UNSUPPORTED_PLAN_SCHEMA_MESSAGE,
                 ["plan", "schema_version"],
             )
         )
@@ -360,9 +391,24 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                 )
             )
 
+        issues.extend(
+            _validate_string_list_issues(
+                item.risks,
+                path=[item.id, "risks"],
+                field_name="risks",
+            )
+        )
+        issues.extend(
+            _validate_string_list_issues(
+                item.source_refs,
+                path=[item.id, "source_refs"],
+                field_name="source_refs",
+            )
+        )
+
     issues.extend(validate_plan_quality_warnings(plan))
 
-    for field_name in ("boundaries", "constraints", "assumptions", "acceptance"):
+    for field_name in ("boundaries", "constraints", "assumptions", "acceptance", "risks"):
         value = getattr(plan, field_name)
         if not isinstance(value, list):
             issues.append(
@@ -373,6 +419,15 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     ["plan", field_name],
                 )
             )
+
+    if isinstance(plan.risks, list):
+        issues.extend(
+            _validate_string_list_issues(
+                plan.risks,
+                path=["plan", "risks"],
+                field_name="plan risks",
+            )
+        )
 
     return issues
 

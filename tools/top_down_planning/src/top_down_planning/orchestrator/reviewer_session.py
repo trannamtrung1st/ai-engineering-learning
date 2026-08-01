@@ -89,7 +89,11 @@ def build_reviewer_protocol_instructions(
                     "Flag contradictions between outcomes, acceptance criteria, "
                     "dependencies, and titles; impossible or cyclic dependencies; "
                     "overlapping executable scope; and claims that cannot be "
-                    "verified before production."
+                    "verified before production. Flag generic or meaningless risks, "
+                    "requirements placed in risks instead of acceptance, risks "
+                    "duplicated across levels, architecture suggestions in acceptance, "
+                    "source references in scope.includes instead of source_refs, and "
+                    "material risks implied by inputs but omitted from the plan."
                 )
             )
         else:
@@ -102,6 +106,16 @@ def build_reviewer_protocol_instructions(
                     "completion claim."
                 )
             )
+    elif normalized_type == "focused_plan" and normalized != "finding_verification":
+        instructions.append(
+            (
+                "Focused plan review: flag generic or misplaced risks, requirements "
+                "placed in risks instead of acceptance, risks duplicated across "
+                "levels, architecture suggestions in acceptance, source references "
+                "in scope.includes instead of source_refs, and material risks "
+                "implied by inputs but omitted from the scoped items."
+            )
+        )
     if normalized == "finding_verification":
         instructions.extend(
             [

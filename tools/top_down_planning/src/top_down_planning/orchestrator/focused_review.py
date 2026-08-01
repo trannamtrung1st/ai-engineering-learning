@@ -803,7 +803,9 @@ def build_focused_review_package(
         **plan_execution_contract_fields(plan),
         "digests": digests,
         "review_policy": reviewer_package_policy_guidance(),
-        "protocol_instructions": build_reviewer_protocol_instructions(),
+        "protocol_instructions": build_reviewer_protocol_instructions(
+            review_type=loop.type,
+        ),
         "tool_instructions": tool_instructions,
         },
         config=config,

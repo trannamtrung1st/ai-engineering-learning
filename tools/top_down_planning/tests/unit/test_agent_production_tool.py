@@ -585,17 +585,52 @@ def test_ready_items_equivalent_after_reload(tmp_path: Path) -> None:
     assert first["not_ready"] == second["not_ready"]
 
 
-def test_cli_production_snapshot_exits_nonzero_when_plan_validation_fails(
+def test_cli_production_snapshot_reports_unsupported_plan_schema_version(
     tmp_path: Path,
 ) -> None:
+    import json
+
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    plan_payload = store.load_plan("run-20260101T000201-000201")
-    expected_revision = int(plan_payload["revision"])
-    plan_payload = dict(plan_payload)
+    run_id = "run-20260101T000201-000201"
+    plan_path = store.run_dir(run_id) / "plan.json"
+    plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
     plan_payload["schema_version"] = 99
-    plan_payload["revision"] = expected_revision + 1
-    store.save_plan("run-20260101T000201-000201", plan_payload, expected_revision)
+    plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
+
+    result = run_cli(
+        [
+            "agent",
+            "production",
+            "snapshot",
+            "--run",
+            run_id,
+            "--runs-dir",
+            str(tmp_path),
+            "--view",
+            "ready",
+        ]
+    )
+
+    assert result.exit_code == 1
+    payload = result.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "unsupported_plan_schema"
+    assert "Recreate the run" in payload["error"]["message"]
+
+
+def test_cli_production_snapshot_reports_corrupt_plan_schema_version(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    store = FileRunStore(tmp_path)
+    _create_production_run(store)
+    run_id = "run-20260101T000201-000201"
+    plan_path = store.run_dir(run_id) / "plan.json"
+    plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan_payload["schema_version"] = "two"
+    plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
 
     result = run_cli(
         [
@@ -614,7 +649,8 @@ def test_cli_production_snapshot_exits_nonzero_when_plan_validation_fails(
     assert result.exit_code == 1
     payload = result.json()
     assert payload["ok"] is False
-    assert any(issue["code"] == "invalid_schema_version" for issue in payload["issues"])
+    assert payload["error"]["code"] == "unsupported_plan_schema"
+    assert "Recreate the run" in payload["error"]["message"]
 
 
 def test_duplicate_evidence_id_across_batches_is_rejected(tmp_path: Path) -> None:

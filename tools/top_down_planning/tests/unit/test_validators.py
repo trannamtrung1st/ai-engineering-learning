@@ -231,13 +231,6 @@ def test_invalid_schema_version_fails_validation() -> None:
     assert any(issue.code == "invalid_schema_version" for issue in result.issues)
 
 
-def test_plan_from_dict_requires_schema_version() -> None:
-    plan = _chain_plan(depth=1)
-
-    with pytest.raises(ValueError, match="schema_version is required"):
-        Plan.from_dict({key: value for key, value in plan.to_dict().items() if key != "schema_version"})
-
-
 def test_executable_parent_overlap_warns_without_blocking() -> None:
     plan = Plan(
         id="plan-overlap",

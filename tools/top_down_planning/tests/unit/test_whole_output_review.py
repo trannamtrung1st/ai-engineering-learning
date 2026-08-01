@@ -559,6 +559,7 @@ def test_default_whole_output_rubric_covers_correctness_themes() -> None:
         "cross-output consistency",
         "completion claim",
         "traceability",
+        "plan risk coverage",
     ):
         assert theme in joined, f"missing advisory theme {theme!r} in {rubric}"
 

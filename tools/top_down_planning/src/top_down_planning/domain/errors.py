@@ -39,3 +39,12 @@ class DependencyCycleError(DomainError):
     def __init__(self, path: list[str]) -> None:
         super().__init__(f"dependency cycle: {' -> '.join(path)}")
         self.path = path
+
+
+class UnsupportedPlanSchemaVersionError(DomainError):
+    """Persisted plan.json uses a corrupt or unsupported schema_version."""
+
+    code = "unsupported_plan_schema"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)

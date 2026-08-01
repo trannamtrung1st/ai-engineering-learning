@@ -134,10 +134,11 @@ agent_context:
     store.create_run(
         "run-20260101T000501-000501",
         plan={
-            "schema_version": 1,
+            "schema_version": 2,
             "id": "plan-compact",
             "revision": 0,
             "output_goal": "Goal.",
+            "risks": [],
             "items": [],
         },
         **create_run_kwargs(workspace, resolved_config=config),
@@ -165,10 +166,11 @@ run:
     store.create_run(
         "run-20260101T000502-000502",
         plan={
-            "schema_version": 1,
+            "schema_version": 2,
             "id": "plan-save-run",
             "revision": 0,
             "output_goal": "Goal.",
+            "risks": [],
             "items": [],
         },
         **create_run_kwargs(workspace, resolved_config=config),

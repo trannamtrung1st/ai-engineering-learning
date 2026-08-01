@@ -91,6 +91,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
                     "Traceability: Can each acceptance criterion be traced to a "
                     "specific planned outcome and verification path?"
                 ),
+                (
+                    "Field placement: Are acceptance, risks, assumptions, and "
+                    "constraints used consistently? Are source-document references in "
+                    "source_refs rather than scope.includes? Are non-binding "
+                    "suggestions kept out of acceptance?"
+                ),
+                (
+                    "Risk ownership: Are material uncertainties captured as specific "
+                    "risks on the lowest owning item? Are plan-level risks reserved "
+                    "for cross-cutting threats without duplicating item-level risks?"
+                ),
             ],
         },
         "whole_output": {
@@ -115,6 +126,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 (
                     "Traceability: Can each disposition be traced from plan "
                     "contract through evidence to a verifiable output?"
+                ),
+                (
+                    "Plan risk coverage: Were material plan-level and item-level "
+                    "risks addressed or explicitly accepted in the delivered output?"
                 ),
             ],
         },

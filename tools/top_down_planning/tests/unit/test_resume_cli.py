@@ -147,6 +147,36 @@ def test_resume_check_json_output(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert payload["config_changes"]["limits.production.max_batches"]["to"] == 99
 
 
+def test_resume_check_rejects_unsupported_plan_schema(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_paused_production_run(store)
+    plan_path = store.run_dir(run_id) / "plan.json"
+    plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan_payload["schema_version"] = 1
+    plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exit_info:
+        handle_resume_command(
+            Namespace(
+                run=run_id,
+                runs_dir=str(store.root),
+                stream_json=True,
+                check=True,
+                set=[],
+                config=None,
+                command="resume",
+            )
+        )
+
+    assert exit_info.value.code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "unsupported_plan_schema"
+    assert "Recreate the run" in payload["error"]["message"]
+
+
 def test_resume_apply_prints_same_summary_as_check(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = _create_paused_production_run(store)

@@ -404,6 +404,46 @@ def test_update_item_rejects_unknown_patch_fields() -> None:
         )
 
 
+def test_update_item_risks_and_source_refs() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "update_item",
+                "item_id": "item-first",
+                "patch": {
+                    "risks": ["Same-column reorder may be off-by-one."],
+                    "source_refs": ["spec.md → Drag and drop"],
+                },
+            }
+        ],
+    )
+
+    item = result.plan.items["item-first"]
+    assert item.risks == ["Same-column reorder may be off-by-one."]
+    assert item.source_refs == ["spec.md → Drag and drop"]
+
+
+def test_update_plan_risks() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "update_plan",
+                "patch": {"risks": ["Browser storage may be inconsistent in CI."]},
+            }
+        ],
+    )
+
+    assert result.plan.risks == ["Browser storage may be inconsistent in CI."]
+
+
 def test_remove_item_recompacts_sibling_order_keys() -> None:
     plan = _sample_plan()
 

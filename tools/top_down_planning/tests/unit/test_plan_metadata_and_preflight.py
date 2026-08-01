@@ -29,12 +29,15 @@ def test_initial_plan_seeds_boundaries_and_acceptance() -> None:
     plan = _initial_plan("run-x", config, output_goal="Goal.")
     assert plan.boundaries == ["Stay in tools/"]
     assert plan.acceptance == ["Tests pass"]
+    assert plan.risks == []
     assert plan.scope.includes == []
     assert plan.scope.excludes == []
     assert plan.constraints == []
     assert plan.assumptions == []
     root = plan.items["item-root"]
     assert root.kind == "aggregate"
+    assert root.risks == []
+    assert root.source_refs == []
 
 
 def test_update_plan_advances_revision_and_metadata() -> None:
@@ -84,6 +87,7 @@ def test_plan_snapshot_exposes_metadata(tmp_path: Path) -> None:
         output_goal="Goal.",
         boundaries=["bound"],
         acceptance=["accept"],
+        risks=["Delivery risk."],
         items={
             "item-root": PlanItem(
                 id="item-root",
@@ -91,6 +95,8 @@ def test_plan_snapshot_exposes_metadata(tmp_path: Path) -> None:
                 order_key="0000000000",
                 title="Root",
                 kind="aggregate",
+                risks=["Item risk."],
+                source_refs=["spec.md → Section"],
             )
         },
     )
@@ -103,9 +109,13 @@ def test_plan_snapshot_exposes_metadata(tmp_path: Path) -> None:
     snapshot = PlanAgentService(store, "run-20260101T000701-000701").snapshot()
     assert snapshot["boundaries"] == ["bound"]
     assert snapshot["acceptance"] == ["accept"]
+    assert snapshot["risks"] == ["Delivery risk."]
     assert "constraints" in snapshot
     assert "assumptions" in snapshot
     assert "scope" in snapshot
+    root_item = next(item for item in snapshot["items"] if item["id"] == "item-root")
+    assert root_item["risks"] == ["Item risk."]
+    assert root_item["source_refs"] == ["spec.md → Section"]
 
 
 def test_candidate_preflight_rejects_invalid_plan(tmp_path: Path) -> None:

@@ -36,6 +36,12 @@ from top_down_planning.persistence.digests import (
     compute_plan_digest,
 )
 from top_down_planning.persistence.path_ids import validate_run_id, validate_store_id
+from top_down_planning.domain.plan_schema import (
+    PLAN_SCHEMA_VERSION,
+    UNSUPPORTED_PLAN_SCHEMA_MESSAGE,
+    UnsupportedPlanSchemaVersionError,
+    validate_plan_schema_version,
+)
 from top_down_planning.persistence.run_schema import (
     CURRENT_RUN_SCHEMA_VERSION,
     validate_run_digests,
@@ -74,7 +80,11 @@ def _utc_now() -> str:
 
 
 def _canonical_plan_payload(plan: Plan | dict[str, Any]) -> dict[str, Any]:
-    model = plan if isinstance(plan, Plan) else Plan.from_dict(dict(plan))
+    if isinstance(plan, Plan):
+        if plan.schema_version != PLAN_SCHEMA_VERSION:
+            raise UnsupportedPlanSchemaVersionError(UNSUPPORTED_PLAN_SCHEMA_MESSAGE)
+        return plan.to_dict()
+    model = Plan.from_dict(dict(plan))
     return model.to_dict()
 
 
@@ -925,7 +935,9 @@ class FileRunStore:
         return path
 
     def _read_plan(self, run_id: str) -> dict[str, Any]:
-        return self._read_json(self._plan_path(run_id))
+        payload = self._read_json(self._plan_path(run_id))
+        validate_plan_schema_version(payload)
+        return payload
 
     def _production_path(self, run_id: str) -> Path:
         path = self.run_dir(run_id) / "production.json"

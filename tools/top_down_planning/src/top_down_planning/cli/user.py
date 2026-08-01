@@ -75,6 +75,7 @@ from top_down_planning.observability import (
     wrap_store_with_observability,
 )
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
+from top_down_planning.domain.plan_schema import UnsupportedPlanSchemaVersionError
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.observability import ConsoleEvent
 from core_tools.provider import create_provider
@@ -483,6 +484,14 @@ def handle_resume_command(args: Namespace) -> None:
             code=exc.code,
         )
         return
+    except UnsupportedPlanSchemaVersionError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=exc.code,
+        )
+        return
 
     plan_summary = build_resume_plan_summary(
         resume_plan,
@@ -655,6 +664,13 @@ def handle_status_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="run_not_found",
         )
+    except UnsupportedPlanSchemaVersionError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=exc.code,
+        )
 
     diagnostics = store_diagnostics_payload(resolved_runs, run_id=args.run, store=store)
     workspace = str(run.get("workspace") or "")
@@ -747,6 +763,13 @@ def handle_inspect_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="run_not_found",
         )
+    except UnsupportedPlanSchemaVersionError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=exc.code,
+        )
 
     limits = planning_limits_from_config(config)
     if view == "audit":
@@ -783,6 +806,13 @@ def handle_validate_command(args: Namespace) -> None:
             exit_code=1,
             stream_json=args.stream_json,
             code="run_not_found",
+        )
+    except UnsupportedPlanSchemaVersionError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=exc.code,
         )
 
     limits = planning_limits_from_config(config)
