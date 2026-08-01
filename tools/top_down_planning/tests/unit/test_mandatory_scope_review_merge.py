@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tests.helpers import make_review_loop
 from top_down_planning.domain.reviews import (
     ReviewFinding,
     ReviewLoop,
@@ -13,7 +14,7 @@ from top_down_planning.orchestrator.mandatory_review_stages import (
 
 
 def test_merge_scope_review_findings_preserves_prior_audit() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -56,7 +57,7 @@ def test_merge_scope_review_findings_preserves_prior_audit() -> None:
 
 
 def test_mandatory_orchestration_decision_reads_stage_results() -> None:
-    verified_loop = ReviewLoop(
+    verified_loop = make_review_loop(
         id="r1",
         type="whole_plan",
         reviewer_session_id="s",
@@ -75,7 +76,7 @@ def test_mandatory_orchestration_decision_reads_stage_results() -> None:
     )
     assert mandatory_orchestration_decision(verified_loop) == "verified"
 
-    scope_review_loop = ReviewLoop(
+    scope_review_loop = make_review_loop(
         id="r2",
         type="whole_plan",
         reviewer_session_id="s",

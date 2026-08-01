@@ -7,7 +7,7 @@ from typing import Any
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.session_bindings import (
     SessionBinding,
-    binding_provider_session_id,
+    resumable_binding_provider_session_id,
 )
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
@@ -34,10 +34,10 @@ _FORBIDDEN_STAGE_LABELS = (
 
 def reviewer_loop_provider_session_id(loop: ReviewLoop | dict[str, Any]) -> str | None:
     if isinstance(loop, ReviewLoop):
-        return loop.reviewer_session_id
+        return resumable_binding_provider_session_id(loop.reviewer_binding)
     binding_raw = loop.get("reviewer_binding")
     if isinstance(binding_raw, dict):
-        return binding_provider_session_id(binding_raw)
+        return resumable_binding_provider_session_id(binding_raw)
     return None
 
 
@@ -63,6 +63,7 @@ def build_reviewer_allocation_request(*, run_id: str, loop_id: str) -> dict[str,
 def build_reviewer_protocol_instructions(
     *,
     stage: str | None = None,
+    review_type: str | None = None,
 ) -> list[str]:
     """Provider-agnostic reviewer behavior instructions for review packages."""
 
@@ -83,7 +84,29 @@ def build_reviewer_protocol_instructions(
             "with `uv run`."
         ),
     ]
+    normalized_type = str(review_type or "").strip() or None
     normalized = str(stage or "").strip() or None
+    if normalized_type in {"whole_plan", "whole_output"} and normalized != "finding_verification":
+        if normalized_type == "whole_plan":
+            instructions.append(
+                (
+                    "Primary gate focus: plan correctness and internal consistency. "
+                    "Flag contradictions between outcomes, acceptance criteria, "
+                    "dependencies, and titles; impossible or cyclic dependencies; "
+                    "overlapping executable scope; and claims that cannot be "
+                    "verified before production."
+                )
+            )
+        else:
+            instructions.append(
+                (
+                    "Primary gate focus: output correctness and consistency. "
+                    "Verify deliverables satisfy the approved plan contracts, "
+                    "evidence supports claimed dispositions, and outputs do not "
+                    "contradict each other, the plan acceptance criteria, or the "
+                    "completion claim."
+                )
+            )
     if normalized == "finding_verification":
         instructions.extend(
             [

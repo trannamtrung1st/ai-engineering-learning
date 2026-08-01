@@ -121,7 +121,6 @@ def _create_run_in_production_with_sessions(
             "max_expansion_per_item": 7,
         },
         "limits": limits,
-        "provider": {"name": "stub"},
     }
     store.create_run(
         run_id,

@@ -31,6 +31,7 @@ from top_down_planning.orchestrator.whole_plan_review import build_whole_plan_re
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.schema_docs import PUBLIC_EXAMPLES, show_example, show_schema
 from tests.helpers import (
+    make_review_loop,
     save_review_payload,
     create_run_kwargs,
     grant_capability,
@@ -120,7 +121,7 @@ def test_stage_decision_validation_and_finding_resolution() -> None:
     with pytest.raises(ValueError, match="finding_verification decisions"):
         validate_mandatory_stage_decision("finding_verification", "approved")
 
-    verification_loop = ReviewLoop(
+    verification_loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -164,7 +165,7 @@ def test_stage_decision_validation_and_finding_resolution() -> None:
     assert verification[0].status == "resolved"
     assert verification[0].issue == "Gap"
 
-    scope_loop = ReviewLoop(
+    scope_loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -185,7 +186,7 @@ def test_stage_decision_validation_and_finding_resolution() -> None:
     merged = merge_scope_review_findings(scope_loop, reported)
     assert merged[0].id == "finding-new"
     assert mandatory_stage_respond_decision(
-        ReviewLoop(
+        make_review_loop(
             id="review-whole-plan-01",
             type="whole_plan",
             reviewer_session_id="sess",
@@ -235,7 +236,7 @@ def test_scope_review_package_omits_prior_finding_framing(tmp_path: Path) -> Non
         **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
         phase=WHOLE_PLAN_REVIEW,
     )
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -282,7 +283,7 @@ def test_scope_review_package_omits_prior_finding_framing(tmp_path: Path) -> Non
 
 
 def test_verification_package_and_recheck_include_finding_guidance() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-output-01",
         type="whole_output",
         reviewer_session_id="sess",

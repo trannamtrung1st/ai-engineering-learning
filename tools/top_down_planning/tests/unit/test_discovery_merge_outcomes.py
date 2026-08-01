@@ -18,7 +18,7 @@ from top_down_planning.domain.reviews import (
     merge_discovery_findings,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, grant_capability
+from tests.helpers import create_run_kwargs, grant_capability, make_review_loop
 
 
 def _finding(
@@ -40,7 +40,7 @@ def _finding(
 
 def test_merge_discovery_findings_is_append_only() -> None:
     prior = _finding("finding-001", severity="blocker", status="resolved")
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",
@@ -147,7 +147,7 @@ def test_derive_outcomes_for_incomplete_required_optional_and_clear() -> None:
 
 
 def test_apply_discovery_persists_finding_actions_and_incomplete_marker() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",
@@ -206,7 +206,7 @@ def test_apply_discovery_persists_finding_actions_and_incomplete_marker() -> Non
 
 
 def test_legacy_severity_findings_remain_readable_after_merge() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",
@@ -255,7 +255,7 @@ def test_legacy_severity_findings_remain_readable_after_merge() -> None:
 
 
 def test_block_review_yields_blocked_outcome_and_status() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -302,7 +302,7 @@ def _seed_focused_run(tmp_path: Path) -> tuple[FileRunStore, str, ReviewLoop, st
         items={"item-root": root},
     )
     store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path))
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",

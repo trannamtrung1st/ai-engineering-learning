@@ -34,7 +34,7 @@ from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import update_primary_binding
 from top_down_planning.workspace import WorkspaceIntegrityError, validate_run_workspace_integrity
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, whole_plan_approval_record
+from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, whole_plan_approval_record, make_review_loop
 
 
 def _sample_plan() -> Plan:
@@ -160,7 +160,7 @@ def test_reviewer_session_missing_and_replaced(tmp_path: Path) -> None:
     run["phase"] = PLANNING
     store.save_run(run_id, run, expected_revision)
 
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="loop-focused-01",
         type="focused_plan",
         reviewer_session_id=None,

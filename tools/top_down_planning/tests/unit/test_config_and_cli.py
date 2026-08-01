@@ -174,7 +174,6 @@ def _create_validate_run(
     config = {
         "run": {"output_goal": "Deliver the sample output.", "input_refs": []},
         "planning": {"max_depth": 4, "max_expansion_per_item": 7},
-        "provider": {"name": "stub"},
     }
     store.create_run(
         run_id,

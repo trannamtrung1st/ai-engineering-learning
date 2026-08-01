@@ -15,6 +15,7 @@ from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import (
+    make_review_loop,
     save_review_payload,
     create_run_kwargs,
     grant_capability,
@@ -357,11 +358,10 @@ def test_whole_plan_and_producer_packages_remain_active_only(tmp_path: Path) -> 
 
     config = minimal_resolved_config(
         run={"output_goal": "Deliver the output.", "input_refs": []},
-        provider={"name": "stub"},
     )
     config["project"]["workspace"] = str(tmp_path.resolve())
     run = {"digests": {}, "workspace": str(tmp_path.resolve())}
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",

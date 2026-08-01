@@ -52,6 +52,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "revise_at": None,
             "rubric": [
                 (
+                    "Internal consistency: Are parent and child outcomes, acceptance "
+                    "criteria, dependencies, and titles mutually consistent with no "
+                    "contradictions, impossible ordering, or unverifiable claims?"
+                ),
+                (
                     "Hierarchy: Is every child a genuine decomposition of its parent "
                     "outcome? Are unrelated enhancements siblings? Are grouping-only "
                     "nodes marked aggregate? Does any executable parent overlap "
@@ -90,6 +95,28 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
         "whole_output": {
             "revise_at": None,
+            "rubric": [
+                (
+                    "Plan conformance: Does each completed disposition satisfy the "
+                    "approved plan item outcome and acceptance criteria?"
+                ),
+                (
+                    "Evidence correctness: Does recorded evidence support the "
+                    "claimed disposition for each terminal item?"
+                ),
+                (
+                    "Cross-output consistency: Do deliverables, summaries, and "
+                    "references contradict each other or the approved plan?"
+                ),
+                (
+                    "Completion claim: Does the goal assessment align with the "
+                    "evidence and remaining open items?"
+                ),
+                (
+                    "Traceability: Can each disposition be traced from plan "
+                    "contract through evidence to a verifiable output?"
+                ),
+            ],
         },
     },
     "provider": {
@@ -184,6 +211,7 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "review.whole_plan.revise_at",
         "review.whole_plan.rubric",
         "review.whole_output.revise_at",
+        "review.whole_output.rubric",
         "provider.name",
         "provider.binary",
         "provider.skip_probe",

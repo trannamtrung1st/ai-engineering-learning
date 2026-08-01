@@ -12,7 +12,7 @@ from top_down_planning.orchestrator.whole_output_review import (
     build_whole_output_review_package,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.helpers import create_run_kwargs, minimal_resolved_config, make_review_loop
 
 
 def _plan() -> Plan:
@@ -233,7 +233,7 @@ def test_whole_output_package_includes_traceability(tmp_path: Path) -> None:
         phase="whole_output_review",
     )
     production = _production_with_shared_artifact()
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-output-01",
         type="whole_output",
         reviewer_session_id="sess",
@@ -264,7 +264,7 @@ def test_focused_output_package_includes_scoped_traceability(tmp_path: Path) -> 
         phase="production",
     )
     production = _production_with_shared_artifact()
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-output-01",
         type="focused_output",
         reviewer_session_id="sess",

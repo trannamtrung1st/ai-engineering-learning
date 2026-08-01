@@ -13,7 +13,25 @@ from top_down_planning.orchestrator.reviewer_session import (
 )
 from top_down_planning.orchestrator.whole_plan_review import build_whole_plan_review_package
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.helpers import create_run_kwargs, minimal_resolved_config, make_review_loop
+
+
+def test_whole_plan_protocol_prioritizes_correctness_and_consistency() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(review_type="whole_plan")
+    ).lower()
+    assert "correctness" in protocol
+    assert "internal consistency" in protocol
+    assert "contradictions" in protocol
+
+
+def test_whole_output_protocol_prioritizes_correctness_and_consistency() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(review_type="whole_output")
+    ).lower()
+    assert "correctness" in protocol
+    assert "consistency" in protocol
+    assert "plan contracts" in protocol
 
 
 def test_discovery_protocol_requires_full_material_disclosure() -> None:
@@ -43,8 +61,53 @@ def test_verification_protocol_stays_narrow() -> None:
     assert "every material issue" not in protocol
 
 
+def test_verification_protocol_omits_mandatory_gate_focus() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(
+            stage="finding_verification",
+            review_type="whole_plan",
+        )
+    ).lower()
+    assert "primary gate focus" not in protocol
+    assert "internal consistency" not in protocol
+
+
+def test_whole_scope_review_guidance_prioritizes_consistency_and_correctness() -> None:
+    plan_fields = stage_package_fields(
+        make_review_loop(
+            id="review-whole-plan-01",
+            type="whole_plan",
+            reviewer_session_id="sess",
+            target_revision=1,
+            scope={"kind": "whole_plan"},
+            active_stage="scope_review",
+            finding_set_id="fs-1",
+        )
+    )
+    plan_guidance = " ".join(plan_fields["scope_review_guidance"]).lower()
+    assert "internal consistency" in plan_guidance
+    assert "correctness" in plan_guidance
+    assert "contradictions" in plan_guidance
+
+    output_fields = stage_package_fields(
+        make_review_loop(
+            id="review-whole-output-01",
+            type="whole_output",
+            reviewer_session_id="sess",
+            target_revision=1,
+            scope={"kind": "whole_output"},
+            active_stage="scope_review",
+            finding_set_id="fs-1",
+        )
+    )
+    output_guidance = " ".join(output_fields["scope_review_guidance"]).lower()
+    assert "correctness" in output_guidance
+    assert "consistency" in output_guidance
+    assert "completion claim" in output_guidance
+
+
 def test_stage_packages_include_review_policy_without_revise_at() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -92,7 +155,7 @@ def test_focused_and_whole_packages_omit_revise_at(tmp_path: Path) -> None:
     run = store.load_run(run_id)
     config = store.load_resolved_config(run_id)
     focused, finding_set_id = allocate_discovery_finding_set_id(
-        ReviewLoop(
+        make_review_loop(
             id="review-focused-plan-01",
             type="focused_plan",
             reviewer_session_id=None,
@@ -110,7 +173,7 @@ def test_focused_and_whole_packages_omit_revise_at(tmp_path: Path) -> None:
     protocol = " ".join(focused_pkg["protocol_instructions"]).lower()
     assert "every material issue" in protocol
 
-    whole = ReviewLoop(
+    whole = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",

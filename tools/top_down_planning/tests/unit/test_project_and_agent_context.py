@@ -33,7 +33,7 @@ from top_down_planning.orchestrator import (
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, write_config
+from tests.helpers import create_run_kwargs, write_config, make_review_loop
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -459,7 +459,7 @@ def test_reviewer_packages_include_contracts(tmp_path: Path) -> None:
             )
         },
     )
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="loop-1",
         type="focused_plan",
         reviewer_session_id=None,
@@ -476,7 +476,7 @@ def test_reviewer_packages_include_contracts(tmp_path: Path) -> None:
     assert focused["input_refs"] == [str(task.resolve())]
     assert focused["output_goal"] == "Goal."
 
-    whole_plan_loop = ReviewLoop(
+    whole_plan_loop = make_review_loop(
         id="loop-2",
         type="whole_plan",
         reviewer_session_id=None,
@@ -500,7 +500,7 @@ def test_reviewer_packages_include_contracts(tmp_path: Path) -> None:
         "output_evidence": [],
         "dispositions": {},
     }
-    whole_output_loop = ReviewLoop(
+    whole_output_loop = make_review_loop(
         id="loop-3",
         type="whole_output",
         reviewer_session_id=None,

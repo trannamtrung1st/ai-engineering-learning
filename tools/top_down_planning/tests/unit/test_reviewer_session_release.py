@@ -20,6 +20,7 @@ from top_down_planning.orchestrator.session_events import (
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import binding_provider_session_id
 from tests.helpers import (
+    make_review_loop,
     done_events,
     mandatory_initial_respond_request,
     respond_review,
@@ -38,7 +39,7 @@ def test_release_reviewer_session_after_decision_releases_on_terminal_status(
     provider = StubProvider()
     script_reviewer_allocate(provider)
     session_id = provider.start_reviewer_session({"loop_id": "review-whole-plan-01"})
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id=session_id,
@@ -127,7 +128,7 @@ def test_sync_reviewer_loop_session_id_before_release(tmp_path: Path) -> None:
     provider = StubProvider()
     script_reviewer_allocate(provider)
     session_id = provider.start_reviewer_session({"loop_id": "review-whole-plan-01"})
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id=session_id,

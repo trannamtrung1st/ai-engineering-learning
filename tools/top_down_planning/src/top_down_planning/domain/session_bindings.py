@@ -1,4 +1,4 @@
-"""Structured session bindings (proposal §9)."""
+"""Structured session bindings for provider sessions."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def validate_durable_provider_session_id(value: str | None) -> str:
     text = str(value).strip()
     if is_transient_provider_session_id(text):
         raise SessionBindingError(
-            f"transient provider session id must not be persisted: {text!r}"
+            f"transient provider session id is not allowed when binding state is bound: {text!r}"
         )
     return text
 
@@ -109,11 +109,24 @@ class SessionBinding:
         return binding
 
     def with_next_generation(self) -> SessionBinding:
+        """In-flight replacement: new generation, ``starting``, id cleared until allocate."""
+
         return replace(
             self,
             session_instance_id=new_session_instance_id(),
             generation=int(self.generation) + 1,
             state="starting",
+            provider_session_id=None,
+        )
+
+    def released_for_reallocation(self) -> SessionBinding:
+        """Stale interrupt or scope reset: new generation, ``unbound``, id cleared."""
+
+        return replace(
+            self,
+            session_instance_id=new_session_instance_id(),
+            generation=int(self.generation) + 1,
+            state="unbound",
             provider_session_id=None,
         )
 
@@ -123,14 +136,18 @@ class SessionBinding:
         *,
         provider: str | None = None,
         model: str | None = None,
-        allow_transient: bool = False,
     ) -> SessionBinding:
         resolved = str(provider_session_id).strip()
         if not resolved:
             raise SessionBindingError("provider_session_id is required")
-        if not allow_transient and is_transient_provider_session_id(resolved):
+        if (
+            self.state == "bound"
+            and self.provider_session_id
+            and not is_transient_provider_session_id(self.provider_session_id)
+            and is_transient_provider_session_id(resolved)
+        ):
             raise SessionBindingError(
-                f"transient provider session id must not be persisted: {resolved!r}"
+                "cannot downgrade bound durable provider session id to transient"
             )
         updated = replace(
             self,
@@ -188,7 +205,6 @@ def binding_with_provider_session_id(
         str(provider_session_id).strip(),
         provider=provider,
         model=model,
-        allow_transient=is_transient_provider_session_id(provider_session_id),
     )
 
 
@@ -229,6 +245,26 @@ def binding_provider_session_id(binding: SessionBinding | dict[str, Any] | None)
     return None
 
 
+def resumable_binding_provider_session_id(
+    binding: SessionBinding | dict[str, Any] | None,
+) -> str | None:
+    """Return a provider session id only when the binding is resumable (``state: bound``)."""
+
+    if binding is None:
+        return None
+    if isinstance(binding, SessionBinding):
+        payload = binding
+    elif isinstance(binding, dict):
+        if not binding.get("session_instance_id"):
+            return None
+        payload = SessionBinding.from_dict(binding)
+    else:
+        return None
+    if payload.state != "bound":
+        return None
+    return payload.provider_session_id
+
+
 def validate_session_binding(binding: SessionBinding) -> None:
     if binding.state == "bound":
         validate_durable_provider_session_id(binding.provider_session_id)
@@ -249,6 +285,7 @@ __all__ = [
     "SessionRole",
     "binding_provider_session_id",
     "binding_with_provider_session_id",
+    "resumable_binding_provider_session_id",
     "is_transient_provider_session_id",
     "new_session_binding",
     "new_session_instance_id",

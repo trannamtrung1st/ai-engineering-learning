@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from tests.helpers import make_review_loop
 from top_down_planning.domain.reviews import ReviewFinding, ReviewLoop, needs_primary_revision_resume
 from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
 
 
 def _loop(**overrides) -> ReviewLoop:
-    base = ReviewLoop(
+    base = make_review_loop(
         id="review-whole-output-01",
         type="whole_output",
         reviewer_session_id="reviewer-1",
@@ -28,7 +29,7 @@ def _loop(**overrides) -> ReviewLoop:
         revision_cycles=1,
         revise_at="blocker",
     )
-    return ReviewLoop(
+    return make_review_loop(
         id=overrides.get("id", base.id),
         type=overrides.get("type", base.type),
         reviewer_session_id=overrides.get("reviewer_session_id", base.reviewer_session_id),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.helpers import review_loop_dict_with_binding
+from tests.helpers import review_loop_dict_with_binding, make_review_loop
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import (
@@ -53,7 +53,7 @@ def test_scope_review_result_rejects_blocking_findings() -> None:
 
 
 def test_review_loop_to_dict_uses_scope_review_fields() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",

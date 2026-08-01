@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.helpers import make_review_loop
 from top_down_planning.domain.reviews import (
     FINDING_DISPOSITIONS,
     MANDATORY_REVIEW_TRANSITIONS,
@@ -139,7 +140,7 @@ def test_verification_and_scope_review_result_round_trip() -> None:
 
 
 def test_review_loop_round_trip_preserves_lifecycle_fields() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-1",
         type="whole_plan",
         reviewer_session_id="rev-1",

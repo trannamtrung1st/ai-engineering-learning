@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import multiprocessing
-import time
 from pathlib import Path
 from typing import Literal
 
@@ -81,6 +80,7 @@ def test_reader_waits_for_writer_lock_before_recovering_txn(tmp_path: Path) -> N
     ready_queue: multiprocessing.Queue[str] = ctx.Queue()
     release_queue: multiprocessing.Queue[str] = ctx.Queue()
     result_queue: multiprocessing.Queue[int] = ctx.Queue()
+    attempt_queue: multiprocessing.Queue[str] = ctx.Queue()
 
     writer = ctx.Process(
         target=hold_lock_with_prepared_txn_worker,
@@ -88,7 +88,7 @@ def test_reader_waits_for_writer_lock_before_recovering_txn(tmp_path: Path) -> N
     )
     reader = ctx.Process(
         target=load_plan_reader_worker,
-        args=(str(tmp_path), run_id, result_queue),
+        args=(str(tmp_path), run_id, result_queue, attempt_queue),
     )
 
     writer.start()
@@ -96,7 +96,7 @@ def test_reader_waits_for_writer_lock_before_recovering_txn(tmp_path: Path) -> N
     assert list(run_dir.glob(".txn-*"))
 
     reader.start()
-    time.sleep(0.5)
+    assert attempt_queue.get(timeout=30) == "loading"
     assert result_queue.empty()
     assert list(run_dir.glob(".txn-*"))
 

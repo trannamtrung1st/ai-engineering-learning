@@ -18,7 +18,7 @@ from top_down_planning.orchestrator.focused_review import build_focused_review_p
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.schema_docs import show_example, show_schema
 from core_tools.schema import validate_against_schema
-from tests.helpers import create_run_kwargs, grant_capability, review_loop_dict_with_binding, save_review_payload
+from tests.helpers import create_run_kwargs, grant_capability, review_loop_dict_with_binding, save_review_payload, make_review_loop
 
 
 def _loop(**overrides: object) -> ReviewLoop:
@@ -160,7 +160,7 @@ def test_focused_package_includes_allocated_finding_set_id(tmp_path: Path) -> No
     config = store.load_resolved_config(run_id)
     run = store.load_run(run_id)
     loop, finding_set_id = allocate_discovery_finding_set_id(
-        ReviewLoop(
+        make_review_loop(
             id="review-focused-plan-01",
             type="focused_plan",
             reviewer_session_id=None,
@@ -195,7 +195,7 @@ def test_review_service_rejects_finding_set_id_mismatch(tmp_path: Path) -> None:
         items={"item-root": root},
     )
     store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path))
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",

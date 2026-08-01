@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
+from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.domain.outcome import (
     evaluate_acceptance_invariant,
@@ -631,7 +632,6 @@ class WholeOutputReviewOrchestrator:
         loop = ReviewLoop(
             id=loop_id,
             type="whole_output",
-            reviewer_session_id=None,
             target_revision=output_revision,
             scope={"kind": "whole_output"},
             status="pending",
@@ -1047,6 +1047,11 @@ def build_whole_output_review_package(
     """Package a bounded whole-output review for a fresh reviewer session."""
 
     digests = dict(run.get("digests") or {})
+    review_cfg = (config.get("review") or {}).get("whole_output") or {}
+    rubric = list(
+        review_cfg.get("rubric")
+        or DEFAULT_CONFIG["review"]["whole_output"]["rubric"]
+    )
     traceability = build_output_traceability(plan, production)
     package: dict[str, Any] = {
         "run_id": run_id,
@@ -1068,10 +1073,13 @@ def build_whole_output_review_package(
         "digests": digests,
         **stage_package_fields(loop),
         "protocol_instructions": build_reviewer_protocol_instructions(
-            stage=loop.active_stage or "initial_review"
+            stage=loop.active_stage or "initial_review",
+            review_type=loop.type,
         ),
         "tool_instructions": build_reviewer_tool_instructions(run_id),
     }
+    if loop.active_stage != "scope_review":
+        package["rubric"] = rubric
     return attach_role_context_to_manifest(
         package,
         config=config,

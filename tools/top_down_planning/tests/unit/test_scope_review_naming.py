@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from tests.helpers import review_loop_dict_with_binding
+from tests.helpers import review_loop_dict_with_binding, make_review_loop
 
+from top_down_planning.domain.session_bindings import new_session_binding
 from top_down_planning.domain.reviews import (
     ReviewFinding,
     ReviewLoop,
@@ -48,10 +49,15 @@ def test_legacy_scope_names_are_rejected() -> None:
 
 
 def test_prepare_scope_review_loop_writes_scope_review_fields() -> None:
-    loop = ReviewLoop(
+    reviewer_binding = new_session_binding(
+        role="reviewer",
+        kind="reviewer",
+    ).with_provider_session_id("sess")
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
+        reviewer_binding=reviewer_binding,
         target_revision=0,
         scope={"kind": "whole_plan"},
         status="approved",
@@ -70,6 +76,10 @@ def test_prepare_scope_review_loop_writes_scope_review_fields() -> None:
     assert payload["lifecycle_status"] == "scope_review_pending"
     assert payload.get("scope_review_rounds", 0) == 0
     assert "scope_review_rounds" not in payload
+    assert prepared.reviewer_binding is not None
+    assert prepared.reviewer_binding.state == "unbound"
+    assert prepared.reviewer_binding.provider_session_id is None
+    assert prepared.reviewer_session_id is None
     fields = stage_package_fields(prepared)
     assert fields["stage"] == "scope_review"
     assert fields["respond_contract"]["stage"] == "scope_review"
@@ -77,7 +87,7 @@ def test_prepare_scope_review_loop_writes_scope_review_fields() -> None:
 
 
 def test_scope_review_result_uses_reported_findings_only() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -163,7 +173,7 @@ def test_mandatory_gate_approval_requires_canonical_record() -> None:
 
 
 def test_incomplete_retry_restores_scope_review_pending() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",

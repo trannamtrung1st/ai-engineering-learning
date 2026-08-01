@@ -164,14 +164,13 @@ def prepare_scope_review_loop(loop: ReviewLoop) -> ReviewLoop:
     prepared = replace(
         loop,
         status="pending",
-        reviewer_session_id=None,
         lifecycle_status="scope_review_pending",
         active_stage=SCOPE_REVIEW_STAGE,
         approved_digests=None,
         scope_review_result=None,
     )
     prepared, _finding_set_id = allocate_discovery_finding_set_id(prepared)
-    return prepared
+    return prepared.with_reviewer_session_released()
 
 
 def mark_mandatory_approved(loop: ReviewLoop) -> ReviewLoop:
@@ -257,26 +256,32 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
         }
         if loop.type == "whole_plan":
             fields["scope_review_guidance"] = [
+                "internal consistency across titles, outcomes, acceptance criteria, and dependencies",
+                "correctness of feasibility and verifiability claims",
+                "contradictions and impossible or cyclic dependencies",
                 "coverage of the original request",
                 "required deliverables",
                 "actionable completeness",
                 "dependency and sequencing validity",
-                "feasibility",
-                "contradictions",
                 "unresolved assumptions that prevent execution",
                 "applicable planning acceptance criteria",
             ]
-        else:
+        elif loop.type == "whole_output":
             fields["scope_review_guidance"] = [
+                "correctness against approved plan contracts and acceptance criteria",
+                "consistency between evidence, dispositions, outputs, and completion claim",
+                "material cross-output inconsistency",
                 "conformance to the approved plan",
                 "required deliverables",
-                "correctness",
                 "missing required content",
-                "material cross-output inconsistency",
                 "broken references or dependencies",
-                "applicable output acceptance criteria",
                 "regressions that prevent use or acceptance",
             ]
+        else:
+            raise ValueError(
+                f"scope_review guidance is only defined for mandatory whole_* loops; "
+                f"got {loop.type!r}"
+            )
         fields["respond_contract"] = {
             "stage": SCOPE_REVIEW_STAGE,
             "required_fields": [
@@ -322,13 +327,31 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
                 "summary",
             ],
         }
-        fields["initial_review_guidance"] = [
-            "Mandatory review gate: report every material issue with severity and category",
-            "Clear initial discovery still requires a separate fresh scope review",
-            "Do not treat this pass as final approval",
-            "Echo finding_set_id unchanged; service derives lifecycle outcomes",
-            "Do not omit lower-severity issues because they may not force revision",
-        ]
+        if loop.type == "whole_plan":
+            fields["initial_review_guidance"] = [
+                "Mandatory whole-plan gate: prioritize correctness and internal consistency",
+                "Report contradictions, unverifiable claims, and overlapping executable scope",
+                "Report every material issue with severity and category",
+                "Clear initial discovery still requires a separate fresh scope review",
+                "Do not treat this pass as final approval",
+                "Echo finding_set_id unchanged; service derives lifecycle outcomes",
+                "Do not omit lower-severity issues because they may not force revision",
+            ]
+        elif loop.type == "whole_output":
+            fields["initial_review_guidance"] = [
+                "Mandatory whole-output gate: prioritize correctness and cross-artifact consistency",
+                "Report mismatches between evidence, dispositions, outputs, and plan contracts",
+                "Report every material issue with severity and category",
+                "Clear initial discovery still requires a separate fresh scope review",
+                "Do not treat this pass as final approval",
+                "Echo finding_set_id unchanged; service derives lifecycle outcomes",
+                "Do not omit lower-severity issues because they may not force revision",
+            ]
+        else:
+            raise ValueError(
+                f"initial_review guidance is only defined for mandatory whole_* loops; "
+                f"got {loop.type!r}"
+            )
     return fields
 
 

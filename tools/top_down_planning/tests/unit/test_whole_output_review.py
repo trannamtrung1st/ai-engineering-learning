@@ -62,7 +62,6 @@ def _create_run_at_whole_output_review(
                 "max_revision_cycles": 5,
             }
         },
-        "provider": {"name": "stub"},
     }
     if limits:
         config["limits"]["whole_output_review"].update(limits)
@@ -549,3 +548,52 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
     assert result.phase == OUTPUT_VALIDATED
     assert result.outcome == "accepted"
     assert store.load_run(run_id)["status"] == "completed"
+
+
+def test_default_whole_output_rubric_covers_correctness_themes() -> None:
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+
+    rubric = DEFAULT_CONFIG["review"]["whole_output"]["rubric"]
+    joined = "\n".join(rubric).casefold()
+    for theme in (
+        "plan conformance",
+        "evidence correctness",
+        "cross-output consistency",
+        "completion claim",
+        "traceability",
+    ):
+        assert theme in joined, f"missing advisory theme {theme!r} in {rubric}"
+
+
+def test_whole_output_package_includes_default_rubric(tmp_path: Path) -> None:
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+    from top_down_planning.orchestrator.whole_output_review import (
+        build_whole_output_review_package,
+    )
+    from tests.helpers import make_review_loop
+
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_output_review(store)
+    run_id = "run-20260101T000801-000801"
+    plan = store.load_plan_model(run_id)
+    config = store.load_resolved_config(run_id)
+    production = store.load_production(run_id)
+    loop = make_review_loop(
+        id="review-whole-output-01",
+        type="whole_output",
+        reviewer_session_id="sess",
+        target_revision=1,
+        scope={"kind": "whole_output"},
+    )
+    package = build_whole_output_review_package(
+        run_id,
+        store.load_run(run_id),
+        config,
+        plan,
+        production,
+        loop,
+    )
+    assert package["rubric"] == DEFAULT_CONFIG["review"]["whole_output"]["rubric"]
+    protocol = " ".join(package["protocol_instructions"]).lower()
+    assert "primary gate focus" in protocol
+    assert "correctness" in protocol

@@ -63,6 +63,49 @@ def review_loop_dict_with_binding(payload: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def make_review_loop(**kwargs: Any) -> Any:
+    """Build a ``ReviewLoop`` from fixture kwargs (maps ``reviewer_session_id`` → binding)."""
+
+    from top_down_planning.domain.reviews import ReviewLoop
+    from top_down_planning.domain.session_bindings import SessionBinding
+
+    kwargs = dict(kwargs)
+    binding = kwargs.get("reviewer_binding")
+    if isinstance(binding, SessionBinding):
+        kwargs["reviewer_binding"] = binding.to_dict()
+    findings = kwargs.get("findings")
+    if isinstance(findings, list) and findings and hasattr(findings[0], "to_dict"):
+        kwargs["findings"] = [
+            item.to_dict() if hasattr(item, "to_dict") else item for item in findings
+        ]
+    finding_actions = kwargs.get("finding_actions")
+    if (
+        isinstance(finding_actions, list)
+        and finding_actions
+        and hasattr(finding_actions[0], "to_dict")
+    ):
+        kwargs = dict(kwargs)
+        kwargs["finding_actions"] = [
+            item.to_dict() if hasattr(item, "to_dict") else item
+            for item in finding_actions
+        ]
+    payload = review_loop_dict_with_binding(dict(kwargs))
+    payload.setdefault("status", "pending")
+    payload.setdefault("findings", [])
+    payload.setdefault("revision_cycles", 0)
+    payload.setdefault("revision", 0)
+    payload.setdefault("finding_actions", [])
+    payload.setdefault("advisory_handoffs_completed", [])
+    payload.setdefault("finding_ids_by_set", {})
+    loop_type = str(payload.get("type") or "").strip()
+    if loop_type and payload.get("revise_at") is None:
+        from top_down_planning.domain.review_policy import BUILTIN_REVISE_AT
+
+        if loop_type in BUILTIN_REVISE_AT:
+            payload["revise_at"] = "blocker"
+    return ReviewLoop.from_dict(payload)
+
+
 def test_run_workspace(store: Any) -> str:
     """Workspace path for test runs (required on ``create_run``)."""
 
@@ -94,6 +137,27 @@ def ensure_input_ref_files(workspace: Path, config: dict[str, Any]) -> None:
         target.write_text(f"fixture content for {ref_text}\n", encoding="utf-8")
 
 
+def _normalize_test_resolved_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Default unit tests to stub provider unless a test overrides it explicitly."""
+
+    normalized = copy.deepcopy(config)
+    provider = normalized.get("provider")
+    if not isinstance(provider, dict):
+        normalized["provider"] = {"name": "stub", "skip_probe": True}
+        return normalized
+
+    name = str(provider.get("name") or "").strip().lower()
+    if not name:
+        normalized["provider"] = {"name": "stub", "skip_probe": True}
+        return normalized
+
+    if name == "stub":
+        merged_provider = dict(provider)
+        merged_provider.setdefault("skip_probe", True)
+        normalized["provider"] = merged_provider
+    return normalized
+
+
 def minimal_resolved_config(**overrides: Any) -> dict[str, Any]:
     """Return a minimal resolved config snapshot for test runs."""
 
@@ -107,7 +171,7 @@ def minimal_resolved_config(**overrides: Any) -> dict[str, Any]:
             config[key] = merged
         else:
             config[key] = value
-    return config
+    return _normalize_test_resolved_config(config)
 
 
 def run_context_digests_for_config(
@@ -167,7 +231,7 @@ def create_run_kwargs(
 ) -> dict[str, str | dict[str, Any]]:
     """Return shared ``create_run`` digest/config kwargs for tests."""
 
-    config = resolved_config or minimal_resolved_config()
+    config = _normalize_test_resolved_config(resolved_config or minimal_resolved_config())
     if isinstance(config.get("project"), dict):
         config = copy.deepcopy(config)
         config["project"]["workspace"] = str(workspace.resolve())
@@ -578,21 +642,18 @@ def grant_capability(
         try:
             loop = ReviewLoop.from_dict(store.load_review(run_id, resolved_loop_id))
         except Exception:
-            loop = ReviewLoop(
+            loop = make_review_loop(
                 id=resolved_loop_id,
                 type="focused_output",
-                reviewer_session_id=resolved_session_id,
                 target_revision=0,
                 scope={"kind": "focused_output"},
                 revise_at="blocker",
+                reviewer_session_id=resolved_session_id,
             )
             save_review_payload(store, run_id, loop.to_dict())
         else:
             if loop.reviewer_session_id != resolved_session_id:
-                updated = loop.with_reviewer_provider_session_id(
-                    resolved_session_id,
-                    allow_transient=resolved_session_id.startswith("cursor-pending-"),
-                )
+                updated = loop.with_reviewer_provider_session_id(resolved_session_id)
                 save_review_payload(store, run_id, updated.to_dict())
 
     return issue_session_capability(

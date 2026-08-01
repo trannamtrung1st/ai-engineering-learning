@@ -588,7 +588,6 @@ class WholePlanReviewOrchestrator:
         loop = ReviewLoop(
             id=loop_id,
             type="whole_plan",
-            reviewer_session_id=None,
             target_revision=plan_revision,
             scope={"kind": "whole_plan"},
             status="pending",
@@ -987,7 +986,8 @@ def build_whole_plan_review_package(
         "digests": digests,
         **stage_package_fields(loop),
         "protocol_instructions": build_reviewer_protocol_instructions(
-            stage=loop.active_stage or "initial_review"
+            stage=loop.active_stage or "initial_review",
+            review_type=loop.type,
         ),
         "tool_instructions": {
             **build_reviewer_tool_instructions(

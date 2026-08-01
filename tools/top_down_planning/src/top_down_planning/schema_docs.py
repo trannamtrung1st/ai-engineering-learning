@@ -685,7 +685,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                         ],
                                     },
                                 ]
-                            }
+                            },
+                            "rubric": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -948,22 +952,33 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "description": (
             "Primary-agent owner actions for `tdp agent review record-actions`. "
             "Required findings may only use fix|challenge; optional findings may "
-            "also use defer|accept_as_is. Challenges require proposed_disposition. "
+            "also use defer|accept_as_is. Challenges require challenge_reason, "
+            "proposed_disposition, and rationale. Use default_optional_action "
+            "(defer|accept_as_is) to batch-apply a default to remaining optional "
+            "findings in the current finding set. "
             "Owner/advisory packages expose an active-findings view: "
             "`new_findings`, `carried_open_findings`, `verification_targets`, "
-            "`current_finding_actions`, `history_summary`, and `history_ref` "
+            "`current_finding_actions`, `history_summary` (`total`, `closed`, "
+            "`open`, optional `convergence_warning`), and `history_ref` "
             "(structured pointer with kind/loop_id/finding_set_id — not a file path). "
             "Persisted review loops may include `finding_ids_by_set` mapping each "
             "discovery finding_set_id to finding ids introduced in that set."
         ),
         "type": "object",
-        "required": ["loop_id", "finding_actions"],
+        "required": ["loop_id"],
         "properties": {
             "loop_id": {"type": "string"},
             "artifact_revision": {"type": "integer"},
+            "default_optional_action": {
+                "type": "string",
+                "enum": ["defer", "accept_as_is"],
+                "description": (
+                    "Apply this action to optional findings in the current "
+                    "finding_set_id that lack an explicit finding_actions entry."
+                ),
+            },
             "finding_actions": {
                 "type": "array",
-                "minItems": 1,
                 "items": {
                     "type": "object",
                     "required": [
@@ -986,6 +1001,17 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         "artifact_revision": {"type": "integer"},
                         "finding_set_id": {"type": "string"},
                         "rationale": {"type": "string"},
+                        "challenge_reason": {
+                            "type": "string",
+                            "enum": [
+                                "invalid",
+                                "duplicate",
+                                "already_satisfied",
+                                "conflicts_with_contract",
+                                "conflicts_with_finding",
+                                "recommendation_not_viable",
+                            ],
+                        },
                         "proposed_disposition": {
                             "type": "string",
                             "enum": ["invalid", "superseded"],
@@ -1336,19 +1362,23 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "description": (
             "Primary agent records fix/challenge/defer/accept_as_is owner responses "
             "for open optional findings after an advisory handoff. fix and challenge "
-            "route to reviewer verification; defer and accept_as_is proceed without it."
+            "route to reviewer verification; defer and accept_as_is proceed without it. "
+            "Use default_optional_action to accept or defer remaining optionals in bulk."
         ),
         "payload": {
             "loop_id": "review-focused-plan-01",
             "artifact_revision": 0,
+            "default_optional_action": "accept_as_is",
             "finding_actions": [
                 {
                     "finding_id": "finding-opt-01",
-                    "action": "defer",
+                    "action": "challenge",
+                    "challenge_reason": "conflicts_with_contract",
+                    "proposed_disposition": "invalid",
                     "actor_role": "planner",
                     "artifact_revision": 0,
                     "finding_set_id": "review-focused-plan-01-fs-01",
-                    "rationale": "Useful polish outside current acceptance need.",
+                    "rationale": "Conflicts with acceptance criterion 7.",
                 }
             ],
         },
@@ -1503,7 +1533,8 @@ not consumed by the orchestrator.
    `review-respond-initial`, `review-respond-initial-approved`, `review-respond-verification`, and `review-respond-scope`.
    Review packages include an embedded plan tree and optional `rubric` on initial
    review only; refresh with `plan snapshot --view active` when revising after
-   `needs_revision` or initial `changes_requested`. Approval requires a clear
+   `needs_revision` or initial `changes_requested`. Reviewers prioritize plan
+   correctness and internal consistency. Approval requires a clear
    fresh `scope_review` against the current artifact digest — finding closure alone is not
    enough.
 3. Producer records batches with `production apply`, then `submit-completion` with
@@ -1511,7 +1542,10 @@ not consumed by the orchestrator.
    expose `ready_items` (contracts per ready leaf) alongside `ready_item_ids`.
 4. Mandatory whole-output review must complete the gate before `outcome: accepted`.
    Same mandatory gate as whole-plan review (`initial_review`, then
-   repeatable verification and fresh `scope_review` rounds). After `needs_revision` or initial
+   repeatable verification and fresh `scope_review` rounds). Review packages include
+   production traceability, an optional `rubric` on initial review only, and
+   reviewer guidance that prioritizes output correctness and cross-artifact
+   consistency. After `needs_revision` or initial
    `changes_requested`, the producer must use `production apply` with
    `evidence_revision: true` and **new** output evidence IDs on terminal items
    targeted by unresolved required findings (dispositions unchanged), then

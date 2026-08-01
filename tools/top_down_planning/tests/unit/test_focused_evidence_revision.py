@@ -45,7 +45,6 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551")
             "max_expansion_per_item": 7,
         },
         "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
-        "provider": {"name": "stub"},
     }
     store.create_run(
         run_id,

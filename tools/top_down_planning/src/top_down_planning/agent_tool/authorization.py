@@ -137,12 +137,8 @@ def authorize_mutation(
                 operation=operation,
             )
         loop = ReviewLoop.from_dict(store.load_review(run_id, record_loop_id))
-        from top_down_planning.orchestrator.reviewer_session import (
-            reviewer_loop_provider_session_id,
-        )
-
         binding = loop.reviewer_binding
-        provider_session_id = reviewer_loop_provider_session_id(loop)
+        provider_session_id = binding_provider_session_id(binding)
         if not provider_session_id or provider_session_id != record_session_id:
             raise CapabilityDeniedError(
                 "capability token session does not match the review loop reviewer session",

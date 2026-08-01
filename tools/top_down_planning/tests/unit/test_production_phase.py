@@ -100,7 +100,6 @@ def _create_run_at_plan_validated(
                 "max_agent_turns_per_batch": 10,
             }
         },
-        "provider": {"name": "stub"},
     }
     if limits:
         config["limits"]["production"].update(limits)
@@ -399,7 +398,6 @@ def test_production_apply_rejects_missing_plan_approval(tmp_path: Path) -> None:
         "run": {"output_goal": "Deliver.", "input_refs": []},
         "planning": {"stop_hint": "Stop.", "max_depth": 4, "max_expansion_per_item": 7},
         "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
-        "provider": {"name": "stub"},
     }
     store.create_run(
         "run-20260101T002101-002101",
@@ -459,7 +457,6 @@ def test_production_without_plan_approval_is_rejected(tmp_path: Path) -> None:
         "run": {"output_goal": "Deliver.", "input_refs": []},
         "planning": {"stop_hint": "Stop.", "max_depth": 4, "max_expansion_per_item": 7},
         "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
-        "provider": {"name": "stub"},
     }
     store.create_run(
         "run-20260101T002101-002101",

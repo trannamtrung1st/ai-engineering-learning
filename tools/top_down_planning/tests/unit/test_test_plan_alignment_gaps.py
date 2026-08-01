@@ -22,7 +22,7 @@ from top_down_planning.domain.reviews import (
     whole_output_revision_target_ids,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, review_loop_dict_with_binding, save_review_payload
+from tests.helpers import create_run_kwargs, review_loop_dict_with_binding, save_review_payload, make_review_loop
 
 
 def _finding(
@@ -61,6 +61,9 @@ def _action(
     }
     if action in {"defer", "accept_as_is", "challenge"}:
         payload.setdefault("rationale", "owner rationale")
+    if action == "challenge":
+        payload.setdefault("challenge_reason", "invalid")
+        payload.setdefault("proposed_disposition", "invalid")
     return FindingAction.from_dict(payload)  # type: ignore[arg-type]
 
 
@@ -82,7 +85,7 @@ def test_fix_requires_revision_and_verification_challenge_verification_only() ->
 
 
 def test_challenge_marks_verification_required_without_budget_mutation() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",
@@ -102,6 +105,7 @@ def test_challenge_marks_verification_required_without_budget_mutation() -> None
             {
                 "finding_id": "f-opt",
                 "action": "challenge",
+                "challenge_reason": "invalid",
                 "rationale": "Not applicable here",
                 "proposed_disposition": "invalid",
                 "finding_set_id": "fs-01",
@@ -117,7 +121,7 @@ def test_challenge_marks_verification_required_without_budget_mutation() -> None
 
 
 def test_optional_fix_requires_revision_advance() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",
@@ -220,7 +224,7 @@ def test_voluntary_optional_only_fix_is_accepted_as_evidence_target() -> None:
 
 
 def test_deferred_optional_remains_in_final_review_history() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-output-01",
         type="whole_output",
         reviewer_session_id="sess",
@@ -253,7 +257,7 @@ def test_deferred_optional_remains_in_final_review_history() -> None:
 
 
 def test_duplicate_findings_across_fresh_reviews_not_deduplicated() -> None:
-    prior = ReviewLoop(
+    prior = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -281,7 +285,7 @@ def test_duplicate_findings_across_fresh_reviews_not_deduplicated() -> None:
 
 
 def test_superseded_by_finding_id_validated_at_verification() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -368,7 +372,7 @@ def test_superseded_by_finding_id_validated_at_verification() -> None:
 
 
 def test_fresh_scope_discovery_preserves_prior_and_new_ids() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -433,7 +437,7 @@ def test_loop_revise_at_persists_through_store_roundtrip(tmp_path: Path) -> None
         **create_run_kwargs(tmp_path, resolved_config={"run": {"output_goal": "G"}}),
         phase=PLANNING,
     )
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",

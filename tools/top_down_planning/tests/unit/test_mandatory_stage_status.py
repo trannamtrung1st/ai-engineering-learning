@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.helpers import make_review_loop
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     mandatory_stage_respond_decision,
@@ -12,7 +13,7 @@ from top_down_planning.domain.reviews import (
 
 
 def test_mandatory_stage_respond_decision_requires_result_payloads() -> None:
-    verification_loop = ReviewLoop(
+    verification_loop = make_review_loop(
         id="r1",
         type="whole_plan",
         reviewer_session_id="s",
@@ -26,7 +27,7 @@ def test_mandatory_stage_respond_decision_requires_result_payloads() -> None:
     with pytest.raises(ValueError, match="missing verification_result"):
         mandatory_stage_respond_decision(verification_loop)
 
-    blocker_loop = ReviewLoop(
+    blocker_loop = make_review_loop(
         id="r2",
         type="whole_plan",
         reviewer_session_id="s",
@@ -55,7 +56,7 @@ def test_gate_approve_closes_respond_before_lifecycle_approved() -> None:
         is_terminal_review_loop,
     )
 
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -77,7 +78,7 @@ def test_gate_approve_closes_respond_before_lifecycle_approved() -> None:
     assert is_review_respond_closed(loop) is True
     assert is_terminal_review_loop(loop) is False
 
-    initial_clear = ReviewLoop(
+    initial_clear = make_review_loop(
         id="review-whole-plan-02",
         type="whole_plan",
         reviewer_session_id="sess",

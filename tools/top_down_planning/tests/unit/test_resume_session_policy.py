@@ -11,6 +11,7 @@ from top_down_planning.domain.session_bindings import (
     new_session_binding,
 )
 from top_down_planning.orchestrator.capability import issue_session_capability
+from top_down_planning.orchestrator import RunEngine
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.prepare_resume import prepare_resume
 from top_down_planning.orchestrator.session_policy_execution import (
@@ -19,7 +20,8 @@ from top_down_planning.orchestrator.session_policy_execution import (
 )
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import get_primary_binding
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from core_tools.provider.stub import StubProvider
+from tests.helpers import create_run_kwargs, minimal_resolved_config, script_planning_candidate_ready
 
 
 def _sample_plan() -> Plan:
@@ -54,7 +56,6 @@ def _set_planner_starting_binding(store: FileRunStore, run_id: str) -> SessionBi
     binding = binding.with_provider_session_id(
         "cursor-pending-crash",
         provider="cursor",
-        allow_transient=True,
     )
     run = dict(run)
     run["revision"] = expected_revision + 1
@@ -102,7 +103,7 @@ def test_stale_starting_binding_cleared_on_resume_continuation(tmp_path: Path) -
 
     updated_binding = get_primary_binding(store.load_run(run_id), "planner")
     assert updated_binding is not None
-    assert updated_binding.state == "starting"
+    assert updated_binding.state == "unbound"
     assert updated_binding.generation == binding.generation + 1
     assert updated_binding.provider_session_id is None
 
@@ -139,6 +140,26 @@ def test_derive_session_policy_includes_resume_then_replace_for_bound_session(
     assert entry["role"] == "planner"
 
 
+def test_derive_session_policy_ignores_starting_without_provider_id(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    binding = new_session_binding(role="planner", kind="primary", state="starting")
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    sessions = dict(run.get("sessions") or {})
+    sessions[PRIMARY_PLANNER_SLOT] = binding.to_dict()
+    run["sessions"] = sessions
+    store.save_run(run_id, run, expected_revision)
+
+    policy = derive_session_policy(store.load_run(run_id), store.list_reviews(run_id))
+
+    assert policy["requires_correction"] is False
+    assert PRIMARY_PLANNER_SLOT not in policy["bindings"]
+
+
 def test_prepare_resume_includes_session_policy_for_starting_binding(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T006001-006001"
@@ -164,3 +185,30 @@ def test_prepare_resume_includes_session_policy_for_starting_binding(tmp_path: P
         store.load_resolved_config(run_id),
     )
     assert resume_plan.session_policy["requires_correction"] is True
+
+
+def test_cold_continue_run_clears_stale_starting_binding(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    binding = _set_planner_starting_binding(store, run_id)
+
+    provider = StubProvider()
+    script_planning_candidate_ready(provider)
+    script_planning_candidate_ready(provider)
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: provider,
+    )
+    engine.continue_run(run_id, single_step=True)
+
+    updated_binding = get_primary_binding(store.load_run(run_id), "planner")
+    assert updated_binding is not None
+    assert updated_binding.generation >= binding.generation + 1
+    assert updated_binding.provider_session_id != "cursor-pending-crash"
+
+    generation_after_first = updated_binding.generation
+    engine.continue_run(run_id, single_step=True)
+    updated_after_second = get_primary_binding(store.load_run(run_id), "planner")
+    assert updated_after_second is not None
+    assert updated_after_second.generation == generation_after_first

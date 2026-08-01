@@ -22,6 +22,7 @@ from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.whole_plan_review import WholePlanReviewOrchestrator
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
+    make_review_loop,
     create_run_kwargs,
     done_events,
     grant_capability,
@@ -50,7 +51,7 @@ def _finding(
 
 
 def test_major_is_optional_under_focused_blocker_threshold() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",
@@ -75,7 +76,7 @@ def test_major_is_optional_under_focused_blocker_threshold() -> None:
 
 
 def test_revise_at_major_forces_revision_for_major_finding() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",
@@ -99,7 +100,7 @@ def test_revise_at_major_forces_revision_for_major_finding() -> None:
 
 
 def test_primary_resume_fields_expose_revise_at_and_partitions() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -184,7 +185,7 @@ def test_focused_orchestrator_advisory_handoff_defer_completes(
     )
     store.save_run(run_id, run, expected)
 
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id=None,
@@ -273,7 +274,7 @@ def test_focused_orchestrator_advisory_handoff_defer_completes(
 
 
 def test_whole_plan_minor_only_enters_advisory_not_revision() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -301,7 +302,7 @@ def test_whole_plan_minor_only_enters_advisory_not_revision() -> None:
 
 
 def test_whole_plan_major_forces_revision_under_builtin_threshold() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -330,7 +331,7 @@ def test_whole_plan_major_forces_revision_under_builtin_threshold() -> None:
 def test_clear_discovery_skips_verification_signal() -> None:
     """Approved clear discovery is ready for scope review, not verification."""
 
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",

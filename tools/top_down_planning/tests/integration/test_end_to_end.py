@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import apply_plan, apply_production, done_events, request_amendment, save_review_payload
+from tests.helpers import apply_plan, apply_production, done_events, request_amendment, save_review_payload, make_review_loop
 from tests.integration.e2e_helpers import (
     E2EStubProvider,
     assert_acceptance_invariant_for_run,
@@ -650,7 +650,7 @@ def test_enhancement_scenarios_multi_batch_traceability_and_focused_revision(
         store.load_resolved_config("run-20260101T001001-001001"),
         store.load_plan_model("run-20260101T001001-001001"),
         production,
-        ReviewLoop(
+        make_review_loop(
             id="review-whole-output-01",
             type="whole_output",
             reviewer_session_id="sess",

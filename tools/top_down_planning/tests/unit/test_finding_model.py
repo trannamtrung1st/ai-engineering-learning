@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.helpers import review_loop_dict_with_binding
+from tests.helpers import review_loop_dict_with_binding, make_review_loop
 
 from top_down_planning.domain.reviews import (
     CURRENT_REVIEW_SCHEMA_VERSION,
@@ -126,6 +126,7 @@ def test_finding_action_challenge_requires_proposed_disposition() -> None:
         {
             "finding_id": "f-1",
             "action": "challenge",
+            "challenge_reason": "duplicate",
             "proposed_disposition": "superseded",
             "superseded_by_finding_id": "f-old",
             "rationale": "Duplicate of earlier finding.",
@@ -135,11 +136,12 @@ def test_finding_action_challenge_requires_proposed_disposition() -> None:
         }
     )
     assert challenge.proposed_disposition == "superseded"
+    assert challenge.challenge_reason == "duplicate"
     assert challenge.superseded_by_finding_id == "f-old"
 
 
 def test_review_loop_persists_revise_at_actions_and_schema_version() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="loop-1",
         type="whole_plan",
         reviewer_session_id=None,
@@ -166,7 +168,7 @@ def test_review_loop_persists_revise_at_actions_and_schema_version() -> None:
 
 
 def test_revise_at_immutable_after_loop_creation() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="loop-1",
         type="focused_plan",
         reviewer_session_id=None,

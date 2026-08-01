@@ -10,7 +10,7 @@ from top_down_planning.domain.reviews import ReviewFinding, ReviewLoop, policy_o
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
-from tests.helpers import create_run_kwargs, grant_capability, minimal_resolved_config
+from tests.helpers import create_run_kwargs, grant_capability, minimal_resolved_config, make_review_loop
 
 
 def test_policy_observability_includes_counts() -> None:
@@ -69,7 +69,7 @@ def test_review_respond_emits_observability_events(tmp_path: Path) -> None:
         **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
         phase=WHOLE_PLAN_REVIEW,
     )
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",

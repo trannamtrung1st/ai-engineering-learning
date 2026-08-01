@@ -43,6 +43,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.helpers import (
+    make_review_loop,
     save_review_payload,
     create_run_kwargs,
     grant_capability,
@@ -95,7 +96,7 @@ def test_core_invariant_finding_closure_alone_never_approves() -> None:
         is False
     )
 
-    initial = ReviewLoop(
+    initial = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -514,7 +515,7 @@ def test_mandatory_review_loop_fields_survive_persistence(tmp_path: Path) -> Non
         **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
         phase=WHOLE_PLAN_REVIEW,
     )
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess-a",

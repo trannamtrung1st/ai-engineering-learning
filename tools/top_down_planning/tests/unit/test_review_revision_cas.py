@@ -14,7 +14,7 @@ from top_down_planning.persistence.review_commit import (
     review_record_revision,
     save_review_with_expected_revision,
 )
-from tests.helpers import create_run_kwargs
+from tests.helpers import create_run_kwargs, make_review_loop
 
 
 def _sample_plan() -> Plan:
@@ -46,7 +46,7 @@ def test_save_review_with_expected_revision_bumps_record(tmp_path: Path) -> None
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T007001-007001"
     _create_run(store, run_id)
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="loop-rev-01",
         type="focused_plan",
         reviewer_session_id=None,
@@ -72,7 +72,7 @@ def test_save_review_with_expected_revision_rejects_stale_write(tmp_path: Path) 
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T007002-007002"
     _create_run(store, run_id)
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="loop-rev-02",
         type="focused_plan",
         reviewer_session_id=None,

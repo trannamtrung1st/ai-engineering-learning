@@ -32,7 +32,7 @@ from top_down_planning.orchestrator.session_lineage import (
     emit_session_resume_failed,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.helpers import create_run_kwargs, minimal_resolved_config, make_review_loop
 
 
 def _sample_plan() -> Plan:
@@ -202,6 +202,29 @@ def test_commit_primary_provider_session_binding_emits_lineage_event(
     assert event["session_instance_id"].startswith("tdp-session-")
 
 
+def test_commit_primary_provider_session_binding_skips_transient_lineage(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T007001-007001"
+    _create_planning_run(store)
+
+    commit_primary_provider_session_binding(
+        store,
+        run_id,
+        role="planner",
+        provider_session_id="cursor-pending-1",
+        provider="cursor",
+    )
+
+    persisted = store.load_run(run_id)
+    binding = persisted["sessions"]["primary_planner"]
+    assert binding["provider_session_id"] == "cursor-pending-1"
+    assert binding["state"] == "starting"
+    events = [event for event in store.load_events(run_id) if event.get("type") == SESSION_PROVIDER_ID_BOUND]
+    assert events == []
+
+
 def test_sync_persisted_session_id_emits_lineage_event(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T007001-007001"
@@ -236,7 +259,7 @@ def test_commit_reviewer_loop_provider_session_emits_lineage_event(
     run["phase"] = WHOLE_PLAN_REVIEW
     store.save_run(run_id, run, expected_revision)
 
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id=None,
@@ -257,3 +280,38 @@ def test_commit_reviewer_loop_provider_session_emits_lineage_event(
     assert event["role"] == "reviewer"
     assert event["loop_id"] == loop.id
     assert event["provider_session_id"] == "cursor-reviewer-01"
+
+
+def test_commit_reviewer_loop_provider_session_persists_transient_id(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T007001-007001"
+    _create_planning_run(store, run_id)
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["phase"] = WHOLE_PLAN_REVIEW
+    store.save_run(run_id, run, expected_revision)
+
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id=None,
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        lifecycle_status="review_pending",
+        active_stage=None,
+        finding_set_id="review-whole-plan-01-fs-01",
+        revise_at="major",
+    )
+    updated = loop.with_reviewer_provider_session_id("cursor-pending-1")
+    commit_reviewer_loop_provider_session(store, run_id, updated)
+
+    persisted = store.load_review(run_id, loop.id)
+    assert persisted["reviewer_binding"]["provider_session_id"] == "cursor-pending-1"
+    assert persisted["reviewer_binding"]["state"] == "starting"
+    events = [event for event in store.load_events(run_id) if event.get("type") == SESSION_PROVIDER_ID_BOUND]
+    assert events == []

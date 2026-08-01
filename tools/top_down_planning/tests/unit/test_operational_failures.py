@@ -10,7 +10,6 @@ import pytest
 
 from core_tools.observability import ConsoleEvent
 from core_tools.persistence import PersistenceError
-from core_tools.provider import create_provider
 from core_tools.provider.stub import StubProvider
 from top_down_planning.cli.user import handle_resume_command
 from top_down_planning.cli.user import handle_status_command
@@ -75,7 +74,6 @@ def _create_run(
     config = minimal_resolved_config(
         run={"output_goal": "Deliver the feature.", "input_refs": []},
         planning={"max_depth": 4, "max_expansion_per_item": 7},
-        provider={"name": "stub"},
     )
     config["project"]["workspace"] = str(store.root)
     store.create_run(
@@ -133,7 +131,7 @@ def test_engine_provider_run_error_sets_failed_status(tmp_path: Path) -> None:
     _create_run(store, phase=PLANNING)
     engine = RunEngine(
         store,
-        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+        create_provider=lambda _config, _workspace: StubProvider(),
     )
 
     with patch.object(
@@ -156,7 +154,7 @@ def test_engine_orchestrator_invariant_error_fails_run(tmp_path: Path) -> None:
     _create_run(store, phase=PLANNING)
     engine = RunEngine(
         store,
-        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+        create_provider=lambda _config, _workspace: StubProvider(),
     )
 
     with patch.object(
@@ -177,7 +175,7 @@ def test_engine_operational_exception_sets_failed_status(tmp_path: Path) -> None
     _create_run(store, phase=PLANNING)
     engine = RunEngine(
         store,
-        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+        create_provider=lambda _config, _workspace: StubProvider(),
     )
 
     with patch.object(
@@ -197,7 +195,7 @@ def test_engine_store_exception_sets_failed_status(tmp_path: Path) -> None:
     _create_run(store, phase=PLANNING)
     engine = RunEngine(
         store,
-        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+        create_provider=lambda _config, _workspace: StubProvider(),
     )
 
     with patch.object(
@@ -233,7 +231,7 @@ def test_engine_keyboard_interrupt_terminates_provider_sessions(tmp_path: Path) 
     observability = ObservabilityContext(sink=_CollectSink(), run_id="run-20260101T001701-001701")
     engine = RunEngine(
         store,
-        create_provider=lambda config, workspace: provider,
+        create_provider=lambda _config, _workspace: provider,
         observability=observability,
     )
 
@@ -272,7 +270,7 @@ def test_engine_emits_session_end_before_terminate(tmp_path: Path) -> None:
     observability = ObservabilityContext(sink=_CollectSink(), run_id="run-20260101T001701-001701")
     engine = RunEngine(
         store,
-        create_provider=lambda config, workspace: provider,
+        create_provider=lambda _config, _workspace: provider,
         observability=observability,
     )
 
@@ -391,7 +389,7 @@ def test_operational_failed_run_cannot_be_resumed(tmp_path: Path) -> None:
 
     engine = RunEngine(
         store,
-        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+        create_provider=lambda _config, _workspace: StubProvider(),
     )
     result = engine.continue_run("run-20260101T001701-001701", single_step=True)
 
@@ -421,7 +419,7 @@ def test_operational_paused_run_cannot_be_resumed(tmp_path: Path) -> None:
 
     engine = RunEngine(
         store,
-        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+        create_provider=lambda _config, _workspace: StubProvider(),
     )
     result = engine.continue_run("run-20260101T001701-001701", single_step=True)
 

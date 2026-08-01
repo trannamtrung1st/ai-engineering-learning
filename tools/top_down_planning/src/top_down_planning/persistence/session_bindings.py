@@ -10,8 +10,8 @@ from top_down_planning.domain.session_bindings import (
     SessionBinding,
     SessionBindingError,
     binding_provider_session_id,
-    is_transient_provider_session_id,
     new_session_binding,
+    resumable_binding_provider_session_id,
     validate_session_binding,
 )
 
@@ -111,10 +111,7 @@ def get_primary_binding(
 
 
 def primary_provider_session_id(run: dict[str, Any], role: str) -> str | None:
-    binding = get_primary_binding(run, role)
-    if binding is None:
-        return None
-    return binding.provider_session_id
+    return resumable_binding_provider_session_id(get_primary_binding(run, role))
 
 
 def update_primary_binding(
@@ -133,19 +130,11 @@ def update_primary_binding(
         state="unbound",
     ).to_dict()
     binding = SessionBinding.from_dict(existing_payload)
-    if is_transient_provider_session_id(provider_session_id):
-        updated = binding.with_provider_session_id(
-            provider_session_id,
-            provider=provider,
-            model=model,
-            allow_transient=True,
-        )
-    else:
-        updated = binding.with_provider_session_id(
-            provider_session_id,
-            provider=provider,
-            model=model,
-        )
+    updated = binding.with_provider_session_id(
+        provider_session_id,
+        provider=provider,
+        model=model,
+    )
     structured[slot] = updated.to_dict()
     return structured
 
@@ -180,9 +169,9 @@ def clear_stale_starting_primary_binding(
     if not isinstance(payload, dict) or not payload.get("session_instance_id"):
         return structured
     binding = SessionBinding.from_dict(payload)
-    if binding.state != "starting":
+    if binding.state != "starting" or not binding.provider_session_id:
         return structured
-    structured[slot] = binding.with_next_generation().to_dict()
+    structured[slot] = binding.released_for_reallocation().to_dict()
     return structured
 
 

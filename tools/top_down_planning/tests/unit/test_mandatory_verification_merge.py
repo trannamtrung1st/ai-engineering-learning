@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.helpers import make_review_loop
 from top_down_planning.domain.reviews import (
     ReviewFinding,
     ReviewLoop,
@@ -12,7 +13,7 @@ from top_down_planning.domain.reviews import (
 
 
 def _loop_with_open_finding() -> ReviewLoop:
-    return ReviewLoop(
+    return make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",

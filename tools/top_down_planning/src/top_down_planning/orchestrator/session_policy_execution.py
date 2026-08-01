@@ -1,4 +1,4 @@
-"""Derive and execute resume continuation session policy (proposal §9.1, §14)."""
+"""Derive and execute resume continuation session policy."""
 
 from __future__ import annotations
 
@@ -47,8 +47,12 @@ def _binding_policy_entry(
     }
 
 
+def _is_stale_starting_binding(binding: SessionBinding) -> bool:
+    return binding.state == "starting" and bool(binding.provider_session_id)
+
+
 def _primary_binding_action(binding: SessionBinding) -> str | None:
-    if binding.state == "starting":
+    if _is_stale_starting_binding(binding):
         return "clear_stale_starting"
     if binding.state == "bound" and binding.provider_session_id:
         return "resume_then_replace_if_missing"
@@ -84,7 +88,7 @@ def derive_session_policy(
         binding = loop.reviewer_binding
         if binding is None:
             continue
-        if binding.state == "starting":
+        if _is_stale_starting_binding(binding):
             action = "clear_stale_starting"
         elif binding.state == "bound" and binding.provider_session_id:
             action = "resume_then_replace_if_missing"
@@ -148,7 +152,11 @@ def _clear_stale_starting_primary(
 ) -> bool:
     run = store.load_run(run_id)
     binding = get_primary_binding(run, role)
-    if binding is None or binding.state != "starting":
+    if (
+        binding is None
+        or binding.state != "starting"
+        or not binding.provider_session_id
+    ):
         return False
     revoke_all_capabilities_for_session_instance(
         store,
@@ -169,7 +177,11 @@ def _clear_stale_starting_reviewer(
     review = dict(store.load_review(run_id, loop_id))
     loop = ReviewLoop.from_dict(review)
     binding = loop.reviewer_binding
-    if binding is None or binding.state != "starting":
+    if (
+        binding is None
+        or binding.state != "starting"
+        or not binding.provider_session_id
+    ):
         return
     revoke_all_capabilities_for_session_instance(
         store,
@@ -178,8 +190,7 @@ def _clear_stale_starting_reviewer(
     )
     updated_loop = replace(
         loop,
-        reviewer_binding=binding.with_next_generation(),
-        reviewer_session_id=None,
+        reviewer_binding=binding.released_for_reallocation(),
     )
     save_review_with_expected_revision(
         store,

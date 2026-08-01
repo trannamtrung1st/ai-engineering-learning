@@ -96,7 +96,6 @@ def _create_production_run(
                 "max_agent_turns_per_batch": 10,
             }
         },
-        "provider": {"name": "stub"},
     }
     store.create_run(
         run_id,
@@ -530,7 +529,6 @@ def test_multi_item_batch_still_works_with_ready_items(tmp_path: Path) -> None:
             "max_expansion_per_item": 7,
         },
         "limits": {"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
-        "provider": {"name": "stub"},
     }
     store.create_run(
         "run-20260101T000211-000211",

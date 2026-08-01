@@ -19,6 +19,7 @@ from top_down_planning.domain.reviews import (
     allocate_discovery_finding_set_id,
     apply_discovery_response,
     apply_owner_finding_actions,
+    expand_finding_actions_with_default,
     apply_review_response,
     validate_review_stage,
     find_overlapping_active_focused_loop,
@@ -114,7 +115,6 @@ class ReviewAgentService:
         loop = ReviewLoop(
             id=loop_id,
             type=review_type,  # type: ignore[arg-type]
-            reviewer_session_id=None,
             target_revision=target_revision,
             scope=scope,
             status="pending",
@@ -590,8 +590,18 @@ class ReviewAgentService:
             )
 
         raw_actions = request.get("finding_actions")
-        if not isinstance(raw_actions, list) or not raw_actions:
-            raise RequestError("record_finding_actions requires finding_actions")
+        if raw_actions is None:
+            raw_actions = []
+        if not isinstance(raw_actions, list):
+            raise RequestError("finding_actions must be a list")
+        default_optional = request.get("default_optional_action")
+        if not raw_actions and (
+            default_optional is None or not str(default_optional).strip()
+        ):
+            raise RequestError(
+                "record_finding_actions requires finding_actions or "
+                "default_optional_action"
+            )
 
         if loop.type in {"whole_output", "focused_output"}:
             artifact_revision = int(
@@ -613,9 +623,21 @@ class ReviewAgentService:
                 )
 
         try:
-            updated, parsed = apply_owner_finding_actions(
+            expanded_actions = expand_finding_actions_with_default(
                 loop,
                 raw_actions,
+                default_optional_action=(
+                    str(default_optional).strip()
+                    if default_optional is not None
+                    and str(default_optional).strip()
+                    else None
+                ),
+                actor_role=role,
+                artifact_revision=artifact_revision,
+            )
+            updated, parsed = apply_owner_finding_actions(
+                loop,
+                expanded_actions,
                 actor_role=role,
                 artifact_revision=artifact_revision,
             )

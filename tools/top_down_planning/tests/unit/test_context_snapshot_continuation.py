@@ -72,7 +72,6 @@ def _create_production_ready_run(
             "output_goal": "Deliver the feature.",
             "input_refs": ["task.md"],
         },
-        provider={"name": "stub"},
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
     )
     store.create_run(
@@ -99,7 +98,6 @@ def test_continuation_into_whole_output_succeeds_after_working_resource_mutation
             "output_goal": "Deliver the feature.",
             "input_refs": ["task.md"],
         },
-        provider={"name": "stub"},
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
         agent_context={
             "default": {"resources": [], "skills": []},
@@ -219,7 +217,6 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
             "output_goal": "Deliver the feature.",
             "input_refs": ["task.md"],
         },
-        provider={"name": "stub"},
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
         agent_context={
             "default": {"resources": [], "skills": []},
@@ -365,7 +362,6 @@ def test_engine_enters_whole_output_review_after_production_resource_mutation(
             "output_goal": "Deliver the feature.",
             "input_refs": ["task.md"],
         },
-        provider={"name": "stub"},
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
         agent_context={
             "default": {"resources": [], "skills": []},

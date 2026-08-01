@@ -12,16 +12,19 @@ from top_down_planning.orchestrator.apply_resume import ApplyResumeError, apply_
 from top_down_planning.orchestrator.prepare_resume import prepare_resume
 from top_down_planning.orchestrator import RunEngine
 from top_down_planning.persistence import FileRunStore
-from core_tools.provider import create_provider
-from tests.unit.test_apply_resume import _create_production_run
+from core_tools.provider.stub import StubProvider
+from tests.helpers import script_planning_candidate_ready
+from tests.unit.test_apply_resume import _paused_planning_run
 
 
 def test_crash_before_resume_applied_leaves_run_unchanged(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    run_id = _create_production_run(store, status="paused")
+    run_id = _paused_planning_run(store)
     stored = store.load_resolved_config(run_id)
     candidate = copy.deepcopy(stored)
-    candidate["limits"]["production"]["max_batches"] = 99
+    candidate["limits"] = copy.deepcopy(stored["limits"])
+    candidate["limits"]["planning"] = copy.deepcopy(stored["limits"]["planning"])
+    candidate["limits"]["planning"]["max_agent_turns"] = 99
     plan = prepare_resume(store, run_id, candidate)
     stale_plan = replace(plan, expected_run_revision=plan.expected_run_revision - 1)
 
@@ -42,10 +45,12 @@ def test_crash_before_resume_applied_leaves_run_unchanged(tmp_path: Path) -> Non
 
 def test_crash_after_resume_applied_allows_continue_run(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    run_id = _create_production_run(store, status="paused")
+    run_id = _paused_planning_run(store)
     stored = store.load_resolved_config(run_id)
     candidate = copy.deepcopy(stored)
-    candidate["limits"]["production"]["max_batches"] = 99
+    candidate["limits"] = copy.deepcopy(stored["limits"])
+    candidate["limits"]["planning"] = copy.deepcopy(stored["limits"]["planning"])
+    candidate["limits"]["planning"]["max_agent_turns"] = 99
     plan = prepare_resume(store, run_id, candidate)
     apply_resume_plan_atomically(
         store,
@@ -58,10 +63,13 @@ def test_crash_after_resume_applied_allows_continue_run(tmp_path: Path) -> None:
     assert run["status"] == "running"
     assert run["stop"] is None
 
+    provider = StubProvider()
+    script_planning_candidate_ready(provider)
     engine = RunEngine(
         store,
-        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+        create_provider=lambda _config, _workspace: provider,
     )
     result = engine.continue_run(run_id, single_step=True)
+    assert result.ok is True
     assert result.status == "running"
-    assert result.phase in {"production", "whole_output_review"}
+    assert store.load_run(run_id)["status"] == "running"

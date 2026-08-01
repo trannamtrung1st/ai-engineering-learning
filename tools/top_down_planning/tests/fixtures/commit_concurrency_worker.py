@@ -66,11 +66,18 @@ def hold_lock_with_prepared_txn_worker(
         release_queue.get(timeout=30)
 
 
-def load_plan_reader_worker(store_root: str, run_id: str, result_queue) -> None:
+def load_plan_reader_worker(
+    store_root: str,
+    run_id: str,
+    result_queue,
+    attempt_queue=None,
+) -> None:
     from pathlib import Path
 
     from top_down_planning.persistence import FileRunStore
 
     store = FileRunStore(Path(store_root))
+    if attempt_queue is not None:
+        attempt_queue.put("loading")
     plan = store.load_plan(run_id)
     result_queue.put(int(plan["revision"]))

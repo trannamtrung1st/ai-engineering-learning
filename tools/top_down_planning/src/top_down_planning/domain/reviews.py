@@ -10,7 +10,6 @@ from top_down_planning.domain.session_bindings import (
     SessionBinding,
     binding_provider_session_id,
     new_session_binding,
-    reviewer_binding_for_provider_session,
 )
 
 from top_down_planning.domain.review_policy import (
@@ -124,6 +123,14 @@ CLOSED_FINDING_DISPOSITIONS: frozenset[str] = frozenset(
 FindingOwnerAction = Literal["fix", "defer", "accept_as_is", "challenge"]
 FindingActionActorRole = Literal["planner", "producer"]
 ChallengeProposedDisposition = Literal["invalid", "superseded"]
+ChallengeReason = Literal[
+    "invalid",
+    "duplicate",
+    "already_satisfied",
+    "conflicts_with_contract",
+    "conflicts_with_finding",
+    "recommendation_not_viable",
+]
 
 OPTIONAL_OWNER_RESPONSES: frozenset[str] = frozenset(
     {"fix", "challenge", "defer", "accept_as_is"}
@@ -131,11 +138,24 @@ OPTIONAL_OWNER_RESPONSES: frozenset[str] = frozenset(
 OPTIONAL_NO_VERIFICATION_ACTIONS: frozenset[str] = frozenset(
     {"defer", "accept_as_is"}
 )
+DEFAULT_OPTIONAL_OWNER_ACTIONS: frozenset[str] = OPTIONAL_NO_VERIFICATION_ACTIONS
 REQUIRED_FINDING_OWNER_ACTIONS: frozenset[str] = frozenset({"fix", "challenge"})
 CHALLENGE_PROPOSED_DISPOSITIONS: frozenset[str] = frozenset({"invalid", "superseded"})
+CHALLENGE_REASONS: frozenset[str] = frozenset(
+    {
+        "invalid",
+        "duplicate",
+        "already_satisfied",
+        "conflicts_with_contract",
+        "conflicts_with_finding",
+        "recommendation_not_viable",
+    }
+)
 ACTIONS_REQUIRING_RATIONALE: frozenset[str] = frozenset(
     {"defer", "accept_as_is", "challenge"}
 )
+CONVERGENCE_WARNING_MIN_SCOPE_REVIEW_ROUNDS = 3
+CONVERGENCE_WARNING_RECENT_FINDING_SETS = 3
 
 MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
     "review_pending": frozenset(
@@ -344,6 +364,7 @@ class FindingAction:
     finding_set_id: str
     rationale: str | None = None
     proposed_disposition: ChallengeProposedDisposition | None = None
+    challenge_reason: ChallengeReason | None = None
     superseded_by_finding_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -358,6 +379,8 @@ class FindingAction:
             payload["rationale"] = self.rationale
         if self.proposed_disposition is not None:
             payload["proposed_disposition"] = self.proposed_disposition
+        if self.challenge_reason is not None:
+            payload["challenge_reason"] = self.challenge_reason
         if self.superseded_by_finding_id is not None:
             payload["superseded_by_finding_id"] = self.superseded_by_finding_id
         return payload
@@ -373,6 +396,26 @@ def validate_finding_owner_action(action: str) -> FindingOwnerAction:
         raise ValueError(
             "finding action must be one of: "
             + ", ".join(sorted(OPTIONAL_OWNER_RESPONSES))
+        )
+    return normalized  # type: ignore[return-value]
+
+
+def validate_challenge_reason(reason: str) -> ChallengeReason:
+    normalized = str(reason).strip()
+    if normalized not in CHALLENGE_REASONS:
+        raise ValueError(
+            "challenge_reason must be one of: "
+            + ", ".join(sorted(CHALLENGE_REASONS))
+        )
+    return normalized  # type: ignore[return-value]
+
+
+def validate_default_optional_action(action: str) -> FindingOwnerAction:
+    normalized = str(action).strip()
+    if normalized not in DEFAULT_OPTIONAL_OWNER_ACTIONS:
+        raise ValueError(
+            "default_optional_action must be one of: "
+            + ", ".join(sorted(DEFAULT_OPTIONAL_OWNER_ACTIONS))
         )
     return normalized  # type: ignore[return-value]
 
@@ -428,16 +471,27 @@ def parse_finding_action(payload: Mapping[str, Any]) -> FindingAction:
     if action == "challenge":
         if proposed_disposition is None:
             raise ValueError("challenge requires proposed_disposition")
+        challenge_reason_raw = payload.get("challenge_reason")
+        if challenge_reason_raw is None or not str(challenge_reason_raw).strip():
+            raise ValueError("challenge requires challenge_reason")
+        challenge_reason = validate_challenge_reason(str(challenge_reason_raw))
         if proposed_disposition == "superseded" and not superseded_by_finding_id:
             raise ValueError(
                 "challenge with proposed_disposition superseded requires "
                 "superseded_by_finding_id"
             )
-    elif proposed_disposition is not None or superseded_by_finding_id is not None:
-        raise ValueError(
-            "proposed_disposition and superseded_by_finding_id are only valid "
-            "for challenge actions"
-        )
+    else:
+        challenge_reason = None
+        challenge_reason_raw = payload.get("challenge_reason")
+        if challenge_reason_raw is not None and str(challenge_reason_raw).strip():
+            raise ValueError(
+                "challenge_reason is only valid for challenge actions"
+            )
+        if proposed_disposition is not None or superseded_by_finding_id is not None:
+            raise ValueError(
+                "proposed_disposition and superseded_by_finding_id are only valid "
+                "for challenge actions"
+            )
 
     return FindingAction(
         finding_id=finding_id,
@@ -447,6 +501,7 @@ def parse_finding_action(payload: Mapping[str, Any]) -> FindingAction:
         finding_set_id=finding_set_id,
         rationale=rationale,
         proposed_disposition=proposed_disposition,
+        challenge_reason=challenge_reason if action == "challenge" else None,
         superseded_by_finding_id=superseded_by_finding_id,
     )
 
@@ -479,7 +534,6 @@ def validate_reopens_finding_id(
 class ReviewLoop:
     id: str
     type: ReviewLoopType
-    reviewer_session_id: str | None
     target_revision: int
     scope: dict[str, Any]
     status: ReviewLoopStatus = "pending"
@@ -504,8 +558,12 @@ class ReviewLoop:
     advisory_handoffs_completed: list[str] = field(default_factory=list)
     finding_ids_by_set: dict[str, list[str]] = field(default_factory=dict)
 
+    @property
+    def reviewer_session_id(self) -> str | None:
+        return binding_provider_session_id(self.reviewer_binding)
+
     def to_dict(self) -> dict[str, Any]:
-        binding = self._resolved_reviewer_binding()
+        binding = self.reviewer_binding
         payload: dict[str, Any] = {
             "id": self.id,
             "type": self.type,
@@ -551,15 +609,18 @@ class ReviewLoop:
             payload["exhausted_budget"] = normalize_exhausted_budget(self.exhausted_budget)
         return payload
 
-    def _resolved_reviewer_binding(self) -> SessionBinding | None:
-        if self.reviewer_binding is not None:
-            return self.reviewer_binding
-        if self.reviewer_session_id is None or not str(self.reviewer_session_id).strip():
-            return None
-        return reviewer_binding_for_provider_session(
-            str(self.reviewer_session_id).strip(),
-            instance_seed=self.id,
-        )
+    def with_reviewer_session_released(self) -> ReviewLoop:
+        """Release reviewer binding so orchestration allocates a fresh session."""
+
+        binding = self.reviewer_binding
+        if binding is None:
+            return replace(self, reviewer_binding=None)
+        if binding.state == "unbound" and not binding.provider_session_id:
+            return replace(self, reviewer_binding=binding)
+        if not binding.provider_session_id:
+            return replace(self, reviewer_binding=None)
+        released = binding.released_for_reallocation()
+        return replace(self, reviewer_binding=released)
 
     def with_reviewer_provider_session_id(
         self,
@@ -567,9 +628,8 @@ class ReviewLoop:
         *,
         provider: str | None = "cursor",
         model: str | None = None,
-        allow_transient: bool = False,
     ) -> ReviewLoop:
-        binding = self._resolved_reviewer_binding()
+        binding = self.reviewer_binding
         if binding is None:
             binding = new_session_binding(
                 role="reviewer",
@@ -580,12 +640,10 @@ class ReviewLoop:
             provider_session_id,
             provider=provider,
             model=model,
-            allow_transient=allow_transient,
         )
         return replace(
             self,
             reviewer_binding=updated_binding,
-            reviewer_session_id=updated_binding.provider_session_id,
         )
 
     @classmethod
@@ -707,12 +765,10 @@ class ReviewLoop:
             raise ValueError(
                 "legacy review field reviewer_session_id is not accepted; use reviewer_binding"
             )
-        reviewer_session_id = binding_provider_session_id(reviewer_binding)
 
         return cls(
             id=str(payload["id"]),
             type=str(raw_type).strip(),  # type: ignore[arg-type]
-            reviewer_session_id=reviewer_session_id,
             target_revision=int(payload.get("target_revision") or 0),
             scope=dict(payload.get("scope") or {}),
             status=status_raw,  # type: ignore[arg-type]
@@ -1950,6 +2006,104 @@ def owner_actions_require_revision(actions: Sequence[FindingAction]) -> bool:
     return any(action.action == "fix" for action in actions)
 
 
+def expand_finding_actions_with_default(
+    loop: ReviewLoop,
+    raw_actions: Sequence[Mapping[str, Any]],
+    *,
+    default_optional_action: str | None,
+    actor_role: str,
+    artifact_revision: int,
+) -> list[dict[str, Any]]:
+    """Apply batch default_optional_action to remaining optional findings in the set."""
+
+    explicit = [dict(item) for item in raw_actions if isinstance(item, Mapping)]
+    default_action: FindingOwnerAction | None = None
+    if default_optional_action is not None and str(default_optional_action).strip():
+        default_action = validate_default_optional_action(default_optional_action)
+    if not explicit and default_action is None:
+        raise ValueError(
+            "record_finding_actions requires finding_actions or default_optional_action"
+        )
+
+    finding_set_id = str(loop.finding_set_id or "").strip()
+    explicit_ids = {
+        str(item.get("finding_id") or "").strip()
+        for item in explicit
+        if str(item.get("finding_id") or "").strip()
+    }
+    scoped_existing_ids = {
+        action.finding_id
+        for action in loop.finding_actions
+        if not finding_set_id or action.finding_set_id == finding_set_id
+    }
+    expanded = list(explicit)
+    if default_action is not None:
+        threshold = loop_revise_at(loop)
+        current_set_ids = (
+            set(loop.finding_ids_by_set.get(finding_set_id, []))
+            if finding_set_id
+            else set()
+        )
+        for finding in optional_open_findings(loop.findings, threshold):
+            if finding.id in explicit_ids or finding.id in scoped_existing_ids:
+                continue
+            if current_set_ids and finding.id not in current_set_ids:
+                continue
+            expanded.append(
+                {
+                    "finding_id": finding.id,
+                    "action": default_action,
+                    "actor_role": actor_role,
+                    "artifact_revision": artifact_revision,
+                    "finding_set_id": finding_set_id,
+                    "rationale": (
+                        f"Batch default_optional_action: {default_action}"
+                    ),
+                }
+            )
+
+    if not expanded:
+        raise ValueError(
+            "no finding_actions to record; explicit actions and "
+            "default_optional_action did not match any optional findings"
+        )
+    return expanded
+
+
+def build_review_convergence_warning(loop: ReviewLoop) -> str | None:
+    """Informational warning for repeated scope-review rounds without approval."""
+
+    if loop.lifecycle_status == "approved":
+        return None
+    rounds = int(loop.scope_review_rounds)
+    if rounds < CONVERGENCE_WARNING_MIN_SCOPE_REVIEW_ROUNDS:
+        return None
+
+    threshold = loop_revise_at(loop)
+    open_required = required_open_findings(loop.findings, threshold)
+    open_optional = optional_open_findings(loop.findings, threshold)
+    lines = [
+        "Review convergence warning:",
+        (
+            f"{rounds} scope-review round(s) have completed without approval."
+        ),
+    ]
+    if loop.finding_ids_by_set:
+        recent = list(loop.finding_ids_by_set.items())[
+            -CONVERGENCE_WARNING_RECENT_FINDING_SETS:
+        ]
+        counts = [len(ids) for _set_id, ids in recent if ids]
+        if counts:
+            joined = ", ".join(str(count) for count in counts)
+            lines.append(
+                f"The latest {len(counts)} round(s) added {joined} finding(s)."
+            )
+    if not open_required and open_optional:
+        lines.append("All prior required findings are closed.")
+        lines.append("The current round contains optional findings only.")
+    return "\n".join(lines)
+
+
 def apply_owner_finding_actions(
     loop: ReviewLoop,
     raw_actions: Sequence[Mapping[str, Any]],
@@ -2110,6 +2264,17 @@ def build_active_findings_view(loop: ReviewLoop) -> dict[str, Any]:
         and effective[finding.id].action in {"fix", "challenge"}
     ]
     closed_count = len(loop.findings) - len(open_all)
+    convergence_warning = build_review_convergence_warning(loop)
+    history_summary: dict[str, Any] = {
+        "total": len(loop.findings),
+        "closed": closed_count,
+        "open": len(open_all),
+        "advisory_handoffs_completed": len(loop.advisory_handoffs_completed),
+        "finding_set_id": finding_set_id or None,
+        "scope_review_rounds": int(loop.scope_review_rounds),
+    }
+    if convergence_warning is not None:
+        history_summary["convergence_warning"] = convergence_warning
     return {
         "new_findings": [finding.to_dict() for finding in new_findings],
         "carried_open_findings": [
@@ -2119,12 +2284,7 @@ def build_active_findings_view(loop: ReviewLoop) -> dict[str, Any]:
             finding.to_dict() for finding in verification_targets
         ],
         "current_finding_actions": [action.to_dict() for action in scoped_actions],
-        "history_summary": {
-            "closed_finding_count": closed_count,
-            "total_finding_count": len(loop.findings),
-            "advisory_handoffs_completed": len(loop.advisory_handoffs_completed),
-            "finding_set_id": finding_set_id or None,
-        },
+        "history_summary": history_summary,
         "history_ref": {
             "kind": "review_loop_findings",
             "loop_id": loop.id,

@@ -14,13 +14,17 @@ from top_down_planning.domain.reviews import (
     advisory_handoff_allowed,
     apply_discovery_response,
     apply_owner_finding_actions,
+    build_active_findings_view,
+    build_review_convergence_warning,
     budgets_snapshot,
     complete_advisory_handoff_if_owner_responses_recorded,
+    expand_finding_actions_with_default,
     mark_advisory_handoff_completed,
     mark_advisory_handoff_incomplete,
     needs_advisory_handoff,
     prepare_review_incomplete_retry,
     primary_review_resume_fields,
+    verification_required_for_loop,
 )
 from top_down_planning.orchestrator.failure import (
     apply_review_incomplete_run_transition,
@@ -29,6 +33,7 @@ from top_down_planning.persistence import FileRunStore
 from top_down_planning.schema_docs import show_example, show_schema
 from core_tools.schema import validate_against_schema
 from tests.helpers import (
+    make_review_loop,
     create_run_kwargs,
     grant_capability,
     review_loop_dict_with_binding,
@@ -112,7 +117,23 @@ def test_challenge_requires_proposed_disposition_and_keeps_finding_open() -> Non
                 {
                     "finding_id": "finding-opt",
                     "action": "challenge",
+                    "challenge_reason": "invalid",
                     "rationale": "Not applicable",
+                    "finding_set_id": "fs-01",
+                }
+            ],
+            actor_role="planner",
+            artifact_revision=0,
+        )
+    with pytest.raises(ValueError, match="challenge_reason"):
+        apply_owner_finding_actions(
+            loop,
+            [
+                {
+                    "finding_id": "finding-opt",
+                    "action": "challenge",
+                    "rationale": "Not applicable",
+                    "proposed_disposition": "invalid",
                     "finding_set_id": "fs-01",
                 }
             ],
@@ -126,6 +147,7 @@ def test_challenge_requires_proposed_disposition_and_keeps_finding_open() -> Non
             {
                 "finding_id": "finding-opt",
                 "action": "challenge",
+                "challenge_reason": "invalid",
                 "rationale": "Not applicable",
                 "proposed_disposition": "invalid",
                 "finding_set_id": "fs-01",
@@ -267,6 +289,7 @@ def test_owner_cannot_set_invalid_or_superseded_via_actions() -> None:
             {
                 "finding_id": "finding-opt",
                 "action": "challenge",
+                "challenge_reason": "duplicate",
                 "rationale": "Duplicate",
                 "proposed_disposition": "superseded",
                 "superseded_by_finding_id": "finding-older",
@@ -311,7 +334,7 @@ def test_owner_action_unique_per_finding_set_not_globally() -> None:
 
 
 def test_review_incomplete_preserves_budgets_and_reuses_finding_set_id() -> None:
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -377,7 +400,7 @@ def test_review_incomplete_run_transition_and_resume(tmp_path: Path) -> None:
         items={"item-root": root},
     )
     store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path))
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",
@@ -430,7 +453,7 @@ def test_review_service_incomplete_does_not_fail_run_for_focused(tmp_path: Path)
         items={"item-root": root},
     )
     store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path))
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-focused-plan-01",
         type="focused_plan",
         reviewer_session_id="sess",
@@ -613,6 +636,89 @@ def test_record_finding_actions_service_path(tmp_path: Path) -> None:
             },
             capability_token=token,
         )
+
+
+def test_default_optional_action_applies_to_remaining_optionals() -> None:
+    loop = _optional_loop(
+        findings=[
+            _finding("finding-a").to_dict(),
+            _finding("finding-b").to_dict(),
+        ],
+        finding_ids_by_set={"fs-01": ["finding-a", "finding-b"]},
+    )
+    expanded = expand_finding_actions_with_default(
+        loop,
+        [
+            {
+                "finding_id": "finding-a",
+                "action": "challenge",
+                "challenge_reason": "conflicts_with_contract",
+                "proposed_disposition": "invalid",
+                "rationale": "Conflicts with contract.",
+                "finding_set_id": "fs-01",
+            }
+        ],
+        default_optional_action="accept_as_is",
+        actor_role="planner",
+        artifact_revision=0,
+    )
+    assert len(expanded) == 2
+    by_id = {item["finding_id"]: item["action"] for item in expanded}
+    assert by_id["finding-a"] == "challenge"
+    assert by_id["finding-b"] == "accept_as_is"
+
+    updated, parsed = apply_owner_finding_actions(
+        loop,
+        expanded,
+        actor_role="planner",
+        artifact_revision=0,
+    )
+    assert len(parsed) == 2
+    assert verification_required_for_loop(updated)
+    assert updated.status != "approved"
+
+
+def test_default_optional_action_never_covers_required_findings() -> None:
+    loop = _optional_loop(
+        findings=[
+            _finding("finding-req", severity="blocker").to_dict(),
+            _finding("finding-opt").to_dict(),
+        ],
+        finding_ids_by_set={"fs-01": ["finding-req", "finding-opt"]},
+    )
+    expanded = expand_finding_actions_with_default(
+        loop,
+        [],
+        default_optional_action="accept_as_is",
+        actor_role="planner",
+        artifact_revision=0,
+    )
+    assert len(expanded) == 1
+    assert expanded[0]["finding_id"] == "finding-opt"
+
+
+def test_history_summary_reports_open_count_and_convergence_warning() -> None:
+    loop = _optional_loop(
+        scope_review_rounds=3,
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        findings=[
+            _finding("finding-closed", status="resolved").to_dict(),
+            _finding("finding-open", severity="minor").to_dict(),
+        ],
+        finding_ids_by_set={
+            "fs-00": ["finding-closed"],
+            "fs-01": ["finding-open"],
+        },
+    )
+    view = build_active_findings_view(loop)
+    summary = view["history_summary"]
+    assert summary["total"] == 2
+    assert summary["closed"] == 1
+    assert summary["open"] == 1
+    assert summary["scope_review_rounds"] == 3
+    assert "convergence_warning" in summary
+    assert build_review_convergence_warning(loop) is not None
 
 
 def test_record_actions_schema_and_example_validate() -> None:

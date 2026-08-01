@@ -212,7 +212,11 @@ def commit_primary_provider_session_binding(
     provider: str | None = "cursor",
     phase_action_id: str | None = None,
 ) -> dict[str, Any]:
-    """Persist a durable primary provider session id and emit session_provider_id_bound."""
+    """Persist a provider session id on the primary binding.
+
+    Transient ``cursor-pending-*`` ids are stored in ``state: starting``; lineage
+    events emit only after a durable id is bound.
+    """
 
     run = store.load_run(run_id)
     expected_revision = int(run["revision"])
@@ -221,7 +225,7 @@ def commit_primary_provider_session_binding(
     if (
         existing is not None
         and existing.provider_session_id == provider_session_id
-        and existing.state == "bound"
+        and existing.state in {"bound", "starting"}
     ):
         return run
 
@@ -236,7 +240,11 @@ def commit_primary_provider_session_binding(
     store.save_run(run_id, run, expected_revision)
     saved = store.load_run(run_id)
     binding = get_primary_binding(saved, role)
-    if binding is not None and binding.provider_session_id:
+    if (
+        binding is not None
+        and binding.provider_session_id
+        and not is_transient_provider_session_id(binding.provider_session_id)
+    ):
         emit_session_provider_id_bound(
             store,
             run_id,
@@ -320,8 +328,6 @@ def sync_reviewer_loop_session_id(
     """Persist the provider canonical reviewer session id on the review loop record."""
 
     resolved = provider.canonical_session_id(session_id)
-    if resolved == session_id and is_transient_provider_session_id(resolved):
-        return resolved
     if is_transient_provider_session_id(resolved):
         return resolved
 

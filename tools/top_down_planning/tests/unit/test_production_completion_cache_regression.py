@@ -96,7 +96,6 @@ def _create_dir_resource_run(
             "output_goal": "Deliver the feature.",
             "input_refs": ["task.md"],
         },
-        provider={"name": "stub"},
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
         agent_context={
             "default": {"resources": [], "skills": []},

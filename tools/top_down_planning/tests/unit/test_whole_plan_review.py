@@ -16,6 +16,7 @@ from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
 from tests.helpers import (
+    make_review_loop,
     save_review_payload,
     apply_plan,
     create_run_kwargs,
@@ -77,7 +78,6 @@ def _create_run_at_whole_plan_review(
                 "max_revision_cycles": 5,
             }
         },
-        "provider": {"name": "stub"},
     }
     if limits:
         config["limits"]["whole_plan_review"].update(limits)
@@ -544,6 +544,7 @@ def test_default_whole_plan_rubric_covers_advisory_themes() -> None:
     rubric = DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
     joined = "\n".join(rubric).casefold()
     for theme in (
+        "internal consistency",
         "hierarchy",
         "dependencies",
         "granularity",
@@ -567,7 +568,7 @@ def test_whole_plan_package_includes_default_rubric(tmp_path: Path) -> None:
     _create_run_at_whole_plan_review(store)
     plan = store.load_plan_model("run-20260101T000301-000301")
     config = minimal_resolved_config()
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -632,7 +633,7 @@ def test_whole_plan_package_includes_overlap_warnings(tmp_path: Path) -> None:
         },
     )
     config = minimal_resolved_config()
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-02",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -675,7 +676,7 @@ def test_whole_plan_package_includes_empty_aggregate_warnings(tmp_path: Path) ->
         },
     )
     config = minimal_resolved_config()
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-03",
         type="whole_plan",
         reviewer_session_id="sess",
@@ -710,7 +711,7 @@ def test_whole_plan_package_preserves_custom_rubric(tmp_path: Path) -> None:
         "focused_output": {"enabled": True},
         "whole_plan": {"rubric": ["coverage", "custom-quality"]},
     }
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",

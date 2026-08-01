@@ -35,7 +35,6 @@ def test_ensure_phase_action_id_assigns_and_reuses(tmp_path: Path) -> None:
         "run": {"output_goal": "Deliver the feature.", "input_refs": ["README.md"]},
         "planning": {"stop_hint": "Stop when ready.", "max_depth": 4, "max_expansion_per_item": 7},
         "limits": {"planning": {"max_items_added": 20, "max_agent_turns": 40}},
-        "provider": {"name": "stub"},
     }
     store.create_run(run_id, plan=plan, **create_run_kwargs(store.root, resolved_config=config))
 
@@ -110,7 +109,6 @@ def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
         "planning": {"stop_hint": "Stop when ready.", "max_depth": 4, "max_expansion_per_item": 7},
         "limits": {"planning": {"max_items_added": 20, "max_agent_turns": 40}},
         "review": {"focused_plan": {"enabled": True}, "focused_output": {"enabled": True}},
-        "provider": {"name": "stub"},
     }
     store.create_run(run_id, plan=plan, **create_run_kwargs(store.root, resolved_config=config))
 
@@ -146,7 +144,6 @@ def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:
         "planning": {"stop_hint": "Stop when ready.", "max_depth": 4, "max_expansion_per_item": 7},
         "limits": {"planning": {"max_items_added": 20, "max_agent_turns": 40}},
         "review": {"focused_plan": {"enabled": True}, "focused_output": {"enabled": True}},
-        "provider": {"name": "stub"},
     }
     store.create_run(run_id, plan=plan, **create_run_kwargs(store.root, resolved_config=config))
 
@@ -197,7 +194,6 @@ def test_planning_accepts_assistant_text_completion_signal(tmp_path: Path) -> No
         "run": {"output_goal": "Deliver the feature.", "input_refs": ["README.md"]},
         "planning": {"stop_hint": "Stop when ready.", "max_depth": 4, "max_expansion_per_item": 7},
         "limits": {"planning": {"max_items_added": 20, "max_agent_turns": 40}},
-        "provider": {"name": "stub"},
     }
     store.create_run(run_id, plan=plan, **create_run_kwargs(store.root, resolved_config=config))
 
@@ -247,7 +243,6 @@ def test_planning_runs_store_created_focused_review_before_advancing(
             },
         },
         "review": {"focused_plan": {"enabled": True}, "focused_output": {"enabled": True}},
-        "provider": {"name": "stub"},
     }
     store.create_run(run_id, plan=plan, **create_run_kwargs(store.root, resolved_config=config))
 

@@ -59,7 +59,6 @@ def _create_run(
                 "max_agent_turns": 40,
             }
         },
-        "provider": {"name": "stub"},
     }
     if limits:
         config["limits"]["planning"].update(limits)

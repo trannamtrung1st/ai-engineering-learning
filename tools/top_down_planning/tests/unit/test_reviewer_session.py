@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.reviewer_session import (
     deliver_reviewer_turn,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, done_events, script_reviewer_allocate
+from tests.helpers import create_run_kwargs, done_events, script_reviewer_allocate, make_review_loop
 
 
 def _create_review_run(store: FileRunStore, run_id: str) -> None:
@@ -40,7 +40,6 @@ def _create_review_run(store: FileRunStore, run_id: str) -> None:
         **create_run_kwargs(
             store.root,
             resolved_config={
-                "provider": {"name": "stub"},
                 "run": {"output_goal": "Deliver the feature."},
             },
         ),
@@ -77,7 +76,7 @@ def test_begin_reviewer_review_delivers_package_after_allocate(tmp_path: Path) -
     script_reviewer_allocate(provider)
     provider.script_turn(done_events(text="review turn"))
 
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="stub-session-reviewer-pending",
@@ -113,7 +112,7 @@ def test_deliver_reviewer_turn_binds_token_before_send(tmp_path: Path) -> None:
     )
     provider.script_turn(done_events(text="recheck"))
 
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id=session_id,

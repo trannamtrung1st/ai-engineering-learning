@@ -18,6 +18,7 @@ from top_down_planning.orchestrator.phases import PLANNING, PLAN_AMENDMENT, PROD
 from top_down_planning.orchestrator.prepare_resume import PrepareResumeBlockedError, prepare_resume
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
+    make_review_loop,
     create_run_kwargs,
     minimal_resolved_config,
     whole_plan_approval_record,
@@ -345,7 +346,7 @@ def test_resume_mandatory_review_incomplete_continue(tmp_path: Path) -> None:
         phase=WHOLE_PLAN_REVIEW,
         **create_run_kwargs(store.root),
     )
-    loop = ReviewLoop(
+    loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
         reviewer_session_id="sess",

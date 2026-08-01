@@ -98,7 +98,6 @@ def _create_planning_run(
             "max_expansion_per_item": 7,
         },
         limits={"planning": {"max_items_added": 20, "max_agent_turns": 40}},
-        provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
     store.create_run(
@@ -182,7 +181,6 @@ def _create_production_run(
             "input_refs": ["README.md"],
         },
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
-        provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
     input_digest, output_goal_digest = _run_digests(config, store.root)
@@ -386,7 +384,6 @@ def test_resume_cli_stream_json_for_completed_run(tmp_path: Path) -> None:
     )
     config = minimal_resolved_config(
         run={"output_goal": "Deliver.", "input_refs": []},
-        provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
     input_digest, output_goal_digest = _run_digests(config, store.root)
@@ -427,7 +424,6 @@ def test_resume_completed_rejected_whole_plan_review_does_not_restart(
     )
     config = minimal_resolved_config(
         run={"output_goal": "Deliver.", "input_refs": []},
-        provider={"name": "stub"},
     )
     bound = _bind_config_workspace(config, store.root)
     input_digest, output_goal_digest = _run_digests(config, store.root)

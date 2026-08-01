@@ -14,6 +14,7 @@ from top_down_planning.agent_tool.artifacts import (
     validate_production_evidence_integrity,
 )
 from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.session_bindings import is_transient_provider_session_id
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import (
     assert_expected_run_revision,
@@ -250,7 +251,11 @@ def replace_primary_session(
             generation=saved_binding.generation,
             reason="provider_session_not_found",
             old_provider_session_id=old_provider_session_id,
-            new_provider_session_id=new_session_id,
+            new_provider_session_id=(
+                new_session_id
+                if not is_transient_provider_session_id(new_session_id)
+                else None
+            ),
             phase_action_id=phase_action_id,
         )
         return new_session_id
@@ -302,7 +307,6 @@ def replace_reviewer_session(
         updated_loop = replace(
             current_loop,
             reviewer_binding=updated_binding,
-            reviewer_session_id=None,
         )
         save_review_with_expected_revision(
             store,
@@ -390,7 +394,11 @@ def replace_reviewer_session(
             generation=committed_binding.generation,
             reason="provider_session_not_found",
             old_provider_session_id=old_provider_session_id,
-            new_provider_session_id=new_session_id,
+            new_provider_session_id=(
+                new_session_id
+                if not is_transient_provider_session_id(new_session_id)
+                else None
+            ),
             phase_action_id=phase_action_id,
             loop_id=loop.id,
         )

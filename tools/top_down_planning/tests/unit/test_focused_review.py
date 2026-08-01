@@ -59,7 +59,6 @@ def _planning_config(*, limits: dict | None = None, review: dict | None = None) 
             "focused_plan": {"enabled": True},
             "focused_output": {"enabled": True},
         },
-        "provider": {"name": "stub"},
     }
     if limits:
         config["limits"]["focused_plan_review"].update(limits)
@@ -539,7 +538,6 @@ def _create_production_run(
             "focused_plan": {"enabled": True},
             "focused_output": {"enabled": True},
         },
-        "provider": {"name": "stub"},
     }
     if limits:
         config["limits"]["focused_output_review"].update(limits)

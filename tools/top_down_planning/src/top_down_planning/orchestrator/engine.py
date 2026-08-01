@@ -25,6 +25,10 @@ from top_down_planning.orchestrator.failure import (
 )
 from top_down_planning.orchestrator.run_transitions import pause_run
 from top_down_planning.orchestrator.session_policy import execute_session_policy_if_registered
+from top_down_planning.orchestrator.session_policy_execution import (
+    derive_session_policy,
+    execute_session_policy,
+)
 import top_down_planning.orchestrator.session_policy_execution  # noqa: F401 — registers executor
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
@@ -137,6 +141,10 @@ class RunEngine:
                 run_id,
                 session_policy,
             )
+        else:
+            run = self._store.load_run(run_id)
+            derived_policy = derive_session_policy(run, self._store.list_reviews(run_id))
+            execute_session_policy(self._store, run_id, derived_policy)
         started_at = time.monotonic()
         steps: list[RunStepResult] = []
         while True:
