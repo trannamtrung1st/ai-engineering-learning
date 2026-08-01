@@ -20,6 +20,7 @@ from tests.helpers import (
     create_run_kwargs,
     grant_capability,
     set_capability_env,
+    write_agent_request_file,
     whole_plan_approval_record,
 )
 
@@ -519,8 +520,9 @@ def test_cli_plan_commands_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             }
         ],
     }
-    request_path = tmp_path / "apply.json"
-    request_path.write_text(json.dumps(request), encoding="utf-8")
+    request_path = write_agent_request_file(
+        store, "run-20260101T000001-000001", "apply.json", request
+    )
 
     apply = run_cli(
         [
@@ -588,21 +590,20 @@ def test_cli_stale_revision_returns_actionable_error(
         grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
     )
 
-    request_path = tmp_path / "stale.json"
-    request_path.write_text(
-        json.dumps(
-            {
-                "base_revision": 5,
-                "operations": [
-                    {
-                        "op": "update_item",
-                        "item_id": "item-root",
-                        "patch": {"title": "Stale"},
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
+    request_path = write_agent_request_file(
+        store,
+        "run-20260101T000001-000001",
+        "stale.json",
+        {
+            "base_revision": 5,
+            "operations": [
+                {
+                    "op": "update_item",
+                    "item_id": "item-root",
+                    "patch": {"title": "Stale"},
+                }
+            ],
+        },
     )
 
     result = run_cli(
@@ -748,21 +749,20 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
         grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
     )
 
-    request_path = tmp_path / "apply.json"
-    request_path.write_text(
-        json.dumps(
-            {
-                "base_revision": 0,
-                "operations": [
-                    {
-                        "op": "update_item",
-                        "item_id": "item-worker",
-                        "patch": {"title": "Worker updated"},
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
+    request_path = write_agent_request_file(
+        store,
+        "run-20260101T000001-000001",
+        "apply.json",
+        {
+            "base_revision": 0,
+            "operations": [
+                {
+                    "op": "update_item",
+                    "item_id": "item-worker",
+                    "patch": {"title": "Worker updated"},
+                }
+            ],
+        },
     )
 
     result = run_cli(

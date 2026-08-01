@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -153,12 +154,14 @@ def _create_provider_for_run(
     *,
     workspace: Path,
     resolved_runs: Any,
+    run_id: str,
+    store: FileRunStore,
     on_provider_event: Any | None = None,
 ) -> Any:
     return create_provider(
         config,
         workspace=workspace,
-        extra_env=provider_extra_env(resolved_runs),
+        extra_env=provider_extra_env(resolved_runs, run_id=run_id, store=store),
         on_provider_event=on_provider_event,
     )
 
@@ -167,6 +170,7 @@ def _build_run_engine(
     store: FileRunStore,
     resolved_runs: Any,
     *,
+    run_id: str,
     observability: ObservabilityContext,
 ) -> RunEngine:
     def create_provider(config: dict[str, Any], workspace: Path) -> Any:
@@ -174,6 +178,8 @@ def _build_run_engine(
             config,
             workspace=workspace,
             resolved_runs=resolved_runs,
+            run_id=run_id,
+            store=store,
             on_provider_event=observability.provider_callback(),
         )
 
@@ -270,6 +276,7 @@ def handle_run_command(args: Namespace) -> None:
         workspace=workspace,
         resolved_runs=resolved_runs,
         run_id=run_id,
+        store=store,
     )
     observability = build_observability_context(
         options=invocation.observability,
@@ -292,7 +299,9 @@ def handle_run_command(args: Namespace) -> None:
 
     try:
         try:
-            engine = _build_run_engine(store, resolved_runs, observability=observability)
+            engine = _build_run_engine(
+                store, resolved_runs, run_id=run_id, observability=observability
+            )
             continuation = engine.continue_run(run_id, until=until)
         except KeyboardInterrupt:
             _handle_blocking_run_interrupt(
@@ -513,9 +522,13 @@ def handle_resume_command(args: Namespace) -> None:
         return
 
     if args.stream_json:
-        emit_payload({**plan_summary, "check_only": False})
+        json.dump({**plan_summary, "check_only": False}, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
     else:
-        emit_message(format_resume_plan_summary_text(plan_summary))
+        summary_text = format_resume_plan_summary_text(plan_summary)
+        sys.stdout.write(summary_text)
+        if not summary_text.endswith("\n"):
+            sys.stdout.write("\n")
 
     try:
         apply_resume_plan_atomically(
@@ -552,7 +565,9 @@ def handle_resume_command(args: Namespace) -> None:
     )
     try:
         try:
-            engine = _build_run_engine(store, resolved_runs, observability=observability)
+            engine = _build_run_engine(
+                store, resolved_runs, run_id=args.run, observability=observability
+            )
             if until:
                 continuation = engine.continue_run(
                     args.run,
@@ -641,7 +656,7 @@ def handle_status_command(args: Namespace) -> None:
             code="run_not_found",
         )
 
-    diagnostics = store_diagnostics_payload(resolved_runs, run_id=args.run)
+    diagnostics = store_diagnostics_payload(resolved_runs, run_id=args.run, store=store)
     workspace = str(run.get("workspace") or "")
     payload = {
         "ok": True,

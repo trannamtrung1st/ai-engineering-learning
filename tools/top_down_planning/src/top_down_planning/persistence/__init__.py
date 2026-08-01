@@ -16,7 +16,7 @@ from top_down_planning.persistence.digests import (
     execution_config_projection,
     semantic_config_projection,
 )
-from top_down_planning.persistence.file_store import FileRunStore, new_run_record
+from top_down_planning.persistence.file_store import AGENT_REQUESTS_DIR, FileRunStore, new_run_record
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.run_schema import (
     CURRENT_RUN_SCHEMA_VERSION,
@@ -27,6 +27,7 @@ from top_down_planning.persistence.run_schema import (
 )
 
 __all__ = [
+    "AGENT_REQUESTS_DIR",
     "FileRunStore",
     "PersistenceError",
     "RunNotFoundError",

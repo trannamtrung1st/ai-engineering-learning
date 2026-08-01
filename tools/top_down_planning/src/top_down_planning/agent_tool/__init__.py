@@ -15,7 +15,6 @@ from top_down_planning.agent_tool.errors import (
 )
 from top_down_planning.agent_tool.plan_service import PlanAgentService
 from top_down_planning.agent_tool.production_service import ProductionAgentService
-from top_down_planning.agent_tool.request import load_structured_request
 from top_down_planning.agent_tool.review_service import ReviewAgentService
 from top_down_planning.agent_tool.run_service import RunAgentService
 
@@ -31,5 +30,4 @@ __all__ = [
     "ReviewAgentService",
     "RevisionConflictError",
     "RunAgentService",
-    "load_structured_request",
 ]

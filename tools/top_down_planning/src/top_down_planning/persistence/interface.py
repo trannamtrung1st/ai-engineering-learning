@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Protocol
 
 from top_down_planning.domain.models import Plan
@@ -94,6 +95,9 @@ class RunStore(Protocol):
 
     def revoke_capabilities_for_session(self, run_id: str, session_id: str) -> None:
         """Revoke all live capabilities bound to a provider session."""
+
+    def agent_requests_dir(self, run_id: str) -> Path:
+        """Return the designated agent-authored request-input directory."""
 
     def artifact_path(self, run_id: str, snapshot_id: str, filename: str) -> Any:
         """Return a contained artifact snapshot path under the run store."""

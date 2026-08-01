@@ -167,8 +167,8 @@ def test_resume_apply_prints_same_summary_as_check(tmp_path: Path) -> None:
         )
     check_output = check_text.getvalue()
 
-    apply_calls: list[str] = []
-    with patch("top_down_planning.cli.user.emit_message", side_effect=lambda msg, **_: apply_calls.append(msg)):
+    apply_output = StringIO()
+    with patch("sys.stdout", apply_output):
         with patch("top_down_planning.cli.user._build_run_engine") as build_engine:
             engine = build_engine.return_value
             engine.continue_run.return_value.ok = False
@@ -178,10 +178,10 @@ def test_resume_apply_prints_same_summary_as_check(tmp_path: Path) -> None:
             engine.continue_run.return_value.steps = []
             engine.continue_run.return_value.reason = "test stop"
             engine.continue_run.return_value.cancelled = False
-            handle_resume_command(args)
+            with patch("top_down_planning.cli.user.emit_message", side_effect=lambda msg, **_: apply_output.write(msg)):
+                handle_resume_command(args)
 
-    assert apply_calls
-    assert apply_calls[0] == check_output
+    assert apply_output.getvalue().startswith(check_output)
 
 
 def test_resume_check_rejects_failed_run(tmp_path: Path) -> None:

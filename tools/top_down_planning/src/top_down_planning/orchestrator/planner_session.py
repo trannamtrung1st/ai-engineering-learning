@@ -50,6 +50,11 @@ def build_planner_protocol_instructions() -> list[str]:
             "Discover request contracts with tdp agent readme, tdp agent "
             "schema, and tdp agent example."
         ),
+        (
+            "Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR. "
+            "Do not create .tdp-* or .review-* dotfiles in the project workspace "
+            "or harness folders. Do not modify orchestrator-owned run files."
+        ),
     ]
 
 
@@ -61,10 +66,17 @@ def build_planner_tool_instructions(run_id: str) -> dict[str, str]:
             "Mutating commands require the session capability token exported "
             "as TDP_CAPABILITY_TOKEN."
         ),
+        "agent_requests_dir": "$TDP_AGENT_REQUESTS_DIR",
         "snapshot": f"tdp agent plan snapshot --run {run_id} --view active",
-        "apply": f"tdp agent plan apply --run {run_id} --request <file>",
+        "apply": (
+            f"tdp agent plan apply --run {run_id} "
+            "--request $TDP_AGENT_REQUESTS_DIR/plan-apply-r<rev>-a01.json"
+        ),
         "check": f"tdp agent plan check --run {run_id}",
-        "request_review": f"tdp agent review request --run {run_id} --request <file>",
+        "request_review": (
+            f"tdp agent review request --run {run_id} "
+            "--request $TDP_AGENT_REQUESTS_DIR/review-request-<scope>-a01.json"
+        ),
         "completion_signal": PLANNER_CANDIDATE_READY_SIGNAL,
     }
 

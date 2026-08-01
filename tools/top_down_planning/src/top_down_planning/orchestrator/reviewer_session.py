@@ -170,6 +170,13 @@ def build_reviewer_protocol_instructions(
                 ),
             ]
         )
+    instructions.append(
+        (
+            "Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR. "
+            "Do not create .tdp-* or .review-* dotfiles in the project workspace "
+            "or harness folders. Do not modify orchestrator-owned run files."
+        )
+    )
     return instructions
 
 
@@ -185,8 +192,10 @@ def build_reviewer_tool_instructions(
             "as TDP_CAPABILITY_TOKEN on the provider subprocess that runs your "
             "review turn."
         ),
+        "agent_requests_dir": "$TDP_AGENT_REQUESTS_DIR",
         "respond": (
-            f"tdp agent review respond --run {run_id} --request <file> "
+            f"tdp agent review respond --run {run_id} "
+            "--request $TDP_AGENT_REQUESTS_DIR/review-respond-<stage>-r<rev>-a01.json "
             "(invoke `tdp` directly; do not wrap with `uv run`)"
         ),
         "schema": "tdp agent schema review-respond",

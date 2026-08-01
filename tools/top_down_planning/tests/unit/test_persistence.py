@@ -87,6 +87,7 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
     assert (run_dir / "plan.json").exists()
     assert (run_dir / "production.json").exists()
     assert (run_dir / "reviews").is_dir()
+    assert (run_dir / "agent-requests").is_dir()
     assert (run_dir / "events.jsonl").exists()
     assert (run_dir / "invocation.json").exists()
 

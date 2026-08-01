@@ -309,7 +309,7 @@ Resolution precedence:
 
 `tdp run` creates the store root when needed. Read-only commands (`status`, `inspect`, `validate`, `tdp agent …`) do not create a missing store.
 
-When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR` and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses **before** any turn where the agent may run mutating `tdp agent …` commands. Reviewer sessions start with the bounded review package in a single provider turn (`begin_reviewer_review`); follow-up turns on the same session use `deliver_reviewer_turn` (`send` + capability bind). Mutating commands require the capability token; authorization is bound to run phase, role, provider session, and (for reviewers) review loop — not a self-declared `--role` flag. Capability records store only a hash of the secret; tokens are revoked when turns, loops, or phases end.
+When the orchestrator starts a provider session, it exports `TDP_RUNS_DIR`, `TDP_RUN_ID`, `TDP_AGENT_REQUESTS_DIR`, and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses **before** any turn where the agent may run mutating `tdp agent …` commands. Write mutating request payloads only under `$TDP_AGENT_REQUESTS_DIR` (the run's `agent-requests/` directory). Reviewer sessions start with the bounded review package in a single provider turn (`begin_reviewer_review`); follow-up turns on the same session use `deliver_reviewer_turn` (`send` + capability bind). Mutating commands require the capability token; authorization is bound to run phase, role, provider session, and (for reviewers) review loop — not a self-declared `--role` flag. Capability records store only a hash of the secret; tokens are revoked when turns, loops, or phases end.
 
 Planner, producer, and reviewer packages include `protocol_instructions` (role behavior rules) and `tool_instructions` (`tdp agent` command templates). The provider adapter surfaces `protocol_instructions` at the top of the prompt so agents do not substitute host IDE planning artifacts for persisted `tdp agent` mutations.
 
@@ -343,16 +343,16 @@ tdp agent readme
 tdp agent schema              # list schemas; add a name to show one
 tdp agent example expand-branch
 tdp agent plan snapshot --run <run-id> --view active
-tdp agent plan apply --run <run-id> --request request.json
+tdp agent plan apply --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/plan-apply-r0-a01.json
 tdp agent plan check --run <run-id>
 tdp agent production snapshot --run <run-id> --view ready
-tdp agent production apply --run <run-id> --request request.json
+tdp agent production apply --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-apply-batch-01-a01.json
 tdp agent production check --run <run-id>
-tdp agent production request-amendment --run <run-id> --request request.json
-tdp agent production submit-completion --run <run-id> --request request.json
-tdp agent production report-blocked --run <run-id> --request request.json
-tdp agent review request --run <run-id> --request focused-review.json
-tdp agent review respond --run <run-id> --request review.json
+tdp agent production request-amendment --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-amendment-a01.json
+tdp agent production submit-completion --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-completion-a01.json
+tdp agent production report-blocked --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-blocked-a01.json
+tdp agent review request --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/review-request-focused-a01.json
+tdp agent review respond --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/review-respond-scope-r0-a01.json
 tdp agent run status --run <run-id>
 ```
 

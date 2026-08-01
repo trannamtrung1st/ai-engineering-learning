@@ -253,23 +253,44 @@ runtime:
 
 
 def test_create_provider_receives_tdp_runs_dir_env(tmp_path: Path) -> None:
-    from top_down_planning.cli.common import ResolvedRunsDir
+    from top_down_planning.cli.common import ResolvedRunsDir, provider_extra_env
     from top_down_planning.cli.user import _create_provider_for_run
+    from top_down_planning.domain.models import Plan, PlanItem
+    from tests.helpers import create_run_kwargs
 
     config = {"provider": {"name": "cursor", "skip_probe": True}}
     runs_path = tmp_path / "runs-store"
+    runs_path.mkdir()
     resolved_runs = ResolvedRunsDir(runs_path.resolve(), "config")
+    store = FileRunStore(runs_path)
+    run_id = "run-20260101T000001-000001"
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={"item-root": root},
+    )
+    store.create_run(run_id, plan=plan, **create_run_kwargs(runs_path))
 
     with patch("top_down_planning.cli.user.create_provider") as create_provider:
         _create_provider_for_run(
             config,
             workspace=tmp_path,
             resolved_runs=resolved_runs,
+            run_id=run_id,
+            store=store,
         )
 
     create_provider.assert_called_once_with(
         config,
         workspace=tmp_path,
-        extra_env={"TDP_RUNS_DIR": str(runs_path.resolve())},
+        extra_env=provider_extra_env(resolved_runs, run_id=run_id, store=store),
         on_provider_event=None,
     )

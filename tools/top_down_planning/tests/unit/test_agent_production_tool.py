@@ -22,6 +22,7 @@ from tests.helpers import (
     create_run_kwargs,
     grant_capability,
     set_capability_env,
+    write_agent_request_file,
     whole_plan_approval_record,
 )
 
@@ -299,8 +300,10 @@ def test_cli_production_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         plan_items=["item-first"],
         dispositions={"item-first": {"disposition": "completed"}},
     )
-    first_path = tmp_path / "batch-first.json"
-    first_path.write_text(json.dumps(first_request), encoding="utf-8")
+    run_id = "run-20260101T000201-000201"
+    first_path = write_agent_request_file(
+        store, run_id, "batch-first.json", first_request
+    )
 
     first_apply = run_cli(
         [
@@ -324,8 +327,9 @@ def test_cli_production_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         dispositions={"item-second": {"disposition": "completed"}},
         production_revision=first_payload["production_revision"],
     )
-    second_path = tmp_path / "batch-second.json"
-    second_path.write_text(json.dumps(second_request), encoding="utf-8")
+    second_path = write_agent_request_file(
+        store, run_id, "batch-second.json", second_request
+    )
 
     second_apply = run_cli(
         [
@@ -342,10 +346,11 @@ def test_cli_production_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     )
     assert second_apply.exit_code == 0, second_apply.stderr
 
-    completion_path = tmp_path / "completion.json"
-    completion_path.write_text(
-        json.dumps({"goal_assessment": "Delivered the feature.", "goal_met": True}),
-        encoding="utf-8",
+    completion_path = write_agent_request_file(
+        store,
+        run_id,
+        "completion.json",
+        {"goal_assessment": "Delivered the feature.", "goal_met": True},
     )
     completion = run_cli(
         [
@@ -383,15 +388,14 @@ def test_cli_reviewer_denied_for_production_apply(
         ),
     )
 
-    request_path = tmp_path / "apply.json"
-    request_path.write_text(
-        json.dumps(
-            _batch_apply_request(
-                plan_items=["item-first"],
-                dispositions={"item-first": {"disposition": "completed"}},
-            )
+    request_path = write_agent_request_file(
+        store,
+        "run-20260101T000201-000201",
+        "apply.json",
+        _batch_apply_request(
+            plan_items=["item-first"],
+            dispositions={"item-first": {"disposition": "completed"}},
         ),
-        encoding="utf-8",
     )
 
     result = run_cli(

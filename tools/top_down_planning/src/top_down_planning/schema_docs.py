@@ -1441,20 +1441,20 @@ Discover contracts without reading source:
 
 Plan:
   tdp agent plan snapshot --run <run-id> [--view active|audit|ready|issues]
-  tdp agent plan apply --run <run-id> --request <file>
+  tdp agent plan apply --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/plan-apply-r<rev>-a01.json
   tdp agent plan check --run <run-id> [--mode draft|approval]
 
 Production:
   tdp agent production snapshot --run <run-id> [--view tree|ready]
-  tdp agent production apply --run <run-id> --request <file>
+  tdp agent production apply --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-apply-batch-01-a01.json
   tdp agent production check --run <run-id>
-  tdp agent production request-amendment --run <run-id> --request <file>
-  tdp agent production submit-completion --run <run-id> --request <file>
-  tdp agent production report-blocked --run <run-id> --request <file>
+  tdp agent production request-amendment --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-amendment-a01.json
+  tdp agent production submit-completion --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-completion-a01.json
+  tdp agent production report-blocked --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-blocked-a01.json
 
 Review:
-  tdp agent review request --run <run-id> --request <file>
-  tdp agent review respond --run <run-id> --request <file>
+  tdp agent review request --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/review-request-<scope>-a01.json
+  tdp agent review respond --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/review-respond-<stage>-r<rev>-a01.json
 
 Whole-plan and focused_plan reviewers receive an embedded plan snapshot in the
 review package; call `tdp agent plan snapshot --run <run-id> --view active` to
@@ -1464,18 +1464,20 @@ Run status:
   tdp agent run status --run <run-id>
 
 Run store: agent commands use --runs-dir, $TDP_RUNS_DIR, or ./runs. Run ids use
-run-YYYYMMDDTHHMMSS-<6hex> (UTC creation time plus random suffix). The orchestrator
-exports the resolved absolute store root as TDP_RUNS_DIR and a session-scoped
-TDP_CAPABILITY_TOKEN to provider subprocesses before turns that may call mutating
-commands. Reviewer sessions allocate a provider session id, bind the token, then
-deliver the review package on the next turn. Mutating commands require the token;
-authorization is bound to run phase and session role, not a self-declared flag.
+run-YYYYMMDDTHHMMSS-<6hex> (UTC creation time plus random suffix). Provider
+subprocesses receive TDP_RUNS_DIR, TDP_RUN_ID, TDP_AGENT_REQUESTS_DIR, and a
+session-scoped TDP_CAPABILITY_TOKEN before turns that may call mutating commands.
+Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR.
+Reviewer sessions allocate a provider session id, bind the token, then deliver the
+review package on the next turn. Mutating commands require the token; authorization
+is bound to run phase and session role, not a self-declared flag.
 
 Published schemas: """ + ", ".join(PUBLIC_SCHEMAS) + """
 Published examples: """ + ", ".join(PUBLIC_EXAMPLES) + """
 
-Request bodies are JSON or YAML objects. Use --request <file> or pipe stdin.
-Revision fields (base_revision, production_revision) must match the latest snapshot.
+Request bodies are JSON or YAML objects. Use --request under $TDP_AGENT_REQUESTS_DIR
+or pipe stdin. Revision fields (base_revision, production_revision) must match the
+latest snapshot.
 """
 
 AGENT_README_TEXT = """# Top Down Planning — agent protocol
@@ -1502,6 +1504,40 @@ do not pass `--role` on the CLI.
 - planner — mutate the plan during planning or amendment
 - producer — record production batches, completion claims, blockers, amendment requests
 - reviewer — submit review findings and decisions
+
+## Agent request inputs (`agent-requests/`)
+
+Mutating `tdp agent` commands accept JSON or YAML via `--request` under
+`$TDP_AGENT_REQUESTS_DIR` or via stdin. The orchestrator exports
+`TDP_AGENT_REQUESTS_DIR` (absolute path to `<run-id>/agent-requests/`) as the
+designated write surface for agent-authored request files. Request files are
+durable but non-canonical: retained for debugging and postmortems, included when
+the run folder is copied or archived, never required for resume or recovery, and
+outside commit transactions. Payloads may contain sensitive workspace or review
+content — treat exported run directories accordingly.
+
+Provider subprocesses also receive `TDP_RUNS_DIR`, `TDP_RUN_ID`, and
+`TDP_CAPABILITY_TOKEN`. When capability context is active, `TDP_RUN_ID` must match
+`--run`. All `--request` file paths must resolve inside `agent-requests/`.
+
+Each mutating invocation emits two correlated audit events in `events.jsonl`,
+linked by `request_id`:
+
+- `agent_request_read` — immediately after raw bytes are read and hashed (before
+  JSON parse), with `source_kind` (`agent_requests` or `stdin`) and normalized
+  `source`
+- `agent_request_completed` — when the command finishes, with `result`:
+  `applied` (mutation committed), `rejected` (expected refusal including malformed
+  JSON or schema errors), or `failed` (unexpected technical failure)
+
+An `agent_request_read` without a matching `agent_request_completed` indicates the
+process was interrupted after consuming the request. Request audit events are
+append-only observability records and are not rolled back when plan, production,
+or review commits fail. Canonical mutation events (`plan_applied`,
+`review_responded`, etc.) include `request_id` when emitted from a request path.
+
+Discover `agent_requests_dir` via `tdp status --stream-json` or
+`tdp agent run status --run <run-id>`.
 
 ## Provider session packages
 
@@ -1567,9 +1603,9 @@ not consumed by the orchestrator.
 ## Run store
 
 Agent commands locate runs via `--runs-dir`, `$TDP_RUNS_DIR`, or `./runs` (in that
-precedence). The orchestrator exports the resolved absolute store root as
-`TDP_RUNS_DIR` and a session-scoped `TDP_CAPABILITY_TOKEN` to provider subprocesses,
-so in-agent commands typically need only `--run <run-id>`. Run ids use
+precedence). Provider subprocesses receive `TDP_RUNS_DIR`, `TDP_RUN_ID`,
+`TDP_AGENT_REQUESTS_DIR`, and a session-scoped `TDP_CAPABILITY_TOKEN`, so in-agent
+commands typically need only `--run <run-id>`. Run ids use
 `run-YYYYMMDDTHHMMSS-<6hex>` (UTC creation time plus random suffix).
 
 `plan.json` items include `depth` (0-based from the tree root, derived from

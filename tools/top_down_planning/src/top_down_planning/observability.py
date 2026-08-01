@@ -435,6 +435,8 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         "review_finding_action_recorded": ("review", "review finding action recorded"),
         "review_finding_actions_recorded": ("review", "review finding actions recorded"),
         "review_challenge_submitted": ("review", "review challenge submitted"),
+        "agent_request_read": ("state", "agent request read"),
+        "agent_request_completed": ("state", "agent request completed"),
         "whole_output_review_approved": ("review", "whole output review approved"),
         "whole_output_review_failed": ("error", "whole output review failed"),
         "plan_amendment_started": ("phase:start", "plan amendment started"),

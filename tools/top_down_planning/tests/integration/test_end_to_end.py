@@ -367,7 +367,7 @@ def test_capability_guardrails_reject_missing_token(
         ).json()["run_id"]
 
     request_path = write_agent_request(
-        tmp_path / "plan-apply.json",
+        store.agent_requests_dir(run_id) / "plan-apply.json",
         {"base_revision": 0, "operations": []},
     )
     denied_result = run_cli(

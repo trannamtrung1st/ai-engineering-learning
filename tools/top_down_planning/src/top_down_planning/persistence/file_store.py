@@ -27,6 +27,8 @@ from core_tools.persistence import (
     require_revision_field,
 )
 from top_down_planning.persistence.capabilities import new_capability_record
+
+AGENT_REQUESTS_DIR = "agent-requests"
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
@@ -202,6 +204,7 @@ class FileRunStore:
             (staging_dir / "reviews").mkdir()
             (staging_dir / "capabilities").mkdir()
             (staging_dir / "artifacts").mkdir()
+            (staging_dir / AGENT_REQUESTS_DIR).mkdir()
             atomic_write_text(
                 staging_dir / "resolved-config.yaml",
                 dump_yaml(resolved_config) + "\n",
@@ -583,6 +586,9 @@ class FileRunStore:
 
     def artifacts_dir(self, run_id: str) -> Path:
         return self._assert_contained(self.run_dir(run_id) / "artifacts")
+
+    def agent_requests_dir(self, run_id: str) -> Path:
+        return self._assert_contained(self.run_dir(run_id) / AGENT_REQUESTS_DIR)
 
     def create_capability(
         self,

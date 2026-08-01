@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from typing import Any
 
 from top_down_planning.agent_tool import (
@@ -11,7 +12,13 @@ from top_down_planning.agent_tool import (
     ProductionAgentService,
     ReviewAgentService,
     RunAgentService,
-    load_structured_request,
+)
+from top_down_planning.agent_tool.request_audit import (
+    AgentRequestContext,
+    complete_agent_request,
+    consume_agent_request,
+    map_exception_to_result,
+    map_response_to_result,
 )
 from top_down_planning.cli.common import (
     AGENT_RUNS_DIR_HELP,
@@ -241,6 +248,51 @@ def emit_error(exc: Exception, *, exit_code: int = 1) -> None:
     emit_response(payload, exit_code=exit_code)
 
 
+def _run_mutating_command(
+    store: FileRunStore,
+    run_id: str,
+    operation: str,
+    args: argparse.Namespace,
+    handler: Callable[..., dict[str, Any]],
+    *,
+    default_exit_code: int | None = None,
+) -> None:
+    context: AgentRequestContext | None = None
+    try:
+        payload, context = consume_agent_request(
+            store,
+            run_id,
+            operation=operation,
+            request_path=args.request,
+        )
+        result = handler(payload, request_audit=context)
+        complete_agent_request(
+            store,
+            run_id,
+            context,
+            result=map_response_to_result(result),
+        )
+        if default_exit_code is not None:
+            exit_code = default_exit_code
+        else:
+            exit_code = 0 if result.get("ok") else 1
+        emit_response(result, exit_code=exit_code)
+    except AgentToolError as exc:
+        audit_context = context or getattr(exc, "request_context", None)
+        if audit_context is not None:
+            complete_agent_request(
+                store,
+                run_id,
+                audit_context,
+                result=map_exception_to_result(exc),
+            )
+        emit_error(exc)
+    except Exception as exc:
+        if context is not None:
+            complete_agent_request(store, run_id, context, result="failed")
+        emit_error(exc)
+
+
 def handle_agent_command(args: argparse.Namespace) -> None:
     if args.agent_command is None:
         emit_message(schema_docs.AGENT_HELP_TEXT)
@@ -337,9 +389,13 @@ def _handle_plan_command(args: argparse.Namespace) -> None:
             )
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.plan_command == "apply":
-            request = load_structured_request(request_path=args.request)
-            payload = service.apply(request)
-            emit_response(payload, exit_code=0 if payload["ok"] else 1)
+            _run_mutating_command(
+                store,
+                args.run,
+                "plan.apply",
+                args,
+                service.apply,
+            )
         elif args.plan_command == "check":
             payload = service.check(mode=args.mode)
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
@@ -372,24 +428,40 @@ def _handle_production_command(args: argparse.Namespace) -> None:
             payload = service.snapshot(view=args.view)
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "apply":
-            request = load_structured_request(request_path=args.request)
-            payload = service.apply(request)
-            emit_response(payload, exit_code=0 if payload["ok"] else 1)
+            _run_mutating_command(
+                store,
+                args.run,
+                "production.apply",
+                args,
+                service.apply,
+            )
         elif args.production_command == "check":
             payload = service.check()
             emit_response(payload, exit_code=0 if payload["ok"] else 1)
         elif args.production_command == "request-amendment":
-            request = load_structured_request(request_path=args.request)
-            payload = service.request_amendment(request)
-            emit_response(payload, exit_code=0 if payload["ok"] else 1)
+            _run_mutating_command(
+                store,
+                args.run,
+                "production.request_amendment",
+                args,
+                service.request_amendment,
+            )
         elif args.production_command == "submit-completion":
-            request = load_structured_request(request_path=args.request)
-            payload = service.submit_completion(request)
-            emit_response(payload, exit_code=0 if payload["ok"] else 1)
+            _run_mutating_command(
+                store,
+                args.run,
+                "production.submit_completion",
+                args,
+                service.submit_completion,
+            )
         elif args.production_command == "report-blocked":
-            request = load_structured_request(request_path=args.request)
-            payload = service.report_blocked(request)
-            emit_response(payload, exit_code=0 if payload["ok"] else 1)
+            _run_mutating_command(
+                store,
+                args.run,
+                "production.report_blocked",
+                args,
+                service.report_blocked,
+            )
         else:
             emit_error(
                 AgentToolError(f"unknown production command: {args.production_command!r}"),
@@ -415,17 +487,32 @@ def _handle_review_command(args: argparse.Namespace) -> None:
 
     try:
         if args.review_command == "respond":
-            request = load_structured_request(request_path=args.request)
-            payload = service.respond(request)
-            emit_response(payload)
+            _run_mutating_command(
+                store,
+                args.run,
+                "review.respond",
+                args,
+                service.respond,
+                default_exit_code=0,
+            )
         elif args.review_command == "request":
-            request = load_structured_request(request_path=args.request)
-            payload = service.request(request)
-            emit_response(payload)
+            _run_mutating_command(
+                store,
+                args.run,
+                "review.request",
+                args,
+                service.request,
+                default_exit_code=0,
+            )
         elif args.review_command == "record-actions":
-            request = load_structured_request(request_path=args.request)
-            payload = service.record_finding_actions(request)
-            emit_response(payload)
+            _run_mutating_command(
+                store,
+                args.run,
+                "review.record_actions",
+                args,
+                service.record_finding_actions,
+                default_exit_code=0,
+            )
         else:
             emit_error(
                 AgentToolError(f"unknown review command: {args.review_command!r}"),

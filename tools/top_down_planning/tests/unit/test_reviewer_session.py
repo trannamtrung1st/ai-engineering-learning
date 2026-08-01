@@ -56,6 +56,8 @@ def test_tool_instructions_discourage_uv_run() -> None:
     instructions = build_reviewer_tool_instructions("run-test")
     assert "uv run" in instructions["respond"]
     assert "TDP_CAPABILITY_TOKEN" in instructions["authorization"]
+    assert instructions["agent_requests_dir"] == "$TDP_AGENT_REQUESTS_DIR"
+    assert "TDP_AGENT_REQUESTS_DIR" in instructions["respond"]
 
 
 def test_begin_reviewer_review_starts_session_with_review_package(tmp_path: Path) -> None:

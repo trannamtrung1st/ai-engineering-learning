@@ -37,6 +37,10 @@ from top_down_planning.domain.validators import (
     new_hard_validation_issues,
     validate_plan,
 )
+from top_down_planning.agent_tool.request_audit import (
+    AgentRequestContext,
+    apply_request_audit_fields,
+)
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.persistence import StoreRevisionConflictError
@@ -105,6 +109,7 @@ class PlanAgentService:
         request: dict[str, Any],
         *,
         capability_token: str | None = None,
+        request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
         authorize_mutation(
             self._store,
@@ -185,14 +190,17 @@ class PlanAgentService:
                     run=run_payload,
                     run_expected_revision=expected_run_revision,
                     events=[
-                        {
-                            "type": "plan_applied",
-                            "run_id": self._run_id,
-                            "base_revision": base_revision,
-                            "revision": result.revision,
-                            "operation_count": len(operations),
-                            "changed_item_ids": result.changed_item_ids,
-                        }
+                        apply_request_audit_fields(
+                            {
+                                "type": "plan_applied",
+                                "run_id": self._run_id,
+                                "base_revision": base_revision,
+                                "revision": result.revision,
+                                "operation_count": len(operations),
+                                "changed_item_ids": result.changed_item_ids,
+                            },
+                            request_audit,
+                        )
                     ],
                 ),
             )

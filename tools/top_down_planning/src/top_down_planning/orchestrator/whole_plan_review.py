@@ -749,7 +749,7 @@ class WholePlanReviewOrchestrator:
                 "tool_instructions": {
                     "record_actions": (
                         f"tdp agent review record-actions --run {self._run_id} "
-                        "--request <file>"
+                        "--request $TDP_AGENT_REQUESTS_DIR/review-record-actions-<loop>-a01.json"
                     ),
                     "notes": (
                         "Revise the plan for open required findings. Optional findings "
@@ -832,7 +832,7 @@ class WholePlanReviewOrchestrator:
                 "tool_instructions": {
                     "record_actions": (
                         f"tdp agent review record-actions --run {self._run_id} "
-                        "--request <file>"
+                        "--request $TDP_AGENT_REQUESTS_DIR/review-record-actions-<loop>-a01.json"
                     ),
                     "notes": (
                         "Record fix|challenge|defer|accept_as_is for optional findings. "

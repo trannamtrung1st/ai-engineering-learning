@@ -21,6 +21,8 @@ from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.capabilities import CAPABILITY_ENV_VAR
 
 RUNS_DIR_ENV_VAR = "TDP_RUNS_DIR"
+RUN_ID_ENV_VAR = "TDP_RUN_ID"
+AGENT_REQUESTS_DIR_ENV_VAR = "TDP_AGENT_REQUESTS_DIR"
 
 RunsDirSource = RunsDirSource
 
@@ -123,11 +125,18 @@ def open_run_store(
 def provider_extra_env(
     resolved: ResolvedRunsDir,
     *,
+    run_id: str | None = None,
+    store: FileRunStore | None = None,
     capability_token: str | None = None,
 ) -> dict[str, str]:
     """Environment variables exported to provider subprocesses."""
 
     env = {RUNS_DIR_ENV_VAR: str(resolved.path)}
+    if run_id is not None:
+        if store is None:
+            raise ValueError("store is required when run_id is set")
+        env[RUN_ID_ENV_VAR] = run_id
+        env[AGENT_REQUESTS_DIR_ENV_VAR] = str(store.agent_requests_dir(run_id))
     if capability_token is not None:
         env[CAPABILITY_ENV_VAR] = capability_token
     return env
@@ -137,13 +146,18 @@ def store_diagnostics_payload(
     resolved: ResolvedRunsDir,
     *,
     run_id: str | None = None,
+    store: FileRunStore | None = None,
 ) -> dict[str, str]:
     payload = {
         "runs_root": str(resolved.path),
         "runs_root_source": resolved.source,
     }
     if run_id is not None:
-        payload["run_path"] = str(resolved.path / run_id)
+        if store is None:
+            raise ValueError("store is required when run_id is set")
+        run_path = store.run_dir(run_id)
+        payload["run_path"] = str(run_path)
+        payload["agent_requests_dir"] = str(store.agent_requests_dir(run_id))
     return payload
 
 
@@ -154,6 +168,7 @@ def run_startup_diagnostics_payload(
     workspace: Path,
     resolved_runs: ResolvedRunsDir,
     run_id: str | None = None,
+    store: FileRunStore | None = None,
 ) -> dict[str, str]:
     """Path diagnostics printed once at ``tdp run`` startup."""
 
@@ -161,7 +176,7 @@ def run_startup_diagnostics_payload(
         "working_directory": str(cwd),
         "config_file": str(config_path),
         "workspace": str(workspace),
-        **store_diagnostics_payload(resolved_runs, run_id=run_id),
+        **store_diagnostics_payload(resolved_runs, run_id=run_id, store=store),
     }
     return payload
 
@@ -177,8 +192,10 @@ def format_run_startup_diagnostics(payload: Mapping[str, str]) -> str:
 
 
 __all__ = [
+    "AGENT_REQUESTS_DIR_ENV_VAR",
     "AGENT_RUNS_DIR_HELP",
     "CAPABILITY_ENV_VAR",
+    "RUN_ID_ENV_VAR",
     "RUNS_DIR_ENV_VAR",
     "RUNS_DIR_HELP",
     "ResolvedRunsDir",

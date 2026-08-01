@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 from typing import Any
 
@@ -674,6 +675,19 @@ def set_capability_env(monkeypatch: Any, token: str | None) -> None:
         monkeypatch.delenv(CAPABILITY_ENV_VAR, raising=False)
     else:
         monkeypatch.setenv(CAPABILITY_ENV_VAR, token)
+
+
+def write_agent_request_file(
+    store: Any,
+    run_id: str,
+    filename: str,
+    payload: dict[str, Any],
+) -> Path:
+    """Write a mutating agent request under the run's agent-requests/ directory."""
+
+    path = store.agent_requests_dir(run_id) / filename
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
 
 
 def script_verification_then_scope_review_approval(

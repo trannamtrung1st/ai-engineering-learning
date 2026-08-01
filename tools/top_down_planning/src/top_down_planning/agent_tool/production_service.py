@@ -16,6 +16,10 @@ from top_down_planning.agent_tool.errors import (
     RequestError,
     RevisionConflictError,
 )
+from top_down_planning.agent_tool.request_audit import (
+    AgentRequestContext,
+    apply_request_audit_fields,
+)
 from top_down_planning.agent_tool.views import (
     build_hierarchy_snapshot,
     build_ready_view,
@@ -121,6 +125,7 @@ class ProductionAgentService:
         request: dict[str, Any],
         *,
         capability_token: str | None = None,
+        request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
         authorize_mutation(
             self._store,
@@ -336,14 +341,17 @@ class ProductionAgentService:
                     production=updated,
                     production_expected_revision=current_revision,
                     events=[
-                        {
-                            "type": "production_batch_recorded",
-                            "run_id": self._run_id,
-                            "batch_id": batch_id,
-                            "plan_items": batch.plan_items,
-                            "production_revision": updated["revision"],
-                            "output_revision": updated["output_revision"],
-                        }
+                        apply_request_audit_fields(
+                            {
+                                "type": "production_batch_recorded",
+                                "run_id": self._run_id,
+                                "batch_id": batch_id,
+                                "plan_items": batch.plan_items,
+                                "production_revision": updated["revision"],
+                                "output_revision": updated["output_revision"],
+                            },
+                            request_audit,
+                        )
                     ],
                 ),
             )
@@ -392,6 +400,7 @@ class ProductionAgentService:
         request: dict[str, Any],
         *,
         capability_token: str | None = None,
+        request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
         authorize_mutation(
             self._store,
@@ -451,13 +460,16 @@ class ProductionAgentService:
                     production=updated,
                     production_expected_revision=expected_revision,
                     events=[
-                        {
-                            "type": "production_amendment_requested",
-                            "run_id": self._run_id,
-                            "amendment_id": amendment_id,
-                            "affected_refs": affected_refs,
-                            "production_revision": updated["revision"],
-                        }
+                        apply_request_audit_fields(
+                            {
+                                "type": "production_amendment_requested",
+                                "run_id": self._run_id,
+                                "amendment_id": amendment_id,
+                                "affected_refs": affected_refs,
+                                "production_revision": updated["revision"],
+                            },
+                            request_audit,
+                        )
                     ],
                 ),
             )
@@ -483,6 +495,7 @@ class ProductionAgentService:
         request: dict[str, Any],
         *,
         capability_token: str | None = None,
+        request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
         authorize_mutation(
             self._store,
@@ -545,12 +558,15 @@ class ProductionAgentService:
                     production=updated,
                     production_expected_revision=expected_revision,
                     events=[
-                        {
-                            "type": "production_completion_claimed",
-                            "run_id": self._run_id,
-                            "production_revision": updated["revision"],
-                            "output_revision": claim["output_revision"],
-                        }
+                        apply_request_audit_fields(
+                            {
+                                "type": "production_completion_claimed",
+                                "run_id": self._run_id,
+                                "production_revision": updated["revision"],
+                                "output_revision": claim["output_revision"],
+                            },
+                            request_audit,
+                        )
                     ],
                 ),
             )
@@ -576,6 +592,7 @@ class ProductionAgentService:
         request: dict[str, Any],
         *,
         capability_token: str | None = None,
+        request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
         authorize_mutation(
             self._store,
@@ -615,12 +632,15 @@ class ProductionAgentService:
                     production=updated,
                     production_expected_revision=expected_revision,
                     events=[
-                        {
-                            "type": "production_blocked_reported",
-                            "run_id": self._run_id,
-                            "affected_refs": affected_refs,
-                            "production_revision": updated["revision"],
-                        }
+                        apply_request_audit_fields(
+                            {
+                                "type": "production_blocked_reported",
+                                "run_id": self._run_id,
+                                "affected_refs": affected_refs,
+                                "production_revision": updated["revision"],
+                            },
+                            request_audit,
+                        )
                     ],
                 ),
             )

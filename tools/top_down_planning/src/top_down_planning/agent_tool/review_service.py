@@ -6,6 +6,10 @@ from typing import Any
 
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import RequestError
+from top_down_planning.agent_tool.request_audit import (
+    AgentRequestContext,
+    apply_request_audit_fields,
+)
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.approval_digests import (
     OUTPUT_APPROVAL_DIGEST_KEYS,
@@ -58,6 +62,7 @@ class ReviewAgentService:
         request: dict[str, Any],
         *,
         capability_token: str | None = None,
+        request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
         role = authorize_mutation(
             self._store,
@@ -126,15 +131,18 @@ class ReviewAgentService:
             CommitSpec(
                 reviews=[loop.to_dict()],
                 events=[
-                    {
-                        "type": "focused_review_requested",
-                        "run_id": self._run_id,
-                        "loop_id": loop_id,
-                        "review_type": review_type,
-                        "scope": scope,
-                        "target_revision": target_revision,
-                        "requested_by": role,
-                    }
+                    apply_request_audit_fields(
+                        {
+                            "type": "focused_review_requested",
+                            "run_id": self._run_id,
+                            "loop_id": loop_id,
+                            "review_type": review_type,
+                            "scope": scope,
+                            "target_revision": target_revision,
+                            "requested_by": role,
+                        },
+                        request_audit,
+                    )
                 ],
             ),
         )
@@ -153,6 +161,7 @@ class ReviewAgentService:
         request: dict[str, Any],
         *,
         capability_token: str | None = None,
+        request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
         loop_id = request.get("loop_id")
         if loop_id is None or not str(loop_id).strip():
@@ -419,14 +428,17 @@ class ReviewAgentService:
         elif decision == "approved" and approved_digests is not None:
             updated = replace_loop_approved_digests(updated, approved_digests)
 
-        event: dict[str, Any] = {
-            "type": "review_responded",
-            "run_id": self._run_id,
-            "loop_id": loop_id,
-            "decision": decision,
-            "target_revision": target_revision,
-            "finding_count": len(updated.findings),
-        }
+        event = apply_request_audit_fields(
+            {
+                "type": "review_responded",
+                "run_id": self._run_id,
+                "loop_id": loop_id,
+                "decision": decision,
+                "target_revision": target_revision,
+                "finding_count": len(updated.findings),
+            },
+            request_audit,
+        )
         if stage is not None:
             event["stage"] = stage
         observability = policy_observability_fields(
@@ -564,6 +576,7 @@ class ReviewAgentService:
         request: dict[str, Any],
         *,
         capability_token: str | None = None,
+        request_audit: AgentRequestContext | None = None,
     ) -> dict[str, Any]:
         """Record primary-agent owner actions for optional/required findings."""
 
@@ -644,14 +657,17 @@ class ReviewAgentService:
         except ValueError as exc:
             raise RequestError(str(exc)) from exc
 
-        event: dict[str, Any] = {
-            "type": "review_finding_action_recorded",
-            "run_id": self._run_id,
-            "loop_id": loop_id,
-            "actor_role": role,
-            "action_count": len(parsed),
-            "actions": [action.action for action in parsed],
-        }
+        event: dict[str, Any] = apply_request_audit_fields(
+            {
+                "type": "review_finding_action_recorded",
+                "run_id": self._run_id,
+                "loop_id": loop_id,
+                "actor_role": role,
+                "action_count": len(parsed),
+                "actions": [action.action for action in parsed],
+            },
+            request_audit,
+        )
         if any(action.action == "challenge" for action in parsed):
             event["type"] = "review_challenge_submitted"
         event.update(
