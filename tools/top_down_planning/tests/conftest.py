@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import ExitStack
 from dataclasses import dataclass
 from io import StringIO
 from unittest.mock import patch
@@ -12,23 +13,39 @@ import pytest
 
 from top_down_planning.cli.main import main
 
+SEND_DESKTOP_NOTIFICATION_TARGETS = (
+    "top_down_planning.notifications.desktop.send_desktop_notification",
+    "top_down_planning.notifications.bridge.send_desktop_notification",
+    "top_down_planning.notifications.outcome.send_desktop_notification",
+)
+BRIDGE_SEND_DESKTOP = SEND_DESKTOP_NOTIFICATION_TARGETS[1]
+OUTCOME_SEND_DESKTOP = SEND_DESKTOP_NOTIFICATION_TARGETS[2]
+
 
 @pytest.fixture(autouse=True)
-def suppress_desktop_notifications(request: pytest.FixtureRequest):
-    """Prevent real desktop notifications during tests (macOS/notify-py)."""
+def suppress_desktop_notifications():
+    """Stub desktop notification transport so tests never invoke notify-py."""
 
-    if request.node.get_closest_marker("allow_desktop_notifications"):
+    with ExitStack() as stack:
+        for target in SEND_DESKTOP_NOTIFICATION_TARGETS:
+            stack.enter_context(patch(target, return_value=False))
         yield
-        return
 
-    targets = (
-        "top_down_planning.notifications.desktop.send_desktop_notification",
-        "top_down_planning.notifications.bridge.send_desktop_notification",
-        "top_down_planning.notifications.outcome.send_desktop_notification",
-    )
-    patches = [patch(target, return_value=False) for target in targets]
-    with patches[0], patches[1], patches[2]:
-        yield
+
+@pytest.fixture
+def bridge_send_mock():
+    """Recording mock for bridge-tier notification sends (overrides autouse stub)."""
+
+    with patch(BRIDGE_SEND_DESKTOP, return_value=True) as mock:
+        yield mock
+
+
+@pytest.fixture
+def outcome_send_mock():
+    """Recording mock for CLI outcome notification sends (overrides autouse stub)."""
+
+    with patch(OUTCOME_SEND_DESKTOP, return_value=True) as mock:
+        yield mock
 
 
 @dataclass(frozen=True)

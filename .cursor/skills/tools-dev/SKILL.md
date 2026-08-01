@@ -145,6 +145,16 @@ from tests.conftest import run_cli
 result = run_cli(["run", "--config", str(config_path)])
 ```
 
+```python
+# BAD — real desktop notifications during pytest (macOS notify-py popups)
+run_cli(["run", "--config", str(config_path)])  # completes run, fires OS notification
+
+# GOOD — autouse stub in tests/conftest.py; assert sends via bridge_send_mock fixture
+def test_progress_notification(bridge_send_mock, tmp_path):
+    ...
+    assert "Planning candidate ready" in [c.args[0] for c in bridge_send_mock.call_args_list]
+```
+
 ## Workflow
 
 1. Identify the unit under test and its dependencies (provider, store, filesystem, CLI).
@@ -158,7 +168,7 @@ result = run_cli(["run", "--config", str(config_path)])
 - [ ] Semantic config via YAML + `--set` only; no mirrored `--param` flags
 - [ ] New paths in `ALLOWED_OVERRIDE_PATHS`, `defaults.py`, `schema_docs.py`
 - [ ] Presentation fields wired through `invocation.py` if dedicated flags added
-- [ ] No live Cursor CLI, agent subprocess, or network in unit tests
+- [ ] No live Cursor CLI, agent subprocess, network, or desktop notifications in unit tests
 - [ ] Provider orchestration uses `StubProvider.script_turn()` (or `fake_runner` for adapter tests)
 - [ ] Reused package test helpers where applicable
 - [ ] No sleep unless timing/process lifecycle is under test, and ≤100ms

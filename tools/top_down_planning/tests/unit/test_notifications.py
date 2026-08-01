@@ -41,7 +41,6 @@ from tests.helpers import (
     apply_plan,
     create_run_kwargs,
     done_events,
-    minimal_resolved_config,
     only_run_id,
     with_root_contract,
     write_config,
@@ -184,8 +183,9 @@ def test_notifications_suppressed_on_headless_linux(
     assert _notifications_suppressed() is True
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_handle_audit_event_user_cancelled_pause_uses_cancelled_title(send_mock) -> None:
+def test_handle_audit_event_user_cancelled_pause_uses_cancelled_title(
+    bridge_send_mock,
+) -> None:
     options = NotificationOptions()
     sent = handle_audit_event(
         {
@@ -200,7 +200,7 @@ def test_handle_audit_event_user_cancelled_pause_uses_cancelled_title(send_mock)
         phase="planning",
     )
     assert sent is True
-    title, message = send_mock.call_args.args
+    title, message = bridge_send_mock.call_args.args
     assert title == "TDP run cancelled"
     assert "cancelled by user" in message
 
@@ -209,8 +209,7 @@ def test_short_run_id_uses_suffix() -> None:
     assert short_run_id("run-20260101T002201-002201") == "002201"
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_handle_audit_event_terminal_tier(send_mock) -> None:
+def test_handle_audit_event_terminal_tier(bridge_send_mock) -> None:
     options = NotificationOptions()
     sent = handle_audit_event(
         {"type": "outcome_resolved", "outcome": "success"},
@@ -219,16 +218,15 @@ def test_handle_audit_event_terminal_tier(send_mock) -> None:
         phase="output_validated",
     )
     assert sent is True
-    send_mock.assert_called_once()
-    title, message = send_mock.call_args.args
+    bridge_send_mock.assert_called_once()
+    title, message = bridge_send_mock.call_args.args
     assert title == "TDP run complete"
     assert "002201" in message
     assert "output validated" in message
     assert "run-20260101T002201-002201" not in message
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_handle_audit_event_respects_disabled_tier(send_mock) -> None:
+def test_handle_audit_event_respects_disabled_tier(bridge_send_mock) -> None:
     options = NotificationOptions(progress=False)
     assert (
         handle_audit_event(
@@ -239,11 +237,10 @@ def test_handle_audit_event_respects_disabled_tier(send_mock) -> None:
         )
         is False
     )
-    send_mock.assert_not_called()
+    bridge_send_mock.assert_not_called()
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_handle_audit_event_dedupes_pause_and_limit(send_mock) -> None:
+def test_handle_audit_event_dedupes_pause_and_limit(bridge_send_mock) -> None:
     options = NotificationOptions()
     state = NotificationDedupeState()
     handle_audit_event(
@@ -260,11 +257,10 @@ def test_handle_audit_event_dedupes_pause_and_limit(send_mock) -> None:
         phase="planning",
         dedupe_state=state,
     )
-    assert send_mock.call_count == 1
+    assert bridge_send_mock.call_count == 1
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_handle_audit_event_dedupes_output_approval_and_outcome(send_mock) -> None:
+def test_handle_audit_event_dedupes_output_approval_and_outcome(bridge_send_mock) -> None:
     options = NotificationOptions()
     state = NotificationDedupeState()
     completed_run = {"status": "completed", "phase": "output_validated"}
@@ -284,12 +280,13 @@ def test_handle_audit_event_dedupes_output_approval_and_outcome(send_mock) -> No
         run=completed_run,
         dedupe_state=state,
     )
-    assert send_mock.call_count == 1
-    assert send_mock.call_args.args[0] == "TDP run complete"
+    assert bridge_send_mock.call_count == 1
+    assert bridge_send_mock.call_args.args[0] == "TDP run complete"
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_handle_audit_event_sends_output_approval_when_terminal_disabled(send_mock) -> None:
+def test_handle_audit_event_sends_output_approval_when_terminal_disabled(
+    bridge_send_mock,
+) -> None:
     options = NotificationOptions(terminal=False, phase=True)
     completed_run = {"status": "completed", "phase": "output_validated"}
     approval_sent = handle_audit_event(
@@ -308,12 +305,11 @@ def test_handle_audit_event_sends_output_approval_when_terminal_disabled(send_mo
     )
     assert approval_sent is True
     assert outcome_sent is False
-    assert send_mock.call_count == 1
-    assert send_mock.call_args.args[0] == "Output approved"
+    assert bridge_send_mock.call_count == 1
+    assert bridge_send_mock.call_args.args[0] == "Output approved"
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_handle_audit_event_sends_unpaired_output_approval(send_mock) -> None:
+def test_handle_audit_event_sends_unpaired_output_approval(bridge_send_mock) -> None:
     options = NotificationOptions()
     running_run = {"status": "running", "phase": "whole_output_review"}
     sent = handle_audit_event(
@@ -324,7 +320,7 @@ def test_handle_audit_event_sends_unpaired_output_approval(send_mock) -> None:
         run=running_run,
     )
     assert sent is True
-    assert send_mock.call_args.args[0] == "Output approved"
+    assert bridge_send_mock.call_args.args[0] == "Output approved"
 
 
 @patch("top_down_planning.notifications.bridge.send_desktop_notification")
@@ -351,29 +347,25 @@ def test_handle_audit_event_failed_pause_still_allows_limit_exceeded(send_mock) 
     assert state.last_run_paused_at is None
 
 
-def test_unmapped_events_are_not_notified() -> None:
+def test_unmapped_events_are_not_notified(bridge_send_mock) -> None:
     options = NotificationOptions()
-    with patch(
-        "top_down_planning.notifications.bridge.send_desktop_notification",
-        return_value=True,
-    ) as send_mock:
-        assert (
-            handle_audit_event(
-                {"type": "run_completed"},
-                run_id="run-1",
-                options=options,
-            )
-            is False
+    assert (
+        handle_audit_event(
+            {"type": "run_completed"},
+            run_id="run-1",
+            options=options,
         )
-        assert (
-            handle_audit_event(
-                {"type": "focused_review_failed"},
-                run_id="run-1",
-                options=options,
-            )
-            is False
+        is False
+    )
+    assert (
+        handle_audit_event(
+            {"type": "focused_review_failed"},
+            run_id="run-1",
+            options=options,
         )
-        send_mock.assert_not_called()
+        is False
+    )
+    bridge_send_mock.assert_not_called()
 
 
 def _minimal_plan() -> Plan:
@@ -432,20 +424,20 @@ def test_wrap_run_store_puts_notifications_outside_observability(tmp_path: Path)
     assert isinstance(wrapped._store, ObservingRunStore)
 
 
-@patch("top_down_planning.notifications.outcome.send_desktop_notification", return_value=True)
-def test_notify_run_outcome_cancelled(send_mock) -> None:
+def test_notify_run_outcome_cancelled(outcome_send_mock) -> None:
     notify_run_outcome(
         "cancelled",
         run_id="run-1",
         run={"phase": "planning", "status": "running"},
         options=NotificationOptions(),
     )
-    send_mock.assert_called_once()
-    assert send_mock.call_args.args[0] == "TDP run cancelled"
+    outcome_send_mock.assert_called_once()
+    assert outcome_send_mock.call_args.args[0] == "TDP run cancelled"
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_handle_audit_event_user_cancelled_notifies_when_terminal_disabled(send_mock) -> None:
+def test_handle_audit_event_user_cancelled_notifies_when_terminal_disabled(
+    bridge_send_mock,
+) -> None:
     options = NotificationOptions(terminal=False)
     sent = handle_audit_event(
         {
@@ -460,11 +452,12 @@ def test_handle_audit_event_user_cancelled_notifies_when_terminal_disabled(send_
         phase="planning",
     )
     assert sent is True
-    assert send_mock.call_args.args[0] == "TDP run cancelled"
+    assert bridge_send_mock.call_args.args[0] == "TDP run cancelled"
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_handle_audit_event_limit_pause_respects_disabled_terminal_tier(send_mock) -> None:
+def test_handle_audit_event_limit_pause_respects_disabled_terminal_tier(
+    bridge_send_mock,
+) -> None:
     options = NotificationOptions(terminal=False)
     assert (
         handle_audit_event(
@@ -481,11 +474,10 @@ def test_handle_audit_event_limit_pause_respects_disabled_terminal_tier(send_moc
         )
         is False
     )
-    send_mock.assert_not_called()
+    bridge_send_mock.assert_not_called()
 
 
-@patch("top_down_planning.notifications.outcome.send_desktop_notification", return_value=True)
-def test_notify_run_outcome_target_reached_when_running(send_mock) -> None:
+def test_notify_run_outcome_target_reached_when_running(outcome_send_mock) -> None:
     notify_run_outcome(
         "target_reached",
         run_id="run-1",
@@ -493,11 +485,10 @@ def test_notify_run_outcome_target_reached_when_running(send_mock) -> None:
         options=NotificationOptions(terminal=False),
         until="plan",
     )
-    send_mock.assert_called_once()
+    outcome_send_mock.assert_called_once()
 
 
-@patch("top_down_planning.notifications.outcome.send_desktop_notification", return_value=True)
-def test_notify_run_outcome_target_reached_skips_terminal_status(send_mock) -> None:
+def test_notify_run_outcome_target_reached_skips_terminal_status(outcome_send_mock) -> None:
     notify_run_outcome(
         "target_reached",
         run_id="run-1",
@@ -505,7 +496,7 @@ def test_notify_run_outcome_target_reached_skips_terminal_status(send_mock) -> N
         options=NotificationOptions(),
         until="completed",
     )
-    send_mock.assert_not_called()
+    outcome_send_mock.assert_not_called()
 
 
 @patch("top_down_planning.cli.user.notify_run_outcome")
@@ -591,8 +582,7 @@ def test_resume_until_emits_target_reached_when_still_running(
     assert notify_mock.call_args.args[0] == "target_reached"
 
 
-@patch("top_down_planning.notifications.desktop.send_desktop_notification", return_value=True)
-def test_read_only_cli_commands_do_not_notify(send_mock, tmp_path: Path) -> None:
+def test_read_only_cli_commands_do_not_notify(bridge_send_mock, tmp_path: Path) -> None:
     config_path = write_config(
         tmp_path / "cfg.yaml",
         """
@@ -653,11 +643,13 @@ runtime:
             str(config_path),
         ]
     )
-    send_mock.assert_not_called()
+    bridge_send_mock.assert_not_called()
 
 
-@patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
-def test_run_cli_progress_notifications_with_stub_provider(send_mock, tmp_path: Path) -> None:
+def test_run_cli_progress_notifications_with_stub_provider(
+    bridge_send_mock,
+    tmp_path: Path,
+) -> None:
     config_path = write_config(
         tmp_path / "run.yaml",
         """
@@ -708,5 +700,5 @@ planning:
         )
 
     assert result.exit_code == 0, result.stderr
-    titles = [call.args[0] for call in send_mock.call_args_list]
+    titles = [call.args[0] for call in bridge_send_mock.call_args_list]
     assert "Planning candidate ready" in titles
