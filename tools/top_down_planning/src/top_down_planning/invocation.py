@@ -19,6 +19,16 @@ def _observability_defaults() -> dict[str, Any]:
     return dict(_DEFAULT_OBSERVABILITY)
 
 
+def _optional_positive_limit(value: Any, *, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{field} must be a positive integer or null")
+    if value < 1:
+        raise ValueError(f"{field} must be >= 1 when set")
+    return value
+
+
 def observability_options_from_args_and_config(
     args: Namespace,
     *,
@@ -69,6 +79,30 @@ def observability_options_from_args_and_config(
     else:
         agent_transcript = observability_cfg.get("agent_transcript", False)
 
+    max_message_length_arg = getattr(args, "max_message_length", None)
+    if max_message_length_arg is not None:
+        max_message_length = _optional_positive_limit(
+            max_message_length_arg,
+            field="observability.max_message_length",
+        )
+    else:
+        max_message_length = _optional_positive_limit(
+            observability_cfg.get("max_message_length"),
+            field="observability.max_message_length",
+        )
+
+    max_tool_summary_length_arg = getattr(args, "max_tool_summary_length", None)
+    if max_tool_summary_length_arg is not None:
+        max_tool_summary_length = _optional_positive_limit(
+            max_tool_summary_length_arg,
+            field="observability.max_tool_summary_length",
+        )
+    else:
+        max_tool_summary_length = _optional_positive_limit(
+            observability_cfg.get("max_tool_summary_length"),
+            field="observability.max_tool_summary_length",
+        )
+
     return ObservabilityOptions(
         log_level=log_level,
         log_format=log_format,
@@ -76,6 +110,8 @@ def observability_options_from_args_and_config(
         show_timestamps=show_timestamps,
         no_agent_text=no_agent_text,
         agent_transcript=agent_transcript,
+        max_message_length=max_message_length,
+        max_tool_summary_length=max_tool_summary_length,
     )
 
 
@@ -163,15 +199,20 @@ def invocation_to_dict(invocation: InvocationOptions) -> dict[str, Any]:
     """Serialize invocation metadata for persistence (not included in config digests)."""
 
     obs = invocation.observability
+    observability: dict[str, Any] = {
+        "log_level": obs.log_level,
+        "log_format": obs.log_format,
+        "color": obs.color,
+        "show_agent_text": not obs.no_agent_text,
+        "show_timestamps": obs.show_timestamps,
+        "agent_transcript": obs.agent_transcript,
+    }
+    if obs.max_message_length is not None:
+        observability["max_message_length"] = obs.max_message_length
+    if obs.max_tool_summary_length is not None:
+        observability["max_tool_summary_length"] = obs.max_tool_summary_length
     return {
-        "observability": {
-            "log_level": obs.log_level,
-            "log_format": obs.log_format,
-            "color": obs.color,
-            "show_agent_text": not obs.no_agent_text,
-            "show_timestamps": obs.show_timestamps,
-            "agent_transcript": obs.agent_transcript,
-        },
+        "observability": observability,
         "runs_dir": {
             "path": invocation.runs_dir_path,
             "source": invocation.runs_dir_source,

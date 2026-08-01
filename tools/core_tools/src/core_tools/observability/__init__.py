@@ -9,7 +9,12 @@ from core_tools.observability.events import (
     category_tag,
 )
 from core_tools.observability.jsonl import JsonlEventSink
-from core_tools.observability.redaction import RedactionPolicy, redact_event, redact_value
+from core_tools.observability.redaction import (
+    RedactionPolicy,
+    redact_event,
+    redact_value,
+    truncate_text,
+)
 from core_tools.observability.sink import (
     CompositeSink,
     EventSink,
@@ -35,4 +40,5 @@ __all__ = [
     "redact_event",
     "redact_value",
     "resolve_color_mode",
+    "truncate_text",
 ]

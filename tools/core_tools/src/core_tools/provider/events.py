@@ -44,8 +44,6 @@ _TOOL_DETAIL_KEYS = (
     "command",
 )
 
-_TOOL_SUMMARY_MAX_LEN = 120
-
 
 def _format_protocol_instructions(protocol: Any) -> str | None:
     if isinstance(protocol, str):
@@ -307,7 +305,7 @@ def _format_cursor_tool_call_summary(raw: dict[str, Any]) -> str | None:
         if not isinstance(success, dict):
             success = {}
         command = args.get("command") or success.get("command") or "shell"
-        return f"shell: {_shorten_summary(str(command))}"
+        return f"shell: {str(command)}"
 
     for key, label in _TOOL_LABELS.items():
         if key not in tool_call:
@@ -318,7 +316,7 @@ def _format_cursor_tool_call_summary(raw: dict[str, Any]) -> str | None:
             args = {}
         detail = _first_str(args, *_TOOL_DETAIL_KEYS)
         if detail:
-            return f"{label} {_shorten_summary(detail)}"
+            return f"{label} {detail}"
         return label
 
     function = tool_call.get("function")
@@ -357,13 +355,6 @@ def _first_str(mapping: dict[str, Any], *keys: str) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
-
-
-def _shorten_summary(text: str, *, max_len: int = _TOOL_SUMMARY_MAX_LEN) -> str:
-    compact = " ".join(text.split())
-    if len(compact) <= max_len:
-        return compact
-    return compact[: max_len - 3] + "..."
 
 
 def _provider_event_text(raw: dict[str, Any]) -> str | None:

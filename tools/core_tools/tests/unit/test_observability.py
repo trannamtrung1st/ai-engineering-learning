@@ -139,11 +139,17 @@ def test_redaction_strips_capability_tokens_and_secret_keys() -> None:
 
 
 def test_redaction_truncates_oversized_strings() -> None:
-    policy = RedactionPolicy(normal_max=20)
+    policy = RedactionPolicy(max_message_length=20)
     event = ConsoleEvent(category="response", message="x" * 100)
-    safe = redact_event(event, policy=policy, output_level="normal")
+    safe = redact_event(event, policy=policy)
     assert len(safe.message) == 20
     assert safe.message.endswith("...")
+
+
+def test_redaction_unlimited_by_default() -> None:
+    event = ConsoleEvent(category="response", message="x" * 1000)
+    safe = redact_event(event, policy=RedactionPolicy())
+    assert safe.message == "x" * 1000
 
 
 def test_filtered_sink_respects_quiet_and_no_agent_text() -> None:

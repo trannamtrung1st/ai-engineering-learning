@@ -64,6 +64,26 @@ def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Persist redacted agent transcript to agent-transcript.jsonl.",
     )
+    parser.add_argument(
+        "--max-message-length",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Truncate console event messages after N characters "
+            "(default: from config or unlimited)."
+        ),
+    )
+    parser.add_argument(
+        "--max-tool-summary-length",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Truncate tool:start/tool:end summaries after N characters "
+            "(default: from config or unlimited)."
+        ),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

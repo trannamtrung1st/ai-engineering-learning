@@ -5,9 +5,12 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from top_down_planning.cli.main import build_parser
 from top_down_planning.config import resolve_config
 from top_down_planning.invocation import (
+    _optional_positive_limit,
     observability_options_from_args_and_config,
     invocation_options_from_args,
     invocation_to_dict,
@@ -223,3 +226,56 @@ def test_invocation_to_dict_round_trip_fields() -> None:
     assert payload["observability"]["show_agent_text"] is False
     assert payload["observability"]["agent_transcript"] is True
     assert payload["command"] == "run"
+
+
+def test_observability_truncation_limits_from_yaml_and_cli(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "obs.yaml",
+        """
+run:
+  output_goal: Goal.
+observability:
+  max_message_length: 500
+  max_tool_summary_length: 120
+""",
+    )
+    resolved = resolve_config(config_path)
+    args = _parse(["run", "--config", str(config_path)])
+    options = observability_options_from_args_and_config(args, resolved_config=resolved)
+    assert options.max_message_length == 500
+    assert options.max_tool_summary_length == 120
+
+    cli_args = _parse(
+        [
+            "run",
+            "--config",
+            str(config_path),
+            "--max-message-length",
+            "80",
+            "--max-tool-summary-length",
+            "60",
+        ]
+    )
+    cli_options = observability_options_from_args_and_config(
+        cli_args,
+        resolved_config=resolved,
+    )
+    assert cli_options.max_message_length == 80
+    assert cli_options.max_tool_summary_length == 60
+
+
+def test_observability_truncation_defaults_are_unlimited(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "obs.yaml",
+        "run:\n  output_goal: Goal.\n",
+    )
+    resolved = resolve_config(config_path)
+    args = _parse(["run", "--config", str(config_path)])
+    options = observability_options_from_args_and_config(args, resolved_config=resolved)
+    assert options.max_message_length is None
+    assert options.max_tool_summary_length is None
+
+
+def test_observability_truncation_rejects_non_positive_values() -> None:
+    with pytest.raises(ValueError, match=r"max_message_length must be >= 1"):
+        _optional_positive_limit(0, field="observability.max_message_length")

@@ -90,6 +90,9 @@ observability:
   color: auto
   show_agent_text: true
   agent_transcript: false
+  # Optional stderr truncation (unlimited when omitted):
+  # max_message_length: 500
+  # max_tool_summary_length: 120
 
 provider:
   name: cursor

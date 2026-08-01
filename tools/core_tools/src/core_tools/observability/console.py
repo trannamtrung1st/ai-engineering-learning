@@ -56,13 +56,11 @@ class ColorizedConsoleSink:
         stream: TextIO | None = None,
         color: ColorMode = "auto",
         show_timestamps: bool = False,
-        log_level: str = "normal",
         policy: RedactionPolicy | None = None,
         environ: dict[str, str] | None = None,
     ) -> None:
         self._stream = stream or sys.stderr
         self._show_timestamps = show_timestamps
-        self._log_level = log_level
         self._policy = policy or RedactionPolicy()
         self._use_color = resolve_color_mode(
             color=color,
@@ -80,11 +78,7 @@ class ColorizedConsoleSink:
         self._streaming_block_category: str | None = None
 
     def emit(self, event: ConsoleEvent) -> None:
-        safe = redact_event(
-            event,
-            policy=self._policy,
-            output_level=self._log_level,  # type: ignore[arg-type]
-        )
+        safe = redact_event(event, policy=self._policy)
         if safe.category in _STREAMING_CATEGORIES:
             self._emit_stream_delta(safe)
             return

@@ -388,3 +388,67 @@ def test_secret_redaction_in_console_output() -> None:
         context.close()
     assert token not in stderr.getvalue()
     assert "[REDACTED]" in stderr.getvalue()
+
+
+def test_build_observability_context_truncates_response_when_configured(tmp_path: Path) -> None:
+    stderr = io.StringIO()
+    with patch("core_tools.observability.console.sys.stderr", stderr):
+        context = build_observability_context(
+            options=ObservabilityOptions(
+                color="never",
+                max_message_length=40,
+            ),
+            run_id="run-20260101T001004-001004",
+            run_dir=tmp_path,
+        )
+        context.emit(
+            ConsoleEvent(
+                category="response",
+                message="x" * 100,
+                run_id="run-20260101T001004-001004",
+            )
+        )
+        context.close()
+    output = stderr.getvalue()
+    assert output.endswith("...")
+    assert len(output.split("[response] ", 1)[1]) == 40
+
+
+def test_provider_bridge_truncates_tool_summary_when_configured() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(
+        sink=collector,
+        options=ObservabilityOptions(max_tool_summary_length=20),
+    )
+    bridge = ProviderToConsoleBridge(context)
+    long_command = "tdp agent review respond " + ("x" * 80)
+    started = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "call_id": "call-long",
+            "tool_call": {"shellToolCall": {"args": {"command": long_command}}},
+        }
+    )
+    assert started is not None
+    bridge.handle(started)
+    assert collector.events[0].message.endswith("...")
+    assert len(collector.events[0].message) == 20
+
+
+def test_provider_bridge_keeps_full_tool_summary_by_default() -> None:
+    collector = _CollectSink()
+    context = ObservabilityContext(sink=collector)
+    bridge = ProviderToConsoleBridge(context)
+    long_path = "/very/long/path/" + ("segment/" * 20) + "file.ts"
+    started = normalize_cursor_event(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "call_id": "call-path",
+            "tool_call": {"readToolCall": {"args": {"path": long_path}}},
+        }
+    )
+    assert started is not None
+    bridge.handle(started)
+    assert collector.events[0].message == f"read {long_path}"

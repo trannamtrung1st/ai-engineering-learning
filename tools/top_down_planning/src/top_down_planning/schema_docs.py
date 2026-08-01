@@ -723,6 +723,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "show_agent_text": {"type": "boolean"},
                     "show_timestamps": {"type": "boolean"},
                     "agent_transcript": {"type": "boolean"},
+                    "max_message_length": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                    },
+                    "max_tool_summary_length": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                    },
                 },
                 "additionalProperties": False,
             },

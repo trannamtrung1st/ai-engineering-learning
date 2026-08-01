@@ -17,6 +17,8 @@ from core_tools.observability import (
     JsonlEventSink,
     LogLevel,
     NullSink,
+    RedactionPolicy,
+    truncate_text,
 )
 from core_tools.provider.events import is_tool_call_end, is_tool_call_start
 from top_down_planning.persistence.interface import RunStore
@@ -96,6 +98,8 @@ class ObservabilityOptions:
     show_timestamps: bool = False
     no_agent_text: bool = False
     agent_transcript: bool = False
+    max_message_length: int | None = None
+    max_tool_summary_length: int | None = None
 
 
 @dataclass
@@ -149,23 +153,24 @@ def build_observability_context(
     sinks: list[EventSink] = []
     jsonl_sink: JsonlEventSink | None = None
     transcript_sink: JsonlEventSink | None = None
+    policy = RedactionPolicy(max_message_length=options.max_message_length)
 
     if options.log_format == "jsonl":
-        jsonl_sink = JsonlEventSink(sys.stderr, log_level=options.log_level)
+        jsonl_sink = JsonlEventSink(sys.stderr, policy=policy)
         sinks.append(jsonl_sink)
     else:
         sinks.append(
             ColorizedConsoleSink(
                 color=options.color,  # type: ignore[arg-type]
                 show_timestamps=options.show_timestamps,
-                log_level=options.log_level,
+                policy=policy,
             )
         )
 
     if options.agent_transcript and run_dir is not None:
         transcript_sink = JsonlEventSink(
             run_dir / "agent-transcript.jsonl",
-            log_level=options.log_level,
+            policy=policy,
         )
         sinks.append(
             FilteredSink(
@@ -307,6 +312,7 @@ class ProviderToConsoleBridge:
         summary = str(event.get("summary") or "")
         if not summary:
             return
+        summary = truncate_text(summary, self._context.options.max_tool_summary_length)
         key = _tool_call_key(event, summary)
         seen = self._seen_tool_starts if category == "tool:start" else self._seen_tool_ends
         if key in seen:

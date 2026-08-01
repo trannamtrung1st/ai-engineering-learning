@@ -236,5 +236,7 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "observability.show_agent_text",
         "observability.show_timestamps",
         "observability.agent_transcript",
+        "observability.max_message_length",
+        "observability.max_tool_summary_length",
     }
 )

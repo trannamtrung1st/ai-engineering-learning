@@ -84,8 +84,17 @@ tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-pla
 | `--agent-text` / `--no-agent-text` | from config / on | Show thinking/response text (streamed incrementally) |
 | `--timestamps` / `--no-timestamps` | from config / off | Category prefix on the first line of each event; optional timestamp when enabled (streaming `thinking`/`response` blocks share one prefix) |
 | `--agent-transcript` / `--no-agent-transcript` | from config / off | Persist redacted provider transcript |
+| `--max-message-length N` | from config / unlimited | Truncate console event messages after *N* characters |
+| `--max-tool-summary-length N` | from config / unlimited | Truncate `[tool:start]` / `[tool:end]` summaries after *N* characters |
 
 Observability can be set in YAML under `observability` (same file as orchestration config). Precedence for presentation settings: built-in defaults → YAML → `--set` → explicitly supplied dedicated CLI flag (omitted flags do not override YAML). Changing observability or `runtime.runs_dir` does not invalidate resume; `digests.config_contract` and `digests.config_execution` exclude those presentation fields.
+
+```yaml
+observability:
+  # Optional; omit both for unlimited stderr output (default).
+  max_message_length: 500
+  max_tool_summary_length: 120
+```
 
 Provider thinking and response text is normalized from Cursor `stream-json` (`text` field or `message.content`), deduplicated when cumulative, and printed incrementally as new characters arrive. Empty thinking chunks are dropped. Explicit `\n` in agent text breaks lines within a thinking/response block; multiple sentences without newlines stay on one line until another category interrupts.
 
@@ -95,7 +104,7 @@ Console output prints `[category]` once per discrete event block (optional `[tim
 
 Agent session lifecycle: `[session:start]` on `planner_session_started` / `producer_session_started` / `reviewer_session_started` audit events (`phase`, `role`, `run_id`, `session_id`, `model` required); `[session:resume]` on `*_session_resumed` with the same fields; `[session:end]` on `reviewer_session_ended` when a bounded reviewer turn records a terminal decision, and from engine teardown for any provider session still in the in-memory registry after each blocking phase step or Ctrl+C cancel (primary planner/producer sessions have no durable end audit). `model` is the provider-resolved CLI model label (`auto` when no explicit `--model` is passed). Providers attach the same `model` label to normalized stream events; agent discrete console events (`tool:start`, `tool:end`, `retry`, `error`) surface it from those events. Run-level CLI messages use `[run:start]` and `[run:resume]`; persisted `run_created` audit events map to `[run:start]`.
 
-`events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens, secrets, and oversized payloads are redacted at every log level.
+`events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens and secrets are redacted at every log level. Console message and tool-summary truncation are unlimited by default; set `observability.max_message_length` and/or `observability.max_tool_summary_length` (or the matching CLI flags) to cap stderr output length.
 
 `tdp run` and `tdp resume` handle Ctrl+C without a traceback: the engine stops provider subprocesses, emits a `[session:cancel]` line on stderr, emits `[session:end]` for each active provider session, pauses the run with `stop.code: user_cancelled` (`status: paused`), and exits with code 130. With `--stream-json`, stdout carries `{"cancelled": true, "reason": "cancelled by user", ...}`. Resume with `tdp resume` clears the pause and continues the same run.
 
