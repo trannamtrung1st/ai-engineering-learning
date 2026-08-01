@@ -36,6 +36,7 @@ from tests.helpers import (
     make_review_loop,
     create_run_kwargs,
     grant_capability,
+    minimal_resolved_config,
     review_loop_dict_with_binding,
     save_review_payload,
     sessions_with_primary_session,
@@ -506,7 +507,7 @@ def test_advisory_handoff_incomplete_marker_and_resume_fields() -> None:
     assert incomplete.review_incomplete["missing_owner_action_ids"] == ["finding-opt"]
     retried = prepare_review_incomplete_retry(incomplete)
     assert retried.status == "advisory_pending"
-    fields = primary_review_resume_fields(loop)
+    fields = primary_review_resume_fields(loop, config=minimal_resolved_config())
     assert "new_findings" in fields
     assert "carried_open_findings" in fields
     assert "current_finding_actions" in fields

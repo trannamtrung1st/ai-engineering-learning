@@ -2289,7 +2289,141 @@ def build_active_findings_view(loop: ReviewLoop) -> dict[str, Any]:
     }
 
 
-def primary_review_resume_fields(loop: ReviewLoop) -> dict[str, Any]:
+PrimaryOwnerFindingHandoff = Literal["revision", "advisory"]
+
+
+def _budget_dimension(consumed: int, maximum: int) -> dict[str, int]:
+    consumed_value = int(consumed)
+    maximum_value = int(maximum)
+    return {
+        "consumed": consumed_value,
+        "max": maximum_value,
+        "remaining": max(0, maximum_value - consumed_value),
+    }
+
+
+def build_review_budget_fields(
+    loop: ReviewLoop,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Consumed/max/remaining review budgets for primary-agent handoff packages."""
+
+    loop_type = str(loop.type or "").strip()
+    if loop_type in {"whole_plan", "whole_output"}:
+        review_type = "whole_plan" if loop_type == "whole_plan" else "whole_output"
+        limits = mandatory_review_limits_from_config(config, review_type)
+        return {
+            "revision_cycles": _budget_dimension(
+                loop.revision_cycles,
+                limits.max_revision_cycles,
+            ),
+            "scope_review_rounds": _budget_dimension(
+                loop.scope_review_rounds,
+                limits.max_scope_review_rounds,
+            ),
+        }
+
+    if loop_type in {"focused_plan", "focused_output"}:
+        max_cycles = focused_review_revision_limit_from_config(
+            config,
+            loop_type,  # type: ignore[arg-type]
+        )
+        return {
+            "revision_cycles": _budget_dimension(loop.revision_cycles, max_cycles),
+        }
+
+    raise ValueError(f"unsupported review loop type for review_budget: {loop_type!r}")
+
+
+def focused_review_revision_limit_from_config(
+    config: Mapping[str, Any],
+    review_type: Literal["focused_plan", "focused_output"],
+) -> int:
+    """Load per-loop revision budget for focused plan/output review."""
+
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+
+    limits_key = (
+        "focused_plan_review"
+        if review_type == "focused_plan"
+        else "focused_output_review"
+    )
+    section = (config.get("limits") or {}).get(limits_key) or {}
+    default_section = DEFAULT_CONFIG["limits"][limits_key]
+    return int(
+        section.get(
+            "max_revision_cycles_per_loop",
+            default_section["max_revision_cycles_per_loop"],
+        )
+    )
+
+
+def build_primary_owner_finding_guidance(
+    *,
+    handoff: PrimaryOwnerFindingHandoff,
+    loop: ReviewLoop,
+    config: Mapping[str, Any],
+) -> str:
+    """Budget-aware owner guidance for primary review handoff resume packages."""
+
+    threshold = loop_revise_at(loop)
+    optional_count = len(optional_open_finding_ids(loop.findings, threshold))
+    budget = build_review_budget_fields(loop, config)
+
+    if handoff == "revision":
+        lines = [
+            (
+                "Fix every open required finding (severity at or above revise_at). "
+                "For optional findings, prefer defer or accept_as_is via record-actions "
+                "unless the fix is trivially included in required work. "
+                "Optional fix or challenge triggers reviewer verification and consumes a "
+                "revision cycle; defer and accept_as_is do not. "
+                "Required findings may only use fix or challenge."
+            ),
+        ]
+    else:
+        lines = [
+            (
+                "Record owner responses for all optional findings via record-actions. "
+                "Prefer accept_as_is when the issue is valid but not worth another review "
+                "round; use defer when you intend to address it later. "
+                "Use fix or challenge only when the finding is materially wrong or the "
+                "improvement is worth a verification cycle. "
+                "Bulk-close remaining optionals with default_optional_action when "
+                "appropriate."
+            ),
+        ]
+
+    if optional_count > 0:
+        lines.append(
+            f"{optional_count} optional finding(s) are open; conserve revision budget "
+            "by resolving them with defer or accept_as_is when fixes are not required."
+        )
+
+    revision = budget["revision_cycles"]
+    if revision["remaining"] <= 1:
+        lines.append(
+            "Review budget: "
+            f"{revision['remaining']} revision cycle(s) remaining "
+            f"({revision['consumed']}/{revision['max']} used). "
+            "Do not spend them on optional fixes."
+        )
+    scope = budget.get("scope_review_rounds")
+    if scope is not None and scope["remaining"] <= 1:
+        lines.append(
+            "Scope-review budget: "
+            f"{scope['remaining']} round(s) remaining "
+            f"({scope['consumed']}/{scope['max']} used)."
+        )
+
+    return " ".join(lines)
+
+
+def primary_review_resume_fields(
+    loop: ReviewLoop,
+    *,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
     """Fields for primary-agent revision/advisory packages (includes revise_at)."""
 
     threshold = loop_revise_at(loop)
@@ -2303,6 +2437,7 @@ def primary_review_resume_fields(loop: ReviewLoop) -> dict[str, Any]:
             threshold,
             finding_set_id=loop.finding_set_id,
         ),
+        "review_budget": build_review_budget_fields(loop, config),
     }
 
 

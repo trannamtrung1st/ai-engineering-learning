@@ -113,7 +113,7 @@ def test_primary_resume_fields_expose_revise_at_and_partitions() -> None:
         ],
         finding_ids_by_set={"fs-01": ["f-major", "f-minor"]},
     )
-    fields = primary_review_resume_fields(loop)
+    fields = primary_review_resume_fields(loop, config=minimal_resolved_config())
     assert fields["revise_at"] == "major"
     assert fields["required_open_finding_ids"] == ["f-major"]
     assert fields["optional_open_finding_ids"] == ["f-minor"]

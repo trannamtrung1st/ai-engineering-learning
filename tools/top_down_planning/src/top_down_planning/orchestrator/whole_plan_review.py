@@ -24,6 +24,7 @@ from top_down_planning.domain.reviews import (
     mandatory_approval_allowed,
     mark_advisory_handoff_completed,
     needs_advisory_handoff,
+    build_primary_owner_finding_guidance,
     owner_actions_require_revision,
     policy_observability_fields,
     primary_review_resume_fields,
@@ -749,17 +750,16 @@ class WholePlanReviewOrchestrator:
                 "phase": WHOLE_PLAN_REVIEW,
                 "loop_id": loop.id,
                 "target_revision": loop.target_revision,
-                **primary_review_resume_fields(loop),
+                **primary_review_resume_fields(loop, config=config),
                 "tool_instructions": {
                     "record_actions": (
                         f"tdp agent review record-actions --run {self._run_id} "
                         "--request $TDP_AGENT_REQUESTS_DIR/review-record-actions-<loop>-a01.json"
                     ),
-                    "notes": (
-                        "Revise the plan for open required findings. Optional findings "
-                        "may use fix, challenge, defer, or accept_as_is via "
-                        "record-actions. fix and challenge require reviewer verification; "
-                        "required findings may only use fix or challenge."
+                    "notes": build_primary_owner_finding_guidance(
+                        handoff="revision",
+                        loop=loop,
+                        config=config,
                     ),
                 },
             },
@@ -832,16 +832,16 @@ class WholePlanReviewOrchestrator:
                 "phase": WHOLE_PLAN_REVIEW,
                 "loop_id": loop.id,
                 "target_revision": loop.target_revision,
-                **primary_review_resume_fields(loop),
+                **primary_review_resume_fields(loop, config=config),
                 "tool_instructions": {
                     "record_actions": (
                         f"tdp agent review record-actions --run {self._run_id} "
                         "--request $TDP_AGENT_REQUESTS_DIR/review-record-actions-<loop>-a01.json"
                     ),
-                    "notes": (
-                        "Record fix|challenge|defer|accept_as_is for optional findings. "
-                        "fix and challenge require reviewer verification; "
-                        "defer and accept_as_is do not."
+                    "notes": build_primary_owner_finding_guidance(
+                        handoff="advisory",
+                        loop=loop,
+                        config=config,
                     ),
                 },
             },

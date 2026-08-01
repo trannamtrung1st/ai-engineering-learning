@@ -7,7 +7,6 @@ from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.views import build_plan_review_snapshot
-from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.production import (
     build_output_traceability,
     build_production_review_snapshot,
@@ -19,10 +18,12 @@ from top_down_planning.domain.reviews import (
     budgets_snapshot,
     complete_advisory_handoff_if_owner_responses_recorded,
     finding_actions_for_active_set,
+    focused_review_revision_limit_from_config,
     loop_revise_at,
     mark_advisory_handoff_completed,
     needs_advisory_handoff,
     optional_open_findings,
+    build_primary_owner_finding_guidance,
     owner_actions_require_revision,
     policy_observability_fields,
     prepare_review_incomplete_retry,
@@ -88,9 +89,6 @@ from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
-_FOCUSED_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_plan_review"]
-_FOCUSED_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_output_review"]
-
 _NO_COMPLETION_SIGNALS = frozenset[str]()
 
 @dataclass(frozen=True)
@@ -123,7 +121,10 @@ class FocusedReviewOrchestrator:
             raise ProviderRunError(f"review loop {loop_id} is not a focused review loop")
 
         config = self._store.load_resolved_config(self._run_id)
-        max_revision_cycles = _focused_revision_limit(config, loop.type)
+        max_revision_cycles = focused_review_revision_limit_from_config(
+            config,
+            loop.type,  # type: ignore[arg-type]
+        )
         loop, reviewer_turn_delivered = self._normalize_loop_for_resume(loop)
         deliver_on_existing_session = (
             reviewer_loop_provider_session_id(loop) is not None
@@ -393,17 +394,16 @@ class FocusedReviewOrchestrator:
                 "review_type": loop.type,
                 "target_revision": loop.target_revision,
                 "scope": dict(loop.scope),
-                **primary_review_resume_fields(loop),
+                **primary_review_resume_fields(loop, config=config),
                 "tool_instructions": {
                     "record_actions": (
                         f"tdp agent review record-actions --run {self._run_id} "
                         "--request $TDP_AGENT_REQUESTS_DIR/review-record-actions-<loop>-a01.json"
                     ),
-                    "notes": (
-                        "Record fix|challenge|defer|accept_as_is via finding_actions. "
-                        "Required findings may only use fix or challenge. "
-                        "fix and challenge require reviewer verification; "
-                        "defer and accept_as_is do not."
+                    "notes": build_primary_owner_finding_guidance(
+                        handoff="advisory",
+                        loop=loop,
+                        config=config,
                     ),
                 },
             },
@@ -556,7 +556,18 @@ class FocusedReviewOrchestrator:
                 "review_type": loop.type,
                 "target_revision": loop.target_revision,
                 "scope": dict(loop.scope),
-                **primary_review_resume_fields(loop),
+                **primary_review_resume_fields(loop, config=config),
+                "tool_instructions": {
+                    "record_actions": (
+                        f"tdp agent review record-actions --run {self._run_id} "
+                        "--request $TDP_AGENT_REQUESTS_DIR/review-record-actions-<loop>-a01.json"
+                    ),
+                    "notes": build_primary_owner_finding_guidance(
+                        handoff="revision",
+                        loop=loop,
+                        config=config,
+                    ),
+                },
                 **(
                     {
                         "revision_instructions": {
@@ -569,9 +580,7 @@ class FocusedReviewOrchestrator:
                                 "terminal plan_items targeted by open required findings "
                                 "within this focused_output scope. Keep existing "
                                 "dispositions unchanged; attach new output evidence IDs. "
-                                "Voluntary optional fixes are allowed; deferred optionals "
-                                "need record-actions. Output revision advances for "
-                                "reviewer recheck."
+                                "Output revision advances for reviewer recheck."
                             ),
                         }
                     }
@@ -828,24 +837,6 @@ def build_focused_review_package(
             package["plan_contracts"] = traceability["plan_contracts"]
             package["evidence_by_item"] = traceability["evidence_by_item"]
     return package
-
-
-def _focused_revision_limit(config: dict[str, Any], review_type: str) -> int:
-    if review_type == "focused_plan":
-        review_limits = (config.get("limits") or {}).get("focused_plan_review") or {}
-        return int(
-            review_limits.get(
-                "max_revision_cycles_per_loop",
-                _FOCUSED_PLAN_LIMIT_DEFAULTS["max_revision_cycles_per_loop"],
-            )
-        )
-    review_limits = (config.get("limits") or {}).get("focused_output_review") or {}
-    return int(
-        review_limits.get(
-            "max_revision_cycles_per_loop",
-            _FOCUSED_OUTPUT_LIMIT_DEFAULTS["max_revision_cycles_per_loop"],
-        )
-    )
 
 
 def _current_target_revision(store: RunStore, run_id: str, review_type: str) -> int:
