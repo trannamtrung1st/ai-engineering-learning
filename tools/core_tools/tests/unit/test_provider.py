@@ -704,6 +704,111 @@ def test_format_provider_model_name_labels_auto() -> None:
     assert format_provider_model_name("coding-model") == "coding-model"
 
 
+def test_cursor_reviewer_turn_rejects_transient_only_stream_session_id(
+    tmp_path: Path,
+) -> None:
+    stream_lines = [
+        json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "cursor-pending-1",
+            }
+        ),
+        json.dumps(
+            {
+                "type": "assistant",
+                "session_id": "cursor-pending-1",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "reviewed"}],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": "cursor-pending-1",
+                "is_error": False,
+                "result": "reviewed",
+            }
+        ),
+    ]
+
+    def fake_runner(argv: list[str], cwd: Path):
+        for line in stream_lines:
+            yield line
+
+    config = {"provider": {"name": "cursor"}}
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        config,
+        workspace=tmp_path,
+        runner=fake_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+
+    session_id = provider.start_reviewer_session({"loop_id": "review-01"})
+    assert session_id == "cursor-pending-1"
+    with pytest.raises(ProviderTurnError, match="durable provider session id"):
+        list(provider.stream_events(session_id))
+
+
+def test_cursor_reviewer_turn_accepts_durable_session_id_after_pending_init(
+    tmp_path: Path,
+) -> None:
+    stream_lines = [
+        json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "cursor-pending-1",
+            }
+        ),
+        json.dumps(
+            {
+                "type": "assistant",
+                "session_id": "chat-reviewer-1",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "reviewed"}],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": "chat-reviewer-1",
+                "is_error": False,
+                "result": "reviewed",
+            }
+        ),
+    ]
+
+    def fake_runner(argv: list[str], cwd: Path):
+        for line in stream_lines:
+            yield line
+
+    config = {"provider": {"name": "cursor"}}
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        config,
+        workspace=tmp_path,
+        runner=fake_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+
+    session_id = provider.start_reviewer_session({"loop_id": "review-01"})
+    list(provider.stream_events(session_id))
+    assert provider.canonical_session_id(session_id) == "chat-reviewer-1"
+
+
 def test_enrich_provider_observability_event_attaches_session_and_model() -> None:
     enriched = enrich_provider_observability_event(
         {"type": "assistant", "text": "hello"},

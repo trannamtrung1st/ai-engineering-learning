@@ -53,6 +53,7 @@ from top_down_planning.orchestrator.reviewer_session import (
     resume_reviewer_session_with_package,
     reviewer_decision_missing_error,
     reviewer_loop_provider_session_id,
+    resolve_reviewer_session_for_recheck,
 )
 from top_down_planning.orchestrator.mandatory_review_stages import (
     prepare_focused_verification_recheck,
@@ -644,9 +645,23 @@ class FocusedReviewOrchestrator:
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         current_revision = _current_target_revision(self._store, self._run_id, loop.type)
-        session_id = reviewer_loop_provider_session_id(loop)
-        if session_id is None:
-            raise ProviderRunError("reviewer session is missing for recheck")
+        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        role_context = resolve_role_session_context(config, run, "reviewer")
+        session_id = resolve_reviewer_session_for_recheck(
+            self._provider,
+            self._store,
+            self._run_id,
+            loop,
+            target_revision=loop.target_revision,
+            current_revision=current_revision,
+            phase=phase,
+            append_event=self._append_event,
+            model=role_context.model,
+            review_type=loop.type,
+            scope=loop.scope,
+        )
 
         updated = prepare_focused_verification_recheck(
             loop,
@@ -654,10 +669,6 @@ class FocusedReviewOrchestrator:
         )
         updated = updated.with_reviewer_provider_session_id(session_id)
         self._persist_loop(updated)
-        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-        run = self._store.load_run(self._run_id)
-        config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, "reviewer")
         self._capability_token = deliver_reviewer_turn(
             self._provider,
             self._store,

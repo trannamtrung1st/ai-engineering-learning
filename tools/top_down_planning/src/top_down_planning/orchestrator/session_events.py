@@ -325,7 +325,11 @@ def sync_reviewer_loop_session_id(
     loop_id: str,
     session_id: str,
 ) -> str:
-    """Persist the provider canonical reviewer session id on the review loop record."""
+    """Persist the canonical durable reviewer session id on the review loop record.
+
+    Transient ``cursor-pending-*`` ids are ignored. When a durable id is known,
+    the binding is promoted to ``state: bound``.
+    """
 
     resolved = provider.canonical_session_id(session_id)
     if is_transient_provider_session_id(resolved):
@@ -333,8 +337,13 @@ def sync_reviewer_loop_session_id(
 
     review = dict(store.load_review(run_id, loop_id))
     loop = ReviewLoop.from_dict(review)
-    prior_provider_id = loop.reviewer_binding.provider_session_id if loop.reviewer_binding else None
-    if prior_provider_id == resolved:
+    binding = loop.reviewer_binding
+    prior_provider_id = binding.provider_session_id if binding is not None else None
+    if (
+        prior_provider_id == resolved
+        and binding is not None
+        and binding.state == "bound"
+    ):
         return resolved
 
     updated = loop.with_reviewer_provider_session_id(resolved, provider="cursor")
@@ -369,7 +378,7 @@ def release_reviewer_session_after_decision(
             append_event,
             provider,
             phase=phase,
-            session_id=session_id,
+            session_id=provider.canonical_session_id(session_id),
             loop_id=loop_id,
             review_type=review_type,
         )

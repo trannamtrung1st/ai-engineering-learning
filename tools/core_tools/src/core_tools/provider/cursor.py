@@ -31,6 +31,8 @@ from core_tools.provider.events import (
 )
 from core_tools.provider.process_cleanup import terminate_process_tree
 
+_CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
+
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
 ProviderEventCallback = Callable[[dict[str, Any]], None]
 
@@ -418,7 +420,7 @@ class CursorProvider:
         canonical_id = self.canonical_session_id(session_id)
         if canonical_id in self._sessions:
             return canonical_id
-        if canonical_id.startswith("cursor-pending-"):
+        if canonical_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
             raise ProviderSessionError(
                 f"unknown provider session: {session_id}",
                 session_id=session_id,
@@ -435,7 +437,7 @@ class CursorProvider:
 
     def _new_pending_session_id(self) -> str:
         self._pending_counter += 1
-        return f"cursor-pending-{self._pending_counter}"
+        return f"{_CURSOR_TRANSIENT_SESSION_PREFIX}{self._pending_counter}"
 
     def _register_session(
         self,
@@ -610,8 +612,10 @@ class CursorProvider:
                 if classified is not None:
                     raise classified
             if raw.get("session_id"):
-                provider_session_id = str(raw["session_id"])
-                session_id = self._maybe_migrate_session(session_id, provider_session_id)
+                event_session_id = str(raw["session_id"])
+                session_id = self._maybe_migrate_session(session_id, event_session_id)
+                if not event_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+                    provider_session_id = event_session_id
             normalized = normalize_cursor_event(raw)
             if normalized is not None:
                 enriched = enrich_provider_observability_event(
@@ -624,9 +628,11 @@ class CursorProvider:
                     session.pending_events.append(enriched)
                     session.condition.notify_all()
 
-        if provider_session_id is None:
+        if provider_session_id is None or provider_session_id.startswith(
+            _CURSOR_TRANSIENT_SESSION_PREFIX
+        ):
             raise ProviderTurnError(
-                "Cursor CLI turn completed without a provider session id",
+                "Cursor CLI turn completed without a durable provider session id",
                 session_id=session_id,
             )
         if provider_session_id != session_id:

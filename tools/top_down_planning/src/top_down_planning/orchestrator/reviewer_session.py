@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.session_bindings import is_transient_provider_session_id
 from top_down_planning.domain.session_bindings import (
     SessionBinding,
     resumable_binding_provider_session_id,
@@ -305,14 +307,115 @@ def resume_reviewer_session_with_package(
     )
 
 
+def _reviewer_binding_requires_replacement(binding: SessionBinding | None) -> bool:
+    if binding is None:
+        return True
+    if binding.state == "unbound":
+        return True
+    return binding.state == "starting" and is_transient_provider_session_id(
+        binding.provider_session_id or ""
+    )
+
+
+def allocate_reviewer_binding_for_recheck(
+    provider: Provider,
+    store: RunStore,
+    run_id: str,
+    loop: ReviewLoop,
+    *,
+    phase: str,
+    append_event: Callable[..., None],
+    model: str | None = None,
+    review_type: str | None = None,
+    scope: dict[str, Any] | None = None,
+) -> str:
+    """Allocate a replacement reviewer session after the prior binding was lost."""
+
+    from top_down_planning.orchestrator.session_events import (
+        commit_reviewer_loop_provider_session,
+        emit_reviewer_session_started,
+    )
+
+    session_id = allocate_reviewer_session(
+        provider,
+        run_id=run_id,
+        loop_id=loop.id,
+        model=model,
+    )
+    started_fields: dict[str, Any] = {"loop_id": loop.id}
+    if review_type is not None:
+        started_fields["review_type"] = review_type
+    if scope is not None:
+        started_fields["scope"] = scope
+    emit_reviewer_session_started(
+        append_event,
+        provider,
+        phase=phase,
+        session_id=session_id,
+        **started_fields,
+    )
+    updated = loop.with_reviewer_session_released().with_reviewer_provider_session_id(
+        session_id
+    )
+    commit_reviewer_loop_provider_session(store, run_id, updated)
+    return session_id
+
+
+def resolve_reviewer_session_for_recheck(
+    provider: Provider,
+    store: RunStore,
+    run_id: str,
+    loop: ReviewLoop,
+    *,
+    target_revision: int,
+    current_revision: int,
+    phase: str,
+    append_event: Callable[..., None],
+    model: str | None = None,
+    review_type: str | None = None,
+    scope: dict[str, Any] | None = None,
+) -> str:
+    """Return a bound reviewer session for verification recheck.
+
+    Recheck resumes the same bound reviewer session when available. When resume
+    session policy cleared a lost transient binding after planner revision work
+    is already recorded, allocate a replacement reviewer session.
+    """
+
+    session_id = reviewer_loop_provider_session_id(loop)
+    if session_id is not None:
+        return session_id
+
+    if (
+        loop.finding_actions
+        and current_revision > target_revision
+        and _reviewer_binding_requires_replacement(loop.reviewer_binding)
+    ):
+        return allocate_reviewer_binding_for_recheck(
+            provider,
+            store,
+            run_id,
+            loop,
+            phase=phase,
+            append_event=append_event,
+            model=model,
+            review_type=review_type,
+            scope=scope,
+        )
+
+    raise ProviderRunError("reviewer session is missing for recheck")
+
+
 __all__ = [
     "REVIEWER_DECISION_MISSING",
+    "allocate_reviewer_binding_for_recheck",
     "allocate_reviewer_session",
     "begin_reviewer_review",
     "build_reviewer_allocation_request",
     "build_reviewer_protocol_instructions",
     "build_reviewer_tool_instructions",
     "deliver_reviewer_turn",
+    "resolve_reviewer_session_for_recheck",
     "resume_reviewer_session_with_package",
     "reviewer_decision_missing_error",
     "reviewer_loop_binding",

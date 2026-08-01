@@ -74,6 +74,7 @@ from top_down_planning.orchestrator.reviewer_session import (
     resume_reviewer_session_with_package,
     reviewer_decision_missing_error,
     reviewer_loop_provider_session_id,
+    resolve_reviewer_session_for_recheck,
 )
 from top_down_planning.orchestrator.errors import (
     OrchestratorInvariantError,
@@ -885,17 +886,25 @@ class WholePlanReviewOrchestrator:
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])
-        session_id = reviewer_loop_provider_session_id(loop)
-        if session_id is None:
-            raise ProviderRunError("reviewer session is missing for recheck")
-
-        updated = self._persist_loop(
-            mark_verification_pending(loop, target_revision=plan_revision)
-        )
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or WHOLE_PLAN_REVIEW)
         config = self._store.load_resolved_config(self._run_id)
         role_context = resolve_role_session_context(config, run, "reviewer")
+        session_id = resolve_reviewer_session_for_recheck(
+            self._provider,
+            self._store,
+            self._run_id,
+            loop,
+            target_revision=loop.target_revision,
+            current_revision=plan_revision,
+            phase=phase,
+            append_event=self._append_event,
+            model=role_context.model,
+        )
+
+        updated = self._persist_loop(
+            mark_verification_pending(loop, target_revision=plan_revision)
+        )
         self._capability_token = deliver_reviewer_turn(
             self._provider,
             self._store,

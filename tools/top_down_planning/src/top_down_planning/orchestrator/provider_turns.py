@@ -263,7 +263,7 @@ def consume_provider_turn_with_session_recovery(
         domain_budget_committed = _finalize_phase_action_turn(store, run_id, phase_action_id)
         return ProviderTurnOutcome(
             signal=signal,
-            session_id=session_id,
+            session_id=provider.canonical_session_id(session_id),
             replaced=False,
             domain_budget_committed=domain_budget_committed,
         )
@@ -353,7 +353,7 @@ def consume_provider_turn_with_session_recovery(
         domain_budget_committed = _finalize_phase_action_turn(store, run_id, phase_action_id)
         return ProviderTurnOutcome(
             signal=signal,
-            session_id=new_session_id,
+            session_id=provider.canonical_session_id(new_session_id),
             replaced=True,
             domain_budget_committed=domain_budget_committed,
             capability_token=capability_token,
