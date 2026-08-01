@@ -120,7 +120,7 @@ def resolve_provider_cli_model(*, model: str | None = None) -> str | None:
 
 
 def format_provider_model_name(model: str | None) -> str:
-    """Return the observability label for a provider-resolved model."""
+    """Return the session lifecycle label for a provider-resolved model."""
 
     resolved = resolve_provider_cli_model(model=model)
     if resolved is None:
@@ -132,13 +132,11 @@ def enrich_provider_observability_event(
     event: dict[str, Any],
     *,
     session_id: str,
-    model: str | None,
 ) -> dict[str, Any]:
-    """Attach session identity and resolved model label to a provider event."""
+    """Attach session identity to a normalized provider stream event."""
 
     enriched = dict(event)
     enriched["session_id"] = session_id
-    enriched["model"] = format_provider_model_name(model)
     return enriched
 
 
@@ -558,7 +556,6 @@ class CursorProvider:
                                 "max_retries": max_retries,
                             },
                             session_id=session_id,
-                            model=session.model,
                         )
                     )
                 if attempt >= max_retries:
@@ -621,7 +618,6 @@ class CursorProvider:
                 enriched = enrich_provider_observability_event(
                     normalized,
                     session_id=session_id,
-                    model=session.model,
                 )
                 self._emit_provider_event(enriched)
                 with session.condition:

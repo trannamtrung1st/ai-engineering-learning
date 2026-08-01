@@ -875,20 +875,19 @@ def test_cursor_reviewer_turn_accepts_durable_session_id_on_init(
     assert provider.canonical_session_id(session_id) == "chat-reviewer-1"
 
 
-def test_enrich_provider_observability_event_attaches_session_and_model() -> None:
+def test_enrich_provider_observability_event_attaches_session_id() -> None:
     enriched = enrich_provider_observability_event(
         {"type": "assistant", "text": "hello"},
         session_id="session-1",
-        model="coding-model",
     )
     assert enriched["session_id"] == "session-1"
-    assert enriched["model"] == "coding-model"
     assert enriched["text"] == "hello"
+    assert "model" not in enriched
 
-    auto = enrich_provider_observability_event(
+    done = enrich_provider_observability_event(
         {"type": "done", "subtype": "success"},
         session_id="session-2",
-        model=None,
     )
-    assert auto["model"] == "auto"
+    assert done["session_id"] == "session-2"
+    assert "model" not in done
 

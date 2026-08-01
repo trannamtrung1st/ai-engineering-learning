@@ -220,7 +220,6 @@ class StubProvider:
             enriched = enrich_provider_observability_event(
                 normalized,
                 session_id=session_id,
-                model=session.model,
             )
             self._emit_provider_event(enriched)
             session.pending_events.append(enriched)
