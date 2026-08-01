@@ -14,6 +14,7 @@ from top_down_planning.cli.user import (
     handle_status_command,
     handle_validate_command,
 )
+from top_down_planning.cli.doctor import handle_doctor_command
 
 
 def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
@@ -136,6 +137,14 @@ def build_parser() -> argparse.ArgumentParser:
             "(validated), or final outcome (completed)."
         ),
     )
+    run_parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Allow starting a new run when paused runs still have orphan agent "
+            "processes in the workspace."
+        ),
+    )
 
     resume_parser = subparsers.add_parser("resume", help="Resume an interrupted run.")
     resume_parser.add_argument("--run", help="Run id.")
@@ -213,6 +222,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_operational_flags(validate_parser)
 
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Report orphan agent processes for a run.",
+    )
+    doctor_parser.add_argument("--run", help="Run id.")
+    doctor_parser.add_argument(
+        "--config",
+        help=(
+            "YAML configuration file. Uses runtime.runs_dir (resolved from process "
+            "cwd) when locating the store."
+        ),
+    )
+    _add_operational_flags(doctor_parser)
+
     add_agent_subparsers(subparsers)
 
     return parser
@@ -248,6 +271,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "validate":
         handle_validate_command(args)
+        return
+
+    if args.command == "doctor":
+        handle_doctor_command(args)
         return
 
     parser.error(f"unknown command: {args.command!r}")

@@ -111,6 +111,23 @@ def test_map_audit_event_maps_planner_session_resumed_with_phase_and_role() -> N
     assert mapped.session_id == "planner-1"
 
 
+def test_map_audit_event_maps_planner_session_ended_with_phase_and_role() -> None:
+    mapped = map_audit_event(
+        {
+            "type": "planner_session_ended",
+            "run_id": "run-20260101T000001-000001",
+            "session_id": "planner-1",
+            "role": "planner",
+            "phase": "planning",
+            "model": "auto",
+        }
+    )
+    assert mapped is not None
+    assert mapped.category == "session:end"
+    assert mapped.message == "planner session ended"
+    assert mapped.session_id == "planner-1"
+
+
 def test_map_audit_event_maps_reviewer_session_ended_with_phase_and_role() -> None:
     mapped = map_audit_event(
         {

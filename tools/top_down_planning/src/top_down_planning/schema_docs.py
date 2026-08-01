@@ -1710,7 +1710,11 @@ checkpoint); failed stops use `category: invariant` with
 `code` in `state_integrity_failure`, `evidence_integrity_failure`,
 `unsupported_phase_state`, `orchestrator_invariant_failure`, or
 `session_recovery_exhausted`. Each stop record includes `phase`, `message`, `role`
-(null when unset), and optional `details`.
+(null when unset), and optional `details`. For `user_cancelled`, `details.terminated_pids`
+lists agent subprocess pids stopped during cancel. Cancel also records `agent_terminated`
+and `planner_session_ended` / `producer_session_ended` / `reviewer_session_ended` audit
+events. Resume scans for orphan agents (`agent_orphan_cleaned` when cleaned). Use
+`tdp doctor --run <id>` to inspect orphan agent pids for a run.
 
 ## Resume
 

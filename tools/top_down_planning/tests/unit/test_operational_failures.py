@@ -216,9 +216,9 @@ def test_engine_keyboard_interrupt_terminates_provider_sessions(tmp_path: Path) 
     terminated: list[bool] = []
     original_terminate = provider.terminate_all_sessions
 
-    def spy_terminate() -> None:
+    def spy_terminate() -> list[dict[str, object]]:
         terminated.append(True)
-        original_terminate()
+        return original_terminate()
 
     provider.terminate_all_sessions = spy_terminate  # type: ignore[method-assign]
 
@@ -321,7 +321,8 @@ def test_resume_keyboard_interrupt_exits_without_marking_failed(tmp_path: Path) 
 
     run = store.load_run("run-20260101T001701-001701")
     assert run["status"] != "failed"
-    assert run.get("stop") in (None, {})
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "user_cancelled"
 
 
 def test_resume_keyboard_interrupt_stream_json_payload(tmp_path: Path) -> None:

@@ -173,8 +173,9 @@ class StubProvider:
     def terminate_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
 
-    def terminate_all_sessions(self) -> None:
+    def terminate_all_sessions(self) -> list[dict[str, Any]]:
         self._sessions.clear()
+        return []
 
     def set_capability_token(self, token: str | None) -> None:
         self._capability_token = token

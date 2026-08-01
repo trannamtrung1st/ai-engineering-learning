@@ -29,7 +29,11 @@ from core_tools.provider.events import (
     format_request_prompt,
     normalize_cursor_event,
 )
-from core_tools.provider.process_cleanup import terminate_process_tree
+from core_tools.provider.process_cleanup import (
+    is_pid_alive,
+    terminate_pid_tree,
+    terminate_process_tree,
+)
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 
@@ -228,7 +232,9 @@ class CursorProvider:
         self._sessions: dict[str, _CursorSession] = {}
         self._session_aliases: dict[str, str] = {}
         self._pending_counter = 0
-        self._active_turn_proc: subprocess.Popen[str] | None = None
+        self._turn_proc_lock = threading.Lock()
+        self._tracked_turn_procs: dict[int, tuple[str, str]] = {}
+        self._current_collect_context: tuple[str, str] | None = None
         self._on_provider_event = on_provider_event
 
     def start_primary_session(
@@ -357,12 +363,52 @@ class CursorProvider:
             if target == canonical_id or alias == canonical_id:
                 self._session_aliases.pop(alias, None)
 
-    def terminate_all_sessions(self) -> None:
+    def terminate_all_sessions(self) -> list[dict[str, Any]]:
         """Stop in-flight turns and drop tracked provider sessions."""
 
-        self._terminate_active_turn()
+        terminated: list[dict[str, Any]] = []
+        self._abort_inflight_sessions()
+        with self._turn_proc_lock:
+            tracked = dict(self._tracked_turn_procs)
+
+        seen_pids: set[int] = set()
+        for pid, (session_id, role) in tracked.items():
+            if pid in seen_pids:
+                continue
+            seen_pids.add(pid)
+            if is_pid_alive(pid):
+                terminate_pid_tree(pid)
+                terminated.append(
+                    {
+                        "pid": pid,
+                        "role": role,
+                        "session_id": session_id,
+                        "reason": "terminated",
+                    }
+                )
+
+        for session in list(self._sessions.values()):
+            thread = session.collector_thread
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=0.1)
+
+        with self._turn_proc_lock:
+            self._tracked_turn_procs.clear()
         self._sessions.clear()
         self._session_aliases.clear()
+        return terminated
+
+    def _abort_inflight_sessions(self) -> None:
+        for session_id, session in list(self._sessions.items()):
+            with session.condition:
+                session.turn_running = False
+                session.turn_complete = True
+                if session.turn_error is None:
+                    session.turn_error = ProviderTurnError(
+                        "provider session terminated",
+                        session_id=session_id,
+                    )
+                session.condition.notify_all()
 
     def set_capability_token(self, token: str | None) -> None:
         if token:
@@ -570,73 +616,76 @@ class CursorProvider:
         argv: list[str],
     ) -> None:
         provider_session_id: str | None = None
-
+        self._current_collect_context = (session_id, session.role)
         try:
-            stream = self._runner(argv, self._workspace)
-        except ProviderTurnError as exc:
-            classified = reclassify_provider_turn_error(exc, session_id=session_id)
-            if isinstance(classified, ProviderSessionNotFoundError):
-                raise classified from exc
-            raise
-
-        for line in stream:
             try:
-                raw = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ProviderTurnError(
-                    f"invalid stream-json line from Cursor CLI: {line!r}"
-                ) from exc
-            if not isinstance(raw, dict):
-                continue
-            if raw.get("type") == "error":
-                detail = str(raw.get("text") or raw.get("message") or raw)
-                classified = classify_cursor_session_failure(
-                    detail,
-                    session_id=session_id,
-                )
-                if classified is not None:
-                    raise classified
-                raise ProviderTurnError(
-                    f"Cursor CLI error event: {detail}",
-                    session_id=session_id,
-                )
-            if raw.get("type") == "result" and raw.get("is_error"):
-                detail = str(raw.get("result") or raw.get("message") or raw)
-                classified = classify_cursor_session_failure(
-                    detail,
-                    session_id=session_id,
-                )
-                if classified is not None:
-                    raise classified
-            if raw.get("session_id"):
-                event_session_id = str(raw["session_id"])
-                session_id = self._maybe_migrate_session(session_id, event_session_id)
-                if not event_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
-                    provider_session_id = event_session_id
-            normalized = normalize_cursor_event(raw)
-            if normalized is not None:
-                enriched = enrich_provider_observability_event(
-                    normalized,
-                    session_id=session_id,
-                )
-                self._emit_provider_event(enriched)
-                with session.condition:
-                    session.pending_events.append(enriched)
-                    session.condition.notify_all()
+                stream = self._runner(argv, self._workspace)
+            except ProviderTurnError as exc:
+                classified = reclassify_provider_turn_error(exc, session_id=session_id)
+                if isinstance(classified, ProviderSessionNotFoundError):
+                    raise classified from exc
+                raise
 
-        if provider_session_id is None or provider_session_id.startswith(
-            _CURSOR_TRANSIENT_SESSION_PREFIX
-        ):
-            raise ProviderTurnError(
-                "Cursor CLI turn completed without a durable provider session id",
-                session_id=session_id,
-            )
-        if provider_session_id != session_id:
-            raise ProviderTurnError(
-                f"Cursor CLI resume returned unexpected session id "
-                f"{provider_session_id!r} (expected {session_id!r})",
-                session_id=session_id,
-            )
+            for line in stream:
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ProviderTurnError(
+                        f"invalid stream-json line from Cursor CLI: {line!r}"
+                    ) from exc
+                if not isinstance(raw, dict):
+                    continue
+                if raw.get("type") == "error":
+                    detail = str(raw.get("text") or raw.get("message") or raw)
+                    classified = classify_cursor_session_failure(
+                        detail,
+                        session_id=session_id,
+                    )
+                    if classified is not None:
+                        raise classified
+                    raise ProviderTurnError(
+                        f"Cursor CLI error event: {detail}",
+                        session_id=session_id,
+                    )
+                if raw.get("type") == "result" and raw.get("is_error"):
+                    detail = str(raw.get("result") or raw.get("message") or raw)
+                    classified = classify_cursor_session_failure(
+                        detail,
+                        session_id=session_id,
+                    )
+                    if classified is not None:
+                        raise classified
+                if raw.get("session_id"):
+                    event_session_id = str(raw["session_id"])
+                    session_id = self._maybe_migrate_session(session_id, event_session_id)
+                    if not event_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+                        provider_session_id = event_session_id
+                normalized = normalize_cursor_event(raw)
+                if normalized is not None:
+                    enriched = enrich_provider_observability_event(
+                        normalized,
+                        session_id=session_id,
+                    )
+                    self._emit_provider_event(enriched)
+                    with session.condition:
+                        session.pending_events.append(enriched)
+                        session.condition.notify_all()
+
+            if provider_session_id is None or provider_session_id.startswith(
+                _CURSOR_TRANSIENT_SESSION_PREFIX
+            ):
+                raise ProviderTurnError(
+                    "Cursor CLI turn completed without a durable provider session id",
+                    session_id=session_id,
+                )
+            if provider_session_id != session_id:
+                raise ProviderTurnError(
+                    f"Cursor CLI resume returned unexpected session id "
+                    f"{provider_session_id!r} (expected {session_id!r})",
+                    session_id=session_id,
+                )
+        finally:
+            self._current_collect_context = None
 
     def _maybe_migrate_session(self, current_id: str, provider_session_id: str) -> str:
         if current_id == provider_session_id:
@@ -667,18 +716,24 @@ class CursorProvider:
             return None
         return {**os.environ, **dict(extra_env)}
 
-    def _terminate_active_turn(self) -> None:
-        proc = self._active_turn_proc
+    def _register_tracked_turn_proc(self, proc: subprocess.Popen[str]) -> None:
+        context = self._current_collect_context
+        if context is None:
+            return
+        session_id, role = context
+        with self._turn_proc_lock:
+            self._tracked_turn_procs[proc.pid] = (session_id, role)
+
+    def _unregister_tracked_turn_proc(self, proc: subprocess.Popen[str] | None) -> None:
         if proc is None:
             return
-        self._active_turn_proc = None
-        terminate_process_tree(proc)
+        with self._turn_proc_lock:
+            self._tracked_turn_procs.pop(proc.pid, None)
 
     def _wrap_runner(self, runner: ProcessRunner) -> ProcessRunner:
         active_proc: list[subprocess.Popen[str] | None] = [None]
 
         def wrapped(argv: list[str], cwd: Path) -> Iterator[str]:
-            self._active_turn_proc = None
             try:
                 if runner is default_process_runner:
                     stream = default_process_runner(
@@ -691,11 +746,11 @@ class CursorProvider:
                     stream = runner(argv, cwd)
                 for line in stream:
                     if active_proc[0] is not None:
-                        self._active_turn_proc = active_proc[0]
+                        self._register_tracked_turn_proc(active_proc[0])
                     yield line
             finally:
-                self._active_turn_proc = None
                 proc = active_proc[0]
+                self._unregister_tracked_turn_proc(proc)
                 if proc is not None and proc.poll() is None:
                     terminate_process_tree(proc)
 

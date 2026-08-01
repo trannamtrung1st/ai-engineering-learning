@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -11,10 +12,10 @@ from top_down_planning.domain.production import has_pending_amendment
 from top_down_planning.observability import (
     ObservabilityContext,
     cancel_console_event,
-    session_lifecycle_event,
 )
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import resolve_run_dir, run_ownership
+from top_down_planning.orchestrator.agent_process_cleanup import kill_orphan_agents
 from top_down_planning.orchestrator.errors import (
     OrchestratorInvariantError,
     ProviderRunError,
@@ -23,6 +24,8 @@ from top_down_planning.orchestrator.failure import (
     mark_run_failed,
     sanitize_operational_error,
 )
+from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
+from top_down_planning.orchestrator.run_signals import trap_run_interrupt_signals
 from top_down_planning.orchestrator.run_transitions import pause_run
 from top_down_planning.orchestrator.session_policy import execute_session_policy_if_registered
 from top_down_planning.orchestrator.session_policy_execution import (
@@ -112,20 +115,21 @@ class RunEngine:
         session_policy: dict[str, Any] | None = None,
     ) -> RunContinuationResult:
         run_dir = resolve_run_dir(self._store, run_id)
-        if run_dir is not None:
-            with run_ownership(run_id, run_dir=run_dir):
-                return self._continue_run_unlocked(
-                    run_id,
-                    until=until,
-                    single_step=single_step,
-                    session_policy=session_policy,
-                )
-        return self._continue_run_unlocked(
-            run_id,
-            until=until,
-            single_step=single_step,
-            session_policy=session_policy,
-        )
+        with trap_run_interrupt_signals():
+            if run_dir is not None:
+                with run_ownership(run_id, run_dir=run_dir):
+                    return self._continue_run_unlocked(
+                        run_id,
+                        until=until,
+                        single_step=single_step,
+                        session_policy=session_policy,
+                    )
+            return self._continue_run_unlocked(
+                run_id,
+                until=until,
+                single_step=single_step,
+                session_policy=session_policy,
+            )
 
     def _continue_run_unlocked(
         self,
@@ -145,6 +149,11 @@ class RunEngine:
             run = self._store.load_run(run_id)
             derived_policy = derive_session_policy(run, self._store.list_reviews(run_id))
             execute_session_policy(self._store, run_id, derived_policy)
+        kill_orphan_agents(
+            self._store,
+            run_id,
+            exclude_pids=frozenset({os.getpid()}),
+        )
         started_at = time.monotonic()
         steps: list[RunStepResult] = []
         while True:
@@ -215,6 +224,7 @@ class RunEngine:
             config = self._store.load_resolved_config(run_id)
             workspace = run_workspace(run)
             provider = self._create_provider(config, workspace)
+            cancelled = False
 
             try:
                 if has_pending_amendment(production) and phase != PRODUCTION:
@@ -335,25 +345,7 @@ class RunEngine:
                 return result
             except KeyboardInterrupt:
                 self._emit(cancel_console_event(run_id=run_id, phase=phase))
-                stop = StopRecord(
-                    code="user_cancelled",
-                    category="operational",
-                    phase=phase,
-                    message="cancelled by user",
-                )
-                pause_run(self._store, run_id, stop=stop)
-                run = self._store.load_run(run_id)
-                result = RunContinuationResult(
-                    ok=False,
-                    run_id=run_id,
-                    phase=phase,
-                    status=str(run.get("status") or ""),
-                    outcome=run.get("outcome"),
-                    steps=steps,
-                    reason="cancelled by user",
-                    cancelled=True,
-                )
-                return result
+                cancelled = True
             except Exception as exc:
                 message = sanitize_operational_error(exc)
                 mark_run_failed(self._store, run_id, message=message)
@@ -369,24 +361,42 @@ class RunEngine:
                 self._emit_done(result, started_at=started_at)
                 return result
             finally:
-                for session in provider.list_active_sessions():
-                    session_id = session["session_id"]
-                    model = session.get("model")
-                    extra_fields: dict[str, Any] = {}
-                    if isinstance(model, str):
-                        extra_fields["model"] = model
-                    self._emit(
-                        session_lifecycle_event(
-                            category="session:end",
-                            role=session["role"],
-                            phase=phase,
-                            session_id=session_id,
-                            run_id=run_id,
-                            kind=session.get("kind"),
-                            **extra_fields,
-                        )
+                def append_event(event_type: str, **fields: Any) -> None:
+                    self._store.append_event(
+                        run_id,
+                        {"type": event_type, **fields},
                     )
-                provider.terminate_all_sessions()
+
+                terminated_pids = teardown_provider_sessions(
+                    provider,
+                    run_id=run_id,
+                    phase=phase,
+                    append_event=append_event,
+                    emit_console=self._emit,
+                    audit_cancel=cancelled,
+                )
+                if cancelled:
+                    stop = StopRecord(
+                        code="user_cancelled",
+                        category="operational",
+                        phase=phase,
+                        message="cancelled by user",
+                        details={"terminated_pids": terminated_pids},
+                    )
+                    pause_run(self._store, run_id, stop=stop)
+
+            if cancelled:
+                run = self._store.load_run(run_id)
+                return RunContinuationResult(
+                    ok=False,
+                    run_id=run_id,
+                    phase=phase,
+                    status=str(run.get("status") or ""),
+                    outcome=run.get("outcome"),
+                    steps=steps,
+                    reason="cancelled by user",
+                    cancelled=True,
+                )
 
             steps.append(step)
             if not step.ok:

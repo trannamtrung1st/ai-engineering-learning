@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -53,6 +54,12 @@ from top_down_planning.cli.resume_diagnostics import (
     build_resume_plan_summary,
     format_resume_plan_summary_text,
 )
+from top_down_planning.domain.run_lifecycle import StopRecord
+from top_down_planning.orchestrator.agent_process_cleanup import (
+    kill_orphan_agents,
+    workspace_has_orphan_agents,
+)
+from top_down_planning.orchestrator.run_transitions import pause_run
 from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.config.resume_policy import resolve_resume_candidate_for_run
 from top_down_planning.orchestrator.resume import (
@@ -123,6 +130,25 @@ def _handle_blocking_run_interrupt(
     """Emit cancel observability and exit when Ctrl+C escapes the engine loop."""
 
     run = store.load_run(run_id)
+    if str(run.get("status") or "") == "running":
+        phase = str(run.get("phase") or "unknown")
+        terminated_pids = kill_orphan_agents(
+            store,
+            run_id,
+            exclude_pids=frozenset({os.getpid()}),
+        )
+        pause_run(
+            store,
+            run_id,
+            stop=StopRecord(
+                code="user_cancelled",
+                category="operational",
+                phase=phase,
+                message="cancelled by user",
+                details={"terminated_pids": terminated_pids},
+            ),
+        )
+        run = store.load_run(run_id)
     if notifications is not None:
         notify_run_outcome(
             "cancelled",
@@ -264,6 +290,18 @@ def handle_run_command(args: Namespace) -> None:
 
     store = FileRunStore(resolved_runs.path)
     store.root.mkdir(parents=True, exist_ok=True)
+
+    orphans = workspace_has_orphan_agents(store)
+    if orphans and not getattr(args, "force", False):
+        pairs = ", ".join(f"{run_id}:pid={pid}" for run_id, pid in orphans)
+        emit_error_message(
+            "refusing to start a new run while orphan agent processes are still "
+            f"alive for paused runs ({pairs}); retry with --force after cleanup",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="orphan_agents_present",
+        )
+
     invocation = invocation_options_from_args(
         args,
         resolved_config=resolved,

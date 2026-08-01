@@ -37,7 +37,7 @@ def test_terminate_process_tree_kills_child_process() -> None:
     assert proc.poll() is not None
 
 
-def test_cursor_provider_terminate_all_sessions_kills_active_turn(tmp_path: Path) -> None:
+def test_cursor_provider_terminate_all_sessions_kills_tracked_turn(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
     provider = CursorProvider(
@@ -53,12 +53,13 @@ def test_cursor_provider_terminate_all_sessions_kills_active_turn(tmp_path: Path
         stderr=subprocess.DEVNULL,
         start_new_session=sys.platform != "win32",
     )
-    provider._active_turn_proc = proc
+    provider._tracked_turn_procs[proc.pid] = ("cursor-session-1", "planner")
 
-    provider.terminate_all_sessions()
+    terminated = provider.terminate_all_sessions()
 
     assert proc.poll() is not None
-    assert provider._active_turn_proc is None
+    assert not provider._tracked_turn_procs
+    assert any(record.get("pid") == proc.pid for record in terminated)
 
 
 def test_stub_provider_list_active_sessions() -> None:

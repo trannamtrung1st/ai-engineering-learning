@@ -56,6 +56,8 @@ _SESSION_RESUME_EVENT_TYPES = frozenset(
 
 _SESSION_END_EVENT_TYPES = frozenset(
     {
+        "planner_session_ended",
+        "producer_session_ended",
         "reviewer_session_ended",
     }
 )
