@@ -301,6 +301,7 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             "Verify disposition of prior findings",
             "Confirm required outcomes and evidence",
             "Check direct revision side effects only",
+            "Classify new_direct_side_effect_findings with severity and category",
             "Do not perform a broad discovery pass",
         ]
         fields["respond_contract"] = {

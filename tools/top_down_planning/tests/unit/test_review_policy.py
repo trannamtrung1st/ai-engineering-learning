@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import itertools
+from typing import get_args
 
 import pytest
 
 from top_down_planning.domain.review_policy import (
-    BUILTIN_FINDING_CATEGORIES,
     BUILTIN_REVISE_AT,
+    CATEGORY_DEFINITIONS,
+    FINDING_CATEGORY_ORDER,
+    FindingCategory,
     SEVERITY_ORDER,
     SEVERITY_RANK,
     resolved_revise_at,
@@ -108,29 +111,26 @@ def test_resolved_revise_at_rejects_unknown_review_type() -> None:
         resolved_revise_at({}, "ad_hoc_review")
 
 
+def test_finding_category_literal_matches_definitions() -> None:
+    assert frozenset(get_args(FindingCategory)) == frozenset(CATEGORY_DEFINITIONS)
+
+
 def test_builtin_finding_categories_include_other() -> None:
-    expected = {
-        "correctness",
-        "requirements_coverage",
-        "acceptance",
-        "scope",
-        "traceability",
-        "architecture",
-        "security",
-        "reliability",
-        "performance",
-        "maintainability",
-        "usability",
-        "testing",
-        "documentation",
-        "other",
-    }
-    assert BUILTIN_FINDING_CATEGORIES == expected
-    assert "other" in BUILTIN_FINDING_CATEGORIES
-    for category in sorted(expected):
+    assert FINDING_CATEGORY_ORDER == tuple(sorted(CATEGORY_DEFINITIONS))
+    assert "other" in CATEGORY_DEFINITIONS
+    for category in FINDING_CATEGORY_ORDER:
         assert validate_finding_category(category) == category
+
+
+def test_category_definitions_cover_builtin_categories() -> None:
+    for category in FINDING_CATEGORY_ORDER:
+        definition = CATEGORY_DEFINITIONS[category]
+        assert isinstance(definition, str)
+        assert definition.strip()
 
 
 def test_validate_finding_category_rejects_unknown() -> None:
     with pytest.raises(ValueError, match="finding category must be one of"):
+        validate_finding_category("style")
+    with pytest.raises(ValueError, match="acceptance, architecture"):
         validate_finding_category("style")

@@ -17,11 +17,12 @@ from top_down_planning.domain.reviews import (
 )
 
 
-def test_finding_from_dict_requires_severity_and_recommended_change() -> None:
+def test_finding_from_dict_requires_severity_category_and_recommended_change() -> None:
     blocking = ReviewFinding.from_dict(
         {
             "id": "f-block",
             "severity": "blocker",
+            "category": "correctness",
             "target_refs": ["item-a"],
             "issue": "Broken",
             "recommended_change": "Fix it",
@@ -29,7 +30,19 @@ def test_finding_from_dict_requires_severity_and_recommended_change() -> None:
         }
     )
     assert blocking.severity == "blocker"
+    assert blocking.category == "correctness"
     assert blocking.recommended_change == "Fix it"
+
+    with pytest.raises(ValueError, match="finding requires category"):
+        ReviewFinding.from_dict(
+            {
+                "id": "f-missing-category",
+                "severity": "blocker",
+                "target_refs": ["item-a"],
+                "issue": "Broken",
+                "recommended_change": "Fix it",
+            }
+        )
 
     with pytest.raises(ValueError, match="legacy finding field importance"):
         ReviewFinding.from_dict(
@@ -37,6 +50,7 @@ def test_finding_from_dict_requires_severity_and_recommended_change() -> None:
                 "id": "f-legacy",
                 "importance": "blocking",
                 "severity": "blocker",
+                "category": "correctness",
                 "target_refs": [],
                 "issue": "x",
                 "recommended_change": "y",

@@ -14,8 +14,12 @@ from top_down_planning.domain.session_bindings import (
 
 from top_down_planning.domain.review_policy import (
     BUILTIN_REVISE_AT,
+    CATEGORY_DEFINITIONS,
+    FINDING_CATEGORY_ORDER,
     FindingCategory,
     ReviewSeverity,
+    SEVERITY_DEFINITIONS,
+    SEVERITY_ORDER,
     severity_at_or_above,
     validate_finding_category,
     validate_review_severity,
@@ -309,9 +313,8 @@ class ReviewFinding:
         severity = _severity_from_payload(payload)
         category_raw = payload.get("category")
         if category_raw is None or not str(category_raw).strip():
-            category: FindingCategory = "other"
-        else:
-            category = validate_finding_category(str(category_raw))
+            raise ValueError("finding requires category")
+        category = validate_finding_category(str(category_raw))
 
         if "recommended_change" not in payload:
             raise ValueError("finding requires recommended_change")
@@ -1581,10 +1584,6 @@ def validate_finding_set_id_echo(
 def parse_reported_finding(payload: Mapping[str, Any]) -> ReviewFinding:
     """Parse one discovery finding; severity and category are required."""
 
-    if payload.get("severity") is None or not str(payload.get("severity")).strip():
-        raise ValueError("discovery finding requires severity")
-    if payload.get("category") is None or not str(payload.get("category")).strip():
-        raise ValueError("discovery finding requires category")
     finding = ReviewFinding.from_dict(dict(payload))
     if finding.status != "unresolved":
         raise ValueError(
@@ -1857,18 +1856,15 @@ def apply_discovery_response(
 
 
 def reviewer_package_policy_guidance() -> dict[str, Any]:
-    """Severity guidance for reviewer packages (never includes revise_at)."""
-
-    from top_down_planning.domain.review_policy import (
-        BUILTIN_FINDING_CATEGORIES,
-        SEVERITY_DEFINITIONS,
-        SEVERITY_ORDER,
-    )
+    """Severity and category guidance for reviewer packages (never includes revise_at)."""
 
     return {
         "severity_order": list(SEVERITY_ORDER),
         "severity_definitions": dict(SEVERITY_DEFINITIONS),
-        "categories": sorted(BUILTIN_FINDING_CATEGORIES),
+        "category_definitions": {
+            category: CATEGORY_DEFINITIONS[category]
+            for category in FINDING_CATEGORY_ORDER
+        },
     }
 
 

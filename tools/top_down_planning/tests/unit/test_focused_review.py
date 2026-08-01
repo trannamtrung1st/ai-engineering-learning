@@ -165,7 +165,7 @@ def _review_respond_request(
             severity = str(finding.get("severity") or "").strip()
             finding["severity"] = "blocker" if severity == "blocker" else "minor"
         if not str(finding.get("category") or "").strip():
-            finding["category"] = "other"
+            raise ValueError("focused review test findings require category")
         if "recommended_change" not in finding and "recommended_change" in finding:
             finding["recommended_change"] = finding["recommended_change"]
         reported.append(finding)
@@ -325,6 +325,7 @@ def test_focused_plan_finding_outside_scope_is_rejected(tmp_path: Path) -> None:
                     {
                         "id": "finding-01",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-root"],
                         "issue": "Root needs work.",
                         "recommended_change": "Improve root.",
@@ -419,6 +420,7 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
                     {
                         "id": "finding-01",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-api"],
                         "issue": "Needs work.",
                         "recommended_change": "Improve acceptance.",
@@ -657,6 +659,7 @@ def test_blocking_focused_output_findings_prevent_production_apply(
                 {
                     "id": "finding-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-first"],
                     "issue": "Output incomplete.",
                     "recommended_change": "Add evidence.",

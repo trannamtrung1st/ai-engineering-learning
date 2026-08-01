@@ -330,6 +330,7 @@ def test_whole_output_scope_review_round_limit_rejects_without_approval(
                 {
                     "id": "finding-blocker-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-leaf"],
                     "issue": "Still blocked.",
                     "recommended_change": "Fix coverage.",

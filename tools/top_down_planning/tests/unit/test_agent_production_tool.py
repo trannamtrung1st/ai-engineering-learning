@@ -434,6 +434,7 @@ def test_production_ready_snapshot_excludes_review_blocked_items(tmp_path: Path)
                 {
                     "id": "finding-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-second"],
                     "issue": "Output incomplete.",
                     "recommended_change": "Add evidence.",

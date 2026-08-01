@@ -121,6 +121,7 @@ def _focused_review(*, item_ids: list[str], status: str = "changes_requested") -
             {
                 "id": "finding-01",
                 "severity": "blocker",
+                "category": "correctness",
                 "target_refs": item_ids[:1],
                 "issue": "Need better evidence.",
                 "recommended_change": "Add revised artifact.",

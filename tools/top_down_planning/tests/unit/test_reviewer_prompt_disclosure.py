@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.review_policy import CATEGORY_DEFINITIONS, FINDING_CATEGORY_ORDER
 from top_down_planning.domain.reviews import ReviewLoop, allocate_discovery_finding_set_id
 from top_down_planning.orchestrator.focused_review import build_focused_review_package
 from top_down_planning.orchestrator.mandatory_review_stages import stage_package_fields
@@ -73,7 +74,7 @@ def test_discovery_protocol_requires_full_material_disclosure() -> None:
     protocol = " ".join(build_reviewer_protocol_instructions()).lower()
     assert "every material issue" in protocol
     assert "do not omit lower-severity" in protocol
-    assert "review_policy" in protocol
+    assert "category_definitions" in protocol
     assert "blocking findings when needed" not in protocol
 
 
@@ -85,6 +86,14 @@ def test_scope_review_protocol_is_not_blocker_only() -> None:
     assert "remaining approval blockers within the current scope only" not in protocol
     assert "do not raise optional style" not in protocol
     assert "reported_findings" in protocol
+
+
+def test_verification_protocol_mentions_side_effect_category_guidance() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(stage="finding_verification")
+    ).lower()
+    assert "new_direct_side_effect_findings" in protocol
+    assert "category_definitions" in protocol
 
 
 def test_verification_protocol_stays_narrow() -> None:
@@ -105,6 +114,23 @@ def test_verification_protocol_omits_mandatory_gate_focus() -> None:
     ).lower()
     assert "primary gate focus" not in protocol
     assert "internal consistency" not in protocol
+
+
+def test_verification_package_guidance_mentions_side_effect_categories() -> None:
+    fields = stage_package_fields(
+        make_review_loop(
+            id="review-whole-plan-01",
+            type="whole_plan",
+            reviewer_session_id="sess",
+            target_revision=1,
+            scope={"kind": "whole_plan"},
+            active_stage="finding_verification",
+            finding_set_id="fs-1",
+        )
+    )
+    guidance = " ".join(fields["verification_guidance"]).lower()
+    assert "new_direct_side_effect_findings" in guidance
+    assert "category" in guidance
 
 
 def test_whole_scope_review_guidance_prioritizes_consistency_and_correctness() -> None:
@@ -162,7 +188,10 @@ def test_stage_packages_include_review_policy_without_revise_at() -> None:
         "blocker",
     ]
     assert "severity_definitions" in fields["review_policy"]
-    assert "categories" in fields["review_policy"]
+    assert fields["review_policy"]["category_definitions"] == {
+        category: CATEGORY_DEFINITIONS[category] for category in FINDING_CATEGORY_ORDER
+    }
+    assert "categories" not in fields["review_policy"]
 
 
 def test_focused_and_whole_packages_omit_revise_at(tmp_path: Path) -> None:
@@ -205,6 +234,9 @@ def test_focused_and_whole_packages_omit_revise_at(tmp_path: Path) -> None:
     assert focused_pkg["finding_set_id"] == finding_set_id
     assert "revise_at" not in focused_pkg
     assert focused_pkg["review_policy"]["severity_order"][-1] == "blocker"
+    assert focused_pkg["review_policy"]["category_definitions"] == {
+        category: CATEGORY_DEFINITIONS[category] for category in FINDING_CATEGORY_ORDER
+    }
     protocol = " ".join(focused_pkg["protocol_instructions"]).lower()
     assert "every material issue" in protocol
 
@@ -222,4 +254,7 @@ def test_focused_and_whole_packages_omit_revise_at(tmp_path: Path) -> None:
     whole_pkg = build_whole_plan_review_package(run_id, run, config, plan, whole)
     assert "revise_at" not in whole_pkg
     assert "review_policy" in whole_pkg
+    assert whole_pkg["review_policy"]["category_definitions"] == {
+        category: CATEGORY_DEFINITIONS[category] for category in FINDING_CATEGORY_ORDER
+    }
     assert whole_pkg["freshness"]["purpose"].lower().find("every material") >= 0

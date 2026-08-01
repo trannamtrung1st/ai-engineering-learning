@@ -157,6 +157,7 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
                 {
                     "id": "finding-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-api"],
                     "issue": "API outcome is too vague.",
                     "recommended_change": "Add concrete acceptance criteria.",
@@ -252,6 +253,7 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
                 {
                     "id": "finding-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-api"],
                     "issue": "Still vague.",
                     "recommended_change": "Clarify.",
@@ -327,6 +329,7 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                     {
                         "id": "finding-01",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-api"],
                         "issue": "Needs work.",
                         "recommended_change": "Improve acceptance.",
@@ -353,6 +356,7 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                     {
                         "id": "finding-01",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-api"],
                         "issue": "Still needs work.",
                         "recommended_change": "Improve acceptance.",
@@ -401,6 +405,7 @@ def test_unapproved_plan_cannot_leave_whole_plan_review_phase(tmp_path: Path) ->
                     {
                         "id": "finding-01",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-root"],
                         "issue": "Plan is not viable.",
                         "recommended_change": "Rework the plan.",
@@ -451,6 +456,7 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
                 {
                     "id": "finding-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-api"],
                     "issue": "Needs work.",
                     "recommended_change": "Improve acceptance.",

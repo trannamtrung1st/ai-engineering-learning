@@ -26,6 +26,7 @@ def _blocker_finding() -> dict:
     return {
         "id": "finding-blocker-01",
         "severity": "blocker",
+        "category": "correctness",
         "target_refs": ["item-api"],
         "issue": "Coverage gap.",
         "recommended_change": "Add acceptance checks.",

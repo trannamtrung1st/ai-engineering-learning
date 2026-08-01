@@ -485,6 +485,7 @@ def test_remove_item_rejects_items_with_review_history() -> None:
                 {
                     "id": "finding-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-first"],
                     "issue": "Too vague.",
                     "recommended_change": "Add detail.",

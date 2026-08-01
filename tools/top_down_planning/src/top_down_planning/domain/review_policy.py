@@ -58,23 +58,68 @@ FindingCategory = Literal[
     "other",
 ]
 
-BUILTIN_FINDING_CATEGORIES: frozenset[str] = frozenset(
-    {
-        "correctness",
-        "requirements_coverage",
-        "acceptance",
-        "scope",
-        "traceability",
-        "architecture",
-        "security",
-        "reliability",
-        "performance",
-        "maintainability",
-        "usability",
-        "testing",
-        "documentation",
-        "other",
-    }
+CATEGORY_DEFINITIONS: dict[FindingCategory, str] = {
+    "correctness": (
+        "Factual, logical, or structural error: contradictions, invalid or cyclic "
+        "dependencies, impossible ordering, broken references, or claims that "
+        "cannot be verified."
+    ),
+    "requirements_coverage": (
+        "A material requirement from inputs or the output goal is missing, "
+        "incomplete, or not owned by any planned outcome."
+    ),
+    "acceptance": (
+        "Acceptance criteria are missing, misplaced, untestable, duplicated, or "
+        "do not express the required resulting truth for the owning item."
+    ),
+    "scope": (
+        "Work boundaries are wrong: overlap between items, scope creep, missing "
+        "excludes, or an unpopulated root/item contract (for example item-root "
+        "still titled Root or lacking a decomposable outcome)."
+    ),
+    "traceability": (
+        "Requirements, acceptance, outcomes, verification paths, or deliverables "
+        "cannot be linked across plan fields, source_refs, and evidence."
+    ),
+    "architecture": (
+        "Design or decomposition issue: poor hierarchy, wrong aggregate/work "
+        "split, misplaced integration checks, or awkward structure not better "
+        "classified elsewhere."
+    ),
+    "security": (
+        "Security vulnerability, unsafe behavior, or missing security control."
+    ),
+    "reliability": (
+        "Failure modes, resilience gaps, or material operational risks not "
+        "captured or not addressed when they affect success."
+    ),
+    "performance": (
+        "Performance or scalability concern material to the planned or delivered "
+        "outcome."
+    ),
+    "maintainability": (
+        "Structure or wording that will impede change, including duplicated or "
+        "ambiguous plan fields across levels."
+    ),
+    "usability": (
+        "User-facing usability or experience gap material to the deliverable."
+    ),
+    "testing": (
+        "Test coverage, test-plan alignment, or verifiability of acceptance "
+        "through testing is inadequate."
+    ),
+    "documentation": (
+        "Documentation gap or unclear articulation not better classified "
+        "elsewhere."
+    ),
+    "other": (
+        "Material issue that does not fit another category. Prefer a specific "
+        "category when one applies."
+    ),
+}
+
+FINDING_CATEGORY_ORDER: tuple[FindingCategory, ...] = tuple(
+    sorted(CATEGORY_DEFINITIONS)
 )
 
 BUILTIN_REVISE_AT: dict[str, ReviewSeverity] = {
@@ -100,10 +145,10 @@ def validate_finding_category(value: str) -> FindingCategory:
     """Return a validated finding category; reject unknown values."""
 
     normalized = str(value).strip()
-    if normalized not in BUILTIN_FINDING_CATEGORIES:
+    if normalized not in CATEGORY_DEFINITIONS:
         raise ValueError(
             "finding category must be one of: "
-            + ", ".join(sorted(BUILTIN_FINDING_CATEGORIES))
+            + ", ".join(FINDING_CATEGORY_ORDER)
         )
     return normalized  # type: ignore[return-value]
 

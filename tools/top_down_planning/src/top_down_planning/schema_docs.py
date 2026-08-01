@@ -9,6 +9,11 @@ from core_tools.schema import validate_against_schema
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS
+from top_down_planning.domain.review_policy import (
+    CATEGORY_DEFINITIONS,
+    FINDING_CATEGORY_ORDER,
+    SEVERITY_ORDER,
+)
 
 PUBLIC_SCHEMAS: tuple[str, ...] = (
     "config",
@@ -218,9 +223,12 @@ _REVIEW_FINDING_SCHEMA: dict[str, Any] = {
         "id": {"type": "string"},
         "severity": {
             "type": "string",
-            "enum": ["suggestion", "minor", "major", "blocker"],
+            "enum": list(SEVERITY_ORDER),
         },
-        "category": {"type": "string"},
+        "category": {
+            "type": "string",
+            "enum": list(FINDING_CATEGORY_ORDER),
+        },
         "target_refs": {"type": "array", "items": {"type": "string"}},
         "issue": {"type": "string"},
         "evidence": {"type": "array", "items": {"type": "string"}},
@@ -963,9 +971,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "ReviewRespondRequest",
         "description": (
             "Review findings and decision for `tdp agent review respond`. "
-            "Mandatory whole_plan / whole_output loops require `stage` and "
-            "stage-native decisions per branch below. Focused reviews omit "
-            "`stage` and use approved|changes_requested|blocked."
+            "Each reported finding requires `severity` and `category` from "
+            "the built-in taxonomy (see `tdp agent readme`, section Review "
+            "finding categories). Mandatory whole_plan / whole_output loops "
+            "require `stage` and stage-native decisions per branch below. "
+            "Focused reviews omit `stage` and use "
+            "approved|changes_requested|blocked."
         ),
         "oneOf": _REVIEW_RESPOND_ONE_OF,
     },
@@ -1496,6 +1507,8 @@ Production:
 Review:
   tdp agent review request --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/review-request-<scope>-a01.json
   tdp agent review respond --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/review-respond-<stage>-r<rev>-a01.json
+  Finding categories: review_policy.category_definitions in reviewer packages;
+  tdp agent readme (Review finding categories); tdp agent schema review-respond
 
 Whole-plan and focused_plan reviewers receive an embedded plan snapshot in the
 review package; call `tdp agent plan snapshot --run <run-id> --view active` to
@@ -1521,7 +1534,7 @@ or pipe stdin. Revision fields (base_revision, production_revision) must match t
 latest snapshot.
 """
 
-AGENT_README_TEXT = """# Top Down Planning — agent protocol
+AGENT_README_PREFIX = """# Top Down Planning — agent protocol
 
 `tdp` orchestrates planning and production. Agents interact only through `tdp agent`
 shell commands; those commands persist mutations to the run store. The orchestrator
@@ -1599,7 +1612,8 @@ include:
 - Producer packages include `approved_plan` (plan metadata plus canonical item
   contracts from `build_item_production_contract`)
 - Review packages include `plan_scope`, `boundaries`, `acceptance`, and `risks` from persisted
-  plan metadata (not static run config)
+  plan metadata (not static run config), plus `review_policy` with
+  `severity_definitions` and `category_definitions` for classifying findings
 
 The provider adapter formats these payloads for the agent. Follow
 `protocol_instructions` and `tool_instructions`; host IDE planning artifacts are
@@ -1633,7 +1647,30 @@ item-owned `scope`/`boundaries`, merged `effective_scope`/`effective_boundaries`
 depends_on. Producers enforce batch boundaries from `effective_*`; approved work
 leaves must already declare item-level scope or boundaries.
 
-## Workflow
+"""
+
+
+def _finding_category_readme_section() -> str:
+    lines = [
+        "## Review finding categories",
+        "",
+        "Discovery findings require `severity` and `category`. Reviewer packages "
+        "expose `review_policy.severity_definitions` and "
+        "`review_policy.category_definitions` (same enum as "
+        "`tdp agent schema review-respond`).",
+        "",
+        "The configured review `rubric` names inspection themes (dependencies, "
+        "coverage, risk ownership, root contract). Rubric themes are not finding "
+        "categories — classify each issue with the nearest category below:",
+        "",
+    ]
+    for category in FINDING_CATEGORY_ORDER:
+        lines.append(f"- **{category}** — {CATEGORY_DEFINITIONS[category]}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+_AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.
    Each `add_item` requires `kind`: `work` for batchable leaves, `aggregate` for
@@ -1652,8 +1689,9 @@ leaves must already declare item-level scope or boundaries.
    findings after revisions), then fresh `scope_review` (complete-scope discovery).
    Each stage requires `stage` plus Result Contract fields — see
    `review-respond-initial`, `review-respond-initial-approved`, `review-respond-verification`, and `review-respond-scope`.
-   Review packages include an embedded plan tree and optional `rubric` on initial
-   review only; refresh with `plan snapshot --view active` when revising after
+   Review packages include an embedded plan tree, `review_policy.category_definitions`,
+   and optional `rubric` on initial review only; refresh with
+   `plan snapshot --view active` when revising after
    `needs_revision` or initial `changes_requested`. Reviewers prioritize plan
    correctness and internal consistency. Approval requires a clear
    fresh `scope_review` against the current artifact digest — finding closure alone is not
@@ -1665,7 +1703,8 @@ leaves must already declare item-level scope or boundaries.
 4. Mandatory whole-output review must complete the gate before `outcome: accepted`.
    Same mandatory gate as whole-plan review (`initial_review`, then
    repeatable verification and fresh `scope_review` rounds). Review packages include
-   production traceability, an optional `rubric` on initial review only, and
+   production traceability, `review_policy.category_definitions`, an optional
+   `rubric` on initial review only, and
    reviewer guidance that prioritizes output correctness and cross-artifact
    consistency. After `needs_revision` or initial
    `changes_requested`, the producer must use `production apply` with
@@ -1814,6 +1853,12 @@ use `production snapshot` or `production check` for plan validation.
 
 Package README: tools/top_down_planning/README.md
 """
+
+AGENT_README_TEXT = (
+    AGENT_README_PREFIX
+    + _finding_category_readme_section()
+    + _AGENT_README_WORKFLOW_AND_BEYOND
+)
 
 
 def list_schema_names() -> list[str]:

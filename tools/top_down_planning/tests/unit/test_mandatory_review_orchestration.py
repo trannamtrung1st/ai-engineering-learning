@@ -89,6 +89,7 @@ def test_whole_plan_scope_review_reopen_returns_to_verification(tmp_path: Path) 
                 {
                     "id": "finding-blocker-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-api"],
                     "issue": "Missing deliverable coverage.",
                     "recommended_change": "Add leaf acceptance.",
@@ -174,6 +175,7 @@ def test_whole_plan_scope_review_round_limit_rejects(tmp_path: Path) -> None:
                     {
                         "id": "finding-blocker-01",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-api"],
                         "issue": "Still blocked.",
                         "recommended_change": "Fix coverage.",

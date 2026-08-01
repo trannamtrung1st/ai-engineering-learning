@@ -219,6 +219,7 @@ def test_legacy_severity_findings_remain_readable_after_merge() -> None:
                 {
                     "id": "legacy-1",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-root"],
                     "issue": "Legacy blocker",
                     "recommended_change": "Fix",
@@ -370,6 +371,7 @@ def test_review_service_rejects_legacy_decision_path(tmp_path: Path) -> None:
                     {
                         "id": "finding-legacy",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-root"],
                         "issue": "Legacy path",
                         "recommended_change": "Fix",

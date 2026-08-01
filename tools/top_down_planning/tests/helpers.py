@@ -375,7 +375,7 @@ def _normalize_reported_findings(
         if not str(finding.get("severity") or "").strip():
             raise ValueError("test finding fixtures require severity")
         if not str(finding.get("category") or "").strip():
-            finding["category"] = "other"
+            raise ValueError("test finding fixtures require category")
         if "recommended_change" not in finding:
             raise ValueError("test finding fixtures require recommended_change")
         reported.append(finding)

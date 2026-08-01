@@ -215,6 +215,7 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
                 {
                     "id": "finding-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-leaf"],
                     "issue": "Output evidence is missing.",
                     "recommended_change": "Add artifact reference.",
@@ -329,6 +330,7 @@ def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None
                     {
                         "id": "finding-01",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-leaf"],
                         "issue": "Needs work.",
                         "recommended_change": "Improve output.",
@@ -354,6 +356,7 @@ def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None
                     {
                         "id": "finding-02",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-leaf"],
                         "issue": "Still needs work.",
                         "recommended_change": "Improve again.",
@@ -458,6 +461,7 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
                 {
                     "id": "finding-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-leaf"],
                     "issue": "Output evidence is missing.",
                     "recommended_change": "Add artifact reference.",

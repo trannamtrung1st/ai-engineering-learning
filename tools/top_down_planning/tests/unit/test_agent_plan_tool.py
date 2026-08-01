@@ -823,6 +823,7 @@ def test_snapshot_ready_excludes_review_blocked_items(tmp_path: Path) -> None:
                 {
                     "id": "finding-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-child"],
                     "issue": "Needs more detail.",
                     "recommended_change": "Expand acceptance.",

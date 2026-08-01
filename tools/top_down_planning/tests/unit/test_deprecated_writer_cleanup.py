@@ -15,6 +15,19 @@ from top_down_planning.domain.reviews import (
 )
 
 
+def test_review_finding_rejects_missing_category() -> None:
+    with pytest.raises(ValueError, match="finding requires category"):
+        ReviewFinding.from_dict(
+            {
+                "id": "f1",
+                "severity": "blocker",
+                "target_refs": ["item-a"],
+                "issue": "gap",
+                "recommended_change": "Fix",
+            }
+        )
+
+
 def test_review_finding_rejects_legacy_importance_and_required_change() -> None:
     with pytest.raises(ValueError, match="legacy finding field importance"):
         ReviewFinding.from_dict(
@@ -22,6 +35,7 @@ def test_review_finding_rejects_legacy_importance_and_required_change() -> None:
                 "id": "f1",
                 "importance": "blocking",
                 "severity": "blocker",
+                "category": "correctness",
                 "target_refs": ["item-a"],
                 "issue": "gap",
                 "recommended_change": "Fix",
@@ -32,6 +46,7 @@ def test_review_finding_rejects_legacy_importance_and_required_change() -> None:
             {
                 "id": "f2",
                 "severity": "blocker",
+                "category": "correctness",
                 "target_refs": ["item-a"],
                 "issue": "gap",
                 "required_change": "Fix",

@@ -3,12 +3,72 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
 from core_tools.schema import validate_against_schema
 from top_down_planning import schema_docs
+from top_down_planning.domain.review_policy import FINDING_CATEGORY_ORDER
 from tests.conftest import run_cli
+
+
+def test_agent_readme_documents_finding_categories() -> None:
+    readme = schema_docs.AGENT_README_TEXT.lower()
+    assert "## review finding categories" in readme
+    assert "category_definitions" in readme
+    assert "rubric themes are not finding categories" in readme
+    for category in FINDING_CATEGORY_ORDER:
+        assert category in readme
+
+
+def test_agent_help_points_to_finding_categories() -> None:
+    assert "category_definitions" in schema_docs.AGENT_HELP_TEXT
+
+
+def test_review_finding_schema_uses_builtin_category_enum() -> None:
+    schema = schema_docs.show_schema("review-respond")
+    finding_schemas: list[dict[str, Any]] = []
+    for branch in schema["oneOf"]:
+        reported = (
+            branch.get("properties", {})
+            .get("reported_findings", {})
+            .get("items")
+        )
+        if reported is not None:
+            finding_schemas.append(reported)
+        side_effects = (
+            branch.get("properties", {})
+            .get("new_direct_side_effect_findings", {})
+            .get("items")
+        )
+        if side_effects is not None:
+            finding_schemas.append(side_effects)
+    assert finding_schemas
+    expected = list(FINDING_CATEGORY_ORDER)
+    for finding_schema in finding_schemas:
+        assert finding_schema["properties"]["category"]["enum"] == expected
+
+
+def test_review_respond_schema_rejects_invalid_finding_category() -> None:
+    example = schema_docs.show_example("review-respond")
+    payload = dict(example["payload"])
+    payload["reported_findings"] = [
+        {
+            "id": "finding-001",
+            "severity": "major",
+            "category": "style",
+            "target_refs": ["item-api"],
+            "issue": "Bad category.",
+            "recommended_change": "Use a built-in category.",
+            "status": "unresolved",
+        }
+    ]
+    issues = validate_against_schema(
+        payload,
+        schema_docs.show_schema("review-respond"),
+    )
+    assert issues
 
 
 def test_agent_help_lists_core_verbs() -> None:

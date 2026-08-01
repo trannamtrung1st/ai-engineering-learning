@@ -242,6 +242,7 @@ def _pause_whole_plan_revision_limit(
                     {
                         "id": "finding-01",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-api"],
                         "issue": "Needs work.",
                         "recommended_change": "Improve acceptance.",
@@ -268,6 +269,7 @@ def _pause_whole_plan_revision_limit(
                     {
                         "id": "finding-01",
                         "severity": "blocker",
+                        "category": "correctness",
                         "target_refs": ["item-api"],
                         "issue": "Still needs work.",
                         "recommended_change": "Improve acceptance.",
@@ -380,6 +382,7 @@ def _pause_whole_plan_scope_review_limit(
                 {
                     "id": "finding-blocker-01",
                     "severity": "blocker",
+                    "category": "correctness",
                     "target_refs": ["item-api"],
                     "issue": "Still blocked.",
                     "recommended_change": "Fix coverage.",

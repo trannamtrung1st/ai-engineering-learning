@@ -134,6 +134,11 @@ def build_reviewer_protocol_instructions(
                     "dispositions "
                     "resolved|partially_resolved|unresolved|superseded|invalid."
                 ),
+                (
+                    "When reporting new_direct_side_effect_findings, classify "
+                    "each entry by severity and category using review_policy "
+                    "severity_definitions and category_definitions."
+                ),
             ]
         )
     elif normalized == "scope_review":
@@ -146,8 +151,9 @@ def build_reviewer_protocol_instructions(
                     "and report every material issue you find."
                 ),
                 (
-                    "Classify each finding by severity and category using the "
-                    "provided review_policy definitions. Report every material "
+                    "Classify each finding by severity and category using "
+                    "review_policy severity_definitions and category_definitions. "
+                    "Report every material "
                     "issue you discover; do not omit lower-severity issues "
                     "because they may not force revision. Do not report purely "
                     "subjective preferences unless they are clearly marked as "
@@ -169,8 +175,9 @@ def build_reviewer_protocol_instructions(
                 (
                     "Review the complete current scope and report every material "
                     "issue you find. Classify each finding by severity and "
-                    "category using the provided review_policy definitions. "
-                    "Report every material issue you discover; do not omit "
+                    "category using review_policy severity_definitions and "
+                    "category_definitions. Report every material issue you "
+                    "discover; do not omit "
                     "lower-severity issues because they may not force revision. "
                     "Do not report purely subjective preferences unless they are "
                     "clearly marked as suggestions. Do not raise out-of-scope "
