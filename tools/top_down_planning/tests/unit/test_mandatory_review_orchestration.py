@@ -16,7 +16,6 @@ from tests.helpers import (
     mandatory_initial_respond_request,
     mandatory_verification_respond_request,
     respond_review,
-    script_reviewer_allocate,
     script_verification_then_scope_review_approval,
 )
 from tests.unit.test_whole_plan_review import _create_run_at_whole_plan_review

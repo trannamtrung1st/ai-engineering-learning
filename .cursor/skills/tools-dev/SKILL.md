@@ -65,7 +65,7 @@ with patch("top_down_planning.cli.user.emit_message"):
 Read `tests/helpers.py` first. Common utilities:
 
 - `done_events()`, `respond_review()`, `apply_plan()`, `apply_production()`
-- `script_reviewer_allocate()`, `mandatory_initial_respond_request()`
+- `mandatory_initial_respond_request()`
 - `ensure_input_ref_files()` for config input refs on `tmp_path`
 
 Extend helpers when the same stub setup repeats across tests.

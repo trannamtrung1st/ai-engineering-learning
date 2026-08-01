@@ -18,7 +18,6 @@ from tests.helpers import (
     mandatory_initial_respond_request,
     mandatory_verification_needs_revision_request,
     respond_review,
-    script_reviewer_allocate,
 )
 from tests.unit.test_whole_plan_review import _create_run_at_whole_plan_review
 
@@ -40,7 +39,6 @@ def test_in_process_scope_review_changes_requested_emits_event_and_enters_revisi
     _create_run_at_whole_plan_review(store, provider=provider)
     run_id = "run-20260101T000301-000301"
 
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="initial clear"),
         mutate_store=lambda: respond_review(
@@ -57,7 +55,6 @@ def test_in_process_scope_review_changes_requested_emits_event_and_enters_revisi
             loop_id="review-whole-plan-01",
         )(),
     )
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="blockers found"),
         mutate_store=lambda: respond_review(
@@ -125,7 +122,6 @@ def test_in_process_needs_revision_enters_revision_without_illegal_transition(
     _create_run_at_whole_plan_review(store, provider=provider)
     run_id = "run-20260101T000301-000301"
 
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="initial changes"),
         mutate_store=lambda: respond_review(

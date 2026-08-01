@@ -23,7 +23,7 @@ from top_down_planning.orchestrator.provider_turns import (
     consume_provider_turn_with_session_recovery,
 )
 from top_down_planning.orchestrator.reviewer_session import (
-    allocate_reviewer_binding_for_recheck,
+    ReviewerRecheckRequiresNewSession,
     resolve_reviewer_session_for_recheck,
 )
 from top_down_planning.orchestrator.session_events import sync_reviewer_loop_session_id
@@ -42,7 +42,7 @@ def _cursor_stream(*, session_id: str, text: str) -> list[str]:
             {
                 "type": "system",
                 "subtype": "init",
-                "session_id": "cursor-pending-1",
+                "session_id": session_id,
             }
         ),
         json.dumps(
@@ -203,26 +203,7 @@ def test_whole_plan_recheck_binds_cursor_reviewer_session_after_initial_review(
     )
 
 
-def _replacement_reviewer_provider(*, session_id: str = "replacement-session-1") -> object:
-  class _Provider:
-      def canonical_session_id(self, handle: str) -> str:
-          return handle
-
-      def start_reviewer_session(self, *_args: object, **_kwargs: object) -> str:
-          return session_id
-
-      def get_session_reference(self, handle: str) -> dict[str, str]:
-          return {"model": "auto", "session_id": handle}
-
-  return _Provider()
-
-
-def test_resolve_reviewer_session_for_recheck_allocates_after_lost_transient_binding(
-    tmp_path: Path,
-) -> None:
-    store = FileRunStore(tmp_path)
-    run_id = "run-20260101T010004-010004"
-    _create_run_at_whole_plan_review(store, run_id=run_id)
+def test_resolve_reviewer_session_for_recheck_raises_when_replacement_required() -> None:
     binding = (
         new_session_binding(role="reviewer", kind="reviewer", state="starting")
         .with_provider_session_id("cursor-pending-1")
@@ -236,76 +217,30 @@ def test_resolve_reviewer_session_for_recheck_allocates_after_lost_transient_bin
         revise_at="major",
         status="changes_requested",
     )
-    payload = loop.to_dict()
-    payload["finding_actions"] = [
+    loop = ReviewLoop.from_dict(
         {
-            "finding_id": "finding-001",
-            "finding_set_id": "review-whole-plan-01-fs-01",
-            "action": "fix",
-            "actor_role": "planner",
-            "artifact_revision": 2,
-            "rationale": "fixed",
+            **loop.to_dict(),
+            "finding_actions": [
+                {
+                    "finding_id": "finding-001",
+                    "finding_set_id": "review-whole-plan-01-fs-01",
+                    "action": "fix",
+                    "actor_role": "planner",
+                    "artifact_revision": 2,
+                    "rationale": "fixed",
+                }
+            ],
+            "revision_cycles": 1,
+            "lifecycle_status": "revision_in_progress",
         }
-    ]
-    payload["revision_cycles"] = 1
-    payload["lifecycle_status"] = "revision_in_progress"
-    store.save_review(run_id, payload)
-    loop = ReviewLoop.from_dict(store.load_review(run_id, "review-whole-plan-01"))
-
-    provider = _replacement_reviewer_provider()
-    append_event = MagicMock()
-    session_id = resolve_reviewer_session_for_recheck(
-        provider,
-        store,
-        run_id,
-        loop,
-        target_revision=1,
-        current_revision=2,
-        phase=WHOLE_PLAN_REVIEW,
-        append_event=append_event,
     )
 
-    assert session_id == "replacement-session-1"
-    append_event.assert_called_once()
-    review = store.load_review(run_id, "review-whole-plan-01")
-    assert review["reviewer_binding"]["provider_session_id"] == session_id
-    assert review["reviewer_binding"]["state"] == "bound"
-
-
-def test_allocate_reviewer_binding_for_recheck_releases_stale_binding(
-    tmp_path: Path,
-) -> None:
-    store = FileRunStore(tmp_path)
-    run_id = "run-20260101T010005-010005"
-    _create_run_at_whole_plan_review(store, run_id=run_id)
-    binding = (
-        new_session_binding(role="reviewer", kind="reviewer", state="starting")
-        .with_provider_session_id("cursor-pending-1")
-    )
-    loop = make_review_loop(
-        id="review-whole-plan-01",
-        type="whole_plan",
-        reviewer_binding=binding,
-        target_revision=0,
-        scope={"kind": "whole_plan"},
-        revise_at="major",
-        status="changes_requested",
-    )
-    store.save_review(run_id, loop.to_dict())
-
-    provider = _replacement_reviewer_provider(session_id="replacement-session-2")
-    session_id = allocate_reviewer_binding_for_recheck(
-        provider,
-        store,
-        run_id,
-        loop,
-        phase=WHOLE_PLAN_REVIEW,
-        append_event=MagicMock(),
-    )
-
-    assert session_id == "replacement-session-2"
-    review = store.load_review(run_id, "review-whole-plan-01")
-    assert review["reviewer_binding"]["provider_session_id"] == session_id
+    with pytest.raises(ReviewerRecheckRequiresNewSession):
+        resolve_reviewer_session_for_recheck(
+            loop,
+            target_revision=1,
+            current_revision=2,
+        )
 
 
 def test_consume_provider_turn_returns_canonical_reviewer_session_id(

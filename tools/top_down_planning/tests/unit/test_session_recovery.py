@@ -28,7 +28,7 @@ from top_down_planning.orchestrator.recovery_manifest import (
     build_planner_recovery_manifest,
     build_producer_recovery_manifest,
 )
-from top_down_planning.orchestrator.reviewer_session import allocate_reviewer_session
+from top_down_planning.orchestrator.reviewer_session import begin_reviewer_review
 from top_down_planning.orchestrator.session_recovery import replace_primary_session
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import update_primary_binding
@@ -182,14 +182,20 @@ def test_reviewer_session_missing_and_replaced(tmp_path: Path) -> None:
         loop,
         plan=store.load_plan_model(run_id),
     )
-    provider.script_turn(done_events(text="allocation"))
-    session_id = allocate_reviewer_session(provider, run_id=run_id, loop_id=loop.id)
+    provider.script_turn(done_events(text="initial review"))
+    session_id, _token = begin_reviewer_review(
+        provider,
+        store,
+        run_id,
+        loop_id=loop.id,
+        review_package=package,
+        phase=PLANNING,
+    )
     list(provider.stream_events(session_id))
     updated = loop.with_reviewer_provider_session_id(session_id)
     store.save_review(run_id, updated.to_dict())
 
     provider.mark_session_not_found(session_id)
-    provider.script_turn(done_events(text="replacement reviewer alloc"))
     provider.script_turn(done_events(text="replacement reviewer turn"))
     outcome = consume_provider_turn_with_session_recovery(
         store,

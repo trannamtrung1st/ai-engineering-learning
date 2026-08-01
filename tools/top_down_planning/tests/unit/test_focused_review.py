@@ -28,7 +28,6 @@ from tests.helpers import (
     respond_review,
     run_digests_for_config,
     save_review_payload,
-    script_reviewer_allocate,
     sessions_with_primary_session,
     whole_plan_approval_record,
 )
@@ -233,7 +232,7 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
             }
         ],
     )()
-    script_reviewer_allocate(provider)
+    provider.script_turn(done_events(text="recheck delivery without respond"))
     with pytest.raises(ProviderRunError, match="without a decision"):
         FocusedReviewOrchestrator(store, run_id, provider).run("review-focused-plan-01")
     provider.script_turn(
@@ -408,7 +407,6 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
     run["sessions"] = sessions_with_primary_session(planner=planner_session_id)
     store.save_run("run-20260101T000401-000401", run, expected_revision)
 
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="reviewer turn"),
         mutate_store=respond_review(
@@ -450,7 +448,6 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
             ],
         ),
     )
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="reviewer verify"),
         mutate_store=lambda: respond_review(
@@ -594,7 +591,6 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
             phase=PRODUCTION,
         ),
     )
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="reviewer approve"),
         mutate_store=respond_review(

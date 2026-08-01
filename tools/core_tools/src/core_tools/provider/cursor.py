@@ -171,7 +171,7 @@ def build_agent_argv(
     if resolved_model:
         argv.extend(["--model", resolved_model])
 
-    if session_id:
+    if session_id and not str(session_id).startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
         argv.extend(["--resume", session_id])
 
     if prompt:

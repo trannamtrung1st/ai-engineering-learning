@@ -29,7 +29,6 @@ from top_down_planning.orchestrator.errors import (
     ProviderRunError,
     SessionRecoveryPaused,
 )
-from top_down_planning.orchestrator.reviewer_session import allocate_reviewer_session
 from top_down_planning.orchestrator.run_transitions import pause_run
 from top_down_planning.orchestrator.session_events import (
     commit_primary_provider_session_binding,
@@ -336,13 +335,7 @@ def replace_reviewer_session(
         )
 
         try:
-            new_session_id = allocate_reviewer_session(
-                provider,
-                run_id=run_id,
-                loop_id=loop.id,
-                model=model,
-            )
-            provider.send(new_session_id, manifest, model=model)
+            new_session_id = provider.start_reviewer_session(manifest, model=model)
             emit_reviewer_session_started(
                 append_event,
                 provider,

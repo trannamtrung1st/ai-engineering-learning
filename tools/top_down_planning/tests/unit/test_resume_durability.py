@@ -43,7 +43,6 @@ from tests.helpers import (
     minimal_resolved_config,
     respond_review,
     script_mandatory_clear_approval,
-    script_reviewer_allocate,
     sessions_with_primary_session,
     whole_plan_approval_record,
 )

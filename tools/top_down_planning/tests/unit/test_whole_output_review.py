@@ -15,7 +15,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, respond_review, save_review_payload, script_mandatory_clear_approval, script_reviewer_allocate, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
+from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, respond_review, save_review_payload, script_mandatory_clear_approval, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -319,7 +319,6 @@ def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None
     _create_run_at_whole_output_review(store, limits={"max_revision_cycles": 1}, provider=provider)
 
     run_id = "run-20260101T000801-000801"
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(
@@ -386,7 +385,6 @@ def test_provider_exception_does_not_set_outcome(tmp_path: Path) -> None:
     provider = StubProvider()
     _create_run_at_whole_output_review(store, provider=provider)
 
-    script_reviewer_allocate(provider)
     provider.script_turn([{"type": "error", "text": "provider crashed"}])
     with pytest.raises(ProviderRunError, match="provider crashed"):
         WholeOutputReviewOrchestrator(store, "run-20260101T000801-000801", provider).run()

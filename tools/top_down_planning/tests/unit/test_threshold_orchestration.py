@@ -29,7 +29,6 @@ from tests.helpers import (
     minimal_resolved_config,
     review_loop_dict_with_binding,
     save_review_payload,
-    script_reviewer_allocate,
 )
 
 
@@ -197,7 +196,6 @@ def test_focused_orchestrator_advisory_handoff_defer_completes(
     save_review_payload(store, run_id, loop.to_dict())
 
     provider = StubProvider()
-    script_reviewer_allocate(provider)
 
     def _reviewer_discovery() -> None:
         from top_down_planning.domain.session_bindings import binding_provider_session_id

@@ -180,6 +180,72 @@ def test_build_agent_argv_shape_with_fake_runner(tmp_path: Path) -> None:
     assert argv[-1] == "Plan the work"
 
 
+def test_build_agent_argv_omits_resume_for_transient_pending_session(tmp_path: Path) -> None:
+    argv = build_agent_argv(
+        {},
+        binary="/fake/agent",
+        workspace=tmp_path,
+        session_id="cursor-pending-1",
+        prompt="Review the package",
+    )
+    assert "--resume" not in argv
+    assert argv[-1] == "Review the package"
+
+
+def test_cursor_reviewer_send_before_first_turn_omits_resume_for_pending_session(
+    tmp_path: Path,
+) -> None:
+    captured_argv: list[list[str]] = []
+
+    def fake_runner(argv: list[str], cwd: Path):
+        captured_argv.append(argv)
+        yield json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "chat-reviewer-1",
+            }
+        )
+        yield json.dumps(
+            {
+                "type": "assistant",
+                "session_id": "chat-reviewer-1",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "reviewed"}],
+                },
+            }
+        )
+        yield json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": "chat-reviewer-1",
+                "is_error": False,
+                "result": "reviewed",
+            }
+        )
+
+    config = {"provider": {"name": "cursor"}}
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        config,
+        workspace=tmp_path,
+        runner=fake_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+
+    session_id = provider.start_reviewer_session({"loop_id": "review-01"})
+    provider.send(session_id, {"action": "initial_review", "loop_id": "review-01"})
+    list(provider.stream_events(session_id))
+
+    assert len(captured_argv) == 1
+    assert "--resume" not in captured_argv[0]
+    assert provider.canonical_session_id(session_id) == "chat-reviewer-1"
+
+
 def test_cursor_provider_uses_injected_runner(tmp_path: Path) -> None:
     stream_lines = [
         json.dumps(
@@ -757,7 +823,7 @@ def test_cursor_reviewer_turn_rejects_transient_only_stream_session_id(
         list(provider.stream_events(session_id))
 
 
-def test_cursor_reviewer_turn_accepts_durable_session_id_after_pending_init(
+def test_cursor_reviewer_turn_accepts_durable_session_id_on_init(
     tmp_path: Path,
 ) -> None:
     stream_lines = [
@@ -765,7 +831,7 @@ def test_cursor_reviewer_turn_accepts_durable_session_id_after_pending_init(
             {
                 "type": "system",
                 "subtype": "init",
-                "session_id": "cursor-pending-1",
+                "session_id": "chat-reviewer-1",
             }
         ),
         json.dumps(

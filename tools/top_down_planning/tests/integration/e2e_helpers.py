@@ -31,7 +31,6 @@ from tests.helpers import (
     only_run_id,
     request_amendment,
     respond_review,
-    script_reviewer_allocate,
     write_config,
 )
 
@@ -301,7 +300,7 @@ def script_whole_plan_review(
     decision: str,
     loop_id: str = "review-whole-plan-01",
 ) -> None:
-    """Queue allocate + respond turns for whole-plan review (mandatory gate when approved)."""
+    """Queue respond turns for whole-plan review (mandatory gate when approved)."""
 
     if decision == "approved":
         def _initial_mutate() -> None:
@@ -336,13 +335,10 @@ def script_whole_plan_review(
                 loop_id=loop_id,
             )()
 
-        script_reviewer_allocate(provider)
         queue_turn(provider, (done_events(text="review turn"), _initial_mutate))
-        script_reviewer_allocate(provider)
         queue_turn(provider, (done_events(text="blocker review turn"), _scope_mutate))
         return
 
-    script_reviewer_allocate(provider)
     queue_turn(
         provider,
         review_respond_script(
@@ -382,12 +378,11 @@ def script_whole_output_review(
     decision: str,
     loop_id: str = "review-whole-output-01",
 ) -> None:
-    """Queue allocate + respond turns for whole-output review (mandatory gate when approved)."""
+    """Queue respond turns for whole-output review (mandatory gate when approved)."""
 
     production = store.load_production(run_id)
     target_revision = int(production["output_revision"])
     if decision == "approved":
-        script_reviewer_allocate(provider)
         queue_turn(
             provider,
             (
@@ -407,7 +402,6 @@ def script_whole_output_review(
                 ),
             ),
         )
-        script_reviewer_allocate(provider)
         queue_turn(
             provider,
             (
@@ -429,7 +423,6 @@ def script_whole_output_review(
         )
         return
 
-    script_reviewer_allocate(provider)
     queue_turn(
         provider,
         review_respond_script(

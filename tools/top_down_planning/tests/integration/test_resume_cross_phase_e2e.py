@@ -33,7 +33,6 @@ from tests.helpers import (
     mandatory_verification_respond_request,
     prepare_loop_for_scope_review_respond,
     respond_review,
-    script_reviewer_allocate,
     whole_output_approval_record,
     whole_plan_approval_record,
 )
@@ -228,7 +227,6 @@ def _pause_whole_plan_revision_limit(
         limits={"max_revision_cycles": 1},
         provider=provider,
     )
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(

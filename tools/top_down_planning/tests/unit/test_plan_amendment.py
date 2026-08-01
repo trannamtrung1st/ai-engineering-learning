@@ -20,7 +20,6 @@ from tests.helpers import (
     grant_capability,
     respond_review,
     script_mandatory_clear_approval,
-    script_reviewer_allocate,
     sessions_with_primary_session,
     whole_plan_approval_record,
     mandatory_scope_review_respond_request,
@@ -209,7 +208,6 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             phase=PLAN_AMENDMENT,
         ),
     )
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="review turn"),
         mutate_store=lambda: respond_review(
@@ -226,7 +224,6 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             loop_id="review-whole-plan-02",
         )(),
     )
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="blocker review turn"),
         mutate_store=lambda: respond_review(
@@ -433,7 +430,6 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
     store.save_production("run-20260101T001901-001901", production, int(production["revision"]) - 1)
 
     run_id = "run-20260101T001901-001901"
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="review turn"),
         mutate_store=lambda: respond_review(
@@ -449,7 +445,6 @@ def test_resume_routes_pending_amendment_in_whole_plan_review(tmp_path: Path) ->
             loop_id="review-whole-plan-02",
         )(),
     )
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="blocker review turn"),
         mutate_store=lambda: respond_review(

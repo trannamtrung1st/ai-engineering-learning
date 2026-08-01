@@ -28,7 +28,6 @@ from tests.helpers import (
     mandatory_verification_respond_request,
     respond_review,
     script_mandatory_clear_approval,
-    script_reviewer_allocate,
     script_verification_then_scope_review_approval,
     prepare_loop_for_scope_review_respond,
 )
@@ -316,7 +315,6 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
     _create_run_at_whole_plan_review(store, limits={"max_revision_cycles": 1}, provider=provider)
 
     run_id = "run-20260101T000301-000301"
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(
@@ -391,7 +389,6 @@ def test_unapproved_plan_cannot_leave_whole_plan_review_phase(tmp_path: Path) ->
 
     provider = StubProvider()
     run_id = "run-20260101T000301-000301"
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(

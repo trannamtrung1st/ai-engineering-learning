@@ -71,7 +71,8 @@ from top_down_planning.orchestrator.capability import (
 )
 from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
 from top_down_planning.orchestrator.reviewer_session import (
-    allocate_reviewer_session,
+    ReviewerRecheckRequiresNewSession,
+    begin_reviewer_review,
     build_reviewer_protocol_instructions,
     build_reviewer_tool_instructions,
     deliver_reviewer_turn,
@@ -676,10 +677,13 @@ class WholeOutputReviewOrchestrator:
         role_context = resolve_role_session_context(config, run, "reviewer")
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
-        session_id = allocate_reviewer_session(
+        session_id, self._capability_token = begin_reviewer_review(
             self._provider,
-            run_id=self._run_id,
+            self._store,
+            self._run_id,
             loop_id=loop.id,
+            review_package=package,
+            phase=phase,
             model=role_context.model,
         )
         emit_reviewer_session_started(
@@ -688,17 +692,6 @@ class WholeOutputReviewOrchestrator:
             phase=phase,
             session_id=session_id,
             loop_id=loop.id,
-        )
-        updated = loop.with_reviewer_provider_session_id(session_id)
-        commit_reviewer_loop_provider_session(self._store, self._run_id, updated)
-        self._capability_token = deliver_reviewer_turn(
-            self._provider,
-            self._store,
-            self._run_id,
-            session_id=session_id,
-            loop_id=loop.id,
-            phase=phase,
-            request=package,
         )
         return session_id, self._capability_token
 
@@ -956,21 +949,44 @@ class WholeOutputReviewOrchestrator:
         phase = str(run.get("phase") or WHOLE_OUTPUT_REVIEW)
         config = self._store.load_resolved_config(self._run_id)
         role_context = resolve_role_session_context(config, run, "reviewer")
-        session_id = resolve_reviewer_session_for_recheck(
-            self._provider,
-            self._store,
-            self._run_id,
-            loop,
-            target_revision=loop.target_revision,
-            current_revision=output_revision,
-            phase=phase,
-            append_event=self._append_event,
-            model=role_context.model,
-        )
-
         updated = self._persist_loop(
             mark_verification_pending(loop, target_revision=output_revision)
         )
+        verification_request = verification_recheck_request(
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop=updated,
+            target_revision=output_revision,
+        )
+        try:
+            session_id = resolve_reviewer_session_for_recheck(
+                loop,
+                target_revision=loop.target_revision,
+                current_revision=output_revision,
+            )
+        except ReviewerRecheckRequiresNewSession:
+            loop = self._persist_loop(loop.with_reviewer_session_released())
+            updated = self._persist_loop(
+                mark_verification_pending(loop, target_revision=output_revision)
+            )
+            session_id, self._capability_token = begin_reviewer_review(
+                self._provider,
+                self._store,
+                self._run_id,
+                loop_id=loop.id,
+                review_package=verification_request,
+                phase=phase,
+                model=role_context.model,
+            )
+            emit_reviewer_session_started(
+                self._append_event,
+                self._provider,
+                phase=phase,
+                session_id=session_id,
+                loop_id=loop.id,
+                replacement=True,
+            )
+            return updated
+
         self._capability_token = deliver_reviewer_turn(
             self._provider,
             self._store,
@@ -978,11 +994,7 @@ class WholeOutputReviewOrchestrator:
             session_id=session_id,
             loop_id=loop.id,
             phase=phase,
-            request=verification_recheck_request(
-                phase=WHOLE_OUTPUT_REVIEW,
-                loop=updated,
-                target_revision=output_revision,
-            ),
+            request=verification_request,
             model=role_context.model,
         )
         emit_reviewer_session_resumed(

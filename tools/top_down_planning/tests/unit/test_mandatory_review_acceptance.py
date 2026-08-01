@@ -290,13 +290,11 @@ def test_whole_output_scope_review_round_limit_rejects_without_approval(
         mandatory_initial_respond_request,
         mandatory_verification_respond_request,
         respond_review,
-        script_reviewer_allocate,
         prepare_loop_for_scope_review_respond,
     )
 
     # Initial clear → first blocker finds issues → revise → verify clear →
     # second blocker would be needed but budget is 1.
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="initial clear"),
         mutate_store=respond_review(

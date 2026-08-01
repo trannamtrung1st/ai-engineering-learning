@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
 
 from top_down_planning.domain.reviews import ReviewLoop
@@ -34,6 +33,10 @@ _FORBIDDEN_STAGE_LABELS = (
 )
 
 
+class ReviewerRecheckRequiresNewSession(Exception):
+    """The bound reviewer session is missing; begin a new session with the recheck package."""
+
+
 def reviewer_loop_provider_session_id(loop: ReviewLoop | dict[str, Any]) -> str | None:
     if isinstance(loop, ReviewLoop):
         return resumable_binding_provider_session_id(loop.reviewer_binding)
@@ -50,16 +53,6 @@ def reviewer_loop_binding(loop: ReviewLoop | dict[str, Any]) -> SessionBinding |
     if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
         return SessionBinding.from_dict(binding_raw)
     return None
-
-
-def build_reviewer_allocation_request(*, run_id: str, loop_id: str) -> dict[str, Any]:
-    """Minimal allocation payload that only establishes a provider session id."""
-
-    return {
-        "action": "reviewer_session_allocate",
-        "run_id": run_id,
-        "loop_id": loop_id,
-    }
 
 
 def build_reviewer_protocol_instructions(
@@ -210,18 +203,57 @@ def reviewer_decision_missing_error() -> ProviderRunError:
     return ProviderRunError(REVIEWER_DECISION_MISSING)
 
 
-def allocate_reviewer_session(
+def _issue_reviewer_capability(
+    store: RunStore,
+    run_id: str,
     provider: Provider,
     *,
-    run_id: str,
+    session_id: str,
     loop_id: str,
+    phase: str,
+) -> str:
+    token = issue_session_capability(
+        store,
+        run_id,
+        role="reviewer",
+        phase=phase,
+        session_id=session_id,
+        session_kind="reviewer",
+        loop_id=loop_id,
+    )
+    bind_provider_capability(provider, token)
+    return token
+
+
+def start_reviewer_review_session(
+    provider: Provider,
+    review_package: dict[str, Any],
+    *,
     model: str | None = None,
 ) -> str:
-    """Register a reviewer session id without delivering the review package."""
+    """Register a reviewer session whose first streamed turn uses *review_package*."""
 
-    return provider.start_reviewer_session(
-        build_reviewer_allocation_request(run_id=run_id, loop_id=loop_id),
-        model=model,
+    return provider.start_reviewer_session(review_package, model=model)
+
+
+def bind_reviewer_session_capability(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    *,
+    session_id: str,
+    loop_id: str,
+    phase: str,
+) -> str:
+    """Issue and bind a reviewer capability token for an already-persisted loop binding."""
+
+    return _issue_reviewer_capability(
+        store,
+        run_id,
+        provider,
+        session_id=session_id,
+        loop_id=loop_id,
+        phase=phase,
     )
 
 
@@ -236,18 +268,16 @@ def deliver_reviewer_turn(
     request: dict[str, Any],
     model: str | None = None,
 ) -> str:
-    """Issue a reviewer capability token, bind it, then queue a provider turn."""
+    """Bind reviewer capability and queue a follow-up turn on an existing session."""
 
-    token = issue_session_capability(
+    token = _issue_reviewer_capability(
         store,
         run_id,
-        role="reviewer",
-        phase=phase,
+        provider,
         session_id=session_id,
-        session_kind="reviewer",
         loop_id=loop_id,
+        phase=phase,
     )
-    bind_provider_capability(provider, token)
     provider.send(session_id, request, model=model)
     return token
 
@@ -262,22 +292,30 @@ def begin_reviewer_review(
     phase: str,
     model: str | None = None,
 ) -> tuple[str, str]:
-    """Allocate a reviewer session, then deliver the bounded review package."""
+    """Start a reviewer session, persist its loop binding, and bind capability."""
 
-    session_id = allocate_reviewer_session(
+    from top_down_planning.orchestrator.session_events import (
+        commit_reviewer_loop_provider_session,
+    )
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    session_id = start_reviewer_review_session(
         provider,
-        run_id=run_id,
-        loop_id=loop_id,
+        review_package,
         model=model,
     )
-    token = deliver_reviewer_turn(
-        provider,
+    commit_reviewer_loop_provider_session(
         store,
         run_id,
+        loop.with_reviewer_provider_session_id(session_id),
+    )
+    token = bind_reviewer_session_capability(
+        store,
+        run_id,
+        provider,
         session_id=session_id,
         loop_id=loop_id,
         phase=phase,
-        request=review_package,
     )
     return session_id, token
 
@@ -317,107 +355,58 @@ def _reviewer_binding_requires_replacement(binding: SessionBinding | None) -> bo
     )
 
 
-def allocate_reviewer_binding_for_recheck(
-    provider: Provider,
-    store: RunStore,
-    run_id: str,
-    loop: ReviewLoop,
-    *,
-    phase: str,
-    append_event: Callable[..., None],
-    model: str | None = None,
-    review_type: str | None = None,
-    scope: dict[str, Any] | None = None,
-) -> str:
-    """Allocate a replacement reviewer session after the prior binding was lost."""
-
-    from top_down_planning.orchestrator.session_events import (
-        commit_reviewer_loop_provider_session,
-        emit_reviewer_session_started,
-    )
-
-    session_id = allocate_reviewer_session(
-        provider,
-        run_id=run_id,
-        loop_id=loop.id,
-        model=model,
-    )
-    started_fields: dict[str, Any] = {"loop_id": loop.id}
-    if review_type is not None:
-        started_fields["review_type"] = review_type
-    if scope is not None:
-        started_fields["scope"] = scope
-    emit_reviewer_session_started(
-        append_event,
-        provider,
-        phase=phase,
-        session_id=session_id,
-        **started_fields,
-    )
-    updated = loop.with_reviewer_session_released().with_reviewer_provider_session_id(
-        session_id
-    )
-    commit_reviewer_loop_provider_session(store, run_id, updated)
-    return session_id
-
-
-def resolve_reviewer_session_for_recheck(
-    provider: Provider,
-    store: RunStore,
-    run_id: str,
+def recheck_requires_reviewer_session_replacement(
     loop: ReviewLoop,
     *,
     target_revision: int,
     current_revision: int,
-    phase: str,
-    append_event: Callable[..., None],
-    model: str | None = None,
-    review_type: str | None = None,
-    scope: dict[str, Any] | None = None,
-) -> str:
-    """Return a bound reviewer session for verification recheck.
+) -> bool:
+    return (
+        bool(loop.finding_actions)
+        and current_revision > target_revision
+        and _reviewer_binding_requires_replacement(loop.reviewer_binding)
+    )
 
-    Recheck resumes the same bound reviewer session when available. When resume
-    session policy cleared a lost transient binding after planner revision work
-    is already recorded, allocate a replacement reviewer session.
+
+def resolve_reviewer_session_for_recheck(
+    loop: ReviewLoop,
+    *,
+    target_revision: int,
+    current_revision: int,
+) -> str:
+    """Return a bound reviewer session id for verification recheck.
+
+    Raises ``ReviewerRecheckRequiresNewSession`` when planner revision work is
+    recorded but the prior binding was lost before a durable id was bound.
     """
 
     session_id = reviewer_loop_provider_session_id(loop)
     if session_id is not None:
         return session_id
 
-    if (
-        loop.finding_actions
-        and current_revision > target_revision
-        and _reviewer_binding_requires_replacement(loop.reviewer_binding)
+    if recheck_requires_reviewer_session_replacement(
+        loop,
+        target_revision=target_revision,
+        current_revision=current_revision,
     ):
-        return allocate_reviewer_binding_for_recheck(
-            provider,
-            store,
-            run_id,
-            loop,
-            phase=phase,
-            append_event=append_event,
-            model=model,
-            review_type=review_type,
-            scope=scope,
-        )
+        raise ReviewerRecheckRequiresNewSession()
 
     raise ProviderRunError("reviewer session is missing for recheck")
 
 
 __all__ = [
     "REVIEWER_DECISION_MISSING",
-    "allocate_reviewer_binding_for_recheck",
-    "allocate_reviewer_session",
+    "ReviewerRecheckRequiresNewSession",
     "begin_reviewer_review",
-    "build_reviewer_allocation_request",
+    "bind_reviewer_session_capability",
     "build_reviewer_protocol_instructions",
     "build_reviewer_tool_instructions",
     "deliver_reviewer_turn",
+    "recheck_requires_reviewer_session_replacement",
     "resolve_reviewer_session_for_recheck",
     "resume_reviewer_session_with_package",
     "reviewer_decision_missing_error",
     "reviewer_loop_binding",
     "reviewer_loop_provider_session_id",
+    "start_reviewer_review_session",
 ]

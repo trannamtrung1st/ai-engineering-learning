@@ -24,7 +24,6 @@ from tests.helpers import (
     done_events,
     mandatory_initial_respond_request,
     respond_review,
-    script_reviewer_allocate,
 )
 from tests.integration.e2e_helpers import script_whole_plan_review
 from tests.unit.test_whole_plan_review import _create_run_at_whole_plan_review
@@ -37,7 +36,7 @@ def test_release_reviewer_session_after_decision_releases_on_terminal_status(
     run_id = "run-20260101T009903-009903"
     _create_run_at_whole_plan_review(store, run_id=run_id)
     provider = StubProvider()
-    script_reviewer_allocate(provider)
+    provider.script_turn(done_events(text="review session registered"))
     session_id = provider.start_reviewer_session({"loop_id": "review-whole-plan-01"})
     loop = make_review_loop(
         id="review-whole-plan-01",
@@ -72,7 +71,7 @@ def test_release_reviewer_session_after_decision_releases_on_terminal_status(
 
 def test_end_reviewer_session_with_audit_terminates_and_records_event() -> None:
     provider = StubProvider()
-    script_reviewer_allocate(provider)
+    provider.script_turn(done_events(text="review session registered"))
     session_id = provider.start_reviewer_session({"loop_id": "review-01"})
     events: list[dict] = []
 
@@ -100,7 +99,7 @@ def test_end_reviewer_session_with_audit_terminates_and_records_event() -> None:
 
 def test_end_reviewer_session_with_audit_is_idempotent() -> None:
     provider = StubProvider()
-    script_reviewer_allocate(provider)
+    provider.script_turn(done_events(text="review session registered"))
     session_id = provider.start_reviewer_session({"loop_id": "review-01"})
     append_event = MagicMock()
 
@@ -126,7 +125,7 @@ def test_sync_reviewer_loop_session_id_before_release(tmp_path: Path) -> None:
     run_id = "run-20260101T009901-009901"
     _create_run_at_whole_plan_review(store, run_id=run_id)
     provider = StubProvider()
-    script_reviewer_allocate(provider)
+    provider.script_turn(done_events(text="review session registered"))
     session_id = provider.start_reviewer_session({"loop_id": "review-whole-plan-01"})
     loop = make_review_loop(
         id="review-whole-plan-01",
@@ -195,7 +194,6 @@ def test_pending_reviewer_turn_does_not_release_session(tmp_path: Path) -> None:
     provider = StubProvider()
     _create_run_at_whole_plan_review(store, provider=provider)
     run_id = "run-20260101T000301-000301"
-    script_reviewer_allocate(provider)
     provider.script_turn(done_events(text="review turn without respond"))
 
     with pytest.raises(ProviderRunError, match="without a decision"):
@@ -243,7 +241,6 @@ def test_whole_plan_recheck_resumes_after_changes_requested_release(tmp_path: Pa
     provider = StubProvider()
     _create_run_at_whole_plan_review(store, provider=provider)
     run_id = "run-20260101T000301-000301"
-    script_reviewer_allocate(provider)
     provider.script_turn(
         done_events(text="review turn"),
         mutate_store=respond_review(

@@ -46,7 +46,8 @@ from top_down_planning.orchestrator.capability import (
 from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
 from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
 from top_down_planning.orchestrator.reviewer_session import (
-    allocate_reviewer_session,
+    ReviewerRecheckRequiresNewSession,
+    begin_reviewer_review,
     build_reviewer_protocol_instructions,
     build_reviewer_tool_instructions,
     deliver_reviewer_turn,
@@ -434,10 +435,13 @@ class FocusedReviewOrchestrator:
         )
         role_context = resolve_role_session_context(config, run, "reviewer")
         phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-        session_id = allocate_reviewer_session(
+        session_id, capability_token = begin_reviewer_review(
             self._provider,
-            run_id=self._run_id,
+            self._store,
+            self._run_id,
             loop_id=loop.id,
+            review_package=package,
+            phase=phase,
             model=role_context.model,
         )
         emit_reviewer_session_started(
@@ -448,17 +452,6 @@ class FocusedReviewOrchestrator:
             loop_id=loop.id,
             review_type=loop.type,
             scope=loop.scope,
-        )
-        updated = loop.with_reviewer_provider_session_id(session_id)
-        commit_reviewer_loop_provider_session(self._store, self._run_id, updated)
-        capability_token = deliver_reviewer_turn(
-            self._provider,
-            self._store,
-            self._run_id,
-            session_id=session_id,
-            loop_id=loop.id,
-            phase=phase,
-            request=package,
         )
         return session_id, capability_token
 
@@ -649,24 +642,45 @@ class FocusedReviewOrchestrator:
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
         role_context = resolve_role_session_context(config, run, "reviewer")
-        session_id = resolve_reviewer_session_for_recheck(
-            self._provider,
-            self._store,
-            self._run_id,
-            loop,
-            target_revision=loop.target_revision,
-            current_revision=current_revision,
-            phase=phase,
-            append_event=self._append_event,
-            model=role_context.model,
-            review_type=loop.type,
-            scope=loop.scope,
-        )
-
         updated = prepare_focused_verification_recheck(
             loop,
             target_revision=current_revision,
         )
+        verification_request = verification_recheck_request(
+            phase=phase,
+            loop=updated,
+            target_revision=current_revision,
+        )
+        try:
+            session_id = resolve_reviewer_session_for_recheck(
+                loop,
+                target_revision=loop.target_revision,
+                current_revision=current_revision,
+            )
+        except ReviewerRecheckRequiresNewSession:
+            loop = self._persist_loop(loop.with_reviewer_session_released())
+            updated = self._persist_loop(updated)
+            session_id, self._capability_token = begin_reviewer_review(
+                self._provider,
+                self._store,
+                self._run_id,
+                loop_id=loop.id,
+                review_package=verification_request,
+                phase=phase,
+                model=role_context.model,
+            )
+            emit_reviewer_session_started(
+                self._append_event,
+                self._provider,
+                phase=phase,
+                session_id=session_id,
+                loop_id=loop.id,
+                review_type=loop.type,
+                scope=loop.scope,
+                replacement=True,
+            )
+            return ReviewLoop.from_dict(self._store.load_review(self._run_id, loop.id))
+
         updated = updated.with_reviewer_provider_session_id(session_id)
         self._persist_loop(updated)
         self._capability_token = deliver_reviewer_turn(
@@ -676,11 +690,7 @@ class FocusedReviewOrchestrator:
             session_id=session_id,
             loop_id=loop.id,
             phase=phase,
-            request=verification_recheck_request(
-                phase=phase,
-                loop=updated,
-                target_revision=current_revision,
-            ),
+            request=verification_request,
             model=role_context.model,
         )
         emit_reviewer_session_resumed(

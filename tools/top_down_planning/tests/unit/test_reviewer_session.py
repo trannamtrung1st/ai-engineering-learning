@@ -10,14 +10,13 @@ from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.mandatory_review_stages import verification_recheck_request
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.reviewer_session import (
-    build_reviewer_allocation_request,
     build_reviewer_protocol_instructions,
     build_reviewer_tool_instructions,
     begin_reviewer_review,
     deliver_reviewer_turn,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, done_events, script_reviewer_allocate, make_review_loop
+from tests.helpers import create_run_kwargs, done_events, make_review_loop
 
 
 def _create_review_run(store: FileRunStore, run_id: str) -> None:
@@ -47,15 +46,6 @@ def _create_review_run(store: FileRunStore, run_id: str) -> None:
     )
 
 
-def test_allocation_request_is_minimal() -> None:
-    payload = build_reviewer_allocation_request(
-        run_id="run-20260101T009901-009901",
-        loop_id="review-whole-plan-01",
-    )
-    assert payload["action"] == "reviewer_session_allocate"
-    assert "plan" not in payload
-
-
 def test_reviewer_protocol_discourages_host_planning_artifacts() -> None:
     protocol = " ".join(build_reviewer_protocol_instructions())
     assert "review respond" in protocol
@@ -68,12 +58,11 @@ def test_tool_instructions_discourage_uv_run() -> None:
     assert "TDP_CAPABILITY_TOKEN" in instructions["authorization"]
 
 
-def test_begin_reviewer_review_delivers_package_after_allocate(tmp_path: Path) -> None:
+def test_begin_reviewer_review_starts_session_with_review_package(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T009901-009901"
     _create_review_run(store, run_id)
     provider = StubProvider()
-    script_reviewer_allocate(provider)
     provider.script_turn(done_events(text="review turn"))
 
     loop = make_review_loop(
@@ -98,7 +87,7 @@ def test_begin_reviewer_review_delivers_package_after_allocate(tmp_path: Path) -
     assert session_id.startswith("stub-session-")
     assert token
     session = provider._sessions[session_id]
-    assert session.history[-1]["purpose"] == "review"
+    assert '"purpose": "review"' in session.history[0]["prompt"]
 
 
 def test_deliver_reviewer_turn_binds_token_before_send(tmp_path: Path) -> None:
@@ -106,21 +95,27 @@ def test_deliver_reviewer_turn_binds_token_before_send(tmp_path: Path) -> None:
     run_id = "run-20260101T009902-009902"
     _create_review_run(store, run_id)
     provider = StubProvider()
-    script_reviewer_allocate(provider)
-    session_id = provider.start_reviewer_session(
-        build_reviewer_allocation_request(run_id=run_id, loop_id="review-whole-plan-01"),
-    )
-    provider.script_turn(done_events(text="recheck"))
-
     loop = make_review_loop(
         id="review-whole-plan-01",
         type="whole_plan",
-        reviewer_session_id=session_id,
+        reviewer_session_id="stub-session-reviewer-pending",
         target_revision=0,
         scope={"kind": "whole_plan"},
         revise_at="blocker",
     )
     store.save_review(run_id, loop.to_dict())
+    provider.script_turn(done_events(text="initial review"))
+    session_id, _token = begin_reviewer_review(
+        provider,
+        store,
+        run_id,
+        loop_id="review-whole-plan-01",
+        review_package={"loop_id": "review-whole-plan-01", "purpose": "initial"},
+        phase=WHOLE_PLAN_REVIEW,
+    )
+    provider.script_turn(done_events(text="recheck"))
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, "review-whole-plan-01"))
     token = deliver_reviewer_turn(
         provider,
         store,
