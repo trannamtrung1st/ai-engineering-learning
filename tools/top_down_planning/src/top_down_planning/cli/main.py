@@ -224,9 +224,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = subparsers.add_parser(
         "doctor",
-        help="Report orphan agent processes for a run.",
+        help="Report run/workspace hygiene issues and orphan agent processes.",
     )
-    doctor_parser.add_argument("--run", help="Run id.")
+    doctor_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help=(
+            "Reconcile stale running runs, kill orphan agents, and remove "
+            "leftover .creating-* staging directories."
+        ),
+    )
+    doctor_parser.add_argument("--run", help="Run id (omit for workspace diagnostics).")
     doctor_parser.add_argument(
         "--config",
         help=(

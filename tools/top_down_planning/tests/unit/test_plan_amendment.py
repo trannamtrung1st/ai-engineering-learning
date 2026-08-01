@@ -17,6 +17,7 @@ from tests.helpers import (
     apply_plan,
     create_run_kwargs,
     done_events,
+    ensure_plan_work_scope_contracts,
     grant_capability,
     plan_root_item,
     respond_review,
@@ -89,7 +90,8 @@ def _create_run_in_production_with_sessions(
         depends_on=["item-first"],
         kind="work",
     )
-    plan = Plan(
+    plan = ensure_plan_work_scope_contracts(
+        Plan(
         id=f"plan-{run_id}",
         revision=0,
         output_goal="Deliver the feature.",
@@ -98,6 +100,7 @@ def _create_run_in_production_with_sessions(
             "item-first": first,
             "item-second": second,
         },
+        )
     )
     limits: dict = {
         "production": {"max_batches": 50, "max_agent_turns_per_batch": 10},
@@ -196,10 +199,10 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
                     "parent_id": "item-root",
                     "placement": {"last_child": True},
                     "item": {
-    "kind": "work",
-
+                        "kind": "work",
                         "title": "Third",
                         "outcome": "Third outcome.",
+                        "scope": {"includes": ["Third capability"]},
                     },
                 }
             ],

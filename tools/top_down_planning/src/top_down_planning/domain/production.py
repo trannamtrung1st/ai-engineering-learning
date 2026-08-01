@@ -7,6 +7,7 @@ from typing import Any
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS, TerminalDisposition
+from top_down_planning.domain.item_contract import build_item_production_contract
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.readiness import compute_ready_view, detect_deadlock, is_applicable_item
 from top_down_planning.domain.reviews import (
@@ -314,15 +315,10 @@ def build_output_traceability(
             if is_active_item(plan.items[item_id])
         ]
 
-    plan_contracts: dict[str, dict[str, Any]] = {}
-    for item_id in contract_ids:
-        item = plan.items[item_id]
-        plan_contracts[item_id] = {
-            "title": item.title,
-            "outcome": item.outcome,
-            "acceptance": list(item.acceptance),
-            "risks": list(item.risks),
-        }
+    plan_contracts: dict[str, dict[str, Any]] = {
+        item_id: build_item_production_contract(plan, item_id)
+        for item_id in contract_ids
+    }
 
     return {
         "plan_contracts": plan_contracts,
@@ -341,19 +337,7 @@ def build_compact_approved_plan(plan: Plan) -> dict[str, Any]:
 
     items: list[dict[str, Any]] = []
     for item_id, _, _ in walk_active_tree(plan).rows:
-        item = plan.items[item_id]
-        items.append(
-            {
-                "id": item.id,
-                "title": item.title,
-                "outcome": item.outcome,
-                "kind": item.kind,
-                "acceptance": list(item.acceptance),
-                "risks": list(item.risks),
-                "source_refs": list(item.source_refs),
-                "depends_on": list(item.depends_on),
-            }
-        )
+        items.append(build_item_production_contract(plan, item_id))
     return {
         "revision": int(plan.revision),
         "scope": plan.scope.to_dict(),

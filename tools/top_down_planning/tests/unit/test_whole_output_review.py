@@ -15,7 +15,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, plan_root_item, respond_review, save_review_payload, script_mandatory_clear_approval, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
+from tests.helpers import apply_production, create_run_kwargs, done_events, ensure_plan_work_scope_contracts, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, plan_root_item, respond_review, save_review_payload, script_mandatory_clear_approval, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -38,11 +38,13 @@ def _create_run_at_whole_output_review(
         outcome="Leaf outcome.",
         kind="work",
     )
-    plan = Plan(
+    plan = ensure_plan_work_scope_contracts(
+        Plan(
         id=f"plan-{run_id}",
         revision=0,
         output_goal="Deliver the feature.",
         items={"item-root": root, "item-leaf": leaf},
+        )
     )
     config = {
         "run": {

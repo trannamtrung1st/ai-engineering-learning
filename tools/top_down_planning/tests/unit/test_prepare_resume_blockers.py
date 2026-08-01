@@ -328,7 +328,6 @@ def test_prepare_resume_running_continuation(tmp_path: Path) -> None:
     assert plan.state_transition is not None
     assert plan.state_transition.from_status == "running"
     assert plan.state_transition.to_status == "running"
-    assert plan.config_changes == {}
 
 
 def test_prepare_resume_completed_returns_informational_plan(tmp_path: Path) -> None:

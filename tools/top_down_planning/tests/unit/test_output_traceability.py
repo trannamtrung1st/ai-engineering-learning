@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.models import Plan, PlanItem, Scope
+from top_down_planning.domain.item_contract import build_item_production_contract
 from top_down_planning.domain.production import build_output_traceability
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.focused_review import build_focused_review_package
@@ -33,6 +34,7 @@ def _plan() -> Plan:
         outcome="A outcome.",
         acceptance=["A ok"],
         kind="work",
+        scope=Scope(includes=["Capability A"]),
     )
     b = PlanItem(
         id="item-b",
@@ -42,11 +44,14 @@ def _plan() -> Plan:
         outcome="B outcome.",
         acceptance=["B ok"],
         kind="work",
+        scope=Scope(includes=["Capability B"]),
     )
     return Plan(
         id="plan-trace",
         revision=3,
         output_goal="Deliver.",
+        scope=Scope(includes=["Shared plan scope"]),
+        boundaries=["Shared boundary"],
         items={"item-root": root, "item-a": a, "item-b": b},
     )
 
@@ -150,6 +155,19 @@ def test_whole_output_traceability_includes_contracts_and_evidence_by_item() -> 
     assert trace["plan_contracts"]["item-a"]["title"] == "A"
     assert trace["plan_contracts"]["item-a"]["outcome"] == "A outcome."
     assert trace["plan_contracts"]["item-a"]["acceptance"] == ["A ok"]
+    assert trace["plan_contracts"]["item-a"]["scope"] == {
+        "includes": ["Capability A"],
+        "excludes": [],
+    }
+    assert trace["plan_contracts"]["item-a"]["effective_scope"]["includes"] == [
+        "Shared plan scope",
+        "Capability A",
+    ]
+    assert trace["plan_contracts"]["item-a"]["effective_boundaries"] == ["Shared boundary"]
+    assert trace["plan_contracts"]["item-a"] == build_item_production_contract(
+        plan,
+        "item-a",
+    )
 
     a_ids = [e["evidence_id"] for e in trace["evidence_by_item"]["item-a"]]
     b_ids = [e["evidence_id"] for e in trace["evidence_by_item"]["item-b"]]

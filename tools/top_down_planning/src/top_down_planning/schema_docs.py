@@ -1596,7 +1596,8 @@ include:
   (do not repeat `run.input_refs` or the output-goal file under `resources`;
   overlaps are rejected). Guidance is advisory and not merged into
   `protocol_instructions`.
-- Producer packages include `approved_plan` (compact plan metadata + items with `kind`)
+- Producer packages include `approved_plan` (plan metadata plus canonical item
+  contracts from `build_item_production_contract`)
 - Review packages include `plan_scope`, `boundaries`, `acceptance`, and `risks` from persisted
   plan metadata (not static run config)
 
@@ -1621,6 +1622,17 @@ traceability when needed. Do not convert every possible defect into a risk. Atta
 each risk to the lowest item that owns it; avoid duplicating the same risk
 at plan and item level.
 
+Every active `work` leaf must set item-level `scope.includes`, `scope.excludes`,
+and/or `boundaries` (plan-level fields do not satisfy this). Draft validation
+warns (`missing_work_item_scope_contract`); approval mode errors.
+
+Production item contracts (`ready_items`, `approved_plan.items`, output-review
+`plan_contracts`) share one canonical shape from `build_item_production_contract`:
+item-owned `scope`/`boundaries`, merged `effective_scope`/`effective_boundaries`
+(plan-level ∪ item-level, deduped), plus acceptance, risks, source_refs, and
+depends_on. Producers enforce batch boundaries from `effective_*`; approved work
+leaves must already declare item-level scope or boundaries.
+
 ## Workflow
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.
@@ -1631,6 +1643,8 @@ at plan and item level.
    revise plan-level `scope`, `boundaries`, `constraints`, `assumptions`,
    `acceptance`, and `risks` (seeded from `run.boundaries` / `run.acceptance` at run creation).
    Item-level `risks` and `source_refs` use `add_item` / `update_item`.
+   Every `work` leaf must also set item-level `scope.includes`, `scope.excludes`,
+   and/or `boundaries` (approval mode errors when all three are empty).
    Once `item-root` has active children, deterministic validation requires a
    non-default title and non-empty outcome on `item-root`.
 2. Mandatory whole-plan review (`review respond`) must complete the gate before production.
@@ -1646,7 +1660,8 @@ at plan and item level.
    enough.
 3. Producer records batches with `production apply`, then `submit-completion` with
    `goal_met: true` and a `goal_assessment` rationale. Production `ready` snapshots
-   expose `ready_items` (contracts per ready leaf) alongside `ready_item_ids`.
+   expose `ready_items` (canonical contracts per ready leaf, including
+   `effective_scope` / `effective_boundaries`) alongside `ready_item_ids`.
 4. Mandatory whole-output review must complete the gate before `outcome: accepted`.
    Same mandatory gate as whole-plan review (`initial_review`, then
    repeatable verification and fresh `scope_review` rounds). Review packages include
@@ -1705,7 +1720,7 @@ Run lifecycle fields on `run.json`: `status` (`running`, `paused`, `completed`, 
 when paused or failed, otherwise null); `phase_action_id` (stable logical action id for
 the current provider step, or null). Paused stops use `category: operational` with
 `code` in `limit_exhausted`, `review_incomplete`, `provider_unavailable`,
-`provider_turn_failed`, `user_cancelled`, or `amendment_pending` (internal amendment
+`provider_turn_failed`, `user_cancelled`, `orchestrator_interrupted`, or `amendment_pending` (internal amendment
 checkpoint); failed stops use `category: invariant` with
 `code` in `state_integrity_failure`, `evidence_integrity_failure`,
 `unsupported_phase_state`, `orchestrator_invariant_failure`, or
@@ -1714,7 +1729,12 @@ checkpoint); failed stops use `category: invariant` with
 lists agent subprocess pids stopped during cancel. Cancel also records `agent_terminated`
 and `planner_session_ended` / `producer_session_ended` / `reviewer_session_ended` audit
 events. `RunEngine.continue_run` scans for orphan agents (`agent_orphan_cleaned` when
-cleaned). Use `tdp doctor --run <id>` to inspect orphan agent pids for a run.
+cleaned). `status: running` with no live orchestrator is normal between blocking CLI
+steps (idle, awaiting resume). When orphan agents remain, reconcile to `paused` with
+`orchestrator_interrupted` via `tdp doctor --fix` or automatic resume preflight when
+orphans are detected. Use `tdp doctor --run <id>` to inspect orphan agent pids, or
+`tdp doctor --fix` to kill orphans, reconcile interrupted runs, and remove leftover
+`.creating-*` staging directories. Omit `--run` for workspace-level diagnostics.
 
 ## Resume
 
@@ -1768,9 +1788,10 @@ new hard validation errors are rejected before persistence with `operation_error
 and leave the plan revision unchanged. `ok` is true only when validation has no
 error-severity issues after a persisted apply (inspect `issues` after apply even
 when `applied: true` for pre-existing draft issues). Production `snapshot` uses the same plan validation shape;
-use `production check` for batch/disposition-specific checks. Tree item
-snapshots include `scope`, `boundaries`, `acceptance`, `risks`, and item-level
-`source_refs` alongside core planning fields. Plan `ready` views exclude items blocked by unresolved
+use `production check` for batch/disposition-specific checks. Active plan snapshots
+include item-owned `scope`, `boundaries`, `acceptance`, `risks`, and `source_refs`.
+Production `ready` snapshots and `approved_plan.items` add merged `effective_scope`
+and `effective_boundaries`. Plan `ready` views exclude items blocked by unresolved
 `focused_plan` / `whole_plan` findings; production `ready` views exclude items
 blocked by unresolved `focused_output` / `whole_output` findings. Plans carry
 `schema_version` (currently 2). Unsupported or missing plan `schema_version`

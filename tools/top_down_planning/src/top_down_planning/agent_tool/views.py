@@ -7,7 +7,6 @@ from typing import Any, Literal
 from top_down_planning.domain.dispositions import DispositionMap
 from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits
 from top_down_planning.domain.plan_tree import (
-    ancestor_path,
     compute_planning_budget,
     descendants_of,
     display_traversal,
@@ -207,22 +206,11 @@ def build_plan_review_snapshot(
 
 
 def ready_item_contract(plan: Plan, item_id: str) -> dict[str, Any]:
-    """Compact work-item contract for production ready snapshots."""
+    """Production ready snapshot contract for a ready work leaf."""
 
-    item = plan.items[item_id]
-    return {
-        "id": item.id,
-        "title": item.title,
-        "outcome": item.outcome,
-        "kind": item.kind,
-        "scope": item.scope.to_dict(),
-        "boundaries": list(item.boundaries),
-        "acceptance": list(item.acceptance),
-        "risks": list(item.risks),
-        "source_refs": list(item.source_refs),
-        "depends_on": list(item.depends_on),
-        "ancestor_path": ancestor_path(plan, item_id),
-    }
+    from top_down_planning.domain.item_contract import build_item_production_contract
+
+    return build_item_production_contract(plan, item_id, include_ancestor_path=True)
 
 
 def build_ready_view(

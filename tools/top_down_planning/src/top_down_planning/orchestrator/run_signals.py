@@ -32,4 +32,28 @@ def trap_run_interrupt_signals() -> Iterator[None]:
                 pass
 
 
-__all__ = ["trap_run_interrupt_signals"]
+@contextmanager
+def defer_run_interrupt_signals() -> Iterator[None]:
+    """Ignore SIGINT/SIGTERM while persisting cancel teardown."""
+
+    previous: dict[int, Any] = {}
+
+    def _ignore_signal(_signum: int, _frame: object | None) -> None:
+        return None
+
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        try:
+            previous[signum] = signal.signal(signum, _ignore_signal)
+        except (OSError, ValueError):
+            continue
+    try:
+        yield
+    finally:
+        for signum, handler in previous.items():
+            try:
+                signal.signal(signum, handler)
+            except (OSError, ValueError):
+                pass
+
+
+__all__ = ["defer_run_interrupt_signals", "trap_run_interrupt_signals"]

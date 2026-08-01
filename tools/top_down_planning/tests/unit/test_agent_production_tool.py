@@ -13,7 +13,7 @@ from top_down_planning.agent_tool import (
     RevisionConflictError,
 )
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
-from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
@@ -59,6 +59,7 @@ def _create_production_run(
         title="First",
         outcome="First outcome.",
         kind="work",
+        scope=Scope(includes=["First capability"]),
     )
     second = PlanItem(
         id="item-second",
@@ -68,11 +69,14 @@ def _create_production_run(
         outcome="Second outcome.",
         depends_on=["item-first"],
         kind="work",
+        scope=Scope(includes=["Second capability"]),
     )
     plan = Plan(
         id=f"plan-{run_id}",
         revision=0,
         output_goal="Deliver the feature.",
+        scope=Scope(includes=["Plan scope"]),
+        boundaries=["Plan boundary"],
         items={
             "item-root": root,
             "item-first": first,
@@ -476,8 +480,13 @@ def test_production_ready_snapshot_includes_ready_item_contracts(tmp_path: Path)
     first = by_id["item-first"]
     assert first["title"] == "First"
     assert first["outcome"] == "First outcome."
-    assert first["scope"] == {"includes": [], "excludes": []}
+    assert first["scope"] == {"includes": ["First capability"], "excludes": []}
     assert first["boundaries"] == []
+    assert first["effective_scope"] == {
+        "includes": ["Plan scope", "First capability"],
+        "excludes": [],
+    }
+    assert first["effective_boundaries"] == ["Plan boundary"]
     assert first["acceptance"] == []
     assert first["depends_on"] == []
     assert first["ancestor_path"] == ["item-root"]

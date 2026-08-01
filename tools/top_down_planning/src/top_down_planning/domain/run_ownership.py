@@ -237,3 +237,13 @@ def resolve_run_dir(store: Any, run_id: str) -> Path | None:
     if not callable(run_dir_fn):
         return None
     return Path(run_dir_fn(run_id))
+
+
+def is_run_orchestrator_alive(run_dir: Path) -> bool:
+    """Return True when a live process holds the run resume lock."""
+
+    clear_stale_resume_lock(run_dir)
+    lock = read_resume_lock(run_dir)
+    if lock is None:
+        return False
+    return is_pid_alive(lock.pid)

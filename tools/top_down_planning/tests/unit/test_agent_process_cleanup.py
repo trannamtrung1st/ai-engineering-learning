@@ -377,3 +377,20 @@ def test_workspace_has_orphan_agents_scans_paused_runs(tmp_path: Path) -> None:
         orphans = workspace_has_orphan_agents(store)
 
     assert orphans == [("run-20260101T001903-001903", 5555)]
+
+
+def test_workspace_has_orphan_agents_scans_stale_running_runs(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, run_id="run-20260101T001906-001906", phase=PLANNING)
+
+    with patch(
+        "top_down_planning.domain.run_ownership.is_run_orchestrator_alive",
+        return_value=False,
+    ):
+        with patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
+            return_value=[7777],
+        ):
+            orphans = workspace_has_orphan_agents(store)
+
+    assert orphans == [("run-20260101T001906-001906", 7777)]

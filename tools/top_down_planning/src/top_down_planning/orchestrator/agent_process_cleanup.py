@@ -13,6 +13,10 @@ from typing import Any
 from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
 
 from top_down_planning.cli.common import RUN_ID_ENV_VAR
+from top_down_planning.domain.run_lifecycle import StopRecord
+from top_down_planning.domain.run_ownership import is_run_orchestrator_alive
+from top_down_planning.orchestrator.run_signals import defer_run_interrupt_signals
+from top_down_planning.orchestrator.run_transitions import pause_run
 from top_down_planning.persistence.interface import RunStore
 
 ReadPidEnviron = Callable[[int], dict[str, str]]
@@ -230,6 +234,40 @@ def kill_orphan_agents(
     return cleaned
 
 
+def finalize_user_cancel(
+    store: RunStore,
+    run_id: str,
+    *,
+    phase: str,
+    provider_terminated_pids: list[int] | None = None,
+    exclude_pids: frozenset[int] | None = None,
+) -> list[int]:
+    """Terminate orphan agents, persist ``user_cancelled``, and return all stopped pids."""
+
+    with defer_run_interrupt_signals():
+        orphan_pids = kill_orphan_agents(
+            store,
+            run_id,
+            exclude_pids=exclude_pids,
+        )
+        all_terminated_pids = sorted(
+            {int(pid) for pid in (provider_terminated_pids or [])}
+            | {int(pid) for pid in orphan_pids}
+        )
+        pause_run(
+            store,
+            run_id,
+            stop=StopRecord(
+                code="user_cancelled",
+                category="operational",
+                phase=phase,
+                message="cancelled by user",
+                details={"terminated_pids": all_terminated_pids},
+            ),
+        )
+    return all_terminated_pids
+
+
 def terminated_pids_from_stop(run: dict[str, Any]) -> list[int]:
     stop = run.get("stop")
     if not isinstance(stop, dict):
@@ -247,7 +285,7 @@ def workspace_has_orphan_agents(
     list_live_pids: ListLivePids | None = None,
     read_pid_environ: ReadPidEnviron | None = None,
 ) -> list[tuple[str, int]]:
-    """Return (run_id, pid) pairs for orphan agents in paused runs."""
+    """Return (run_id, pid) pairs for orphan agents in paused or stale runs."""
 
     orphans: list[tuple[str, int]] = []
     root = getattr(store, "root", None)
@@ -265,7 +303,14 @@ def workspace_has_orphan_agents(
             run = store.load_run(run_id)
         except Exception:
             continue
-        if str(run.get("status") or "") != "paused":
+        status = str(run.get("status") or "")
+        if status == "paused":
+            scan = True
+        elif status == "running":
+            scan = not is_run_orchestrator_alive(run_dir)
+        else:
+            scan = False
+        if not scan:
             continue
         for pid in scan_orphan_agent_pids(
             run_id,
@@ -280,6 +325,7 @@ def workspace_has_orphan_agents(
 
 __all__ = [
     "default_read_pid_environ",
+    "finalize_user_cancel",
     "kill_orphan_agents",
     "scan_orphan_agent_pids",
     "terminated_pids_from_stop",

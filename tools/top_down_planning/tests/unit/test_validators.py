@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits
+from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits, Scope
 from top_down_planning.domain.validators import validate_plan
 
 
@@ -322,6 +322,7 @@ def test_plan_quality_warnings_remain_warnings_in_approval_mode() -> None:
                 order_key="0000000000",
                 title="Parent work",
                 kind="work",
+                scope=Scope(includes=["parent capability"]),
             ),
             "item-child": PlanItem(
                 id="item-child",
@@ -329,6 +330,7 @@ def test_plan_quality_warnings_remain_warnings_in_approval_mode() -> None:
                 order_key="0000000000",
                 title="Child work",
                 kind="work",
+                scope=Scope(includes=["child capability"]),
             ),
         },
     )
@@ -454,3 +456,89 @@ def test_populated_root_with_children_passes_validation() -> None:
     result = validate_plan(plan)
 
     assert result.ok
+
+
+def _work_leaf_plan(**item_overrides: object) -> Plan:
+    defaults: dict[str, object] = {
+        "id": "item-work",
+        "parent_id": "item-root",
+        "order_key": "0000000000",
+        "title": "Work",
+        "kind": "work",
+        "outcome": "Work outcome.",
+    }
+    defaults.update(item_overrides)
+    return Plan(
+        id="plan-scope-contract",
+        revision=0,
+        output_goal="Goal.",
+        scope=Scope(includes=["plan scope"]),
+        boundaries=["plan boundary"],
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Deliverable",
+                outcome="Root outcome.",
+                kind="aggregate",
+            ),
+            str(defaults["id"]): PlanItem(**defaults),  # type: ignore[arg-type]
+        },
+    )
+
+
+def test_work_item_scope_contract_warns_in_draft_errors_in_approval() -> None:
+    plan = _work_leaf_plan()
+
+    draft = validate_plan(plan, mode="draft")
+    assert draft.ok
+    scope_issues = [
+        issue for issue in draft.issues if issue.code == "missing_work_item_scope_contract"
+    ]
+    assert len(scope_issues) == 1
+    assert scope_issues[0].severity == "warning"
+
+    approval = validate_plan(plan, mode="approval")
+    assert not approval.ok
+    approval_scope = [
+        issue for issue in approval.issues if issue.code == "missing_work_item_scope_contract"
+    ]
+    assert len(approval_scope) == 1
+    assert approval_scope[0].severity == "error"
+
+
+def test_work_item_scope_contract_rejects_whitespace_only_entries() -> None:
+    plan = _work_leaf_plan(scope=Scope(includes=["   "]))
+    approval = validate_plan(plan, mode="approval")
+    assert not approval.ok
+    assert any(
+        issue.code == "missing_work_item_scope_contract"
+        for issue in approval.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"scope": Scope(includes=["owned capability"])},
+        {"scope": Scope(excludes=["out of scope"])},
+        {"boundaries": ["No external APIs"]},
+    ],
+)
+def test_work_item_scope_contract_passes_with_item_level_field(patch: dict) -> None:
+    plan = _work_leaf_plan(**patch)
+
+    draft = validate_plan(plan, mode="draft")
+    approval = validate_plan(plan, mode="approval")
+
+    assert not [
+        issue
+        for issue in draft.issues
+        if issue.code == "missing_work_item_scope_contract"
+    ]
+    assert not [
+        issue
+        for issue in approval.issues
+        if issue.code == "missing_work_item_scope_contract"
+    ]

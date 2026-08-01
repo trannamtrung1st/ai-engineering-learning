@@ -113,7 +113,7 @@ def assert_running_continuation_preconditions(
     *,
     expected_run_revision: int,
 ) -> RunResumeSnapshot:
-    """Validate ownership and revision for interrupted running→running continuation."""
+    """Validate ownership and revision for idle ``running`` continuation."""
 
     snapshot = assert_resume_apply_preconditions(
         store,

@@ -105,6 +105,8 @@ def validate_stop_for_resume_apply(
         return None
     if code == "user_cancelled":
         return None
+    if code == "orchestrator_interrupted":
+        return None
     raise ResumeStopValidationError(f"unsupported paused stop code for resume apply: {code!r}")
 
 

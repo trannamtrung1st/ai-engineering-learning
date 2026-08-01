@@ -54,12 +54,14 @@ from top_down_planning.cli.resume_diagnostics import (
     build_resume_plan_summary,
     format_resume_plan_summary_text,
 )
-from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.orchestrator.agent_process_cleanup import (
-    kill_orphan_agents,
+    finalize_user_cancel,
     workspace_has_orphan_agents,
 )
-from top_down_planning.orchestrator.run_transitions import pause_run
+from top_down_planning.orchestrator.run_lifecycle_reconciliation import (
+    cleanup_staging_dirs,
+    reconcile_stale_running_run,
+)
 from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.config.resume_policy import resolve_resume_candidate_for_run
 from top_down_planning.orchestrator.resume import (
@@ -132,21 +134,11 @@ def _handle_blocking_run_interrupt(
     run = store.load_run(run_id)
     if str(run.get("status") or "") == "running":
         phase = str(run.get("phase") or "unknown")
-        terminated_pids = kill_orphan_agents(
+        finalize_user_cancel(
             store,
             run_id,
+            phase=phase,
             exclude_pids=frozenset({os.getpid()}),
-        )
-        pause_run(
-            store,
-            run_id,
-            stop=StopRecord(
-                code="user_cancelled",
-                category="operational",
-                phase=phase,
-                message="cancelled by user",
-                details={"terminated_pids": terminated_pids},
-            ),
         )
         run = store.load_run(run_id)
     if notifications is not None:
@@ -290,13 +282,14 @@ def handle_run_command(args: Namespace) -> None:
 
     store = FileRunStore(resolved_runs.path)
     store.root.mkdir(parents=True, exist_ok=True)
+    cleanup_staging_dirs(store)
 
     orphans = workspace_has_orphan_agents(store)
     if orphans and not getattr(args, "force", False):
         pairs = ", ".join(f"{run_id}:pid={pid}" for run_id, pid in orphans)
         emit_error_message(
             "refusing to start a new run while orphan agent processes are still "
-            f"alive for paused runs ({pairs}); retry with --force after cleanup",
+            f"alive for interrupted runs ({pairs}); retry with --force after cleanup",
             exit_code=1,
             stream_json=args.stream_json,
             code="orphan_agents_present",
@@ -449,6 +442,7 @@ def handle_resume_command(args: Namespace) -> None:
         )
 
     store, resolved_runs = _open_run_store_for_command(args)
+    reconcile_stale_running_run(store, args.run)
     try:
         run = store.load_run(args.run)
     except RunNotFoundError as exc:

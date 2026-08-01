@@ -271,6 +271,39 @@ def validate_root_item_populated(plan: Plan) -> list[ValidationIssue]:
     return issues
 
 
+def _work_item_has_scope_contract(item: PlanItem) -> bool:
+    from top_down_planning.domain.item_contract import has_item_scope_contract
+
+    return has_item_scope_contract(item)
+
+
+def validate_work_item_scope_contract(
+    plan: Plan,
+    *,
+    mode: ValidationMode = "draft",
+) -> list[ValidationIssue]:
+    """Require item-level scope or boundaries on active work leaves."""
+
+    issues: list[ValidationIssue] = []
+    for item_id, item in sorted(plan.items.items()):
+        if not is_active_item(item) or item.kind != "work":
+            continue
+        if _work_item_has_scope_contract(item):
+            continue
+        issues.append(
+            _issue(
+                "missing_work_item_scope_contract",
+                _severity_for_mode(mode, "warning"),
+                (
+                    f"work item {item_id} requires item-level scope.includes, "
+                    "scope.excludes, or boundaries"
+                ),
+                [item_id, "scope"],
+            )
+        )
+    return issues
+
+
 def validate_plan_quality_warnings(plan: Plan) -> list[ValidationIssue]:
     """Advisory semantic warnings that never escalate to hard errors alone."""
 
@@ -850,6 +883,7 @@ def validate_plan(
 
     issues.extend(validate_ids_and_fields(plan))
     issues.extend(validate_root_item_populated(plan))
+    issues.extend(validate_work_item_scope_contract(plan, mode=mode))
     issues.extend(validate_hierarchy(plan))
     issues.extend(
         validate_dependencies(

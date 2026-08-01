@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import apply_plan, apply_production, done_events, request_amendment, save_review_payload, make_review_loop, with_root_contract
+from tests.helpers import apply_plan, apply_production, done_events, request_amendment, save_review_payload, make_review_loop, with_root_contract, work_item_payload
 from tests.integration.e2e_helpers import (
     E2EStubProvider,
     assert_acceptance_invariant_for_run,
@@ -252,12 +252,11 @@ def test_amendment_mid_production_finishes_accepted(
                         "temp_id": "item-third",
                         "parent_id": "item-root",
                         "placement": {"last_child": True},
-                        "item": {
-                            "kind": "work",
-                            "title": "Third",
-                            "outcome": "Third outcome.",
-                            "acceptance": ["Third is verifiable."],
-                        },
+                        "item": work_item_payload(
+                            title="Third",
+                            outcome="Third outcome.",
+                            acceptance=["Third is verifiable."],
+                        ),
                     }
                 ]
             ),

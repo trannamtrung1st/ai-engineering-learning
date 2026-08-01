@@ -65,6 +65,13 @@ def build_producer_protocol_instructions() -> list[str]:
             "Do not create .tdp-* or .review-* dotfiles in the project workspace "
             "or harness folders. Do not modify orchestrator-owned run files."
         ),
+        (
+            "Each production batch must stay within the plan item's "
+            "effective_scope and effective_boundaries. Item scope and "
+            "boundaries are the item-owned slice; effective_* is the union "
+            "with plan-level guardrails. Use item acceptance and risks as the "
+            "verifiable batch contract."
+        ),
     ]
 
 

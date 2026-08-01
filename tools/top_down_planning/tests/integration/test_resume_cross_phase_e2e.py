@@ -36,6 +36,7 @@ from tests.helpers import (
     whole_output_approval_record,
     whole_plan_approval_record,
     with_root_contract,
+    work_item_payload,
 )
 from top_down_planning.domain.approval_digests import OUTPUT_APPROVAL_DIGEST_KEYS
 from tests.helpers import approved_digests_from_run
@@ -75,12 +76,11 @@ def _planning_one_item_continue_script(
                 "temp_id": "item-task",
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
-                "item": {
-                    "kind": "work",
-                    "title": "Deliver feature",
-                    "outcome": "Feature is delivered and verifiable.",
-                    "acceptance": ["Feature behavior is testable."],
-                },
+                "item": work_item_payload(
+                    title="Deliver feature",
+                    outcome="Feature is delivered and verifiable.",
+                    acceptance=["Feature behavior is testable."],
+                ),
             }
         ]
     )
@@ -104,12 +104,11 @@ def _planning_complete_script(
                 "temp_id": "item-task-2",
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
-                "item": {
-                    "kind": "work",
-                    "title": "Deliver feature follow-up",
-                    "outcome": "Follow-up feature work is delivered.",
-                    "acceptance": ["Follow-up behavior is testable."],
-                },
+                "item": work_item_payload(
+                    title="Deliver feature follow-up",
+                    outcome="Follow-up feature work is delivered.",
+                    acceptance=["Follow-up behavior is testable."],
+                ),
             }
         ]
     )
@@ -698,7 +697,7 @@ def test_running_continuation_resume_without_config_mutation(
     tmp_path: Path,
     patch_provider: E2EStubProvider,
 ) -> None:
-    """§10.1-E2E: running→running continuation preserves config (item 1.3.4 / 1.6)."""
+    """Idle ``running`` runs continue without config mutation after a milestone."""
 
     from top_down_planning.orchestrator.resume import assert_running_continuation_preconditions
 

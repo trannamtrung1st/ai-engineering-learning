@@ -15,7 +15,10 @@ from top_down_planning.observability import (
 )
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import resolve_run_dir, run_ownership
-from top_down_planning.orchestrator.agent_process_cleanup import kill_orphan_agents
+from top_down_planning.orchestrator.agent_process_cleanup import (
+    finalize_user_cancel,
+    kill_orphan_agents,
+)
 from top_down_planning.orchestrator.errors import (
     OrchestratorInvariantError,
     ProviderRunError,
@@ -376,14 +379,13 @@ class RunEngine:
                     audit_cancel=cancelled,
                 )
                 if cancelled:
-                    stop = StopRecord(
-                        code="user_cancelled",
-                        category="operational",
+                    finalize_user_cancel(
+                        self._store,
+                        run_id,
                         phase=phase,
-                        message="cancelled by user",
-                        details={"terminated_pids": terminated_pids},
+                        provider_terminated_pids=terminated_pids,
+                        exclude_pids=frozenset({os.getpid()}),
                     )
-                    pause_run(self._store, run_id, stop=stop)
 
             if cancelled:
                 run = self._store.load_run(run_id)

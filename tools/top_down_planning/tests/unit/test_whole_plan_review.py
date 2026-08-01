@@ -18,6 +18,7 @@ from core_tools.provider import StubProvider
 from tests.helpers import (
     make_review_loop,
     plan_root_item,
+    ensure_plan_work_scope_contracts,
     save_review_payload,
     apply_plan,
     create_run_kwargs,
@@ -54,11 +55,13 @@ def _create_run_at_whole_plan_review(
         acceptance=["API behavior is verifiable."],
         kind="work",
     )
-    plan = Plan(
+    plan = ensure_plan_work_scope_contracts(
+        Plan(
         id=f"plan-{run_id}",
         revision=0,
         output_goal="Deliver the feature.",
         items={"item-root": root, "item-api": api},
+        )
     )
     config = {
         "run": {

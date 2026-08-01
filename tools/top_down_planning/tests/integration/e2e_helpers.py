@@ -32,6 +32,7 @@ from tests.helpers import (
     request_amendment,
     respond_review,
     with_root_contract,
+    work_item_payload,
     write_config,
 )
 
@@ -122,12 +123,11 @@ def planning_single_leaf_script(store: FileRunStore) -> tuple[list[dict[str, Any
                 "temp_id": "item-task",
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
-                "item": {
-                    "kind": "work",
-                    "title": "Deliver feature",
-                    "outcome": "Feature is delivered and verifiable.",
-                    "acceptance": ["Feature behavior is testable."],
-                },
+                "item": work_item_payload(
+                    title="Deliver feature",
+                    outcome="Feature is delivered and verifiable.",
+                    acceptance=["Feature behavior is testable."],
+                ),
             }
         ]
     )
@@ -149,24 +149,22 @@ def planning_two_item_script(store: FileRunStore) -> tuple[list[dict[str, Any]],
                 "temp_id": "item-first",
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
-                "item": {
-                    "kind": "work",
-                    "title": "First",
-                    "outcome": "First outcome.",
-                    "acceptance": ["First is verifiable."],
-                },
+                "item": work_item_payload(
+                    title="First",
+                    outcome="First outcome.",
+                    acceptance=["First is verifiable."],
+                ),
             },
             {
                 "op": "add_item",
                 "temp_id": "item-second",
                 "parent_id": "item-root",
                 "placement": {"last_child": True},
-                "item": {
-                    "kind": "work",
-                    "title": "Second",
-                    "outcome": "Second outcome.",
-                    "acceptance": ["Second is verifiable."],
-                },
+                "item": work_item_payload(
+                    title="Second",
+                    outcome="Second outcome.",
+                    acceptance=["Second is verifiable."],
+                ),
             },
         ]
     )

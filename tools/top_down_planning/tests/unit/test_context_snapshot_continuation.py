@@ -15,6 +15,7 @@ from tests.helpers import (
     apply_production,
     create_run_kwargs,
     done_events,
+    ensure_plan_work_scope_contracts,
     grant_capability,
     minimal_resolved_config,
     plan_root_item,
@@ -59,11 +60,13 @@ def _create_production_ready_run(
         outcome="Leaf outcome.",
         kind="work",
     )
-    plan = Plan(
+    plan = ensure_plan_work_scope_contracts(
+        Plan(
         id=f"plan-{run_id}",
         revision=0,
         output_goal="Deliver the feature.",
         items={"item-root": root, "item-leaf": leaf},
+        )
     )
     resolved = config or minimal_resolved_config(
         run={
@@ -197,7 +200,8 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
         depends_on=["item-first"],
         kind="work",
     )
-    plan = Plan(
+    plan = ensure_plan_work_scope_contracts(
+        Plan(
         id="plan-run-20260101T009904-009904",
         revision=0,
         output_goal="Deliver the feature.",
@@ -206,6 +210,7 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
             "item-first": first,
             "item-second": second,
         },
+        )
     )
     config = minimal_resolved_config(
         run={

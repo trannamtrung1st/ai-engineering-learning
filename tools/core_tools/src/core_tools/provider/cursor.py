@@ -236,6 +236,7 @@ class CursorProvider:
         self._tracked_turn_procs: dict[int, tuple[str, str]] = {}
         self._current_collect_context: tuple[str, str] | None = None
         self._on_provider_event = on_provider_event
+        self._shutting_down = False
 
     def start_primary_session(
         self,
@@ -366,8 +367,27 @@ class CursorProvider:
     def terminate_all_sessions(self) -> list[dict[str, Any]]:
         """Stop in-flight turns and drop tracked provider sessions."""
 
+        self._shutting_down = True
         terminated: list[dict[str, Any]] = []
         self._abort_inflight_sessions()
+        terminated.extend(self._terminate_tracked_turn_procs())
+
+        for session in list(self._sessions.values()):
+            thread = session.collector_thread
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=0.5)
+
+        terminated.extend(self._terminate_tracked_turn_procs())
+
+        with self._turn_proc_lock:
+            self._tracked_turn_procs.clear()
+        self._sessions.clear()
+        self._session_aliases.clear()
+        self._shutting_down = False
+        return terminated
+
+    def _terminate_tracked_turn_procs(self) -> list[dict[str, Any]]:
+        terminated: list[dict[str, Any]] = []
         with self._turn_proc_lock:
             tracked = dict(self._tracked_turn_procs)
 
@@ -386,16 +406,6 @@ class CursorProvider:
                         "reason": "terminated",
                     }
                 )
-
-        for session in list(self._sessions.values()):
-            thread = session.collector_thread
-            if thread is not None and thread.is_alive():
-                thread.join(timeout=0.1)
-
-        with self._turn_proc_lock:
-            self._tracked_turn_procs.clear()
-        self._sessions.clear()
-        self._session_aliases.clear()
         return terminated
 
     def _abort_inflight_sessions(self) -> None:
@@ -575,6 +585,16 @@ class CursorProvider:
                 session.turn_complete = True
                 session.condition.notify_all()
 
+    def _session_turn_aborted(self, session: _CursorSession) -> bool:
+        if self._shutting_down:
+            return True
+        with session.condition:
+            error = session.turn_error
+            if error is None:
+                return False
+            message = str(error).lower()
+            return "terminated" in message or "shutting down" in message
+
     def _collect_turn_once(
         self,
         session_id: str,
@@ -584,6 +604,11 @@ class CursorProvider:
         max_retries = self._max_retries_per_call()
         last_error: ProviderTurnError | None = None
         for attempt in range(max_retries + 1):
+            if self._session_turn_aborted(session):
+                raise ProviderTurnError(
+                    "provider session terminated",
+                    session_id=session_id,
+                )
             try:
                 self._collect_turn_stream(session_id, session, argv)
                 return
@@ -591,6 +616,11 @@ class CursorProvider:
                 classified = reclassify_provider_turn_error(exc, session_id=session_id)
                 if isinstance(classified, ProviderSessionNotFoundError):
                     raise classified from exc
+                if self._session_turn_aborted(session):
+                    raise ProviderTurnError(
+                        "provider session terminated",
+                        session_id=session_id,
+                    ) from exc
                 last_error = classified
                 if attempt < max_retries:
                     self._emit_provider_event(

@@ -14,6 +14,7 @@ PausedStopCode = Literal[
     "provider_unavailable",
     "provider_turn_failed",
     "user_cancelled",
+    "orchestrator_interrupted",
     "amendment_pending",
 ]
 
@@ -34,6 +35,7 @@ PAUSED_STOP_CODES: frozenset[str] = frozenset(
         "provider_unavailable",
         "provider_turn_failed",
         "user_cancelled",
+        "orchestrator_interrupted",
         "amendment_pending",
     }
 )

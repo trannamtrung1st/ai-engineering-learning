@@ -40,6 +40,7 @@ def _sample_plan(revision: int = 0) -> Plan:
         order_key="0000000000",
         title="Gate",
         kind="work",
+        scope=Scope(includes=["Gate capability"]),
     )
     child = PlanItem(
         id="item-child",
@@ -48,6 +49,7 @@ def _sample_plan(revision: int = 0) -> Plan:
         title="Child",
         depends_on=["item-gate"],
         kind="work",
+        scope=Scope(includes=["Child capability"]),
     )
     return Plan(
         id="plan-001",
@@ -331,6 +333,7 @@ def test_whole_plan_and_producer_packages_remain_active_only(tmp_path: Path) -> 
                 outcome="Live outcome.",
                 risks=["Item-level risk."],
                 source_refs=["spec.md → Live section"],
+                scope=Scope(includes=["Live capability"]),
             ),
             "item-old": PlanItem(
                 id="item-old",
@@ -361,6 +364,13 @@ def test_whole_plan_and_producer_packages_remain_active_only(tmp_path: Path) -> 
     live_item = next(item for item in approved["items"] if item["id"] == "item-live")
     assert live_item["risks"] == ["Item-level risk."]
     assert live_item["source_refs"] == ["spec.md → Live section"]
+    assert live_item["scope"] == {"includes": ["Live capability"], "excludes": []}
+    assert live_item["boundaries"] == []
+    assert live_item["effective_scope"] == {
+        "includes": ["Live capability"],
+        "excludes": [],
+    }
+    assert live_item["effective_boundaries"] == []
 
     review_snapshot = build_plan_review_snapshot(plan, limits=PlanningLimits())
     assert review_snapshot["view"] == "active"

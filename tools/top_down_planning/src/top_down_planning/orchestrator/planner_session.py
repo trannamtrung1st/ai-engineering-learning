@@ -69,6 +69,12 @@ def build_planner_protocol_instructions() -> list[str]:
             "Do not convert every possible defect into a risk. "
             "Do not place source-document section names in scope.includes — use source_refs."
         ),
+        (
+            "Every work leaf must set item-level scope.includes (owned product "
+            "capability), scope.excludes, and/or boundaries. Plan-level scope "
+            "and boundaries do not satisfy this requirement. Keep spec "
+            "traceability in source_refs, not scope.includes."
+        ),
         PLAN_ROOT_PLANNER_INSTRUCTION,
     ]
 

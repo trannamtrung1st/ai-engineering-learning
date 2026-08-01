@@ -34,6 +34,46 @@ def plan_root_item(
     )
 
 
+def ensure_plan_work_scope_contracts(plan: Any) -> Any:
+    """Give active work leaves a default item scope for approval-mode tests."""
+
+    from top_down_planning.domain.item_contract import has_item_scope_contract
+    from top_down_planning.domain.models import Plan, Scope
+
+    if not isinstance(plan, Plan):
+        return plan
+    for item in plan.items.values():
+        if item.kind != "work" or item.planning_status != "open":
+            continue
+        if has_item_scope_contract(item):
+            continue
+        item.scope = Scope(includes=[f"{item.title} test capability"])
+    return plan
+
+
+def work_item_payload(*, title: str, outcome: str, **extra: Any) -> dict[str, Any]:
+    """Build a work item payload with a default item-level scope contract."""
+
+    payload: dict[str, Any] = {
+        "kind": "work",
+        "title": title,
+        "outcome": outcome,
+        **extra,
+    }
+    scope = payload.get("scope")
+    boundaries = payload.get("boundaries")
+    has_scope = isinstance(scope, dict) and (
+        any(str(entry).strip() for entry in (scope.get("includes") or []))
+        or any(str(entry).strip() for entry in (scope.get("excludes") or []))
+    )
+    has_boundaries = isinstance(boundaries, list) and any(
+        str(entry).strip() for entry in boundaries
+    )
+    if not has_scope and not has_boundaries:
+        payload["scope"] = {"includes": [f"{title} capability"]}
+    return payload
+
+
 def update_plan_root_operation(
     *,
     title: str = "Deliver the output",

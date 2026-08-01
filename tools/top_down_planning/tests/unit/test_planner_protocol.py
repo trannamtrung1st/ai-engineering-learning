@@ -20,6 +20,11 @@ def test_planner_protocol_discourages_risks_in_acceptance_and_scope_refs() -> No
     assert "do not place source-document section names in scope.includes" in protocol
 
 
+def test_planner_protocol_requires_work_leaf_scope_contract() -> None:
+    protocol = " ".join(build_planner_protocol_instructions()).lower()
+    assert "every work leaf must set item-level scope.includes" in protocol
+
+
 def test_planner_protocol_requires_populating_seeded_root() -> None:
     protocol = " ".join(build_planner_protocol_instructions()).lower()
     assert "item-root" in protocol
