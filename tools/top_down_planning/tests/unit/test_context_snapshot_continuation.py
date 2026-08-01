@@ -17,6 +17,7 @@ from tests.helpers import (
     done_events,
     grant_capability,
     minimal_resolved_config,
+    plan_root_item,
     whole_plan_approval_record,
 )
 
@@ -46,12 +47,9 @@ def _create_production_ready_run(
     run_id: str = "run-20260101T009901-009901",
     config: dict | None = None,
 ) -> None:
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
     )
     leaf = PlanItem(
         id="item-leaf",
@@ -178,12 +176,9 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
     (tests_dir / ".keep").write_text("keep\n", encoding="utf-8")
     (tmp_path / "task.md").write_text("task\n", encoding="utf-8")
 
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
     )
     first = PlanItem(
         id="item-first",

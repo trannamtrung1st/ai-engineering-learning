@@ -18,3 +18,10 @@ def test_planner_protocol_discourages_risks_in_acceptance_and_scope_refs() -> No
     assert "do not place architecture suggestions in acceptance" in protocol
     assert "do not convert every possible defect into a risk" in protocol
     assert "do not place source-document section names in scope.includes" in protocol
+
+
+def test_planner_protocol_requires_populating_seeded_root() -> None:
+    protocol = " ".join(build_planner_protocol_instructions()).lower()
+    assert "item-root" in protocol
+    assert "update_item" in protocol
+    assert "update_plan" in protocol

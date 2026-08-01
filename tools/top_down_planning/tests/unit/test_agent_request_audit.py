@@ -35,6 +35,7 @@ from core_tools.cli import ResolvedRunsDir
 from tests.conftest import run_cli
 from tests.helpers import (
     create_run_kwargs,
+    with_root_contract,
     grant_capability,
     make_review_loop,
     mandatory_scope_review_respond_request,
@@ -72,15 +73,17 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000001-000001")
 def _apply_request() -> dict:
     return {
         "base_revision": 0,
-        "operations": [
-            {
-                "op": "add_item",
-                "temp_id": "item-new",
-                "parent_id": "item-root",
-                "placement": {"last_child": True},
-                "item": {"kind": "work", "title": "API", "outcome": "API exists."},
-            }
-        ],
+        "operations": with_root_contract(
+            [
+                {
+                    "op": "add_item",
+                    "temp_id": "item-new",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {"kind": "work", "title": "API", "outcome": "API exists."},
+                }
+            ]
+        ),
     }
 
 
@@ -511,8 +514,8 @@ def test_review_respond_under_agent_requests_records_request_id(
         id="item-root",
         parent_id=None,
         order_key="0000000000",
-        title="Root",
-        outcome="Done.",
+        title="Deliver the output",
+        outcome="Deliver the output.",
         kind="aggregate",
     )
     plan = Plan(

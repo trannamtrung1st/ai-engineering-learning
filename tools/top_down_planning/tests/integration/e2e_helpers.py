@@ -31,6 +31,7 @@ from tests.helpers import (
     only_run_id,
     request_amendment,
     respond_review,
+    with_root_contract,
     write_config,
 )
 
@@ -114,21 +115,22 @@ limits:
 def planning_single_leaf_script(store: FileRunStore) -> tuple[list[dict[str, Any]], Callable[[], None]]:
     """Add one actionable leaf and signal candidate plan ready."""
 
-    operations = [
-        {
-            "op": "add_item",
-            "temp_id": "item-task",
-            "parent_id": "item-root",
-            "placement": {"last_child": True},
-            "item": {
-    "kind": "work",
-
-                "title": "Deliver feature",
-                "outcome": "Feature is delivered and verifiable.",
-                "acceptance": ["Feature behavior is testable."],
-            },
-        }
-    ]
+    operations = with_root_contract(
+        [
+            {
+                "op": "add_item",
+                "temp_id": "item-task",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {
+                    "kind": "work",
+                    "title": "Deliver feature",
+                    "outcome": "Feature is delivered and verifiable.",
+                    "acceptance": ["Feature behavior is testable."],
+                },
+            }
+        ]
+    )
 
     def mutate() -> None:
         run_id = only_run_id(store)
@@ -140,34 +142,34 @@ def planning_single_leaf_script(store: FileRunStore) -> tuple[list[dict[str, Any
 def planning_two_item_script(store: FileRunStore) -> tuple[list[dict[str, Any]], Callable[[], None]]:
     """Add two sibling leaves for amendment scenarios."""
 
-    operations = [
-        {
-            "op": "add_item",
-            "temp_id": "item-first",
-            "parent_id": "item-root",
-            "placement": {"last_child": True},
-            "item": {
-    "kind": "work",
-
-                "title": "First",
-                "outcome": "First outcome.",
-                "acceptance": ["First is verifiable."],
+    operations = with_root_contract(
+        [
+            {
+                "op": "add_item",
+                "temp_id": "item-first",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {
+                    "kind": "work",
+                    "title": "First",
+                    "outcome": "First outcome.",
+                    "acceptance": ["First is verifiable."],
+                },
             },
-        },
-        {
-            "op": "add_item",
-            "temp_id": "item-second",
-            "parent_id": "item-root",
-            "placement": {"last_child": True},
-            "item": {
-    "kind": "work",
-
-                "title": "Second",
-                "outcome": "Second outcome.",
-                "acceptance": ["Second is verifiable."],
+            {
+                "op": "add_item",
+                "temp_id": "item-second",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {
+                    "kind": "work",
+                    "title": "Second",
+                    "outcome": "Second outcome.",
+                    "acceptance": ["Second is verifiable."],
+                },
             },
-        },
-    ]
+        ]
+    )
 
     def mutate() -> None:
         run_id = only_run_id(store)

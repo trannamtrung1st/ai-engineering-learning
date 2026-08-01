@@ -34,4 +34,5 @@ pythonpath = ["src"]
 addopts = ["-m", "not integration"]
 markers = [
   "integration: stub-provider e2e and multi-layer smoke tests.",
+  "allow_desktop_notifications: opt out of autouse desktop notification suppression.",
 ]

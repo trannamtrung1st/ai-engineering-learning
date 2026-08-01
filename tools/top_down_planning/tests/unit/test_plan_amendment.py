@@ -18,6 +18,7 @@ from tests.helpers import (
     create_run_kwargs,
     done_events,
     grant_capability,
+    plan_root_item,
     respond_review,
     script_mandatory_clear_approval,
     sessions_with_primary_session,
@@ -67,12 +68,9 @@ def _create_run_in_production_with_sessions(
     *,
     amendment_limits: dict | None = None,
 ) -> tuple[str, str]:
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
     )
     first = PlanItem(
         id="item-first",

@@ -16,6 +16,49 @@ from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence.capabilities import CAPABILITY_ENV_VAR
 
 
+def plan_root_item(
+    *,
+    title: str = "Deliver the output",
+    outcome: str = "Deliver the output.",
+) -> Any:
+    from top_down_planning.domain.models import PlanItem
+    from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
+
+    return PlanItem(
+        id=PLAN_ROOT_ITEM_ID,
+        parent_id=None,
+        order_key="0000000000",
+        title=title,
+        outcome=outcome,
+        kind="aggregate",
+    )
+
+
+def update_plan_root_operation(
+    *,
+    title: str = "Deliver the output",
+    outcome: str = "Deliver the output.",
+) -> dict[str, Any]:
+    from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
+
+    return {
+        "op": "update_item",
+        "item_id": PLAN_ROOT_ITEM_ID,
+        "patch": {"title": title, "outcome": outcome},
+    }
+
+
+def with_root_contract(
+    operations: list[dict[str, Any]],
+    *,
+    title: str = "Deliver the output",
+    outcome: str = "Deliver the output.",
+) -> list[dict[str, Any]]:
+    """Prepend the required root update_item before decomposition operations."""
+
+    return [update_plan_root_operation(title=title, outcome=outcome), *operations]
+
+
 def sessions_with_primary_session(
     *,
     planner: str | None = None,

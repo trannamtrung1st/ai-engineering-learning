@@ -15,7 +15,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, respond_review, save_review_payload, script_mandatory_clear_approval, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
+from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, plan_root_item, respond_review, save_review_payload, script_mandatory_clear_approval, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -26,12 +26,9 @@ def _create_run_at_whole_output_review(
     provider: StubProvider | None = None,
     goal_assessment: str = "Output goal is fully met.",
 ) -> str | None:
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
     )
     leaf = PlanItem(
         id="item-leaf",

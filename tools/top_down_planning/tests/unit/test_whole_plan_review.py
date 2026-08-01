@@ -17,6 +17,7 @@ from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
 from tests.helpers import (
     make_review_loop,
+    plan_root_item,
     save_review_payload,
     apply_plan,
     create_run_kwargs,
@@ -40,12 +41,9 @@ def _create_run_at_whole_plan_review(
     limits: dict | None = None,
     provider: StubProvider | None = None,
 ) -> str | None:
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
     )
     api = PlanItem(
         id="item-api",
@@ -591,7 +589,7 @@ def test_whole_plan_package_includes_overlap_warnings(tmp_path: Path) -> None:
     from top_down_planning.orchestrator.whole_plan_review import (
         build_whole_plan_review_package,
     )
-    from tests.helpers import minimal_resolved_config
+    from tests.helpers import minimal_resolved_config, plan_root_item
 
     store = FileRunStore(tmp_path)
     _create_run_at_whole_plan_review(store)
@@ -600,14 +598,9 @@ def test_whole_plan_package_includes_overlap_warnings(tmp_path: Path) -> None:
         revision=0,
         output_goal="Deliver the feature.",
         items={
-            "item-root": PlanItem(
-                id="item-root",
-                parent_id=None,
-                order_key="0000000000",
-                title="Root",
+            "item-root": plan_root_item(
+                title="Deliver the feature",
                 outcome="Root outcome.",
-                acceptance=["root ok"],
-                kind="aggregate",
             ),
             "item-parent": PlanItem(
                 id="item-parent",

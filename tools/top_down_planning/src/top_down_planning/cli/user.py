@@ -33,6 +33,7 @@ from top_down_planning.config import (
     resolve_workspace,
 )
 from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID, seed_plan_root_item
 from top_down_planning.agent_tool.validation_context import (
     compute_plan_approval_actual_digests,
     user_validate_mode_and_context,
@@ -966,13 +967,7 @@ def _initial_plan(run_id: str, config: dict[str, Any], *, output_goal: str) -> P
     input_refs = list(run_section.get("input_refs") or [])
     boundaries = list(run_section.get("boundaries") or [])
     acceptance = list(run_section.get("acceptance") or [])
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
-    )
+    root = seed_plan_root_item()
     return Plan(
         id=f"plan-{run_id}",
         revision=0,
@@ -980,7 +975,7 @@ def _initial_plan(run_id: str, config: dict[str, Any], *, output_goal: str) -> P
         input_refs=input_refs,
         boundaries=boundaries,
         acceptance=acceptance,
-        items={"item-root": root},
+        items={PLAN_ROOT_ITEM_ID: root},
     )
 
 

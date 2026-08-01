@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from top_down_planning.domain.plan_tree import PLAN_ROOT_PLANNER_INSTRUCTION
 from top_down_planning.domain.session_bindings import SessionBinding
 from top_down_planning.persistence.session_bindings import (
     get_primary_binding,
@@ -68,6 +69,7 @@ def build_planner_protocol_instructions() -> list[str]:
             "Do not convert every possible defect into a risk. "
             "Do not place source-document section names in scope.includes — use source_refs."
         ),
+        PLAN_ROOT_PLANNER_INSTRUCTION,
     ]
 
 

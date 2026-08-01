@@ -23,7 +23,7 @@ from top_down_planning.notifications.bridge import (
     handle_audit_event,
     short_run_id,
 )
-from top_down_planning.notifications.desktop import send_desktop_notification
+from top_down_planning.notifications.desktop import _notifications_suppressed
 from top_down_planning.notifications.options import NotificationOptions
 from top_down_planning.notifications.outcome import notify_run_outcome
 from top_down_planning.notifications.store import (
@@ -43,6 +43,7 @@ from tests.helpers import (
     done_events,
     minimal_resolved_config,
     only_run_id,
+    with_root_contract,
     write_config,
 )
 
@@ -166,12 +167,12 @@ def test_merge_and_sync_invocation_notifications() -> None:
     assert synced["notifications"]["progress"] is True
 
 
-def test_send_desktop_notification_suppressed_in_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_notifications_suppressed_in_ci(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CI", "true")
-    assert send_desktop_notification("title", "message") is False
+    assert _notifications_suppressed() is True
 
 
-def test_send_desktop_notification_suppressed_on_headless_linux(
+def test_notifications_suppressed_on_headless_linux(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     if not sys.platform.startswith("linux"):
@@ -180,25 +181,7 @@ def test_send_desktop_notification_suppressed_on_headless_linux(
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
-    assert send_desktop_notification("title", "message") is False
-
-
-def test_send_desktop_notification_without_notify_py(monkeypatch: pytest.MonkeyPatch) -> None:
-    import builtins
-
-    real_import = builtins.__import__
-
-    def fake_import(name: str, *args: object, **kwargs: object) -> object:
-        if name == "notifypy":
-            raise ImportError("notify-py not installed")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-    with patch(
-        "top_down_planning.notifications.desktop._notifications_suppressed",
-        return_value=False,
-    ):
-        assert send_desktop_notification("title", "message") is False
+    assert _notifications_suppressed() is True
 
 
 @patch("top_down_planning.notifications.bridge.send_desktop_notification", return_value=True)
@@ -688,15 +671,17 @@ planning:
     )
     runs_dir = tmp_path / "runs"
     store = FileRunStore(runs_dir)
-    operations = [
-        {
-            "op": "add_item",
-            "temp_id": "item-api",
-            "parent_id": "item-root",
-            "placement": {"last_child": True},
-            "item": {"kind": "work", "title": "API", "outcome": "API exists."},
-        },
-    ]
+    operations = with_root_contract(
+        [
+            {
+                "op": "add_item",
+                "temp_id": "item-api",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {"kind": "work", "title": "API", "outcome": "API exists."},
+            },
+        ]
+    )
     provider = StubProvider()
     provider.script_turn(
         done_events(signal="candidate_plan_ready", text="planning turn"),

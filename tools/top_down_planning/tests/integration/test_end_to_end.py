@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import apply_plan, apply_production, done_events, request_amendment, save_review_payload, make_review_loop
+from tests.helpers import apply_plan, apply_production, done_events, request_amendment, save_review_payload, make_review_loop, with_root_contract
 from tests.integration.e2e_helpers import (
     E2EStubProvider,
     assert_acceptance_invariant_for_run,
@@ -245,20 +245,22 @@ def test_amendment_mid_production_finishes_accepted(
             store,
             run_id,
             base_revision=current_plan_revision(store, run_id),
-            operations=[
-                {
-                    "op": "add_item",
-                    "temp_id": "item-third",
-                    "parent_id": "item-root",
-                    "placement": {"last_child": True},
-                    "item": {
-                        "kind": "work",
-                        "title": "Third",
-                        "outcome": "Third outcome.",
-                        "acceptance": ["Third is verifiable."],
-                    },
-                }
-            ],
+            operations=with_root_contract(
+                [
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-third",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {
+                            "kind": "work",
+                            "title": "Third",
+                            "outcome": "Third outcome.",
+                            "acceptance": ["Third is verifiable."],
+                        },
+                    }
+                ]
+            ),
             phase="plan_amendment",
         ),
     )
@@ -430,7 +432,7 @@ def test_example_config_and_stub_instructions_are_present(tmp_path: Path) -> Non
     assert "name: cursor" in example_text
 
     readme_text = readme.read_text(encoding="utf-8")
-    assert "provider.name=stub" in readme_text
+    assert "tests default to `stub`" in readme_text
     assert "tools/top_down_planning/examples/top-down-planning.yaml" in readme_text
 
     from top_down_planning.config import resolve_config

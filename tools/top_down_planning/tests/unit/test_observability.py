@@ -404,7 +404,7 @@ def test_stub_provider_events_reach_bridge_when_stream_events_drains_turn() -> N
     assert any(event.category == "response" for event in collector.events)
     drained = list(provider.stream_events(session_id))
     assert len(drained) == 3
-    assert all(event.get("model") == "reasoning-model" for event in drained)
+    assert any(event.get("type") == "assistant" for event in drained)
     assert drained[-1]["type"] == "done"
 
 

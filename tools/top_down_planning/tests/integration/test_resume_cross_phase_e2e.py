@@ -35,6 +35,7 @@ from tests.helpers import (
     respond_review,
     whole_output_approval_record,
     whole_plan_approval_record,
+    with_root_contract,
 )
 from top_down_planning.domain.approval_digests import OUTPUT_APPROVAL_DIGEST_KEYS
 from tests.helpers import approved_digests_from_run
@@ -67,20 +68,22 @@ def patch_provider(provider: E2EStubProvider):
 def _planning_one_item_continue_script(
     store: FileRunStore,
 ) -> tuple[list[dict[str, Any]], Callable[[], None]]:
-    operations = [
-        {
-            "op": "add_item",
-            "temp_id": "item-task",
-            "parent_id": "item-root",
-            "placement": {"last_child": True},
-            "item": {
-                "kind": "work",
-                "title": "Deliver feature",
-                "outcome": "Feature is delivered and verifiable.",
-                "acceptance": ["Feature behavior is testable."],
-            },
-        }
-    ]
+    operations = with_root_contract(
+        [
+            {
+                "op": "add_item",
+                "temp_id": "item-task",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {
+                    "kind": "work",
+                    "title": "Deliver feature",
+                    "outcome": "Feature is delivered and verifiable.",
+                    "acceptance": ["Feature behavior is testable."],
+                },
+            }
+        ]
+    )
 
     def mutate() -> None:
         from tests.helpers import only_run_id
@@ -94,20 +97,22 @@ def _planning_one_item_continue_script(
 def _planning_complete_script(
     store: FileRunStore,
 ) -> tuple[list[dict[str, Any]], Callable[[], None]]:
-    operations = [
-        {
-            "op": "add_item",
-            "temp_id": "item-task",
-            "parent_id": "item-root",
-            "placement": {"last_child": True},
-            "item": {
-                "kind": "work",
-                "title": "Deliver feature",
-                "outcome": "Feature is delivered and verifiable.",
-                "acceptance": ["Feature behavior is testable."],
-            },
-        }
-    ]
+    operations = with_root_contract(
+        [
+            {
+                "op": "add_item",
+                "temp_id": "item-task-2",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {
+                    "kind": "work",
+                    "title": "Deliver feature follow-up",
+                    "outcome": "Follow-up feature work is delivered.",
+                    "acceptance": ["Follow-up behavior is testable."],
+                },
+            }
+        ]
+    )
 
     def mutate() -> None:
         from tests.helpers import only_run_id

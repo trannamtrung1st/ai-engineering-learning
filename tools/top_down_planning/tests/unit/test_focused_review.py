@@ -24,6 +24,7 @@ from tests.helpers import (
     create_run_kwargs,
     done_events,
     grant_capability,
+    plan_root_item,
     request_focused_review,
     respond_review,
     run_digests_for_config,
@@ -73,12 +74,9 @@ def _create_planning_run(
     limits: dict | None = None,
     review: dict | None = None,
 ) -> None:
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
     )
     api = PlanItem(
         id="item-api",
@@ -490,12 +488,9 @@ def _create_production_run(
     review: dict | None = None,
     provider: StubProvider | None = None,
 ) -> str:
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
     )
     first = PlanItem(
         id="item-first",

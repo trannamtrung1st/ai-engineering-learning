@@ -21,6 +21,7 @@ from tests.helpers import (
     save_review_payload,
     create_run_kwargs,
     grant_capability,
+    plan_root_item,
     set_capability_env,
     write_agent_request_file,
     whole_plan_approval_record,
@@ -47,12 +48,9 @@ def _create_production_run(
     store: FileRunStore,
     run_id: str = "run-20260101T000201-000201",
 ) -> None:
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
     )
     first = PlanItem(
         id="item-first",
@@ -501,7 +499,7 @@ def test_production_ready_snapshot_preserves_blocker_behavior_with_ready_items(
 
 def test_multi_item_batch_still_works_with_ready_items(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
+    root = plan_root_item(title="Deliver the feature", outcome="Deliver the feature.")
     a = PlanItem(
         id="item-a",
         parent_id="item-root",

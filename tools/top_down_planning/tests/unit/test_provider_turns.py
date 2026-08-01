@@ -18,13 +18,13 @@ from top_down_planning.orchestrator.provider_turns import (
 )
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, grant_capability, respond_review
+from tests.helpers import create_run_kwargs, done_events, grant_capability, plan_root_item, respond_review
 
 
 def test_ensure_phase_action_id_assigns_and_reuses(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000905-000905"
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
+    root = plan_root_item(title="Deliver the feature", outcome="Deliver the feature.")
     plan = Plan(
         id=f"plan-{run_id}",
         revision=0,
@@ -97,7 +97,7 @@ def test_turn_text_accumulator_resolves_assistant_only_signal() -> None:
 def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000901-000901"
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
+    root = plan_root_item(title="Deliver the feature", outcome="Deliver the feature.")
     plan = Plan(
         id=f"plan-{run_id}",
         revision=0,
@@ -132,7 +132,7 @@ def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
 def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000902-000902"
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
+    root = plan_root_item(title="Deliver the feature", outcome="Deliver the feature.")
     plan = Plan(
         id=f"plan-{run_id}",
         revision=0,
@@ -183,7 +183,7 @@ def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:
 def test_planning_accepts_assistant_text_completion_signal(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000903-000903"
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
+    root = plan_root_item(title="Deliver the feature", outcome="Deliver the feature.")
     plan = Plan(
         id=f"plan-{run_id}",
         revision=0,
@@ -216,7 +216,7 @@ def test_planning_runs_store_created_focused_review_before_advancing(
 ) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000904-000904"
-    root = PlanItem(id="item-root", parent_id=None, order_key="0000000000", title="Root", kind="aggregate")
+    root = plan_root_item(title="Deliver the feature", outcome="Deliver the feature.")
     api = PlanItem(
         id="item-api",
         parent_id="item-root",

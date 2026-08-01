@@ -43,6 +43,23 @@ def test_whole_plan_protocol_prioritizes_correctness_and_consistency() -> None:
     assert "contradictions" in protocol
 
 
+def test_whole_plan_protocol_checks_populated_root_contract() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(review_type="whole_plan")
+    ).lower()
+    assert "item-root" in protocol
+    assert "root contract" in protocol
+    assert "non-empty outcome" in protocol
+
+
+def test_focused_plan_protocol_checks_populated_root_contract() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(review_type="focused_plan")
+    ).lower()
+    assert "item-root" in protocol
+    assert "root contract" in protocol
+
+
 def test_whole_output_protocol_prioritizes_correctness_and_consistency() -> None:
     protocol = " ".join(
         build_reviewer_protocol_instructions(review_type="whole_output")

@@ -274,7 +274,8 @@ def test_duplicate_looking_sibling_contracts_warns_without_blocking() -> None:
                 id="item-root",
                 parent_id=None,
                 order_key="0000000000",
-                title="Root",
+                title="Deliverable",
+                outcome="Deliverable outcome.",
                 kind="aggregate",
             ),
             "item-a": PlanItem(
@@ -337,3 +338,119 @@ def test_plan_quality_warnings_remain_warnings_in_approval_mode() -> None:
         issue.code == "executable_parent_overlap" and issue.severity == "warning"
         for issue in approval.issues
     )
+
+
+def test_seed_root_without_children_passes_validation() -> None:
+    plan = Plan(
+        id="plan-seed",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            ),
+        },
+    )
+
+    result = validate_plan(plan)
+
+    assert result.ok
+    assert not any(issue.code.startswith("default_root") for issue in result.issues)
+    assert not any(issue.code == "missing_root_outcome" for issue in result.issues)
+
+
+def test_default_root_with_children_fails_validation() -> None:
+    plan = Plan(
+        id="plan-root-default",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            ),
+            "item-work": PlanItem(
+                id="item-work",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Work",
+                kind="work",
+                outcome="Done.",
+            ),
+        },
+    )
+
+    result = validate_plan(plan)
+
+    assert not result.ok
+    codes = {issue.code for issue in result.issues}
+    assert "default_root_title" in codes
+    assert "missing_root_outcome" in codes
+
+
+def test_default_root_title_is_case_insensitive() -> None:
+    plan = Plan(
+        id="plan-root-case",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="root",
+                outcome="Deliverable outcome.",
+                kind="aggregate",
+            ),
+            "item-work": PlanItem(
+                id="item-work",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Work",
+                kind="work",
+                outcome="Done.",
+            ),
+        },
+    )
+
+    result = validate_plan(plan)
+
+    assert not result.ok
+    assert any(issue.code == "default_root_title" for issue in result.issues)
+
+
+def test_populated_root_with_children_passes_validation() -> None:
+    plan = Plan(
+        id="plan-root-ok",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Deliverable",
+                outcome="Deliverable outcome.",
+                kind="aggregate",
+            ),
+            "item-work": PlanItem(
+                id="item-work",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Work",
+                kind="work",
+                outcome="Done.",
+            ),
+        },
+    )
+
+    result = validate_plan(plan)
+
+    assert result.ok

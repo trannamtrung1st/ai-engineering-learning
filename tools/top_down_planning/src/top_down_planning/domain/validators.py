@@ -14,6 +14,9 @@ from top_down_planning.domain.plan_schema import (
     UNSUPPORTED_PLAN_SCHEMA_MESSAGE,
 )
 from top_down_planning.domain.plan_tree import (
+    DEFAULT_PLAN_ROOT_TITLE,
+    PLAN_ROOT_ITEM_ID,
+    active_children_of,
     compute_planning_budget,
     find_hierarchy_cycle,
     is_active_item,
@@ -228,6 +231,44 @@ def _contract_fingerprint(item: PlanItem) -> tuple[Any, ...]:
         tuple(entry.strip().casefold() for entry in item.scope.excludes),
         tuple(entry.strip().casefold() for entry in item.acceptance),
     )
+
+
+def validate_root_item_populated(plan: Plan) -> list[ValidationIssue]:
+    """Require a named root outcome once decomposition children exist."""
+
+    issues: list[ValidationIssue] = []
+    root = plan.items.get(PLAN_ROOT_ITEM_ID)
+    if root is None or not is_active_item(root):
+        return issues
+    if not active_children_of(plan, PLAN_ROOT_ITEM_ID):
+        return issues
+
+    if root.title.strip().casefold() == DEFAULT_PLAN_ROOT_TITLE.casefold():
+        issues.append(
+            _issue(
+                "default_root_title",
+                "error",
+                (
+                    f"root item {PLAN_ROOT_ITEM_ID} still has the seeded title "
+                    f"{DEFAULT_PLAN_ROOT_TITLE!r}; update it with update_item before "
+                    "signaling candidate_plan_ready"
+                ),
+                [PLAN_ROOT_ITEM_ID, "title"],
+            )
+        )
+    if not root.outcome.strip():
+        issues.append(
+            _issue(
+                "missing_root_outcome",
+                "error",
+                (
+                    f"root item {PLAN_ROOT_ITEM_ID} requires a non-empty outcome "
+                    "once it has active child items"
+                ),
+                [PLAN_ROOT_ITEM_ID, "outcome"],
+            )
+        )
+    return issues
 
 
 def validate_plan_quality_warnings(plan: Plan) -> list[ValidationIssue]:
@@ -808,6 +849,7 @@ def validate_plan(
     is_review_blocked = build_is_review_blocked_fn(reviews, review_types=review_types)
 
     issues.extend(validate_ids_and_fields(plan))
+    issues.extend(validate_root_item_populated(plan))
     issues.extend(validate_hierarchy(plan))
     issues.extend(
         validate_dependencies(

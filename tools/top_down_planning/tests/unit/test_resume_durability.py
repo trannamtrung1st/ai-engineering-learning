@@ -45,6 +45,7 @@ from tests.helpers import (
     script_mandatory_clear_approval,
     sessions_with_primary_session,
     whole_plan_approval_record,
+    with_root_contract,
 )
 
 
@@ -225,15 +226,17 @@ def test_interrupt_planning_resume_keeps_same_session(tmp_path: Path) -> None:
             store,
             run_id,
             base_revision=0,
-            operations=[
-                {
-                    "op": "add_item",
-                    "temp_id": "item-api",
-                    "parent_id": "item-root",
-                    "placement": {"last_child": True},
-                    "item": {"kind": "work", "title": "API", "outcome": "API exists."},
-                }
-            ],
+            operations=with_root_contract(
+                [
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-api",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {"kind": "work", "title": "API", "outcome": "API exists."},
+                    }
+                ]
+            ),
         ),
     )
 

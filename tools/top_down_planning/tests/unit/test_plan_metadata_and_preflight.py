@@ -200,7 +200,8 @@ def test_valid_candidate_still_enters_whole_plan_review(tmp_path: Path) -> None:
                 id="item-root",
                 parent_id=None,
                 order_key="0000000000",
-                title="Root",
+                title="Deliver the output",
+                outcome="Deliver the output.",
                 kind="aggregate",
             ),
             "item-work": PlanItem(
@@ -240,7 +241,7 @@ def test_candidate_preflight_surfaces_warnings_without_blocking(tmp_path: Path) 
                 id="item-root",
                 parent_id=None,
                 order_key="0000000000",
-                title="Root",
+                title="Deliver goal",
                 outcome="Root outcome.",
                 acceptance=["root ok"],
                 kind="aggregate",
@@ -307,3 +308,52 @@ def test_draft_validation_ok_for_titled_plan() -> None:
         },
     )
     assert validate_plan(plan).ok is True
+
+
+def test_candidate_preflight_blocks_default_root_with_children(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    plan = Plan(
+        id="plan-root-default",
+        revision=0,
+        output_goal="Goal.",
+        items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Root",
+                kind="aggregate",
+            ),
+            "item-work": PlanItem(
+                id="item-work",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="Work",
+                outcome="Done.",
+                acceptance=["ok"],
+                kind="work",
+            ),
+        },
+    )
+    config = create_run_kwargs(store.root)["resolved_config"]
+    assert isinstance(config, dict)
+    config = dict(config)
+    limits = dict(config.get("limits") or {})
+    planning_limits = dict(limits.get("planning") or {})
+    planning_limits["max_agent_turns"] = 2
+    limits["planning"] = planning_limits
+    config["limits"] = limits
+    store.create_run(
+        "run-20260101T000706-000706",
+        plan=plan,
+        **create_run_kwargs(store.root, resolved_config=config),
+        phase=PLANNING,
+    )
+    provider = StubProvider()
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="ready"))
+    provider.script_turn(done_events(text="continue after preflight"))
+    result = PlanningPhaseOrchestrator(
+        store, "run-20260101T000706-000706", provider
+    ).run()
+    assert store.load_run("run-20260101T000706-000706")["phase"] == PLANNING
+    assert result.ok is False

@@ -1110,10 +1110,30 @@ _SCHEMAS = SCHEMAS
 _EXAMPLES: dict[str, dict[str, Any]] = {
     "expand-branch": {
         "schema": "plan-transaction",
-        "description": "Expand a plan branch with sibling items and a dependency edge.",
+        "description": (
+            "Set plan-level contract, populate the seeded root, and expand a branch."
+        ),
         "payload": {
             "base_revision": 0,
             "operations": [
+                {
+                    "op": "update_plan",
+                    "patch": {
+                        "scope": {
+                            "includes": ["src/api/", "src/ui/"],
+                            "excludes": [],
+                        },
+                        "acceptance": ["API and UI layers are testable end to end."],
+                    },
+                },
+                {
+                    "op": "update_item",
+                    "item_id": "item-root",
+                    "patch": {
+                        "title": "Deliver API and UI layers",
+                        "outcome": "HTTP API and consuming UI exist with documented contracts.",
+                    },
+                },
                 {
                     "op": "add_item",
                     "temp_id": "item-api",
@@ -1605,10 +1625,14 @@ at plan and item level.
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.
    Each `add_item` requires `kind`: `work` for batchable leaves, `aggregate` for
-   grouping-only parents. The seeded root is `aggregate`. Use `update_plan` to
+   grouping-only parents. The seeded root is `aggregate` (`item-root`, title
+   `Root`). Before adding children under `item-root`, use `update_item` on
+   `item-root` to set a meaningful title and outcome; use `update_plan` to
    revise plan-level `scope`, `boundaries`, `constraints`, `assumptions`,
    `acceptance`, and `risks` (seeded from `run.boundaries` / `run.acceptance` at run creation).
    Item-level `risks` and `source_refs` use `add_item` / `update_item`.
+   Once `item-root` has active children, deterministic validation requires a
+   non-default title and non-empty outcome on `item-root`.
 2. Mandatory whole-plan review (`review respond`) must complete the gate before production.
    Stages: `initial_review` (discovery), optional `finding_verification` (close known
    findings after revisions), then fresh `scope_review` (complete-scope discovery).
@@ -1753,6 +1777,8 @@ stored approval when one exists for the current revision, otherwise surface
 plan item when a more specific descendant already captures the prerequisite.
 
 `plan snapshot`, `plan apply`, and `plan check` exit 0 only when `ok` is true.
+When `item-root` has active children, draft validation errors on
+`default_root_title` (seeded title `Root`) or `missing_root_outcome`.
 `production snapshot` and `production check` follow the same rule. A persisted
 `plan apply` may return `applied: true` with exit 1 only when post-apply validation
 reports pre-existing error-severity issues that the mutation did not introduce.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from top_down_planning.domain.plan_tree import PLAN_ROOT_REVIEWER_INSTRUCTION
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.session_bindings import is_transient_provider_session_id
 from top_down_planning.domain.session_bindings import (
@@ -96,6 +97,7 @@ def build_reviewer_protocol_instructions(
                     "material risks implied by inputs but omitted from the plan."
                 )
             )
+            instructions.append(PLAN_ROOT_REVIEWER_INSTRUCTION)
         else:
             instructions.append(
                 (
@@ -116,6 +118,7 @@ def build_reviewer_protocol_instructions(
                 "implied by inputs but omitted from the scoped items."
             )
         )
+        instructions.append(PLAN_ROOT_REVIEWER_INSTRUCTION)
     if normalized == "finding_verification":
         instructions.extend(
             [

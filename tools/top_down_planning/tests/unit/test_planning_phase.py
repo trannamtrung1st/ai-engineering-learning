@@ -20,7 +20,9 @@ from tests.helpers import (
     done_events,
     grant_capability,
     minimal_resolved_config,
+    plan_root_item,
     sessions_with_primary_session,
+    with_root_contract,
 )
 
 
@@ -30,12 +32,9 @@ def _create_run(
     *,
     limits: dict | None = None,
 ) -> None:
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        kind="aggregate",
+    root = plan_root_item(
+        title="Deliver the feature",
+        outcome="Deliver the feature.",
     )
     plan = Plan(
         id=f"plan-{run_id}",
@@ -83,22 +82,24 @@ def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) 
             store,
             run_id,
             base_revision=0,
-            operations=[
-                {
-                    "op": "add_item",
-                    "temp_id": "item-api",
-                    "parent_id": "item-root",
-                    "placement": {"last_child": True},
-                    "item": {"kind": "work", "title": "API", "outcome": "API exists."},
-                },
-                {
-                    "op": "add_item",
-                    "temp_id": "item-ui",
-                    "parent_id": "item-root",
-                    "placement": {"last_child": True},
-                    "item": {"kind": "work", "title": "UI", "outcome": "UI exists."},
-                },
-            ],
+            operations=with_root_contract(
+                [
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-api",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {"kind": "work", "title": "API", "outcome": "API exists."},
+                    },
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-ui",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {"kind": "work", "title": "UI", "outcome": "UI exists."},
+                    },
+                ]
+            ),
         ),
     )
 
@@ -256,15 +257,17 @@ def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -
     service.apply(
         {
             "base_revision": 0,
-            "operations": [
-                {
-                    "op": "add_item",
-                    "temp_id": "item-a",
-                    "parent_id": "item-root",
-                    "placement": {"last_child": True},
-                    "item": {"kind": "work", "title": "A"},
-                }
-            ],
+            "operations": with_root_contract(
+                [
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-a",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {"kind": "work", "title": "A"},
+                    }
+                ]
+            ),
         },
         capability_token=grant_capability(store, "run-20260101T000101-000101", role="planner", phase=PLANNING),
     )

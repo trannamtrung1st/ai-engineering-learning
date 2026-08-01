@@ -25,7 +25,7 @@ from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
     compute_config_execution_digest,
 )
-from tests.conftest import run_cli
+from tests.conftest import CliResult, run_cli
 from tests.helpers import create_run_kwargs, run_digests_for_config, whole_plan_approval_record, write_config
 
 
@@ -340,3 +340,13 @@ run:
     assert "output_goal" not in run_section
     assert run_section["output_goal_file"] == "goal.md"
     assert resolve_output_goal_text(resolved, base_dir=workspace) == "Goal from file."
+
+
+def test_cli_result_json_returns_last_object_when_stdout_has_multiple() -> None:
+    result = CliResult(
+        exit_code=0,
+        stdout='{"first": true}\n{"run_id": "run-1", "status": "running"}\n',
+        stderr="",
+    )
+
+    assert result.json() == {"run_id": "run-1", "status": "running"}

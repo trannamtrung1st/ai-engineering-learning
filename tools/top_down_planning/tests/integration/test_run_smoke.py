@@ -12,7 +12,7 @@ from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import apply_plan, done_events, only_run_id, write_config
+from tests.helpers import apply_plan, done_events, only_run_id, with_root_contract, write_config
 
 
 @pytest.mark.integration
@@ -33,22 +33,24 @@ planning:
     runs_dir = tmp_path / "runs"
     store = FileRunStore(runs_dir)
 
-    operations = [
-        {
-            "op": "add_item",
-            "temp_id": "item-api",
-            "parent_id": "item-root",
-            "placement": {"last_child": True},
-            "item": {"kind": "work", "title": "API", "outcome": "API exists."},
-        },
-        {
-            "op": "add_item",
-            "temp_id": "item-ui",
-            "parent_id": "item-root",
-            "placement": {"last_child": True},
-            "item": {"kind": "work", "title": "UI", "outcome": "UI exists."},
-        },
-    ]
+    operations = with_root_contract(
+        [
+            {
+                "op": "add_item",
+                "temp_id": "item-api",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {"kind": "work", "title": "API", "outcome": "API exists."},
+            },
+            {
+                "op": "add_item",
+                "temp_id": "item-ui",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {"kind": "work", "title": "UI", "outcome": "UI exists."},
+            },
+        ]
+    )
 
     provider = StubProvider()
     provider.script_turn(

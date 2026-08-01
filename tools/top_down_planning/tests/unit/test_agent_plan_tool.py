@@ -30,7 +30,8 @@ def _sample_plan(revision: int = 0) -> Plan:
         id="item-root",
         parent_id=None,
         order_key="0000000000",
-        title="Root",
+        title="Deliver the output",
+        outcome="Deliver the output.",
         kind="aggregate",
     )
     gate = PlanItem(
@@ -157,7 +158,8 @@ def test_snapshot_active_and_audit_views(tmp_path: Path) -> None:
                 id="item-root",
                 parent_id=None,
                 order_key="0000000000",
-                title="Root",
+                title="Deliver the output",
+                outcome="Deliver the output.",
                 kind="aggregate",
             ),
             "item-live": PlanItem(
@@ -235,7 +237,8 @@ def test_audit_view_includes_nested_inactive_under_root_filter(tmp_path: Path) -
                 id="item-root",
                 parent_id=None,
                 order_key="0000000000",
-                title="Root",
+                title="Deliver the output",
+                outcome="Deliver the output.",
                 kind="aggregate",
             ),
             "item-live": PlanItem(
@@ -315,7 +318,8 @@ def test_whole_plan_and_producer_packages_remain_active_only(tmp_path: Path) -> 
                 id="item-root",
                 parent_id=None,
                 order_key="0000000000",
-                title="Root",
+                title="Deliver the output",
+                outcome="Deliver the output.",
                 kind="aggregate",
             ),
             "item-live": PlanItem(
@@ -424,7 +428,8 @@ def test_plan_check_surfaces_overlap_warnings_without_blocking(tmp_path: Path) -
                 id="item-root",
                 parent_id=None,
                 order_key="0000000000",
-                title="Root",
+                title="Deliver the output",
+                outcome="Deliver the output.",
                 kind="aggregate",
             ),
             "item-parent": PlanItem(
