@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core_tools.persistence.yaml_util import load_yaml
+from core_tools.persistence.yaml_util import dump_yaml, load_yaml
 
 
 def test_load_yaml_folded_scalar_in_mapping() -> None:
@@ -58,6 +58,24 @@ items:
 """
     )
     assert parsed["items"][0] == {"text": "hello", "file": "notes.md"}
+
+
+def test_dump_yaml_round_trips_multiline_scalar() -> None:
+    value = {"planning": {"stop_hint": "line one\nline two"}}
+    parsed = load_yaml(dump_yaml(value))
+    assert parsed == value
+
+
+def test_dump_yaml_round_trips_nested_multiline_guidance() -> None:
+    value = {
+        "agent_context": {
+            "planner": {
+                "guidance": [{"text": "Line one\nLine two"}],
+            }
+        }
+    }
+    parsed = load_yaml(dump_yaml(value))
+    assert parsed == value
 
 
 def test_load_yaml_rejects_unexpected_indentation() -> None:
