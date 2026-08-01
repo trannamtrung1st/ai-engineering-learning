@@ -99,12 +99,12 @@ def test_override_values_parse_yaml_types(tmp_path: Path) -> None:
         [
             "planning.max_depth=5",
             "review.focused_plan.enabled=false",
-            "run.input_refs=[README.md, docs/spec.md]",
+            "run.input_refs=[README.md, docs/guide.md]",
         ],
     )
     assert resolved["planning"]["max_depth"] == 5
     assert resolved["review"]["focused_plan"]["enabled"] is False
-    assert resolved["run"]["input_refs"] == ["README.md", "docs/spec.md"]
+    assert resolved["run"]["input_refs"] == ["README.md", "docs/guide.md"]
 
 
 def test_input_digest_uses_file_content_when_ref_exists(tmp_path: Path) -> None:

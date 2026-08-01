@@ -2,9 +2,7 @@
 
 Planning and production orchestration: receive an input and output goal, build a top-down plan, review and validate it, produce output in coherent batches, and resolve a final quality outcome.
 
-Specification: [`docs/spec.md`](docs/spec.md) · Resume ops:
-[`docs/resume-batch-checklist.md`](docs/resume-batch-checklist.md) · §19 crosswalk:
-[`docs/implementation-plan-crosswalk.md`](docs/implementation-plan-crosswalk.md)
+Agent protocol: `tdp agent readme` · schemas and examples: `tdp agent schema` / `tdp agent example`
 
 ## Quickstart
 
@@ -244,7 +242,7 @@ context_snapshot:
 }
 ```
 
-List-shaped `{path, digest}` entries, absolute path keys, and a binding-level `workspace` field are rejected; recreate the run. Config document `version` is unrelated to run-record `schema_version` (currently `3`). Unsupported or missing run `schema_version` fails load with a recreate message — there is no automatic migrator. See [`docs/resume-batch-checklist.md`](docs/resume-batch-checklist.md) for the coordinated v3 deployment gate. Prefer snapshot excludes over
+List-shaped `{path, digest}` entries, absolute path keys, and a binding-level `workspace` field are rejected; recreate the run. Config document `version` is unrelated to run-record `schema_version` (currently `3`). Unsupported or missing run `schema_version` fails load with a recreate message — there is no automatic migrator. Prefer snapshot excludes over
 
 Snapshot excludes apply only to **context snapshot** resource materialization (`SnapshotPolicy.collect`). Agent session resource manifests still expand directories recursively and may list `__pycache__` / `.pyc` paths from `resolve_expanded_path_list`; that packaging surface is intentionally unchanged — use snapshot excludes for integrity binding, not for agent manifest hygiene.
 

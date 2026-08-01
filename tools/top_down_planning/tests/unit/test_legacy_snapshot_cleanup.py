@@ -70,7 +70,7 @@ def test_binding_validation_rejects_without_rewriting() -> None:
     assert legacy["workspace"] == "/tmp/ws"
 
 
-def test_docs_and_example_cover_context_snapshot_excludes() -> None:
+def test_readme_and_example_cover_context_snapshot_excludes() -> None:
     package_root = _SRC_ROOT.parents[1]
     readme = (package_root / "README.md").read_text(encoding="utf-8")
     example = (package_root / "examples" / "top-down-planning.yaml").read_text(
@@ -88,6 +88,5 @@ def test_docs_and_example_cover_context_snapshot_excludes() -> None:
 
     assert "context_snapshot" in AGENT_README_TEXT
     assert "schema_version" in AGENT_README_TEXT
-    assert "docs/spec.md" not in AGENT_README_TEXT
     config_schema = show_schema("config")
     assert "context_snapshot" in config_schema["properties"]

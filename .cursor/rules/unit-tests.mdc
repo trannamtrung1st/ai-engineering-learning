@@ -1,0 +1,44 @@
+---
+description: Fast unit tests — prefer fakes/stubs over live I/O; avoid slow sleeps
+globs: "**/tests/**/*.py"
+alwaysApply: false
+---
+
+# Unit Test Performance
+
+Unit tests must be fast. Prefer fakes, stubs, and mocks over live implementations.
+
+## Default to fakes and stubs
+
+- **Provider orchestration**: `StubProvider` + `script_turn()` — do not invoke live Cursor CLI or agent subprocesses.
+- **Provider adapter tests**: inject a `fake_runner` into `CursorProvider` — never spawn a real agent binary.
+- **Config** (`top_down_planning`): `minimal_resolved_config()` / `create_run_kwargs()` default `provider.name` to `stub`.
+- **I/O boundaries**: `unittest.mock.patch` or inject fakes (`tmp_path`, in-memory stores).
+- **Network / subprocess**: no live services or child processes unless process lifecycle is the behavior under test.
+
+## Avoid live implementations
+
+| Avoid | Use instead |
+| --- | --- |
+| Live Cursor CLI / agent subprocess | `StubProvider` + `script_turn()`, or `CursorProvider(..., runner=fake_runner)` |
+| Real HTTP / sockets | stub responses or `patch` |
+| Long `time.sleep` / `asyncio.sleep` | `mutate_store` callbacks, scripted events, or injected fakes |
+| CLI subprocess (`subprocess.run(["tdp", ...])`) | in-process `run_cli()` (`top_down_planning`) or direct function calls |
+
+Using `provider="cursor"` or session ids like `cursor-abc` as **metadata strings** is fine — that is not invoking the live provider.
+
+## Sleep and delays
+
+- Do not sleep to "wait for" async work — control timing with stubs.
+- Only use short sleeps (≤100ms) when timing or process lifecycle is the behavior under test.
+- Prefer `provider.script_turn(..., mutate_store=...)` to mutate state at the right moment.
+
+## Test placement
+
+- `tests/unit/` — pure logic, stubs, mocks; must run in milliseconds.
+- `tests/integration/` — broader flows; still prefer `stub` provider. Reserve live `cursor` for manual/smoke runs.
+
+## Before finishing
+
+- Reuse package test helpers before inventing new setup (`top_down_planning`: `tests/helpers.py`, `tests/conftest.py`).
+- One behavior per test; no unnecessary fixtures or multi-second setup.

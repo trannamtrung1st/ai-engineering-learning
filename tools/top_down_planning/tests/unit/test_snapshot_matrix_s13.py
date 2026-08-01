@@ -32,8 +32,7 @@ from top_down_planning.config import (
 from top_down_planning.config.context import MISSING_RESOURCE_FILE_DIGEST
 from tests.helpers import write_config
 
-# Scenario id -> covering test (this module or elsewhere). Keep in sync with
-# temp/tdp-digest-enhancements.md §13.
+# Scenario id -> owning test (this module or elsewhere). Canonical §13 matrix registry.
 MATRIX_COVERAGE: dict[str, str] = {
     "1": "test_exclude_matching.py::test_builtin_matcher_semantics",
     "2": "test_exclude_matching.py::test_builtin_matcher_semantics",
