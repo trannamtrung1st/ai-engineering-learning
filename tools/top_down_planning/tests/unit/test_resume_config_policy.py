@@ -58,6 +58,14 @@ def test_resume_rejects_provider_change() -> None:
     assert any("session-strategy" in error for error in comparison.errors)
 
 
+def test_resume_rejects_skip_probe_change() -> None:
+    stored = _base_config()
+    candidate = resolve_config(None, ["provider.skip_probe=true"])
+    comparison = validate_resume_config_comparison(compare_resume_configs(stored, candidate))
+    assert not comparison.ok
+    assert any("session-strategy" in error for error in comparison.errors)
+
+
 def test_resume_rejects_model_change() -> None:
     stored = _base_config()
     candidate = resolve_config(None, ["agent_context.producer.model=gpt-4"])

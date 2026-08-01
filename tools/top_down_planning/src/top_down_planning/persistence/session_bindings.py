@@ -1,16 +1,14 @@
-"""Run-store session binding persistence and migration (proposal §9)."""
+"""Run-store structured session binding persistence (proposal §11)."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from top_down_planning.domain.session_bindings import (
-    LEGACY_PRIMARY_SESSION_FIELDS,
     PRIMARY_PLANNER_SLOT,
     PRIMARY_PRODUCER_SLOT,
     SessionBinding,
     SessionBindingError,
-    binding_from_legacy_provider_session_id,
     binding_provider_session_id,
     is_transient_provider_session_id,
     new_session_binding,
@@ -22,7 +20,29 @@ _SLOT_ROLE_KIND: dict[str, tuple[str, str]] = {
     PRIMARY_PRODUCER_SLOT: ("producer", "primary"),
 }
 
+_REJECTED_LEGACY_SESSION_FIELDS = frozenset(
+    {
+        "primary_planner_session_id",
+        "primary_producer_session_id",
+    }
+)
+
+_REJECTED_LEGACY_REVIEW_FIELDS = frozenset({"reviewer_session_id"})
+
 StructuredSessions = dict[str, dict[str, Any]]
+
+
+class LegacySessionFieldError(SessionBindingError):
+    """Persisted session payload uses a removed flat session-id field."""
+
+
+def _reject_legacy_session_fields(sessions: dict[str, Any]) -> None:
+    for field in _REJECTED_LEGACY_SESSION_FIELDS:
+        if field in sessions:
+            raise LegacySessionFieldError(
+                f"legacy session field {field!r} is not accepted; "
+                "use structured sessions.{primary_planner,primary_producer}; recreate the run"
+            )
 
 
 def initial_structured_sessions() -> StructuredSessions:
@@ -40,57 +60,37 @@ def initial_structured_sessions() -> StructuredSessions:
     }
 
 
-def _binding_dict(binding: SessionBinding | dict[str, Any]) -> dict[str, Any]:
-    if isinstance(binding, SessionBinding):
-        return binding.to_dict()
-    if not isinstance(binding, dict):
-        raise SessionBindingError("session binding must be a mapping or SessionBinding")
-    return SessionBinding.from_dict(binding).to_dict()
+def coerce_structured_sessions(sessions: dict[str, Any] | None) -> StructuredSessions:
+    """Normalize in-memory session payloads to structured bindings only."""
 
-
-def migrate_sessions_payload(sessions: dict[str, Any] | None) -> StructuredSessions:
     raw = dict(sessions or {})
+    _reject_legacy_session_fields(raw)
     structured: StructuredSessions = {}
 
     for slot, (role, kind) in _SLOT_ROLE_KIND.items():
         existing = raw.get(slot)
-        legacy_field = next(
-            (field for field, mapped_slot in LEGACY_PRIMARY_SESSION_FIELDS.items() if mapped_slot == slot),
-            None,
-        )
-        legacy_value = raw.get(legacy_field) if legacy_field is not None else None
         if isinstance(existing, dict) and existing.get("session_instance_id"):
             binding = SessionBinding.from_dict(existing)
         else:
-            binding = binding_from_legacy_provider_session_id(
-                role=role,
-                kind=kind,
-                provider_session_id=(
-                    str(legacy_value).strip()
-                    if legacy_value is not None and str(legacy_value).strip()
-                    else None
-                ),
-            )
+            binding = new_session_binding(role=role, kind=kind, state="unbound")
         structured[slot] = binding.to_dict()
 
     for key, value in raw.items():
-        if key in LEGACY_PRIMARY_SESSION_FIELDS or key in _SLOT_ROLE_KIND:
+        if key in _SLOT_ROLE_KIND:
             continue
         if isinstance(value, dict) and value.get("session_instance_id"):
             structured[key] = SessionBinding.from_dict(value).to_dict()
     return structured
 
 
-def enrich_sessions_for_runtime(sessions: dict[str, Any] | None) -> dict[str, Any]:
-    structured = migrate_sessions_payload(sessions)
-    runtime: dict[str, Any] = dict(structured)
-    for legacy_field, slot in LEGACY_PRIMARY_SESSION_FIELDS.items():
-        runtime[legacy_field] = binding_provider_session_id(structured.get(slot))
-    return runtime
+def normalize_sessions_for_runtime(sessions: dict[str, Any] | None) -> StructuredSessions:
+    """Return structured session bindings for orchestration (no flat aliases)."""
+
+    return coerce_structured_sessions(sessions)
 
 
 def sessions_for_persistence(sessions: dict[str, Any] | None) -> StructuredSessions:
-    structured = migrate_sessions_payload(sessions)
+    structured = coerce_structured_sessions(sessions)
     for slot, payload in structured.items():
         binding = SessionBinding.from_dict(payload)
         validate_session_binding(binding)
@@ -106,19 +106,7 @@ def get_primary_binding(
     slot = PRIMARY_PLANNER_SLOT if role == "planner" else PRIMARY_PRODUCER_SLOT
     payload = sessions.get(slot)
     if not isinstance(payload, dict) or not payload.get("session_instance_id"):
-        legacy_field = (
-            "primary_planner_session_id"
-            if role == "planner"
-            else "primary_producer_session_id"
-        )
-        legacy_value = sessions.get(legacy_field)
-        if legacy_value is None or not str(legacy_value).strip():
-            return None
-        return binding_from_legacy_provider_session_id(
-            role=role,
-            kind="primary",
-            provider_session_id=str(legacy_value).strip(),
-        )
+        return None
     return SessionBinding.from_dict(payload)
 
 
@@ -136,10 +124,10 @@ def update_primary_binding(
     provider_session_id: str,
     provider: str | None = None,
     model: str | None = None,
-) -> dict[str, Any]:
+) -> StructuredSessions:
     slot = PRIMARY_PLANNER_SLOT if role == "planner" else PRIMARY_PRODUCER_SLOT
-    migrated = migrate_sessions_payload(sessions)
-    existing_payload = migrated.get(slot) or new_session_binding(
+    structured = coerce_structured_sessions(sessions)
+    existing_payload = structured.get(slot) or new_session_binding(
         role=role,
         kind="primary",
         state="unbound",
@@ -158,103 +146,88 @@ def update_primary_binding(
             provider=provider,
             model=model,
         )
-    migrated[slot] = updated.to_dict()
-    return enrich_sessions_for_runtime(migrated)
+    structured[slot] = updated.to_dict()
+    return structured
 
 
 def bump_primary_binding_generation(
     sessions: dict[str, Any],
     *,
     role: str,
-) -> dict[str, Any]:
-    from top_down_planning.domain.session_bindings import SessionBinding
-
+) -> StructuredSessions:
     slot = PRIMARY_PLANNER_SLOT if role == "planner" else PRIMARY_PRODUCER_SLOT
-    migrated = migrate_sessions_payload(sessions)
-    payload = migrated.get(slot) or new_session_binding(
+    structured = coerce_structured_sessions(sessions)
+    payload = structured.get(slot) or new_session_binding(
         role=role,
         kind="primary",
         state="unbound",
     ).to_dict()
     binding = SessionBinding.from_dict(payload).with_next_generation()
-    migrated[slot] = binding.to_dict()
-    return enrich_sessions_for_runtime(migrated)
+    structured[slot] = binding.to_dict()
+    return structured
 
 
 def clear_stale_starting_primary_binding(
     sessions: dict[str, Any],
     *,
     role: str,
-) -> dict[str, Any]:
+) -> StructuredSessions:
     """Bump generation and clear provider id for a stale ``starting`` primary binding."""
 
     slot = PRIMARY_PLANNER_SLOT if role == "planner" else PRIMARY_PRODUCER_SLOT
-    migrated = migrate_sessions_payload(sessions)
-    payload = migrated.get(slot)
+    structured = coerce_structured_sessions(sessions)
+    payload = structured.get(slot)
     if not isinstance(payload, dict) or not payload.get("session_instance_id"):
-        return enrich_sessions_for_runtime(migrated)
+        return structured
     binding = SessionBinding.from_dict(payload)
     if binding.state != "starting":
-        return enrich_sessions_for_runtime(migrated)
-    migrated[slot] = binding.with_next_generation().to_dict()
-    return enrich_sessions_for_runtime(migrated)
+        return structured
+    structured[slot] = binding.with_next_generation().to_dict()
+    return structured
 
 
 def normalize_review_record_for_runtime(review: dict[str, Any]) -> dict[str, Any]:
     payload = dict(review)
+    for field in _REJECTED_LEGACY_REVIEW_FIELDS:
+        if field in payload:
+            raise LegacySessionFieldError(
+                f"legacy review field {field!r} is not accepted; "
+                "use reviewer_binding; recreate the run"
+            )
     binding_raw = payload.get("reviewer_binding")
-    legacy = payload.get("reviewer_session_id")
     if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
         binding = SessionBinding.from_dict(binding_raw)
         payload["reviewer_binding"] = binding.to_dict()
-        payload["reviewer_session_id"] = binding.provider_session_id
-        return payload
-    if legacy is not None and str(legacy).strip():
-        from top_down_planning.domain.session_bindings import (
-            reviewer_binding_from_legacy_session_id,
-        )
-
-        binding = reviewer_binding_from_legacy_session_id(str(legacy).strip())
-        if binding is not None:
-            payload["reviewer_binding"] = binding.to_dict()
-            payload["reviewer_session_id"] = binding.provider_session_id
     return payload
 
 
 def review_record_for_persistence(review: dict[str, Any]) -> dict[str, Any]:
     payload = dict(review)
+    for field in _REJECTED_LEGACY_REVIEW_FIELDS:
+        if field in payload:
+            raise LegacySessionFieldError(
+                f"legacy review field {field!r} is not accepted; "
+                "use reviewer_binding; recreate the run"
+            )
     binding_raw = payload.get("reviewer_binding")
-    legacy = payload.get("reviewer_session_id")
     if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
         binding = SessionBinding.from_dict(binding_raw)
-    elif legacy is not None and str(legacy).strip():
-        from top_down_planning.domain.session_bindings import (
-            reviewer_binding_from_legacy_session_id,
-        )
-
-        binding = reviewer_binding_from_legacy_session_id(str(legacy).strip())
-        if binding is None:
-            payload.pop("reviewer_binding", None)
-            payload.pop("reviewer_session_id", None)
-            return payload
+        validate_session_binding(binding)
+        payload["reviewer_binding"] = binding.to_dict()
     else:
         payload.pop("reviewer_binding", None)
-        payload.pop("reviewer_session_id", None)
-        return payload
-    validate_session_binding(binding)
-    payload["reviewer_binding"] = binding.to_dict()
-    payload.pop("reviewer_session_id", None)
     return payload
 
 
 __all__ = [
+    "LegacySessionFieldError",
     "bump_primary_binding_generation",
     "clear_stale_starting_primary_binding",
-    "enrich_sessions_for_runtime",
+    "coerce_structured_sessions",
     "get_primary_binding",
     "initial_structured_sessions",
-    "migrate_sessions_payload",
     "normalize_review_record_for_runtime",
+    "normalize_sessions_for_runtime",
     "primary_provider_session_id",
     "review_record_for_persistence",
     "sessions_for_persistence",

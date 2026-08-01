@@ -9,7 +9,7 @@ import pytest
 from top_down_planning.config import ConfigError, resolve_config
 from top_down_planning.config.defaults import ALLOWED_OVERRIDE_PATHS, DEFAULT_CONFIG
 from top_down_planning.domain.review_policy import resolved_revise_at
-from top_down_planning.persistence.digests import compute_config_digest
+from top_down_planning.persistence.digests import compute_config_contract_digest
 from tests.helpers import write_config
 
 
@@ -76,4 +76,4 @@ def test_semantic_digest_includes_non_null_revise_at(tmp_path: Path) -> None:
     config_path = write_config(tmp_path / "base.yaml", "run:\n  output_goal: Goal.\n")
     base = resolve_config(config_path)
     overridden = resolve_config(config_path, ["review.whole_plan.revise_at=blocker"])
-    assert compute_config_digest(base) != compute_config_digest(overridden)
+    assert compute_config_contract_digest(base) != compute_config_contract_digest(overridden)

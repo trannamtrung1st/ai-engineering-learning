@@ -176,15 +176,6 @@ def authorize_mutation(
     else:
         binding = get_primary_binding(run, role)
         provider_session_id = binding_provider_session_id(binding)
-        if provider_session_id is None:
-            provider_session_id = str(
-                (run.get("sessions") or {}).get(
-                    "primary_planner_session_id"
-                    if role == "planner"
-                    else "primary_producer_session_id"
-                )
-                or ""
-            ).strip() or None
         if provider_session_id is None or provider_session_id != record_session_id:
             raise CapabilityDeniedError(
                 "capability token session does not match the active provider session",

@@ -10,7 +10,7 @@ from top_down_planning.agent_tool import ProductionAgentService, RequestError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, grant_capability, whole_plan_approval_record
+from tests.helpers import create_run_kwargs, grant_capability, whole_plan_approval_record, save_review_payload
 
 
 def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551") -> None:
@@ -53,7 +53,7 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551")
         **create_run_kwargs(store.root, resolved_config=config),
         phase=PRODUCTION,
     )
-    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    save_review_payload(store, run_id, whole_plan_approval_record(store, run_id))
     production = store.load_production(run_id)
     expected = int(production["revision"])
     production = dict(production)
@@ -135,7 +135,7 @@ def _focused_review(*, item_ids: list[str], status: str = "changes_requested") -
 def test_focused_evidence_revision_succeeds(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    store.save_review("run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
+    save_review_payload(store, "run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
     artifact = tmp_path / "first-v2.txt"
     artifact.write_text("revised", encoding="utf-8")
     service = ProductionAgentService(store, "run-20260101T000551-000551")
@@ -183,7 +183,7 @@ def test_focused_evidence_revision_rejects_stale_target_revision(tmp_path: Path)
     _create_run(store)
     stale_loop = _focused_review(item_ids=["item-first"])
     stale_loop["target_revision"] = 0
-    store.save_review("run-20260101T000551-000551", stale_loop)
+    save_review_payload(store, "run-20260101T000551-000551", stale_loop)
     artifact = tmp_path / "first-v2.txt"
     artifact.write_text("revised", encoding="utf-8")
     service = ProductionAgentService(store, "run-20260101T000551-000551")
@@ -218,7 +218,7 @@ def test_focused_evidence_revision_rejects_stale_target_revision(tmp_path: Path)
 def test_focused_evidence_revision_rejects_out_of_scope(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    store.save_review("run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
+    save_review_payload(store, "run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
     artifact = tmp_path / "second.txt"
     artifact.write_text("x", encoding="utf-8")
     service = ProductionAgentService(store, "run-20260101T000551-000551")
@@ -253,7 +253,7 @@ def test_focused_evidence_revision_rejects_out_of_scope(tmp_path: Path) -> None:
 def test_focused_evidence_revision_rejects_disposition_change(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    store.save_review("run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
+    save_review_payload(store, "run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
     artifact = tmp_path / "first-v2.txt"
     artifact.write_text("revised", encoding="utf-8")
     service = ProductionAgentService(store, "run-20260101T000551-000551")
@@ -288,7 +288,7 @@ def test_focused_evidence_revision_rejects_disposition_change(tmp_path: Path) ->
 def test_focused_evidence_revision_requires_new_evidence(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    store.save_review("run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
+    save_review_payload(store, "run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
     service = ProductionAgentService(store, "run-20260101T000551-000551")
     token = grant_capability(
         store, "run-20260101T000551-000551", role="producer", phase=PRODUCTION
@@ -315,7 +315,7 @@ def test_submit_completion_blocked_while_focused_findings_unresolved(
 ) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    store.save_review("run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
+    save_review_payload(store, "run-20260101T000551-000551", _focused_review(item_ids=["item-first"]))
     service = ProductionAgentService(store, "run-20260101T000551-000551")
     token = grant_capability(
         store, "run-20260101T000551-000551", role="producer", phase=PRODUCTION

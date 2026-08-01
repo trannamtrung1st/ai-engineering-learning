@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from top_down_planning.persistence.session_bindings import update_primary_binding
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, respond_review, script_mandatory_clear_approval, script_reviewer_allocate, script_verification_then_scope_review_approval, whole_plan_approval_record
+from tests.helpers import apply_production, create_run_kwargs, done_events, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, respond_review, save_review_payload, script_mandatory_clear_approval, script_reviewer_allocate, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -103,8 +104,7 @@ def _create_run_at_whole_output_review(
         phase=WHOLE_OUTPUT_REVIEW,
         production=production,
     )
-    store.save_review(
-        run_id,
+    save_review_payload(store, run_id,
         whole_plan_approval_record(
             store,
             run_id,
@@ -131,16 +131,13 @@ def _create_run_at_whole_output_review(
     run["digests"] = digests
     sessions: dict[str, str] = {}
     if session_id is not None:
-        sessions["primary_producer_session_id"] = session_id
+        sessions = update_primary_binding(sessions, role="producer", provider_session_id=session_id)
     run["sessions"] = sessions
     store.save_run(run_id, run, expected_revision)
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-output-01",
             "type": "whole_output",
             "revise_at": "blocker",
-            "reviewer_session_id": None,
             "target_revision": int(production["output_revision"]),
             "scope": {"kind": "whole_output"},
             "status": "pending",
@@ -317,7 +314,7 @@ def test_missing_goal_assessment_blocks_acceptance(tmp_path: Path) -> None:
     assert "validation" in result.reason
 
 
-def test_revision_cycle_limit_yields_rejected_not_accepted(tmp_path: Path) -> None:
+def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     _create_run_at_whole_output_review(store, limits={"max_revision_cycles": 1}, provider=provider)
@@ -404,9 +401,7 @@ def test_provider_exception_does_not_set_outcome(tmp_path: Path) -> None:
 def test_whole_output_review_respond_uses_output_revision(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_whole_output_review(store)
-    store.save_review(
-        "run-20260101T000801-000801",
-        {
+    save_review_payload(store, "run-20260101T000801-000801", {
             "id": "review-whole-output-01",
             "type": "whole_output",
             "revise_at": "blocker",
@@ -451,9 +446,7 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
     provider = StubProvider()
     producer_session_id = _create_run_at_whole_output_review(store, provider=provider)
     run_id = "run-20260101T000801-000801"
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-output-01",
             "type": "whole_output",
             "revise_at": "blocker",
@@ -483,7 +476,7 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
     run["revision"] = expected_revision + 1
     run["status"] = "running"
     run["stop"] = None
-    run["sessions"] = {"primary_producer_session_id": producer_session_id}
+    run["sessions"] = sessions_with_primary_session(producer=producer_session_id)
     store.save_run(run_id, run, expected_revision)
 
     provider = StubProvider()

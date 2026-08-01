@@ -59,6 +59,7 @@ from top_down_planning.orchestrator.agent_context import (
     resolve_role_session_context,
 )
 from top_down_planning.orchestrator.capability import (
+    adopt_replacement_capability,
     bind_provider_capability,
     issue_session_capability,
     revoke_capabilities_for_loop,
@@ -437,7 +438,7 @@ class WholeOutputReviewOrchestrator:
             plan_approval=plan_approval,
             output_approval=output_approval,
             actual_plan_digest=compute_plan_digest(plan),
-            actual_config_digest=compute_config_contract_digest(config),
+            actual_config_contract_digest=compute_config_contract_digest(config),
             actual_output_digest=compute_output_digest(production),
             actual_input_digest=compute_input_digest(
                 config,
@@ -699,6 +700,14 @@ class WholeOutputReviewOrchestrator:
         except SessionRecoveryPaused as exc:
             raise ProviderRunError(str(exc)) from exc
         session_id = turn_outcome.session_id
+        if turn_outcome.replaced:
+            self._capability_token = adopt_replacement_capability(
+                self._store,
+                self._run_id,
+                current_token=self._capability_token,
+                replacement_token=turn_outcome.capability_token,
+                provider=self._provider,
+            )
         sync_reviewer_loop_session_id(
             self._provider,
             self._store,
@@ -889,7 +898,7 @@ class WholeOutputReviewOrchestrator:
             self._store,
             self._run_id,
             session_id,
-            field="primary_producer_session_id",
+            role="producer",
         )
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:

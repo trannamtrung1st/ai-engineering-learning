@@ -10,6 +10,7 @@ from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import blocking_focused_findings_for_items
 from top_down_planning.domain.validators import ValidationResult, plan_advisory_warning_messages, validate_plan
 from top_down_planning.orchestrator.capability import (
+    adopt_replacement_capability,
     bind_provider_capability,
     issue_session_capability,
     revoke_capabilities_for_phase,
@@ -42,6 +43,7 @@ from top_down_planning.orchestrator.session_events import (
 )
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.session_bindings import primary_provider_session_id
 from core_tools.provider import Provider
 
 _PLANNING_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["planning"]
@@ -173,24 +175,19 @@ class PlanningPhaseOrchestrator:
             session_id = turn_outcome.session_id
             turn_signal = turn_outcome.signal
             if turn_outcome.replaced:
-                run = self._store.load_run(self._run_id)
-                phase = str(run.get("phase") or PLANNING)
-                self._capability_token = rotate_session_capability(
+                self._capability_token = adopt_replacement_capability(
                     self._store,
                     self._run_id,
                     current_token=self._capability_token,
-                    role="planner",
-                    phase=phase,
-                    session_id=session_id,
-                    session_kind="primary",
+                    replacement_token=turn_outcome.capability_token,
+                    provider=self._provider,
                 )
-                bind_provider_capability(self._provider, self._capability_token)
             session_id = sync_persisted_session_id(
                 self._provider,
                 self._store,
                 self._run_id,
                 session_id,
-                field="primary_planner_session_id",
+                role="planner",
             )
             run_pending_focused_review(
                 self._store,
@@ -418,7 +415,7 @@ class PlanningPhaseOrchestrator:
             phase=str(run.get("phase") or PLANNING),
             status=str(run.get("status") or "running"),
             outcome=run.get("outcome"),
-            session_id=session_id or sessions.get("primary_planner_session_id"),
+            session_id=session_id or primary_provider_session_id(run, "planner"),
             agent_turns=metrics["agent_turns"],
             items_added=metrics["items_added"],
             reason=reason,

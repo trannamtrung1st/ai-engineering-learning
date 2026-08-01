@@ -22,7 +22,7 @@ from top_down_planning.domain.reviews import (
     whole_output_revision_target_ids,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs
+from tests.helpers import create_run_kwargs, review_loop_dict_with_binding, save_review_payload
 
 
 def _finding(
@@ -140,7 +140,8 @@ def test_optional_fix_consumes_revision_signal() -> None:
 
 def test_evidence_revision_includes_voluntary_optional_fix_targets() -> None:
     reviews = [
-        {
+        review_loop_dict_with_binding(
+            {
             "id": "review-focused-output-01",
             "type": "focused_output",
             "reviewer_session_id": "sess",
@@ -157,7 +158,8 @@ def test_evidence_revision_includes_voluntary_optional_fix_targets() -> None:
                 _action("f-block", "fix").to_dict(),
                 _action("f-minor", "fix").to_dict(),
             ],
-        }
+            }
+        )
     ]
     assert focused_output_revision_target_ids(
         reviews, loop_id="review-focused-output-01"
@@ -166,7 +168,8 @@ def test_evidence_revision_includes_voluntary_optional_fix_targets() -> None:
 
 def test_voluntary_optional_only_fix_is_accepted_as_evidence_target() -> None:
     reviews = [
-        {
+        review_loop_dict_with_binding(
+            {
             "id": "review-focused-output-01",
             "type": "focused_output",
             "reviewer_session_id": "sess",
@@ -179,14 +182,16 @@ def test_voluntary_optional_only_fix_is_accepted_as_evidence_target() -> None:
                 _finding("f-minor", severity="minor", target="item-b").to_dict(),
             ],
             "finding_actions": [_action("f-minor", "fix").to_dict()],
-        }
+            }
+        )
     ]
     assert focused_output_revision_target_ids(
         reviews, loop_id="review-focused-output-01"
     ) == {"item-b"}
 
     whole = [
-        {
+        review_loop_dict_with_binding(
+            {
             "id": "review-whole-output-01",
             "type": "whole_output",
             "reviewer_session_id": "sess",
@@ -201,7 +206,8 @@ def test_voluntary_optional_only_fix_is_accepted_as_evidence_target() -> None:
             "finding_actions": [
                 _action("f-minor", "fix", finding_set_id="fs-02").to_dict()
             ],
-        }
+            }
+        )
     ]
     assert whole_output_revision_target_ids(whole) == {"item-leaf"}
 
@@ -428,6 +434,6 @@ def test_loop_revise_at_persists_through_store_roundtrip(tmp_path: Path) -> None
         scope={"kind": "focused_plan", "item_ids": ["item-root"]},
         revise_at="minor",
     )
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
     loaded = ReviewLoop.from_dict(store.load_review(run_id, loop.id))
     assert loaded.revise_at == "minor"

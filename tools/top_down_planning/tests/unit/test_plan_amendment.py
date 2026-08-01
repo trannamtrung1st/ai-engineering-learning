@@ -21,6 +21,7 @@ from tests.helpers import (
     respond_review,
     script_mandatory_clear_approval,
     script_reviewer_allocate,
+    sessions_with_primary_session,
     whole_plan_approval_record,
     mandatory_scope_review_respond_request,
     mandatory_initial_respond_request,
@@ -153,10 +154,7 @@ def _create_run_in_production_with_sessions(
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = {
-        "primary_planner_session_id": planner_session_id,
-        "primary_producer_session_id": producer_session_id,
-    }
+    run["sessions"] = sessions_with_primary_session(planner=planner_session_id, producer=producer_session_id)
     store.save_run(run_id, run, expected_revision)
     return planner_session_id, producer_session_id
 

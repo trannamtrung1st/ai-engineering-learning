@@ -9,8 +9,7 @@ from top_down_planning.domain.session_bindings import (
     PRIMARY_PLANNER_SLOT,
     PRIMARY_PRODUCER_SLOT,
     SessionBinding,
-    binding_from_legacy_provider_session_id,
-    reviewer_binding_from_legacy_session_id,
+    SessionBindingError,
 )
 
 
@@ -46,34 +45,14 @@ def resolve_primary_capability_binding(
     *,
     provider_session_id: str,
 ) -> CapabilitySessionBinding:
-    from top_down_planning.domain.session_bindings import (
-        PRIMARY_PLANNER_SLOT,
-        PRIMARY_PRODUCER_SLOT,
-        SessionBinding,
-        binding_from_legacy_provider_session_id,
-    )
-
     sessions = run.get("sessions") or {}
     slot = PRIMARY_PLANNER_SLOT if role == "planner" else PRIMARY_PRODUCER_SLOT
     payload = sessions.get(slot)
-    if isinstance(payload, dict) and payload.get("session_instance_id"):
-        binding = SessionBinding.from_dict(payload)
-    else:
-        legacy_field = (
-            "primary_planner_session_id"
-            if role == "planner"
-            else "primary_producer_session_id"
+    if not isinstance(payload, dict) or not payload.get("session_instance_id"):
+        raise SessionBindingError(
+            f"structured session binding for role {role!r} is required before capability issuance"
         )
-        legacy_value = sessions.get(legacy_field)
-        binding = binding_from_legacy_provider_session_id(
-            role=role,
-            kind="primary",
-            provider_session_id=(
-                str(legacy_value).strip()
-                if legacy_value is not None and str(legacy_value).strip()
-                else provider_session_id
-            ),
-        )
+    binding = SessionBinding.from_dict(payload)
     return capability_binding_from_session_binding(
         binding,
         provider_session_id=provider_session_id,
@@ -94,11 +73,6 @@ def resolve_reviewer_capability_binding(
         review_loop = ReviewLoop.from_dict(dict(loop))
 
     binding = review_loop.reviewer_binding
-    if binding is None:
-        binding = reviewer_binding_from_legacy_session_id(
-            review_loop.reviewer_session_id,
-            instance_seed=review_loop.id or loop_id,
-        )
     if binding is None:
         raise ValueError("reviewer session binding is required for capability issuance")
     return capability_binding_from_session_binding(
@@ -130,8 +104,7 @@ def capability_binding_matches_record(
 ) -> bool:
     bound = record_capability_binding(record)
     if bound is None:
-        record_session_id = str(record.get("session_id") or "").strip()
-        return record_session_id == expected.provider_session_id
+        return False
     return (
         bound.session_instance_id == expected.session_instance_id
         and bound.generation == expected.generation

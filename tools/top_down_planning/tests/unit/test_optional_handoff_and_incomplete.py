@@ -25,7 +25,13 @@ from top_down_planning.orchestrator.failure import (
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.schema_docs import show_example, show_schema
 from core_tools.schema import validate_against_schema
-from tests.helpers import create_run_kwargs, grant_capability
+from tests.helpers import (
+    create_run_kwargs,
+    grant_capability,
+    review_loop_dict_with_binding,
+    save_review_payload,
+    sessions_with_primary_session,
+)
 
 
 def _finding(
@@ -46,19 +52,21 @@ def _finding(
 
 
 def _optional_loop(**overrides: object) -> ReviewLoop:
-    payload = {
-        "id": "review-focused-plan-01",
-        "type": "focused_plan",
-        "reviewer_session_id": "sess",
-        "target_revision": 0,
-        "scope": {"kind": "focused_plan", "item_ids": ["item-root"]},
-        "status": "pending",
-        "revise_at": "blocker",
-        "finding_set_id": "fs-01",
-        "revision_cycles": 0,
-        "findings": [_finding("finding-opt").to_dict()],
-        "finding_actions": [],
-    }
+    payload = review_loop_dict_with_binding(
+        {
+            "id": "review-focused-plan-01",
+            "type": "focused_plan",
+            "reviewer_session_id": "sess",
+            "target_revision": 0,
+            "scope": {"kind": "focused_plan", "item_ids": ["item-root"]},
+            "status": "pending",
+            "revise_at": "blocker",
+            "finding_set_id": "fs-01",
+            "revision_cycles": 0,
+            "findings": [_finding("finding-opt").to_dict()],
+            "finding_actions": [],
+        }
+    )
     payload.update(overrides)
     return ReviewLoop.from_dict(payload)  # type: ignore[arg-type]
 
@@ -252,7 +260,7 @@ def test_review_incomplete_run_transition_and_resume(tmp_path: Path) -> None:
             "reason": "missing inputs",
         },
     )
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
 
     result = apply_review_incomplete_run_transition(
         store,
@@ -301,7 +309,7 @@ def test_review_service_incomplete_does_not_fail_run_for_focused(tmp_path: Path)
         finding_set_id="fs-01",
         revision_cycles=1,
     )
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
     token = grant_capability(
         store,
         run_id,
@@ -353,14 +361,11 @@ def test_record_finding_actions_service_path(tmp_path: Path) -> None:
     expected = int(run["revision"])
     run = dict(run)
     run["revision"] = expected + 1
-    run["sessions"] = {
-        **dict(run.get("sessions") or {}),
-        "primary_planner_session_id": "planner-sess",
-    }
+    run["sessions"] = sessions_with_primary_session(planner="planner-sess")
     store.save_run(run_id, run, expected)
 
     loop = _optional_loop(status="pending")
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
     token = grant_capability(
         store,
         run_id,
@@ -395,7 +400,7 @@ def test_record_finding_actions_service_path(tmp_path: Path) -> None:
             findings=[_finding("finding-req", severity="blocker").to_dict()],
             status="changes_requested",
         )
-        store.save_review(run_id, required_loop.to_dict())
+        save_review_payload(store, run_id, required_loop.to_dict())
         service.record_finding_actions(
             {
                 "loop_id": loop.id,

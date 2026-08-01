@@ -21,6 +21,7 @@ from top_down_planning.domain.approval_digests import (
     PLAN_APPROVAL_DIGEST_KEYS,
     reject_legacy_approved_config_digest,
 )
+from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.domain.resume_plan import (
     ResumePlan,
     ResumePlanValidation,
@@ -47,6 +48,10 @@ from top_down_planning.orchestrator.phases import (
     PLAN_VALIDATED,
     PRODUCTION,
     WHOLE_OUTPUT_REVIEW,
+)
+from top_down_planning.orchestrator.resume_stop_validators import (
+    ResumeStopValidationError,
+    validate_stop_for_resume_apply,
 )
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
@@ -109,55 +114,6 @@ def _verify_production_evidence(
             except Exception as exc:
                 return f"evidence integrity failure: {exc}"
     return None
-
-
-def _validate_amendment_pending_stop(
-    run: dict[str, Any],
-    production: dict[str, Any],
-    stop: dict[str, Any],
-) -> str | None:
-    if str(run.get("phase") or "") != PLAN_AMENDMENT:
-        return "amendment_pending resume requires phase plan_amendment"
-    details = stop.get("details") or {}
-    pending_id = str(details.get("pending_amendment_id") or "").strip()
-    if not pending_id:
-        return "amendment_pending stop requires details.pending_amendment_id"
-    stored_pending = str(production.get("pending_amendment_id") or "").strip()
-    if stored_pending != pending_id:
-        return "pending_amendment_id does not match production state"
-    for request in production.get("amendment_requests") or []:
-        if not isinstance(request, dict):
-            continue
-        if str(request.get("id") or "") != pending_id:
-            continue
-        if str(request.get("status") or "") in {"completed", "cancelled"}:
-            return "amendment request is not pending"
-        return None
-    return "amendment request record missing"
-
-
-def _consumed_limits_for_stop(run: dict[str, Any], stop_code: str | None) -> dict[str, int] | None:
-    if stop_code != "limit_exhausted":
-        return None
-    stop = run.get("stop")
-    if isinstance(stop, dict):
-        details = stop.get("details") or {}
-        limit_path = str(details.get("limit") or "").strip()
-        consumed = details.get("consumed")
-        if limit_path and isinstance(consumed, int):
-            return {limit_path: consumed}
-    consumed_limits: dict[str, int] = {}
-    planning = run.get("planning") or {}
-    if isinstance(planning, dict):
-        if "max_agent_turns" in (run.get("digests") or {}):
-            pass
-        turns = planning.get("agent_turns")
-        if isinstance(turns, int):
-            consumed_limits["limits.planning.max_agent_turns"] = turns
-        items = planning.get("items_added")
-        if isinstance(items, int):
-            consumed_limits["limits.planning.max_items_added"] = items
-    return consumed_limits or None
 
 
 _APPROVAL_REQUIRED_PHASES = frozenset(
@@ -318,22 +274,18 @@ def prepare_resume(
 
     comparison = validate_resume_config_comparison(
         compare_resume_configs(stored_config, candidate_config),
-        consumed_limits=consumed_limits
-        or _consumed_limits_for_stop(
-            run,
-            (run.get("stop") or {}).get("code") if isinstance(run.get("stop"), dict) else None,
-        ),
+        consumed_limits=consumed_limits or consumed_limits_from_run(run),
     )
     if not comparison.ok:
         blockers.extend(comparison.errors)
 
     if status == "paused":
         stop = run.get("stop")
-        stop_code = stop.get("code") if isinstance(stop, dict) else None
-        if stop_code == "amendment_pending" and isinstance(stop, dict):
-            amendment_error = _validate_amendment_pending_stop(run, production, stop)
-            if amendment_error is not None:
-                blockers.append(amendment_error)
+        if isinstance(stop, dict):
+            try:
+                validate_stop_for_resume_apply(store, run_id, run, stop)
+            except ResumeStopValidationError as exc:
+                blockers.append(str(exc))
         phase_action_id = run.get("phase_action_id")
         if phase_action_id and replacement_attempted_for_phase_action(
             run,

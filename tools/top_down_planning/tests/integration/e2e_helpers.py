@@ -478,7 +478,7 @@ def assert_acceptance_invariant_for_run(store: FileRunStore, run_id: str) -> Non
         plan_approval=plan_approval,
         output_approval=output_approval,
         actual_plan_digest=compute_plan_digest(plan),
-        actual_config_digest=compute_config_contract_digest(config),
+        actual_config_contract_digest=compute_config_contract_digest(config),
         actual_output_digest=compute_output_digest(production),
         actual_input_digest=compute_input_digest(
             config,

@@ -15,7 +15,7 @@ from top_down_planning.orchestrator.apply_resume import (
 )
 from top_down_planning.orchestrator.failure import apply_review_incomplete_run_transition
 from top_down_planning.orchestrator.phases import PLANNING, PLAN_AMENDMENT, PRODUCTION, WHOLE_PLAN_REVIEW
-from top_down_planning.orchestrator.prepare_resume import prepare_resume
+from top_down_planning.orchestrator.prepare_resume import PrepareResumeBlockedError, prepare_resume
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
     create_run_kwargs,
@@ -240,14 +240,8 @@ def test_resume_provider_turn_failed_requires_phase_action_id(tmp_path: Path) ->
         extra_run_fields={"phase_action_id": None},
     )
     stored = store.load_resolved_config(run_id)
-    plan = prepare_resume(store, run_id, stored)
-    with pytest.raises(ApplyResumeError, match="phase_action_id"):
-        apply_resume_plan_atomically(
-            store,
-            plan,
-            resolved_config=stored,
-            invocation=store.load_invocation(run_id),
-        )
+    with pytest.raises(PrepareResumeBlockedError, match="phase_action_id"):
+        prepare_resume(store, run_id, stored)
 
 
 def test_resume_provider_turn_failed_success(tmp_path: Path) -> None:

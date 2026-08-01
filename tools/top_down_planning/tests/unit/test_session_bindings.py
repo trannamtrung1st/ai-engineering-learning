@@ -18,7 +18,9 @@ from top_down_planning.domain.session_bindings import (
 from top_down_planning.orchestrator.session_events import sync_persisted_session_id
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import (
-    migrate_sessions_payload,
+    LegacySessionFieldError,
+    coerce_structured_sessions,
+    primary_provider_session_id,
     sessions_for_persistence,
 )
 from tests.helpers import create_run_kwargs
@@ -59,6 +61,17 @@ def test_new_session_binding_emits_structured_fields() -> None:
     assert payload["state"] == "unbound"
 
 
+def test_with_next_generation_allocates_new_session_instance_id() -> None:
+    binding = new_session_binding(role="planner", kind="primary", state="starting")
+    binding = binding.with_provider_session_id("provider-1")
+    next_binding = binding.with_next_generation()
+    assert next_binding.generation == binding.generation + 1
+    assert next_binding.session_instance_id != binding.session_instance_id
+    assert next_binding.session_instance_id.startswith("tdp-session-")
+    assert next_binding.provider_session_id is None
+    assert next_binding.state == "starting"
+
+
 def test_transient_provider_session_id_detection() -> None:
     assert is_transient_provider_session_id("cursor-pending-1")
     assert not is_transient_provider_session_id("cursor-abc123")
@@ -70,35 +83,30 @@ def test_bound_binding_rejects_transient_provider_session_id() -> None:
         binding.with_provider_session_id("cursor-pending-1")
 
 
-def test_migrate_legacy_primary_session_fields() -> None:
-    structured = migrate_sessions_payload(
-        {
-            "primary_planner_session_id": "planner-sess-1",
-            "primary_producer_session_id": "producer-sess-1",
-        }
-    )
-    planner = SessionBinding.from_dict(structured["primary_planner"])
-    producer = SessionBinding.from_dict(structured["primary_producer"])
-    assert planner.provider_session_id == "planner-sess-1"
-    assert planner.state == "bound"
-    assert producer.provider_session_id == "producer-sess-1"
+def test_coerce_structured_sessions_rejects_legacy_primary_fields() -> None:
+    with pytest.raises(LegacySessionFieldError, match="primary_.*_session_id"):
+        coerce_structured_sessions(
+            {
+                "primary_planner_session_id": "planner-sess-1",
+                "primary_producer_session_id": "producer-sess-1",
+            }
+        )
 
 
-def test_sessions_for_persistence_strips_legacy_fields(tmp_path: Path) -> None:
-    structured = sessions_for_persistence(
-        {
-            "primary_planner": new_session_binding(
-                role="planner",
-                kind="primary",
-                state="starting",
-            )
-            .with_provider_session_id("planner-sess")
-            .to_dict(),
-            "primary_planner_session_id": "legacy-should-drop",
-        }
-    )
-    assert "primary_planner_session_id" not in structured
-    assert structured["primary_planner"]["provider_session_id"] == "planner-sess"
+def test_sessions_for_persistence_rejects_legacy_fields() -> None:
+    with pytest.raises(LegacySessionFieldError, match="primary_planner_session_id"):
+        sessions_for_persistence(
+            {
+                "primary_planner": new_session_binding(
+                    role="planner",
+                    kind="primary",
+                    state="starting",
+                )
+                .with_provider_session_id("planner-sess")
+                .to_dict(),
+                "primary_planner_session_id": "legacy-should-drop",
+            }
+        )
 
 
 def test_new_run_record_uses_structured_sessions(tmp_path: Path) -> None:
@@ -106,8 +114,8 @@ def test_new_run_record_uses_structured_sessions(tmp_path: Path) -> None:
     run_id = "run-20260101T004001-004001"
     _create_run(store, run_id)
     run = store.load_run(run_id)
-    assert "primary_planner_session_id" in run["sessions"]
-    assert run["sessions"]["primary_planner_session_id"] is None
+    assert "primary_planner" in run["sessions"]
+    assert primary_provider_session_id(run, "planner") is None
     persisted = json.loads((store.run_dir(run_id) / "run.json").read_text(encoding="utf-8"))
     assert "primary_planner_session_id" not in persisted["sessions"]
     assert persisted["sessions"]["primary_planner"]["state"] == "unbound"
@@ -130,6 +138,20 @@ def test_review_loop_serializes_reviewer_binding() -> None:
     assert roundtrip.reviewer_binding is not None
 
 
+def test_review_loop_from_dict_rejects_legacy_reviewer_session_id() -> None:
+    with pytest.raises(ValueError, match="reviewer_session_id"):
+        ReviewLoop.from_dict(
+            {
+                "id": "loop-legacy",
+                "type": "focused_plan",
+                "reviewer_session_id": "reviewer-sess",
+                "target_revision": 1,
+                "scope": {},
+                "revise_at": "blocker",
+            }
+        )
+
+
 def test_sync_persisted_session_id_skips_transient_cursor_pending(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T004002-004002"
@@ -145,7 +167,7 @@ def test_sync_persisted_session_id_skips_transient_cursor_pending(tmp_path: Path
         store,
         run_id,
         "cursor-pending-1",
-        field="primary_planner_session_id",
+        role="planner",
     )
     assert resolved == "cursor-pending-1"
     persisted = json.loads((store.run_dir(run_id) / "run.json").read_text(encoding="utf-8"))
@@ -158,7 +180,7 @@ def test_sync_persisted_session_id_skips_transient_cursor_pending(tmp_path: Path
         store,
         run_id,
         "cursor-durable-abc",
-        field="primary_planner_session_id",
+        role="planner",
     )
     persisted = json.loads((store.run_dir(run_id) / "run.json").read_text(encoding="utf-8"))
     assert persisted["sessions"]["primary_planner"]["provider_session_id"] == "cursor-durable-abc"
@@ -176,4 +198,4 @@ def test_grant_capability_emits_structured_binding_fields(tmp_path: Path) -> Non
     binding = run["sessions"]["primary_planner"]
     assert binding["provider_session_id"] == "planner-cap-sess"
     assert binding["session_instance_id"].startswith("tdp-session-")
-    assert run["sessions"]["primary_planner_session_id"] == "planner-cap-sess"
+    assert primary_provider_session_id(run, "planner") == "planner-cap-sess"

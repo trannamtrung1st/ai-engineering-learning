@@ -20,7 +20,9 @@ from top_down_planning.domain.run_ownership import (
     resolve_run_dir,
     run_ownership,
 )
-from top_down_planning.orchestrator.capability import revoke_capabilities_for_session_binding
+from top_down_planning.orchestrator.capability import (
+    revoke_all_capabilities_for_session_instance,
+)
 from top_down_planning.orchestrator.errors import (
     ProducerReplacementBlocked,
     ProviderRunError,
@@ -40,7 +42,10 @@ from top_down_planning.orchestrator.session_lineage import (
     emit_session_replacement_started,
     emit_session_resume_failed,
 )
-from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.review_commit import (
+    review_record_revision,
+    save_review_with_expected_revision,
+)
 from top_down_planning.persistence.session_bindings import (
     bump_primary_binding_generation,
     get_primary_binding,
@@ -167,11 +172,10 @@ def replace_primary_session(
         if new_binding is None:
             raise ProviderRunError(f"failed to bump {role} session binding generation")
 
-        revoke_capabilities_for_session_binding(
+        revoke_all_capabilities_for_session_instance(
             store,
             run_id,
-            session_instance_id=new_binding.session_instance_id,
-            generation=new_binding.generation,
+            session_instance_id=binding.session_instance_id,
         )
 
         run = dict(run)
@@ -274,7 +278,10 @@ def replace_reviewer_session(
         expected_revision = int(run["revision"])
         assert_expected_run_revision(run, expected_revision)
 
-        binding = loop.reviewer_binding
+        review_record = store.load_review(run_id, loop.id)
+        review_revision = review_record_revision(review_record)
+        current_loop = ReviewLoop.from_dict(review_record)
+        binding = current_loop.reviewer_binding
         if binding is None:
             raise ProviderRunError("missing reviewer session binding for replacement")
 
@@ -288,22 +295,27 @@ def replace_reviewer_session(
             reason="provider_session_not_found",
             provider_session_id=old_provider_session_id,
             phase_action_id=phase_action_id,
-            loop_id=loop.id,
+            loop_id=current_loop.id,
         )
 
         updated_binding = binding.with_next_generation()
         updated_loop = replace(
-            loop,
+            current_loop,
             reviewer_binding=updated_binding,
             reviewer_session_id=None,
         )
-        store.save_review(run_id, updated_loop.to_dict())
-
-        revoke_capabilities_for_session_binding(
+        save_review_with_expected_revision(
             store,
             run_id,
-            session_instance_id=updated_binding.session_instance_id,
-            generation=updated_binding.generation,
+            updated_loop,
+            expected_revision=review_revision,
+        )
+        review_revision += 1
+
+        revoke_all_capabilities_for_session_instance(
+            store,
+            run_id,
+            session_instance_id=binding.session_instance_id,
         )
 
         emit_session_replacement_started(
@@ -362,6 +374,7 @@ def replace_reviewer_session(
             run_id,
             updated_loop.with_reviewer_provider_session_id(new_session_id),
             phase_action_id=phase_action_id,
+            expected_revision=review_revision,
         )
         committed_binding = committed_loop.reviewer_binding
         if committed_binding is None:

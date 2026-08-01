@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import apply_plan, apply_production, done_events, request_amendment
+from tests.helpers import apply_plan, apply_production, done_events, request_amendment, save_review_payload
 from tests.integration.e2e_helpers import (
     E2EStubProvider,
     assert_acceptance_invariant_for_run,
@@ -522,8 +522,7 @@ def test_enhancement_scenarios_multi_batch_traceability_and_focused_revision(
         **create_run_kwargs(store.root),
         phase=PRODUCTION,
     )
-    store.save_review(
-        "run-20260101T001001-001001",
+    save_review_payload(store, "run-20260101T001001-001001",
         whole_plan_approval_record(store, "run-20260101T001001-001001"),
     )
     (store.root / "concepts.md").write_text("concepts", encoding="utf-8")
@@ -577,9 +576,7 @@ def test_enhancement_scenarios_multi_batch_traceability_and_focused_revision(
         store.load_production("run-20260101T001001-001001")["dispositions"],
     ).state == "satisfied"
 
-    store.save_review(
-        "run-20260101T001001-001001",
-        {
+    save_review_payload(store, "run-20260101T001001-001001", {
             "id": "review-focused-output-01",
             "type": "focused_output",
             "revise_at": "blocker",

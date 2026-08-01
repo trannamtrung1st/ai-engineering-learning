@@ -27,7 +27,9 @@ from tests.helpers import (
     request_focused_review,
     respond_review,
     run_digests_for_config,
+    save_review_payload,
     script_reviewer_allocate,
+    sessions_with_primary_session,
     whole_plan_approval_record,
 )
 
@@ -301,9 +303,7 @@ def test_focused_plan_finding_outside_scope_is_rejected(tmp_path: Path) -> None:
     planner_token = grant_capability(store, "run-20260101T000401-000401", role="planner", phase=PLANNING)
 
     created = service.request(_focused_plan_request(["item-api"]), capability_token=planner_token)
-    store.save_review(
-        "run-20260101T000401-000401",
-        {
+    save_review_payload(store, "run-20260101T000401-000401", {
             **store.load_review("run-20260101T000401-000401", created["loop_id"]),
             "reviewer_session_id": "stub-session-reviewer",
         },
@@ -362,9 +362,7 @@ def test_focused_plan_loop_limit_is_enforced(tmp_path: Path) -> None:
     token = grant_capability(store, "run-20260101T000401-000401", role="planner", phase=PLANNING)
 
     created = service.request(_focused_plan_request(["item-api"]), capability_token=token)
-    store.save_review(
-        "run-20260101T000401-000401",
-        {
+    save_review_payload(store, "run-20260101T000401-000401", {
             **store.load_review("run-20260101T000401-000401", created["loop_id"]),
             "status": "approved",
         },
@@ -408,7 +406,7 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = {"primary_planner_session_id": planner_session_id}
+    run["sessions"] = sessions_with_primary_session(planner=planner_session_id)
     store.save_run("run-20260101T000401-000401", run, expected_revision)
 
     script_reviewer_allocate(provider)
@@ -554,7 +552,7 @@ def _create_production_run(
         **create_run_kwargs(store.root, resolved_config=config),
         phase=PRODUCTION,
     )
-    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    save_review_payload(store, run_id, whole_plan_approval_record(store, run_id))
     run = store.load_run(run_id)
     expected_revision = int(run["revision"])
     run = dict(run)
@@ -568,7 +566,7 @@ def _create_production_run(
         list(provider.stream_events(session_id))
     else:
         session_id = "stub-session-producer"
-    run["sessions"] = {"primary_producer_session_id": session_id}
+    run["sessions"] = sessions_with_primary_session(producer=session_id)
     store.save_run(run_id, run, expected_revision)
     return session_id
 
@@ -658,9 +656,7 @@ def test_blocking_focused_output_findings_prevent_production_apply(
     provider = StubProvider()
     producer_session_id = _create_production_run(store, provider=provider)
 
-    store.save_review(
-        "run-20260101T000501-000501",
-        {
+    save_review_payload(store, "run-20260101T000501-000501", {
             "id": "review-focused-output-01",
             "type": "focused_output",
             "revise_at": "blocker",

@@ -15,6 +15,54 @@ from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.persistence.capabilities import CAPABILITY_ENV_VAR
 
 
+def sessions_with_primary_session(
+    *,
+    planner: str | None = None,
+    producer: str | None = None,
+) -> dict[str, Any]:
+    from top_down_planning.persistence.session_bindings import update_primary_binding
+
+    sessions: dict[str, Any] = {}
+    if planner is not None:
+        sessions = update_primary_binding(
+            sessions,
+            role="planner",
+            provider_session_id=planner,
+        )
+    if producer is not None:
+        sessions = update_primary_binding(
+            sessions,
+            role="producer",
+            provider_session_id=producer,
+        )
+    return sessions
+
+
+def assert_primary_session_id(
+    run: dict[str, Any],
+    role: str,
+    expected: str | None,
+) -> None:
+    from top_down_planning.persistence.session_bindings import primary_provider_session_id
+
+    assert primary_provider_session_id(run, role) == expected
+
+
+def review_loop_dict_with_binding(payload: dict[str, Any]) -> dict[str, Any]:
+    from top_down_planning.domain.session_bindings import reviewer_binding_for_provider_session
+
+    data = dict(payload)
+    session_id = data.pop("reviewer_session_id", None)
+    if "reviewer_binding" not in data and session_id:
+        binding = reviewer_binding_for_provider_session(
+            str(session_id),
+            instance_seed=str(data.get("id") or ""),
+        )
+        if binding is not None:
+            data["reviewer_binding"] = binding.to_dict()
+    return data
+
+
 def test_run_workspace(store: Any) -> str:
     """Workspace path for test runs (required on ``create_run``)."""
 
@@ -358,6 +406,7 @@ def mandatory_verification_needs_revision_request(
 
 
 def whole_plan_approval_record(store: Any, run_id: str, **fields: Any) -> dict[str, Any]:
+    from top_down_planning.domain.session_bindings import reviewer_binding_for_provider_session
     from top_down_planning.persistence.digests import compute_plan_digest
 
     digests = approved_digests_from_run(store, run_id)
@@ -372,11 +421,15 @@ def whole_plan_approval_record(store: Any, run_id: str, **fields: Any) -> dict[s
         "acceptance_criteria_checked": ["Core Invariant"],
         "summary": "Approved.",
     }
+    binding = reviewer_binding_for_provider_session(
+        "stub-session-reviewer",
+        instance_seed="review-whole-plan-01",
+    )
     payload: dict[str, Any] = {
         "id": "review-whole-plan-01",
         "type": "whole_plan",
         "revise_at": "blocker",
-        "reviewer_session_id": "stub-session-reviewer",
+        "reviewer_binding": binding.to_dict() if binding is not None else None,
         "target_revision": 0,
         "scope": {"kind": "whole_plan"},
         "status": "approved",
@@ -390,6 +443,15 @@ def whole_plan_approval_record(store: Any, run_id: str, **fields: Any) -> dict[s
         "scope_review_result": scope_review_result_payload,
     }
     payload.update(fields)
+    if "reviewer_session_id" in payload:
+        session_id = str(payload.pop("reviewer_session_id") or "").strip() or None
+        if session_id and "reviewer_binding" not in payload:
+            binding = reviewer_binding_for_provider_session(
+                session_id,
+                instance_seed=str(payload.get("id") or ""),
+            )
+            if binding is not None:
+                payload["reviewer_binding"] = binding.to_dict()
     return payload
 
 
@@ -399,11 +461,17 @@ def whole_output_approval_record(store: Any, run_id: str, **fields: Any) -> dict
     digests = approved_digests_from_run(store, run_id, keys=OUTPUT_APPROVAL_DIGEST_KEYS)
     production = store.load_production(run_id)
     digests["output"] = compute_output_digest(production)
+    from top_down_planning.domain.session_bindings import reviewer_binding_for_provider_session
+
+    binding = reviewer_binding_for_provider_session(
+        "stub-session-output-reviewer",
+        instance_seed="review-whole-output-01",
+    )
     payload: dict[str, Any] = {
         "id": "review-whole-output-01",
         "type": "whole_output",
         "revise_at": "blocker",
-        "reviewer_session_id": "stub-session-output-reviewer",
+        "reviewer_binding": binding.to_dict() if binding is not None else None,
         "target_revision": int(production["output_revision"]),
         "scope": {"kind": "whole_output"},
         "status": "approved",
@@ -425,7 +493,20 @@ def whole_output_approval_record(store: Any, run_id: str, **fields: Any) -> dict
         },
     }
     payload.update(fields)
+    if "reviewer_session_id" in payload:
+        session_id = str(payload.pop("reviewer_session_id") or "").strip() or None
+        if session_id and "reviewer_binding" not in payload:
+            binding = reviewer_binding_for_provider_session(
+                session_id,
+                instance_seed=str(payload.get("id") or ""),
+            )
+            if binding is not None:
+                payload["reviewer_binding"] = binding.to_dict()
     return payload
+
+
+def save_review_payload(store: Any, run_id: str, payload: dict[str, Any]) -> None:
+    store.save_review(run_id, review_loop_dict_with_binding(payload))
 
 
 def grant_capability(
@@ -441,7 +522,10 @@ def grant_capability(
     """Issue a session capability token and return its serialized value."""
 
     from top_down_planning.orchestrator.capability import issue_session_capability
-    from top_down_planning.persistence.session_bindings import update_primary_binding
+    from top_down_planning.persistence.session_bindings import (
+        primary_provider_session_id,
+        update_primary_binding,
+    )
 
     if phase is None:
         phase = PLANNING if role == "planner" else PRODUCTION
@@ -454,9 +538,9 @@ def grant_capability(
             resolved_session_id = session_id
         else:
             resolved_session_id = (
-                sessions.get("primary_planner_session_id") or "test-planner-session"
+                primary_provider_session_id(run, "planner") or "test-planner-session"
             )
-        if sessions.get("primary_planner_session_id") is None:
+        if primary_provider_session_id(run, "planner") is None:
             expected = int(run["revision"])
             run = dict(run)
             run["revision"] = expected + 1
@@ -471,9 +555,9 @@ def grant_capability(
             resolved_session_id = session_id
         else:
             resolved_session_id = (
-                sessions.get("primary_producer_session_id") or "test-producer-session"
+                primary_provider_session_id(run, "producer") or "test-producer-session"
             )
-        if sessions.get("primary_producer_session_id") is None:
+        if primary_provider_session_id(run, "producer") is None:
             expected = int(run["revision"])
             run = dict(run)
             run["revision"] = expected + 1
@@ -489,18 +573,27 @@ def grant_capability(
     resolved_loop_id: str | None = None
     if session_kind == "reviewer" or role == "reviewer":
         resolved_loop_id = loop_id or "review-test-loop"
-        try:
-            from top_down_planning.domain.reviews import ReviewLoop
+        from top_down_planning.domain.reviews import ReviewLoop
 
+        try:
             loop = ReviewLoop.from_dict(store.load_review(run_id, resolved_loop_id))
+        except Exception:
+            loop = ReviewLoop(
+                id=resolved_loop_id,
+                type="focused_output",
+                reviewer_session_id=resolved_session_id,
+                target_revision=0,
+                scope={"kind": "focused_output"},
+                revise_at="blocker",
+            )
+            save_review_payload(store, run_id, loop.to_dict())
+        else:
             if loop.reviewer_session_id != resolved_session_id:
                 updated = loop.with_reviewer_provider_session_id(
                     resolved_session_id,
                     allow_transient=resolved_session_id.startswith("cursor-pending-"),
                 )
-                store.save_review(run_id, updated.to_dict())
-        except Exception:
-            pass
+                save_review_payload(store, run_id, updated.to_dict())
 
     return issue_session_capability(
         store,
@@ -552,7 +645,7 @@ def script_verification_then_scope_review_approval(
         loop_payload.get("finding_set_id") or f"{loop_id}-fs-01"
     )
     loop_payload["finding_set_id"] = resolved_finding_set_id
-    store.save_review(run_id, loop_payload)
+    save_review_payload(store, run_id, loop_payload)
 
     resolved_results = finding_results
     if resolved_results is None:
@@ -624,7 +717,7 @@ def prepare_loop_for_scope_review_respond(
     if loop.target_revision != target_revision:
         loop = replace(loop, target_revision=target_revision)
     loop = prepare_scope_review_loop(loop)
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
 
 
 def script_mandatory_clear_approval(
@@ -751,11 +844,13 @@ def respond_review(
     resolved_loop_id = loop_id or str(request.get("loop_id") or "")
 
     def mutate() -> None:
+        from top_down_planning.domain.session_bindings import binding_provider_session_id
+
         resolved_session_id = session_id
         if resolved_session_id is None and resolved_loop_id:
             try:
                 loop = store.load_review(run_id, resolved_loop_id)
-                loop_session = loop.get("reviewer_session_id")
+                loop_session = binding_provider_session_id(loop.get("reviewer_binding"))
                 if isinstance(loop_session, str) and loop_session:
                     resolved_session_id = loop_session
             except Exception:
@@ -784,7 +879,7 @@ def respond_review(
                     loop_model, finding_set_id = allocate_discovery_finding_set_id(
                         ReviewLoop.from_dict(loop)
                     )
-                    store.save_review(run_id, loop_model.to_dict())
+                    save_review_payload(store, run_id, loop_model.to_dict())
                 payload["finding_set_id"] = finding_set_id
             except Exception:
                 pass

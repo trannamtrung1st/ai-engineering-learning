@@ -49,9 +49,9 @@ from top_down_planning.orchestrator.phases import (
 )
 from top_down_planning.cli.resume_diagnostics import (
     build_resume_plan_summary,
-    consumed_limits_from_run,
     format_resume_plan_summary_text,
 )
+from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.config.resume_policy import resolve_resume_candidate_for_run
 from top_down_planning.orchestrator.resume import (
     ApplyResumeError,
@@ -807,7 +807,7 @@ def handle_validate_command(args: Namespace) -> None:
         if output_approval is not None:
             (
                 actual_plan_digest,
-                actual_config_digest,
+                actual_config_contract_digest,
                 actual_input_digest,
                 actual_output_goal_digest,
                 actual_context_spec_digest,
@@ -817,7 +817,7 @@ def handle_validate_command(args: Namespace) -> None:
                 approval=output_approval,
                 actual_output_digest=compute_output_digest(production),
                 actual_plan_digest=actual_plan_digest,
-                actual_config_digest=actual_config_digest,
+                actual_config_contract_digest=actual_config_contract_digest,
                 actual_input_digest=actual_input_digest,
                 actual_output_goal_digest=actual_output_goal_digest,
                 actual_context_spec_digest=actual_context_spec_digest,

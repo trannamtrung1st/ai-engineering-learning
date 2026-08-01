@@ -46,7 +46,7 @@ from top_down_planning.domain.run_lifecycle import (
 )
 from top_down_planning.domain.session_recovery_state import validate_session_recovery_fields
 from top_down_planning.persistence.session_bindings import (
-    enrich_sessions_for_runtime,
+    normalize_sessions_for_runtime,
     initial_structured_sessions,
     normalize_review_record_for_runtime,
     review_record_for_persistence,
@@ -328,9 +328,21 @@ class FileRunStore:
             if not review_id:
                 raise PersistenceError("review record requires id")
             validated_review_id = validate_store_id(str(review_id), label="review_id")
-            review_payloads.append(
-                (validated_review_id, review_record_for_persistence(dict(review)))
-            )
+            review_payload = review_record_for_persistence(dict(review))
+            expected_review_revision = spec.review_expected_revisions.get(validated_review_id)
+            if expected_review_revision is not None:
+                current_review_revision = self._read_review_revision(
+                    validated_run_id,
+                    validated_review_id,
+                )
+                if current_review_revision != int(expected_review_revision):
+                    raise StoreRevisionConflictError(
+                        int(expected_review_revision),
+                        current_review_revision,
+                    )
+                next_review_revision = int(expected_review_revision) + 1
+                review_payload["revision"] = next_review_revision
+            review_payloads.append((validated_review_id, review_payload))
 
         txn_id = uuid.uuid4().hex
         staging_dir = self._assert_contained(run_dir / f".txn-{txn_id}")
@@ -661,11 +673,27 @@ class FileRunStore:
             / validate_store_id(filename, label="artifact_filename")
         )
 
-    def save_review(self, run_id: str, review: dict[str, Any]) -> None:
+    def save_review(
+        self,
+        run_id: str,
+        review: dict[str, Any],
+        *,
+        expected_revision: int | None = None,
+    ) -> None:
         review_id = review.get("id")
         if not review_id:
             raise PersistenceError("review record requires id")
-        self.commit(run_id, CommitSpec(reviews=[review_record_for_persistence(dict(review))]))
+        validated_review_id = validate_store_id(str(review_id), label="review_id")
+        review_expected: dict[str, int] = {}
+        if expected_revision is not None:
+            review_expected[validated_review_id] = int(expected_revision)
+        self.commit(
+            run_id,
+            CommitSpec(
+                reviews=[review_record_for_persistence(dict(review))],
+                review_expected_revisions=review_expected,
+            ),
+        )
 
     def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
         validated_review_id = validate_store_id(review_id, label="review_id")
@@ -882,7 +910,7 @@ class FileRunStore:
         except RunLifecycleError as exc:
             raise PersistenceError(str(exc)) from exc
         payload = dict(payload)
-        payload["sessions"] = enrich_sessions_for_runtime(payload.get("sessions"))
+        payload["sessions"] = normalize_sessions_for_runtime(payload.get("sessions"))
         return payload
 
     def _plan_path(self, run_id: str) -> Path:
@@ -900,6 +928,12 @@ class FileRunStore:
 
     def _read_production(self, run_id: str) -> dict[str, Any]:
         return self._read_json(self._production_path(run_id))
+
+    def _read_review_revision(self, run_id: str, review_id: str) -> int:
+        path = self.reviews_dir(run_id) / f"{review_id}.json"
+        if not path.exists():
+            return 0
+        return int(self._read_json(path).get("revision") or 0)
 
     def _events_path(self, run_id: str) -> Path:
         return self.run_dir(run_id) / "events.jsonl"

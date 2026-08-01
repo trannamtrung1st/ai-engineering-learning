@@ -32,8 +32,10 @@ from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
 from tests.helpers import (
+    save_review_payload,
     apply_plan,
     apply_production,
+    assert_primary_session_id,
     create_run_kwargs,
     done_events,
     ensure_input_ref_files,
@@ -42,6 +44,7 @@ from tests.helpers import (
     respond_review,
     script_mandatory_clear_approval,
     script_reviewer_allocate,
+    sessions_with_primary_session,
     whole_plan_approval_record,
 )
 
@@ -115,16 +118,13 @@ def _create_planning_run(
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = {"primary_planner_session_id": session_id}
+    run["sessions"] = sessions_with_primary_session(planner=session_id)
     run["planning"] = {"agent_turns": 1, "items_added": 0}
     store.save_run(run_id, run, expected_revision)
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",
-            "reviewer_session_id": None,
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
             "status": "pending",
@@ -192,7 +192,7 @@ def _create_production_run(
         **create_run_kwargs(store.root, resolved_config=bound),
         phase=PRODUCTION,
     )
-    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    save_review_payload(store, run_id, whole_plan_approval_record(store, run_id))
 
     run = store.load_run(run_id)
     provider.script_turn(done_events(text="producer session start"))
@@ -211,7 +211,7 @@ def _create_production_run(
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = {"primary_producer_session_id": session_id}
+    run["sessions"] = sessions_with_primary_session(producer=session_id)
     store.save_run(run_id, run, expected_revision)
     return session_id
 
@@ -274,7 +274,7 @@ def test_interrupt_production_resume_keeps_same_session(tmp_path: Path) -> None:
     )
 
     run = store.load_run("run-20260101T001201-001201")
-    assert run["sessions"]["primary_producer_session_id"] == session_id
+    assert_primary_session_id(run, "producer", session_id)
 
     run_id = "run-20260101T001201-001201"
     provider.script_turn(
@@ -342,10 +342,13 @@ def test_interrupt_whole_plan_review_resume_keeps_loop_and_reviewer_session(
     assert result.reviewer_session_id is not None
 
     review = store.load_review("run-20260101T001101-001101", "review-whole-plan-01")
-    assert review["reviewer_session_id"] == result.reviewer_session_id
+    review = store.load_review(run_id, "review-whole-plan-01")
+    from top_down_planning.domain.session_bindings import binding_provider_session_id
+
+    assert binding_provider_session_id(review.get("reviewer_binding")) == result.reviewer_session_id
 
     run = store.load_run("run-20260101T001101-001101")
-    assert run["sessions"]["primary_planner_session_id"] == planner_session_id
+    assert_primary_session_id(run, "planner", planner_session_id)
 
 
 def test_resume_twice_does_not_corrupt_revision_counters(tmp_path: Path) -> None:
@@ -434,9 +437,7 @@ def test_resume_completed_rejected_whole_plan_review_does_not_restart(
         **create_run_kwargs(store.root, resolved_config=bound),
         phase=WHOLE_PLAN_REVIEW,
     )
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",

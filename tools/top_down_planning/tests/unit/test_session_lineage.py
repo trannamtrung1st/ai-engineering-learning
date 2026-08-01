@@ -215,7 +215,7 @@ def test_sync_persisted_session_id_emits_lineage_event(tmp_path: Path) -> None:
         store,
         run_id,
         "cursor-planner-02",
-        field="primary_planner_session_id",
+        role="planner",
     )
 
     events = [event for event in store.load_events(run_id) if event.get("type") == SESSION_PROVIDER_ID_BOUND]

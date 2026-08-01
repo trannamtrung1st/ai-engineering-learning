@@ -8,6 +8,10 @@ from typing import Any
 from core_tools.provider import Provider
 from core_tools.provider.errors import ProviderSessionNotFoundError
 from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.orchestrator.capability import (
+    bind_provider_capability,
+    issue_session_capability,
+)
 from top_down_planning.orchestrator.errors import (
     ProducerReplacementBlocked,
     ProviderRunError,
@@ -167,6 +171,7 @@ class ProviderTurnOutcome:
     session_id: str
     replaced: bool = False
     domain_budget_committed: bool = False
+    capability_token: str | None = None
 
 
 def _recovery_role_phase_loop(
@@ -309,6 +314,21 @@ def consume_provider_turn_with_session_recovery(
         except SessionRecoveryPaused:
             raise
 
+        role_for_cap, phase_for_cap, loop_id_for_cap = _recovery_role_phase_loop(recovery)
+        session_kind = (
+            "primary" if isinstance(recovery, PrimarySessionRecoverySpec) else "reviewer"
+        )
+        capability_token = issue_session_capability(
+            store,
+            run_id,
+            role=role_for_cap,
+            phase=phase_for_cap,
+            session_id=new_session_id,
+            session_kind=session_kind,
+            loop_id=loop_id_for_cap,
+        )
+        bind_provider_capability(provider, capability_token)
+
         try:
             signal = _drain_provider_turn(
                 provider,
@@ -336,6 +356,7 @@ def consume_provider_turn_with_session_recovery(
             session_id=new_session_id,
             replaced=True,
             domain_budget_committed=domain_budget_committed,
+            capability_token=capability_token,
         )
 
 

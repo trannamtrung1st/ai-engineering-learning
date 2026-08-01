@@ -211,6 +211,7 @@ def test_reviewer_session_missing_and_replaced(tmp_path: Path) -> None:
 
     assert outcome.replaced is True
     assert outcome.session_id != session_id
+    assert outcome.capability_token is not None
     events = _event_types(store, run_id)
     assert "session_resume_failed" in events
     assert "session_replaced" in events
@@ -259,6 +260,7 @@ def test_producer_session_missing_and_replaced(tmp_path: Path) -> None:
 
     assert outcome.replaced is True
     assert outcome.session_id != session_id
+    assert outcome.capability_token is not None
     events = _event_types(store, run_id)
     assert "session_replaced" in events
 

@@ -74,8 +74,8 @@ class DigestBundle:
     expected_input_digest: str | None = None
     output_goal_digest: str | None = None
     expected_output_goal_digest: str | None = None
-    config_digest: str | None = None
-    expected_config_digest: str | None = None
+    config_contract_digest: str | None = None
+    expected_config_contract_digest: str | None = None
     context_spec_digest: str | None = None
     expected_context_spec_digest: str | None = None
 
@@ -85,7 +85,7 @@ def build_plan_approval_validation_context(
     plan: Plan,
     approval: dict[str, Any],
     actual_plan_digest: str,
-    actual_config_digest: str,
+    actual_config_contract_digest: str,
     actual_input_digest: str,
     actual_output_goal_digest: str,
     actual_context_spec_digest: str | None = None,
@@ -115,8 +115,8 @@ def build_plan_approval_validation_context(
         expected_input_digest=expected_digests.get("input"),
         output_goal_digest=actual_output_goal_digest,
         expected_output_goal_digest=expected_digests.get("output_goal"),
-        config_digest=actual_config_digest,
-        expected_config_digest=expected_digests.get("config_contract"),
+        config_contract_digest=actual_config_contract_digest,
+        expected_config_contract_digest=expected_digests.get("config_contract"),
         context_spec_digest=actual_context_spec_digest,
         expected_context_spec_digest=expected_digests.get("context_spec"),
     )
@@ -727,7 +727,7 @@ def validate_digest_hooks(
         ("plan", digests.actual_plan_digest, digests.expected_plan_digest),
         ("input", digests.input_digest, digests.expected_input_digest),
         ("output_goal", digests.output_goal_digest, digests.expected_output_goal_digest),
-        ("config_contract", digests.config_digest, digests.expected_config_digest),
+        ("config_contract", digests.config_contract_digest, digests.expected_config_contract_digest),
         ("context_spec", digests.context_spec_digest, digests.expected_context_spec_digest),
     ):
         digest_issue = _validate_digest_pair(label, actual, expected, mode=mode)

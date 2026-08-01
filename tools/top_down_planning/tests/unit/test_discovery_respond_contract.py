@@ -18,11 +18,12 @@ from top_down_planning.orchestrator.focused_review import build_focused_review_p
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.schema_docs import show_example, show_schema
 from core_tools.schema import validate_against_schema
-from tests.helpers import create_run_kwargs, grant_capability
+from tests.helpers import create_run_kwargs, grant_capability, review_loop_dict_with_binding, save_review_payload
 
 
 def _loop(**overrides: object) -> ReviewLoop:
-    payload = {
+    payload = review_loop_dict_with_binding(
+        {
         "id": "review-focused-plan-01",
         "type": "focused_plan",
         "reviewer_session_id": "sess",
@@ -32,7 +33,8 @@ def _loop(**overrides: object) -> ReviewLoop:
         "revise_at": "blocker",
         "finding_set_id": "review-focused-plan-01-fs-01",
         "findings": [],
-    }
+        }
+    )
     payload.update(overrides)
     return ReviewLoop.from_dict(payload)  # type: ignore[arg-type]
 
@@ -203,7 +205,7 @@ def test_review_service_rejects_finding_set_id_mismatch(tmp_path: Path) -> None:
         revise_at="blocker",
         finding_set_id="review-focused-plan-01-fs-01",
     )
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
     service = ReviewAgentService(store, run_id)
     token = grant_capability(
         store,

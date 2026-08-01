@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.helpers import review_loop_dict_with_binding
+
 from top_down_planning.domain.reviews import (
     ReviewFinding,
     ReviewLoop,
@@ -122,7 +124,7 @@ def test_scope_review_result_uses_reported_findings_only() -> None:
 
 def test_review_loop_rejects_legacy_persisted_fields() -> None:
     with pytest.raises(ValueError, match="legacy lifecycle status"):
-        ReviewLoop.from_dict(
+        ReviewLoop.from_dict(review_loop_dict_with_binding(
             {
                 "id": "review-whole-plan-01",
                 "type": "whole_plan",
@@ -136,7 +138,7 @@ def test_review_loop_rejects_legacy_persisted_fields() -> None:
                 "lifecycle_status": "blocker_review_pending",
                 "active_stage": "scope_blocker_review",
             }
-        )
+        ))
 
 
 def test_mandatory_gate_approval_requires_canonical_record() -> None:

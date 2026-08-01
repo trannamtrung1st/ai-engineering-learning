@@ -12,6 +12,7 @@ from top_down_planning.config.resume_policy import (
     get_config_value,
     validate_resume_config_comparison,
 )
+from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.domain.resume_plan import ResumePlan
 from top_down_planning.orchestrator.resume import RunResumeSnapshot
 
@@ -32,27 +33,6 @@ class ResumeLimitDiagnostic:
             "candidate_limit": self.candidate_limit,
             "remaining_budget": self.remaining_budget,
         }
-
-
-def consumed_limits_from_run(run: dict[str, Any]) -> dict[str, int] | None:
-    stop = run.get("stop")
-    if not isinstance(stop, dict) or str(stop.get("code") or "") != "limit_exhausted":
-        return None
-    details = stop.get("details") or {}
-    limit_path = str(details.get("limit") or "").strip()
-    consumed = details.get("consumed")
-    if limit_path and isinstance(consumed, int):
-        return {limit_path: consumed}
-    consumed_limits: dict[str, int] = {}
-    planning = run.get("planning") or {}
-    if isinstance(planning, dict):
-        turns = planning.get("agent_turns")
-        if isinstance(turns, int):
-            consumed_limits["limits.planning.max_agent_turns"] = turns
-        items = planning.get("items_added")
-        if isinstance(items, int):
-            consumed_limits["limits.planning.max_items_added"] = items
-    return consumed_limits or None
 
 
 def build_limit_diagnostics(
@@ -90,6 +70,29 @@ def build_limit_diagnostics(
             )
         )
     return diagnostics
+
+
+def format_session_policy_text(session_policy: dict[str, Any]) -> str:
+    bindings = dict(session_policy.get("bindings") or {})
+    if not bindings:
+        return "no session corrections required"
+
+    lines: list[str] = []
+    for key in sorted(bindings):
+        entry = bindings[key]
+        action = str(entry.get("action") or "")
+        role = str(entry.get("role") or key)
+        provider_session_id = entry.get("provider_session_id")
+        if action == "clear_stale_starting":
+            lines.append(f"clear stale starting binding for {role}")
+            continue
+        if action == "resume_then_replace_if_missing" and provider_session_id:
+            lines.append(f"resume {role} session {provider_session_id}")
+            lines.append("replace once if Cursor reports session not found")
+            continue
+        if action:
+            lines.append(f"{role}: {action}")
+    return "\n  ".join(lines) if lines else "no session corrections required"
 
 
 def _format_stop_summary(stop: dict[str, Any] | None) -> str | None:
@@ -139,15 +142,7 @@ def build_resume_plan_summary(
         snapshot.stop if snapshot.status == "paused" else None
     )
     session_policy = dict(resume_plan.session_policy)
-    if session_policy.get("status") == "deferred_until_phase_4":
-        session_policy_text = "deferred until Phase 4 session bindings"
-    elif session_policy.get("requires_correction"):
-        binding_count = len(session_policy.get("bindings") or {})
-        session_policy_text = (
-            f"session corrections required for {binding_count} binding(s)"
-        )
-    else:
-        session_policy_text = "no session corrections required"
+    session_policy_text = format_session_policy_text(session_policy)
 
     transition = None
     if resume_plan.state_transition is not None:
@@ -243,7 +238,8 @@ def format_resume_plan_summary_text(summary: dict[str, Any]) -> str:
 
     lines.append("")
     lines.append("Session policy:")
-    lines.append(f"  {summary.get('session_policy_text')}")
+    for line in str(summary.get("session_policy_text") or "").splitlines():
+        lines.append(f"  {line}")
 
     config_path = summary.get("config_path")
     overrides = summary.get("config_overrides") or []
@@ -264,4 +260,5 @@ __all__ = [
     "build_resume_plan_summary",
     "consumed_limits_from_run",
     "format_resume_plan_summary_text",
+    "format_session_policy_text",
 ]

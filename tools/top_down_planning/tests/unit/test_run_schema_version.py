@@ -74,8 +74,9 @@ def test_missing_schema_version_rejected_with_recreate_message(tmp_path: Path) -
     del payload["schema_version"]
     run_path.write_text(json.dumps(payload), encoding="utf-8")
 
-    with pytest.raises(UnsupportedRunSchemaVersionError, match=UNSUPPORTED_RUN_SCHEMA_MESSAGE):
+    with pytest.raises(UnsupportedRunSchemaVersionError, match=UNSUPPORTED_RUN_SCHEMA_MESSAGE) as exc_info:
         store.load_run("run-20260101T000001-000001")
+    assert exc_info.value.code == "unsupported_run_schema"
 
 
 def test_unsupported_schema_version_rejected_with_recreate_message(tmp_path: Path) -> None:

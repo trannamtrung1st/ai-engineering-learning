@@ -59,6 +59,7 @@ RESUME_SESSION_STRATEGY_BLOCKED_PATHS: frozenset[str] = frozenset(
     {
         "provider.name",
         "provider.binary",
+        "provider.skip_probe",
         *(
             f"agent_context.{role}.model"
             for role in ALLOWED_AGENT_CONTEXT_ROLES

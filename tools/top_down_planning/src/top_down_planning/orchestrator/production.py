@@ -32,6 +32,7 @@ from top_down_planning.orchestrator.agent_context import (
     resolve_role_session_context,
 )
 from top_down_planning.orchestrator.capability import (
+    adopt_replacement_capability,
     bind_provider_capability,
     issue_session_capability,
     revoke_capabilities_for_phase,
@@ -62,6 +63,7 @@ from top_down_planning.orchestrator.session_events import (
 )
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.session_bindings import primary_provider_session_id
 from core_tools.provider import Provider
 
 _PRODUCTION_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["production"]
@@ -250,24 +252,19 @@ class ProductionPhaseOrchestrator:
             session_id = turn_outcome.session_id
             turn_signal = turn_outcome.signal
             if turn_outcome.replaced:
-                run = self._store.load_run(self._run_id)
-                phase = str(run.get("phase") or PRODUCTION)
-                self._capability_token = rotate_session_capability(
+                self._capability_token = adopt_replacement_capability(
                     self._store,
                     self._run_id,
                     current_token=self._capability_token,
-                    role="producer",
-                    phase=phase,
-                    session_id=session_id,
-                    session_kind="primary",
+                    replacement_token=turn_outcome.capability_token,
+                    provider=self._provider,
                 )
-                bind_provider_capability(self._provider, self._capability_token)
             session_id = sync_persisted_session_id(
                 self._provider,
                 self._store,
                 self._run_id,
                 session_id,
-                field="primary_producer_session_id",
+                role="producer",
             )
             run_pending_focused_review(
                 self._store,
@@ -519,7 +516,7 @@ class ProductionPhaseOrchestrator:
             phase=str(run.get("phase") or PRODUCTION),
             status=str(run.get("status") or "running"),
             outcome=run.get("outcome"),
-            session_id=session_id or sessions.get("primary_producer_session_id"),
+            session_id=session_id or primary_provider_session_id(run, "producer"),
             batch_count=self._batch_count(),
             reason=reason,
         )

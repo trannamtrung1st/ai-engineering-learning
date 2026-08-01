@@ -1,4 +1,4 @@
-"""Interim resume guards until Phase 3 ``prepare_resume`` lands (proposal §18)."""
+"""Resume snapshot loading and apply preconditions (proposal §10, §18)."""
 
 from __future__ import annotations
 
@@ -30,7 +30,6 @@ __all__ = [
     "ResumeNotAllowedError",
     "RunResumeSnapshot",
     "apply_resume_plan_atomically",
-    "assert_resume_allowed",
     "assert_resume_apply_preconditions",
     "assert_running_continuation_preconditions",
     "execute_session_policy",
@@ -53,7 +52,7 @@ def short_digest_for_observability(digest: str | None) -> str | None:
 
 
 class ResumeNotAllowedError(OrchestratorError):
-    """Resume blocked until Phase 3 resume apply (failed/paused runs)."""
+    """Resume blocked by status, ownership, or revision preconditions."""
 
     def __init__(
         self,
@@ -86,26 +85,6 @@ def load_run_resume_snapshot(store: RunStore, run_id: str) -> RunResumeSnapshot:
         outcome=outcome if isinstance(outcome, str) else None,
         stop=dict(stop) if isinstance(stop, dict) else None,
     )
-
-
-def assert_resume_allowed(snapshot: RunResumeSnapshot) -> None:
-    """Reject failed and paused runs until Phase 3 resume apply."""
-
-    if snapshot.status == "failed":
-        raise ResumeNotAllowedError(
-            "failed runs cannot be resumed",
-            code="failed_run_not_resumable",
-            stop=snapshot.stop,
-        )
-
-    if snapshot.status == "paused":
-        stop_code = (snapshot.stop or {}).get("code", "unknown")
-        raise ResumeNotAllowedError(
-            "paused runs cannot be resumed via tdp resume until resume apply "
-            f"is available (stop={stop_code})",
-            code="paused_run_not_resumable",
-            stop=snapshot.stop,
-        )
 
 
 def is_terminal_resume_snapshot(snapshot: RunResumeSnapshot) -> bool:

@@ -413,6 +413,7 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         "run_failed": ("error", "run failed"),
         "run_paused": ("warning", "run paused"),
         "resume_applied": ("run:resume", "resume applied"),
+        "amendment_execution_resumed": ("run:resume", "amendment execution resumed"),
         "resume_limit_extended": ("run:resume", "resume limit extended"),
         "session_provider_id_bound": ("session:lineage", "session provider id bound"),
         "session_replaced": ("session:lineage", "session replaced"),

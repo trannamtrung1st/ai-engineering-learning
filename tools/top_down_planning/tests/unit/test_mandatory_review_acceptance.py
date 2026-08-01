@@ -43,6 +43,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.helpers import (
+    save_review_payload,
     create_run_kwargs,
     grant_capability,
     minimal_resolved_config,
@@ -281,6 +282,7 @@ def test_whole_output_scope_review_round_limit_rejects_without_approval(
     (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
     run_id = "run-20260101T000801-000801"
     from tests.helpers import (
+    save_review_payload,
         apply_production,
         done_events,
         mandatory_scope_review_found_respond_request,
@@ -388,7 +390,7 @@ def test_whole_output_scope_review_round_limit_rejects_without_approval(
     loop_payload["status"] = "pending"
     loop_payload["target_revision"] = 2
     loop_payload["finding_set_id"] = str(loop.get("finding_set_id") or "review-whole-output-01-fs-01")
-    store.save_review(run_id, loop_payload)
+    save_review_payload(store, run_id, loop_payload)
     respond_review(
         store,
         run_id,
@@ -447,9 +449,7 @@ def test_review_respond_rejects_stale_target_digest(tmp_path: Path) -> None:
         **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
         phase=WHOLE_PLAN_REVIEW,
     )
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",
@@ -539,7 +539,7 @@ def test_mandatory_review_loop_fields_survive_persistence(tmp_path: Path) -> Non
         scope_review_rounds=1,
         revise_at="blocker",
     )
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
     restored = ReviewLoop.from_dict(store.load_review(run_id, loop.id))
     assert restored.lifecycle_status == "verification_pending"
     assert restored.active_stage == "finding_verification"

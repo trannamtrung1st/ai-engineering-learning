@@ -8,7 +8,6 @@ from core_tools.persistence import (
 
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
-    compute_config_digest,
     compute_config_execution_digest,
     contract_config_projection,
     digest_binding_payload,
@@ -37,7 +36,6 @@ __all__ = [
     "UNSUPPORTED_RUN_SCHEMA_MESSAGE",
     "UnsupportedRunSchemaVersionError",
     "compute_config_contract_digest",
-    "compute_config_digest",
     "compute_config_execution_digest",
     "contract_config_projection",
     "digest_binding_payload",

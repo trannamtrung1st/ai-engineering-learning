@@ -31,6 +31,7 @@ from top_down_planning.orchestrator.whole_plan_review import build_whole_plan_re
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.schema_docs import PUBLIC_EXAMPLES, show_example, show_schema
 from tests.helpers import (
+    save_review_payload,
     create_run_kwargs,
     grant_capability,
     mandatory_scope_review_respond_request,
@@ -343,9 +344,7 @@ def test_review_service_accepts_stage_payloads(tmp_path: Path) -> None:
         **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
         phase=WHOLE_PLAN_REVIEW,
     )
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",
@@ -396,9 +395,7 @@ def test_review_service_accepts_stage_payloads(tmp_path: Path) -> None:
     assert result["stage"] == "finding_verification"
     assert result["status"] == "verified"
 
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",
@@ -458,9 +455,7 @@ def test_mandatory_respond_requires_stage(tmp_path: Path) -> None:
         **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
         phase=WHOLE_PLAN_REVIEW,
     )
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",
@@ -518,9 +513,7 @@ def test_review_service_rejects_respond_after_gate_approve(tmp_path: Path) -> No
         phase=WHOLE_PLAN_REVIEW,
     )
     digest = mandatory_plan_digest(store, run_id)
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",

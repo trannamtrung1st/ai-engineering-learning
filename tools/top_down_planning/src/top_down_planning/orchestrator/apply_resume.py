@@ -6,7 +6,7 @@ from typing import Any
 
 from core_tools.persistence import StoreRevisionConflictError
 
-from top_down_planning.domain.resume_plan import ResumePlan
+from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.domain.reviews import ReviewLoop, prepare_review_incomplete_retry
 from top_down_planning.domain.run_ownership import (
     RunOwnershipError,
@@ -30,27 +30,6 @@ from top_down_planning.persistence.file_store import FileRunStore
 
 class ApplyResumeError(OrchestratorError):
     """Resume apply refused or persistence failed."""
-
-
-def _consumed_limits_from_run(run: dict[str, Any]) -> dict[str, int] | None:
-    stop = run.get("stop")
-    if not isinstance(stop, dict) or str(stop.get("code") or "") != "limit_exhausted":
-        return None
-    details = stop.get("details") or {}
-    limit_path = str(details.get("limit") or "").strip()
-    consumed = details.get("consumed")
-    if limit_path and isinstance(consumed, int):
-        return {limit_path: consumed}
-    consumed_limits: dict[str, int] = {}
-    planning = run.get("planning") or {}
-    if isinstance(planning, dict):
-        turns = planning.get("agent_turns")
-        if isinstance(turns, int):
-            consumed_limits["limits.planning.max_agent_turns"] = turns
-        items = planning.get("items_added")
-        if isinstance(items, int):
-            consumed_limits["limits.planning.max_items_added"] = items
-    return consumed_limits or None
 
 
 def _review_updates_for_resume_apply(
@@ -127,7 +106,7 @@ def apply_resume_plan_atomically(
             candidate_config=resolved_config,
             stored_invocation=stored_invocation,
             candidate_invocation=invocation or {},
-            consumed_limits=consumed_limits or _consumed_limits_from_run(run),
+            consumed_limits=consumed_limits or consumed_limits_from_run(run),
         )
     except ResumeConfigCommitError as exc:
         raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc

@@ -12,7 +12,7 @@ from top_down_planning.invocation import (
     invocation_options_from_args,
     invocation_to_dict,
 )
-from top_down_planning.persistence.digests import compute_config_digest
+from top_down_planning.persistence.digests import compute_config_contract_digest
 from tests.helpers import write_config
 
 
@@ -137,7 +137,7 @@ observability:
     )
     base = resolve_config(base_path)
     verbose = resolve_config(verbose_path)
-    assert compute_config_digest(base) == compute_config_digest(verbose)
+    assert compute_config_contract_digest(base) == compute_config_contract_digest(verbose)
 
 
 def test_run_boundaries_and_acceptance_affect_config_digest(tmp_path: Path) -> None:
@@ -182,8 +182,8 @@ run:
 """,
         )
     )
-    assert compute_config_digest(base) != compute_config_digest(drifted_boundaries)
-    assert compute_config_digest(base) != compute_config_digest(drifted_acceptance)
+    assert compute_config_contract_digest(base) != compute_config_contract_digest(drifted_boundaries)
+    assert compute_config_contract_digest(base) != compute_config_contract_digest(drifted_acceptance)
 
 
 def test_runtime_runs_dir_excluded_from_config_digest(tmp_path: Path) -> None:
@@ -200,7 +200,7 @@ runtime:
   runs_dir: .tdp/runs
 """,
     )
-    assert compute_config_digest(resolve_config(no_runtime)) == compute_config_digest(
+    assert compute_config_contract_digest(resolve_config(no_runtime)) == compute_config_contract_digest(
         resolve_config(with_runtime)
     )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.outcome import AcceptanceInvariant, evaluate_acceptance_invariant, resolve_quality_outcome
 from top_down_planning.domain.validators import PlanningLimits
-from top_down_planning.persistence.digests import compute_config_digest, compute_output_digest, compute_plan_digest
+from top_down_planning.persistence.digests import compute_config_contract_digest, compute_output_digest, compute_plan_digest
 
 
 def _sample_plan() -> Plan:
@@ -105,7 +105,7 @@ def test_missing_goal_assessment_cannot_accept() -> None:
         plan_approval=reviews[0],
         output_approval=reviews[1],
         actual_plan_digest=compute_plan_digest(plan),
-        actual_config_digest=compute_config_digest({"run": {"output_goal": "Deliver."}}),
+        actual_config_contract_digest=compute_config_contract_digest({"run": {"output_goal": "Deliver."}}),
         actual_output_digest=compute_output_digest(production),
         actual_input_digest="input-a",
         actual_output_goal_digest="goal-b",
@@ -152,7 +152,7 @@ def test_unapproved_output_cannot_accept() -> None:
         plan_approval=reviews[0],
         output_approval=None,
         actual_plan_digest=compute_plan_digest(plan),
-        actual_config_digest=compute_config_digest({"run": {"output_goal": "Deliver."}}),
+        actual_config_contract_digest=compute_config_contract_digest({"run": {"output_goal": "Deliver."}}),
         actual_output_digest=compute_output_digest(production),
         actual_input_digest="input-a",
         actual_output_goal_digest="goal-b",
@@ -208,7 +208,7 @@ def test_goal_not_met_assessment_cannot_accept() -> None:
         plan_approval=reviews[0],
         output_approval=reviews[1],
         actual_plan_digest=compute_plan_digest(plan),
-        actual_config_digest=compute_config_digest({"run": {"output_goal": "Deliver."}}),
+        actual_config_contract_digest=compute_config_contract_digest({"run": {"output_goal": "Deliver."}}),
         actual_output_digest=compute_output_digest(production),
         actual_input_digest="input-a",
         actual_output_goal_digest="goal-b",

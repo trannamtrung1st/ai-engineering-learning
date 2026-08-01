@@ -12,7 +12,7 @@ from top_down_planning.cli.common import resolve_runs_dir, runs_dir_config_value
 from top_down_planning.cli.user import handle_status_command
 from top_down_planning.config import resolve_config
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.persistence.digests import compute_config_digest
+from top_down_planning.persistence.digests import compute_config_contract_digest
 from tests.conftest import run_cli
 from tests.helpers import script_planning_candidate_ready, write_config
 
@@ -247,7 +247,7 @@ runtime:
   runs_dir: .tdp/runs
 """,
     )
-    assert compute_config_digest(resolve_config(no_runtime)) == compute_config_digest(
+    assert compute_config_contract_digest(resolve_config(no_runtime)) == compute_config_contract_digest(
         resolve_config(with_runtime)
     )
 

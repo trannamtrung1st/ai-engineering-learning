@@ -20,3 +20,4 @@ class CommitSpec:
     resolved_config: dict[str, Any] | None = None
     invocation: dict[str, Any] | None = None
     reviews: list[dict[str, Any]] = field(default_factory=list)
+    review_expected_revisions: dict[str, int] = field(default_factory=dict)

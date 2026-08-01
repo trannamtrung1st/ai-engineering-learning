@@ -1549,8 +1549,14 @@ binds operational limits and execution budgets. Approvals bind to `config_contra
 Run lifecycle fields on `run.json`: `status` (`running`, `paused`, `completed`, `failed`);
 `outcome` (non-null only when `status` is `completed`); `stop` (structured stop record
 when paused or failed, otherwise null); `phase_action_id` (stable logical action id for
-the current provider step, or null). Paused stops use `category: operational`; failed
-stops use `category: invariant`.
+the current provider step, or null). Paused stops use `category: operational` with
+`code` in `limit_exhausted`, `review_incomplete`, `provider_unavailable`,
+`provider_turn_failed`, `user_cancelled`, or `amendment_pending` (internal amendment
+checkpoint beyond proposal §5.1); failed stops use `category: invariant` with
+`code` in `state_integrity_failure`, `evidence_integrity_failure`,
+`unsupported_phase_state`, `orchestrator_invariant_failure`, or
+`session_recovery_exhausted`. Each stop record includes `phase`, `message`, `role`
+(null when unset), and optional `details`.
 
 ## Resume (proposal §9–§16)
 

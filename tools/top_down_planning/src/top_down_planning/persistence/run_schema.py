@@ -20,6 +20,8 @@ _REQUIRED_V3_DIGEST_KEYS = frozenset({"config_contract", "config_execution"})
 class UnsupportedRunSchemaVersionError(PersistenceError):
     """Persisted run.json uses a missing or unsupported schema_version."""
 
+    code = "unsupported_run_schema"
+
     def __init__(self, message: str = UNSUPPORTED_RUN_SCHEMA_MESSAGE) -> None:
         super().__init__(message)
 

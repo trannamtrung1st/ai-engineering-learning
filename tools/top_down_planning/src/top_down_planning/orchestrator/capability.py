@@ -83,8 +83,32 @@ def revoke_capabilities_for_session_binding(
             continue
         record_generation = record.get("generation")
         if record_generation is None:
+            capability_id = str(record.get("id") or "")
+            if capability_id:
+                store.revoke_capability(run_id, capability_id)
             continue
         if int(record_generation) == target_generation:
+            continue
+        capability_id = str(record.get("id") or "")
+        if capability_id:
+            store.revoke_capability(run_id, capability_id)
+
+
+def revoke_all_capabilities_for_session_instance(
+    store: RunStore,
+    run_id: str,
+    *,
+    session_instance_id: str,
+) -> None:
+    """Revoke all live capabilities bound to a session instance identity."""
+
+    normalized_instance_id = str(session_instance_id).strip()
+    if not normalized_instance_id:
+        return
+    for record in store.list_capabilities(run_id):
+        if record.get("revoked") is True:
+            continue
+        if str(record.get("session_instance_id") or "").strip() != normalized_instance_id:
             continue
         capability_id = str(record.get("id") or "")
         if capability_id:
@@ -105,30 +129,12 @@ def _resolve_capability_binding(
         if loop_id is None or not str(loop_id).strip():
             raise ValueError("loop_id is required for reviewer capabilities")
         normalized_loop_id = str(loop_id).strip()
-        try:
-            loop = store.load_review(run_id, normalized_loop_id)
-            return resolve_reviewer_capability_binding(
-                loop,
-                provider_session_id=normalized_session_id,
-                loop_id=normalized_loop_id,
-            )
-        except Exception:
-            from top_down_planning.domain.session_bindings import (
-                reviewer_binding_from_legacy_session_id,
-            )
-
-            binding = reviewer_binding_from_legacy_session_id(
-                normalized_session_id,
-                instance_seed=normalized_loop_id,
-            )
-            if binding is None:
-                raise ValueError(
-                    "reviewer session binding is required for capability issuance"
-                ) from None
-            return capability_binding_from_session_binding(
-                binding,
-                provider_session_id=normalized_session_id,
-            )
+        loop = store.load_review(run_id, normalized_loop_id)
+        return resolve_reviewer_capability_binding(
+            loop,
+            provider_session_id=normalized_session_id,
+            loop_id=normalized_loop_id,
+        )
 
     run = store.load_run(run_id)
     return resolve_primary_capability_binding(
@@ -216,3 +222,20 @@ def bind_provider_capability(provider: Any, token: str | None) -> None:
     setter = getattr(provider, "set_capability_token", None)
     if setter is not None and token is not None:
         setter(token)
+
+
+def adopt_replacement_capability(
+    store: RunStore,
+    run_id: str,
+    *,
+    current_token: str | None,
+    replacement_token: str | None,
+    provider: Any,
+) -> str | None:
+    """Revoke the orchestrator-held token and adopt the recovery-issued replacement."""
+
+    if replacement_token is None:
+        return current_token
+    revoke_capability_token(store, run_id, current_token)
+    bind_provider_capability(provider, replacement_token)
+    return replacement_token

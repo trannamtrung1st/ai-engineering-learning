@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.helpers import review_loop_dict_with_binding
+
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.reviews import (
     MandatoryReviewLimits,
@@ -76,7 +78,7 @@ def test_review_loop_to_dict_uses_scope_review_fields() -> None:
 
 def test_legacy_persisted_blocker_fields_are_rejected() -> None:
     with pytest.raises(ValueError, match="legacy field blocker_review_result"):
-        ReviewLoop.from_dict(
+        ReviewLoop.from_dict(review_loop_dict_with_binding(
             {
                 "id": "review-whole-plan-01",
                 "type": "whole_plan",
@@ -94,7 +96,7 @@ def test_legacy_persisted_blocker_fields_are_rejected() -> None:
                     "scope_id": "whole_plan",
                 },
             }
-        )
+        ))
 
 
 def test_mandatory_limits_reject_legacy_config_key() -> None:

@@ -15,6 +15,7 @@ from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import (
+    save_review_payload,
     create_run_kwargs,
     grant_capability,
     set_capability_env,
@@ -787,9 +788,7 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
 def test_snapshot_ready_excludes_review_blocked_items(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    store.save_review(
-        "run-20260101T000001-000001",
-        {
+    save_review_payload(store, "run-20260101T000001-000001", {
             "id": "review-focused-plan-01",
             "type": "focused_plan",
             "revise_at": "blocker",
@@ -883,8 +882,7 @@ def test_plan_check_approval_without_binding_surfaces_not_checked_warnings(
 def test_plan_check_approval_mode_runs_review_and_digest_hooks(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    store.save_review(
-        "run-20260101T000001-000001",
+    save_review_payload(store, "run-20260101T000001-000001",
         whole_plan_approval_record(
             store,
             "run-20260101T000001-000001",
@@ -903,7 +901,7 @@ def test_plan_check_approval_mode_runs_review_and_digest_hooks(tmp_path: Path) -
     review = dict(review)
     review["approved_digests"] = dict(review["approved_digests"])
     review["approved_digests"]["plan"] = "stale-plan-digest"
-    store.save_review("run-20260101T000001-000001", review)
+    save_review_payload(store, "run-20260101T000001-000001", review)
 
     approval_after_tamper = service.check(mode="approval")
     assert approval_after_tamper["ok"] is False

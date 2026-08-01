@@ -13,6 +13,7 @@ from top_down_planning.domain.reconciliation import (
 from top_down_planning.domain.reviews import find_whole_plan_approval
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.orchestrator.capability import (
+    adopt_replacement_capability,
     bind_provider_capability,
     issue_session_capability,
     revoke_capabilities_for_phase,
@@ -287,12 +288,24 @@ class PlanAmendmentOrchestrator:
         if str(run.get("status") or "") == "running" and run.get("stop") is None:
             return run
         expected_revision = int(run["revision"])
+        prior_status = str(run.get("status") or "running")
+        prior_stop = run.get("stop")
+        prior_phase = str(run.get("phase") or "")
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["status"] = "running"
         run["outcome"] = None
         run["stop"] = None
         self._store.save_run(self._run_id, run, expected_revision)
+        if prior_status == "paused" and isinstance(prior_stop, dict):
+            self._append_event(
+                "amendment_execution_resumed",
+                expected_revision=expected_revision,
+                resulting_revision=expected_revision + 1,
+                phase=prior_phase,
+                prior_status=prior_status,
+                prior_stop=prior_stop,
+            )
         return self._store.load_run(self._run_id)
 
     def _transition_to_whole_plan_review(self) -> dict[str, Any]:
@@ -384,13 +397,21 @@ class PlanAmendmentOrchestrator:
         except SessionRecoveryPaused as exc:
             raise ProviderRunError(str(exc)) from exc
         session_id = turn_outcome.session_id
+        if turn_outcome.replaced:
+            self._capability_token = adopt_replacement_capability(
+                self._store,
+                self._run_id,
+                current_token=self._capability_token,
+                replacement_token=turn_outcome.capability_token,
+                provider=self._provider,
+            )
         signal = turn_outcome.signal
         sync_persisted_session_id(
             self._provider,
             self._store,
             self._run_id,
             session_id,
-            field="primary_planner_session_id",
+            role="planner",
         )
         return signal
 

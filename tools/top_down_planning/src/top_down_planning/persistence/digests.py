@@ -13,7 +13,6 @@ from top_down_planning.domain.production import build_production_digest_payload
 
 __all__ = [
     "compute_config_contract_digest",
-    "compute_config_digest",
     "compute_config_execution_digest",
     "contract_config_projection",
     "digest_binding_payload",
@@ -74,12 +73,6 @@ def compute_config_contract_digest(config: dict[str, Any]) -> str:
 
 def compute_config_execution_digest(config: dict[str, Any]) -> str:
     return digest_json(execution_config_projection(config))
-
-
-def compute_config_digest(config: dict[str, Any]) -> str:
-    """Compatibility alias for contract digest semantics."""
-
-    return compute_config_contract_digest(config)
 
 
 def digest_binding_payload(payload: dict[str, Any]) -> str:

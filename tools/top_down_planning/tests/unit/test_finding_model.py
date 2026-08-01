@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.helpers import review_loop_dict_with_binding
+
 from top_down_planning.domain.reviews import (
     CURRENT_REVIEW_SCHEMA_VERSION,
     FindingAction,
@@ -179,14 +181,13 @@ def test_revise_at_immutable_after_loop_creation() -> None:
 
 def test_review_loop_load_requires_revise_at() -> None:
     with pytest.raises(ValueError, match="missing required revise_at"):
-        ReviewLoop.from_dict(
+        ReviewLoop.from_dict(review_loop_dict_with_binding(
             {
                 "id": "legacy-loop",
                 "type": "focused_output",
-                "reviewer_session_id": None,
                 "target_revision": 2,
                 "scope": {"kind": "focused_output", "item_ids": ["item-a"]},
                 "status": "pending",
                 "findings": [],
             }
-        )
+        ))

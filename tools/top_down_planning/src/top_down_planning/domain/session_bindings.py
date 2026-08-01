@@ -13,11 +13,6 @@ SessionKind = Literal["primary", "reviewer"]
 PRIMARY_PLANNER_SLOT = "primary_planner"
 PRIMARY_PRODUCER_SLOT = "primary_producer"
 
-LEGACY_PRIMARY_SESSION_FIELDS: dict[str, str] = {
-    "primary_planner_session_id": PRIMARY_PLANNER_SLOT,
-    "primary_producer_session_id": PRIMARY_PRODUCER_SLOT,
-}
-
 
 class SessionBindingError(ValueError):
     """Invalid session binding state or payload."""
@@ -116,6 +111,7 @@ class SessionBinding:
     def with_next_generation(self) -> SessionBinding:
         return replace(
             self,
+            session_instance_id=new_session_instance_id(),
             generation=int(self.generation) + 1,
             state="starting",
             provider_session_id=None,
@@ -171,7 +167,7 @@ def new_session_binding(
     return binding
 
 
-def binding_from_legacy_provider_session_id(
+def binding_with_provider_session_id(
     *,
     role: str,
     kind: str,
@@ -196,7 +192,7 @@ def binding_from_legacy_provider_session_id(
     )
 
 
-def reviewer_binding_from_legacy_session_id(
+def reviewer_binding_for_provider_session(
     provider_session_id: str | None,
     *,
     provider: str | None = "cursor",
@@ -205,7 +201,7 @@ def reviewer_binding_from_legacy_session_id(
 ) -> SessionBinding | None:
     if provider_session_id is None or not str(provider_session_id).strip():
         return None
-    binding = binding_from_legacy_provider_session_id(
+    binding = binding_with_provider_session_id(
         role="reviewer",
         kind="reviewer",
         provider_session_id=str(provider_session_id).strip(),
@@ -244,7 +240,6 @@ def validate_session_binding(binding: SessionBinding) -> None:
 
 
 __all__ = [
-    "LEGACY_PRIMARY_SESSION_FIELDS",
     "PRIMARY_PLANNER_SLOT",
     "PRIMARY_PRODUCER_SLOT",
     "SessionBinding",
@@ -252,12 +247,12 @@ __all__ = [
     "SessionBindingState",
     "SessionKind",
     "SessionRole",
-    "binding_from_legacy_provider_session_id",
     "binding_provider_session_id",
+    "binding_with_provider_session_id",
     "is_transient_provider_session_id",
     "new_session_binding",
     "new_session_instance_id",
-    "reviewer_binding_from_legacy_session_id",
+    "reviewer_binding_for_provider_session",
     "validate_durable_provider_session_id",
     "validate_session_binding",
 ]

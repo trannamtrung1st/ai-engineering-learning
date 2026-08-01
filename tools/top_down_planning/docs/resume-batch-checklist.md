@@ -29,7 +29,7 @@ Downstream phases (3–5) depend on this batch but may merge after it is green.
 
 ## Post-merge operator verification
 
-1. Delete interim **schema v2** development runs (no migrator — recreate if needed).
+1. Delete schema versions below **3** development runs (no migrator — recreate if needed).
 2. `tdp run --config <yaml>` — confirm `schema_version: 3` in `run.json`.
 3. Exhaust a limit → confirm `status: paused`, `stop.code: limit_exhausted`.
 4. `tdp resume --run <id> --set limits.<phase>.<limit>=<N> --check` — no writes.

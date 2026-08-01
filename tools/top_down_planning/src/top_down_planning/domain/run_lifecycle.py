@@ -65,16 +65,14 @@ class StopRecord:
     details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+        return {
             "code": self.code,
             "category": self.category,
             "phase": self.phase,
             "message": self.message,
+            "role": self.role,
             "details": dict(self.details),
         }
-        if self.role is not None:
-            payload["role"] = self.role
-        return payload
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StopRecord:

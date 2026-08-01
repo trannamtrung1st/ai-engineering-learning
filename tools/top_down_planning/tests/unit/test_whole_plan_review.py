@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from top_down_planning.persistence.session_bindings import update_primary_binding
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
 from tests.helpers import (
+    save_review_payload,
     apply_plan,
     create_run_kwargs,
     done_events,
@@ -99,16 +101,13 @@ def _create_run_at_whole_plan_review(
     run["revision"] = expected_revision + 1
     sessions: dict[str, str] = {}
     if session_id is not None:
-        sessions["primary_planner_session_id"] = session_id
+        sessions = update_primary_binding(sessions, role="planner", provider_session_id=session_id)
     run["sessions"] = sessions
     store.save_run(run_id, run, expected_revision)
-    store.save_review(
-        run_id,
-        {
+    save_review_payload(store, run_id, {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",
-            "reviewer_session_id": None,
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
             "status": "pending",
@@ -222,9 +221,7 @@ def test_whole_plan_review_changes_then_approve_reaches_plan_validated(
 def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_whole_plan_review(store)
-    store.save_review(
-        "run-20260101T000301-000301",
-        {
+    save_review_payload(store, "run-20260101T000301-000301", {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",
@@ -273,9 +270,7 @@ def test_blocking_finding_prevents_approval_via_review_respond(tmp_path: Path) -
 def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_whole_plan_review(store)
-    store.save_review(
-        "run-20260101T000301-000301",
-        {
+    save_review_payload(store, "run-20260101T000301-000301", {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",
@@ -442,9 +437,7 @@ def test_resume_after_planner_revision_skips_duplicate_revision(tmp_path: Path) 
     )
     list(provider.stream_events(reviewer_session_id))
 
-    store.save_review(
-        "run-20260101T000301-000301",
-        {
+    save_review_payload(store, "run-20260101T000301-000301", {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",

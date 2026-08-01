@@ -126,7 +126,7 @@ def test_approval_mode_detects_input_digest_tampering() -> None:
         plan=plan,
         approval=approval,
         actual_plan_digest="plan-digest",
-        actual_config_digest="config-digest",
+        actual_config_contract_digest="config-digest",
         actual_input_digest="tampered-input-digest",
         actual_output_goal_digest="goal-digest",
     )
@@ -158,7 +158,7 @@ def test_legacy_config_approved_digest_rejected() -> None:
             plan=plan,
             approval=approval,
             actual_plan_digest="plan-digest",
-            actual_config_digest="contract-digest",
+            actual_config_contract_digest="contract-digest",
             actual_input_digest="input-digest",
             actual_output_goal_digest="goal-digest",
         )
@@ -166,8 +166,10 @@ def test_legacy_config_approved_digest_rejected() -> None:
 
 def test_review_loop_round_trips_approved_digests() -> None:
     from top_down_planning.domain.reviews import ReviewLoop
+    from tests.helpers import review_loop_dict_with_binding
 
-    payload = {
+    payload = review_loop_dict_with_binding(
+        {
         "id": "review-whole-plan-01",
         "type": "whole_plan",
         "revise_at": "blocker",
@@ -182,7 +184,8 @@ def test_review_loop_round_trips_approved_digests() -> None:
             "config_contract": "config-digest",
             "input": "input-digest",
         },
-    }
+        }
+    )
     loop = ReviewLoop.from_dict(payload)
     assert loop.to_dict()["approved_digests"] == payload["approved_digests"]
 

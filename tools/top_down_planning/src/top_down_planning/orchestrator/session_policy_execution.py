@@ -11,8 +11,14 @@ from top_down_planning.domain.session_bindings import (
     PRIMARY_PRODUCER_SLOT,
     SessionBinding,
 )
-from top_down_planning.orchestrator.capability import revoke_capabilities_for_session_binding
+from top_down_planning.orchestrator.capability import (
+    revoke_all_capabilities_for_session_instance,
+)
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.review_commit import (
+    review_record_revision,
+    save_review_with_expected_revision,
+)
 from top_down_planning.persistence.session_bindings import (
     clear_stale_starting_primary_binding,
     get_primary_binding,
@@ -36,8 +42,17 @@ def _binding_policy_entry(
         "session_instance_id": payload["session_instance_id"],
         "generation": int(payload["generation"]),
         "binding_state": payload["state"],
+        "provider_session_id": payload.get("provider_session_id"),
         "action": action,
     }
+
+
+def _primary_binding_action(binding: SessionBinding) -> str | None:
+    if binding.state == "starting":
+        return "clear_stale_starting"
+    if binding.state == "bound" and binding.provider_session_id:
+        return "resume_then_replace_if_missing"
+    return None
 
 
 def derive_session_policy(
@@ -53,11 +68,13 @@ def derive_session_policy(
         (PRIMARY_PRODUCER_SLOT, "producer"),
     ):
         binding = get_primary_binding(run, role)
-        if binding is not None and binding.state == "starting":
-            bindings[slot_key] = _binding_policy_entry(
-                binding,
-                action="clear_stale_starting",
-            )
+        if binding is None:
+            continue
+        action = _primary_binding_action(binding)
+        if action is not None:
+            entry = _binding_policy_entry(binding, action=action)
+            entry["role"] = role
+            bindings[slot_key] = entry
 
     for review in reviews:
         loop_id = str(review.get("id") or "").strip()
@@ -68,14 +85,22 @@ def derive_session_policy(
         if binding is None:
             continue
         if binding.state == "starting":
-            bindings[f"{_REVIEWER_KEY_PREFIX}{loop_id}"] = _binding_policy_entry(
-                binding,
-                action="clear_stale_starting",
-            )
+            action = "clear_stale_starting"
+        elif binding.state == "bound" and binding.provider_session_id:
+            action = "resume_then_replace_if_missing"
+        else:
+            continue
+        entry = _binding_policy_entry(binding, action=action)
+        entry["role"] = "reviewer"
+        bindings[f"{_REVIEWER_KEY_PREFIX}{loop_id}"] = entry
 
     if not bindings:
         return {"requires_correction": False, "bindings": {}}
-    return {"requires_correction": True, "bindings": bindings}
+    requires_correction = any(
+        entry.get("action") == "clear_stale_starting"
+        for entry in bindings.values()
+    )
+    return {"requires_correction": requires_correction, "bindings": bindings}
 
 
 def execute_session_policy(
@@ -85,8 +110,6 @@ def execute_session_policy(
 ) -> None:
     """Apply continuation-path session corrections after apply_resume_plan_atomically."""
 
-    if session_policy.get("status") == "deferred_until_phase_4":
-        return
     if not session_policy.get("requires_correction"):
         return
 
@@ -127,11 +150,10 @@ def _clear_stale_starting_primary(
     binding = get_primary_binding(run, role)
     if binding is None or binding.state != "starting":
         return False
-    revoke_capabilities_for_session_binding(
+    revoke_all_capabilities_for_session_instance(
         store,
         run_id,
         session_instance_id=binding.session_instance_id,
-        generation=binding.generation + 1,
     )
     updated_sessions = clear_stale_starting_primary_binding(sessions, role=role)
     sessions.clear()
@@ -149,18 +171,22 @@ def _clear_stale_starting_reviewer(
     binding = loop.reviewer_binding
     if binding is None or binding.state != "starting":
         return
-    revoke_capabilities_for_session_binding(
+    revoke_all_capabilities_for_session_instance(
         store,
         run_id,
         session_instance_id=binding.session_instance_id,
-        generation=binding.generation + 1,
     )
     updated_loop = replace(
         loop,
         reviewer_binding=binding.with_next_generation(),
         reviewer_session_id=None,
     )
-    store.save_review(run_id, updated_loop.to_dict())
+    save_review_with_expected_revision(
+        store,
+        run_id,
+        updated_loop,
+        expected_revision=review_record_revision(review),
+    )
 
 
 from top_down_planning.orchestrator.session_policy import register_session_policy_executor

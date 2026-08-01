@@ -11,10 +11,15 @@ from top_down_planning.domain.session_bindings import (
 )
 from top_down_planning.orchestrator.session_lineage import emit_session_provider_id_bound
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.review_commit import (
+    review_record_revision,
+    save_review_with_expected_revision,
+)
 from top_down_planning.persistence.session_bindings import (
     get_primary_binding,
     update_primary_binding,
 )
+from core_tools.persistence import RunNotFoundError
 from core_tools.provider import Provider
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
@@ -207,19 +212,16 @@ def sync_persisted_session_id(
     run_id: str,
     session_id: str,
     *,
-    field: str,
+    role: str,
 ) -> str:
     """Persist the provider-native session id when it differs from the stored ref."""
 
+    if role not in _PRIMARY_ROLES:
+        raise ValueError(f"unsupported primary session role: {role}")
     resolved = provider.canonical_session_id(session_id)
-    role = "planner" if field == "primary_planner_session_id" else "producer"
     run = store.load_run(run_id)
-    sessions = dict(run.get("sessions") or {})
-    current = sessions.get(field) if field in sessions else None
-    slot_key = "primary_planner" if role == "planner" else "primary_producer"
-    slot_payload = sessions.get(slot_key)
-    if isinstance(slot_payload, dict):
-        current = slot_payload.get("provider_session_id")
+    existing = get_primary_binding(run, role)
+    current = existing.provider_session_id if existing is not None else None
     if current == resolved:
         return resolved
     if is_transient_provider_session_id(resolved):
@@ -296,10 +298,23 @@ def commit_reviewer_loop_provider_session(
     loop: ReviewLoop,
     *,
     phase_action_id: str | None = None,
+    expected_revision: int | None = None,
 ) -> ReviewLoop:
     """Persist reviewer loop binding and emit session_provider_id_bound when durable."""
 
-    store.save_review(run_id, loop.to_dict())
+    if expected_revision is None:
+        try:
+            review_record = store.load_review(run_id, loop.id)
+        except RunNotFoundError:
+            expected_revision = 0
+        else:
+            expected_revision = review_record_revision(review_record)
+    save_review_with_expected_revision(
+        store,
+        run_id,
+        loop,
+        expected_revision=int(expected_revision),
+    )
     _emit_reviewer_provider_id_bound(
         store,
         run_id,

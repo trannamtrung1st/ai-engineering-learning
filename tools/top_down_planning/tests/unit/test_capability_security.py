@@ -15,7 +15,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, grant_capability, mandatory_initial_respond_request, mandatory_plan_digest, minimal_resolved_config
+from tests.helpers import create_run_kwargs, grant_capability, mandatory_initial_respond_request, mandatory_plan_digest, minimal_resolved_config, save_review_payload
 
 
 def _create_planning_run(store: FileRunStore, run_id: str = "run-20260101T000901-000901") -> None:
@@ -113,9 +113,7 @@ def test_planner_cannot_use_reviewer_authority_from_disk(tmp_path: Path) -> None
     run["revision"] = expected + 1
     store.save_run("run-20260101T000901-000901", run, expected)
 
-    store.save_review(
-        "run-20260101T000901-000901",
-        {
+    save_review_payload(store, "run-20260101T000901-000901", {
             "id": "review-whole-plan-01",
             "type": "whole_plan",
             "revise_at": "blocker",
@@ -175,8 +173,7 @@ def test_planner_cannot_use_reviewer_authority_from_disk(tmp_path: Path) -> None
         session_id="reviewer-session-02",
         loop_id="review-whole-plan-01",
     )
-    store.save_review(
-        "run-20260101T000901-000901",
+    save_review_payload(store, "run-20260101T000901-000901",
         ReviewLoop.from_dict(
             store.load_review("run-20260101T000901-000901", "review-whole-plan-01")
         )

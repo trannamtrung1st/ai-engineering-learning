@@ -13,7 +13,15 @@ from top_down_planning.orchestrator import PlanningPhaseOrchestrator, ProviderRu
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import apply_plan, done_events, grant_capability, create_run_kwargs, minimal_resolved_config
+from tests.helpers import (
+    apply_plan,
+    assert_primary_session_id,
+    create_run_kwargs,
+    done_events,
+    grant_capability,
+    minimal_resolved_config,
+    sessions_with_primary_session,
+)
 
 
 def _create_run(
@@ -108,7 +116,7 @@ def test_planning_phase_reaches_candidate_ready_with_apply_path(tmp_path: Path) 
     assert len(plan.items) == 3
 
     run = store.load_run("run-20260101T000101-000101")
-    assert run["sessions"]["primary_planner_session_id"] == result.session_id
+    assert_primary_session_id(run, "planner", result.session_id)
     assert run["phase"] == WHOLE_PLAN_REVIEW
     assert run["outcome"] is None
 
@@ -158,7 +166,7 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
 
     expected_revision = int(run["revision"])
     run["revision"] = expected_revision + 1
-    run["sessions"] = {"primary_planner_session_id": session_id}
+    run["sessions"] = sessions_with_primary_session(planner=session_id)
     run["planning"] = {"agent_turns": 1, "items_added": 0}
     store.save_run("run-20260101T000101-000101", run, expected_revision)
 
@@ -190,7 +198,7 @@ def test_planning_resumes_persisted_session_on_fresh_provider(tmp_path: Path) ->
 
     expected_revision = int(run["revision"])
     run["revision"] = expected_revision + 1
-    run["sessions"] = {"primary_planner_session_id": session_id}
+    run["sessions"] = sessions_with_primary_session(planner=session_id)
     run["planning"] = {"agent_turns": 1, "items_added": 0}
     store.save_run("run-20260101T000101-000101", run, expected_revision)
 
@@ -262,9 +270,16 @@ def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -
         capability_token=grant_capability(store, "run-20260101T000101-000101", role="planner", phase=PLANNING),
     )
 
+    from top_down_planning.domain.session_bindings import PRIMARY_PLANNER_SLOT, new_session_binding
+    from top_down_planning.persistence.session_bindings import coerce_structured_sessions
+
     run = store.load_run("run-20260101T000101-000101")
-    sessions = dict(run.get("sessions") or {})
-    sessions["primary_planner_session_id"] = None
+    sessions = coerce_structured_sessions(run.get("sessions"))
+    sessions[PRIMARY_PLANNER_SLOT] = new_session_binding(
+        role="planner",
+        kind="primary",
+        state="unbound",
+    ).to_dict()
     run = dict(run)
     run["sessions"] = sessions
     expected = int(run["revision"])

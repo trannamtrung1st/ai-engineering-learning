@@ -87,6 +87,7 @@ def test_decision_10_session_bindings_are_replaceable() -> None:
         state="bound",
     )
     assert binding.with_next_generation().generation == 2
+    assert binding.with_next_generation().session_instance_id != binding.session_instance_id
 
 
 def test_decision_11_recovery_manifests_from_durable_state() -> None:

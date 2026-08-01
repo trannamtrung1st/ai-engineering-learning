@@ -1,4 +1,4 @@
-"""Resume apply ownership and revision CAS tests (§21 test 24; §10.1 interim)."""
+"""Resume apply ownership and revision CAS tests (§21 test 24; §10.1)."""
 
 from __future__ import annotations
 

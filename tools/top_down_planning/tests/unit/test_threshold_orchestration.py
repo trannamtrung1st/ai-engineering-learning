@@ -26,6 +26,8 @@ from tests.helpers import (
     done_events,
     grant_capability,
     minimal_resolved_config,
+    review_loop_dict_with_binding,
+    save_review_payload,
     script_reviewer_allocate,
 )
 
@@ -119,7 +121,8 @@ def test_primary_resume_fields_expose_revise_at_and_partitions() -> None:
 
 def test_evidence_revision_targets_required_findings_only() -> None:
     reviews = [
-        {
+        review_loop_dict_with_binding(
+            {
             "id": "review-focused-output-01",
             "type": "focused_output",
             "reviewer_session_id": "sess",
@@ -131,7 +134,8 @@ def test_evidence_revision_targets_required_findings_only() -> None:
                 _finding("f-block", severity="blocker", target="item-a"),
                 _finding("f-minor", severity="minor", target="item-b"),
             ],
-        }
+            }
+        )
     ]
     assert focused_output_revision_target_ids(
         reviews, loop_id="review-focused-output-01"
@@ -185,12 +189,14 @@ def test_focused_orchestrator_advisory_handoff_defer_completes(
         status="pending",
         revise_at="blocker",
     )
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
 
     provider = StubProvider()
     script_reviewer_allocate(provider)
 
     def _reviewer_discovery() -> None:
+        from top_down_planning.domain.session_bindings import binding_provider_session_id
+
         persisted = store.load_review(run_id, loop.id)
         token = grant_capability(
             store,
@@ -198,7 +204,7 @@ def test_focused_orchestrator_advisory_handoff_defer_completes(
             role="reviewer",
             phase=PLANNING,
             loop_id=loop.id,
-            session_id=str(persisted["reviewer_session_id"]),
+            session_id=str(binding_provider_session_id(persisted.get("reviewer_binding"))),
         )
         from top_down_planning.agent_tool import ReviewAgentService
 

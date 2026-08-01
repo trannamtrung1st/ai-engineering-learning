@@ -1,4 +1,4 @@
-"""Session policy execution hook (Phase 4 wiring point)."""
+"""Session policy executor registration hook."""
 
 from __future__ import annotations
 

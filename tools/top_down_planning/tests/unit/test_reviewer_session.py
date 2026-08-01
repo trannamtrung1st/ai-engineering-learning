@@ -77,6 +77,16 @@ def test_begin_reviewer_review_delivers_package_after_allocate(tmp_path: Path) -
     script_reviewer_allocate(provider)
     provider.script_turn(done_events(text="review turn"))
 
+    loop = ReviewLoop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="stub-session-reviewer-pending",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        revise_at="blocker",
+    )
+    store.save_review(run_id, loop.to_dict())
+
     session_id, token = begin_reviewer_review(
         provider,
         store,
@@ -109,7 +119,9 @@ def test_deliver_reviewer_turn_binds_token_before_send(tmp_path: Path) -> None:
         reviewer_session_id=session_id,
         target_revision=0,
         scope={"kind": "whole_plan"},
+        revise_at="blocker",
     )
+    store.save_review(run_id, loop.to_dict())
     token = deliver_reviewer_turn(
         provider,
         store,

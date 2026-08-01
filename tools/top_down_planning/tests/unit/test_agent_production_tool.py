@@ -18,6 +18,7 @@ from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import (
+    save_review_payload,
     create_run_kwargs,
     grant_capability,
     set_capability_env,
@@ -103,7 +104,7 @@ def _create_production_run(
         **create_run_kwargs(store.root, resolved_config=config),
         phase=PRODUCTION,
     )
-    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    save_review_payload(store, run_id, whole_plan_approval_record(store, run_id))
 
 
 def test_apply_requires_production_revision(tmp_path: Path) -> None:
@@ -416,9 +417,7 @@ def test_cli_reviewer_denied_for_production_apply(
 def test_production_ready_snapshot_excludes_review_blocked_items(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    store.save_review(
-        "run-20260101T000201-000201",
-        {
+    save_review_payload(store, "run-20260101T000201-000201", {
             "id": "review-focused-output-01",
             "type": "focused_output",
             "revise_at": "blocker",
@@ -539,8 +538,7 @@ def test_multi_item_batch_still_works_with_ready_items(tmp_path: Path) -> None:
         **create_run_kwargs(store.root, resolved_config=config),
         phase=PRODUCTION,
     )
-    store.save_review(
-        "run-20260101T000211-000211",
+    save_review_payload(store, "run-20260101T000211-000211",
         whole_plan_approval_record(store, "run-20260101T000211-000211"),
     )
     service = ProductionAgentService(store, "run-20260101T000211-000211")

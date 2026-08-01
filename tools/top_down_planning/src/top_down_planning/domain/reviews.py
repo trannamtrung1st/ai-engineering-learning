@@ -10,7 +10,7 @@ from top_down_planning.domain.session_bindings import (
     SessionBinding,
     binding_provider_session_id,
     new_session_binding,
-    reviewer_binding_from_legacy_session_id,
+    reviewer_binding_for_provider_session,
 )
 
 from top_down_planning.domain.review_policy import (
@@ -488,6 +488,7 @@ class ReviewLoop:
     status: ReviewLoopStatus = "pending"
     findings: list[ReviewFinding] = field(default_factory=list)
     revision_cycles: int = 0
+    revision: int = 0
     approved_digests: dict[str, str] | None = None
     reviewer_binding: SessionBinding | None = None
     # Mandatory review loop fields (optional; focused loops leave unset).
@@ -515,6 +516,7 @@ class ReviewLoop:
             "status": self.status,
             "findings": [finding.to_dict() for finding in self.findings],
             "revision_cycles": self.revision_cycles,
+            "revision": int(self.revision),
             "review_schema_version": self.review_schema_version,
             "finding_actions": [action.to_dict() for action in self.finding_actions],
             "review_incomplete": (
@@ -552,7 +554,7 @@ class ReviewLoop:
             return self.reviewer_binding
         if self.reviewer_session_id is None or not str(self.reviewer_session_id).strip():
             return None
-        return reviewer_binding_from_legacy_session_id(
+        return reviewer_binding_for_provider_session(
             str(self.reviewer_session_id).strip(),
             instance_seed=self.id,
         )
@@ -689,16 +691,11 @@ class ReviewLoop:
         reviewer_binding: SessionBinding | None = None
         if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
             reviewer_binding = SessionBinding.from_dict(binding_raw)
-        legacy_reviewer_session_id = payload.get("reviewer_session_id")
-        if reviewer_binding is None and legacy_reviewer_session_id is not None:
-            reviewer_binding = reviewer_binding_from_legacy_session_id(
-                str(legacy_reviewer_session_id).strip() or None,
-                instance_seed=str(payload.get("id") or "").strip() or None,
+        if "reviewer_session_id" in payload:
+            raise ValueError(
+                "legacy review field reviewer_session_id is not accepted; use reviewer_binding"
             )
         reviewer_session_id = binding_provider_session_id(reviewer_binding)
-        if reviewer_session_id is None and legacy_reviewer_session_id is not None:
-            legacy_text = str(legacy_reviewer_session_id).strip()
-            reviewer_session_id = legacy_text or None
 
         return cls(
             id=str(payload["id"]),
@@ -709,6 +706,7 @@ class ReviewLoop:
             status=status_raw,  # type: ignore[arg-type]
             findings=findings,
             revision_cycles=int(payload.get("revision_cycles") or 0),
+            revision=int(payload.get("revision") or 0),
             approved_digests=approved_digests,
             reviewer_binding=reviewer_binding,
             lifecycle_status=lifecycle_status,  # type: ignore[arg-type]

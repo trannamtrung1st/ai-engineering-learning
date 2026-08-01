@@ -288,7 +288,10 @@ def test_format_resume_plan_summary_text_includes_config_overrides() -> None:
                 "to": "running",
                 "prior_stop_code": "limit_exhausted",
             },
-            "session_policy_text": "deferred until Phase 4 session bindings",
+            "session_policy_text": (
+                "resume planner session cursor-abc123\n"
+                "replace once if Cursor reports session not found"
+            ),
             "config_path": "/tmp/updated.yaml",
             "config_overrides": ["limits.production.max_batches=99"],
         }

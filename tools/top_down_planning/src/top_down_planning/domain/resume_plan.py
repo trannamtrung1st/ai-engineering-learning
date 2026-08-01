@@ -65,8 +65,3 @@ class ResumePlan:
         if self.message is not None:
             payload["message"] = self.message
         return payload
-
-
-SESSION_POLICY_PLACEHOLDER: dict[str, Any] = {
-    "status": "deferred_until_phase_4",
-}

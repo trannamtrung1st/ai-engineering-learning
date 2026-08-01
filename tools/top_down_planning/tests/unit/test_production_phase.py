@@ -13,7 +13,15 @@ from top_down_planning.orchestrator import ProductionPhaseOrchestrator, Provider
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import apply_plan, apply_production, create_run_kwargs, done_events, grant_capability, whole_plan_approval_record
+from tests.helpers import (
+    apply_plan,
+    apply_production,
+    assert_primary_session_id,
+    create_run_kwargs,
+    done_events,
+    grant_capability,
+    whole_plan_approval_record,
+)
 
 
 def _batch_apply_request(
@@ -176,7 +184,7 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
 
     run = store.load_run("run-20260101T000201-000201")
     assert run["phase"] == WHOLE_OUTPUT_REVIEW
-    assert run["sessions"]["primary_producer_session_id"] == result.session_id
+    assert_primary_session_id(run, "producer", result.session_id)
 
 
 def test_ready_set_blocks_item_with_unmet_dependency(tmp_path: Path) -> None:

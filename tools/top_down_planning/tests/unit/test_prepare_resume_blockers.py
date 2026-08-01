@@ -206,7 +206,6 @@ def test_prepare_resume_conflicting_review_loops(tmp_path: Path) -> None:
             "id": "review-loop-a",
             "type": "whole_plan",
             "revise_at": "blocker",
-            "reviewer_session_id": None,
             "target_revision": 0,
             "scope": {"kind": "whole_plan"},
             "status": "pending",
@@ -222,7 +221,6 @@ def test_prepare_resume_conflicting_review_loops(tmp_path: Path) -> None:
             "id": "review-loop-b",
             "type": "focused_output",
             "revise_at": "blocker",
-            "reviewer_session_id": None,
             "target_revision": 0,
             "scope": {"kind": "focused_output", "item_ids": ["item-root"]},
             "status": "pending",
@@ -396,4 +394,49 @@ def test_prepare_resume_blocks_replacement_exhausted_for_phase_action(
 
     stored = store.load_resolved_config(run_id)
     with pytest.raises(PrepareResumeBlockedError, match="replacement already exhausted"):
+        prepare_resume(store, run_id, stored)
+
+
+def test_prepare_resume_blocks_review_incomplete_without_loop_id(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_production_run(store, status="paused")
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["stop"] = {
+        "code": "review_incomplete",
+        "category": "operational",
+        "phase": PRODUCTION,
+        "message": "review incomplete",
+        "details": {},
+    }
+    store.save_run(run_id, run, expected_revision)
+
+    stored = store.load_resolved_config(run_id)
+    with pytest.raises(PrepareResumeBlockedError, match="loop_id"):
+        prepare_resume(store, run_id, stored)
+
+
+def test_prepare_resume_blocks_provider_turn_failed_without_phase_action_id(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_production_run(store, status="paused")
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["phase_action_id"] = None
+    run["stop"] = {
+        "code": "provider_turn_failed",
+        "category": "operational",
+        "phase": PRODUCTION,
+        "message": "turn failed",
+        "details": {},
+    }
+    store.save_run(run_id, run, expected_revision)
+
+    stored = store.load_resolved_config(run_id)
+    with pytest.raises(PrepareResumeBlockedError, match="phase_action_id"):
         prepare_resume(store, run_id, stored)

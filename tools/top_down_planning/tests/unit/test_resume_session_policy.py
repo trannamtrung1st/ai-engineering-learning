@@ -110,6 +110,35 @@ def test_stale_starting_binding_cleared_on_resume_continuation(tmp_path: Path) -
     assert record["revoked"] is True
 
 
+def test_derive_session_policy_includes_resume_then_replace_for_bound_session(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    binding = new_session_binding(role="planner", kind="primary", state="starting")
+    binding = binding.with_provider_session_id(
+        "cursor-abc123",
+        provider="cursor",
+    )
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    sessions = dict(run.get("sessions") or {})
+    sessions[PRIMARY_PLANNER_SLOT] = binding.to_dict()
+    run["sessions"] = sessions
+    store.save_run(run_id, run, expected_revision)
+
+    policy = derive_session_policy(store.load_run(run_id), store.list_reviews(run_id))
+
+    assert policy["requires_correction"] is False
+    entry = policy["bindings"][PRIMARY_PLANNER_SLOT]
+    assert entry["action"] == "resume_then_replace_if_missing"
+    assert entry["provider_session_id"] == "cursor-abc123"
+    assert entry["role"] == "planner"
+
+
 def test_prepare_resume_includes_session_policy_for_starting_binding(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T006001-006001"

@@ -35,6 +35,7 @@ from top_down_planning.orchestrator.agent_context import (
     resolve_role_session_context,
 )
 from top_down_planning.orchestrator.capability import (
+    adopt_replacement_capability,
     bind_provider_capability,
     issue_session_capability,
     revoke_capabilities_for_loop,
@@ -489,6 +490,14 @@ class FocusedReviewOrchestrator:
         except SessionRecoveryPaused as exc:
             raise ProviderRunError(str(exc)) from exc
         session_id = turn_outcome.session_id
+        if turn_outcome.replaced:
+            self._capability_token = adopt_replacement_capability(
+                self._store,
+                self._run_id,
+                current_token=self._capability_token,
+                replacement_token=turn_outcome.capability_token,
+                provider=self._provider,
+            )
         sync_reviewer_loop_session_id(
             self._provider,
             self._store,

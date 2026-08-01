@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.orchestrator.phases import PLAN_AMENDMENT
 from top_down_planning.persistence.interface import RunStore
 
 
@@ -44,13 +45,44 @@ def validate_review_incomplete_stop(
     return loop
 
 
+def validate_amendment_pending_stop(
+    run: dict[str, Any],
+    production: dict[str, Any],
+    stop: dict[str, Any],
+) -> None:
+    if str(run.get("phase") or "") != PLAN_AMENDMENT:
+        raise ResumeStopValidationError(
+            "amendment_pending resume requires phase plan_amendment"
+        )
+    details = stop.get("details") or {}
+    pending_id = str(details.get("pending_amendment_id") or "").strip()
+    if not pending_id:
+        raise ResumeStopValidationError(
+            "amendment_pending stop requires details.pending_amendment_id"
+        )
+    stored_pending = str(production.get("pending_amendment_id") or "").strip()
+    if stored_pending != pending_id:
+        raise ResumeStopValidationError(
+            "pending_amendment_id does not match production state"
+        )
+    for request in production.get("amendment_requests") or []:
+        if not isinstance(request, dict):
+            continue
+        if str(request.get("id") or "") != pending_id:
+            continue
+        if str(request.get("status") or "") in {"completed", "cancelled"}:
+            raise ResumeStopValidationError("amendment request is not pending")
+        return
+    raise ResumeStopValidationError("amendment request record missing")
+
+
 def validate_stop_for_resume_apply(
     store: RunStore,
     run_id: str,
     run: dict[str, Any],
     stop: dict[str, Any],
 ) -> ReviewLoop | None:
-    """Validate paused stop semantics before atomic resume apply."""
+    """Validate paused stop semantics before atomic resume apply or --check."""
 
     code = str(stop.get("code") or "")
     _require_phase_matches_stop(run, stop)
@@ -58,6 +90,8 @@ def validate_stop_for_resume_apply(
     if code == "limit_exhausted":
         return None
     if code == "amendment_pending":
+        production = store.load_production(run_id)
+        validate_amendment_pending_stop(run, production, stop)
         return None
     if code == "review_incomplete":
         return validate_review_incomplete_stop(store, run_id, stop)
@@ -76,6 +110,7 @@ def validate_stop_for_resume_apply(
 
 __all__ = [
     "ResumeStopValidationError",
+    "validate_amendment_pending_stop",
     "validate_review_incomplete_stop",
     "validate_stop_for_resume_apply",
 ]

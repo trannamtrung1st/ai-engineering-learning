@@ -16,6 +16,7 @@ from top_down_planning.domain.plan_tree import (
     display_traversal,
     serialized_plan_items,
 )
+from tests.helpers import review_loop_dict_with_binding
 
 
 def _sample_plan() -> Plan:
@@ -431,7 +432,8 @@ def test_remove_item_requires_review_history_context() -> None:
 def test_remove_item_rejects_items_with_review_history() -> None:
     plan = _sample_plan()
     reviews = [
-        {
+        review_loop_dict_with_binding(
+            {
             "id": "review-focused-plan-01",
             "type": "focused_plan",
             "revise_at": "blocker",
@@ -450,7 +452,8 @@ def test_remove_item_rejects_items_with_review_history() -> None:
                 }
             ],
             "revision_cycles": 0,
-        }
+            }
+        )
     ]
 
     with pytest.raises(InvalidMutationError, match="review history"):

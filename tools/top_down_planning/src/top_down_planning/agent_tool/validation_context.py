@@ -56,7 +56,7 @@ def plan_approval_validation_context(
     run = store.load_run(run_id)
     (
         actual_plan_digest,
-        actual_config_digest,
+        actual_config_contract_digest,
         actual_input_digest,
         actual_output_goal_digest,
         actual_context_spec_digest,
@@ -65,7 +65,7 @@ def plan_approval_validation_context(
         plan=plan,
         approval=approval,
         actual_plan_digest=actual_plan_digest,
-        actual_config_digest=actual_config_digest,
+        actual_config_contract_digest=actual_config_contract_digest,
         actual_input_digest=actual_input_digest,
         actual_output_goal_digest=actual_output_goal_digest,
         actual_context_spec_digest=actual_context_spec_digest,
@@ -91,8 +91,8 @@ def _approval_hooks_not_checked_context(
             expected_input_digest=None,
             output_goal_digest=digests.get("output_goal"),
             expected_output_goal_digest=None,
-            config_digest=compute_config_contract_digest(store.load_resolved_config(run_id)),
-            expected_config_digest=None,
+            config_contract_digest=compute_config_contract_digest(store.load_resolved_config(run_id)),
+            expected_config_contract_digest=None,
             context_spec_digest=digests.get("context_spec"),
             expected_context_spec_digest=None,
         ),
@@ -113,7 +113,7 @@ def user_validate_mode_and_context(
 
     (
         actual_plan_digest,
-        actual_config_digest,
+        actual_config_contract_digest,
         actual_input_digest,
         actual_output_goal_digest,
         actual_context_spec_digest,
@@ -122,7 +122,7 @@ def user_validate_mode_and_context(
         plan=plan,
         approval=approval,
         actual_plan_digest=actual_plan_digest,
-        actual_config_digest=actual_config_digest,
+        actual_config_contract_digest=actual_config_contract_digest,
         actual_input_digest=actual_input_digest,
         actual_output_goal_digest=actual_output_goal_digest,
         actual_context_spec_digest=actual_context_spec_digest,
