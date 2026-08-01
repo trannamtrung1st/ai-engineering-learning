@@ -12,7 +12,6 @@ from unittest.mock import patch
 import pytest
 
 from core_tools.provider.cursor import CursorProvider
-from core_tools.provider.process_cleanup import is_pid_alive
 from core_tools.provider.stub import StubProvider
 from top_down_planning.cli.doctor import handle_doctor_command
 from top_down_planning.observability import ObservabilityContext
@@ -26,7 +25,6 @@ from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, minimal_resolved_config
 from tests.unit.test_operational_failures import _create_run
 
 
@@ -210,7 +208,7 @@ def test_cursor_provider_tracked_turn_procs_killed_on_terminate_all_sessions(
     assert any(record.get("pid") == proc.pid for record in terminated)
 
 
-def test_doctor_reports_orphan_count(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_doctor_reports_no_orphan_agents(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store, run_id="run-20260101T001902-001902")
     run = store.load_run("run-20260101T001902-001902")
@@ -227,16 +225,36 @@ def test_doctor_reports_orphan_count(tmp_path: Path, capsys: pytest.CaptureFixtu
     }
     store.save_run("run-20260101T001902-001902", run, expected_revision)
 
+    handle_doctor_command(
+        type(
+            "Args",
+            (),
+            {
+                "run": "run-20260101T001902-001902",
+                "stream_json": False,
+                "runs_dir": str(store.root),
+                "config": None,
+            },
+        )()
+    )
+
+    assert "no orphan agent processes" in capsys.readouterr().out
+
+
+def test_doctor_reports_orphan_pids(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, run_id="run-20260101T001905-001905")
+
     with patch(
         "top_down_planning.cli.doctor.scan_orphan_agent_pids",
-        return_value=[],
+        return_value=[4242, 5151],
     ):
         handle_doctor_command(
             type(
                 "Args",
                 (),
                 {
-                    "run": "run-20260101T001902-001902",
+                    "run": "run-20260101T001905-001905",
                     "stream_json": False,
                     "runs_dir": str(store.root),
                     "config": None,
@@ -244,7 +262,10 @@ def test_doctor_reports_orphan_count(tmp_path: Path, capsys: pytest.CaptureFixtu
             )()
         )
 
-    assert "no orphan agent processes" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "2 orphan agent process(es)" in output
+    assert "4242" in output
+    assert "5151" in output
 
 
 def test_cursor_provider_terminate_all_sessions_unblocks_stream_events(

@@ -1713,8 +1713,8 @@ checkpoint); failed stops use `category: invariant` with
 (null when unset), and optional `details`. For `user_cancelled`, `details.terminated_pids`
 lists agent subprocess pids stopped during cancel. Cancel also records `agent_terminated`
 and `planner_session_ended` / `producer_session_ended` / `reviewer_session_ended` audit
-events. Resume scans for orphan agents (`agent_orphan_cleaned` when cleaned). Use
-`tdp doctor --run <id>` to inspect orphan agent pids for a run.
+events. `RunEngine.continue_run` scans for orphan agents (`agent_orphan_cleaned` when
+cleaned). Use `tdp doctor --run <id>` to inspect orphan agent pids for a run.
 
 ## Resume
 

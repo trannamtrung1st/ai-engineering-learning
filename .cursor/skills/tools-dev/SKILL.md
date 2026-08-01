@@ -155,6 +155,14 @@ def test_progress_notification(bridge_send_mock, tmp_path):
     assert "Planning candidate ready" in [c.args[0] for c in bridge_send_mock.call_args_list]
 ```
 
+```python
+# BAD — live orphan-agent PID enumeration during orchestration tests (~0.7s per continue_run)
+engine.continue_run(run_id, single_step=True)
+
+# GOOD — autouse stub_orphan_agent_scan in tests/conftest.py; test scan logic via direct
+# import + injected list_live_pids/read_pid_environ in test_agent_process_cleanup.py
+```
+
 ## Workflow
 
 1. Identify the unit under test and its dependencies (provider, store, filesystem, CLI).
@@ -168,7 +176,7 @@ def test_progress_notification(bridge_send_mock, tmp_path):
 - [ ] Semantic config via YAML + `--set` only; no mirrored `--param` flags
 - [ ] New paths in `ALLOWED_OVERRIDE_PATHS`, `defaults.py`, `schema_docs.py`
 - [ ] Presentation fields wired through `invocation.py` if dedicated flags added
-- [ ] No live Cursor CLI, agent subprocess, network, or desktop notifications in unit tests
+- [ ] No live Cursor CLI, agent subprocess, network, desktop notifications, or full-system PID scans in unit tests
 - [ ] Provider orchestration uses `StubProvider.script_turn()` (or `fake_runner` for adapter tests)
 - [ ] Reused package test helpers where applicable
 - [ ] No sleep unless timing/process lifecycle is under test, and ≤100ms

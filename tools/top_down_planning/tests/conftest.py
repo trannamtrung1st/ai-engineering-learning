@@ -21,6 +21,23 @@ SEND_DESKTOP_NOTIFICATION_TARGETS = (
 BRIDGE_SEND_DESKTOP = SEND_DESKTOP_NOTIFICATION_TARGETS[1]
 OUTCOME_SEND_DESKTOP = SEND_DESKTOP_NOTIFICATION_TARGETS[2]
 
+# Full-system PID scans are slow (~0.7s on macOS). Patch every import site; tests that
+# import scan_orphan_agent_pids directly still exercise real logic with injected fakes.
+ORPHAN_AGENT_SCAN_TARGETS = (
+    "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
+    "top_down_planning.cli.doctor.scan_orphan_agent_pids",
+)
+
+
+@pytest.fixture(autouse=True)
+def stub_orphan_agent_scan():
+    """Stub orphan-agent PID scans so unit tests avoid live process enumeration."""
+
+    with ExitStack() as stack:
+        for target in ORPHAN_AGENT_SCAN_TARGETS:
+            stack.enter_context(patch(target, return_value=[]))
+        yield
+
 
 @pytest.fixture(autouse=True)
 def suppress_desktop_notifications():

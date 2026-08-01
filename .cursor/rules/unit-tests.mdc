@@ -25,6 +25,7 @@ Unit tests must be fast. Prefer fakes, stubs, and mocks over live implementation
 | Long `time.sleep` / `asyncio.sleep` | `mutate_store` callbacks, scripted events, or injected fakes |
 | CLI subprocess (`subprocess.run(["tdp", ...])`) | in-process `run_cli()` (`top_down_planning`) or direct function calls |
 | Real desktop notifications (notify-py) | autouse `suppress_desktop_notifications` in `tests/conftest.py`; per-test `bridge_send_mock` / `outcome_send_mock` when asserting sends |
+| Full-system orphan-agent PID scans (`ps` / `/proc`) | autouse `stub_orphan_agent_scan` in `tests/conftest.py`; override with `patch(..., return_value=[...])` in `test_agent_process_cleanup.py` only |
 
 Using `provider="cursor"` or session ids like `cursor-abc` as **metadata strings** is fine — that is not invoking the live provider.
 
