@@ -28,6 +28,7 @@ from top_down_planning.domain.reviews import (
     validate_verification_decision,
     verification_findings_closed,
 )
+from top_down_planning.orchestrator.mandatory_review_stages import mark_verification_pending
 
 
 DIGEST_A = "digest-aaa"
@@ -161,6 +162,29 @@ def test_review_loop_round_trip_preserves_lifecycle_fields() -> None:
     assert restored.finding_set_id == "fs-1"
     assert restored.scope_review_rounds == 2
     assert restored.to_dict() == loop.to_dict()
+
+
+def test_mark_verification_pending_updates_target_when_already_pending() -> None:
+    loop = make_review_loop(
+        id="review-whole-plan-1",
+        type="whole_plan",
+        reviewer_session_id="rev-1",
+        target_revision=20,
+        scope={"kind": "whole_plan"},
+        status="changes_requested",
+        revision_cycles=1,
+        lifecycle_status="verification_pending",
+        active_stage="finding_verification",
+        finding_set_id="fs-47",
+        revise_at="major",
+    )
+
+    updated = mark_verification_pending(loop, target_revision=21)
+
+    assert updated.lifecycle_status == "verification_pending"
+    assert updated.target_revision == 21
+    assert updated.status == "pending"
+    assert updated.active_stage == "finding_verification"
 
 
 def test_mandatory_lifecycle_transitions_match_state_model() -> None:

@@ -123,15 +123,17 @@ def mandatory_orchestration_decision(loop: ReviewLoop) -> str:
 
 def mark_verification_pending(loop: ReviewLoop, *, target_revision: int) -> ReviewLoop:
     current = loop.lifecycle_status or "revision_in_progress"
-    assert_mandatory_review_transition(current, "verification_pending")
-    return replace(
+    pending = replace(
         loop,
         target_revision=target_revision,
         status="pending",
-        lifecycle_status="verification_pending",
         active_stage="finding_verification",
         approved_digests=None,
     )
+    if current == "verification_pending":
+        return replace(pending, lifecycle_status="verification_pending")
+    assert_mandatory_review_transition(current, "verification_pending")
+    return replace(pending, lifecycle_status="verification_pending")
 
 
 def mark_findings_closed(loop: ReviewLoop) -> ReviewLoop:
