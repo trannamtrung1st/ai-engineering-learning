@@ -15,7 +15,10 @@ from top_down_planning.observability import (
 )
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import resolve_run_dir, run_ownership
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import (
+    OrchestratorInvariantError,
+    ProviderRunError,
+)
 from top_down_planning.orchestrator.failure import (
     mark_run_failed,
     sanitize_operational_error,
@@ -287,6 +290,21 @@ class RunEngine:
                     )
                     self._emit_done(result, started_at=started_at)
                     return result
+            except OrchestratorInvariantError as exc:
+                message = sanitize_operational_error(exc)
+                mark_run_failed(self._store, run_id, message=message)
+                run = self._store.load_run(run_id)
+                result = RunContinuationResult(
+                    ok=False,
+                    run_id=run_id,
+                    phase=phase,
+                    status=str(run.get("status") or ""),
+                    outcome=run.get("outcome"),
+                    steps=steps,
+                    reason=message,
+                )
+                self._emit_done(result, started_at=started_at)
+                return result
             except ProviderRunError as exc:
                 stop = StopRecord(
                     code="provider_turn_failed",

@@ -15,9 +15,12 @@ from top_down_planning.domain.reviews import (
     apply_discovery_response,
     apply_owner_finding_actions,
     budgets_snapshot,
+    complete_advisory_handoff_if_owner_responses_recorded,
     mark_advisory_handoff_completed,
+    mark_advisory_handoff_incomplete,
     needs_advisory_handoff,
     prepare_review_incomplete_retry,
+    primary_review_resume_fields,
 )
 from top_down_planning.orchestrator.failure import (
     apply_review_incomplete_run_transition,
@@ -136,6 +139,105 @@ def test_challenge_requires_proposed_disposition_and_keeps_finding_open() -> Non
     assert updated.status != "approved"
 
 
+def test_fix_completes_advisory_handoff_without_approval() -> None:
+    loop = _optional_loop(revision_cycles=2, scope_review_rounds=1)
+    before = budgets_snapshot(loop)
+    assert needs_advisory_handoff(loop)
+    updated, _parsed = apply_owner_finding_actions(
+        loop,
+        [
+            {
+                "finding_id": "finding-opt",
+                "action": "fix",
+                "finding_set_id": "fs-01",
+            }
+        ],
+        actor_role="planner",
+        artifact_revision=1,
+    )
+    assert not needs_advisory_handoff(updated)
+    assert updated.status != "approved"
+    assert budgets_snapshot(updated) == before
+
+
+def test_fix_rejected_without_revision_advance() -> None:
+    loop = _optional_loop()
+    with pytest.raises(ValueError, match="requires artifact revision"):
+        apply_owner_finding_actions(
+            loop,
+            [
+                {
+                    "finding_id": "finding-opt",
+                    "action": "fix",
+                    "finding_set_id": "fs-01",
+                }
+            ],
+            actor_role="planner",
+            artifact_revision=0,
+        )
+
+
+def test_prerecorded_owner_response_marks_handoff_complete() -> None:
+    loop = _optional_loop(status="advisory_pending")
+    updated, _ = apply_owner_finding_actions(
+        loop,
+        [
+            {
+                "finding_id": "finding-opt",
+                "action": "fix",
+                "finding_set_id": "fs-01",
+            }
+        ],
+        actor_role="planner",
+        artifact_revision=1,
+    )
+    assert not needs_advisory_handoff(updated)
+    completed = complete_advisory_handoff_if_owner_responses_recorded(updated)
+    assert completed.advisory_handoffs_completed == ["fs-01"]
+
+
+def test_duplicate_owner_action_rejected() -> None:
+    loop = _optional_loop()
+    updated, _ = apply_owner_finding_actions(
+        loop,
+        [
+            {
+                "finding_id": "finding-opt",
+                "action": "defer",
+                "rationale": "Later",
+                "finding_set_id": "fs-01",
+            }
+        ],
+        actor_role="planner",
+        artifact_revision=0,
+    )
+    with pytest.raises(ValueError, match="already has an owner action"):
+        apply_owner_finding_actions(
+            updated,
+            [
+                {
+                    "finding_id": "finding-opt",
+                    "action": "fix",
+                    "finding_set_id": "fs-01",
+                }
+            ],
+            actor_role="planner",
+            artifact_revision=0,
+        )
+
+
+def test_optional_fix_sets_changes_requested_status() -> None:
+    loop = _optional_loop()
+    updated, _parsed = apply_owner_finding_actions(
+        loop,
+        [{"finding_id": "finding-opt", "action": "fix", "finding_set_id": "fs-01"}],
+        actor_role="planner",
+        artifact_revision=1,
+    )
+    assert updated.status == "changes_requested"
+    assert not needs_advisory_handoff(updated)
+
+
 def test_defer_does_not_mutate_artifact_and_permits_approval() -> None:
     loop = _optional_loop(revision_cycles=2, scope_review_rounds=1)
     before = budgets_snapshot(loop)
@@ -176,6 +278,36 @@ def test_owner_cannot_set_invalid_or_superseded_via_actions() -> None:
     )
     assert updated.findings[0].status == "unresolved"
     assert updated.findings[0].status not in {"invalid", "superseded"}
+
+
+def test_owner_action_unique_per_finding_set_not_globally() -> None:
+    loop = _optional_loop(
+        finding_set_id="fs-02",
+        finding_actions=[
+            {
+                "finding_id": "finding-opt",
+                "action": "defer",
+                "rationale": "Earlier",
+                "actor_role": "planner",
+                "artifact_revision": 0,
+                "finding_set_id": "fs-01",
+            }
+        ],
+    )
+    updated, _ = apply_owner_finding_actions(
+        loop,
+        [
+            {
+                "finding_id": "finding-opt",
+                "action": "accept_as_is",
+                "rationale": "Fine now",
+                "finding_set_id": "fs-02",
+            }
+        ],
+        actor_role="planner",
+        artifact_revision=0,
+    )
+    assert len(updated.finding_actions) == 2
 
 
 def test_review_incomplete_preserves_budgets_and_reuses_finding_set_id() -> None:
@@ -337,6 +469,70 @@ def test_review_service_incomplete_does_not_fail_run_for_focused(tmp_path: Path)
     persisted = ReviewLoop.from_dict(store.load_review(run_id, loop.id))
     assert persisted.revision_cycles == 1
     assert persisted.review_incomplete is not None
+
+
+def test_advisory_handoff_incomplete_marker_and_resume_fields() -> None:
+    loop = _optional_loop(status="advisory_pending")
+    incomplete = mark_advisory_handoff_incomplete(
+        loop,
+        missing_finding_ids=["finding-opt"],
+    )
+    assert incomplete.status == "review_incomplete"
+    assert incomplete.review_incomplete is not None
+    assert incomplete.review_incomplete["stage"] == "advisory_handoff"
+    assert incomplete.review_incomplete["missing_owner_action_ids"] == ["finding-opt"]
+    retried = prepare_review_incomplete_retry(incomplete)
+    assert retried.status == "advisory_pending"
+    fields = primary_review_resume_fields(loop)
+    assert "new_findings" in fields
+    assert "carried_open_findings" in fields
+    assert "current_finding_actions" in fields
+    assert "history_summary" in fields
+    assert "history_ref" in fields
+    assert "findings" not in fields
+    assert "required_findings" not in fields
+    assert "optional_findings" not in fields
+
+
+def test_advisory_handoff_incomplete_run_transition(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T000001-a0c101"
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+        outcome="Done.",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root},
+    )
+    store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path))
+    loop = _optional_loop(status="advisory_pending")
+    incomplete = mark_advisory_handoff_incomplete(
+        loop,
+        missing_finding_ids=["finding-opt"],
+    )
+    save_review_payload(store, run_id, incomplete.to_dict())
+    result = apply_review_incomplete_run_transition(
+        store,
+        run_id,
+        loop_id=loop.id,
+        reason="advisory handoff incomplete",
+        finding_set_id="fs-01",
+        stage="advisory_handoff",
+        missing_owner_action_ids=["finding-opt"],
+        role="planner",
+    )
+    run = store.load_run(run_id)
+    assert result["status"] == "paused"
+    assert run["stop"]["code"] == "review_incomplete"
+    assert run["stop"]["role"] == "planner"
+    assert run["stop"]["details"]["missing_owner_action_ids"] == ["finding-opt"]
 
 
 def test_record_finding_actions_service_path(tmp_path: Path) -> None:

@@ -4,8 +4,9 @@ Single owner per named test or E2E scenario. Plan extensions beyond proposal §5
 `amendment_pending`; production limit; focused limit; amendment `max_requests` resumable
 after run-level pause.
 
-**Note:** mandatory `whole_plan` / `whole_output` `review_incomplete` pauses the run;
-focused `review_incomplete` is loop-level retry without run pause.
+**Note:** mandatory `whole_plan` / `whole_output` `review_incomplete` pauses the run
+(including advisory handoff incomplete). Focused `review_incomplete` — discovery
+or advisory — is loop-level retry without run pause.
 
 ## Phase 1 band
 

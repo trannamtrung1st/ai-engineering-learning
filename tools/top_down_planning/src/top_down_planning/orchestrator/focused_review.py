@@ -17,17 +17,19 @@ from top_down_planning.domain.reviews import (
     allocate_discovery_finding_set_id,
     advisory_handoff_allowed,
     budgets_snapshot,
+    complete_advisory_handoff_if_owner_responses_recorded,
+    finding_actions_for_active_set,
     loop_revise_at,
     mark_advisory_handoff_completed,
     needs_advisory_handoff,
     optional_open_findings,
     owner_actions_require_revision,
-    owner_actions_require_verification,
     policy_observability_fields,
     prepare_review_incomplete_retry,
     primary_review_resume_fields,
     required_open_findings,
     reviewer_package_policy_guidance,
+    verification_required_for_loop,
 )
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
@@ -56,7 +58,14 @@ from top_down_planning.orchestrator.mandatory_review_stages import (
     prepare_focused_verification_recheck,
     verification_recheck_request,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryPaused
+from top_down_planning.orchestrator.errors import (
+    OrchestratorInvariantError,
+    ProviderRunError,
+    SessionRecoveryPaused,
+)
+from top_down_planning.orchestrator.review_incomplete_handoff import (
+    pause_advisory_handoff_incomplete,
+)
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
 from top_down_planning.orchestrator.run_transitions import pause_for_limit_exhausted
 from top_down_planning.orchestrator.provider_turns import (
@@ -206,30 +215,29 @@ class FocusedReviewOrchestrator:
                     ),
                 )
 
-            if decision in {"advisory_pending", "pending"} and needs_advisory_handoff(
-                loop
-            ):
+            if decision in {"advisory_pending", "pending"}:
                 loop = self._handle_advisory_handoff(loop)
+                if loop.status == "review_incomplete":
+                    return self._result_review_incomplete(loop)
                 if loop.status == "approved":
                     return self._result_from_loop(loop, ok=True)
                 if required_open_findings(loop.findings, loop_revise_at(loop)):
                     decision = "changes_requested"
-                elif owner_actions_require_verification(loop.finding_actions):
-                    open_ids = {finding.id for finding in loop.findings if finding.status == "unresolved"}
-                    active_actions = [
-                        action
-                        for action in loop.finding_actions
-                        if action.finding_id in open_ids
-                    ]
-                    if owner_actions_require_revision(active_actions):
+                elif verification_required_for_loop(loop):
+                    active = finding_actions_for_active_set(loop)
+                    if owner_actions_require_revision(active):
                         decision = "changes_requested"
                     else:
                         # Challenge-only: verification/recheck without revision budget.
                         loop = self._prepare_recheck(loop)
                         continue
+                elif needs_advisory_handoff(loop):
+                    loop = self._pause_advisory_handoff_incomplete(loop)
+                    return self._result_review_incomplete(loop)
                 else:
-                    raise ProviderRunError(
-                        "advisory handoff completed without qualifying owner actions"
+                    raise OrchestratorInvariantError(
+                        "advisory handoff completed without resolving optional "
+                        "finding policy"
                     )
 
             if decision != "changes_requested":
@@ -307,6 +315,10 @@ class FocusedReviewOrchestrator:
         return self._prepare_recheck(loop), True
 
     def _handle_advisory_handoff(self, loop: ReviewLoop) -> ReviewLoop:
+        if not needs_advisory_handoff(loop):
+            return self._persist_loop(
+                complete_advisory_handoff_if_owner_responses_recorded(loop)
+            )
         if not advisory_handoff_allowed(loop):
             raise ProviderRunError(
                 f"advisory handoff already completed for finding_set_id "
@@ -328,15 +340,13 @@ class FocusedReviewOrchestrator:
         self._resume_primary_advisory_handoff(loop)
         loop = self._reload_loop(loop.id)
         if needs_advisory_handoff(loop):
-            raise ProviderRunError(
-                "advisory handoff completed without qualifying owner actions"
-            )
+            return self._pause_advisory_handoff_incomplete(loop)
         after_budgets = budgets_snapshot(loop)
         if after_budgets != before_budgets and not owner_actions_require_revision(
-            loop.finding_actions
+            finding_actions_for_active_set(loop)
         ):
             # Defensive: defer/accept/challenge must not consume revision budget.
-            raise ProviderRunError(
+            raise OrchestratorInvariantError(
                 "advisory handoff must not consume revision budget without a fix"
             )
         return self._persist_loop(mark_advisory_handoff_completed(loop))
@@ -389,10 +399,10 @@ class FocusedReviewOrchestrator:
                         "--request <file>"
                     ),
                     "notes": (
-                        "Record fix|defer|accept_as_is|challenge via finding_actions. "
-                        "Required findings cannot defer or accept_as_is. Challenges "
-                        "require proposed_disposition and stay open until verification. "
-                        "defer/accept_as_is consume no revision cycle."
+                        "Record fix|challenge|defer|accept_as_is via finding_actions. "
+                        "Required findings may only use fix or challenge. "
+                        "fix and challenge require reviewer verification; "
+                        "defer and accept_as_is do not."
                     ),
                 },
             },
@@ -678,6 +688,31 @@ class FocusedReviewOrchestrator:
 
     def _reload_loop(self, loop_id: str) -> ReviewLoop:
         return ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+
+    def _pause_advisory_handoff_incomplete(self, loop: ReviewLoop) -> ReviewLoop:
+        loop, _reason = pause_advisory_handoff_incomplete(
+            self._store,
+            self._run_id,
+            loop,
+            pause_run=False,
+        )
+        return self._persist_loop(loop)
+
+    def _result_review_incomplete(self, loop: ReviewLoop) -> FocusedReviewResult:
+        marker = loop.review_incomplete or {}
+        reason = str(
+            marker.get("reason") or "focused review could not be completed"
+        )
+        revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
+        run = self._store.load_run(self._run_id)
+        return FocusedReviewResult(
+            ok=False,
+            loop_id=loop.id,
+            status=str(run.get("status") or loop.status),
+            reviewer_session_id=reviewer_loop_provider_session_id(loop),
+            revision_cycles=loop.revision_cycles,
+            reason=reason,
+        )
 
     def _result_from_loop(
         self,

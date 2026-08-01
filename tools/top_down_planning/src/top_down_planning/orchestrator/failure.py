@@ -58,11 +58,14 @@ def apply_review_incomplete_run_transition(
     reason: str,
     finding_set_id: str | None = None,
     stage: str | None = None,
+    missing_owner_action_ids: list[str] | None = None,
+    role: str | None = None,
 ) -> dict[str, Any]:
-    """Pause the run for incomplete mandatory discovery (AC10 / VR15–16).
+    """Pause the run when mandatory review cannot proceed (discovery or advisory).
 
     Phase and outcome stay unchanged (outcome remains null). Resume retries the
-    same review stage without implying artifact rejection.
+    same review stage without implying artifact rejection. Focused optional loops
+    mark ``review_incomplete`` on the loop only and leave the run ``running``.
     """
 
     run = store.load_run(run_id)
@@ -82,12 +85,14 @@ def apply_review_incomplete_run_transition(
         details["finding_set_id"] = finding_set_id
     if stage is not None:
         details["stage"] = stage
+    if missing_owner_action_ids:
+        details["missing_owner_action_ids"] = list(missing_owner_action_ids)
 
     stop = StopRecord(
         code="review_incomplete",
         category="operational",
         phase=phase or "unknown",
-        role="reviewer",
+        role=role or "reviewer",
         message=reason,
         details=details,
     )
@@ -111,6 +116,10 @@ def apply_review_incomplete_run_transition(
         event["finding_set_id"] = finding_set_id
     if stage is not None:
         event["stage"] = stage
+    if missing_owner_action_ids:
+        event["missing_owner_action_ids"] = list(missing_owner_action_ids)
+    if role is not None:
+        event["role"] = role
     store.append_event(run_id, event)
 
     run = store.load_run(run_id)

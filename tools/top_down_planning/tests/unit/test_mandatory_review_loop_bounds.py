@@ -75,7 +75,6 @@ def test_config_schema_documents_scope_review_rounds() -> None:
         assert "max_revision_cycles" in props
         assert "max_scope_review_rounds" in props
         assert props["max_scope_review_rounds"]["type"] == "integer"
-        assert "max_scope_review_rounds" in props  # legacy read alias in schema
 
 
 def test_mandatory_review_limits_from_config_defaults_and_overrides() -> None:

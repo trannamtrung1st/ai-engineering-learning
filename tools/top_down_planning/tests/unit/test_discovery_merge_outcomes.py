@@ -105,6 +105,42 @@ def test_derive_outcomes_for_incomplete_required_optional_and_clear() -> None:
         == "approved"
     )
     assert (
+        derive_discovery_outcome(
+            optional,
+            [
+                FindingAction(
+                    finding_id="finding-opt",
+                    action="fix",
+                    actor_role="planner",
+                    artifact_revision=0,
+                    finding_set_id="fs-01",
+                )
+            ],
+            "blocker",
+            review_completed=True,
+        )
+        == "changes_requested"
+    )
+    assert (
+        derive_discovery_outcome(
+            optional,
+            [
+                FindingAction(
+                    finding_id="finding-opt",
+                    action="challenge",
+                    actor_role="planner",
+                    artifact_revision=0,
+                    finding_set_id="fs-01",
+                    rationale="Not applicable",
+                    proposed_disposition="invalid",
+                )
+            ],
+            "blocker",
+            review_completed=True,
+        )
+        == "changes_requested"
+    )
+    assert (
         derive_discovery_outcome([], [], "blocker", review_completed=True)
         == "approved"
     )

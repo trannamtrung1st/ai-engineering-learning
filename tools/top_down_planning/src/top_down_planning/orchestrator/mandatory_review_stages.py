@@ -11,6 +11,7 @@ from top_down_planning.domain.reviews import (
     ReviewLoop,
     SCOPE_REVIEW_STAGE,
     allocate_discovery_finding_set_id,
+    build_active_findings_view,
     required_unresolved_finding_ids,
     build_limit_reached_terminal,
     assert_mandatory_review_transition,
@@ -359,15 +360,16 @@ def verification_recheck_request(
 
     staged = replace(loop, active_stage="finding_verification")
     package_fields = stage_package_fields(staged)
+    active = build_active_findings_view(loop)
     return {
         "action": "finding_verification",
         "phase": phase,
         "loop_id": loop.id,
         "target_revision": target_revision,
-        "findings": [finding.to_dict() for finding in loop.findings],
         "protocol_instructions": build_reviewer_protocol_instructions(
             stage="finding_verification"
         ),
+        **active,
         **package_fields,
     }
 

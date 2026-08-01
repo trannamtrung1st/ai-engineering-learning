@@ -125,19 +125,16 @@ FindingOwnerAction = Literal["fix", "defer", "accept_as_is", "challenge"]
 FindingActionActorRole = Literal["planner", "producer"]
 ChallengeProposedDisposition = Literal["invalid", "superseded"]
 
-FINDING_OWNER_ACTIONS: frozenset[str] = frozenset(
-    {"fix", "defer", "accept_as_is", "challenge"}
+OPTIONAL_OWNER_RESPONSES: frozenset[str] = frozenset(
+    {"fix", "challenge", "defer", "accept_as_is"}
 )
-CHALLENGE_PROPOSED_DISPOSITIONS: frozenset[str] = frozenset({"invalid", "superseded"})
-ACTIONS_REQUIRING_RATIONALE: frozenset[str] = frozenset(
-    {"defer", "accept_as_is", "challenge"}
-)
-QUALIFYING_OPTIONAL_OWNER_ACTIONS: frozenset[str] = frozenset(
+OPTIONAL_NO_VERIFICATION_ACTIONS: frozenset[str] = frozenset(
     {"defer", "accept_as_is"}
 )
 REQUIRED_FINDING_OWNER_ACTIONS: frozenset[str] = frozenset({"fix", "challenge"})
-OPTIONAL_FINDING_OWNER_ACTIONS: frozenset[str] = frozenset(
-    {"fix", "defer", "accept_as_is", "challenge"}
+CHALLENGE_PROPOSED_DISPOSITIONS: frozenset[str] = frozenset({"invalid", "superseded"})
+ACTIONS_REQUIRING_RATIONALE: frozenset[str] = frozenset(
+    {"defer", "accept_as_is", "challenge"}
 )
 
 MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
@@ -372,10 +369,10 @@ class FindingAction:
 
 def validate_finding_owner_action(action: str) -> FindingOwnerAction:
     normalized = str(action).strip()
-    if normalized not in FINDING_OWNER_ACTIONS:
+    if normalized not in OPTIONAL_OWNER_RESPONSES:
         raise ValueError(
             "finding action must be one of: "
-            + ", ".join(sorted(FINDING_OWNER_ACTIONS))
+            + ", ".join(sorted(OPTIONAL_OWNER_RESPONSES))
         )
     return normalized  # type: ignore[return-value]
 
@@ -505,6 +502,7 @@ class ReviewLoop:
     finding_actions: list[FindingAction] = field(default_factory=list)
     review_incomplete: dict[str, Any] | None = None
     advisory_handoffs_completed: list[str] = field(default_factory=list)
+    finding_ids_by_set: dict[str, list[str]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         binding = self._resolved_reviewer_binding()
@@ -526,6 +524,10 @@ class ReviewLoop:
             ),
             "advisory_handoffs_completed": list(self.advisory_handoffs_completed),
         }
+        if self.finding_ids_by_set:
+            payload["finding_ids_by_set"] = {
+                key: list(value) for key, value in self.finding_ids_by_set.items()
+            }
         if binding is not None:
             payload["reviewer_binding"] = binding.to_dict()
         if self.revise_at is not None:
@@ -687,6 +689,16 @@ class ReviewLoop:
             for item in (payload.get("advisory_handoffs_completed") or [])
             if str(item).strip()
         ]
+        finding_ids_by_set: dict[str, list[str]] = {}
+        raw_ids_by_set = payload.get("finding_ids_by_set")
+        if isinstance(raw_ids_by_set, dict):
+            for key, value in raw_ids_by_set.items():
+                set_id = str(key).strip()
+                if not set_id or not isinstance(value, list):
+                    continue
+                finding_ids_by_set[set_id] = [
+                    str(item).strip() for item in value if str(item).strip()
+                ]
         binding_raw = payload.get("reviewer_binding")
         reviewer_binding: SessionBinding | None = None
         if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
@@ -721,6 +733,7 @@ class ReviewLoop:
             finding_actions=finding_actions,
             review_incomplete=review_incomplete,
             advisory_handoffs_completed=advisory_handoffs_completed,
+            finding_ids_by_set=finding_ids_by_set,
         )
 
 
@@ -898,35 +911,89 @@ def optional_open_finding_ids(
     return [finding.id for finding in optional_open_findings(findings, threshold)]
 
 
-def open_optional_findings_without_owner_action(
+def scoped_finding_actions(
+    finding_actions: Sequence[FindingAction],
+    finding_set_id: str | None,
+) -> list[FindingAction]:
+    """Return actions recorded for ``finding_set_id`` when set is provided."""
+
+    if not finding_set_id:
+        return list(finding_actions)
+    return [
+        action
+        for action in finding_actions
+        if action.finding_set_id == finding_set_id
+    ]
+
+
+def effective_owner_actions(
+    finding_actions: Sequence[FindingAction],
+    *,
+    finding_set_id: str | None = None,
+) -> dict[str, FindingAction]:
+    """Latest owner action per finding within the scoped finding set."""
+
+    effective: dict[str, FindingAction] = {}
+    for action in scoped_finding_actions(finding_actions, finding_set_id):
+        effective[action.finding_id] = action
+    return effective
+
+
+def open_optional_findings_missing_owner_response(
     findings: Sequence[ReviewFinding],
     finding_actions: Sequence[FindingAction],
     threshold: ReviewSeverity,
     *,
     finding_set_id: str | None = None,
 ) -> list[ReviewFinding]:
-    """Optional open findings lacking a qualifying defer/accept_as_is action.
+    """Optional open findings lacking any owner response for the active finding set."""
 
-    Acknowledgments are keyed by ``finding_id`` only, not ``finding_set_id``.
-    The parameter is accepted for call-site symmetry with policy helpers but is
-    intentionally ignored: a defer/accept on an optional finding applies for the
-    lifetime of the loop regardless of which discovery set reported the finding.
-    """
-
-    del finding_set_id
-    acknowledged = {
-        action.finding_id
-        for action in finding_actions
-        if action.action in QUALIFYING_OPTIONAL_OWNER_ACTIONS
+    effective = effective_owner_actions(
+        finding_actions,
+        finding_set_id=finding_set_id,
+    )
+    responded = {
+        finding_id
+        for finding_id, action in effective.items()
+        if action.action in OPTIONAL_OWNER_RESPONSES
     }
     return [
         finding
         for finding in optional_open_findings(findings, threshold)
-        if finding.id not in acknowledged
+        if finding.id not in responded
     ]
 
 
-def unacknowledged_optional_finding_ids(
+def open_optional_findings_blocking_approval(
+    findings: Sequence[ReviewFinding],
+    finding_actions: Sequence[FindingAction],
+    threshold: ReviewSeverity,
+    *,
+    finding_set_id: str | None = None,
+) -> list[ReviewFinding]:
+    """Optional open findings that block approval without reviewer verification.
+
+    Approval may proceed only when every optional finding has defer or
+    accept_as_is. Findings with fix/challenge or no response remain blocking.
+    """
+
+    effective = effective_owner_actions(
+        finding_actions,
+        finding_set_id=finding_set_id,
+    )
+    no_verification = {
+        finding_id
+        for finding_id, action in effective.items()
+        if action.action in OPTIONAL_NO_VERIFICATION_ACTIONS
+    }
+    return [
+        finding
+        for finding in optional_open_findings(findings, threshold)
+        if finding.id not in no_verification
+    ]
+
+
+def optional_finding_ids_missing_owner_response(
     findings: Sequence[ReviewFinding],
     finding_actions: Sequence[FindingAction],
     threshold: ReviewSeverity,
@@ -935,13 +1002,37 @@ def unacknowledged_optional_finding_ids(
 ) -> list[str]:
     return [
         finding.id
-        for finding in open_optional_findings_without_owner_action(
+        for finding in open_optional_findings_missing_owner_response(
             findings,
             finding_actions,
             threshold,
             finding_set_id=finding_set_id,
         )
     ]
+
+
+def optional_finding_ids_requiring_verification(
+    findings: Sequence[ReviewFinding],
+    finding_actions: Sequence[FindingAction],
+    threshold: ReviewSeverity,
+    *,
+    finding_set_id: str | None = None,
+) -> list[str]:
+    """Optional open findings with fix/challenge responses awaiting verification."""
+
+    effective = effective_owner_actions(
+        finding_actions,
+        finding_set_id=finding_set_id,
+    )
+    optional_ids = {
+        finding.id for finding in optional_open_findings(findings, threshold)
+    }
+    return sorted(
+        finding_id
+        for finding_id in optional_ids
+        if finding_id in effective
+        and effective[finding_id].action in {"fix", "challenge"}
+    )
 
 
 def findings_permit_approval(
@@ -951,11 +1042,11 @@ def findings_permit_approval(
     *,
     finding_set_id: str | None = None,
 ) -> bool:
-    """True when required findings are clear and optionals have owner actions."""
+    """True when required findings are clear and optionals need no verification."""
 
     if required_open_findings(findings, threshold):
         return False
-    if open_optional_findings_without_owner_action(
+    if open_optional_findings_blocking_approval(
         findings,
         finding_actions,
         threshold,
@@ -980,7 +1071,7 @@ def assert_owner_action_allowed_for_finding(
                 f"required finding {finding.id!r} cannot use action "
                 f"{normalized!r}; allowed: fix, challenge"
             )
-    elif normalized not in OPTIONAL_FINDING_OWNER_ACTIONS:
+    elif normalized not in OPTIONAL_OWNER_RESPONSES:
         raise ValueError(
             f"optional finding {finding.id!r} cannot use action {normalized!r}"
         )
@@ -998,7 +1089,13 @@ def policy_observability_fields(
 
     required_ids = required_open_finding_ids(findings, threshold)
     optional_ids = optional_open_finding_ids(findings, threshold)
-    unacked_ids = unacknowledged_optional_finding_ids(
+    missing_response_ids = optional_finding_ids_missing_owner_response(
+        findings,
+        finding_actions,
+        threshold,
+        finding_set_id=finding_set_id,
+    )
+    verification_required_ids = optional_finding_ids_requiring_verification(
         findings,
         finding_actions,
         threshold,
@@ -1011,7 +1108,8 @@ def policy_observability_fields(
         "optional_open_finding_count": len(optional_ids),
         "required_open_finding_ids": required_ids,
         "optional_open_finding_ids": optional_ids,
-        "unacknowledged_optional_finding_ids": unacked_ids,
+        "optional_finding_ids_missing_owner_response": missing_response_ids,
+        "optional_finding_ids_requiring_verification": verification_required_ids,
     }
 
 
@@ -1508,6 +1606,22 @@ def merge_discovery_findings(
     return list(loop.findings) + list(reported)
 
 
+def record_discovery_finding_ids(
+    loop: ReviewLoop,
+    finding_set_id: str,
+    reported: Sequence[ReviewFinding],
+) -> dict[str, list[str]]:
+    """Track finding ids introduced in each discovery finding set."""
+
+    by_set = {key: list(value) for key, value in loop.finding_ids_by_set.items()}
+    existing = list(by_set.get(finding_set_id, []))
+    for finding in reported:
+        if finding.id not in existing:
+            existing.append(finding.id)
+    by_set[finding_set_id] = existing
+    return by_set
+
+
 def parse_request_finding_actions(
     request: Mapping[str, Any],
 ) -> list[FindingAction]:
@@ -1540,6 +1654,7 @@ def derive_discovery_outcome(
     threshold: ReviewSeverity,
     *,
     review_completed: bool,
+    finding_set_id: str | None = None,
 ) -> DiscoveryDerivedOutcome:
     """Derive lifecycle outcome from findings and revise_at (service-owned)."""
 
@@ -1547,13 +1662,28 @@ def derive_discovery_outcome(
         return "review_incomplete"
     if required_open_findings(findings, threshold):
         return "changes_requested"
-    if open_optional_findings_without_owner_action(
+    if open_optional_findings_missing_owner_response(
         findings,
         finding_actions,
         threshold,
+        finding_set_id=finding_set_id,
     ):
         # Optional findings need owner actions; do not force revision.
         return "pending"
+    optional_ids = {
+        finding.id for finding in optional_open_findings(findings, threshold)
+    }
+    effective = effective_owner_actions(
+        finding_actions,
+        finding_set_id=finding_set_id,
+    )
+    relevant_actions = [
+        effective[finding_id]
+        for finding_id in optional_ids
+        if finding_id in effective
+    ]
+    if owner_actions_require_verification(relevant_actions):
+        return "changes_requested"
     return "approved"
 
 
@@ -1631,6 +1761,7 @@ def apply_discovery_response(
         finding_actions,
         threshold,
         review_completed=review_completed,
+        finding_set_id=finding_set_id,
     )
     incomplete: dict[str, Any] | None = None
     if outcome == "review_incomplete":
@@ -1647,6 +1778,11 @@ def apply_discovery_response(
         loop,
         findings=merged,
         finding_actions=finding_actions,
+        finding_ids_by_set=record_discovery_finding_ids(
+            loop,
+            finding_set_id,
+            reported,
+        ),
         review_incomplete=incomplete,
         status=status,
     )
@@ -1687,10 +1823,11 @@ def needs_advisory_handoff(loop: ReviewLoop) -> bool:
     if required_open_findings(loop.findings, threshold):
         return False
     return bool(
-        open_optional_findings_without_owner_action(
+        open_optional_findings_missing_owner_response(
             loop.findings,
             loop.finding_actions,
             threshold,
+            finding_set_id=loop.finding_set_id,
         )
     )
 
@@ -1704,6 +1841,21 @@ def advisory_handoff_allowed(loop: ReviewLoop) -> bool:
     if not finding_set_id:
         return False
     return finding_set_id not in loop.advisory_handoffs_completed
+
+
+def complete_advisory_handoff_if_owner_responses_recorded(
+    loop: ReviewLoop,
+) -> ReviewLoop:
+    """Mark handoff complete when optionals already have owner responses."""
+
+    if needs_advisory_handoff(loop):
+        return loop
+    finding_set_id = str(loop.finding_set_id or "").strip()
+    if not finding_set_id or finding_set_id in loop.advisory_handoffs_completed:
+        return loop
+    if not optional_open_findings(loop.findings, loop_revise_at(loop)):
+        return loop
+    return mark_advisory_handoff_completed(loop)
 
 
 def mark_advisory_handoff_completed(loop: ReviewLoop) -> ReviewLoop:
@@ -1720,6 +1872,41 @@ def mark_advisory_handoff_completed(loop: ReviewLoop) -> ReviewLoop:
     )
 
 
+def mark_advisory_handoff_incomplete(
+    loop: ReviewLoop,
+    *,
+    missing_finding_ids: list[str],
+    reason: str | None = None,
+) -> ReviewLoop:
+    """Persist review_incomplete marker for an unfinished advisory owner handoff."""
+
+    finding_set_id = str(loop.finding_set_id or "").strip()
+    if not finding_set_id:
+        raise ValueError("advisory handoff incomplete requires finding_set_id")
+    message = reason or (
+        "advisory handoff incomplete: optional findings lack owner responses"
+    )
+    marker = build_review_incomplete_marker(
+        stage="advisory_handoff",
+        finding_set_id=finding_set_id,
+        reason=message,
+    )
+    marker["missing_owner_action_ids"] = list(missing_finding_ids)
+    updates: dict[str, Any] = {
+        "status": "review_incomplete",
+        "review_incomplete": marker,
+    }
+    if is_mandatory_review_loop(loop):
+        updates["lifecycle_status"] = "review_incomplete"
+    return replace(loop, **updates)
+
+
+def primary_owner_role_for_review(loop: ReviewLoop) -> str:
+    if loop.type in {"whole_output", "focused_output"}:
+        return "producer"
+    return "planner"
+
+
 def finding_by_id(
     findings: Sequence[ReviewFinding],
     finding_id: str,
@@ -1730,14 +1917,24 @@ def finding_by_id(
     return None
 
 
+def finding_actions_for_active_set(loop: ReviewLoop) -> list[FindingAction]:
+    """Owner actions recorded for the loop's current finding set."""
+
+    return scoped_finding_actions(loop.finding_actions, loop.finding_set_id)
+
+
 def open_challenge_actions(loop: ReviewLoop) -> list[FindingAction]:
     """Challenge actions whose findings are still open (awaiting verification)."""
 
     open_ids = {finding.id for finding in open_findings(loop.findings)}
+    effective = effective_owner_actions(
+        loop.finding_actions,
+        finding_set_id=loop.finding_set_id,
+    )
     return [
         action
-        for action in loop.finding_actions
-        if action.action == "challenge" and action.finding_id in open_ids
+        for finding_id, action in effective.items()
+        if action.action == "challenge" and finding_id in open_ids
     ]
 
 
@@ -1770,7 +1967,13 @@ def apply_owner_finding_actions(
         raise ValueError("actor_role must be planner or producer")
     threshold = loop_revise_at(loop)
     finding_set_id = str(loop.finding_set_id or "").strip()
+    scoped_existing_ids = {
+        action.finding_id
+        for action in loop.finding_actions
+        if not finding_set_id or action.finding_set_id == finding_set_id
+    }
     parsed: list[FindingAction] = []
+    batch_action_ids: set[str] = set()
     for item in raw_actions:
         if not isinstance(item, Mapping):
             raise ValueError("finding_actions entry must be an object")
@@ -1780,6 +1983,16 @@ def apply_owner_finding_actions(
         if finding_set_id and not str(payload.get("finding_set_id") or "").strip():
             payload["finding_set_id"] = finding_set_id
         action = parse_finding_action(payload)
+        if action.finding_id in scoped_existing_ids:
+            raise ValueError(
+                f"finding {action.finding_id!r} already has an owner action "
+                f"for finding_set_id {action.finding_set_id!r}"
+            )
+        if action.finding_id in batch_action_ids:
+            raise ValueError(
+                f"finding {action.finding_id!r} appears more than once in finding_actions"
+            )
+        batch_action_ids.add(action.finding_id)
         if action.actor_role != actor_role:
             raise ValueError(
                 f"finding_actions actor_role must be {actor_role!r} for this session"
@@ -1794,6 +2007,12 @@ def apply_owner_finding_actions(
                 f"finding {finding.id!r} is already closed; owner actions are not allowed"
             )
         assert_owner_action_allowed_for_finding(finding, action.action, threshold)
+        if action.action == "fix" and artifact_revision <= loop.target_revision:
+            raise ValueError(
+                f"fix action for finding {action.finding_id!r} requires artifact "
+                f"revision to advance past review target_revision "
+                f"{loop.target_revision}; got artifact_revision {artifact_revision}"
+            )
         # VR18: owner actions never rewrite finding status to invalid/superseded.
         parsed.append(action)
 
@@ -1803,16 +2022,14 @@ def apply_owner_finding_actions(
         updated.findings,
         updated.finding_actions,
         threshold,
+        finding_set_id=finding_set_id or None,
     ):
-        if is_mandatory_review_loop(updated) and is_scope_review_stage_name(
-            updated.active_stage or "initial_review"
-        ):
-            updated = replace(updated, status="approved")
-        else:
-            updated = replace(updated, status="approved")
+        updated = replace(updated, status="approved")
     elif required_open_findings(updated.findings, threshold):
         if owner_actions_require_revision(parsed) or open_challenge_actions(updated):
             updated = replace(updated, status="changes_requested")
+    elif owner_actions_require_revision(parsed):
+        updated = replace(updated, status="changes_requested")
     return updated, parsed
 
 
@@ -1832,19 +2049,24 @@ def prepare_review_incomplete_retry(loop: ReviewLoop) -> ReviewLoop:
     ).strip()
     lifecycle = loop.lifecycle_status
     if lifecycle == "review_incomplete":
-        if is_scope_review_stage_name(stage):
+        if stage == "advisory_handoff":
+            lifecycle = "review_pending"  # type: ignore[assignment]
+        elif is_scope_review_stage_name(stage):
             lifecycle = "scope_review_pending"
         elif stage == "finding_verification":
             lifecycle = "verification_pending"
         else:
             lifecycle = "review_pending"
+    status: ReviewLoopStatus = "pending"
+    if stage == "advisory_handoff":
+        status = "advisory_pending"
     return replace(
         loop,
-        status="pending",
+        status=status,
         lifecycle_status=lifecycle,  # type: ignore[arg-type]
         active_stage=(
             None
-            if stage in {"", "initial_review", "discovery"}
+            if stage in {"", "initial_review", "discovery", "advisory_handoff"}
             else validate_review_stage(stage)  # type: ignore[arg-type]
         ),
         # Budgets intentionally unchanged: revision_cycles / scope_review_rounds.
@@ -1858,19 +2080,67 @@ def budgets_snapshot(loop: ReviewLoop) -> dict[str, int]:
     }
 
 
+def build_active_findings_view(loop: ReviewLoop) -> dict[str, Any]:
+    """Compact owner/reviewer package fields omitting closed finding history."""
+
+    finding_set_id = str(loop.finding_set_id or "").strip()
+    open_all = open_findings(loop.findings)
+    current_ids = set(loop.finding_ids_by_set.get(finding_set_id, []))
+    if current_ids:
+        new_findings = [finding for finding in open_all if finding.id in current_ids]
+        carried_open_findings = [
+            finding for finding in open_all if finding.id not in current_ids
+        ]
+    else:
+        new_findings = list(open_all)
+        carried_open_findings = []
+
+    scoped_actions = scoped_finding_actions(
+        loop.finding_actions,
+        finding_set_id or None,
+    )
+    effective = effective_owner_actions(
+        scoped_actions,
+        finding_set_id=finding_set_id or None,
+    )
+    verification_targets = [
+        finding
+        for finding in open_all
+        if finding.id in effective
+        and effective[finding.id].action in {"fix", "challenge"}
+    ]
+    closed_count = len(loop.findings) - len(open_all)
+    return {
+        "new_findings": [finding.to_dict() for finding in new_findings],
+        "carried_open_findings": [
+            finding.to_dict() for finding in carried_open_findings
+        ],
+        "verification_targets": [
+            finding.to_dict() for finding in verification_targets
+        ],
+        "current_finding_actions": [action.to_dict() for action in scoped_actions],
+        "history_summary": {
+            "closed_finding_count": closed_count,
+            "total_finding_count": len(loop.findings),
+            "advisory_handoffs_completed": len(loop.advisory_handoffs_completed),
+            "finding_set_id": finding_set_id or None,
+        },
+        "history_ref": {
+            "kind": "review_loop_findings",
+            "loop_id": loop.id,
+            "finding_set_id": finding_set_id or None,
+        },
+    }
+
+
 def primary_review_resume_fields(loop: ReviewLoop) -> dict[str, Any]:
     """Fields for primary-agent revision/advisory packages (includes revise_at)."""
 
     threshold = loop_revise_at(loop)
-    required = required_open_findings(loop.findings, threshold)
-    optional = optional_open_findings(loop.findings, threshold)
     return {
         "revise_at": threshold,
         "finding_set_id": loop.finding_set_id,
-        "findings": [finding.to_dict() for finding in loop.findings],
-        "required_findings": [finding.to_dict() for finding in required],
-        "optional_findings": [finding.to_dict() for finding in optional],
-        "finding_actions": [action.to_dict() for action in loop.finding_actions],
+        **build_active_findings_view(loop),
         **policy_observability_fields(
             loop.findings,
             loop.finding_actions,
@@ -1884,11 +2154,14 @@ def verification_required_for_loop(loop: ReviewLoop) -> bool:
     """True when artifact change, claimed fix, or open challenge requires verification."""
 
     open_ids = {finding.id for finding in open_findings(loop.findings)}
+    effective = effective_owner_actions(
+        loop.finding_actions,
+        finding_set_id=loop.finding_set_id,
+    )
     relevant = [
         action
-        for action in loop.finding_actions
-        if action.finding_id in open_ids
-        and action.action in {"fix", "challenge"}
+        for finding_id, action in effective.items()
+        if finding_id in open_ids and action.action in {"fix", "challenge"}
     ]
     return owner_actions_require_verification(relevant)
 
@@ -2187,25 +2460,39 @@ def apply_review_response(
             findings,
             loop.finding_actions,
             threshold,
+            finding_set_id=loop.finding_set_id,
         ):
             required_ids = required_open_finding_ids(findings, threshold)
-            unacked = unacknowledged_optional_finding_ids(
+            missing_response_ids = optional_finding_ids_missing_owner_response(
                 findings,
                 loop.finding_actions,
                 threshold,
+                finding_set_id=loop.finding_set_id,
+            )
+            verification_required_ids = optional_finding_ids_requiring_verification(
+                findings,
+                loop.finding_actions,
+                threshold,
+                finding_set_id=loop.finding_set_id,
             )
             details: list[str] = []
             if required_ids:
                 details.append(
                     "open required findings: " + ", ".join(required_ids)
                 )
-            if unacked:
+            if missing_response_ids:
                 details.append(
-                    "unacknowledged optional findings: " + ", ".join(unacked)
+                    "optional findings missing owner response: "
+                    + ", ".join(missing_response_ids)
+                )
+            if verification_required_ids:
+                details.append(
+                    "optional findings requiring reviewer verification: "
+                    + ", ".join(verification_required_ids)
                 )
             raise ValueError(
                 f"{decision!r} decision requires no open required findings and "
-                "qualifying owner actions on every open optional finding; "
+                "defer or accept_as_is on every open optional finding; "
                 + "; ".join(details)
             )
 

@@ -18,7 +18,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.observability import ObservabilityContext
 from top_down_planning.orchestrator import mark_run_failed, sanitize_operational_error
 from top_down_planning.orchestrator.engine import RunEngine
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import OrchestratorInvariantError, ProviderRunError
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.persistence import FileRunStore
@@ -149,6 +149,27 @@ def test_engine_provider_run_error_sets_failed_status(tmp_path: Path) -> None:
     assert run["stop"]["code"] == "provider_turn_failed"
     events = store.load_events("run-20260101T001701-001701")
     assert any(event.get("type") == "run_paused" for event in events)
+
+
+def test_engine_orchestrator_invariant_error_fails_run(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    engine = RunEngine(
+        store,
+        create_provider=lambda config, workspace: create_provider(config, workspace=workspace),
+    )
+
+    with patch.object(
+        PlanningPhaseOrchestrator,
+        "run",
+        side_effect=OrchestratorInvariantError("advisory policy invariant"),
+    ):
+        result = engine.continue_run("run-20260101T001701-001701", single_step=True)
+
+    assert result.ok is False
+    run = store.load_run("run-20260101T001701-001701")
+    assert run["status"] == "failed"
+    assert run["stop"]["code"] == "orchestrator_invariant_failure"
 
 
 def test_engine_operational_exception_sets_failed_status(tmp_path: Path) -> None:

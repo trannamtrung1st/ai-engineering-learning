@@ -111,12 +111,16 @@ def test_primary_resume_fields_expose_revise_at_and_partitions() -> None:
             ReviewFinding.from_dict(_finding("f-major", severity="major")),
             ReviewFinding.from_dict(_finding("f-minor", severity="minor")),
         ],
+        finding_ids_by_set={"fs-01": ["f-major", "f-minor"]},
     )
     fields = primary_review_resume_fields(loop)
     assert fields["revise_at"] == "major"
-    assert [item["id"] for item in fields["required_findings"]] == ["f-major"]
-    assert [item["id"] for item in fields["optional_findings"]] == ["f-minor"]
-    assert "revise_at" in fields
+    assert fields["required_open_finding_ids"] == ["f-major"]
+    assert fields["optional_open_finding_ids"] == ["f-minor"]
+    assert [item["id"] for item in fields["new_findings"]] == ["f-major", "f-minor"]
+    assert fields["history_ref"]["loop_id"] == loop.id
+    assert "required_findings" not in fields
+    assert "optional_findings" not in fields
 
 
 def test_evidence_revision_targets_required_findings_only() -> None:

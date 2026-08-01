@@ -116,7 +116,7 @@ def test_challenge_marks_verification_required_without_budget_mutation() -> None
     assert updated.findings[0].status == "unresolved"
 
 
-def test_optional_fix_consumes_revision_signal() -> None:
+def test_optional_fix_requires_revision_advance() -> None:
     loop = ReviewLoop(
         id="review-focused-plan-01",
         type="focused_plan",
@@ -128,11 +128,18 @@ def test_optional_fix_consumes_revision_signal() -> None:
         finding_set_id="fs-01",
         findings=[_finding("f-opt")],
     )
+    with pytest.raises(ValueError, match="requires artifact revision"):
+        apply_owner_finding_actions(
+            loop,
+            [{"finding_id": "f-opt", "action": "fix", "finding_set_id": "fs-01"}],
+            actor_role="planner",
+            artifact_revision=0,
+        )
     _updated, parsed = apply_owner_finding_actions(
         loop,
         [{"finding_id": "f-opt", "action": "fix", "finding_set_id": "fs-01"}],
         actor_role="planner",
-        artifact_revision=0,
+        artifact_revision=1,
     )
     assert owner_actions_require_revision(parsed) is True
     assert owner_actions_require_verification(parsed) is True

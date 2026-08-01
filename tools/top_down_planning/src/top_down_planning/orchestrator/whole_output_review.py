@@ -22,6 +22,8 @@ from top_down_planning.domain.reviews import (
     allocate_discovery_finding_set_id,
     advisory_handoff_allowed,
     budgets_snapshot,
+    complete_advisory_handoff_if_owner_responses_recorded,
+    finding_actions_for_active_set,
     find_whole_plan_approval,
     is_revision_requested_status,
     is_terminal_review_loop,
@@ -76,8 +78,15 @@ from top_down_planning.orchestrator.reviewer_session import (
     reviewer_decision_missing_error,
     reviewer_loop_provider_session_id,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryPaused
+from top_down_planning.orchestrator.errors import (
+    OrchestratorInvariantError,
+    ProviderRunError,
+    SessionRecoveryPaused,
+)
 from top_down_planning.orchestrator.failure import apply_review_incomplete_run_transition
+from top_down_planning.orchestrator.review_incomplete_handoff import (
+    pause_advisory_handoff_incomplete,
+)
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
 from top_down_planning.orchestrator.run_transitions import (
     complete_run_with_outcome,
@@ -215,7 +224,7 @@ class WholeOutputReviewOrchestrator:
                     continue
             stage_decision = mandatory_orchestration_decision(loop)
 
-            if stage_decision in {"approved", "verified", "approved"}:
+            if stage_decision in {"approved", "verified"}:
                 loop = self._reload_loop(loop.id)
                 if approved_means_final_approval(loop):
                     return self._complete_with_approval(loop)
@@ -279,7 +288,9 @@ class WholeOutputReviewOrchestrator:
 
             if stage_decision == "advisory_pending":
                 loop = self._handle_advisory_handoff(loop)
-                if loop.status in {"approved", "approved"}:
+                if loop.status == "review_incomplete":
+                    return self._result_review_incomplete(loop)
+                if loop.status == "approved":
                     if approved_means_final_approval(loop):
                         return self._complete_with_approval(loop)
                     if approved_means_start_scope_review(loop):
@@ -292,26 +303,25 @@ class WholeOutputReviewOrchestrator:
                 if required_open_findings(loop.findings, loop_revise_at(loop)):
                     stage_decision = "changes_requested"
                 elif verification_required_for_loop(loop):
-                    active = [
-                        action
-                        for action in loop.finding_actions
-                        if action.finding_set_id == loop.finding_set_id
-                    ]
-                    if owner_actions_require_revision(active or loop.finding_actions):
+                    active = finding_actions_for_active_set(loop)
+                    if owner_actions_require_revision(active):
                         stage_decision = "changes_requested"
                     else:
                         loop = self._persist_loop(mark_findings_open(loop))
                         loop = self._persist_loop(enter_planner_revision_cycle(loop))
                         loop = self._prepare_recheck(loop)
                         continue
+                elif needs_advisory_handoff(loop):
+                    loop = self._pause_advisory_handoff_incomplete(loop)
+                    return self._result_review_incomplete(loop)
                 else:
-                    raise ProviderRunError(
-                        "advisory handoff completed without qualifying owner actions"
+                    raise OrchestratorInvariantError(
+                        "advisory handoff completed without resolving optional "
+                        "finding policy"
                     )
 
             if stage_decision not in {
                 "needs_revision",
-                "changes_requested",
                 "changes_requested",
             }:
                 raise ProviderRunError(
@@ -494,6 +504,32 @@ class WholeOutputReviewOrchestrator:
         )
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, loop=loop)
+
+    def _pause_advisory_handoff_incomplete(self, loop: ReviewLoop) -> ReviewLoop:
+        loop, _reason = pause_advisory_handoff_incomplete(
+            self._store,
+            self._run_id,
+            loop,
+        )
+        return self._persist_loop(loop)
+
+    def _result_review_incomplete(self, loop: ReviewLoop) -> WholeOutputReviewResult:
+        budgets = budgets_snapshot(loop)
+        marker = loop.review_incomplete or {}
+        reason = str(
+            marker.get("reason") or "whole-output review could not be completed"
+        )
+        run = self._store.load_run(self._run_id)
+        return WholeOutputReviewResult(
+            ok=False,
+            phase=WHOLE_OUTPUT_REVIEW,
+            status=str(run.get("status") or "paused"),
+            outcome=None,
+            loop_id=loop.id,
+            reviewer_session_id=reviewer_loop_provider_session_id(loop),
+            revision_cycles=budgets["revision_cycles"],
+            reason=reason,
+        )
 
     def _pause_for_limit(
         self,
@@ -789,7 +825,9 @@ class WholeOutputReviewOrchestrator:
 
     def _handle_advisory_handoff(self, loop: ReviewLoop) -> ReviewLoop:
         if not needs_advisory_handoff(loop):
-            return loop
+            return self._persist_loop(
+                complete_advisory_handoff_if_owner_responses_recorded(loop)
+            )
         if not advisory_handoff_allowed(loop):
             raise ProviderRunError(
                 f"advisory handoff already completed for finding_set_id "
@@ -810,12 +848,12 @@ class WholeOutputReviewOrchestrator:
         self._resume_producer_advisory_handoff(loop)
         loop = self._reload_loop(loop.id)
         if needs_advisory_handoff(loop):
-            raise ProviderRunError(
-                "advisory handoff completed without qualifying owner actions"
-            )
+            return self._pause_advisory_handoff_incomplete(loop)
         after = budgets_snapshot(loop)
-        if after != before and not owner_actions_require_revision(loop.finding_actions):
-            raise ProviderRunError(
+        if after != before and not owner_actions_require_revision(
+            finding_actions_for_active_set(loop)
+        ):
+            raise OrchestratorInvariantError(
                 "advisory handoff must not consume revision budget without a fix"
             )
         return self._persist_loop(mark_advisory_handoff_completed(loop))
@@ -857,8 +895,9 @@ class WholeOutputReviewOrchestrator:
                         "--request <file>"
                     ),
                     "notes": (
-                        "Record fix|defer|accept_as_is|challenge for optional findings. "
-                        "defer/accept_as_is consume no revision cycle."
+                        "Record fix|challenge|defer|accept_as_is for optional findings. "
+                        "fix and challenge require reviewer verification; "
+                        "defer and accept_as_is do not."
                     ),
                 },
             },

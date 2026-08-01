@@ -16,6 +16,7 @@ from top_down_planning.domain.production import (
 )
 from top_down_planning.domain.reviews import (
     ReviewLoop,
+    build_active_findings_view,
     budgets_snapshot,
     loop_revise_at,
     required_open_findings,
@@ -104,10 +105,11 @@ def _base_recovery_fields(
 def _open_findings_payload(loop: ReviewLoop) -> dict[str, Any]:
     threshold = loop_revise_at(loop)
     open_required = required_open_findings(loop.findings, threshold)
+    active = build_active_findings_view(loop)
     return {
         "finding_set_id": loop.finding_set_id,
         "open_findings": [finding.to_dict() for finding in open_required],
-        "owner_actions": [action.to_dict() for action in loop.finding_actions],
+        **active,
     }
 
 
@@ -262,7 +264,12 @@ def _collect_open_review_findings(
             continue
         loop = ReviewLoop.from_dict(review)
         payload = _open_findings_payload(loop)
-        if not payload["open_findings"] and not payload["owner_actions"]:
+        if (
+            not payload["open_findings"]
+            and not payload.get("carried_open_findings")
+            and not payload.get("new_findings")
+            and not payload.get("current_finding_actions")
+        ):
             continue
         findings.append(
             {

@@ -458,7 +458,8 @@ class ReviewAgentService:
                         "optional_open_finding_count",
                         "required_open_finding_ids",
                         "optional_open_finding_ids",
-                        "unacknowledged_optional_finding_ids",
+                        "optional_finding_ids_missing_owner_response",
+                        "optional_finding_ids_requiring_verification",
                     )
                 },
             }

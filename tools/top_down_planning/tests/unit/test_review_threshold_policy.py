@@ -9,7 +9,7 @@ from top_down_planning.domain.reviews import (
     ReviewFinding,
     assert_owner_action_allowed_for_finding,
     findings_permit_approval,
-    open_optional_findings_without_owner_action,
+    open_optional_findings_missing_owner_response,
     optional_open_findings,
     policy_observability_fields,
     required_open_findings,
@@ -93,16 +93,43 @@ def test_approval_permitted_when_optionals_deferred_or_accepted() -> None:
     ]
     assert findings_permit_approval(findings, actions, "major") is True
     assert (
-        open_optional_findings_without_owner_action(findings, actions, "major")
+        open_optional_findings_missing_owner_response(findings, actions, "major")
         == []
     )
 
 
-def test_approval_rejected_when_optional_unacknowledged() -> None:
+def test_approval_rejected_when_optional_missing_owner_response() -> None:
     findings = [_finding("f-minor", severity="minor")]
     assert findings_permit_approval(findings, [], "major") is False
-    unacked = open_optional_findings_without_owner_action(findings, [], "major")
-    assert [finding.id for finding in unacked] == ["f-minor"]
+    missing = open_optional_findings_missing_owner_response(findings, [], "major")
+    assert [finding.id for finding in missing] == ["f-minor"]
+
+
+def test_fix_and_challenge_complete_handoff_but_block_approval() -> None:
+    findings = [_finding("f-minor", severity="minor")]
+    fix_action = _action("f-minor", "fix")
+    challenge_action = FindingAction(
+        finding_id="f-minor",
+        action="challenge",
+        rationale="Not applicable",
+        actor_role="producer",
+        artifact_revision=1,
+        finding_set_id="fs-1",
+        proposed_disposition="invalid",
+    )
+
+    assert open_optional_findings_missing_owner_response(findings, [fix_action], "major") == []
+    assert findings_permit_approval(findings, [fix_action], "major") is False
+
+    assert (
+        open_optional_findings_missing_owner_response(
+            findings,
+            [challenge_action],
+            "major",
+        )
+        == []
+    )
+    assert findings_permit_approval(findings, [challenge_action], "major") is False
 
 
 def test_required_finding_cannot_be_deferred_or_accepted() -> None:
@@ -121,6 +148,17 @@ def test_required_finding_cannot_be_deferred_or_accepted() -> None:
     assert assert_owner_action_allowed_for_finding(optional, "defer", "major") == "defer"
 
 
+def test_finding_set_scoped_handoff_ignores_prior_set_actions() -> None:
+    findings = [_finding("f-minor", severity="minor")]
+    prior_action = _action("f-minor", "defer", finding_set_id="fs-old")
+    assert open_optional_findings_missing_owner_response(
+        findings,
+        [prior_action],
+        "major",
+        finding_set_id="fs-new",
+    ) == findings
+
+
 def test_policy_observability_fields() -> None:
     findings = [
         _finding("f-major", severity="major"),
@@ -134,5 +172,6 @@ def test_policy_observability_fields() -> None:
         "optional_open_finding_count": 1,
         "required_open_finding_ids": ["f-major"],
         "optional_open_finding_ids": ["f-minor"],
-        "unacknowledged_optional_finding_ids": ["f-minor"],
+        "optional_finding_ids_missing_owner_response": ["f-minor"],
+        "optional_finding_ids_requiring_verification": [],
     }

@@ -17,6 +17,13 @@ class ProviderRunError(OrchestratorError):
         super().__init__(message, code="provider_run_error")
 
 
+class OrchestratorInvariantError(OrchestratorError):
+    """Programming or policy invariant violated during orchestration."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code="orchestrator_invariant_failure")
+
+
 class SessionRecoveryPaused(OrchestratorError):
     """Raised after pausing a run during session replacement."""
 

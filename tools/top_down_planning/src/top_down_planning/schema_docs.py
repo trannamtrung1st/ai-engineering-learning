@@ -948,7 +948,13 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "description": (
             "Primary-agent owner actions for `tdp agent review record-actions`. "
             "Required findings may only use fix|challenge; optional findings may "
-            "also use defer|accept_as_is. Challenges require proposed_disposition."
+            "also use defer|accept_as_is. Challenges require proposed_disposition. "
+            "Owner/advisory packages expose an active-findings view: "
+            "`new_findings`, `carried_open_findings`, `verification_targets`, "
+            "`current_finding_actions`, `history_summary`, and `history_ref` "
+            "(structured pointer with kind/loop_id/finding_set_id — not a file path). "
+            "Persisted review loops may include `finding_ids_by_set` mapping each "
+            "discovery finding_set_id to finding ids introduced in that set."
         ),
         "type": "object",
         "required": ["loop_id", "finding_actions"],
@@ -1328,8 +1334,9 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
     "review-record-finding-actions": {
         "schema": "review-record-finding-actions",
         "description": (
-            "Primary agent records defer/accept_as_is/challenge/fix owner actions "
-            "for open findings after an advisory handoff."
+            "Primary agent records fix/challenge/defer/accept_as_is owner responses "
+            "for open optional findings after an advisory handoff. fix and challenge "
+            "route to reviewer verification; defer and accept_as_is proceed without it."
         ),
         "payload": {
             "loop_id": "review-focused-plan-01",

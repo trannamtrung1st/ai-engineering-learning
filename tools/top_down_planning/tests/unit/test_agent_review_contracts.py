@@ -307,7 +307,9 @@ def test_verification_package_and_recheck_include_finding_guidance() -> None:
         target_revision=2,
     )
     assert recheck["stage"] == "finding_verification"
-    assert "findings" in recheck
+    assert "verification_targets" in recheck
+    assert "history_ref" in recheck
+    assert "findings" not in recheck
     protocol = " ".join(recheck["protocol_instructions"]).lower()
     assert "finding_verification" in protocol
     assert "direct" in protocol and "side effect" in protocol
