@@ -87,7 +87,7 @@ tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-pla
 | `--max-message-length N` | from config / unlimited | Truncate console event messages after *N* characters |
 | `--max-tool-summary-length N` | from config / unlimited | Truncate `[tool:start]` / `[tool:end]` summaries after *N* characters |
 
-Observability can be set in YAML under `observability` (same file as orchestration config). Precedence for presentation settings: built-in defaults → YAML → `--set` → explicitly supplied dedicated CLI flag (omitted flags do not override YAML). Changing observability or `runtime.runs_dir` does not invalidate resume; `digests.config_contract` and `digests.config_execution` exclude those presentation fields.
+Observability can be set in YAML under `observability` (same file as orchestration config). Precedence for presentation settings: built-in defaults → YAML → `--set` → explicitly supplied dedicated CLI flag (omitted flags do not override YAML). Changing `observability.*`, `notifications.*`, or `runtime.runs_dir` does not invalidate resume; `digests.config_contract` and `digests.config_execution` exclude those presentation fields.
 
 ```yaml
 observability:
@@ -102,13 +102,48 @@ Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary
 
 Console output prints `[category]` once per discrete event block (optional `[timestamp]` when `show_timestamps` is enabled). `thinking` and `response` stream incrementally with one prefix per block; explicit `\n` in agent text breaks lines within the block.
 
-Agent session lifecycle: `[session:start]` on `planner_session_started` / `producer_session_started` / `reviewer_session_started` audit events (`phase`, `role`, `run_id`, `session_id`, `model` required); `[session:resume]` on `*_session_resumed` with the same fields; `[session:end]` on `reviewer_session_ended` when a bounded reviewer turn records a terminal decision, and from engine teardown for any provider session still in the in-memory registry after each blocking phase step or Ctrl+C cancel (primary planner/producer sessions have no durable end audit). Reviewer session audit events also carry `loop_id` and `review_type`; mandatory `whole_plan` / `whole_output` gates add `stage` (`initial_review`, `finding_verification`, `scope_review`). `model` is the provider-resolved CLI model label (`auto` when no explicit `--model` is passed). Providers attach the same `model` label to normalized stream events; agent discrete console events (`tool:start`, `tool:end`, `retry`, `error`) surface it from those events. Run-level CLI messages use `[run:start]` and `[run:resume]`; persisted `run_created` audit events map to `[run:start]`.
+Agent session lifecycle: `[session:start]` on `planner_session_started` / `producer_session_started` / `reviewer_session_started` audit events (`phase`, `role`, `run_id`, `session_id`, `model` required); `[session:resume]` on `*_session_resumed` with the same fields; `[session:end]` on `reviewer_session_ended` when a bounded reviewer turn records a terminal decision, and from engine teardown for any provider session still in the in-memory registry after each blocking phase step or Ctrl+C cancel (primary planner/producer sessions have no durable end audit). Reviewer session audit events also carry `loop_id` and `review_type`; mandatory `whole_plan` / `whole_output` gates add `stage` (`initial_review`, `finding_verification`, `scope_review`). `model` is the provider-resolved CLI model label (`auto` when no explicit `--model` is passed). Console output surfaces `model` only on `[session:start]`, `[session:resume]`, and `[session:end]` (with `role` and other session fields). Provider session references (`get_session_reference`, `list_active_sessions`) and session lifecycle audit events carry the same label; normalized stream events do not. Run-level CLI messages use `[run:start]` and `[run:resume]`; persisted `run_created` audit events map to `[run:start]`.
 
 **`phase` vs `stage`:** `phase` is the run lifecycle (`planning`, `whole_plan_review`, `production`, …). `stage` is a mandatory review loop step (`initial_review`, `finding_verification`, `scope_review`) and appears on reviewer session audit events for `whole_plan` / `whole_output` gates only. Mandatory review orchestration maps to `[review:start]` (loop bootstrap) and `[review:stage]` (scope-review transition); run lifecycle transitions remain `[phase:start]` / `[phase:end]`.
 
 `events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens and secrets are redacted at every log level. Console message and tool-summary truncation are unlimited by default; set `observability.max_message_length` and/or `observability.max_tool_summary_length` (or the matching CLI flags) to cap stderr output length.
 
 `tdp run` and `tdp resume` handle Ctrl+C without a traceback: the engine stops provider subprocesses, emits a `[session:cancel]` line on stderr, emits `[session:end]` for each active provider session, pauses the run with `stop.code: user_cancelled` (`status: paused`), and exits with code 130. With `--stream-json`, stdout carries `{"cancelled": true, "reason": "cancelled by user", ...}`. Resume with `tdp resume` clears the pause and continues the same run.
+
+## Desktop notifications
+
+Blocking `tdp run` and `tdp resume` can send optional desktop alerts when a run reaches a milestone or needs attention. Notifications are driven by existing `events.jsonl` audit records (no orchestrator changes) plus one CLI-only outcome: partial `--until` milestones on blocking `tdp run` / `tdp resume --until …` (`target_reached`). Ctrl+C is surfaced as **TDP run cancelled** — normally via the engine’s `run_paused` audit event (`stop.code: user_cancelled`); if the interrupt escapes the engine loop, the CLI sends the same cancelled alert before exit 130. Default single-step `tdp resume` (no `--until`) does not emit `target_reached`.
+
+Install the optional transport:
+
+```bash
+pip install "./tools/top_down_planning[notifications]"
+```
+
+Without `notify-py`, notifications are silently skipped. `CI=true` and headless Linux environments are suppressed at send time.
+
+Configuration lives under `notifications` (separate from `observability`). Precedence: built-in defaults → YAML → `--set` → `--no-notify` (master disable only). Omitted `--no-notify` does not override YAML/`--set`.
+
+```yaml
+notifications:
+  enabled: true
+  terminal: true    # run outcomes, pauses, failures
+  phase: true       # major phase transitions
+  progress: false   # per-batch / per-item (noisy)
+```
+
+```bash
+tdp run --config kanban.yaml --set notifications.progress=true
+tdp resume --run <run-id> --no-notify
+```
+
+| Tier | Default | Examples |
+| --- | --- | --- |
+| `terminal` | on | `outcome_resolved`, `run_failed`, `run_paused` (limit/operational pauses), `*_failed` outcome events. Ctrl+C (`user_cancelled`) and partial `--until` milestones notify whenever `notifications.enabled` is true, even if `terminal` is false. |
+| `phase` | on | `whole_plan_review_started`, `production_phase_started`, `production_completed` |
+| `progress` | off | `production_batch_recorded`, `focused_review_approved`, `planning_candidate_ready` |
+
+`validate`, `status`, `inspect`, `tdp agent *`, and `tdp resume --check` never notify. Changing `notifications.*` does not invalidate resume (presentation tier, like `observability.*`).
 
 ## Import boundaries
 
@@ -127,7 +162,7 @@ tdp validate --run <run-id> --config tools/top_down_planning/examples/top-down-p
 tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
 ```
 
-Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides → dedicated CLI flags when explicitly supplied. Unknown paths in YAML or `--set` are rejected. Resolved configuration is materialized to `<runs-root>/<run-id>/resolved-config.yaml`. Resume binds approvals to `digests.config_contract` and limit changes to `digests.config_execution`; both exclude `observability` and `runtime.runs_dir`. CLI invocation metadata is persisted separately in `invocation.json`.
+Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides → dedicated CLI flags when explicitly supplied. Unknown paths in YAML or `--set` are rejected. Resolved configuration is materialized to `<runs-root>/<run-id>/resolved-config.yaml`. Resume binds approvals to `digests.config_contract` and limit changes to `digests.config_execution`; both exclude `observability`, `notifications`, and `runtime.runs_dir`. CLI invocation metadata is persisted separately in `invocation.json`.
 
 ### Path resolution
 

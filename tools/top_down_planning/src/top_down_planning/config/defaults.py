@@ -146,6 +146,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "show_timestamps": False,
         "agent_transcript": False,
     },
+    "notifications": {
+        "enabled": True,
+        "terminal": True,
+        "phase": True,
+        "progress": False,
+    },
     "limits": {
         "planning": {
             "max_items_added": 20,
@@ -253,5 +259,9 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "observability.agent_transcript",
         "observability.max_message_length",
         "observability.max_tool_summary_length",
+        "notifications.enabled",
+        "notifications.terminal",
+        "notifications.phase",
+        "notifications.progress",
     }
 )

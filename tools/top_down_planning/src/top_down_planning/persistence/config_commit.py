@@ -20,6 +20,7 @@ from top_down_planning.domain.run_ownership import (
 )
 from top_down_planning.invocation import (
     merge_invocation_metadata,
+    sync_invocation_notifications_from_config,
     sync_invocation_observability_from_config,
 )
 from top_down_planning.persistence.commit import CommitSpec
@@ -72,8 +73,11 @@ def validate_and_prepare_resume_config_update(
     if comparison.contract_digest_changed:
         raise ResumeConfigCommitError("config_contract must remain unchanged during resume")
 
-    invocation = sync_invocation_observability_from_config(
-        merge_invocation_metadata(stored_invocation, candidate_invocation),
+    invocation = sync_invocation_notifications_from_config(
+        sync_invocation_observability_from_config(
+            merge_invocation_metadata(stored_invocation, candidate_invocation),
+            candidate_config,
+        ),
         candidate_config,
     )
     config_changes = {

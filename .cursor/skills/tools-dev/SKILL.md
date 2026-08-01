@@ -56,11 +56,11 @@ Prefer **YAML + `--set path=value`**. Do not add dedicated `--param` flags that 
 | Tier | Override surface |
 | --- | --- |
 | **Semantic** (`planning.*`, `limits.*`, `agent_context.*`, `run.*`, …) | defaults → YAML → `--set` only |
-| **Presentation** (`observability.*`, `runtime.runs_dir`) | defaults → YAML → `--set` → explicit dedicated flag |
+| **Presentation** (`observability.*`, `notifications.*`, `runtime.runs_dir`) | defaults → YAML → `--set` → explicit dedicated flag |
 
-`--set` is on `tdp run` and `tdp resume` only. Dedicated flags are for command routing (`--run`, `--until`), store bootstrap (`--runs-dir`), output mode (`--stream-json`), presentation toggles in `invocation.py` (`--log-level`, `--no-color`), or agent per-request args (`tdp agent … --depth`). Omitted presentation flags must not override YAML/`--set`.
+`--set` is on `tdp run` and `tdp resume` only. Dedicated flags are for command routing (`--run`, `--until`), store bootstrap (`--runs-dir`), output mode (`--stream-json`), presentation toggles in `invocation.py` (`--log-level`, `--no-color`, `--no-notify`), or agent per-request args (`tdp agent … --depth`). Omitted presentation flags must not override YAML/`--set`.
 
-New config paths: `ALLOWED_OVERRIDE_PATHS`, `defaults.py`, `schema_docs.py`. Presentation paths under `observability.*` auto-join `RESUME_PRESENTATION_ALLOWLIST`; new presentation sections need `resume_policy.py` updates.
+New config paths: `ALLOWED_OVERRIDE_PATHS`, `defaults.py`, `schema_docs.py`. Presentation paths under `observability.*` auto-join `RESUME_PRESENTATION_ALLOWLIST`; add `notifications.*` (and any other new presentation section) in `resume_policy.py`.
 
 ```bash
 tdp run --config cfg.yaml --set planning.max_depth=5

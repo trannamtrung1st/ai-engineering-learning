@@ -86,6 +86,15 @@ def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_notification_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--no-notify",
+        action="store_true",
+        default=None,
+        help="Disable desktop notifications for this invocation.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tdp",
@@ -117,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resolved-config override (repeatable; proposal §14).",
     )
     _add_operational_flags(run_parser)
+    _add_notification_flags(run_parser)
     run_parser.add_argument(
         "--until",
         choices=["plan", "validated", "completed"],
@@ -149,6 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build and print the resume plan without mutating the run (proposal §16.3).",
     )
     _add_operational_flags(resume_parser)
+    _add_notification_flags(resume_parser)
     resume_parser.add_argument(
         "--until",
         choices=["plan", "validated", "completed"],

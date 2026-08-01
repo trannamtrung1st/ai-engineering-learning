@@ -279,3 +279,10 @@ def test_observability_truncation_defaults_are_unlimited(tmp_path: Path) -> None
 def test_observability_truncation_rejects_non_positive_values() -> None:
     with pytest.raises(ValueError, match=r"max_message_length must be >= 1"):
         _optional_positive_limit(0, field="observability.max_message_length")
+
+
+def test_notification_defaults_from_invocation_options() -> None:
+    args = _parse(["run", "--config", "cfg.yaml"])
+    invocation = invocation_options_from_args(args)
+    assert invocation.notifications.enabled is True
+    assert invocation.notifications.progress is False

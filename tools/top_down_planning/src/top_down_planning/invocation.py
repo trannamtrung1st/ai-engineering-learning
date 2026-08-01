@@ -10,13 +10,25 @@ from typing import Any
 from core_tools.cli import ResolvedRunsDir
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
+from top_down_planning.notifications.options import NotificationOptions
 from top_down_planning.observability import ObservabilityOptions
 
 _DEFAULT_OBSERVABILITY = dict(DEFAULT_CONFIG["observability"])
+_DEFAULT_NOTIFICATIONS = dict(DEFAULT_CONFIG["notifications"])
 
 
 def _observability_defaults() -> dict[str, Any]:
     return dict(_DEFAULT_OBSERVABILITY)
+
+
+def _notifications_defaults() -> dict[str, Any]:
+    return dict(_DEFAULT_NOTIFICATIONS)
+
+
+def _bool_from_config(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
 
 
 def _optional_positive_limit(value: Any, *, field: str) -> int | None:
@@ -115,11 +127,49 @@ def observability_options_from_args_and_config(
     )
 
 
+def notification_options_from_args_and_config(
+    args: Namespace,
+    *,
+    resolved_config: dict[str, Any] | None = None,
+) -> NotificationOptions:
+    """Merge notifications with precedence: defaults < YAML < --set < --no-notify."""
+
+    config = resolved_config or {}
+    notifications_cfg = dict(_notifications_defaults())
+    yaml_notifications = config.get("notifications")
+    if isinstance(yaml_notifications, dict):
+        notifications_cfg.update(yaml_notifications)
+
+    enabled = _bool_from_config(
+        notifications_cfg.get("enabled"),
+        default=True,
+    )
+    if getattr(args, "no_notify", None):
+        enabled = False
+
+    return NotificationOptions(
+        enabled=enabled,
+        terminal=_bool_from_config(
+            notifications_cfg.get("terminal"),
+            default=True,
+        ),
+        phase=_bool_from_config(
+            notifications_cfg.get("phase"),
+            default=True,
+        ),
+        progress=_bool_from_config(
+            notifications_cfg.get("progress"),
+            default=False,
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class InvocationOptions:
     """CLI invocation metadata: presentation, store bootstrap, and run targets."""
 
     observability: ObservabilityOptions
+    notifications: NotificationOptions
     runs_dir_path: str
     runs_dir_source: str
     stream_json: bool = False
@@ -137,6 +187,10 @@ def invocation_options_from_args(
         args,
         resolved_config=resolved_config,
     )
+    notifications = notification_options_from_args_and_config(
+        args,
+        resolved_config=resolved_config,
+    )
     runs_path = ""
     runs_source = ""
     if resolved_runs is not None:
@@ -149,6 +203,7 @@ def invocation_options_from_args(
 
     return InvocationOptions(
         observability=observability,
+        notifications=notifications,
         runs_dir_path=runs_path,
         runs_dir_source=runs_source,
         stream_json=bool(getattr(args, "stream_json", False)),
@@ -169,6 +224,11 @@ def merge_invocation_metadata(
             observability = dict(merged.get("observability") or {})
             observability.update(value)
             merged["observability"] = observability
+            continue
+        if key == "notifications" and isinstance(value, dict):
+            notifications = dict(merged.get("notifications") or {})
+            notifications.update(value)
+            merged["notifications"] = notifications
             continue
         if key == "runs_dir" and isinstance(value, dict):
             runs_dir = dict(merged.get("runs_dir") or {})
@@ -195,6 +255,22 @@ def sync_invocation_observability_from_config(
     return updated
 
 
+def sync_invocation_notifications_from_config(
+    invocation: dict[str, Any],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Mirror resolved notification settings into invocation metadata."""
+
+    updated = copy.deepcopy(invocation)
+    notifications_cfg = config.get("notifications")
+    if not isinstance(notifications_cfg, dict):
+        return updated
+    notifications = dict(updated.get("notifications") or {})
+    notifications.update(notifications_cfg)
+    updated["notifications"] = notifications
+    return updated
+
+
 def invocation_to_dict(invocation: InvocationOptions) -> dict[str, Any]:
     """Serialize invocation metadata for persistence (not included in config digests)."""
 
@@ -211,8 +287,15 @@ def invocation_to_dict(invocation: InvocationOptions) -> dict[str, Any]:
         observability["max_message_length"] = obs.max_message_length
     if obs.max_tool_summary_length is not None:
         observability["max_tool_summary_length"] = obs.max_tool_summary_length
+    notifications = invocation.notifications
     return {
         "observability": observability,
+        "notifications": {
+            "enabled": notifications.enabled,
+            "terminal": notifications.terminal,
+            "phase": notifications.phase,
+            "progress": notifications.progress,
+        },
         "runs_dir": {
             "path": invocation.runs_dir_path,
             "source": invocation.runs_dir_source,

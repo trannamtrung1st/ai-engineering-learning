@@ -33,11 +33,13 @@ def test_resume_execution_allowlist_covers_all_limit_paths() -> None:
     assert limit_paths == RESUME_EXECUTION_POLICY_ALLOWLIST
 
 
-def test_resume_presentation_allowlist_matches_observability_and_runs_dir() -> None:
+def test_resume_presentation_allowlist_matches_observability_notifications_and_runs_dir() -> None:
     expected = {
         path
         for path in ALLOWED_OVERRIDE_PATHS
-        if path.startswith("observability.") or path == "runtime.runs_dir"
+        if path.startswith("observability.")
+        or path.startswith("notifications.")
+        or path == "runtime.runs_dir"
     }
     assert expected == RESUME_PRESENTATION_ALLOWLIST
 

@@ -22,7 +22,7 @@ __all__ = [
     "semantic_config_projection",
 ]
 
-_INVOCATION_ONLY_CONFIG_KEYS = frozenset({"observability"})
+_INVOCATION_ONLY_CONFIG_KEYS = frozenset({"observability", "notifications"})
 _EXECUTION_ONLY_TOP_LEVEL_KEYS = frozenset({"limits"})
 
 

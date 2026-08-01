@@ -67,12 +67,16 @@ from top_down_planning.invocation import (
     invocation_options_from_args,
     invocation_to_dict,
 )
+from top_down_planning.notifications import (
+    NotificationContext,
+    notify_run_outcome,
+    wrap_run_store,
+)
 from top_down_planning.observability import (
     ObservabilityContext,
     build_observability_context,
     cancel_console_event,
     emit_resume_plan_diagnostics,
-    wrap_store_with_observability,
 )
 from top_down_planning.persistence import FileRunStore, RunNotFoundError
 from top_down_planning.domain.plan_schema import UnsupportedPlanSchemaVersionError
@@ -112,11 +116,19 @@ def _handle_blocking_run_interrupt(
     run_id: str,
     store: FileRunStore,
     observability: ObservabilityContext,
+    notifications: NotificationContext | None,
     stream_json: bool,
 ) -> None:
     """Emit cancel observability and exit when Ctrl+C escapes the engine loop."""
 
     run = store.load_run(run_id)
+    if notifications is not None:
+        notify_run_outcome(
+            "cancelled",
+            run_id=run_id,
+            run=run,
+            options=notifications.options,
+        )
     observability.emit(
         cancel_console_event(
             run_id=run_id,
@@ -173,6 +185,7 @@ def _build_run_engine(
     *,
     run_id: str,
     observability: ObservabilityContext,
+    notifications: NotificationContext | None = None,
 ) -> RunEngine:
     def create_provider(config: dict[str, Any], workspace: Path) -> Any:
         return _create_provider_for_run(
@@ -185,7 +198,11 @@ def _build_run_engine(
         )
 
     return RunEngine(
-        wrap_store_with_observability(store, observability),
+        wrap_run_store(
+            store,
+            observability=observability,
+            notifications=notifications,
+        ),
         create_provider=create_provider,
         observability=observability,
     )
@@ -284,6 +301,7 @@ def handle_run_command(args: Namespace) -> None:
         run_id=run_id,
         run_dir=resolved_runs.path / run_id,
     )
+    notifications = NotificationContext(options=invocation.notifications)
     until = invocation.until or "plan"
     observability.emit(
         ConsoleEvent(
@@ -301,7 +319,11 @@ def handle_run_command(args: Namespace) -> None:
     try:
         try:
             engine = _build_run_engine(
-                store, resolved_runs, run_id=run_id, observability=observability
+                store,
+                resolved_runs,
+                run_id=run_id,
+                observability=observability,
+                notifications=notifications,
             )
             continuation = engine.continue_run(run_id, until=until)
         except KeyboardInterrupt:
@@ -309,6 +331,7 @@ def handle_run_command(args: Namespace) -> None:
                 run_id=run_id,
                 store=store,
                 observability=observability,
+                notifications=notifications,
                 stream_json=args.stream_json,
             )
     finally:
@@ -316,6 +339,15 @@ def handle_run_command(args: Namespace) -> None:
 
     if continuation.cancelled:
         _exit_for_cancel(run_id=run_id, store=store, stream_json=args.stream_json)
+
+    if until and continuation.ok and continuation.status == "running":
+        notify_run_outcome(
+            "target_reached",
+            run_id=run_id,
+            run=store.load_run(run_id),
+            options=notifications.options,
+            until=until,
+        )
 
     run_record = store.load_run(run_id)
     last_step = continuation.steps[-1].details if continuation.steps else {}
@@ -560,6 +592,7 @@ def handle_resume_command(args: Namespace) -> None:
         run_id=args.run,
         run_dir=resolved_runs.path / args.run,
     )
+    notifications = NotificationContext(options=invocation.notifications)
     observability.emit(
         ConsoleEvent(
             category="run:resume",
@@ -575,7 +608,11 @@ def handle_resume_command(args: Namespace) -> None:
     try:
         try:
             engine = _build_run_engine(
-                store, resolved_runs, run_id=args.run, observability=observability
+                store,
+                resolved_runs,
+                run_id=args.run,
+                observability=observability,
+                notifications=notifications,
             )
             if until:
                 continuation = engine.continue_run(
@@ -595,6 +632,7 @@ def handle_resume_command(args: Namespace) -> None:
                 run_id=args.run,
                 store=store,
                 observability=observability,
+                notifications=notifications,
                 stream_json=args.stream_json,
             )
     finally:
@@ -602,6 +640,15 @@ def handle_resume_command(args: Namespace) -> None:
 
     if continuation.cancelled:
         _exit_for_cancel(run_id=args.run, store=store, stream_json=args.stream_json)
+
+    if until and continuation.ok and continuation.status == "running":
+        notify_run_outcome(
+            "target_reached",
+            run_id=args.run,
+            run=store.load_run(args.run),
+            options=notifications.options,
+            until=until,
+        )
 
     run = store.load_run(args.run)
     payload = {

@@ -52,7 +52,9 @@ RESUME_EXECUTION_POLICY_ALLOWLIST: frozenset[str] = frozenset(
 RESUME_PRESENTATION_ALLOWLIST: frozenset[str] = frozenset(
     path
     for path in ALLOWED_OVERRIDE_PATHS
-    if path.startswith("observability.") or path == "runtime.runs_dir"
+    if path.startswith("observability.")
+    or path.startswith("notifications.")
+    or path == "runtime.runs_dir"
 )
 
 RESUME_SESSION_STRATEGY_BLOCKED_PATHS: frozenset[str] = frozenset(

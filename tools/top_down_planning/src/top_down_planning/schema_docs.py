@@ -739,6 +739,16 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 },
                 "additionalProperties": False,
             },
+            "notifications": {
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean"},
+                    "terminal": {"type": "boolean"},
+                    "phase": {"type": "boolean"},
+                    "progress": {"type": "boolean"},
+                },
+                "additionalProperties": False,
+            },
             "limits": {
                 "type": "object",
                 "properties": {
