@@ -46,6 +46,8 @@ def test_whole_plan_clear_path_requires_scope_review(tmp_path: Path) -> None:
     assert len(started) == 2
     assert len(resumed) == 0
     assert len(ended) == 2
+    assert started[0]["stage"] == "initial_review"
+    assert started[1]["stage"] == "scope_review"
     assert any(event.get("type") == "whole_plan_scope_review_started" for event in events)
 
 
@@ -261,4 +263,6 @@ def test_whole_output_clear_path_requires_scope_review(tmp_path: Path) -> None:
     assert len(started) == 2
     assert len(resumed) == 0
     assert len(ended) == 2
+    assert started[0]["stage"] == "initial_review"
+    assert started[1]["stage"] == "scope_review"
     assert any(event.get("type") == "whole_output_scope_review_started" for event in events)

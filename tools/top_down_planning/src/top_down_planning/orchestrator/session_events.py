@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.reviews import ReviewLoop, is_mandatory_review_loop
 from top_down_planning.domain.session_bindings import (
     is_transient_provider_session_id,
 )
@@ -23,6 +23,24 @@ from core_tools.persistence import RunNotFoundError
 from core_tools.provider import Provider
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
+
+
+def reviewer_session_audit_fields(loop: ReviewLoop) -> dict[str, Any]:
+    """Standard loop context fields for reviewer session audit events."""
+
+    fields: dict[str, Any] = {"loop_id": loop.id, "review_type": loop.type}
+    if is_mandatory_review_loop(loop):
+        fields["stage"] = loop.active_stage or "initial_review"
+    return fields
+
+
+def _merge_reviewer_session_fields(
+    loop: ReviewLoop | None,
+    fields: dict[str, Any],
+) -> dict[str, Any]:
+    if loop is None:
+        return fields
+    return {**reviewer_session_audit_fields(loop), **fields}
 
 
 def session_model_from_provider(provider: Provider, session_id: str) -> str:
@@ -86,15 +104,17 @@ def emit_reviewer_session_started(
     *,
     phase: str,
     session_id: str,
+    loop: ReviewLoop | None = None,
     **fields: Any,
 ) -> None:
+    merged = _merge_reviewer_session_fields(loop, fields)
     append_event(
         "reviewer_session_started",
         session_id=session_id,
         role="reviewer",
         phase=phase,
         **_session_model_fields(provider, session_id),
-        **fields,
+        **merged,
     )
 
 
@@ -104,15 +124,17 @@ def emit_reviewer_session_resumed(
     *,
     phase: str,
     session_id: str,
+    loop: ReviewLoop | None = None,
     **fields: Any,
 ) -> None:
+    merged = _merge_reviewer_session_fields(loop, fields)
     append_event(
         "reviewer_session_resumed",
         session_id=session_id,
         role="reviewer",
         phase=phase,
         **_session_model_fields(provider, session_id),
-        **fields,
+        **merged,
     )
 
 
@@ -191,6 +213,7 @@ def send_reviewer_session_with_audit(
     session_id: str,
     request: dict[str, Any],
     model: str | None,
+    loop: ReviewLoop | None = None,
     **fields: Any,
 ) -> None:
     provider.send(session_id, request, model=model)
@@ -199,6 +222,7 @@ def send_reviewer_session_with_audit(
         provider,
         phase=phase,
         session_id=session_id,
+        loop=loop,
         **fields,
     )
 
@@ -360,7 +384,6 @@ def release_reviewer_session_after_decision(
     *,
     phase: str,
     loop_id: str,
-    review_type: str,
     session_id: str,
 ) -> str | None:
     """Return the review decision and release the reviewer session when terminal.
@@ -374,13 +397,13 @@ def release_reviewer_session_after_decision(
 
     decision = review_decision_from_store(store, run_id, loop_id)
     if decision is not None:
+        loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
         end_reviewer_session_with_audit(
             append_event,
             provider,
             phase=phase,
             session_id=provider.canonical_session_id(session_id),
-            loop_id=loop_id,
-            review_type=review_type,
+            **reviewer_session_audit_fields(loop),
         )
     return decision
 

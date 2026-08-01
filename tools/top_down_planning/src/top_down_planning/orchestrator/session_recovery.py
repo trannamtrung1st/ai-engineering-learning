@@ -341,7 +341,7 @@ def replace_reviewer_session(
                 provider,
                 phase=phase,
                 session_id=new_session_id,
-                loop_id=loop.id,
+                loop=current_loop,
                 replacement=True,
             )
         except (ProviderTurnError, ProviderError) as exc:

@@ -15,6 +15,7 @@ from top_down_planning.observability import ObservabilityContext
 from top_down_planning.orchestrator.session_events import (
     end_reviewer_session_with_audit,
     release_reviewer_session_after_decision,
+    reviewer_session_audit_fields,
     sync_reviewer_loop_session_id,
 )
 from top_down_planning.persistence import FileRunStore
@@ -27,6 +28,33 @@ from tests.helpers import (
 )
 from tests.integration.e2e_helpers import script_whole_plan_review
 from tests.unit.test_whole_plan_review import _create_run_at_whole_plan_review
+
+
+def test_reviewer_session_audit_fields_includes_stage_for_mandatory_only() -> None:
+    mandatory = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        active_stage="finding_verification",
+    )
+    focused = make_review_loop(
+        id="review-focused-plan-01",
+        type="focused_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "focused_plan", "item_ids": ["item-a"]},
+    )
+    assert reviewer_session_audit_fields(mandatory) == {
+        "loop_id": "review-whole-plan-01",
+        "review_type": "whole_plan",
+        "stage": "finding_verification",
+    }
+    assert reviewer_session_audit_fields(focused) == {
+        "loop_id": "review-focused-plan-01",
+        "review_type": "focused_plan",
+    }
 
 
 def test_release_reviewer_session_after_decision_releases_on_terminal_status(
@@ -46,6 +74,7 @@ def test_release_reviewer_session_after_decision_releases_on_terminal_status(
         scope={"kind": "whole_plan"},
         revise_at="blocker",
         status="approved",
+        active_stage="scope_review",
     )
     store.save_review(run_id, loop.to_dict())
     events: list[dict] = []
@@ -60,13 +89,14 @@ def test_release_reviewer_session_after_decision_releases_on_terminal_status(
         run_id,
         phase=WHOLE_PLAN_REVIEW,
         loop_id="review-whole-plan-01",
-        review_type="whole_plan",
         session_id=session_id,
     )
 
     assert decision == "approved"
     assert provider.list_active_sessions() == []
     assert events[0]["type"] == "reviewer_session_ended"
+    assert events[0]["stage"] == "scope_review"
+    assert events[0]["review_type"] == "whole_plan"
 
 
 def test_end_reviewer_session_with_audit_terminates_and_records_event() -> None:

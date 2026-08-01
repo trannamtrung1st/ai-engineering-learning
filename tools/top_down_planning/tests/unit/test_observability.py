@@ -121,6 +121,8 @@ def test_map_audit_event_maps_reviewer_session_ended_with_phase_and_role() -> No
             "phase": "whole_plan_review",
             "model": "reasoning-model",
             "loop_id": "review-whole-plan-01",
+            "review_type": "whole_plan",
+            "stage": "scope_review",
         }
     )
     assert mapped is not None
@@ -129,6 +131,77 @@ def test_map_audit_event_maps_reviewer_session_ended_with_phase_and_role() -> No
     assert mapped.session_id == "reviewer-1"
     assert mapped.fields["phase"] == "whole_plan_review"
     assert mapped.fields["loop_id"] == "review-whole-plan-01"
+    assert mapped.fields["stage"] == "scope_review"
+    assert mapped.fields["review_type"] == "whole_plan"
+
+
+def test_map_audit_event_maps_whole_plan_review_started_to_review_start() -> None:
+    mapped = map_audit_event(
+        {
+            "type": "whole_plan_review_started",
+            "loop_id": "review-whole-plan-01",
+            "review_type": "whole_plan",
+            "target_revision": 24,
+        }
+    )
+    assert mapped is not None
+    assert mapped.category == "review:start"
+    assert mapped.message == "whole-plan review loop started"
+    assert mapped.fields["review_type"] == "whole_plan"
+
+
+def test_map_audit_event_maps_scope_review_started_to_review_stage() -> None:
+    mapped = map_audit_event(
+        {
+            "type": "whole_plan_scope_review_started",
+            "loop_id": "review-whole-plan-02",
+            "review_type": "whole_plan",
+            "stage": "scope_review",
+            "scope_review_rounds": 1,
+            "target_revision": 24,
+        }
+    )
+    assert mapped is not None
+    assert mapped.category == "review:stage"
+    assert mapped.message == "scope review started"
+    assert mapped.fields["stage"] == "scope_review"
+
+
+def test_map_audit_event_maps_reviewer_session_started_with_stage() -> None:
+    mapped = map_audit_event(
+        {
+            "type": "reviewer_session_started",
+            "run_id": "run-20260101T000001-000001",
+            "session_id": "reviewer-1",
+            "role": "reviewer",
+            "phase": "whole_plan_review",
+            "model": "auto",
+            "loop_id": "review-whole-plan-01",
+            "review_type": "whole_plan",
+            "stage": "initial_review",
+        }
+    )
+    assert mapped is not None
+    assert mapped.category == "session:start"
+    assert mapped.fields["phase"] == "whole_plan_review"
+    assert mapped.fields["stage"] == "initial_review"
+    assert mapped.fields["review_type"] == "whole_plan"
+
+
+def test_map_audit_event_maps_scope_review_changes_requested() -> None:
+    mapped = map_audit_event(
+        {
+            "type": "whole_plan_scope_review_changes_requested",
+            "loop_id": "review-whole-plan-01",
+            "review_type": "whole_plan",
+            "stage": "scope_review",
+            "finding_count": 2,
+        }
+    )
+    assert mapped is not None
+    assert mapped.category == "review"
+    assert mapped.message == "scope review changes requested"
+    assert mapped.fields["stage"] == "scope_review"
 
 
 def test_map_audit_event_requires_role_and_phase_for_session_start() -> None:

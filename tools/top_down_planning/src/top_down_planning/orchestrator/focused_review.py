@@ -169,8 +169,7 @@ class FocusedReviewOrchestrator:
                         self._provider,
                         phase=phase,
                         session_id=session_id,
-                        loop_id=loop.id,
-                        review_type=loop.type,
+                        loop=self._reload_loop(loop.id),
                     )
                     deliver_on_existing_session = False
                 decision = self._consume_reviewer_turn(session_id, loop.id)
@@ -449,8 +448,7 @@ class FocusedReviewOrchestrator:
             self._provider,
             phase=phase,
             session_id=session_id,
-            loop_id=loop.id,
-            review_type=loop.type,
+            loop=loop,
             scope=loop.scope,
         )
         return session_id, capability_token
@@ -516,7 +514,6 @@ class FocusedReviewOrchestrator:
             self._run_id,
             phase=phase,
             loop_id=loop_id,
-            review_type=loop.type,
             session_id=session_id,
         )
 
@@ -674,8 +671,7 @@ class FocusedReviewOrchestrator:
                 self._provider,
                 phase=phase,
                 session_id=session_id,
-                loop_id=loop.id,
-                review_type=loop.type,
+                loop=updated,
                 scope=loop.scope,
                 replacement=True,
             )
@@ -698,8 +694,7 @@ class FocusedReviewOrchestrator:
             self._provider,
             phase=phase,
             session_id=session_id,
-            loop_id=loop.id,
-            review_type=loop.type,
+            loop=updated,
         )
         return updated
 

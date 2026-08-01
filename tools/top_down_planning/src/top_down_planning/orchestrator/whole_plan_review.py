@@ -192,7 +192,7 @@ class WholePlanReviewOrchestrator:
                         self._provider,
                         phase=phase,
                         session_id=session_id,
-                        loop_id=loop.id,
+                        loop=self._reload_loop(loop.id),
                     )
                     deliver_on_existing_session = False
                 decision = self._consume_reviewer_turn(session_id, loop.id)
@@ -329,6 +329,8 @@ class WholePlanReviewOrchestrator:
                 self._append_event(
                     "whole_plan_scope_review_changes_requested",
                     loop_id=loop.id,
+                    review_type=loop.type,
+                    stage="scope_review",
                     finding_set_id=loop.finding_set_id,
                     prior_finding_set_id=prior_finding_set_id,
                     finding_count=len(loop.findings),
@@ -392,6 +394,8 @@ class WholePlanReviewOrchestrator:
         self._append_event(
             "whole_plan_scope_review_started",
             loop_id=updated.id,
+            review_type=updated.type,
+            stage="scope_review",
             scope_review_rounds=updated.scope_review_rounds,
             target_revision=updated.target_revision,
         )
@@ -602,6 +606,7 @@ class WholePlanReviewOrchestrator:
         self._append_event(
             "whole_plan_review_started",
             loop_id=loop_id,
+            review_type=loop.type,
             target_revision=plan_revision,
         )
         return loop
@@ -646,7 +651,7 @@ class WholePlanReviewOrchestrator:
             self._provider,
             phase=phase,
             session_id=session_id,
-            loop_id=loop.id,
+            loop=loop,
         )
         return session_id, self._capability_token
 
@@ -706,7 +711,6 @@ class WholePlanReviewOrchestrator:
             self._run_id,
             phase=phase,
             loop_id=loop_id,
-            review_type=loop.type,
             session_id=session_id,
         )
 
@@ -916,7 +920,7 @@ class WholePlanReviewOrchestrator:
                 self._provider,
                 phase=phase,
                 session_id=session_id,
-                loop_id=loop.id,
+                loop=updated,
                 replacement=True,
             )
             return updated
@@ -936,7 +940,7 @@ class WholePlanReviewOrchestrator:
             self._provider,
             phase=phase,
             session_id=session_id,
-            loop_id=loop.id,
+            loop=updated,
         )
         return updated
 

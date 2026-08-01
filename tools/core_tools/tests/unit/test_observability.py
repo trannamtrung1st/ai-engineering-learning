@@ -38,6 +38,30 @@ def test_session_end_category_renders() -> None:
     assert "planner session ended" in stderr.getvalue()
 
 
+def test_review_start_and_stage_categories_render() -> None:
+    stderr = io.StringIO()
+    sink = ColorizedConsoleSink(stream=stderr, color="never")
+    sink.emit(
+        ConsoleEvent(
+            category="review:start",
+            message="whole-plan review loop started",
+            fields={"loop_id": "review-whole-plan-01", "review_type": "whole_plan"},
+        )
+    )
+    sink.emit(
+        ConsoleEvent(
+            category="review:stage",
+            message="scope review started",
+            fields={"stage": "scope_review", "review_type": "whole_plan"},
+        )
+    )
+    output = stderr.getvalue()
+    assert "[review:start]" in output
+    assert "whole-plan review loop started" in output
+    assert "[review:stage]" in output
+    assert "scope review started" in output
+
+
 def test_category_block_prefix_on_first_line_only() -> None:
     stderr = io.StringIO()
     sink = ColorizedConsoleSink(stream=stderr, color="never")

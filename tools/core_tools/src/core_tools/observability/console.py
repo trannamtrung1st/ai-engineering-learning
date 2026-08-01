@@ -38,6 +38,8 @@ _CATEGORY_STYLES: dict[str, str] = {
     "tool:start": "yellow",
     "tool:end": "green",
     "review": "magenta",
+    "review:start": "magenta",
+    "review:stage": "magenta",
     "state": "cyan",
     "artifact": "cyan",
     "retry": "yellow",
