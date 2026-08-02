@@ -52,12 +52,78 @@ def test_reviewer_protocol_discourages_host_planning_artifacts() -> None:
     assert "host planning modes" in protocol
 
 
+def test_whole_plan_discovery_protocol_includes_family_procedure() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(
+            stage="initial_review",
+            review_type="whole_plan",
+        )
+    ).lower()
+    assert "validation_issues" in protocol
+    assert "candidate_refs" in protocol
+    assert "discovery_sweep" in protocol
+    assert "audit attestation" in protocol
+    assert "reopens_family_id" in protocol
+
+
+def test_whole_plan_verification_protocol_includes_bounded_family_sweep() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(
+            stage="finding_verification",
+            review_type="whole_plan",
+        )
+    ).lower()
+    assert "family_results" in protocol
+    assert "verification_sweep" in protocol
+    assert "not a new broad discovery pass" in protocol
+
+
+def test_scope_review_protocol_is_prior_finding_independent() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(
+            stage="scope_review",
+            review_type="whole_plan",
+        )
+    ).lower()
+    assert "do not use prior finding or family text as framing" in protocol
+    assert "independently observe" in protocol
+    assert "reopens_family_id" in protocol
+    assert "discovery_sweep" in protocol
+    assert "validation_issues" in protocol
+
+
+def test_whole_plan_verification_protocol_omits_audit_attestation() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(
+            stage="finding_verification",
+            review_type="whole_plan",
+        )
+    ).lower()
+    assert "audit_attestation" not in protocol
+    assert "family_results" in protocol
+
+
 def test_tool_instructions_discourage_uv_run() -> None:
     instructions = build_reviewer_tool_instructions("run-test")
     assert "uv run" in instructions["respond"]
     assert "TDP_CAPABILITY_TOKEN" in instructions["authorization"]
     assert instructions["agent_requests_dir"] == "$TDP_AGENT_REQUESTS_DIR"
     assert "TDP_AGENT_REQUESTS_DIR" in instructions["respond"]
+
+
+def test_tool_instructions_use_contract_specific_scope_examples() -> None:
+    legacy = build_reviewer_tool_instructions("run-test", family_protocol=False)
+    assert "review-respond-scope-v1" in legacy["examples"]
+    assert "review-respond-verification" in legacy["examples"]
+    legacy_examples = {part.strip() for part in legacy["examples"].split(";")}
+    assert "tdp agent example review-respond-scope-v1" in legacy_examples
+    assert "tdp agent example review-respond-scope" not in legacy_examples
+
+    family = build_reviewer_tool_instructions("run-test", family_protocol=True)
+    family_examples = {part.strip() for part in family["examples"].split(";")}
+    assert "tdp agent example review-respond-scope" in family_examples
+    assert "tdp agent example review-respond-family-discovery" in family_examples
+    assert "tdp agent example review-respond-scope-v1" not in family_examples
 
 
 def test_begin_reviewer_review_starts_session_with_review_package(tmp_path: Path) -> None:

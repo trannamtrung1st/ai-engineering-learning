@@ -866,6 +866,28 @@ def validate_digest_hooks(
     return issues
 
 
+def collect_plan_analysis_validation_issues(plan: Plan) -> list[ValidationIssue]:
+    """Structured advisory issues for reviewer analysis_context."""
+
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    ordered: list[ValidationIssue] = []
+
+    def add_issues(issues: list[ValidationIssue]) -> None:
+        for issue in issues:
+            key = (issue.code, tuple(issue.path))
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(issue)
+
+    add_issues(validate_ids_and_fields(plan))
+    add_issues(validate_root_item_populated(plan))
+    add_issues(validate_work_item_scope_contract(plan, mode="draft"))
+    add_issues(validate_hierarchy(plan))
+    add_issues(validate_dependencies(plan))
+    return ordered
+
+
 def validate_plan(
     plan: Plan,
     *,

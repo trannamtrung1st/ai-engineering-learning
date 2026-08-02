@@ -146,9 +146,11 @@ def build_reviewer_protocol_instructions(
             [
                 (
                     "Stage: scope_review (fresh scope review). This is a "
-                    "fresh discovery pass: do not anchor on prior finding lists "
+                    "fresh discovery pass: do not use prior finding or family "
+                    "text as framing. Do not anchor on prior finding lists "
                     "or revision discussion. Review the complete current scope "
-                    "and report every material issue you find."
+                    "and report every material issue you find. Create new "
+                    "families from what you independently observe."
                 ),
                 (
                     "Classify each finding by severity and category using "
@@ -195,30 +197,58 @@ def build_reviewer_protocol_instructions(
             ]
         )
     if normalized_type == "whole_plan":
-        instructions.extend(
-            [
-                (
-                    "Whole-plan review: complete every required audit pass in order "
-                    "and submit audit_attestation bound to the current artifact "
-                    "revision and digest."
-                ),
-                (
-                    "Group every confirmed defect into a finding family with a "
-                    "completed discovery_sweep. Search the whole active plan for "
-                    "equivalent instances before marking review_completed true."
-                ),
-                (
-                    "Do not submit reopens_family_id or reopens_finding_id; the "
-                    "service derives regression lineage after scope review."
-                ),
-            ]
-        )
+        if normalized != "finding_verification":
+            instructions.extend(
+                [
+                    (
+                        "Whole-plan review: complete every required audit pass in order "
+                        "and submit audit_attestation bound to the current artifact "
+                        "revision and digest."
+                    ),
+                    (
+                        "Do not submit reopens_family_id or reopens_finding_id; the "
+                        "service derives regression lineage after scope review."
+                    ),
+                ]
+            )
+        if normalized in {None, "initial_review", "scope_review"}:
+            instructions.extend(
+                [
+                    (
+                        "Discovery procedure: treat validation_issues and preflight "
+                        "candidates in analysis_context as candidates, not "
+                        "automatically valid findings. For every confirmed issue, "
+                        "identify the general violated rule. Search the complete "
+                        "current scope for equivalent instances and report all "
+                        "confirmed instances under one finding family. Keep "
+                        "uncertain matches in candidate_refs; do not inflate "
+                        "findings."
+                    ),
+                    (
+                        "Group every confirmed defect into a finding family with a "
+                        "completed discovery_sweep. Do not mark review_completed "
+                        "true until audit attestation and all family discovery "
+                        "sweeps are complete."
+                    ),
+                ]
+            )
         if normalized == "finding_verification":
-            instructions.append(
-                (
-                    "Re-run each active family's rule and search dimensions during "
-                    "verification; report family_results with verification_sweep."
-                )
+            instructions.extend(
+                [
+                    (
+                        "Verification is still bounded to prior findings and direct "
+                        "revision side effects. In addition, re-run each active "
+                        "family's rule components and search dimensions across the "
+                        "active finding set. This family search is part of "
+                        "verification scope, not a new broad discovery pass."
+                    ),
+                    (
+                        "Report remaining same-family instances in family_results. "
+                        "Do not search for unrelated new defect classes. Report "
+                        "family_results with verification_sweep for each active "
+                        "policy-relevant family."
+                    ),
+                ]
             )
     instructions.append(
         (
@@ -247,7 +277,7 @@ def build_reviewer_tool_instructions(
     else:
         examples = (
             "tdp agent example review-respond-verification ; "
-            "tdp agent example review-respond-scope"
+            "tdp agent example review-respond-scope-v1"
         )
     instructions = {
         "authorization": (

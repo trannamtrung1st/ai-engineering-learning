@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from dataclasses import replace
 
-from tests.helpers import make_review_loop
+from tests.helpers import (
+    create_run_kwargs,
+    grant_capability,
+    make_review_loop,
+    mandatory_plan_digest,
+    minimal_resolved_config,
+)
+from top_down_planning.orchestrator.phases import PLANNING
 
 from top_down_planning.domain.artifact_refs import (
     PlanItemFieldRef,
@@ -80,7 +89,12 @@ def test_parse_review_version_fields_rejects_unsupported_versions() -> None:
 def test_uses_finding_family_protocol_gates_on_contract_version() -> None:
     loop = make_review_loop(id="loop-1", type="whole_plan", **_FAMILY_PROTOCOL_VERSIONS)
     assert uses_finding_family_protocol(loop)
-    legacy = make_review_loop(id="loop-2", type="whole_plan")
+    legacy = make_review_loop(
+        id="loop-2",
+        type="whole_plan",
+        review_record_schema_version=LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
+        review_contract_version=LEGACY_REVIEW_CONTRACT_VERSION,
+    )
     assert not uses_finding_family_protocol(legacy)
 
 
@@ -1236,3 +1250,864 @@ def test_completed_owner_sweep_requires_search_metadata() -> None:
             artifact_digest="digest-1",
             current_artifact_revision=1,
         )
+
+
+def test_discovery_accepts_custom_rule_with_definition() -> None:
+    from top_down_planning.agent_tool.review_discovery import (
+        apply_whole_plan_discovery_response,
+    )
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+    from top_down_planning.domain.finding_families import WHOLE_PLAN_AUDIT_PASS_IDS
+    from top_down_planning.orchestrator.review_analysis_context import rubric_items_with_ids
+
+    loop = make_review_loop(
+        id="loop-custom",
+        type="whole_plan",
+        finding_set_id="set-1",
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    rubric_items = rubric_items_with_ids(
+        [str(item) for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]]
+    )
+    rubric_ids = [item["id"] for item in rubric_items]
+    fingerprint = compute_family_fingerprint(
+        rule_id="custom.reset-wiring",
+        subject_key="reset",
+        scope_kind="active-plan",
+        rule_definition="Reset references must resolve through dependencies.",
+    )
+    updated, findings, outcome, events = apply_whole_plan_discovery_response(
+        loop,
+        {
+            "finding_set_id": "set-1",
+            "review_completed": True,
+            "summary": "Custom rule family",
+            "target_digest": "digest-1",
+            "audit_attestation": {
+                "artifact_revision": 1,
+                "artifact_digest": "digest-1",
+                "passes": [
+                    {
+                        "pass_id": pass_id,
+                        "completed": True,
+                        "scope_id": "whole-plan-active-v1",
+                        "search_dimensions": ["acceptance"],
+                        "inspected_refs": ["active-items:*"],
+                        "rubric_item_ids": rubric_ids,
+                        "summary": f"Completed {pass_id}.",
+                    }
+                    for pass_id in WHOLE_PLAN_AUDIT_PASS_IDS
+                ],
+            },
+            "reported_findings": [
+                {
+                "id": "f-1",
+                "family_id": "family-custom",
+                "severity": "blocker",
+                "category": "correctness",
+                    "target_refs": ["item-a"],
+                    "issue": "Reset wiring",
+                    "recommended_change": "Fix wiring",
+                    "instance_ref": {
+                        "kind": "plan_item_field",
+                        "item_id": "item-a",
+                        "field": "acceptance",
+                        "value_digest": digest_field_value("Reset wiring"),
+                        "duplicate_ordinal": 0,
+                    },
+                }
+            ],
+            "finding_families": [
+                {
+                    "id": "family-custom",
+                    "finding_set_id": "set-1",
+                    "rule_id": "custom.reset-wiring",
+                    "rule_definition": "Reset references must resolve through dependencies.",
+                    "subject_key": "reset",
+                    "scope_kind": "active-plan",
+                    "family_fingerprint": fingerprint,
+                    "title": "Reset wiring",
+                    "seed_finding_id": "f-1",
+                    "confirmed_finding_ids": ["f-1"],
+                    "candidate_refs": [],
+                    "recommended_change": "Fix wiring",
+                    "discovery_sweep": {
+                        "artifact_revision": 1,
+                        "artifact_digest": "digest-1",
+                        "searched_refs": ["active-items:*"],
+                        "search_dimensions": ["acceptance"],
+                        "completed": True,
+                        "summary": "Searched acceptance",
+                    },
+                }
+            ],
+        },
+        stage="initial_review",
+        review_type="whole_plan",
+        artifact_revision=1,
+        artifact_digest="digest-1",
+        rubric=[str(item) for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]],
+    )
+    assert outcome == "changes_requested"
+    assert len(updated.finding_families) == 1
+    assert updated.finding_families[0].rule_id == "custom.reset-wiring"
+    assert any(event["type"] == "review_finding_family_reported" for event in events)
+
+
+def test_discovery_rejects_agent_submitted_reopen_fields() -> None:
+    from top_down_planning.agent_tool.review_discovery import _reject_agent_reopen_fields
+
+    with pytest.raises(ValueError, match="reopens_family_id"):
+        _reject_agent_reopen_fields(
+            {
+                "finding_families": [{"reopens_family_id": "family-old"}],
+            }
+        )
+    with pytest.raises(ValueError, match="reopens_finding_id"):
+        _reject_agent_reopen_fields(
+            {
+                "reported_findings": [{"reopens_finding_id": "f-old"}],
+            }
+        )
+
+
+def test_plan_apply_without_record_actions_can_resume_family_fix(tmp_path: Path) -> None:
+    from top_down_planning.agent_tool import PlanAgentService, ReviewAgentService
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+    from top_down_planning.domain.finding_families import WHOLE_PLAN_AUDIT_PASS_IDS
+    from top_down_planning.domain.models import Plan, PlanItem
+    from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
+    from top_down_planning.domain.review_loop_factory import new_whole_plan_review_loop
+    from top_down_planning.orchestrator.review_analysis_context import rubric_items_with_ids
+    from top_down_planning.persistence.file_store import FileRunStore
+
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T120000-abcdef"
+    config = minimal_resolved_config()
+    root = PlanItem(
+        id=PLAN_ROOT_ITEM_ID,
+        parent_id=None,
+        order_key="0000000000",
+        title="Deliver",
+        outcome="Deliver the output.",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+    )
+    store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path, resolved_config=config))
+    plan = store.load_plan_model(run_id)
+    plan.items["item-a"] = PlanItem(
+        id="item-a",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000001",
+        title="item-a",
+        outcome="Outcome",
+        kind="work",
+        acceptance=["Reset control must work end-to-end"],
+    )
+    next_plan = plan.to_dict()
+    next_plan["revision"] = plan.revision + 1
+    store.save_plan(run_id, next_plan, plan.revision)
+
+    loop = new_whole_plan_review_loop(
+        loop_id="review-whole-plan-01",
+        target_revision=int(store.load_plan(run_id)["revision"]),
+        config=config,
+    )
+    loop, finding_set_id = __import__(
+        "top_down_planning.domain.reviews",
+        fromlist=["allocate_discovery_finding_set_id"],
+    ).allocate_discovery_finding_set_id(loop)
+    store.save_review(run_id, loop.to_dict())
+
+    target_revision = int(store.load_plan(run_id)["revision"])
+    digest = mandatory_plan_digest(store, run_id)
+    rubric_items = rubric_items_with_ids(
+        [str(item) for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]]
+    )
+    rubric_ids = [item["id"] for item in rubric_items]
+    fingerprint = compute_family_fingerprint(
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset-control",
+        scope_kind="active-plan",
+    )
+    discovery = {
+        "loop_id": loop.id,
+        "target_revision": target_revision,
+        "stage": "initial_review",
+        "finding_set_id": finding_set_id,
+        "reported_findings": [
+            {
+                "id": "sf-001",
+                "family_id": "family-reset",
+                "severity": "blocker",
+                "category": "architecture",
+                "target_refs": ["item-a"],
+                "issue": "Reset referenced before dependency exists",
+                "recommended_change": "Normalize Reset references",
+                "instance_ref": {
+                    "kind": "plan_item_field",
+                    "item_id": "item-a",
+                    "field": "acceptance",
+                    "value_digest": digest_field_value("Reset control must work end-to-end"),
+                    "duplicate_ordinal": 0,
+                },
+            }
+        ],
+        "review_completed": True,
+        "summary": "One Reset instance found",
+        "target_digest": digest,
+        "audit_attestation": {
+            "artifact_revision": target_revision,
+            "artifact_digest": digest,
+            "passes": [
+                {
+                    "pass_id": pass_id,
+                    "completed": True,
+                    "scope_id": "whole-plan-active-v1",
+                    "search_dimensions": ["acceptance"],
+                    "inspected_refs": ["active-items:*"],
+                    "rubric_item_ids": rubric_ids,
+                    "summary": f"Completed {pass_id}.",
+                }
+                for pass_id in WHOLE_PLAN_AUDIT_PASS_IDS
+            ],
+        },
+        "finding_families": [
+            {
+                "id": "family-reset",
+                "finding_set_id": finding_set_id,
+                "rule_id": "dependency.acceptance_capability_available",
+                "subject_key": "reset-control",
+                "scope_kind": "active-plan",
+                "family_fingerprint": fingerprint,
+                "title": "Reset dependency closure",
+                "seed_finding_id": "sf-001",
+                "confirmed_finding_ids": ["sf-001"],
+                "candidate_refs": [],
+                "recommended_change": "Normalize Reset references",
+                "discovery_sweep": {
+                    "artifact_revision": target_revision,
+                    "artifact_digest": digest,
+                    "searched_refs": ["active-items:*"],
+                    "search_dimensions": ["acceptance"],
+                    "completed": True,
+                    "summary": "Searched acceptance",
+                },
+            }
+        ],
+    }
+    ReviewAgentService(store, run_id).respond(
+        discovery,
+        capability_token=grant_capability(
+            store, run_id, role="reviewer", loop_id=loop.id, phase=PLANNING
+        ),
+    )
+
+    PlanAgentService(store, run_id).apply(
+        {
+            "base_revision": target_revision,
+            "operations": [
+                {
+                    "op": "update_item",
+                    "item_id": "item-a",
+                    "patch": {"acceptance": ["Reserved slot only"]},
+                }
+            ],
+        },
+        capability_token=grant_capability(store, run_id, role="planner", phase=PLANNING),
+    )
+    new_revision = int(store.load_plan(run_id)["revision"])
+    new_digest = mandatory_plan_digest(store, run_id)
+
+    ReviewAgentService(store, run_id).record_finding_actions(
+        {
+            "loop_id": loop.id,
+            "artifact_revision": new_revision,
+            "artifact_digest": new_digest,
+            "family_fixes": [
+                {
+                    "family_id": "family-reset",
+                    "target_finding_ids": [],
+                    "rationale": "Normalized Reset reference",
+                    "changed_refs": ["item-a"],
+                    "owner_sweep": {
+                        "artifact_revision": new_revision,
+                        "artifact_digest": new_digest,
+                        "searched_refs": ["active-items:*"],
+                        "search_dimensions": ["acceptance"],
+                        "additional_fixed_refs": [],
+                        "remaining_instance_refs": [],
+                        "completed": True,
+                        "summary": "No concrete Reset references remain",
+                    },
+                }
+            ],
+            "finding_actions": [],
+        },
+        capability_token=grant_capability(store, run_id, role="planner", phase=PLANNING),
+    )
+    loop_payload = store.load_review(run_id, loop.id)
+    assert any(
+        sweep.get("stage") == "owner_fix"
+        for sweep in loop_payload.get("family_sweeps", [])
+    )
+
+
+def test_family_fixes_overlap_finding_actions_rejected() -> None:
+    from top_down_planning.agent_tool.review_owner_actions import apply_family_fixes
+    from top_down_planning.domain.finding_families import FindingFamily
+
+    finding = ReviewFinding(
+        id="f-1",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-a"],
+        issue="x",
+        recommended_change="y",
+        family_id="family-1",
+    )
+    family = FindingFamily(
+        id="family-1",
+        finding_set_id="set-1",
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset",
+        scope_kind="active-plan",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="dependency.acceptance_capability_available",
+            subject_key="reset",
+            scope_kind="active-plan",
+        ),
+        title="t",
+        seed_finding_id="f-1",
+        confirmed_finding_ids=["f-1"],
+        candidate_refs=[],
+        recommended_change="fix",
+    )
+    owner_sweep = {
+        "artifact_revision": 1,
+        "artifact_digest": "digest-1",
+        "searched_refs": ["active-items:*"],
+        "search_dimensions": ["acceptance"],
+        "additional_fixed_refs": [],
+        "remaining_instance_refs": [],
+        "completed": True,
+        "summary": "swept",
+    }
+    loop = make_review_loop(
+        id="loop-1",
+        type="whole_plan",
+        finding_set_id="set-1",
+        findings=[finding],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["f-1"]},
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    with pytest.raises(ValueError, match="overlap finding_actions"):
+        apply_family_fixes(
+            loop,
+            {
+                "family_fixes": [
+                    {
+                        "family_id": "family-1",
+                        "target_finding_ids": [],
+                        "rationale": "fixed",
+                        "changed_refs": ["item-a"],
+                        "owner_sweep": owner_sweep,
+                    }
+                ],
+                "finding_actions": [
+                    {
+                        "finding_id": "f-1",
+                        "action": "fix",
+                        "actor_role": "planner",
+                        "artifact_revision": 1,
+                        "finding_set_id": "set-1",
+                        "rationale": "already fixing",
+                    }
+                ],
+            },
+            actor_role="planner",
+            artifact_revision=1,
+            artifact_digest="digest-1",
+            current_artifact_revision=1,
+        )
+
+
+def test_family_fix_idempotent_replay_rejects_conflicting_digest() -> None:
+    from top_down_planning.agent_tool.review_owner_actions import apply_family_fixes
+    from top_down_planning.domain.finding_families import FindingFamily
+
+    finding = ReviewFinding(
+        id="f-1",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-a"],
+        issue="x",
+        recommended_change="y",
+        family_id="family-1",
+    )
+    family = FindingFamily(
+        id="family-1",
+        finding_set_id="set-1",
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset",
+        scope_kind="active-plan",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="dependency.acceptance_capability_available",
+            subject_key="reset",
+            scope_kind="active-plan",
+        ),
+        title="t",
+        seed_finding_id="f-1",
+        confirmed_finding_ids=["f-1"],
+        candidate_refs=[],
+        recommended_change="fix",
+    )
+    owner_sweep = {
+        "artifact_revision": 1,
+        "artifact_digest": "digest-1",
+        "searched_refs": ["active-items:*"],
+        "search_dimensions": ["acceptance"],
+        "additional_fixed_refs": [],
+        "remaining_instance_refs": [],
+        "completed": True,
+        "summary": "swept",
+    }
+    loop = make_review_loop(
+        id="loop-1",
+        type="whole_plan",
+        finding_set_id="set-1",
+        findings=[finding],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["f-1"]},
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    updated, _, _ = apply_family_fixes(
+        loop,
+        {
+            "family_fixes": [
+                {
+                    "family_id": "family-1",
+                    "target_finding_ids": [],
+                    "rationale": "fixed",
+                    "changed_refs": ["item-a"],
+                    "owner_sweep": owner_sweep,
+                }
+            ],
+            "finding_actions": [],
+        },
+        actor_role="planner",
+        artifact_revision=1,
+        artifact_digest="digest-1",
+        current_artifact_revision=1,
+    )
+    with pytest.raises(ValueError, match="conflicting request_digest"):
+        apply_family_fixes(
+            updated,
+            {
+                "family_fixes": [
+                    {
+                        "family_id": "family-1",
+                        "target_finding_ids": [],
+                        "rationale": "different rationale",
+                        "changed_refs": ["item-a"],
+                        "owner_sweep": owner_sweep,
+                    }
+                ],
+                "finding_actions": [],
+            },
+            actor_role="planner",
+            artifact_revision=1,
+            artifact_digest="digest-1",
+            current_artifact_revision=1,
+        )
+
+
+def test_optional_target_must_be_confirmed_family_member() -> None:
+    finding_confirmed = ReviewFinding(
+        id="f-req",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-a"],
+        issue="x",
+        recommended_change="y",
+        family_id="family-1",
+    )
+    finding_orphan = ReviewFinding(
+        id="f-orphan",
+        severity="minor",
+        category="correctness",
+        target_refs=["item-b"],
+        issue="x",
+        recommended_change="y",
+        family_id="family-1",
+    )
+    from top_down_planning.domain.finding_families import FindingFamily
+
+    family = FindingFamily(
+        id="family-1",
+        finding_set_id="set-1",
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset",
+        scope_kind="active-plan",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="dependency.acceptance_capability_available",
+            subject_key="reset",
+            scope_kind="active-plan",
+        ),
+        title="t",
+        seed_finding_id="f-req",
+        confirmed_finding_ids=["f-req"],
+        candidate_refs=[],
+        recommended_change="fix",
+    )
+    loop = make_review_loop(
+        id="loop-1",
+        type="whole_plan",
+        finding_set_id="set-1",
+        findings=[finding_confirmed, finding_orphan],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["f-req"]},
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    with pytest.raises(ValueError, match="confirmed member"):
+        compute_effective_fix_target_ids(
+            loop,
+            "family-1",
+            target_finding_ids=["f-orphan"],
+            challenged_required_ids=set(),
+        )
+
+
+def test_discovery_regression_links_fingerprint_and_emits_event() -> None:
+    from top_down_planning.agent_tool.review_discovery import (
+        apply_whole_plan_discovery_response,
+    )
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+    from top_down_planning.domain.artifact_refs import digest_field_value
+    from top_down_planning.domain.finding_families import (
+        WHOLE_PLAN_AUDIT_PASS_IDS,
+        FindingFamily,
+    )
+    from top_down_planning.orchestrator.review_analysis_context import (
+        rubric_items_with_ids,
+    )
+
+    fingerprint = compute_family_fingerprint(
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset",
+        scope_kind="active-plan",
+    )
+    prior_family = FindingFamily(
+        id="family-old",
+        finding_set_id="set-0",
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset",
+        scope_kind="active-plan",
+        family_fingerprint=fingerprint,
+        title="Prior",
+        seed_finding_id="f-old",
+        confirmed_finding_ids=["f-old"],
+        candidate_refs=[],
+        recommended_change="fix",
+    )
+    loop = make_review_loop(
+        id="loop-1",
+        type="whole_plan",
+        finding_set_id="set-1",
+        findings=[
+            ReviewFinding(
+                id="f-old",
+                severity="blocker",
+                category="correctness",
+                target_refs=["item-a"],
+                issue="old",
+                recommended_change="fix",
+                family_id="family-old",
+                status="resolved",
+            )
+        ],
+        finding_families=[prior_family.to_dict()],
+        finding_ids_by_set={"set-0": ["f-old"]},
+        family_sweeps=[
+            {
+                "id": "sweep-verify-old",
+                "family_id": "family-old",
+                "actor_role": "reviewer",
+                "stage": "verification",
+                "artifact_revision": 1,
+                "artifact_digest": "digest-1",
+                "finding_set_id": "set-0",
+                "searched_refs": ["active-items:*"],
+                "search_dimensions": ["acceptance"],
+                "additional_fixed_refs": [],
+                "remaining_instance_refs": [],
+                "completed": True,
+                "summary": "closed",
+            }
+        ],
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    instance_ref = {
+        "kind": "plan_item_field",
+        "item_id": "item-a",
+        "field": "acceptance",
+        "value_digest": digest_field_value("Reset wiring"),
+        "duplicate_ordinal": 0,
+    }
+    rubric_items = rubric_items_with_ids(
+        [str(item) for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]]
+    )
+    rubric_ids = [item["id"] for item in rubric_items]
+    updated, _, _, events = apply_whole_plan_discovery_response(
+        loop,
+        {
+            "finding_set_id": "set-1",
+            "review_completed": True,
+            "target_digest": "digest-2",
+            "summary": "Regression rediscovered",
+            "reported_findings": [
+                {
+                    "id": "f-new",
+                    "family_id": "family-new",
+                    "severity": "blocker",
+                    "category": "correctness",
+                    "target_refs": ["item-a"],
+                    "issue": "Reset wiring",
+                    "recommended_change": "Fix wiring",
+                    "instance_ref": instance_ref,
+                }
+            ],
+            "finding_families": [
+                {
+                    "id": "family-new",
+                    "finding_set_id": "set-1",
+                    "rule_id": "dependency.acceptance_capability_available",
+                    "subject_key": "reset",
+                    "scope_kind": "active-plan",
+                    "title": "Reset wiring",
+                    "seed_finding_id": "f-new",
+                    "confirmed_finding_ids": ["f-new"],
+                    "candidate_refs": [],
+                    "recommended_change": "Fix wiring",
+                    "discovery_sweep": {
+                        "artifact_revision": 2,
+                        "artifact_digest": "digest-2",
+                        "searched_refs": ["active-items:*"],
+                        "search_dimensions": ["acceptance"],
+                        "completed": True,
+                        "summary": "Searched acceptance",
+                    },
+                }
+            ],
+            "audit_attestation": {
+                "artifact_revision": 2,
+                "artifact_digest": "digest-2",
+                "passes": [
+                    {
+                        "pass_id": pass_id,
+                        "completed": True,
+                        "scope_id": "whole-plan-active-v1",
+                        "search_dimensions": ["acceptance"],
+                        "inspected_refs": ["active-items:*"],
+                        "rubric_item_ids": rubric_ids,
+                        "summary": f"Completed {pass_id}.",
+                    }
+                    for pass_id in WHOLE_PLAN_AUDIT_PASS_IDS
+                ],
+            },
+        },
+        stage="scope_review",
+        review_type="whole_plan",
+        artifact_revision=2,
+        artifact_digest="digest-2",
+        rubric=[str(item) for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]],
+    )
+    regressed = next(
+        family for family in updated.finding_families if family.id == "family-new"
+    )
+    assert regressed.reopens_family_id == "family-old"
+    assert any(event["type"] == "review_family_regressed" for event in events)
+
+
+def test_family_observability_counts_latest_audit_run_only() -> None:
+    from top_down_planning.domain.finding_families import (
+        WHOLE_PLAN_AUDIT_PASS_IDS,
+        family_observability_fields,
+    )
+
+    loop = make_review_loop(
+        id="loop-1",
+        type="whole_plan",
+        finding_set_id="set-1",
+        audit_runs=[
+            {
+                "id": "audit-1",
+                "finding_set_id": "set-0",
+                "artifact_revision": 1,
+                "artifact_digest": "digest-1",
+                "recorded_at": "2026-01-01T00:00:00Z",
+                "passes": [
+                    {"pass_id": pass_id, "completed": True}
+                    for pass_id in WHOLE_PLAN_AUDIT_PASS_IDS
+                ],
+            },
+            {
+                "id": "audit-2",
+                "finding_set_id": "set-1",
+                "artifact_revision": 2,
+                "artifact_digest": "digest-2",
+                "recorded_at": "2026-01-02T00:00:00Z",
+                "passes": [
+                    {"pass_id": pass_id, "completed": True}
+                    for pass_id in WHOLE_PLAN_AUDIT_PASS_IDS
+                ],
+            },
+        ],
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    fields = family_observability_fields(
+        loop,
+        artifact_revision=2,
+        artifact_digest="digest-2",
+    )
+    assert fields["audit_passes_completed"] == len(WHOLE_PLAN_AUDIT_PASS_IDS)
+    assert fields["audit_passes_required"] == len(WHOLE_PLAN_AUDIT_PASS_IDS)
+
+
+def test_active_family_view_includes_discovery_sweep_dimensions() -> None:
+    from top_down_planning.domain.finding_families import (
+        FindingFamily,
+        build_active_family_view,
+    )
+
+    finding = ReviewFinding(
+        id="f-1",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-a"],
+        issue="x",
+        recommended_change="y",
+        family_id="family-1",
+    )
+    family = FindingFamily(
+        id="family-1",
+        finding_set_id="set-1",
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset",
+        scope_kind="active-plan",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="dependency.acceptance_capability_available",
+            subject_key="reset",
+            scope_kind="active-plan",
+        ),
+        title="t",
+        seed_finding_id="f-1",
+        confirmed_finding_ids=["f-1"],
+        candidate_refs=[],
+        recommended_change="fix",
+    )
+    loop = make_review_loop(
+        id="loop-1",
+        type="whole_plan",
+        finding_set_id="set-1",
+        findings=[finding],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["f-1"]},
+        family_sweeps=[
+            {
+                "id": "sweep-discovery-1",
+                "family_id": "family-1",
+                "actor_role": "reviewer",
+                "stage": "discovery",
+                "artifact_revision": 1,
+                "artifact_digest": "digest-1",
+                "finding_set_id": "set-1",
+                "searched_refs": ["active-items:*"],
+                "search_dimensions": ["acceptance", "depends_on"],
+                "additional_fixed_refs": [],
+                "remaining_instance_refs": [],
+                "completed": True,
+                "summary": "searched",
+            }
+        ],
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    view = build_active_family_view(loop, artifact_revision=1, artifact_digest="digest-1")
+    sweep = view["families"][0]["discovery_sweep"]
+    assert sweep["search_dimensions"] == ["acceptance", "depends_on"]
+    assert sweep["searched_refs"] == ["active-items:*"]
+
+
+def test_legacy_v1_loop_respond_stays_contract_v1(tmp_path: Path) -> None:
+    from top_down_planning.agent_tool import ReviewAgentService
+    from top_down_planning.domain.models import Plan, PlanItem
+    from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
+    from top_down_planning.persistence import FileRunStore
+    from top_down_planning.persistence.digests import compute_plan_digest
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T009950-009950"
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+        outcome="Done.",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root},
+    )
+    store.create_run(
+        run_id,
+        plan=plan,
+        **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
+        phase=WHOLE_PLAN_REVIEW,
+    )
+    loop = make_review_loop(
+        id="review-whole-plan-legacy",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        finding_set_id="review-whole-plan-legacy-fs-01",
+        review_record_schema_version=LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
+        review_contract_version=LEGACY_REVIEW_CONTRACT_VERSION,
+    )
+    store.save_review(run_id, loop.to_dict())
+    digest = compute_plan_digest(plan)
+    token = grant_capability(
+        store,
+        run_id,
+        role="reviewer",
+        phase=WHOLE_PLAN_REVIEW,
+        loop_id=loop.id,
+        session_id="sess",
+    )
+    ReviewAgentService(store, run_id).respond(
+        {
+            "loop_id": loop.id,
+            "target_revision": 0,
+            "stage": "initial_review",
+            "finding_set_id": loop.finding_set_id,
+            "reported_findings": [],
+            "review_completed": True,
+            "target_digest": digest,
+            "summary": "Clear legacy review.",
+        },
+        capability_token=token,
+    )
+    restored = ReviewLoop.from_dict(
+        store.load_review(run_id, loop.id)
+    )
+    assert restored.review_contract_version == LEGACY_REVIEW_CONTRACT_VERSION
+    assert not restored.finding_families

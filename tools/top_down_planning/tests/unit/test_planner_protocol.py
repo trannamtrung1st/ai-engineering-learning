@@ -30,3 +30,12 @@ def test_planner_protocol_requires_populating_seeded_root() -> None:
     assert "item-root" in protocol
     assert "update_item" in protocol
     assert "update_plan" in protocol
+
+
+def test_planner_protocol_includes_family_repair_guidance() -> None:
+    protocol = " ".join(build_planner_protocol_instructions()).lower()
+    assert "active_families" in protocol
+    assert "repair unit" in protocol
+    assert "target_finding_ids" in protocol
+    assert "remaining_instance_refs" in protocol
+    assert "seed finding" in protocol

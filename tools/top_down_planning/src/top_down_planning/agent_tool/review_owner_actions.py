@@ -42,9 +42,22 @@ def _lookup_idempotent_sweep(
         if sweep.request_digest == request_digest:
             return sweep
         raise ValueError(
-            "family fix idempotency key replay with conflicting request_digest"
+            "family fix idempotency key replay with conflicting request_digest "
+            f"(loop_id={loop.id!r}, stage={loop.active_stage!r}, "
+            f"artifact_revision={sweep.artifact_revision})"
         )
     return None
+
+
+def _owner_action_context(
+    loop: ReviewLoop,
+    *,
+    artifact_revision: int,
+) -> str:
+    return (
+        f"loop_id={loop.id!r}, stage={loop.active_stage!r}, "
+        f"artifact_revision={artifact_revision}"
+    )
 
 
 def _effective_actions(
@@ -139,7 +152,9 @@ def apply_family_fixes(
         }
         if overlap:
             raise ValueError(
-                f"family_fixes overlap finding_actions on findings: {sorted(overlap)}"
+                "family_fixes overlap finding_actions on findings "
+                f"{sorted(overlap)} "
+                f"({_owner_action_context(loop, artifact_revision=artifact_revision)})"
             )
         effective_union.update(effective_ids)
         owner_sweep_raw = raw.get("owner_sweep")
@@ -165,16 +180,19 @@ def apply_family_fixes(
             summary = str(owner_sweep_raw.get("summary") or "").strip()
             if not searched_refs:
                 raise ValueError(
-                    f"family {family_id!r} completed owner_sweep requires searched_refs"
+                    f"family {family_id!r} completed owner_sweep requires searched_refs "
+                    f"({_owner_action_context(loop, artifact_revision=artifact_revision)})"
                 )
             if not search_dimensions:
                 raise ValueError(
                     f"family {family_id!r} completed owner_sweep requires "
-                    "search_dimensions"
+                    f"search_dimensions "
+                    f"({_owner_action_context(loop, artifact_revision=artifact_revision)})"
                 )
             if not summary:
                 raise ValueError(
-                    f"family {family_id!r} completed owner_sweep requires summary"
+                    f"family {family_id!r} completed owner_sweep requires summary "
+                    f"({_owner_action_context(loop, artifact_revision=artifact_revision)})"
                 )
         idempotency_key = family_fix_idempotency_key(
             family_id=family_id,

@@ -124,7 +124,7 @@ def test_in_process_needs_revision_enters_revision_without_illegal_transition(
     run_id = "run-20260101T000301-000301"
 
     provider.script_turn(
-        done_events(text="initial changes"),
+        done_events(text="initial clear"),
         mutate_store=lambda: respond_review(
             store,
             run_id,
@@ -134,7 +134,22 @@ def test_in_process_needs_revision_enters_revision_without_illegal_transition(
                 loop_id="review-whole-plan-01",
                 target_revision=0,
                 review_type="whole_plan",
-                decision="changes_requested",
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-01",
+        )(),
+    )
+    provider.script_turn(
+        done_events(text="blockers found"),
+        mutate_store=lambda: respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_found_respond_request(
+                store,
+                run_id,
+                loop_id="review-whole-plan-01",
+                target_revision=0,
+                review_type="whole_plan",
                 findings=[_blocker_finding()],
             ),
             phase=WHOLE_PLAN_REVIEW,

@@ -1725,7 +1725,8 @@ def assert_reported_finding_ids_unused(
         if finding.id in existing_ids:
             raise ValueError(
                 f"discovery finding id {finding.id!r} already exists in the loop; "
-                "rediscovery must use a new id (optionally with reopens_finding_id)"
+                "rediscovery must use a new id; the service derives reopen lineage "
+                "from fingerprint and instance_ref after scope review"
             )
         validate_reopens_finding_id(finding, loop.findings)
 
@@ -2196,6 +2197,52 @@ def build_review_convergence_warning(loop: ReviewLoop) -> str | None:
     if not open_required and open_optional:
         lines.append("All prior required findings are closed.")
         lines.append("The current round contains optional findings only.")
+    if uses_finding_family_protocol(loop):
+        from top_down_planning.domain.finding_families import (
+            derive_family_operational_status,
+            family_owner_sweeps,
+        )
+
+        regressed = [
+            family.id
+            for family in loop.finding_families
+            if family.reopens_family_id
+        ]
+        if regressed:
+            lines.append(
+                "Service-derived regression reopened "
+                f"{len(regressed)} closed famil(ies): {', '.join(regressed)}."
+            )
+        partial = [
+            family.id
+            for family in loop.finding_families
+            if family_owner_sweeps(loop, family.id)
+            and derive_family_operational_status(loop, family.id) != "closed"
+        ]
+        if partial:
+            lines.append(
+                f"{len(partial)} famil(ies) remain open after owner sweeps: "
+                f"{', '.join(partial)}."
+            )
+        if len(loop.finding_ids_by_set) >= 2:
+            set_ids = list(loop.finding_ids_by_set.keys())
+            current_set = set_ids[-1]
+            prior_fingerprints = {
+                family.family_fingerprint
+                for family in loop.finding_families
+                if family.finding_set_id != current_set
+            }
+            new_families = [
+                family.id
+                for family in loop.finding_families
+                if family.finding_set_id == current_set
+                and family.family_fingerprint not in prior_fingerprints
+            ]
+            if new_families:
+                lines.append(
+                    "Latest scope round introduced new defect families: "
+                    f"{', '.join(new_families)}."
+                )
     return "\n".join(lines)
 
 
@@ -2480,6 +2527,20 @@ def build_primary_owner_finding_guidance(
                 "Required findings may only use fix or challenge."
             ),
         ]
+        if uses_finding_family_protocol(loop):
+            lines.append(
+                (
+                    "Treat each entry in active_families as one repair unit. Search "
+                    "the whole active plan using rule_id, subject_key, scope_kind, "
+                    "candidate_refs, and search dimensions before fixing. Apply all "
+                    "confirmed and newly discovered equivalent locations in one plan "
+                    "apply where possible, then record one family_fix with a completed "
+                    "owner_sweep (empty remaining_instance_refs). Use "
+                    "target_finding_ids to list optional members explicitly; required "
+                    "open members are included automatically. Fixing only the seed "
+                    "finding does not close the family."
+                )
+            )
     else:
         lines = [
             (
@@ -2541,12 +2602,22 @@ def primary_review_resume_fields(
         "review_budget": build_review_budget_fields(loop, config),
     }
     if uses_finding_family_protocol(loop):
-        from top_down_planning.domain.finding_families import build_active_family_view
+        from top_down_planning.domain.finding_families import (
+            build_active_family_view,
+            family_observability_fields,
+        )
 
         fields["active_families"] = build_active_family_view(
             loop,
             artifact_revision=artifact_revision,
             artifact_digest=artifact_digest,
+        )
+        fields.update(
+            family_observability_fields(
+                loop,
+                artifact_revision=artifact_revision,
+                artifact_digest=artifact_digest,
+            )
         )
     return fields
 
@@ -2776,7 +2847,8 @@ def merge_scope_review_findings(
         if finding.id in existing_ids:
             raise ValueError(
                 f"scope review finding id {finding.id!r} already exists in the loop; "
-                "rediscovery must use a new id with reopens_finding_id"
+                "rediscovery must use a new id; the service derives reopen lineage "
+                "from fingerprint and instance_ref"
             )
         merged.append(finding)
         existing_ids.add(finding.id)

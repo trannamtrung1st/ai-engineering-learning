@@ -131,7 +131,7 @@ def test_missing_severity_or_category_rejected() -> None:
 
 def test_discovery_examples_validate_against_schema() -> None:
     schema = show_schema("review-respond")
-    for name in ("review-respond", "review-respond-initial"):
+    for name in ("review-respond",):
         example = show_example(name)
         issues = validate_against_schema(example["payload"], schema)
         assert issues == [], f"{name}: {issues}"

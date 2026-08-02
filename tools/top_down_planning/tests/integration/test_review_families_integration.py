@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from top_down_planning.agent_tool import PlanAgentService, ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.artifact_refs import digest_field_value
@@ -15,13 +17,15 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
 from top_down_planning.orchestrator.review_analysis_context import rubric_items_with_ids
 from top_down_planning.persistence.file_store import FileRunStore
+from top_down_planning.orchestrator.phases import PLANNING
 from tests.helpers import (
     create_run_kwargs,
     grant_capability,
     mandatory_plan_digest,
+    mandatory_scope_review_respond_request,
     minimal_resolved_config,
+    prepare_loop_for_scope_review_respond,
 )
-from top_down_planning.orchestrator.phases import PLANNING
 
 
 def _audit_attestation(*, target_revision: int, digest: str) -> dict:
@@ -284,3 +288,284 @@ def test_family_fix_records_owner_sweep(tmp_path: Path) -> None:
         sweep.get("stage") == "verification"
         for sweep in loop_payload.get("family_sweeps", [])
     )
+
+    prepare_loop_for_scope_review_respond(
+        store,
+        run_id,
+        loop_id,
+        target_revision=new_revision,
+    )
+    ReviewAgentService(store, run_id).respond(
+        mandatory_scope_review_respond_request(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=new_revision,
+            review_type="whole_plan",
+        ),
+        capability_token=grant_capability(
+            store, run_id, role="reviewer", loop_id=loop_id, phase=PLANNING
+        ),
+    )
+    loop_payload = store.load_review(run_id, loop_id)
+    assert loop_payload.get("status") == "approved"
+    scope_result = loop_payload.get("scope_review_result") or {}
+    assert scope_result.get("decision") == "approved"
+    assert scope_result.get("stage") == "scope_review"
+
+
+def test_partial_family_fix_surfaces_remaining_instance(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T120001-abcdef"
+    config = minimal_resolved_config()
+    root = PlanItem(
+        id=PLAN_ROOT_ITEM_ID,
+        parent_id=None,
+        order_key="0000000000",
+        title="Deliver",
+        outcome="Deliver the output.",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+    )
+    store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path, resolved_config=config))
+
+    plan = store.load_plan_model(run_id)
+    plan.revision = int(store.load_plan(run_id)["revision"])
+    for item_id, acceptance in (
+        ("item-a", "Reset control must work end-to-end"),
+        ("item-b", "Uses Reset control in recovery flow"),
+        ("item-c", "Reset control banner must show"),
+    ):
+        plan.items[item_id] = PlanItem(
+            id=item_id,
+            parent_id=PLAN_ROOT_ITEM_ID,
+            order_key=f"000000000{item_id[-1]}",
+            title=item_id,
+            outcome=f"Outcome for {item_id}",
+            kind="work",
+            acceptance=[acceptance],
+        )
+    next_plan = plan.to_dict()
+    next_plan["revision"] = plan.revision + 1
+    store.save_plan(run_id, next_plan, plan.revision)
+
+    from top_down_planning.domain.review_loop_factory import new_whole_plan_review_loop
+
+    loop = new_whole_plan_review_loop(
+        loop_id="review-whole-plan-02",
+        target_revision=int(store.load_plan(run_id)["revision"]),
+        config=config,
+    )
+    loop, finding_set_id = __import__(
+        "top_down_planning.domain.reviews",
+        fromlist=["allocate_discovery_finding_set_id"],
+    ).allocate_discovery_finding_set_id(loop)
+    store.save_review(run_id, loop.to_dict())
+
+    loop_id = loop.id
+    target_revision = int(store.load_plan(run_id)["revision"])
+    digest = mandatory_plan_digest(store, run_id)
+    fingerprint = compute_family_fingerprint(
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset-control",
+        scope_kind="active-plan",
+    )
+    findings = []
+    for index, (item_id, acceptance) in enumerate(
+        (
+            ("item-a", "Reset control must work end-to-end"),
+            ("item-b", "Uses Reset control in recovery flow"),
+            ("item-c", "Reset control banner must show"),
+        ),
+        start=1,
+    ):
+        findings.append(
+            {
+                "id": f"sf-{index:03d}",
+                "family_id": "family-reset",
+                "severity": "blocker",
+                "category": "architecture",
+                "target_refs": [item_id],
+                "issue": "Reset referenced before dependency exists",
+                "recommended_change": "Normalize Reset references",
+                "instance_ref": {
+                    "kind": "plan_item_field",
+                    "item_id": item_id,
+                    "field": "acceptance",
+                    "value_digest": digest_field_value(acceptance),
+                    "duplicate_ordinal": 0,
+                },
+            }
+        )
+
+    ReviewAgentService(store, run_id).respond(
+        {
+            "loop_id": loop_id,
+            "target_revision": target_revision,
+            "stage": "initial_review",
+            "finding_set_id": finding_set_id,
+            "reported_findings": findings,
+            "review_completed": True,
+            "summary": "Three Reset instances found",
+            "target_digest": digest,
+            "audit_attestation": _audit_attestation(
+                target_revision=target_revision,
+                digest=digest,
+            ),
+            "finding_families": [
+                {
+                    "id": "family-reset",
+                    "finding_set_id": finding_set_id,
+                    "rule_id": "dependency.acceptance_capability_available",
+                    "subject_key": "reset-control",
+                    "scope_kind": "active-plan",
+                    "family_fingerprint": fingerprint,
+                    "title": "Reset dependency closure",
+                    "seed_finding_id": "sf-001",
+                    "confirmed_finding_ids": ["sf-001", "sf-002", "sf-003"],
+                    "candidate_refs": [],
+                    "recommended_change": "Normalize Reset references",
+                    "discovery_sweep": {
+                        "artifact_revision": target_revision,
+                        "artifact_digest": digest,
+                        "searched_refs": ["active-items:*"],
+                        "search_dimensions": ["acceptance"],
+                        "completed": True,
+                        "summary": "Searched all active acceptance for Reset references",
+                    },
+                }
+            ],
+        },
+        capability_token=grant_capability(
+            store, run_id, role="reviewer", loop_id=loop_id, phase=PLANNING
+        ),
+    )
+
+    PlanAgentService(store, run_id).apply(
+        {
+            "base_revision": target_revision,
+            "operations": [
+                {
+                    "op": "update_item",
+                    "item_id": item_id,
+                    "patch": {"acceptance": [f"Reserved slot only on {item_id}"]},
+                }
+                for item_id in ("item-a", "item-b")
+            ],
+        },
+        capability_token=grant_capability(store, run_id, role="planner", phase=PLANNING),
+    )
+    new_revision = int(store.load_plan(run_id)["revision"])
+    new_digest = mandatory_plan_digest(store, run_id)
+
+    ReviewAgentService(store, run_id).record_finding_actions(
+        {
+            "loop_id": loop_id,
+            "artifact_revision": new_revision,
+            "artifact_digest": new_digest,
+            "family_fixes": [
+                {
+                    "family_id": "family-reset",
+                    "target_finding_ids": [],
+                    "rationale": "Claimed full family fix",
+                    "changed_refs": ["item-a", "item-b"],
+                    "owner_sweep": {
+                        "artifact_revision": new_revision,
+                        "artifact_digest": new_digest,
+                        "searched_refs": ["active-items:*"],
+                        "search_dimensions": ["acceptance"],
+                        "additional_fixed_refs": [],
+                        "remaining_instance_refs": [],
+                        "completed": True,
+                        "summary": "Claimed complete",
+                    },
+                }
+            ],
+            "finding_actions": [],
+        },
+        capability_token=grant_capability(store, run_id, role="planner", phase=PLANNING),
+    )
+
+    loop_payload = store.load_review(run_id, loop_id)
+    loop_payload["lifecycle_status"] = "verification_pending"
+    loop_payload["active_stage"] = "finding_verification"
+    loop_payload["target_revision"] = new_revision
+    store.save_review(run_id, loop_payload)
+
+    from top_down_planning.agent_tool.review_service import RequestError
+
+    with pytest.raises(RequestError, match="verified rejected|disposition closed"):
+        ReviewAgentService(store, run_id).respond(
+            {
+                "loop_id": loop_id,
+                "target_revision": new_revision,
+                "stage": "finding_verification",
+                "finding_set_id": finding_set_id,
+                "decision": "verified",
+                "target_digest": new_digest,
+                "finding_results": [
+                    {
+                        "finding_id": finding_id,
+                        "disposition": "resolved",
+                        "evidence": ["Fixed"],
+                        "direct_side_effects": [],
+                    }
+                    for finding_id in ("sf-001", "sf-002", "sf-003")
+                ],
+                "family_results": [
+                    {
+                        "family_id": "family-reset",
+                        "disposition": "open",
+                        "verification_sweep": {
+                            "artifact_revision": new_revision,
+                            "artifact_digest": new_digest,
+                            "searched_refs": ["active-items:*"],
+                            "search_dimensions": ["acceptance"],
+                            "remaining_instance_refs": [
+                                {
+                                    "kind": "plan_item_field",
+                                    "item_id": "item-c",
+                                    "field": "acceptance",
+                                    "value_digest": digest_field_value(
+                                        "Reset control banner must show"
+                                    ),
+                                    "duplicate_ordinal": 0,
+                                }
+                            ],
+                            "completed": True,
+                            "summary": "Remaining Reset on item-c",
+                        },
+                        "remaining_instance_findings": [
+                            {
+                                "id": "sf-004",
+                                "family_id": "family-reset",
+                                "severity": "blocker",
+                                "category": "architecture",
+                                "target_refs": ["item-c"],
+                                "issue": "Reset still present",
+                                "recommended_change": "Normalize Reset references",
+                                "instance_ref": {
+                                    "kind": "plan_item_field",
+                                    "item_id": "item-c",
+                                    "field": "acceptance",
+                                    "value_digest": digest_field_value(
+                                        "Reset control banner must show"
+                                    ),
+                                    "duplicate_ordinal": 0,
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "new_direct_side_effect_findings": [],
+                "summary": "Family still open",
+            },
+            capability_token=grant_capability(
+                store, run_id, role="reviewer", loop_id=loop_id, phase=PLANNING
+            ),
+        )

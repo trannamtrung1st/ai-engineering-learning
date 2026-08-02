@@ -28,6 +28,40 @@ _INITIAL_STAGES = frozenset({None, "initial_review"})
 _VERIFICATION_STAGES = frozenset({"finding_verification"})
 _SCOPE_REVIEW_STAGES = frozenset({"scope_review"})
 
+_WHOLE_PLAN_FAMILY_DISCOVERY_REQUIRED = (
+    "finding_set_id",
+    "target_digest",
+    "reported_findings",
+    "finding_families",
+    "audit_attestation",
+    "review_completed",
+    "summary",
+)
+
+_WHOLE_PLAN_FAMILY_VERIFICATION_REQUIRED = (
+    "finding_results",
+    "family_results",
+    "new_direct_side_effect_findings",
+    "target_digest",
+    "finding_set_id",
+    "summary",
+)
+
+
+def _whole_plan_family_discovery_contract(stage: str) -> dict[str, Any]:
+    return {
+        "stage": stage,
+        "required_fields": list(_WHOLE_PLAN_FAMILY_DISCOVERY_REQUIRED),
+    }
+
+
+def _whole_plan_family_verification_contract() -> dict[str, Any]:
+    return {
+        "stage": "finding_verification",
+        "decisions": ["verified", "needs_revision", "blocked"],
+        "required_fields": list(_WHOLE_PLAN_FAMILY_VERIFICATION_REQUIRED),
+    }
+
 
 def is_scope_review_stage(loop: ReviewLoop) -> bool:
     return is_scope_review_stage_name(loop.active_stage)
@@ -235,9 +269,15 @@ def approved_means_start_scope_review(loop: ReviewLoop) -> bool:
 def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
     """Fields embedded in reviewer packages for stage awareness."""
 
-    from top_down_planning.domain.reviews import validate_review_stage
+    from top_down_planning.domain.reviews import (
+        uses_finding_family_protocol,
+        validate_review_stage,
+    )
 
     stage = validate_review_stage(loop.active_stage) or "initial_review"
+    family_protocol = (
+        loop.type == "whole_plan" and uses_finding_family_protocol(loop)
+    )
     fields: dict[str, Any] = {
         "stage": stage,
         "lifecycle_status": loop.lifecycle_status or "review_pending",
@@ -284,57 +324,77 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
                 f"scope_review guidance is only defined for mandatory whole_* loops; "
                 f"got {loop.type!r}"
             )
-        fields["respond_contract"] = {
-            "stage": SCOPE_REVIEW_STAGE,
-            "required_fields": [
-                "finding_set_id",
-                "reported_findings",
-                "review_completed",
-                "target_digest",
-                "scope_id",
-                "summary",
-            ],
-            "optional_fields": ["acceptance_criteria_checked"],
-        }
+        fields["respond_contract"] = (
+            _whole_plan_family_discovery_contract(SCOPE_REVIEW_STAGE)
+            if family_protocol
+            else {
+                "stage": SCOPE_REVIEW_STAGE,
+                "required_fields": [
+                    "finding_set_id",
+                    "reported_findings",
+                    "review_completed",
+                    "target_digest",
+                    "scope_id",
+                    "summary",
+                ],
+                "optional_fields": ["acceptance_criteria_checked"],
+            }
+        )
     elif stage == "finding_verification":
         if loop.finding_set_id is not None:
             fields["finding_set_id"] = loop.finding_set_id
-        fields["verification_guidance"] = [
-            "Verify disposition of prior findings",
-            "Confirm required outcomes and evidence",
-            "Check direct revision side effects only",
-            "Classify new_direct_side_effect_findings with severity and category",
-            "Do not perform a broad discovery pass",
-        ]
-        fields["respond_contract"] = {
-            "stage": "finding_verification",
-            "decisions": ["verified", "needs_revision", "blocked"],
-            "required_fields": [
-                "finding_results",
-                "new_direct_side_effect_findings",
-                "target_digest",
-                "finding_set_id",
-                "summary",
-            ],
-        }
+        if family_protocol:
+            fields["verification_guidance"] = [
+                "Verify disposition of prior findings and direct revision side effects",
+                "Re-run each active family's rule components and search dimensions",
+                "Report family_results with verification_sweep for each active policy-relevant family",
+                "Classify new_direct_side_effect_findings with severity and category",
+                "Do not search for unrelated new defect classes",
+            ]
+            fields["respond_contract"] = _whole_plan_family_verification_contract()
+        else:
+            fields["verification_guidance"] = [
+                "Verify disposition of prior findings",
+                "Confirm required outcomes and evidence",
+                "Check direct revision side effects only",
+                "Classify new_direct_side_effect_findings with severity and category",
+                "Do not perform a broad discovery pass",
+            ]
+            fields["respond_contract"] = {
+                "stage": "finding_verification",
+                "decisions": ["verified", "needs_revision", "blocked"],
+                "required_fields": [
+                    "finding_results",
+                    "new_direct_side_effect_findings",
+                    "target_digest",
+                    "finding_set_id",
+                    "summary",
+                ],
+            }
     else:
         if loop.finding_set_id is not None:
             fields["finding_set_id"] = loop.finding_set_id
-        fields["respond_contract"] = {
-            "stage": "initial_review",
-            "required_fields": [
-                "finding_set_id",
-                "reported_findings",
-                "review_completed",
-                "target_digest",
-                "summary",
-            ],
-        }
+        fields["respond_contract"] = (
+            _whole_plan_family_discovery_contract("initial_review")
+            if family_protocol
+            else {
+                "stage": "initial_review",
+                "required_fields": [
+                    "finding_set_id",
+                    "reported_findings",
+                    "review_completed",
+                    "target_digest",
+                    "summary",
+                ],
+            }
+        )
         if loop.type == "whole_plan":
             fields["initial_review_guidance"] = [
                 "Mandatory whole-plan gate: prioritize correctness and internal consistency",
                 "Report contradictions, unverifiable claims, and overlapping executable scope",
                 "Report every material issue with severity and category",
+                "Complete audit_attestation and a discovery_sweep for every finding family",
+                "Group confirmed instances under families before marking review_completed true",
                 "Clear initial discovery still requires a separate fresh scope review",
                 "Do not treat this pass as final approval",
                 "Echo finding_set_id unchanged; service derives lifecycle outcomes",

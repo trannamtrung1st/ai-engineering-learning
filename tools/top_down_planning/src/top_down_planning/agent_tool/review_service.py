@@ -511,6 +511,15 @@ class ReviewAgentService:
             loop_revise_at(updated),
             finding_set_id=updated.finding_set_id,
         )
+        from top_down_planning.domain.finding_families import family_observability_fields
+
+        observability.update(
+            family_observability_fields(
+                updated,
+                artifact_revision=target_revision,
+                artifact_digest=str(request.get("target_digest") or "").strip() or None,
+            )
+        )
         event.update(observability)
         if derived_outcome is not None:
             event["derived_outcome"] = derived_outcome

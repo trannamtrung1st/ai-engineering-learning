@@ -495,6 +495,54 @@ def family_reviewer_sweeps(
     ]
 
 
+def family_discovery_sweep(
+    loop: ReviewLoop,
+    family_id: str,
+    *,
+    artifact_revision: int | None = None,
+    artifact_digest: str | None = None,
+) -> FamilySweepRecord | None:
+    matching = [
+        sweep
+        for sweep in loop.family_sweeps
+        if sweep.family_id == family_id
+        and sweep.stage in {"discovery", "scope_review"}
+        and (
+            artifact_revision is None
+            or sweep.artifact_revision == artifact_revision
+        )
+        and (
+            artifact_digest is None
+            or sweep.artifact_digest == artifact_digest
+        )
+    ]
+    return matching[-1] if matching else None
+
+
+def _audit_passes_completed_for_artifact(
+    loop: ReviewLoop,
+    *,
+    artifact_revision: int | None = None,
+    artifact_digest: str | None = None,
+) -> int:
+    matching = [
+        run
+        for run in loop.audit_runs
+        if (
+            artifact_revision is None
+            or run.artifact_revision == artifact_revision
+        )
+        and (
+            artifact_digest is None
+            or run.artifact_digest == artifact_digest
+        )
+    ]
+    if not matching:
+        return 0
+    latest = matching[-1]
+    return sum(1 for audit_pass in latest.passes if audit_pass.completed)
+
+
 def family_requires_owner_sweep(
     loop: ReviewLoop,
     family_id: str,
@@ -698,14 +746,29 @@ def compute_effective_fix_target_ids(
     challenged_required_ids: set[str],
 ) -> list[str]:
     reviews = _review_helpers()
+    family = family_by_id(loop, family_id)
+    if family is None:
+        raise ValueError(f"unknown family_id {family_id!r}")
+    confirmed_ids = set(family.confirmed_finding_ids)
     required_ids = {
         finding.id for finding in family_required_members(loop, family_id)
     }
-    optional_targets = {
-        finding_id
-        for finding_id in target_finding_ids
-        if finding_id not in required_ids
-    }
+    optional_targets: set[str] = set()
+    for finding_id in target_finding_ids:
+        if finding_id in required_ids:
+            continue
+        finding = reviews.finding_by_id(loop.findings, finding_id)
+        if finding is None or finding.family_id != family_id:
+            raise ValueError(
+                f"optional target_finding_ids entry {finding_id!r} must belong to "
+                f"family {family_id!r}"
+            )
+        if finding_id not in confirmed_ids:
+            raise ValueError(
+                f"optional target_finding_ids entry {finding_id!r} is not a "
+                f"confirmed member of family {family_id!r}"
+            )
+        optional_targets.add(finding_id)
     required_open = {
         finding.id
         for finding in family_open_required_members(loop, family_id)
@@ -851,6 +914,62 @@ def parse_audit_runs(raw: Any) -> list[AuditAttestationRun]:
     return [AuditAttestationRun.from_dict(item) for item in raw if isinstance(item, Mapping)]
 
 
+def family_observability_fields(
+    loop: ReviewLoop,
+    *,
+    artifact_revision: int | None = None,
+    artifact_digest: str | None = None,
+) -> dict[str, Any]:
+    """Derived family and audit counters for review responses and snapshots."""
+
+    from top_down_planning.domain.reviews import uses_finding_family_protocol
+
+    if not uses_finding_family_protocol(loop):
+        return {}
+
+    required_open = required_open_family_ids(
+        loop,
+        artifact_revision=artifact_revision,
+        artifact_digest=artifact_digest,
+    )
+    awaiting_owner: list[str] = []
+    awaiting_verification: list[str] = []
+    for family in active_families(
+        loop,
+        artifact_revision=artifact_revision,
+        artifact_digest=artifact_digest,
+    ):
+        status = derive_family_operational_status(
+            loop,
+            family.id,
+            artifact_revision=artifact_revision,
+            artifact_digest=artifact_digest,
+        )
+        if status == "owner_sweep_pending":
+            awaiting_owner.append(family.id)
+        elif status == "verification_pending":
+            awaiting_verification.append(family.id)
+
+    audit_completed = _audit_passes_completed_for_artifact(
+        loop,
+        artifact_revision=artifact_revision,
+        artifact_digest=artifact_digest,
+    )
+
+    return {
+        "family_count": len(loop.finding_families),
+        "required_open_family_count": len(required_open),
+        "required_open_family_ids": required_open,
+        "families_awaiting_owner_sweep": awaiting_owner,
+        "families_awaiting_verification": awaiting_verification,
+        "regressed_family_count": sum(
+            1 for family in loop.finding_families if family.reopens_family_id
+        ),
+        "audit_passes_completed": audit_completed,
+        "audit_passes_required": len(WHOLE_PLAN_AUDIT_PASS_IDS),
+    }
+
+
 def build_active_family_view(
     loop: ReviewLoop,
     *,
@@ -870,19 +989,30 @@ def build_active_family_view(
             if finding.family_id == family.id
             and finding.id in set(family.confirmed_finding_ids)
         ]
-        families.append(
-            {
-                **family.to_dict(),
-                "members": members,
-                "operational_status": derive_family_operational_status(
-                    loop,
-                    family.id,
-                    artifact_revision=artifact_revision,
-                    artifact_digest=artifact_digest,
-                ),
-                "disposition_counts": family_disposition_counts(loop, family.id),
-            }
+        family_payload: dict[str, Any] = {
+            **family.to_dict(),
+            "members": members,
+            "operational_status": derive_family_operational_status(
+                loop,
+                family.id,
+                artifact_revision=artifact_revision,
+                artifact_digest=artifact_digest,
+            ),
+            "disposition_counts": family_disposition_counts(loop, family.id),
+        }
+        discovery = family_discovery_sweep(
+            loop,
+            family.id,
+            artifact_revision=artifact_revision,
+            artifact_digest=artifact_digest,
         )
+        if discovery is not None:
+            family_payload["discovery_sweep"] = {
+                "search_dimensions": list(discovery.search_dimensions),
+                "searched_refs": list(discovery.searched_refs),
+                "completed": discovery.completed,
+            }
+        families.append(family_payload)
     return {
         "finding_set_id": finding_set_id or None,
         "families": families,

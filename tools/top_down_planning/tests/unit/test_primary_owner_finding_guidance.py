@@ -107,6 +107,36 @@ def test_primary_review_resume_fields_requires_config() -> None:
         primary_review_resume_fields(loop)  # type: ignore[call-arg]
 
 
+def test_revision_guidance_includes_family_repair_for_contract_v2() -> None:
+    loop = make_review_loop(
+        id="loop-family-revision",
+        type="whole_plan",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        revise_at="major",
+        findings=[_finding("f-major", severity="major")],
+        review_record_schema_version=2,
+        review_contract_version=2,
+    )
+    config = {
+        "limits": {
+            "whole_plan_review": {
+                "max_revision_cycles": 5,
+                "max_scope_review_rounds": 3,
+            }
+        }
+    }
+    guidance = build_primary_owner_finding_guidance(
+        handoff="revision",
+        loop=loop,
+        config=config,
+    )
+    assert "active_families" in guidance
+    assert "repair unit" in guidance
+    assert "target_finding_ids" in guidance
+    assert "remaining_instance_refs" in guidance
+
+
 def test_revision_guidance_prefers_defer_or_accept_for_optionals() -> None:
     loop = make_review_loop(
         id="loop-revision",

@@ -104,19 +104,14 @@ def _create_run_at_whole_plan_review(
         sessions = update_primary_binding(sessions, role="planner", provider_session_id=session_id)
     run["sessions"] = sessions
     store.save_run(run_id, run, expected_revision)
-    save_review_payload(store, run_id, {
-            "id": "review-whole-plan-01",
-            "type": "whole_plan",
-            "revise_at": "blocker",
-            "target_revision": 0,
-            "scope": {"kind": "whole_plan"},
-            "status": "pending",
-            "findings": [],
-            "revision_cycles": 0,
-            "lifecycle_status": "review_pending",
-            "scope_review_rounds": 0,
-        },
+    from top_down_planning.domain.review_loop_factory import new_whole_plan_review_loop
+
+    loop = new_whole_plan_review_loop(
+        loop_id="review-whole-plan-01",
+        target_revision=0,
+        config=config,
     )
+    save_review_payload(store, run_id, loop.to_dict())
     return session_id
 
 
@@ -592,7 +587,112 @@ def test_whole_plan_package_includes_default_rubric(tmp_path: Path) -> None:
     assert package["plan_revision"] == 0
     assert "plan" in package
     assert package["plan"]["view"] == "active"
-    assert "warnings" in package
+    assert "analysis_context" in package
+    assert "validation_issues" in package["analysis_context"]
+
+
+def test_whole_plan_package_declares_contract_v2_and_analysis_context(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.domain.review_loop_factory import new_whole_plan_review_loop
+    from top_down_planning.orchestrator.whole_plan_review import (
+        build_whole_plan_review_package,
+    )
+    from tests.helpers import minimal_resolved_config
+
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_plan_review(store)
+    plan = store.load_plan_model("run-20260101T000301-000301")
+    config = minimal_resolved_config()
+    loop = new_whole_plan_review_loop(
+        loop_id="review-whole-plan-01",
+        target_revision=0,
+        config=config,
+    )
+    package = build_whole_plan_review_package(
+        "run-20260101T000301-000301",
+        store.load_run("run-20260101T000301-000301"),
+        config,
+        plan,
+        loop,
+    )
+    assert package["review_record_schema_version"] == 2
+    assert package["review_contract_version"] == 2
+    assert "analysis_context" in package
+    assert "validation_issues" in package["analysis_context"]
+    assert package["analysis_context"]["preflight_is_advisory"] is True
+
+
+def test_whole_plan_scope_review_package_includes_rubric_omits_active_families(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.domain.review_loop_factory import new_whole_plan_review_loop
+    from top_down_planning.orchestrator.whole_plan_review import (
+        build_whole_plan_review_package,
+    )
+    from top_down_planning.domain.finding_families import FindingFamily, compute_family_fingerprint
+    from top_down_planning.domain.reviews import ReviewFinding
+    from tests.helpers import minimal_resolved_config
+
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_plan_review(store)
+    plan = store.load_plan_model("run-20260101T000301-000301")
+    config = minimal_resolved_config()
+    loop = new_whole_plan_review_loop(
+        loop_id="review-whole-plan-01",
+        target_revision=0,
+        config=config,
+    )
+    loop = loop.__class__.from_dict(
+        {
+            **loop.to_dict(),
+            "lifecycle_status": "scope_review_pending",
+            "active_stage": "scope_review",
+            "finding_set_id": "review-whole-plan-01-fs-01",
+            "finding_families": [
+                FindingFamily(
+                    id="family-closed",
+                    finding_set_id="review-whole-plan-01-fs-01",
+                    rule_id="coverage.traceability_gap",
+                    subject_key="prior",
+                    scope_kind="active-plan",
+                    family_fingerprint=compute_family_fingerprint(
+                        rule_id="coverage.traceability_gap",
+                        subject_key="prior",
+                        scope_kind="active-plan",
+                    ),
+                    title="Prior family title",
+                    seed_finding_id="f-1",
+                    confirmed_finding_ids=["f-1"],
+                    candidate_refs=[],
+                    recommended_change="Do not surface this in scope review",
+                ).to_dict()
+            ],
+            "findings": [
+                ReviewFinding(
+                    id="f-1",
+                    severity="blocker",
+                    category="correctness",
+                    target_refs=["item-api"],
+                    issue="prior",
+                    recommended_change="prior",
+                    family_id="family-closed",
+                    status="resolved",
+                ).to_dict()
+            ],
+        }
+    )
+    package = build_whole_plan_review_package(
+        "run-20260101T000301-000301",
+        store.load_run("run-20260101T000301-000301"),
+        config,
+        plan,
+        loop,
+    )
+    assert package["rubric_items"]
+    assert "active_families" not in package
+    assert "Prior family title" not in str(package)
+    assert package["analysis_context"]["preflight_is_advisory"] is True
 
 
 def test_whole_plan_package_includes_overlap_warnings(tmp_path: Path) -> None:
@@ -649,7 +749,8 @@ def test_whole_plan_package_includes_overlap_warnings(tmp_path: Path) -> None:
         loop,
     )
     assert any(
-        "executable descendants" in warning for warning in package["warnings"]
+        issue.get("code") == "executable_parent_overlap"
+        for issue in package["analysis_context"]["validation_issues"]
     )
 
 
@@ -692,7 +793,68 @@ def test_whole_plan_package_includes_empty_aggregate_warnings(tmp_path: Path) ->
         loop,
     )
     assert any(
-        "no active descendants" in warning for warning in package["warnings"]
+        issue.get("code") == "aggregate_without_descendants"
+        for issue in package["analysis_context"]["validation_issues"]
+    )
+
+
+def test_whole_plan_package_includes_dependency_cycle_issues(tmp_path: Path) -> None:
+    from top_down_planning.domain.reviews import ReviewLoop
+    from top_down_planning.orchestrator.whole_plan_review import (
+        build_whole_plan_review_package,
+    )
+    from tests.helpers import minimal_resolved_config, plan_root_item
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000302-000302"
+    _create_run_at_whole_plan_review(store, run_id=run_id)
+    plan = Plan(
+        id="plan-cycle-package",
+        revision=0,
+        output_goal="Deliver the feature.",
+        items={
+            "item-root": plan_root_item(
+                title="Deliver the feature",
+                outcome="Root outcome.",
+            ),
+            "item-a": PlanItem(
+                id="item-a",
+                parent_id="item-root",
+                order_key="0000000000",
+                title="A",
+                outcome="A.",
+                kind="work",
+                depends_on=["item-b"],
+            ),
+            "item-b": PlanItem(
+                id="item-b",
+                parent_id="item-root",
+                order_key="0000000001",
+                title="B",
+                outcome="B.",
+                kind="work",
+                depends_on=["item-a"],
+            ),
+        },
+    )
+    config = minimal_resolved_config()
+    loop = make_review_loop(
+        id="review-whole-plan-04",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+    )
+    package = build_whole_plan_review_package(
+        run_id,
+        store.load_run(run_id),
+        config,
+        plan,
+        loop,
+    )
+    assert any(
+        issue.get("code") == "dependency_cycle"
+        for issue in package["analysis_context"]["validation_issues"]
     )
 
 

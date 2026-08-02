@@ -35,8 +35,7 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "evidence-revision",
     "evidence-revision-focused",
     "review-respond",
-    "review-respond-initial",
-    "review-respond-initial-approved",
+    "review-respond-scope-v1",
     "review-respond-verification",
     "review-respond-scope",
     "review-respond-family-discovery",
@@ -1652,14 +1651,15 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
     "review-respond-initial": {
         "schema": "review-respond",
         "description": (
-            "Mandatory initial_review discovery: report findings with finding_set_id echo."
+            "Legacy contract v1 mandatory discovery (whole_output / focused_plan). "
+            "Whole-plan loops use review-respond-family-discovery instead."
         ),
         "payload": {
-            "loop_id": "review-whole-plan-01",
+            "loop_id": "review-whole-output-01",
             "target_revision": 0,
             "stage": "initial_review",
-            "finding_set_id": "review-whole-plan-01-fs-01",
-            "target_digest": "plan-digest-placeholder",
+            "finding_set_id": "review-whole-output-01-fs-01",
+            "target_digest": "output-digest-placeholder",
             "reported_findings": [
                 {
                     "id": "finding-001",
@@ -1679,32 +1679,32 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
     "review-respond-initial-approved": {
         "schema": "review-respond",
         "description": (
-            "Mandatory initial_review: clear discovery with digest binding "
-            "(still requires a fresh scope_review before final gate approval)."
+            "Legacy contract v1 clear discovery (whole_output / focused_plan). "
+            "Whole-plan loops use review-respond-family-discovery instead."
         ),
         "payload": {
-            "loop_id": "review-whole-plan-01",
+            "loop_id": "review-whole-output-01",
             "target_revision": 0,
             "stage": "initial_review",
-            "finding_set_id": "review-whole-plan-01-fs-01",
+            "finding_set_id": "review-whole-output-01-fs-01",
             "reported_findings": [],
             "review_completed": True,
-            "target_digest": "plan-digest-abc",
+            "target_digest": "output-digest-abc",
             "summary": "No material issues in initial discovery.",
         },
     },
     "review-respond-verification": {
         "schema": "review-respond",
         "description": (
-            "Stage-1 finding_verification Result Contract: findings closed with "
-            "verified decision."
+            "Legacy contract v1 finding_verification (whole_output / focused_plan). "
+            "Whole-plan loops use review-respond-family-verification instead."
         ),
         "payload": {
-            "loop_id": "review-whole-plan-01",
+            "loop_id": "review-whole-output-01",
             "target_revision": 1,
             "stage": "finding_verification",
-            "target_digest": "plan-digest-abc",
-            "finding_set_id": "review-whole-plan-01-fs-01",
+            "target_digest": "output-digest-abc",
+            "finding_set_id": "review-whole-output-01-fs-01",
             "decision": "verified",
             "finding_results": [
                 {
@@ -1718,19 +1718,19 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "summary": "All required findings closed; no direct side effects.",
         },
     },
-    "review-respond-scope": {
+    "review-respond-scope-v1": {
         "schema": "review-respond",
         "description": (
-            "Fresh scope_review discovery: clear approved outcome with empty "
-            "reported_findings."
+            "Contract v1 fresh scope_review (whole_output). Whole-plan contract v2 "
+            "loops use review-respond-scope instead."
         ),
         "payload": {
-            "loop_id": "review-whole-plan-01",
+            "loop_id": "review-whole-output-01",
             "target_revision": 1,
             "stage": "scope_review",
-            "finding_set_id": "review-whole-plan-01-fs-02",
-            "target_digest": "plan-digest-abc",
-            "scope_id": "whole_plan",
+            "finding_set_id": "review-whole-output-01-fs-02",
+            "target_digest": "output-digest-abc",
+            "scope_id": "whole_output",
             "reported_findings": [],
             "review_completed": True,
             "acceptance_criteria_checked": [
@@ -1738,6 +1738,29 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                 "dependencies",
                 "acceptance",
             ],
+            "summary": "No remaining material issues in current scope.",
+        },
+    },
+    "review-respond-scope": {
+        "schema": "review-respond",
+        "description": (
+            "Whole-plan contract v2 fresh scope_review: clear approved outcome "
+            "with audit attestation and finding families (empty when clear)."
+        ),
+        "payload": {
+            "loop_id": "review-whole-plan-01",
+            "target_revision": 1,
+            "stage": "scope_review",
+            "finding_set_id": "review-whole-plan-01-fs-02",
+            "target_digest": "plan-digest-abc",
+            "reported_findings": [],
+            "finding_families": [],
+            "audit_attestation": {
+                "artifact_revision": 1,
+                "artifact_digest": "plan-digest-abc",
+                "passes": _example_whole_plan_audit_passes(),
+            },
+            "review_completed": True,
             "summary": "No remaining material issues in current scope.",
         },
     },
@@ -2126,6 +2149,36 @@ def _finding_category_readme_section() -> str:
     return "\n".join(lines)
 
 
+def _finding_family_readme_section() -> str:
+    return """## Finding families (whole-plan contract v2)
+
+Mandatory whole-plan loops with `review_contract_version` 2 group related defects
+into **finding families**. A family is one repair unit; each **finding** is one
+confirmed instance with a structured `instance_ref`.
+
+- **Confirmed instance** — reported in `reported_findings` and listed in the
+  family's `confirmed_finding_ids`.
+- **Candidate instance** — uncertain match kept in `candidate_refs`; does not
+  affect derived severity until promoted to a finding.
+- **Owner blast-radius sweep** — after revising the artifact, record one
+  `family_fix` with `owner_sweep.completed: true` and empty
+  `remaining_instance_refs`. Required open members are included automatically;
+  list optional members in `target_finding_ids`.
+- **Family closure** — a policy-relevant family is `closed` only after owner
+  sweep (when required) and reviewer `verification_sweep` when verification
+  members remain. Fixing only the seed finding does not close the family.
+- **Scope-review regression** — do not submit `reopens_family_id` or
+  `reopens_finding_id`; the service links regressions from fingerprint and
+  `instance_ref` match after a fresh scope review.
+
+Examples: `review-respond-family-discovery`, `review-respond-scope`,
+`review-record-family-fix`, `review-respond-family-verification`. Record schema
+version 2 carries persisted family state; contract version 2 governs discovery
+and verification payloads.
+
+"""
+
+
 _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.
@@ -2143,12 +2196,12 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
 2. Mandatory whole-plan review (`review respond`) must complete the gate before production.
    Stages: `initial_review` (discovery), optional `finding_verification` (close known
    findings after revisions), then fresh `scope_review` (complete-scope discovery).
-   Each stage requires `stage` plus Result Contract fields — see
-   `review-respond-family-discovery`, `review-respond-family-verification`,
-   `review-respond-initial-approved`, and `review-respond-scope`.
+   Contract v2 payloads require `audit_attestation`, `finding_families`, and
+   `target_digest` on discovery stages — see `review-respond-family-discovery`,
+   `review-respond-family-verification`, and `review-respond-scope`.
    Review packages include an embedded plan tree, `review_policy.category_definitions`,
-   and optional `rubric` on initial review only; refresh with
-   `plan snapshot --view active` when revising after
+   `rubric_items` on every stage, and optional configured rubric themes on initial
+   review; refresh with `plan snapshot --view active` when revising after
    `needs_revision` or initial `changes_requested`. Reviewers prioritize plan
    correctness and internal consistency. Approval requires a clear
    fresh `scope_review` against the current artifact digest — finding closure alone is not
@@ -2314,6 +2367,7 @@ Package README: tools/top_down_planning/README.md
 AGENT_README_TEXT = (
     AGENT_README_PREFIX
     + _finding_category_readme_section()
+    + _finding_family_readme_section()
     + _AGENT_README_WORKFLOW_AND_BEYOND
 )
 

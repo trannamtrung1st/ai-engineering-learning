@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from dataclasses import replace
+
 from core_tools.schema import validate_against_schema
 from top_down_planning.agent_tool import RequestError, ReviewAgentService
 from top_down_planning.domain.models import Plan, PlanItem
@@ -57,15 +59,83 @@ def test_review_respond_schema_accepts_stage_contracts() -> None:
 
     for name in (
         "review-respond",
-        "review-respond-initial",
-        "review-respond-initial-approved",
+        "review-respond-scope-v1",
         "review-respond-verification",
         "review-respond-scope",
+        "review-respond-family-discovery",
+        "review-respond-family-verification",
     ):
         assert name in PUBLIC_EXAMPLES
         example = show_example(name)
         issues = validate_against_schema(example["payload"], schema)
         assert issues == [], (name, issues)
+
+
+def test_legacy_v1_discovery_examples_remain_addressable_but_unlisted() -> None:
+    for name in (
+        "review-respond-initial",
+        "review-respond-initial-approved",
+    ):
+        assert name not in PUBLIC_EXAMPLES
+        example = show_example(name)
+        assert "legacy contract v1" in example["description"].lower()
+        assert example["payload"]["loop_id"] == "review-whole-output-01"
+
+
+def test_legacy_verification_example_uses_whole_output_loop() -> None:
+    assert "review-respond-verification" in PUBLIC_EXAMPLES
+    example = show_example("review-respond-verification")
+    assert example["payload"]["loop_id"] == "review-whole-output-01"
+    assert "legacy contract v1" in example["description"].lower()
+
+
+def test_scope_examples_are_contract_specific() -> None:
+    v1 = show_example("review-respond-scope-v1")
+    v2 = show_example("review-respond-scope")
+    assert v1["payload"]["loop_id"] == "review-whole-output-01"
+    assert v2["payload"]["loop_id"] == "review-whole-plan-01"
+    assert "audit_attestation" not in v1["payload"]
+    assert "audit_attestation" in v2["payload"]
+
+
+def test_whole_plan_v2_respond_contract_requires_family_fields() -> None:
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        review_record_schema_version=2,
+        review_contract_version=2,
+        finding_set_id="review-whole-plan-01-fs-01",
+    )
+    scope_fields = stage_package_fields(
+        replace(loop, active_stage="scope_review")
+    )
+    required = scope_fields["respond_contract"]["required_fields"]
+    assert "audit_attestation" in required
+    assert "finding_families" in required
+    assert "scope_id" not in required
+
+    initial_fields = stage_package_fields(
+        replace(loop, active_stage="initial_review")
+    )
+    assert "audit_attestation" in initial_fields["respond_contract"]["required_fields"]
+
+    verification_fields = stage_package_fields(
+        replace(loop, active_stage="finding_verification")
+    )
+    assert "family_results" in verification_fields["respond_contract"]["required_fields"]
+    guidance = " ".join(verification_fields["verification_guidance"]).lower()
+    assert "family" in guidance
+    assert "verification_sweep" in guidance
+
+    initial_fields = stage_package_fields(
+        replace(loop, active_stage="initial_review")
+    )
+    initial_guidance = " ".join(initial_fields["initial_review_guidance"]).lower()
+    assert "audit_attestation" in initial_guidance
+    assert "discovery_sweep" in initial_guidance
 
 
 def test_review_respond_schema_rejects_cross_stage_fields() -> None:

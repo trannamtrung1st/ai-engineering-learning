@@ -22,6 +22,17 @@ def test_agent_readme_documents_finding_categories() -> None:
         assert category in readme
 
 
+def test_agent_readme_documents_finding_families() -> None:
+    readme = schema_docs.AGENT_README_TEXT.lower()
+    assert "## finding families" in readme
+    assert "candidate_refs" in readme
+    assert "target_finding_ids" in readme
+    assert "reopens_family_id" in readme
+    assert "review-respond-family-discovery" in readme
+    assert "review-respond-scope" in readme
+    assert "review-respond-initial-approved" not in readme
+
+
 def test_agent_help_points_to_finding_categories() -> None:
     assert "category_definitions" in schema_docs.AGENT_HELP_TEXT
 

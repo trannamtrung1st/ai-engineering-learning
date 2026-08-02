@@ -75,6 +75,17 @@ def build_planner_protocol_instructions() -> list[str]:
             "and boundaries do not satisfy this requirement. Keep spec "
             "traceability in source_refs, not scope.includes."
         ),
+        (
+            "When revising after whole-plan review, treat each finding family in "
+            "active_families as one repair unit. Before applying a fix, search the "
+            "whole active plan using the family's rule_id, subject_key, scope_kind, "
+            "candidate_refs, and search dimensions. Include all confirmed and newly "
+            "discovered equivalent locations in one plan apply transaction where "
+            "possible. List optional family members explicitly in target_finding_ids; "
+            "required open members default when omitted. Record a completed owner "
+            "sweep with empty remaining_instance_refs via record-actions after the "
+            "artifact revision. Fixing only the seed finding does not close the family."
+        ),
         PLAN_ROOT_PLANNER_INSTRUCTION,
     ]
 

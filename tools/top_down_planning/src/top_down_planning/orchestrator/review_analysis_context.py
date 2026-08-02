@@ -13,10 +13,7 @@ from top_down_planning.domain.finding_families import (
 )
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.reviews import ReviewLoop, uses_finding_family_protocol
-from top_down_planning.domain.validators import (
-    ValidationIssue,
-    validate_plan_quality_warnings,
-)
+from top_down_planning.domain.validators import collect_plan_analysis_validation_issues
 
 
 def required_audit_passes(review_type: str) -> tuple[str, ...]:
@@ -51,7 +48,7 @@ def build_plan_analysis_context(
         or DEFAULT_CONFIG["review"].get(review_type, {}).get("rubric", [])
     )
     rubric_items = rubric_items_with_ids([str(item) for item in rubric])
-    issues: list[ValidationIssue] = validate_plan_quality_warnings(plan)
+    issues = collect_plan_analysis_validation_issues(plan)
     return {
         "audit_passes": list(required_audit_passes(review_type)),
         "rubric_items": rubric_items,

@@ -554,7 +554,9 @@ def mandatory_initial_respond_request(
     }
     if decision == "blocked":
         payload["block_review"] = True
-    if decision == "approved":
+    if review_type == "whole_plan":
+        payload["target_digest"] = digest
+    elif decision == "approved":
         payload["target_digest"] = digest
     if review_type == "whole_plan":
         extras, reported = _whole_plan_discovery_extras(
@@ -784,7 +786,7 @@ def mandatory_verification_needs_revision_request(
         loop_id=loop_id,
         target_revision=target_revision,
         review_type=review_type,
-        disposition="unresolved",
+        disposition="open",
     )
     if family_results:
         payload["family_results"] = family_results
@@ -815,6 +817,8 @@ def whole_plan_approval_record(store: Any, run_id: str, **fields: Any) -> dict[s
         "id": "review-whole-plan-01",
         "type": "whole_plan",
         "revise_at": "blocker",
+        "review_record_schema_version": 2,
+        "review_contract_version": 2,
         "reviewer_binding": binding.to_dict() if binding is not None else None,
         "target_revision": 0,
         "scope": {"kind": "whole_plan"},
@@ -1256,12 +1260,15 @@ def enrich_whole_plan_review_respond_payload(
         enriched.update(extras)
         enriched["reported_findings"] = reported
     elif stage == "finding_verification" and "family_results" not in enriched:
+        decision = str(enriched.get("decision") or "").strip()
+        disposition = "open" if decision == "needs_revision" else "closed"
         family_results = _synthetic_family_verification_results(
             store,
             run_id,
             loop_id=loop_id,
             target_revision=int(enriched.get("target_revision") or 0),
             review_type="whole_plan",
+            disposition=disposition,
         )
         if family_results:
             enriched["family_results"] = family_results

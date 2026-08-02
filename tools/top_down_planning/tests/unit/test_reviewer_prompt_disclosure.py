@@ -114,6 +114,7 @@ def test_verification_protocol_omits_mandatory_gate_focus() -> None:
     ).lower()
     assert "primary gate focus" not in protocol
     assert "internal consistency" not in protocol
+    assert "audit_attestation" not in protocol
 
 
 def test_verification_package_guidance_mentions_side_effect_categories() -> None:

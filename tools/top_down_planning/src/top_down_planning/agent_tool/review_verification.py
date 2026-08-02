@@ -230,6 +230,15 @@ def merge_whole_plan_verification(
                 continue
             disposition = str(raw.get("disposition") or "").strip()
             if disposition != "closed":
+                events.append(
+                    {
+                        "type": "review_family_closure_blocked",
+                        "loop_id": loop.id,
+                        "family_id": family.id,
+                        "stage": "finding_verification",
+                        "reason": "disposition_not_closed",
+                    }
+                )
                 raise ValueError(
                     f"verified rejected: family {family.id!r} requires "
                     "disposition closed"
@@ -239,6 +248,15 @@ def merge_whole_plan_verification(
             artifact_revision=artifact_revision,
             artifact_digest=artifact_digest,
         ):
+            events.append(
+                {
+                    "type": "review_family_closure_blocked",
+                    "loop_id": loop.id,
+                    "family_id": family.id,
+                    "stage": "finding_verification",
+                    "reason": "operational_status_open",
+                }
+            )
             raise ValueError(
                 f"verified rejected: family {family.id!r} status "
                 f"{derive_family_operational_status(updated_loop, family.id, artifact_revision=artifact_revision, artifact_digest=artifact_digest)!r}"

@@ -61,7 +61,6 @@ from top_down_planning.orchestrator.mandatory_review_stages import (
 from top_down_planning.orchestrator.review_loop_bootstrap import bootstrap_whole_review_loop
 from top_down_planning.domain.validators import (
     build_plan_approval_validation_context,
-    plan_advisory_warning_messages,
     validate_plan,
 )
 from top_down_planning.orchestrator.agent_context import (
@@ -1016,7 +1015,6 @@ def build_whole_plan_review_package(
         or DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
     )
     rubric_items = rubric_items_with_ids([str(item) for item in rubric])
-    quality_warnings = plan_advisory_warning_messages(plan)
     analysis_context = build_plan_analysis_context(
         plan,
         config,
@@ -1037,7 +1035,6 @@ def build_whole_plan_review_package(
         "target_revision": loop.target_revision,
         "plan_revision": plan.revision,
         "plan": build_plan_review_snapshot(plan, limits=limits),
-        "warnings": quality_warnings,
         "analysis_context": analysis_context,
         **plan_execution_contract_fields(plan),
         "digests": digests,
