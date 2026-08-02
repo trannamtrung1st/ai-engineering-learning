@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from top_down_planning.domain.reviews import (
     ReviewLoop,
+    active_finding_ids_for_advisory_policy,
     is_mandatory_review_loop,
     loop_revise_at,
     mark_advisory_handoff_incomplete,
-    optional_finding_ids_missing_owner_response,
+    open_optional_findings_missing_owner_response_in_active_set,
     primary_owner_role_for_review,
 )
 from top_down_planning.orchestrator.failure import apply_review_incomplete_run_transition
@@ -23,12 +24,16 @@ def advisory_handoff_incomplete_loop(
 ) -> tuple[ReviewLoop, str, list[str]]:
     """Mark a loop review_incomplete after an unfinished advisory owner handoff."""
 
-    missing = optional_finding_ids_missing_owner_response(
-        loop.findings,
-        loop.finding_actions,
-        loop_revise_at(loop),
-        finding_set_id=loop.finding_set_id,
-    )
+    missing = [
+        finding.id
+        for finding in open_optional_findings_missing_owner_response_in_active_set(
+            loop.findings,
+            loop.finding_actions,
+            loop_revise_at(loop),
+            finding_set_id=loop.finding_set_id,
+            finding_ids_in_active_set=active_finding_ids_for_advisory_policy(loop),
+        )
+    ]
     marked = mark_advisory_handoff_incomplete(
         loop,
         missing_finding_ids=missing,

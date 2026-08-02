@@ -11,6 +11,7 @@ from core_tools.provider import StubProvider
 from tests.helpers import (
     apply_plan,
     done_events,
+    enter_mandatory_verification_pending,
     prepare_loop_for_scope_review_respond,
     mandatory_scope_review_found_respond_request,
     mandatory_initial_respond_request,
@@ -200,12 +201,13 @@ def test_whole_plan_scope_review_round_limit_rejects(tmp_path: Path) -> None:
         phase=WHOLE_PLAN_REVIEW,
     )()
     loop = store.load_review(run_id, "review-whole-plan-01")
-    loop_payload = dict(loop)
-    loop_payload["lifecycle_status"] = "verification_pending"
-    loop_payload["active_stage"] = "finding_verification"
-    loop_payload["status"] = "pending"
-    loop_payload["target_revision"] = 1
-    store.save_review(run_id, loop_payload)
+    enter_mandatory_verification_pending(
+        store,
+        run_id,
+        "review-whole-plan-01",
+        target_revision=1,
+        finding_set_id=str(loop.get("finding_set_id") or "fs-1"),
+    )
     respond_review(
         store,
         run_id,

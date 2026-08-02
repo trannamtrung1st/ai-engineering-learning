@@ -22,6 +22,9 @@ from top_down_planning.domain.review_rule_registry import (
     validate_rule_id,
 )
 from top_down_planning.domain.digest import digest_canonical_payload
+from top_down_planning.domain.mandatory_audit_passes import (
+    mandatory_audit_pass_ids_for_loop,
+)
 
 if TYPE_CHECKING:
     from top_down_planning.domain.reviews import (
@@ -57,16 +60,6 @@ FAMILY_RESULT_DISPOSITIONS = frozenset({"closed", "open"})
 
 FAMILY_SCOPE_KINDS: frozenset[str] = frozenset(
     {"active-plan", "focused-plan", "whole-output", "focused-output"}
-)
-
-WHOLE_PLAN_AUDIT_PASS_IDS: tuple[str, ...] = (
-    "preflight_triage",
-    "coverage_and_modality",
-    "dependency_closure",
-    "ownership_and_shared_surfaces",
-    "acceptance_and_branch_completeness",
-    "scope_risk_and_traceability",
-    "finding_family_expansion",
 )
 
 
@@ -922,9 +915,9 @@ def family_observability_fields(
 ) -> dict[str, Any]:
     """Derived family and audit counters for review responses and snapshots."""
 
-    from top_down_planning.domain.reviews import uses_finding_family_protocol
+    from top_down_planning.domain.reviews import loop_uses_finding_families
 
-    if not uses_finding_family_protocol(loop):
+    if not loop_uses_finding_families(loop):
         return {}
 
     required_open = required_open_family_ids(
@@ -966,7 +959,7 @@ def family_observability_fields(
             1 for family in loop.finding_families if family.reopens_family_id
         ),
         "audit_passes_completed": audit_completed,
-        "audit_passes_required": len(WHOLE_PLAN_AUDIT_PASS_IDS),
+        "audit_passes_required": len(mandatory_audit_pass_ids_for_loop(loop)),
     }
 
 

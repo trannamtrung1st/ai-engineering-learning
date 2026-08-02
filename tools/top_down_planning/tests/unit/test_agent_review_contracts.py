@@ -59,7 +59,9 @@ def test_review_respond_schema_accepts_stage_contracts() -> None:
 
     for name in (
         "review-respond",
-        "review-respond-scope-v1",
+        "review-respond-focused-with-instance-ref",
+        "review-respond-family-discovery-focused-plan",
+        "review-respond-family-discovery-focused-output",
         "review-respond-verification",
         "review-respond-scope",
         "review-respond-family-discovery",
@@ -71,31 +73,17 @@ def test_review_respond_schema_accepts_stage_contracts() -> None:
         assert issues == [], (name, issues)
 
 
-def test_legacy_v1_discovery_examples_remain_addressable_but_unlisted() -> None:
-    for name in (
-        "review-respond-initial",
-        "review-respond-initial-approved",
-    ):
-        assert name not in PUBLIC_EXAMPLES
-        example = show_example(name)
-        assert "legacy contract v1" in example["description"].lower()
-        assert example["payload"]["loop_id"] == "review-whole-output-01"
-
-
-def test_legacy_verification_example_uses_whole_output_loop() -> None:
+def test_focused_verification_example_uses_focused_output_loop() -> None:
     assert "review-respond-verification" in PUBLIC_EXAMPLES
     example = show_example("review-respond-verification")
-    assert example["payload"]["loop_id"] == "review-whole-output-01"
-    assert "legacy contract v1" in example["description"].lower()
+    assert example["payload"]["loop_id"] == "review-focused-output-01"
+    assert "focused" in example["description"].lower()
 
 
-def test_scope_examples_are_contract_specific() -> None:
-    v1 = show_example("review-respond-scope-v1")
-    v2 = show_example("review-respond-scope")
-    assert v1["payload"]["loop_id"] == "review-whole-output-01"
-    assert v2["payload"]["loop_id"] == "review-whole-plan-01"
-    assert "audit_attestation" not in v1["payload"]
-    assert "audit_attestation" in v2["payload"]
+def test_scope_example_is_mandatory_whole_plan() -> None:
+    scope = show_example("review-respond-scope")
+    assert scope["payload"]["loop_id"] == "review-whole-plan-01"
+    assert "audit_attestation" in scope["payload"]
 
 
 def test_whole_plan_v2_respond_contract_requires_family_fields() -> None:
@@ -457,6 +445,7 @@ def test_review_service_accepts_stage_payloads(tmp_path: Path) -> None:
                     "direct_side_effects": [],
                 }
             ],
+            "family_results": [],
             "new_direct_side_effect_findings": [],
             "target_digest": mandatory_plan_digest(store, run_id),
             "summary": "Closed.",

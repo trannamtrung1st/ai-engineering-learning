@@ -1,4 +1,4 @@
-"""Whole-plan owner family fix recording."""
+"""Artifact-neutral owner family fix recording."""
 
 from __future__ import annotations
 

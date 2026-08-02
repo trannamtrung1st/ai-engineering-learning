@@ -1,4 +1,4 @@
-"""Whole-plan family verification merge and closure gates."""
+"""Mandatory family verification merge and closure gates."""
 
 from __future__ import annotations
 
@@ -7,7 +7,10 @@ from dataclasses import replace
 from typing import Any
 from uuid import uuid4
 
-from top_down_planning.domain.artifact_refs import parse_artifact_ref_list
+from top_down_planning.domain.artifact_refs import (
+    parse_artifact_ref_list,
+    validate_artifact_ref_kinds,
+)
 from top_down_planning.domain.finding_families import (
     FAMILY_RESULT_DISPOSITIONS,
     FamilySweepRecord,
@@ -98,12 +101,13 @@ def _parse_verification_sweep(
     )
 
 
-def merge_whole_plan_verification(
+def merge_mandatory_family_verification(
     loop: ReviewLoop,
     request: dict[str, Any],
     *,
     artifact_revision: int,
     artifact_digest: str,
+    allowed_artifact_ref_kinds: frozenset[str] = frozenset(),
 ) -> tuple[list[ReviewFinding], FindingVerificationResult, ReviewLoop, list[dict[str, Any]]]:
     findings, result = merge_verification_findings(loop, request)
     raw_results = request.get("family_results") or []
@@ -154,6 +158,12 @@ def merge_whole_plan_verification(
                     artifact_digest=artifact_digest,
                 )
             )
+            if allowed_artifact_ref_kinds:
+                validate_artifact_ref_kinds(
+                    parse_artifact_ref_list(sweep_raw.get("remaining_instance_refs")),
+                    allowed_artifact_ref_kinds,
+                    context=f"family {family.id!r} remaining_instance_refs",
+                )
             remaining_findings = raw.get("remaining_instance_findings") or []
             if remaining_findings:
                 appended = parse_reported_findings(
@@ -163,6 +173,12 @@ def merge_whole_plan_verification(
                     if finding.family_id != family.id:
                         raise ValueError(
                             "remaining_instance_findings must belong to family"
+                        )
+                    if finding.instance_ref is not None and allowed_artifact_ref_kinds:
+                        validate_artifact_ref_kinds(
+                            [finding.instance_ref],
+                            allowed_artifact_ref_kinds,
+                            context=f"finding {finding.id!r} instance_ref",
                         )
                 appended_findings.extend(appended)
                 updated_loop = replace(

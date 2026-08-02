@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
@@ -578,6 +578,26 @@ def uses_finding_family_protocol(loop: ReviewLoop) -> bool:
     return loop.review_contract_version == CURRENT_REVIEW_CONTRACT_VERSION
 
 
+def supports_optional_families(loop: ReviewLoop) -> bool:
+    """True when the loop type may use optional focused finding families."""
+
+    return loop.type in {"focused_plan", "focused_output"}
+
+
+def loop_uses_finding_families(loop: ReviewLoop) -> bool:
+    """True when the loop persists finding-family state."""
+
+    if uses_finding_family_protocol(loop):
+        return True
+    return supports_optional_families(loop) and bool(loop.finding_families)
+
+
+def is_mandatory_whole_review(loop: ReviewLoop) -> bool:
+    """True for mandatory whole-plan or whole-output review loops."""
+
+    return loop.type in {"whole_plan", "whole_output"}
+
+
 def parse_review_version_fields(payload: Mapping[str, Any]) -> tuple[int, int]:
     """Parse persisted review record and contract schema versions."""
 
@@ -1122,6 +1142,57 @@ def open_optional_findings_missing_owner_response(
     ]
 
 
+def open_optional_findings_missing_owner_response_in_active_set(
+    findings: Sequence[ReviewFinding],
+    finding_actions: Sequence[FindingAction],
+    threshold: ReviewSeverity,
+    *,
+    finding_set_id: str | None = None,
+    finding_ids_in_active_set: set[str] | None = None,
+) -> list[ReviewFinding]:
+    """Optional findings needing owner response for the current discovery pass.
+
+    When ``finding_ids_in_active_set`` is empty, carried optional findings from
+    prior passes do not require a new advisory handoff. When ``None``, every
+    open optional without a scoped response is treated as missing (legacy).
+    """
+
+    if finding_ids_in_active_set is not None and not finding_ids_in_active_set:
+        return []
+    missing = open_optional_findings_missing_owner_response(
+        findings,
+        finding_actions,
+        threshold,
+        finding_set_id=finding_set_id,
+    )
+    if finding_ids_in_active_set is None:
+        return missing
+    return [finding for finding in missing if finding.id in finding_ids_in_active_set]
+
+
+def active_finding_ids_for_advisory_policy(
+    loop: ReviewLoop,
+    *,
+    reported_finding_ids: Iterable[str] | None = None,
+) -> set[str] | None:
+    """Finding ids in the current discovery pass for advisory/outcome policy.
+
+    Returns ``None`` for legacy loops without ``finding_ids_by_set`` tracking
+    (every open optional counts). Returns an empty set when the active pass has
+    no reported findings yet (carried optionals do not re-trigger handoff).
+    """
+
+    finding_set_id = str(loop.finding_set_id or "").strip()
+    active = set(loop.finding_ids_by_set.get(finding_set_id, []))
+    if reported_finding_ids:
+        active |= set(reported_finding_ids)
+    if not loop.finding_ids_by_set:
+        return None
+    if not active:
+        return set()
+    return active
+
+
 def open_optional_findings_blocking_approval(
     findings: Sequence[ReviewFinding],
     finding_actions: Sequence[FindingAction],
@@ -1214,6 +1285,37 @@ def findings_permit_approval(
     return True
 
 
+def findings_permit_approval_for_loop(
+    loop: ReviewLoop,
+    findings: Sequence[ReviewFinding] | None = None,
+) -> bool:
+    """True when the loop may approve, scoped to the active discovery pass."""
+
+    resolved = loop.findings if findings is None else findings
+    threshold = loop_revise_at(loop)
+    if required_open_findings(resolved, threshold):
+        return False
+    active = active_finding_ids_for_advisory_policy(loop)
+    if active is not None and not active:
+        return True
+    finding_set_id = str(loop.finding_set_id or "").strip() or None
+    if active is None:
+        return findings_permit_approval(
+            resolved,
+            loop.finding_actions,
+            threshold,
+            finding_set_id=None,
+        )
+    blocking = open_optional_findings_blocking_approval(
+        resolved,
+        loop.finding_actions,
+        threshold,
+        finding_set_id=finding_set_id,
+    )
+    active_blocking = [finding for finding in blocking if finding.id in active]
+    return not active_blocking
+
+
 def assert_owner_action_allowed_for_finding(
     finding: ReviewFinding,
     action: str,
@@ -1242,23 +1344,37 @@ def policy_observability_fields(
     threshold: ReviewSeverity,
     *,
     finding_set_id: str | None = None,
+    finding_ids_in_active_set: set[str] | None = None,
 ) -> dict[str, Any]:
     """Derived threshold/requirement state for review responses and events."""
 
     required_ids = required_open_finding_ids(findings, threshold)
     optional_ids = optional_open_finding_ids(findings, threshold)
-    missing_response_ids = optional_finding_ids_missing_owner_response(
-        findings,
-        finding_actions,
-        threshold,
-        finding_set_id=finding_set_id,
-    )
+    missing_response_ids = [
+        finding.id
+        for finding in open_optional_findings_missing_owner_response_in_active_set(
+            findings,
+            finding_actions,
+            threshold,
+            finding_set_id=finding_set_id,
+            finding_ids_in_active_set=finding_ids_in_active_set,
+        )
+    ]
     verification_required_ids = optional_finding_ids_requiring_verification(
         findings,
         finding_actions,
         threshold,
         finding_set_id=finding_set_id,
     )
+    if finding_ids_in_active_set is not None:
+        if not finding_ids_in_active_set:
+            verification_required_ids = []
+        else:
+            verification_required_ids = [
+                finding_id
+                for finding_id in verification_required_ids
+                if finding_id in finding_ids_in_active_set
+            ]
     return {
         "revise_at": threshold,
         "finding_count": len(findings),
@@ -1269,6 +1385,19 @@ def policy_observability_fields(
         "optional_finding_ids_missing_owner_response": missing_response_ids,
         "optional_finding_ids_requiring_verification": verification_required_ids,
     }
+
+
+def policy_observability_fields_for_loop(loop: ReviewLoop) -> dict[str, Any]:
+    """Observability fields scoped to the loop's active discovery pass."""
+
+    threshold = loop_revise_at(loop)
+    return policy_observability_fields(
+        loop.findings,
+        loop.finding_actions,
+        threshold,
+        finding_set_id=loop.finding_set_id,
+        finding_ids_in_active_set=active_finding_ids_for_advisory_policy(loop),
+    )
 
 
 def required_unresolved_finding_ids(
@@ -1337,10 +1466,18 @@ def validate_focused_scope(scope: Any, review_type: str) -> dict[str, Any]:
 def validate_findings_within_scope(
     findings: list[ReviewFinding],
     scope: dict[str, Any],
+    *,
+    review_type: str | None = None,
 ) -> None:
     allowed = {str(item_id) for item_id in (scope.get("item_ids") or [])}
     if not allowed:
         raise ValueError("focused review scope is missing item_ids")
+
+    allowed_kinds = None
+    if review_type in {"focused_plan", "focused_output"}:
+        from top_down_planning.domain.artifact_refs import focused_allowed_ref_kinds
+
+        allowed_kinds = focused_allowed_ref_kinds(review_type)
 
     for finding in findings:
         for ref in finding.target_refs:
@@ -1348,6 +1485,48 @@ def validate_findings_within_scope(
                 raise ValueError(
                     f"finding {finding.id} target_ref {ref!r} is outside declared scope"
                 )
+        if finding.instance_ref is not None and allowed_kinds is not None:
+            from top_down_planning.domain.artifact_refs import (
+                validate_artifact_ref_within_scope,
+            )
+
+            validate_artifact_ref_within_scope(
+                finding.instance_ref,
+                allowed_item_ids=allowed,
+                allowed_kinds=allowed_kinds,
+                context=f"finding {finding.id} instance_ref",
+            )
+
+
+def validate_finding_families_within_scope(
+    loop: ReviewLoop,
+    scope: dict[str, Any],
+    *,
+    review_type: str,
+) -> None:
+    """Ensure optional focused family candidate_refs stay within scope.item_ids."""
+
+    if not loop.finding_families:
+        return
+
+    allowed = {str(item_id) for item_id in (scope.get("item_ids") or [])}
+    if not allowed:
+        raise ValueError("focused review scope is missing item_ids")
+
+    from top_down_planning.domain.artifact_refs import (
+        focused_allowed_ref_kinds,
+        validate_artifact_ref_within_scope,
+    )
+
+    allowed_kinds = focused_allowed_ref_kinds(review_type)
+    for family in loop.finding_families:
+        for index, ref in enumerate(family.candidate_refs):
+            validate_artifact_ref_within_scope(
+                ref,
+                allowed_item_ids=allowed,
+                allowed_kinds=allowed_kinds,
+                context=f"family {family.id} candidate_refs[{index}]",
+            )
 
 
 def focused_loop_count(reviews: list[dict[str, Any]], review_type: str) -> int:
@@ -1647,13 +1826,17 @@ def allocate_discovery_finding_set_id(loop: ReviewLoop) -> tuple[ReviewLoop, str
     """Ensure a discovery finding_set_id is allocated on the loop.
 
     Reuses the existing id when the loop is marked review_incomplete so retries
-    echo the same identifier. Otherwise allocates a new id for a fresh discovery
-    pass.
+    echo the same identifier, or when a finding_verification / scope_review
+    stage already allocated an id. Otherwise allocates a new id for a fresh
+    discovery pass.
     """
 
     if loop.review_incomplete is not None and loop.finding_set_id:
         return loop, loop.finding_set_id
-    if loop.finding_set_id and loop.active_stage == "finding_verification":
+    if loop.finding_set_id and loop.active_stage in {
+        "finding_verification",
+        SCOPE_REVIEW_STAGE,
+    }:
         return loop, loop.finding_set_id
     finding_set_id = next_finding_set_id(loop)
     return replace(loop, finding_set_id=finding_set_id), finding_set_id
@@ -1810,6 +1993,7 @@ def derive_discovery_outcome(
     *,
     review_completed: bool,
     finding_set_id: str | None = None,
+    finding_ids_in_active_set: set[str] | None = None,
 ) -> DiscoveryDerivedOutcome:
     """Derive lifecycle outcome from findings and revise_at (service-owned)."""
 
@@ -1817,17 +2001,25 @@ def derive_discovery_outcome(
         return "review_incomplete"
     if required_open_findings(findings, threshold):
         return "changes_requested"
-    if open_optional_findings_missing_owner_response(
+    if (
+        finding_ids_in_active_set is not None
+        and not finding_ids_in_active_set
+    ):
+        return "approved"
+    if open_optional_findings_missing_owner_response_in_active_set(
         findings,
         finding_actions,
         threshold,
         finding_set_id=finding_set_id,
+        finding_ids_in_active_set=finding_ids_in_active_set,
     ):
         # Optional findings need owner actions; do not force revision.
         return "pending"
     optional_ids = {
         finding.id for finding in optional_open_findings(findings, threshold)
     }
+    if finding_ids_in_active_set is not None:
+        optional_ids &= finding_ids_in_active_set
     effective = effective_owner_actions(
         finding_actions,
         finding_set_id=finding_set_id,
@@ -1911,12 +2103,17 @@ def apply_discovery_response(
     incoming_actions = parse_request_finding_actions(request)
     finding_actions = list(loop.finding_actions) + incoming_actions
     threshold = loop_revise_at(loop)
+    active_for_handoff = active_finding_ids_for_advisory_policy(
+        loop,
+        reported_finding_ids=[finding.id for finding in reported],
+    )
     outcome = derive_discovery_outcome(
         merged,
         finding_actions,
         threshold,
         review_completed=review_completed,
         finding_set_id=finding_set_id,
+        finding_ids_in_active_set=active_for_handoff,
     )
     incomplete: dict[str, Any] | None = None
     if outcome == "review_incomplete":
@@ -1974,12 +2171,15 @@ def needs_advisory_handoff(loop: ReviewLoop) -> bool:
     threshold = loop_revise_at(loop)
     if required_open_findings(loop.findings, threshold):
         return False
+    finding_set_id = str(loop.finding_set_id or "").strip() or None
+    active_for_handoff = active_finding_ids_for_advisory_policy(loop)
     return bool(
-        open_optional_findings_missing_owner_response(
+        open_optional_findings_missing_owner_response_in_active_set(
             loop.findings,
             loop.finding_actions,
             threshold,
-            finding_set_id=loop.finding_set_id,
+            finding_set_id=finding_set_id,
+            finding_ids_in_active_set=active_for_handoff,
         )
     )
 
@@ -2005,7 +2205,20 @@ def complete_advisory_handoff_if_owner_responses_recorded(
     finding_set_id = str(loop.finding_set_id or "").strip()
     if not finding_set_id or finding_set_id in loop.advisory_handoffs_completed:
         return loop
-    if not optional_open_findings(loop.findings, loop_revise_at(loop)):
+    active = active_finding_ids_for_advisory_policy(loop)
+    if active is not None and not active:
+        return loop
+    threshold = loop_revise_at(loop)
+    if active is not None:
+        if open_optional_findings_missing_owner_response_in_active_set(
+            loop.findings,
+            loop.finding_actions,
+            threshold,
+            finding_set_id=finding_set_id,
+            finding_ids_in_active_set=active,
+        ):
+            return loop
+    elif not optional_open_findings(loop.findings, threshold):
         return loop
     return mark_advisory_handoff_completed(loop)
 
@@ -2541,6 +2754,14 @@ def build_primary_owner_finding_guidance(
                     "finding does not close the family."
                 )
             )
+        elif loop_uses_finding_families(loop):
+            lines.append(
+                (
+                    "Related defects are grouped in active_families. Address every "
+                    "open confirmed member within scope via per-finding record-actions; "
+                    "fixing only the seed finding does not close the group."
+                )
+            )
     else:
         lines = [
             (
@@ -2593,15 +2814,10 @@ def primary_review_resume_fields(
         "revise_at": threshold,
         "finding_set_id": loop.finding_set_id,
         **build_active_findings_view(loop),
-        **policy_observability_fields(
-            loop.findings,
-            loop.finding_actions,
-            threshold,
-            finding_set_id=loop.finding_set_id,
-        ),
+        **policy_observability_fields_for_loop(loop),
         "review_budget": build_review_budget_fields(loop, config),
     }
-    if uses_finding_family_protocol(loop):
+    if loop_uses_finding_families(loop):
         from top_down_planning.domain.finding_families import (
             build_active_family_view,
             family_observability_fields,
@@ -2929,25 +3145,48 @@ def apply_review_response(
 
     if decision in CLEAR_APPROVAL_STATUSES:
         threshold = loop_revise_at(loop)
-        if not findings_permit_approval(
-            findings,
-            loop.finding_actions,
-            threshold,
-            finding_set_id=loop.finding_set_id,
-        ):
-            required_ids = required_open_finding_ids(findings, threshold)
-            missing_response_ids = optional_finding_ids_missing_owner_response(
+        permit_approval = (
+            findings_permit_approval_for_loop(loop, findings)
+            if loop.finding_ids_by_set
+            else findings_permit_approval(
                 findings,
                 loop.finding_actions,
                 threshold,
                 finding_set_id=loop.finding_set_id,
             )
+        )
+        if not permit_approval:
+            required_ids = required_open_finding_ids(findings, threshold)
+            active = (
+                active_finding_ids_for_advisory_policy(loop)
+                if loop.finding_ids_by_set
+                else None
+            )
+            missing_response_ids = [
+                finding.id
+                for finding in open_optional_findings_missing_owner_response_in_active_set(
+                    findings,
+                    loop.finding_actions,
+                    threshold,
+                    finding_set_id=loop.finding_set_id,
+                    finding_ids_in_active_set=active,
+                )
+            ]
             verification_required_ids = optional_finding_ids_requiring_verification(
                 findings,
                 loop.finding_actions,
                 threshold,
                 finding_set_id=loop.finding_set_id,
             )
+            if active is not None:
+                if not active:
+                    verification_required_ids = []
+                else:
+                    verification_required_ids = [
+                        finding_id
+                        for finding_id in verification_required_ids
+                        if finding_id in active
+                    ]
             details: list[str] = []
             if required_ids:
                 details.append(

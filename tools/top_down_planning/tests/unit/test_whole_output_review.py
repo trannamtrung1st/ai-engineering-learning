@@ -15,7 +15,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import apply_production, create_run_kwargs, done_events, ensure_plan_work_scope_contracts, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, plan_root_item, respond_review, save_review_payload, script_mandatory_clear_approval, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
+from tests.helpers import apply_production, create_run_kwargs, done_events, ensure_plan_work_scope_contracts, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, mandatory_scope_review_respond_request, mandatory_verification_respond_request, plan_root_item, record_finding_actions, respond_review, save_review_payload, script_mandatory_clear_approval, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -143,6 +143,8 @@ def _create_run_at_whole_output_review(
             "revision_cycles": 0,
             "lifecycle_status": "review_pending",
             "scope_review_rounds": 0,
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
         },
     )
     return session_id
@@ -457,6 +459,8 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
             "lifecycle_status": "verification_pending",
             "active_stage": "finding_verification",
             "finding_set_id": "review-whole-output-01-fs-01",
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
             "findings": [
                 {
                     "id": "finding-01",
@@ -567,10 +571,13 @@ def test_default_whole_output_rubric_covers_correctness_themes() -> None:
         assert theme in joined, f"missing advisory theme {theme!r} in {rubric}"
 
 
-def test_whole_output_package_includes_default_rubric(tmp_path: Path) -> None:
+def test_whole_output_package_includes_contract_v2_rubric_fields(tmp_path: Path) -> None:
     from top_down_planning.config.defaults import DEFAULT_CONFIG
     from top_down_planning.orchestrator.whole_output_review import (
         build_whole_output_review_package,
+    )
+    from top_down_planning.orchestrator.review_analysis_context import (
+        WHOLE_OUTPUT_AUDIT_PASS_IDS,
     )
     from tests.helpers import make_review_loop
 
@@ -586,6 +593,8 @@ def test_whole_output_package_includes_default_rubric(tmp_path: Path) -> None:
         reviewer_session_id="sess",
         target_revision=1,
         scope={"kind": "whole_output"},
+        review_record_schema_version=2,
+        review_contract_version=2,
     )
     package = build_whole_output_review_package(
         run_id,
@@ -595,7 +604,251 @@ def test_whole_output_package_includes_default_rubric(tmp_path: Path) -> None:
         production,
         loop,
     )
-    assert package["rubric"] == DEFAULT_CONFIG["review"]["whole_output"]["rubric"]
+    rubric_texts = [item["text"] for item in package["rubric_items"]]
+    assert rubric_texts == DEFAULT_CONFIG["review"]["whole_output"]["rubric"]
+    assert package["required_audit_passes"] == list(WHOLE_OUTPUT_AUDIT_PASS_IDS)
+    assert package["review_contract_version"] == 2
+    assert package["family_protocol_enabled"] is True
+    assert "review-respond-family-discovery-output" in package["tool_instructions"]["examples"]
     protocol = " ".join(package["protocol_instructions"]).lower()
     assert "primary gate focus" in protocol
     assert "correctness" in protocol
+
+
+def test_output_owner_request_includes_artifact_binding(tmp_path: Path) -> None:
+    from top_down_planning.orchestrator.whole_output_review import OutputWholeReviewAdapter
+    from tests.helpers import make_review_loop
+
+    store = FileRunStore(tmp_path)
+    _create_run_at_whole_output_review(store)
+    run_id = "run-20260101T000801-000801"
+    production = store.load_production(run_id)
+    output_digest = mandatory_output_digest(store, run_id)
+    loop = make_review_loop(
+        id="review-whole-output-01",
+        type="whole_output",
+        target_revision=int(production["output_revision"]),
+        scope={"kind": "whole_output"},
+        review_record_schema_version=2,
+        review_contract_version=2,
+        finding_set_id="review-whole-output-01-fs-01",
+        findings=[
+            {
+                "id": "finding-01",
+                "severity": "blocker",
+                "category": "correctness",
+                "target_refs": ["item-leaf"],
+                "issue": "Missing evidence.",
+                "recommended_change": "Add evidence.",
+                "status": "unresolved",
+            }
+        ],
+    )
+    adapter = OutputWholeReviewAdapter(store, run_id)
+    config = store.load_resolved_config(run_id)
+    request = adapter.build_owner_request(loop, config, "revision")
+    expected = __import__(
+        "top_down_planning.domain.reviews",
+        fromlist=["primary_review_resume_fields"],
+    ).primary_review_resume_fields(
+        loop,
+        config=config,
+        artifact_revision=int(production["output_revision"]),
+        artifact_digest=output_digest,
+    )
+    assert request["active_families"] == expected["active_families"]
+    assert request["audit_passes_completed"] == expected["audit_passes_completed"]
+
+
+def test_whole_output_review_v2_family_owner_sweep_e2e_reaches_accepted(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    _create_run_at_whole_output_review(store, provider=provider)
+    run_id = "run-20260101T000801-000801"
+    loop_id = "review-whole-output-01"
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
+
+    findings = [
+        {
+            "id": "finding-01",
+            "severity": "blocker",
+            "category": "correctness",
+            "target_refs": ["item-leaf"],
+            "issue": "Output evidence is missing.",
+            "recommended_change": "Add artifact reference.",
+            "status": "unresolved",
+        }
+    ]
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=1,
+                review_type="whole_output",
+                decision="changes_requested",
+                findings=findings,
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=loop_id,
+        ),
+    )
+
+    def _producer_revision() -> None:
+        apply_production(
+            store,
+            run_id,
+            {
+                "production_revision": 2,
+                "evidence_revision": True,
+                "plan_items": ["item-leaf"],
+                "dispositions": {
+                    "item-leaf": {
+                        "disposition": "completed",
+                        "evidence": "Added artifact reference.",
+                    }
+                },
+                "outputs": [
+                    {
+                        "id": "output-leaf",
+                        "type": "artifact",
+                        "ref": "artifacts/leaf.txt",
+                    }
+                ],
+                "contributions": [
+                    {
+                        "item_id": "item-leaf",
+                        "output_refs": ["output-leaf"],
+                        "summary": "Revised evidence.",
+                    }
+                ],
+                "summary": "Addressed reviewer finding.",
+            },
+            handler="apply",
+            phase=WHOLE_OUTPUT_REVIEW,
+        )()
+        apply_production(
+            store,
+            run_id,
+            {
+                "goal_assessment": "Output goal is fully met after revision.",
+                "goal_met": True,
+            },
+            handler="submit_completion",
+            phase=WHOLE_OUTPUT_REVIEW,
+        )()
+        new_revision = int(store.load_production(run_id)["output_revision"])
+        new_digest = mandatory_output_digest(store, run_id)
+        loop_payload = store.load_review(run_id, loop_id)
+        families = loop_payload.get("finding_families") or []
+        assert families, "discovery should persist finding families on the loop"
+        family_id = str(families[0]["id"])
+        record_finding_actions(
+            store,
+            run_id,
+            {
+                "loop_id": loop_id,
+                "artifact_revision": new_revision,
+                "artifact_digest": new_digest,
+                "family_fixes": [
+                    {
+                        "family_id": family_id,
+                        "target_finding_ids": [],
+                        "rationale": "Added missing evidence across production.",
+                        "changed_refs": ["item-leaf"],
+                        "owner_sweep": {
+                            "artifact_revision": new_revision,
+                            "artifact_digest": new_digest,
+                            "searched_refs": ["production:*"],
+                            "search_dimensions": ["evidence"],
+                            "additional_fixed_refs": [],
+                            "remaining_instance_refs": [],
+                            "completed": True,
+                            "summary": "No remaining evidence gaps.",
+                        },
+                    }
+                ],
+                "finding_actions": [],
+            },
+            role="producer",
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=loop_id,
+        )()
+        loop_after_record = store.load_review(run_id, loop_id)
+        assert any(
+            sweep.get("stage") == "owner_fix"
+            for sweep in loop_after_record.get("family_sweeps", [])
+        )
+
+    provider.script_turn(done_events(text="turn complete"), mutate_store=_producer_revision)
+
+    def _verification_respond() -> None:
+        loop = store.load_review(run_id, loop_id)
+        finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
+        target_revision = int(store.load_production(run_id)["output_revision"])
+        respond_review(
+            store,
+            run_id,
+            mandatory_verification_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=target_revision,
+                review_type="whole_output",
+                finding_set_id=finding_set_id,
+                finding_results=[
+                    {
+                        "finding_id": "finding-01",
+                        "disposition": "resolved",
+                        "evidence": ["artifact added"],
+                        "direct_side_effects": [],
+                    }
+                ],
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(done_events(text="turn complete"), mutate_store=_verification_respond)
+
+    def _scope_respond() -> None:
+        target_revision = int(store.load_production(run_id)["output_revision"])
+        respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=target_revision,
+                review_type="whole_output",
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(done_events(text="turn complete"), mutate_store=_scope_respond)
+
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.phase == OUTPUT_VALIDATED
+    assert result.outcome == "accepted"
+    review = store.load_review(run_id, loop_id)
+    assert review.get("active_stage") == "scope_review"
+    assert review.get("status") == "approved"
+    assert review.get("verification_result")
+    assert review.get("scope_review_result")
+    assert review.get("finding_families")
+    events = store.load_events(run_id)
+    event_types = {event.get("type") for event in events}
+    assert "whole_output_scope_review_started" in event_types

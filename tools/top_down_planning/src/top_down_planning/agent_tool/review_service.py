@@ -6,14 +6,19 @@ from typing import Any
 
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import RequestError
+from top_down_planning.agent_tool.mandatory_review_target import (
+    resolve_focused_review_target,
+    resolve_mandatory_review_target,
+)
 from top_down_planning.agent_tool.review_discovery import (
-    apply_whole_plan_discovery_response,
+    apply_focused_discovery_response,
+    apply_mandatory_discovery_response,
 )
 from top_down_planning.agent_tool.review_owner_actions import (
     apply_family_fixes,
 )
 from top_down_planning.agent_tool.review_verification import (
-    merge_whole_plan_verification,
+    merge_mandatory_family_verification,
 )
 from top_down_planning.agent_tool.request_audit import (
     AgentRequestContext,
@@ -31,7 +36,6 @@ from top_down_planning.domain.reviews import (
     ReviewLoop,
     ScopeReviewResult,
     allocate_discovery_finding_set_id,
-    apply_discovery_response,
     apply_owner_finding_actions,
     expand_finding_actions_with_default,
     apply_review_response,
@@ -45,11 +49,14 @@ from top_down_planning.domain.reviews import (
     map_discovery_outcome_to_loop_status,
     merge_verification_findings,
     parse_reported_findings,
+    parse_findings,
     focused_loop_count,
-    policy_observability_fields,
+    policy_observability_fields_for_loop,
     require_review_respond_stage,
+    supports_optional_families,
     uses_finding_family_protocol,
     validate_findings_within_scope,
+    validate_finding_families_within_scope,
     validate_focused_scope,
     validate_mandatory_stage_decision,
     validate_review_respond_stage,
@@ -59,6 +66,52 @@ from top_down_planning.persistence.interface import RunStore
 
 _FOCUSED_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_plan_review"]
 _FOCUSED_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_output_review"]
+
+
+def _reject_non_family_mandatory_loop(loop: ReviewLoop) -> None:
+    if loop.type not in {"whole_plan", "whole_output"}:
+        return
+    if uses_finding_family_protocol(loop):
+        return
+    raise RequestError(
+        f"mandatory {loop.type} review requires contract v2 finding-family protocol; "
+        "nonterminal contract-v1 mandatory loops cannot resume — restart the run"
+    )
+
+
+def _current_focused_artifact_digest(store: RunStore, run_id: str, loop_type: str) -> str:
+    from top_down_planning.persistence.digests import (
+        compute_output_digest,
+        compute_plan_digest,
+    )
+
+    if loop_type == "focused_output":
+        return compute_output_digest(store.load_production(run_id))
+    return compute_plan_digest(store.load_plan(run_id))
+
+
+def _resolve_focused_artifact_digest(
+    store: RunStore,
+    run_id: str,
+    loop: ReviewLoop,
+    request: dict[str, Any],
+    *,
+    require_explicit: bool = False,
+) -> str:
+    requested = str(
+        request.get("target_digest") or request.get("artifact_digest") or ""
+    ).strip()
+    current = _current_focused_artifact_digest(store, run_id, loop.type)
+    if require_explicit and not requested:
+        raise RequestError(f"{loop.type} respond requires target_digest")
+    if requested:
+        if requested != current:
+            label = "output" if loop.type == "focused_output" else "plan"
+            raise RequestError(
+                f"target_digest does not match current {label} digest"
+            )
+        return requested
+    return current
 
 
 class ReviewAgentService:
@@ -278,13 +331,8 @@ class ReviewAgentService:
                     "mandatory initial_review / scope_review stages"
                 )
             try:
-                if uses_finding_family_protocol(loop):
-                    config = self._store.load_resolved_config(self._run_id)
-                    review_cfg = (config.get("review") or {}).get("whole_plan") or {}
-                    rubric = list(
-                        review_cfg.get("rubric")
-                        or DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
-                    )
+                if loop.type in {"whole_plan", "whole_output"}:
+                    _reject_non_family_mandatory_loop(loop)
                     artifact_digest = str(
                         request.get("target_digest")
                         or request.get("artifact_digest")
@@ -292,30 +340,76 @@ class ReviewAgentService:
                     ).strip()
                     if not artifact_digest:
                         raise RequestError(
-                            "whole-plan discovery respond requires target_digest"
+                            f"{loop.type} discovery respond requires target_digest"
                         )
+                    target = resolve_mandatory_review_target(
+                        self._store,
+                        self._run_id,
+                        loop,
+                        artifact_revision=target_revision,
+                        artifact_digest=artifact_digest,
+                    )
                     updated, findings, derived_outcome, family_events = (
-                        apply_whole_plan_discovery_response(
+                        apply_mandatory_discovery_response(
                             loop,
                             request,
                             stage=stage,
-                            review_type=loop.type,
-                            artifact_revision=target_revision,
-                            artifact_digest=artifact_digest,
-                            rubric=[str(item) for item in rubric],
+                            review_type=target.review_type,
+                            artifact_revision=target.artifact_revision,
+                            artifact_digest=target.artifact_digest,
+                            rubric=[
+                                str(item["text"]) for item in target.rubric_items
+                            ],
+                            allowed_artifact_ref_kinds=target.allowed_artifact_ref_kinds,
+                            family_scope_kind=target.family_scope_kind,
+                        )
+                    )
+                elif supports_optional_families(loop):
+                    artifact_digest = _resolve_focused_artifact_digest(
+                        self._store,
+                        self._run_id,
+                        loop,
+                        request,
+                        require_explicit=bool(request.get("finding_families")),
+                    )
+                    target = resolve_focused_review_target(
+                        self._store,
+                        self._run_id,
+                        loop,
+                        artifact_revision=target_revision,
+                        artifact_digest=artifact_digest,
+                    )
+                    updated, findings, derived_outcome, family_events = (
+                        apply_focused_discovery_response(
+                            loop,
+                            request,
+                            stage=stage,
+                            review_type=target.review_type,
+                            artifact_revision=target.artifact_revision,
+                            artifact_digest=target.artifact_digest,
+                            allowed_artifact_ref_kinds=target.allowed_artifact_ref_kinds,
+                            family_scope_kind=target.family_scope_kind,
                         )
                     )
                 else:
-                    updated, findings, derived_outcome = apply_discovery_response(
-                        loop,
-                        request,
-                        stage=stage,
+                    raise RequestError(
+                        f"unsupported review loop type for discovery respond: {loop.type}"
                     )
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
             if loop.type in {"focused_plan", "focused_output"}:
                 try:
-                    validate_findings_within_scope(findings, loop.scope)
+                    validate_findings_within_scope(
+                        findings,
+                        loop.scope,
+                        review_type=loop.type,
+                    )
+                    if updated is not None:
+                        validate_finding_families_within_scope(
+                            updated,
+                            loop.scope,
+                            review_type=loop.type,
+                        )
                 except ValueError as exc:
                     raise RequestError(str(exc)) from exc
             decision = map_discovery_outcome_to_loop_status(
@@ -362,18 +456,27 @@ class ReviewAgentService:
                 )
         elif stage == "finding_verification":
             try:
-                if uses_finding_family_protocol(loop):
+                if loop.type in {"whole_plan", "whole_output"}:
+                    _reject_non_family_mandatory_loop(loop)
                     artifact_digest = str(request.get("target_digest") or "").strip()
                     if not artifact_digest:
                         raise RequestError(
-                            "whole-plan verification respond requires target_digest"
+                            f"{loop.type} verification respond requires target_digest"
                         )
+                    verify_target = resolve_mandatory_review_target(
+                        self._store,
+                        self._run_id,
+                        loop,
+                        artifact_revision=target_revision,
+                        artifact_digest=artifact_digest,
+                    )
                     findings, verification_result, updated_loop, family_events = (
-                        merge_whole_plan_verification(
+                        merge_mandatory_family_verification(
                             loop,
                             request,
                             artifact_revision=target_revision,
                             artifact_digest=artifact_digest,
+                            allowed_artifact_ref_kinds=verify_target.allowed_artifact_ref_kinds,
                         )
                     )
                     verification_payload = verification_result.to_dict()
@@ -386,13 +489,35 @@ class ReviewAgentService:
                         verification_result=verification_payload,
                         scope_review_result=None,
                     )
-                else:
+                elif supports_optional_families(loop):
+                    _resolve_focused_artifact_digest(
+                        self._store,
+                        self._run_id,
+                        loop,
+                        request,
+                        require_explicit=True,
+                    )
                     findings, verification_result = merge_verification_findings(
                         loop, request
                     )
                     verification_payload = verification_result.to_dict()
+                else:
+                    raise RequestError(
+                        f"unsupported review loop type for verification respond: {loop.type}"
+                    )
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
+            if loop.type in {"focused_plan", "focused_output"}:
+                try:
+                    validate_findings_within_scope(
+                        parse_findings(
+                            request.get("new_direct_side_effect_findings") or []
+                        ),
+                        loop.scope,
+                        review_type=loop.type,
+                    )
+                except ValueError as exc:
+                    raise RequestError(str(exc)) from exc
         else:
             raise RequestError("unsupported review respond payload")
 
@@ -505,12 +630,7 @@ class ReviewAgentService:
         )
         if stage is not None:
             event["stage"] = stage
-        observability = policy_observability_fields(
-            updated.findings,
-            updated.finding_actions,
-            loop_revise_at(updated),
-            finding_set_id=updated.finding_set_id,
-        )
+        observability = policy_observability_fields_for_loop(updated)
         from top_down_planning.domain.finding_families import family_observability_fields
 
         observability.update(
@@ -724,6 +844,11 @@ class ReviewAgentService:
                     current_artifact_revision=artifact_revision,
                 )
             else:
+                if raw_fixes:
+                    raise RequestError(
+                        "family_fixes apply only to mandatory whole_plan and "
+                        "whole_output contract-v2 reviews"
+                    )
                 if "artifact_revision" in request:
                     try:
                         requested_revision = int(request["artifact_revision"])
@@ -790,14 +915,7 @@ class ReviewAgentService:
         )
         if any(action.action == "challenge" for action in parsed):
             event["type"] = "review_challenge_submitted"
-        event.update(
-            policy_observability_fields(
-                updated.findings,
-                updated.finding_actions,
-                loop_revise_at(updated),
-                finding_set_id=updated.finding_set_id,
-            )
-        )
+        event.update(policy_observability_fields_for_loop(updated))
 
         self._store.commit(
             self._run_id,
@@ -813,12 +931,7 @@ class ReviewAgentService:
             "status": updated.status,
             "finding_actions": [action.to_dict() for action in updated.finding_actions],
             "recorded_actions": [action.to_dict() for action in parsed],
-            **policy_observability_fields(
-                updated.findings,
-                updated.finding_actions,
-                loop_revise_at(updated),
-                finding_set_id=updated.finding_set_id,
-            ),
+            **policy_observability_fields_for_loop(updated),
         }
 
 

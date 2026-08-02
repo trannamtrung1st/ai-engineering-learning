@@ -158,10 +158,10 @@ def test_finding_action_challenge_requires_proposed_disposition() -> None:
 def test_review_loop_persists_revise_at_actions_and_schema_version() -> None:
     loop = make_review_loop(
         id="loop-1",
-        type="whole_plan",
+        type="focused_plan",
         reviewer_session_id=None,
         target_revision=1,
-        scope={"kind": "whole_plan"},
+        scope={"kind": "focused_plan", "item_ids": ["item-a"]},
         revise_at="major",
         finding_actions=[
             FindingAction(

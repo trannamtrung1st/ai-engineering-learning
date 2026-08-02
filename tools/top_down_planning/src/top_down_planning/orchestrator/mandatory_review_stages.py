@@ -28,7 +28,7 @@ _INITIAL_STAGES = frozenset({None, "initial_review"})
 _VERIFICATION_STAGES = frozenset({"finding_verification"})
 _SCOPE_REVIEW_STAGES = frozenset({"scope_review"})
 
-_WHOLE_PLAN_FAMILY_DISCOVERY_REQUIRED = (
+_MANDATORY_FAMILY_DISCOVERY_REQUIRED = (
     "finding_set_id",
     "target_digest",
     "reported_findings",
@@ -38,7 +38,7 @@ _WHOLE_PLAN_FAMILY_DISCOVERY_REQUIRED = (
     "summary",
 )
 
-_WHOLE_PLAN_FAMILY_VERIFICATION_REQUIRED = (
+_MANDATORY_FAMILY_VERIFICATION_REQUIRED = (
     "finding_results",
     "family_results",
     "new_direct_side_effect_findings",
@@ -48,18 +48,18 @@ _WHOLE_PLAN_FAMILY_VERIFICATION_REQUIRED = (
 )
 
 
-def _whole_plan_family_discovery_contract(stage: str) -> dict[str, Any]:
+def _mandatory_family_discovery_contract(stage: str) -> dict[str, Any]:
     return {
         "stage": stage,
-        "required_fields": list(_WHOLE_PLAN_FAMILY_DISCOVERY_REQUIRED),
+        "required_fields": list(_MANDATORY_FAMILY_DISCOVERY_REQUIRED),
     }
 
 
-def _whole_plan_family_verification_contract() -> dict[str, Any]:
+def _mandatory_family_verification_contract() -> dict[str, Any]:
     return {
         "stage": "finding_verification",
         "decisions": ["verified", "needs_revision", "blocked"],
-        "required_fields": list(_WHOLE_PLAN_FAMILY_VERIFICATION_REQUIRED),
+        "required_fields": list(_MANDATORY_FAMILY_VERIFICATION_REQUIRED),
     }
 
 
@@ -136,8 +136,8 @@ def mark_revision_in_progress(loop: ReviewLoop) -> ReviewLoop:
     )
 
 
-def enter_planner_revision_cycle(loop: ReviewLoop) -> ReviewLoop:
-    """Enter planner revision after needs_revision / changes_requested."""
+def enter_owner_revision_cycle(loop: ReviewLoop) -> ReviewLoop:
+    """Enter owner revision after needs_revision / changes_requested."""
 
     current = loop.lifecycle_status or "findings_open"
     if current == "revision_in_progress":
@@ -266,18 +266,52 @@ def approved_means_start_scope_review(loop: ReviewLoop) -> bool:
     )
 
 
+def _focused_verification_package_fields(loop: ReviewLoop) -> dict[str, Any]:
+    """Verification-stage package fields for focused (non-mandatory) rechecks."""
+
+    fields: dict[str, Any] = {
+        "stage": "finding_verification",
+        "lifecycle_status": loop.lifecycle_status or "review_pending",
+        "review_policy": reviewer_package_policy_guidance(),
+    }
+    if loop.finding_set_id is not None:
+        fields["finding_set_id"] = loop.finding_set_id
+    fields["verification_guidance"] = [
+        "Verify disposition of prior findings",
+        "Confirm required outcomes and evidence",
+        "Check direct revision side effects only",
+        "Classify new_direct_side_effect_findings with severity and category",
+        "Do not perform a broad discovery pass",
+    ]
+    fields["respond_contract"] = {
+        "stage": "finding_verification",
+        "decisions": ["verified", "needs_revision", "blocked"],
+        "required_fields": [
+            "finding_results",
+            "new_direct_side_effect_findings",
+            "target_digest",
+            "finding_set_id",
+            "summary",
+        ],
+    }
+    return fields
+
+
 def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
-    """Fields embedded in reviewer packages for stage awareness."""
+    """Fields embedded in mandatory whole_* reviewer packages for stage awareness."""
 
     from top_down_planning.domain.reviews import (
-        uses_finding_family_protocol,
+        is_mandatory_whole_review,
         validate_review_stage,
     )
 
+    if not is_mandatory_whole_review(loop):
+        raise ValueError(
+            "stage_package_fields applies only to mandatory whole_* reviews; "
+            f"got {loop.type!r}"
+        )
+
     stage = validate_review_stage(loop.active_stage) or "initial_review"
-    family_protocol = (
-        loop.type == "whole_plan" and uses_finding_family_protocol(loop)
-    )
     fields: dict[str, Any] = {
         "stage": stage,
         "lifecycle_status": loop.lifecycle_status or "review_pending",
@@ -324,69 +358,25 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
                 f"scope_review guidance is only defined for mandatory whole_* loops; "
                 f"got {loop.type!r}"
             )
-        fields["respond_contract"] = (
-            _whole_plan_family_discovery_contract(SCOPE_REVIEW_STAGE)
-            if family_protocol
-            else {
-                "stage": SCOPE_REVIEW_STAGE,
-                "required_fields": [
-                    "finding_set_id",
-                    "reported_findings",
-                    "review_completed",
-                    "target_digest",
-                    "scope_id",
-                    "summary",
-                ],
-                "optional_fields": ["acceptance_criteria_checked"],
-            }
+        fields["respond_contract"] = _mandatory_family_discovery_contract(
+            SCOPE_REVIEW_STAGE
         )
     elif stage == "finding_verification":
         if loop.finding_set_id is not None:
             fields["finding_set_id"] = loop.finding_set_id
-        if family_protocol:
-            fields["verification_guidance"] = [
-                "Verify disposition of prior findings and direct revision side effects",
-                "Re-run each active family's rule components and search dimensions",
-                "Report family_results with verification_sweep for each active policy-relevant family",
-                "Classify new_direct_side_effect_findings with severity and category",
-                "Do not search for unrelated new defect classes",
-            ]
-            fields["respond_contract"] = _whole_plan_family_verification_contract()
-        else:
-            fields["verification_guidance"] = [
-                "Verify disposition of prior findings",
-                "Confirm required outcomes and evidence",
-                "Check direct revision side effects only",
-                "Classify new_direct_side_effect_findings with severity and category",
-                "Do not perform a broad discovery pass",
-            ]
-            fields["respond_contract"] = {
-                "stage": "finding_verification",
-                "decisions": ["verified", "needs_revision", "blocked"],
-                "required_fields": [
-                    "finding_results",
-                    "new_direct_side_effect_findings",
-                    "target_digest",
-                    "finding_set_id",
-                    "summary",
-                ],
-            }
+        fields["verification_guidance"] = [
+            "Verify disposition of prior findings and direct revision side effects",
+            "Re-run each active family's rule components and search dimensions",
+            "Report family_results with verification_sweep for each active policy-relevant family",
+            "Classify new_direct_side_effect_findings with severity and category",
+            "Do not search for unrelated new defect classes",
+        ]
+        fields["respond_contract"] = _mandatory_family_verification_contract()
     else:
         if loop.finding_set_id is not None:
             fields["finding_set_id"] = loop.finding_set_id
-        fields["respond_contract"] = (
-            _whole_plan_family_discovery_contract("initial_review")
-            if family_protocol
-            else {
-                "stage": "initial_review",
-                "required_fields": [
-                    "finding_set_id",
-                    "reported_findings",
-                    "review_completed",
-                    "target_digest",
-                    "summary",
-                ],
-            }
+        fields["respond_contract"] = _mandatory_family_discovery_contract(
+            "initial_review"
         )
         if loop.type == "whole_plan":
             fields["initial_review_guidance"] = [
@@ -439,25 +429,45 @@ def verification_recheck_request(
     phase: str,
     loop: ReviewLoop,
     target_revision: int,
+    artifact_digest: str | None = None,
 ) -> dict[str, Any]:
     from top_down_planning.orchestrator.reviewer_session import (
         build_reviewer_protocol_instructions,
     )
 
+    from top_down_planning.domain.reviews import (
+        is_mandatory_whole_review,
+        loop_uses_finding_families,
+    )
+
     staged = replace(loop, active_stage="finding_verification")
-    package_fields = stage_package_fields(staged)
+    package_fields = (
+        stage_package_fields(staged)
+        if is_mandatory_whole_review(loop)
+        else _focused_verification_package_fields(staged)
+    )
     active = build_active_findings_view(loop)
-    return {
+    request: dict[str, Any] = {
         "action": "finding_verification",
         "phase": phase,
         "loop_id": loop.id,
         "target_revision": target_revision,
         "protocol_instructions": build_reviewer_protocol_instructions(
-            stage="finding_verification"
+            stage="finding_verification",
+            review_type=loop.type,
         ),
         **active,
         **package_fields,
     }
+    if loop_uses_finding_families(loop) and not is_mandatory_whole_review(loop):
+        from top_down_planning.domain.finding_families import build_active_family_view
+
+        request["active_families"] = build_active_family_view(
+            loop,
+            artifact_revision=target_revision,
+            artifact_digest=str(artifact_digest or "").strip() or None,
+        )
+    return request
 
 
 def limit_message(

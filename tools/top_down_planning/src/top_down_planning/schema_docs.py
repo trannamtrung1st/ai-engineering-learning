@@ -9,7 +9,10 @@ from core_tools.schema import validate_against_schema
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS
-from top_down_planning.domain.finding_families import WHOLE_PLAN_AUDIT_PASS_IDS
+from top_down_planning.domain.mandatory_audit_passes import (
+    WHOLE_OUTPUT_AUDIT_PASS_IDS,
+    WHOLE_PLAN_AUDIT_PASS_IDS,
+)
 from top_down_planning.domain.review_policy import (
     CATEGORY_DEFINITIONS,
     FINDING_CATEGORY_ORDER,
@@ -35,13 +38,18 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "evidence-revision",
     "evidence-revision-focused",
     "review-respond",
-    "review-respond-scope-v1",
+    "review-respond-focused-with-instance-ref",
+    "review-respond-family-discovery-focused-plan",
+    "review-respond-family-discovery-focused-output",
     "review-respond-verification",
     "review-respond-scope",
     "review-respond-family-discovery",
+    "review-respond-family-discovery-output",
     "review-respond-family-verification",
+    "review-respond-family-verification-output",
     "review-record-finding-actions",
     "review-record-family-fix",
+    "review-record-family-fix-output",
     "focused-review-request",
     "amendment-request",
     "completion-claim",
@@ -246,6 +254,13 @@ _REVIEW_FINDING_SCHEMA: dict[str, Any] = {
                 "superseded",
                 "invalid",
             ],
+        },
+        "instance_ref": {
+            "type": "object",
+            "description": (
+                "Optional structured artifact reference for focused reviews "
+                "(must stay within scope.item_ids when present)."
+            ),
         },
     },
     "additionalProperties": False,
@@ -488,6 +503,78 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
                     "When true, halt scope review without reporting findings."
                 ),
             },
+        },
+        "additionalProperties": False,
+    },
+    {
+        "title": "FocusedFamilyDiscoveryRespond",
+        "type": "object",
+        "required": [
+            "loop_id",
+            "target_revision",
+            "finding_set_id",
+            "finding_families",
+            "reported_findings",
+            "review_completed",
+            "summary",
+        ],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "finding_set_id": {"type": "string"},
+            "target_digest": {"type": "string"},
+            "finding_families": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "id",
+                        "rule_id",
+                        "subject_key",
+                        "scope_kind",
+                        "title",
+                        "seed_finding_id",
+                        "confirmed_finding_ids",
+                        "recommended_change",
+                        "discovery_sweep",
+                    ],
+                    "properties": {
+                        "id": {"type": "string", "maxLength": 128},
+                        "finding_set_id": {"type": "string", "maxLength": 128},
+                        "rule_id": {"type": "string", "maxLength": 128},
+                        "subject_key": {"type": "string", "maxLength": 256},
+                        "scope_kind": {
+                            "type": "string",
+                            "enum": [
+                                "active-plan",
+                                "focused-plan",
+                                "whole-output",
+                                "focused-output",
+                            ],
+                        },
+                        "rule_definition": {"type": "string", "maxLength": 4000},
+                        "title": {"type": "string", "maxLength": 512},
+                        "seed_finding_id": {"type": "string", "maxLength": 128},
+                        "confirmed_finding_ids": {
+                            "type": "array",
+                            "items": {"type": "string", "maxLength": 128},
+                        },
+                        "candidate_refs": {
+                            "type": "array",
+                            "items": {"type": "object"},
+                        },
+                        "recommended_change": {"type": "string", "maxLength": 4000},
+                        "discovery_sweep": _DISCOVERY_SWEEP_SCHEMA,
+                    },
+                    "additionalProperties": False,
+                },
+            },
+            "reported_findings": {
+                "type": "array",
+                "items": _FAMILY_PROTOCOL_FINDING_SCHEMA,
+            },
+            "review_completed": {"type": "boolean"},
+            "summary": {"type": "string"},
         },
         "additionalProperties": False,
     },
@@ -1441,6 +1528,20 @@ def _example_whole_plan_audit_passes() -> list[dict[str, Any]]:
     ]
 
 
+def _example_whole_output_audit_passes() -> list[dict[str, Any]]:
+    return [
+        {
+            "pass_id": pass_id,
+            "completed": True,
+            "search_dimensions": ["evidence"],
+            "inspected_refs": ["production:*"],
+            "rubric_item_ids": ["rubric-1-example"],
+            "summary": f"Completed {pass_id}.",
+        }
+        for pass_id in WHOLE_OUTPUT_AUDIT_PASS_IDS
+    ]
+
+
 _EXAMPLES: dict[str, dict[str, Any]] = {
     "expand-branch": {
         "schema": "plan-transaction",
@@ -1648,63 +1749,156 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "summary": "One blocker finding in scope.",
         },
     },
-    "review-respond-initial": {
+    "review-respond-focused-with-instance-ref": {
         "schema": "review-respond",
         "description": (
-            "Legacy contract v1 mandatory discovery (whole_output / focused_plan). "
-            "Whole-plan loops use review-respond-family-discovery instead."
+            "Focused plan discovery with optional structured instance_ref "
+            "(item_id must stay within scope.item_ids)."
         ),
         "payload": {
-            "loop_id": "review-whole-output-01",
+            "loop_id": "review-focused-plan-01",
             "target_revision": 0,
-            "stage": "initial_review",
-            "finding_set_id": "review-whole-output-01-fs-01",
-            "target_digest": "output-digest-placeholder",
+            "finding_set_id": "review-focused-plan-01-fs-01",
             "reported_findings": [
                 {
                     "id": "finding-001",
-                    "severity": "major",
+                    "severity": "blocker",
                     "category": "acceptance",
                     "target_refs": ["item-api"],
+                    "instance_ref": {
+                        "kind": "plan_item_field",
+                        "item_id": "item-api",
+                        "field": "acceptance",
+                        "value_digest": "abc123",
+                    },
                     "issue": "Acceptance criteria are not testable.",
-                    "evidence": ["Acceptance text is qualitative only."],
-                    "recommended_change": "Add concrete acceptance checks for API behavior.",
+                    "recommended_change": "Add concrete acceptance checks.",
                     "status": "unresolved",
                 }
             ],
             "review_completed": True,
-            "summary": "Material acceptance gap found.",
+            "summary": "Structured instance ref within scope.",
         },
     },
-    "review-respond-initial-approved": {
+    "review-respond-family-discovery-focused-plan": {
         "schema": "review-respond",
         "description": (
-            "Legacy contract v1 clear discovery (whole_output / focused_plan). "
-            "Whole-plan loops use review-respond-family-discovery instead."
+            "Optional focused_plan family discovery (no audit attestation; "
+            "no scope_review stage)."
         ),
         "payload": {
-            "loop_id": "review-whole-output-01",
+            "loop_id": "review-focused-plan-01",
             "target_revision": 0,
-            "stage": "initial_review",
-            "finding_set_id": "review-whole-output-01-fs-01",
-            "reported_findings": [],
+            "finding_set_id": "review-focused-plan-01-fs-01",
+            "target_digest": "plan-digest-placeholder",
+            "finding_families": [
+                {
+                    "id": "family-001",
+                    "rule_id": "dependency.acceptance_capability_available",
+                    "subject_key": "item-api acceptance",
+                    "scope_kind": "focused-plan",
+                    "title": "Acceptance gaps on API item",
+                    "seed_finding_id": "finding-001",
+                    "confirmed_finding_ids": ["finding-001"],
+                    "candidate_refs": [],
+                    "recommended_change": "Add measurable acceptance checks.",
+                    "discovery_sweep": {
+                        "artifact_revision": 0,
+                        "artifact_digest": "plan-digest-placeholder",
+                        "searched_refs": ["active-items:*"],
+                        "search_dimensions": ["acceptance"],
+                        "completed": True,
+                        "summary": "Scoped sweep complete.",
+                    },
+                }
+            ],
+            "reported_findings": [
+                {
+                    "id": "finding-001",
+                    "family_id": "family-001",
+                    "instance_ref": {
+                        "kind": "plan_item_field",
+                        "item_id": "item-api",
+                        "field": "acceptance",
+                        "value_digest": "abc123",
+                    },
+                    "severity": "blocker",
+                    "category": "acceptance",
+                    "target_refs": ["item-api"],
+                    "issue": "Acceptance criteria are not testable.",
+                    "recommended_change": "Add concrete acceptance checks.",
+                    "status": "unresolved",
+                }
+            ],
             "review_completed": True,
-            "target_digest": "output-digest-abc",
-            "summary": "No material issues in initial discovery.",
+            "summary": "One family in focused plan scope.",
+        },
+    },
+    "review-respond-family-discovery-focused-output": {
+        "schema": "review-respond",
+        "description": (
+            "Optional focused_output family discovery within scope.item_ids."
+        ),
+        "payload": {
+            "loop_id": "review-focused-output-01",
+            "target_revision": 1,
+            "finding_set_id": "review-focused-output-01-fs-01",
+            "target_digest": "output-digest-placeholder",
+            "finding_families": [
+                {
+                    "id": "family-001",
+                    "rule_id": "custom.evidence-gap",
+                    "subject_key": "item-api evidence",
+                    "scope_kind": "focused-output",
+                    "title": "Missing evidence on scoped item",
+                    "seed_finding_id": "finding-001",
+                    "confirmed_finding_ids": ["finding-001"],
+                    "candidate_refs": [],
+                    "recommended_change": "Attach evidence for item-api.",
+                    "discovery_sweep": {
+                        "artifact_revision": 1,
+                        "artifact_digest": "output-digest-placeholder",
+                        "searched_refs": ["production:*"],
+                        "search_dimensions": ["evidence"],
+                        "completed": True,
+                        "summary": "Scoped output sweep complete.",
+                    },
+                }
+            ],
+            "reported_findings": [
+                {
+                    "id": "finding-001",
+                    "family_id": "family-001",
+                    "instance_ref": {
+                        "kind": "output_record",
+                        "record_kind": "disposition",
+                        "record_key": "item-api",
+                    },
+                    "severity": "major",
+                    "category": "correctness",
+                    "target_refs": ["item-api"],
+                    "issue": "Terminal disposition lacks supporting evidence.",
+                    "recommended_change": "Attach new evidence for item-api.",
+                    "status": "unresolved",
+                }
+            ],
+            "review_completed": True,
+            "summary": "One family in focused output scope.",
         },
     },
     "review-respond-verification": {
         "schema": "review-respond",
         "description": (
-            "Legacy contract v1 finding_verification (whole_output / focused_plan). "
-            "Whole-plan loops use review-respond-family-verification instead."
+            "Focused finding_verification (focused_plan / focused_output). "
+            "Mandatory whole_plan and whole_output use "
+            "review-respond-family-verification."
         ),
         "payload": {
-            "loop_id": "review-whole-output-01",
+            "loop_id": "review-focused-output-01",
             "target_revision": 1,
             "stage": "finding_verification",
             "target_digest": "output-digest-abc",
-            "finding_set_id": "review-whole-output-01-fs-01",
+            "finding_set_id": "review-focused-output-01-fs-01",
             "decision": "verified",
             "finding_results": [
                 {
@@ -1718,34 +1912,12 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "summary": "All required findings closed; no direct side effects.",
         },
     },
-    "review-respond-scope-v1": {
-        "schema": "review-respond",
-        "description": (
-            "Contract v1 fresh scope_review (whole_output). Whole-plan contract v2 "
-            "loops use review-respond-scope instead."
-        ),
-        "payload": {
-            "loop_id": "review-whole-output-01",
-            "target_revision": 1,
-            "stage": "scope_review",
-            "finding_set_id": "review-whole-output-01-fs-02",
-            "target_digest": "output-digest-abc",
-            "scope_id": "whole_output",
-            "reported_findings": [],
-            "review_completed": True,
-            "acceptance_criteria_checked": [
-                "coverage",
-                "dependencies",
-                "acceptance",
-            ],
-            "summary": "No remaining material issues in current scope.",
-        },
-    },
     "review-respond-scope": {
         "schema": "review-respond",
         "description": (
-            "Whole-plan contract v2 fresh scope_review: clear approved outcome "
-            "with audit attestation and finding families (empty when clear)."
+            "Mandatory whole_plan or whole_output contract v2 fresh scope_review: "
+            "clear approved outcome with audit attestation and finding families "
+            "(empty when clear)."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
@@ -1767,7 +1939,8 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
     "review-respond-family-discovery": {
         "schema": "review-respond",
         "description": (
-            "Whole-plan discovery with audit attestation and finding families."
+            "Mandatory whole_plan discovery with audit attestation and finding "
+            "families (see review-respond-family-discovery-output for whole_output)."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
@@ -1825,10 +1998,75 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             ],
         },
     },
+    "review-respond-family-discovery-output": {
+        "schema": "review-respond",
+        "description": (
+            "Mandatory whole_output discovery with audit attestation and finding "
+            "families."
+        ),
+        "payload": {
+            "loop_id": "review-whole-output-01",
+            "target_revision": 1,
+            "stage": "initial_review",
+            "finding_set_id": "review-whole-output-01-fs-01",
+            "review_completed": True,
+            "summary": "Reported output evidence gap family.",
+            "target_digest": "<output-digest>",
+            "audit_attestation": {
+                "artifact_revision": 1,
+                "artifact_digest": "<output-digest>",
+                "passes": _example_whole_output_audit_passes(),
+            },
+            "finding_families": [
+                {
+                    "id": "family-evidence-gap-leaf",
+                    "finding_set_id": "review-whole-output-01-fs-01",
+                    "rule_id": "custom.evidence-gap",
+                    "rule_definition": "output evidence completeness gap",
+                    "subject_key": "item-leaf",
+                    "scope_kind": "whole-output",
+                    "title": "Missing output evidence for leaf item",
+                    "seed_finding_id": "sf-001",
+                    "confirmed_finding_ids": ["sf-001"],
+                    "candidate_refs": [],
+                    "recommended_change": "Attach artifact evidence for item-leaf.",
+                    "discovery_sweep": {
+                        "artifact_revision": 1,
+                        "artifact_digest": "<output-digest>",
+                        "searched_refs": ["production:*"],
+                        "search_dimensions": ["evidence"],
+                        "completed": True,
+                        "summary": "Searched production for evidence gaps.",
+                        "evidence": [],
+                    },
+                }
+            ],
+            "reported_findings": [
+                {
+                    "id": "sf-001",
+                    "family_id": "family-evidence-gap-leaf",
+                    "instance_ref": {
+                        "kind": "output_record",
+                        "record_kind": "evidence",
+                        "record_key": "evidence-01",
+                        "field": "summary",
+                        "value_digest": "<opaque>",
+                    },
+                    "severity": "blocker",
+                    "category": "correctness",
+                    "target_refs": ["item-leaf"],
+                    "issue": "Output evidence is missing for item-leaf.",
+                    "recommended_change": "Attach artifact evidence for item-leaf.",
+                }
+            ],
+        },
+    },
     "review-respond-family-verification": {
         "schema": "review-respond",
         "description": (
-            "Whole-plan finding_verification with family_results and verified decision."
+            "Mandatory whole_plan finding_verification with family_results and "
+            "verified decision (see review-respond-family-verification-output for "
+            "whole_output)."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
@@ -1866,10 +2104,53 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "summary": "Families verified; no remaining instances.",
         },
     },
+    "review-respond-family-verification-output": {
+        "schema": "review-respond",
+        "description": (
+            "Mandatory whole_output finding_verification with family_results and "
+            "verified decision."
+        ),
+        "payload": {
+            "loop_id": "review-whole-output-01",
+            "target_revision": 2,
+            "stage": "finding_verification",
+            "target_digest": "<output-digest>",
+            "finding_set_id": "review-whole-output-01-fs-01",
+            "decision": "verified",
+            "finding_results": [
+                {
+                    "finding_id": "sf-001",
+                    "disposition": "resolved",
+                    "evidence": ["Artifact evidence attached"],
+                    "direct_side_effects": [],
+                }
+            ],
+            "family_results": [
+                {
+                    "family_id": "family-evidence-gap-leaf",
+                    "disposition": "closed",
+                    "verification_sweep": {
+                        "artifact_revision": 2,
+                        "artifact_digest": "<output-digest>",
+                        "searched_refs": ["production:*"],
+                        "search_dimensions": ["evidence"],
+                        "remaining_instance_refs": [],
+                        "completed": True,
+                        "summary": "No remaining evidence gaps.",
+                        "evidence": [],
+                    },
+                    "remaining_instance_findings": [],
+                }
+            ],
+            "new_direct_side_effect_findings": [],
+            "summary": "Output families verified; no remaining instances.",
+        },
+    },
     "review-record-family-fix": {
         "schema": "review-record-finding-actions",
         "description": (
-            "Whole-plan owner family fix sweep with generated fix actions for required members."
+            "Whole-plan owner family fix sweep with generated fix actions for "
+            "required members (see review-record-family-fix-output for producer)."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
@@ -1890,6 +2171,37 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                         "remaining_instance_refs": [],
                         "completed": True,
                         "summary": "No remaining instances",
+                    },
+                }
+            ],
+            "finding_actions": [],
+        },
+    },
+    "review-record-family-fix-output": {
+        "schema": "review-record-finding-actions",
+        "description": (
+            "Whole-output producer family fix sweep after evidence revision with "
+            "generated fix actions for required members."
+        ),
+        "payload": {
+            "loop_id": "review-whole-output-01",
+            "artifact_revision": 2,
+            "artifact_digest": "<output-digest>",
+            "family_fixes": [
+                {
+                    "family_id": "family-evidence-gap-leaf",
+                    "target_finding_ids": [],
+                    "rationale": "Attached missing artifact evidence",
+                    "changed_refs": ["item-leaf"],
+                    "owner_sweep": {
+                        "artifact_revision": 2,
+                        "artifact_digest": "<output-digest>",
+                        "searched_refs": ["production:*"],
+                        "search_dimensions": ["evidence"],
+                        "additional_fixed_refs": [],
+                        "remaining_instance_refs": [],
+                        "completed": True,
+                        "summary": "No remaining evidence gaps",
                     },
                 }
             ],
@@ -2150,18 +2462,21 @@ def _finding_category_readme_section() -> str:
 
 
 def _finding_family_readme_section() -> str:
-    return """## Finding families (whole-plan contract v2)
+    return """## Finding families (mandatory whole-plan and whole-output contract v2)
 
-Mandatory whole-plan loops with `review_contract_version` 2 group related defects
-into **finding families**. A family is one repair unit; each **finding** is one
-confirmed instance with a structured `instance_ref`.
+Mandatory `whole_plan` and `whole_output` loops with `review_contract_version` 2
+group related defects into **finding families**. Optional `focused_plan` and
+`focused_output` loops may also submit `finding_families` when multiple related
+defects appear within `scope.item_ids` (no audit attestation or scope_review).
+A family is one repair unit; each **finding** is one confirmed instance with a
+structured `instance_ref`.
 
 - **Confirmed instance** — reported in `reported_findings` and listed in the
   family's `confirmed_finding_ids`.
 - **Candidate instance** — uncertain match kept in `candidate_refs`; does not
   affect derived severity until promoted to a finding.
-- **Owner blast-radius sweep** — after revising the artifact, record one
-  `family_fix` with `owner_sweep.completed: true` and empty
+- **Owner blast-radius sweep** — after revising the artifact, the planner or
+  producer records one `family_fix` with `owner_sweep.completed: true` and empty
   `remaining_instance_refs`. Required open members are included automatically;
   list optional members in `target_finding_ids`.
 - **Family closure** — a policy-relevant family is `closed` only after owner
@@ -2171,10 +2486,20 @@ confirmed instance with a structured `instance_ref`.
   `reopens_finding_id`; the service links regressions from fingerprint and
   `instance_ref` match after a fresh scope review.
 
-Examples: `review-respond-family-discovery`, `review-respond-scope`,
-`review-record-family-fix`, `review-respond-family-verification`. Record schema
-version 2 carries persisted family state; contract version 2 governs discovery
-and verification payloads.
+Whole-plan examples: `review-respond-family-discovery`,
+`review-respond-family-verification`, `review-record-family-fix`,
+`review-respond-scope`.
+
+Whole-output examples: `review-respond-family-discovery-output`,
+`review-respond-family-verification-output`, `review-record-family-fix-output`,
+`review-respond-scope`.
+
+Focused examples: `review-respond`, `review-respond-focused-with-instance-ref`,
+`review-respond-family-discovery-focused-plan`,
+`review-respond-family-discovery-focused-output`, `review-respond-verification`.
+
+Record schema version 2 carries persisted family state; contract version 2
+governs mandatory discovery and verification payloads.
 
 """
 
@@ -2211,21 +2536,29 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    expose `ready_items` (canonical contracts per ready leaf, including
    `effective_scope` / `effective_boundaries`) alongside `ready_item_ids`.
 4. Mandatory whole-output review must complete the gate before `outcome: accepted`.
-   Same mandatory gate as whole-plan review (`initial_review`, then
+   Same mandatory contract-v2 gate as whole-plan review (`initial_review`, then
    repeatable verification and fresh `scope_review` rounds). Review packages include
-   production traceability, `review_policy.category_definitions`, an optional
-   `rubric` on initial review only, and
-   reviewer guidance that prioritizes output correctness and cross-artifact
-   consistency. After `needs_revision` or initial
-   `changes_requested`, the producer must use `production apply` with
-   `evidence_revision: true` and **new** output evidence IDs on terminal items
-   targeted by unresolved required findings (dispositions unchanged), then
+   production traceability, `review_policy.category_definitions`, stable
+   `rubric_items` on every stage, `required_audit_passes`, and reviewer guidance
+   that prioritizes output correctness and cross-artifact consistency. Use
+   `review-respond-family-discovery-output`, `review-respond-family-verification-output`,
+   and `review-record-family-fix-output` for whole-output payloads. After
+   `needs_revision` or initial `changes_requested`, the producer must use
+   `production apply` with `evidence_revision: true` and **new** output evidence IDs
+   on terminal items targeted by unresolved required findings (dispositions unchanged),
+   record owner `family_fix` sweeps via `tdp agent review record-actions`, then
    re-submit completion with `goal_met: true`. During production, focused-output
    evidence revision also requires `focused_review_loop_id` bound to the loop's
    `target_revision`. Plan amendment is not available during whole-output review.
 5. Optional focused reviews use `review request` with bounded `scope.item_ids`.
    Focused plan reviewers receive the same embedded plan snapshot guidance as
-   whole-plan review.
+   whole-plan review. Discovery may use flat `target_refs`, structured
+   `instance_ref`, or optional `finding_families` within scope — see
+   `review-respond`, `review-respond-focused-with-instance-ref`,
+   `review-respond-family-discovery-focused-plan`, and
+   `review-respond-family-discovery-focused-output`. Verification uses
+   `review-respond-verification`. Focused loops do not run `scope_review` or
+   require audit attestation.
 
 ## Run store
 

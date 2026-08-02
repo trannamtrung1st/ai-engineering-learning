@@ -14,6 +14,7 @@ from top_down_planning.domain.reviews import (
     policy_observability_fields,
     required_open_findings,
 )
+from tests.helpers import make_review_loop
 
 
 def _finding(
@@ -157,6 +158,219 @@ def test_finding_set_scoped_handoff_ignores_prior_set_actions() -> None:
         "major",
         finding_set_id="fs-new",
     ) == findings
+
+
+def test_active_set_empty_skips_carried_optional_handoff() -> None:
+    from top_down_planning.domain.reviews import (
+        needs_advisory_handoff,
+        open_optional_findings_missing_owner_response_in_active_set,
+    )
+
+    findings = [_finding("f-minor", severity="minor")]
+    defer = _action("f-minor", "defer", finding_set_id="fs-01")
+    assert (
+        open_optional_findings_missing_owner_response_in_active_set(
+            findings,
+            [defer],
+            "major",
+            finding_set_id="fs-02",
+            finding_ids_in_active_set=set(),
+        )
+        == []
+    )
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="approved",
+        revise_at="major",
+        finding_set_id="fs-02",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        findings=[finding.to_dict() for finding in findings],
+        finding_actions=[defer.to_dict()],
+        finding_ids_by_set={"fs-01": ["f-minor"]},
+        advisory_handoffs_completed=["fs-01"],
+    )
+    assert not needs_advisory_handoff(loop)
+
+
+def test_policy_observability_fields_scope_clear_omits_carried_missing() -> None:
+    from top_down_planning.domain.reviews import policy_observability_fields_for_loop
+
+    findings = [_finding("f-minor", severity="minor")]
+    defer = _action("f-minor", "defer", finding_set_id="fs-01")
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        revise_at="major",
+        finding_set_id="fs-02",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        findings=[finding.to_dict() for finding in findings],
+        finding_actions=[defer.to_dict()],
+        finding_ids_by_set={"fs-01": ["f-minor"]},
+    )
+    fields = policy_observability_fields_for_loop(loop)
+    assert fields["optional_finding_ids_missing_owner_response"] == []
+
+
+def test_scope_discovery_new_optional_still_needs_handoff() -> None:
+    from top_down_planning.domain.reviews import (
+        allocate_discovery_finding_set_id,
+        apply_discovery_response,
+        needs_advisory_handoff,
+    )
+
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        revise_at="major",
+        finding_set_id="fs-01",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        findings=[],
+        finding_actions=[],
+        finding_ids_by_set={},
+    )
+    loop, finding_set_id = allocate_discovery_finding_set_id(loop)
+    loop, _, outcome = apply_discovery_response(
+        loop,
+        {
+            "finding_set_id": finding_set_id,
+            "reported_findings": [_finding("f-new", severity="minor").to_dict()],
+            "review_completed": True,
+            "summary": "new polish issue",
+            "target_digest": "digest-1",
+        },
+        stage="scope_review",
+    )
+    assert outcome == "pending"
+    assert loop.status == "advisory_pending"
+    assert needs_advisory_handoff(loop)
+
+
+def test_complete_advisory_handoff_skips_empty_scope_pass() -> None:
+    from top_down_planning.domain.reviews import (
+        complete_advisory_handoff_if_owner_responses_recorded,
+    )
+
+    findings = [_finding("f-minor", severity="minor")]
+    defer = _action("f-minor", "defer", finding_set_id="fs-01")
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        revise_at="major",
+        finding_set_id="fs-02",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        findings=[finding.to_dict() for finding in findings],
+        finding_actions=[defer.to_dict()],
+        finding_ids_by_set={"fs-01": ["f-minor"]},
+        advisory_handoffs_completed=["fs-01"],
+    )
+    completed = complete_advisory_handoff_if_owner_responses_recorded(loop)
+    assert completed.advisory_handoffs_completed == ["fs-01"]
+
+
+def test_mandatory_scope_clear_approves_with_carried_deferred_optional() -> None:
+    from top_down_planning.agent_tool.review_discovery import (
+        apply_mandatory_discovery_response,
+    )
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+    from top_down_planning.domain.mandatory_audit_passes import WHOLE_PLAN_AUDIT_PASS_IDS
+    from top_down_planning.orchestrator.review_analysis_context import rubric_items_with_ids
+
+    findings = [_finding("f-minor", severity="minor")]
+    defer = _action("f-minor", "defer", finding_set_id="fs-01")
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        revise_at="major",
+        finding_set_id="fs-02",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        findings=[finding.to_dict() for finding in findings],
+        finding_actions=[defer.to_dict()],
+        finding_ids_by_set={"fs-01": ["f-minor"]},
+        advisory_handoffs_completed=["fs-01"],
+        review_record_schema_version=2,
+        review_contract_version=2,
+    )
+    rubric_items = rubric_items_with_ids(
+        [str(item) for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]]
+    )
+    rubric_ids = [item["id"] for item in rubric_items]
+    updated, _merged, outcome, _events = apply_mandatory_discovery_response(
+        loop,
+        {
+            "finding_set_id": "fs-02",
+            "review_completed": True,
+            "target_digest": "digest-1",
+            "scope_id": "whole_plan",
+            "summary": "Scope clear.",
+            "reported_findings": [],
+            "audit_attestation": {
+                "artifact_revision": 0,
+                "artifact_digest": "digest-1",
+                "passes": [
+                    {
+                        "pass_id": pass_id,
+                        "completed": True,
+                        "scope_id": "whole-plan-active-v1",
+                        "search_dimensions": ["acceptance"],
+                        "inspected_refs": ["active-items:*"],
+                        "rubric_item_ids": rubric_ids,
+                        "summary": f"Completed {pass_id}.",
+                    }
+                    for pass_id in WHOLE_PLAN_AUDIT_PASS_IDS
+                ],
+            },
+            "finding_families": [],
+        },
+        stage="scope_review",
+        review_type="whole_plan",
+        artifact_revision=0,
+        artifact_digest="digest-1",
+        rubric=[str(item) for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]],
+    )
+    assert outcome == "approved"
+    assert updated.status == "approved"
+
+
+def test_findings_permit_approval_for_loop_scope_carried_defer() -> None:
+    from top_down_planning.domain.reviews import findings_permit_approval_for_loop
+
+    findings = [_finding("f-minor", severity="minor")]
+    defer = _action("f-minor", "defer", finding_set_id="fs-01")
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        revise_at="major",
+        finding_set_id="fs-02",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        findings=[finding.to_dict() for finding in findings],
+        finding_actions=[defer.to_dict()],
+        finding_ids_by_set={"fs-01": ["f-minor"]},
+    )
+    assert findings_permit_approval_for_loop(loop) is True
 
 
 def test_policy_observability_fields() -> None:

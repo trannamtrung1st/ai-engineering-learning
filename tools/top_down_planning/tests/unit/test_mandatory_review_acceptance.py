@@ -283,9 +283,10 @@ def test_whole_output_scope_review_round_limit_rejects_without_approval(
     (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
     run_id = "run-20260101T000801-000801"
     from tests.helpers import (
-    save_review_payload,
+        save_review_payload,
         apply_production,
         done_events,
+        enter_mandatory_verification_pending,
         mandatory_scope_review_found_respond_request,
         mandatory_initial_respond_request,
         mandatory_verification_respond_request,
@@ -384,13 +385,14 @@ def test_whole_output_scope_review_round_limit_rejects_without_approval(
         phase=WHOLE_OUTPUT_REVIEW,
     )()
     loop = store.load_review(run_id, "review-whole-output-01")
-    loop_payload = dict(loop)
-    loop_payload["lifecycle_status"] = "verification_pending"
-    loop_payload["active_stage"] = "finding_verification"
-    loop_payload["status"] = "pending"
-    loop_payload["target_revision"] = 2
-    loop_payload["finding_set_id"] = str(loop.get("finding_set_id") or "review-whole-output-01-fs-01")
-    save_review_payload(store, run_id, loop_payload)
+    finding_set_id = str(loop.get("finding_set_id") or "review-whole-output-01-fs-01")
+    enter_mandatory_verification_pending(
+        store,
+        run_id,
+        "review-whole-output-01",
+        target_revision=2,
+        finding_set_id=finding_set_id,
+    )
     respond_review(
         store,
         run_id,
@@ -400,7 +402,7 @@ def test_whole_output_scope_review_round_limit_rejects_without_approval(
             loop_id="review-whole-output-01",
             target_revision=2,
             review_type="whole_output",
-            finding_set_id=str(loop_payload["finding_set_id"]),
+            finding_set_id=finding_set_id,
             finding_results=[
                 {
                     "finding_id": "finding-blocker-01",

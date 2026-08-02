@@ -9,10 +9,8 @@ import pytest
 from top_down_planning.agent_tool import PlanAgentService, ReviewAgentService
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.artifact_refs import digest_field_value
-from top_down_planning.domain.finding_families import (
-    WHOLE_PLAN_AUDIT_PASS_IDS,
-    compute_family_fingerprint,
-)
+from top_down_planning.domain.mandatory_audit_passes import WHOLE_PLAN_AUDIT_PASS_IDS
+from top_down_planning.domain.finding_families import compute_family_fingerprint
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
 from top_down_planning.orchestrator.review_analysis_context import rubric_items_with_ids
@@ -20,6 +18,7 @@ from top_down_planning.persistence.file_store import FileRunStore
 from top_down_planning.orchestrator.phases import PLANNING
 from tests.helpers import (
     create_run_kwargs,
+    enter_mandatory_verification_pending,
     grant_capability,
     mandatory_plan_digest,
     mandatory_scope_review_respond_request,
@@ -236,10 +235,13 @@ def test_family_fix_records_owner_sweep(tmp_path: Path) -> None:
     )
     assert len(loop_payload.get("finding_families", [])) == 1
 
-    loop_payload["lifecycle_status"] = "verification_pending"
-    loop_payload["active_stage"] = "finding_verification"
-    loop_payload["target_revision"] = new_revision
-    store.save_review(run_id, loop_payload)
+    enter_mandatory_verification_pending(
+        store,
+        run_id,
+        loop_id,
+        target_revision=new_revision,
+        finding_set_id=finding_set_id,
+    )
 
     finding_results = [
         {
@@ -491,11 +493,12 @@ def test_partial_family_fix_surfaces_remaining_instance(tmp_path: Path) -> None:
         capability_token=grant_capability(store, run_id, role="planner", phase=PLANNING),
     )
 
-    loop_payload = store.load_review(run_id, loop_id)
-    loop_payload["lifecycle_status"] = "verification_pending"
-    loop_payload["active_stage"] = "finding_verification"
-    loop_payload["target_revision"] = new_revision
-    store.save_review(run_id, loop_payload)
+    enter_mandatory_verification_pending(
+        store,
+        run_id,
+        loop_id,
+        target_revision=new_revision,
+    )
 
     from top_down_planning.agent_tool.review_service import RequestError
 

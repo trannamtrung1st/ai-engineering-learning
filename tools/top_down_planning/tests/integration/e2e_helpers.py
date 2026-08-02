@@ -380,49 +380,47 @@ def script_whole_output_review(
 ) -> None:
     """Queue respond turns for whole-output review (mandatory gate when approved)."""
 
-    production = store.load_production(run_id)
-    target_revision = int(production["output_revision"])
     if decision == "approved":
-        queue_turn(
-            provider,
-            (
-                done_events(text="review turn"),
-                respond_review(
+        def _initial_mutate() -> None:
+            production = store.load_production(run_id)
+            target_revision = int(production["output_revision"])
+            respond_review(
+                store,
+                run_id,
+                mandatory_initial_respond_request(
                     store,
                     run_id,
-                    mandatory_initial_respond_request(
-                        store,
-                        run_id,
-                        loop_id=loop_id,
-                        target_revision=target_revision,
-                        review_type="whole_output",
-                    ),
-                    phase=WHOLE_OUTPUT_REVIEW,
                     loop_id=loop_id,
+                    target_revision=target_revision,
+                    review_type="whole_output",
                 ),
-            ),
-        )
-        queue_turn(
-            provider,
-            (
-                done_events(text="blocker review turn"),
-                respond_review(
+                phase=WHOLE_OUTPUT_REVIEW,
+                loop_id=loop_id,
+            )()
+
+        def _scope_mutate() -> None:
+            production = store.load_production(run_id)
+            target_revision = int(production["output_revision"])
+            respond_review(
+                store,
+                run_id,
+                mandatory_scope_review_respond_request(
                     store,
                     run_id,
-                    mandatory_scope_review_respond_request(
-                        store,
-                        run_id,
-                        loop_id=loop_id,
-                        target_revision=target_revision,
-                        review_type="whole_output",
-                    ),
-                    phase=WHOLE_OUTPUT_REVIEW,
                     loop_id=loop_id,
+                    target_revision=target_revision,
+                    review_type="whole_output",
                 ),
-            ),
-        )
+                phase=WHOLE_OUTPUT_REVIEW,
+                loop_id=loop_id,
+            )()
+
+        queue_turn(provider, (done_events(text="review turn"), _initial_mutate))
+        queue_turn(provider, (done_events(text="blocker review turn"), _scope_mutate))
         return
 
+    production = store.load_production(run_id)
+    target_revision = int(production["output_revision"])
     queue_turn(
         provider,
         review_respond_script(

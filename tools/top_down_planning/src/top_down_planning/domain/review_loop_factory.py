@@ -61,7 +61,7 @@ def new_whole_output_review_loop(
         revise_at=resolved_revise_at(config, "whole_output"),
         **_version_fields(
             record=CURRENT_REVIEW_RECORD_SCHEMA_VERSION,
-            contract=1,
+            contract=CURRENT_REVIEW_CONTRACT_VERSION,
         ),
     )
 

@@ -196,14 +196,15 @@ def build_reviewer_protocol_instructions(
                 ),
             ]
         )
-    if normalized_type == "whole_plan":
+    if normalized_type in {"whole_plan", "whole_output"}:
+        gate_label = "Whole-plan" if normalized_type == "whole_plan" else "Whole-output"
         if normalized != "finding_verification":
             instructions.extend(
                 [
                     (
-                        "Whole-plan review: complete every required audit pass in order "
-                        "and submit audit_attestation bound to the current artifact "
-                        "revision and digest."
+                        f"{gate_label} review: complete every required audit pass in "
+                        "order and submit audit_attestation bound to the current "
+                        "artifact revision and digest."
                     ),
                     (
                         "Do not submit reopens_family_id or reopens_finding_id; the "
@@ -212,18 +213,38 @@ def build_reviewer_protocol_instructions(
                 ]
             )
         if normalized in {None, "initial_review", "scope_review"}:
+            if normalized_type == "whole_plan":
+                instructions.extend(
+                    [
+                        (
+                            "Discovery procedure: treat validation_issues and preflight "
+                            "candidates in analysis_context as candidates, not "
+                            "automatically valid findings. For every confirmed issue, "
+                            "identify the general violated rule. Search the complete "
+                            "current scope for equivalent instances and report all "
+                            "confirmed instances under one finding family. Keep "
+                            "uncertain matches in candidate_refs; do not inflate "
+                            "findings."
+                        ),
+                    ]
+                )
+            else:
+                instructions.extend(
+                    [
+                        (
+                            "Discovery procedure: treat analysis_context preflight "
+                            "candidates and traceability warnings as candidates, not "
+                            "automatically valid findings. For every confirmed issue, "
+                            "identify the general violated rule. Search the complete "
+                            "current whole-output scope for equivalent instances and "
+                            "report all confirmed instances under one finding family. "
+                            "Keep uncertain matches in candidate_refs; do not inflate "
+                            "findings."
+                        ),
+                    ]
+                )
             instructions.extend(
                 [
-                    (
-                        "Discovery procedure: treat validation_issues and preflight "
-                        "candidates in analysis_context as candidates, not "
-                        "automatically valid findings. For every confirmed issue, "
-                        "identify the general violated rule. Search the complete "
-                        "current scope for equivalent instances and report all "
-                        "confirmed instances under one finding family. Keep "
-                        "uncertain matches in candidate_refs; do not inflate "
-                        "findings."
-                    ),
                     (
                         "Group every confirmed defect into a finding family with a "
                         "completed discovery_sweep. Do not mark review_completed "
@@ -264,20 +285,43 @@ def build_reviewer_tool_instructions(
     run_id: str,
     *,
     family_protocol: bool = False,
+    review_type: str | None = None,
     **extra: str,
 ) -> dict[str, str]:
     """CLI instructions embedded in reviewer review packages."""
 
-    if family_protocol:
+    mandatory_family = family_protocol or review_type in {"whole_plan", "whole_output"}
+    if mandatory_family:
+        if review_type == "whole_output":
+            examples = (
+                "tdp agent example review-respond-family-discovery-output ; "
+                "tdp agent example review-respond-family-verification-output ; "
+                "tdp agent example review-respond-scope"
+            )
+        else:
+            examples = (
+                "tdp agent example review-respond-family-discovery ; "
+                "tdp agent example review-respond-family-verification ; "
+                "tdp agent example review-respond-scope"
+            )
+    elif review_type == "focused_output":
         examples = (
-            "tdp agent example review-respond-family-discovery ; "
-            "tdp agent example review-respond-family-verification ; "
-            "tdp agent example review-respond-scope"
+            "tdp agent example review-respond ; "
+            "tdp agent example review-respond-focused-with-instance-ref ; "
+            "tdp agent example review-respond-family-discovery-focused-output ; "
+            "tdp agent example review-respond-verification"
+        )
+    elif review_type == "focused_plan":
+        examples = (
+            "tdp agent example review-respond ; "
+            "tdp agent example review-respond-focused-with-instance-ref ; "
+            "tdp agent example review-respond-family-discovery-focused-plan ; "
+            "tdp agent example review-respond-verification"
         )
     else:
         examples = (
-            "tdp agent example review-respond-verification ; "
-            "tdp agent example review-respond-scope-v1"
+            "tdp agent example review-respond ; "
+            "tdp agent example review-respond-verification"
         )
     instructions = {
         "authorization": (

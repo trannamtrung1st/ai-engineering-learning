@@ -7,89 +7,55 @@ from typing import Any
 
 from top_down_planning.agent_tool.config import planning_limits_from_config
 from top_down_planning.agent_tool.views import build_plan_review_snapshot
+from top_down_planning.domain.finding_families import build_active_family_view
 from top_down_planning.domain.production import (
     build_output_traceability,
     build_production_review_snapshot,
 )
 from top_down_planning.domain.reviews import (
     ReviewLoop,
-    allocate_discovery_finding_set_id,
-    advisory_handoff_allowed,
-    budgets_snapshot,
-    complete_advisory_handoff_if_owner_responses_recorded,
-    finding_actions_for_active_set,
-    focused_review_revision_limit_from_config,
-    loop_revise_at,
-    mark_advisory_handoff_completed,
-    needs_advisory_handoff,
-    optional_open_findings,
+    build_active_findings_view,
     build_primary_owner_finding_guidance,
-    owner_actions_require_revision,
-    policy_observability_fields,
-    prepare_review_incomplete_retry,
+    focused_review_revision_limit_from_config,
     primary_review_resume_fields,
-    required_open_findings,
     reviewer_package_policy_guidance,
-    verification_required_for_loop,
+    loop_uses_finding_families,
 )
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
     plan_execution_contract_fields,
-    resolve_role_session_context,
 )
-from top_down_planning.orchestrator.capability import (
-    adopt_replacement_capability,
-    bind_provider_capability,
-    issue_session_capability,
-    revoke_capabilities_for_loop,
-    rotate_session_capability,
-)
-from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
-from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
-from top_down_planning.orchestrator.reviewer_session import (
-    ReviewerRecheckRequiresNewSession,
-    begin_reviewer_review,
-    build_reviewer_protocol_instructions,
-    build_reviewer_tool_instructions,
-    deliver_reviewer_turn,
-    resume_reviewer_session_with_package,
-    reviewer_decision_missing_error,
-    reviewer_loop_provider_session_id,
-    resolve_reviewer_session_for_recheck,
-)
+from top_down_planning.orchestrator.capability import revoke_capabilities_for_loop
+from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.mandatory_review_stages import (
+    _focused_verification_package_fields,
     prepare_focused_verification_recheck,
-    verification_recheck_request,
 )
-from top_down_planning.orchestrator.errors import (
-    OrchestratorInvariantError,
-    ProviderRunError,
-    SessionRecoveryPaused,
-)
-from top_down_planning.orchestrator.review_incomplete_handoff import (
-    pause_advisory_handoff_incomplete,
+from top_down_planning.orchestrator.mandatory_whole_review import (
+    MandatoryWholeReviewResult,
+    OwnerHandoff,
 )
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
-from top_down_planning.orchestrator.run_transitions import pause_for_limit_exhausted
+from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
+from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
 from top_down_planning.orchestrator.provider_turns import (
     build_planner_turn_recovery,
     build_producer_turn_recovery,
     build_reviewer_turn_recovery,
-    consume_provider_turn_with_session_recovery,
 )
-from top_down_planning.orchestrator.session_events import (
-    commit_reviewer_loop_provider_session,
-    emit_reviewer_session_resumed,
-    emit_reviewer_session_started,
-    release_reviewer_session_after_decision,
-    resume_primary_session_with_audit,
-    sync_reviewer_loop_session_id,
+from top_down_planning.orchestrator.reviewer_session import (
+    build_reviewer_protocol_instructions,
+    build_reviewer_tool_instructions,
+    reviewer_loop_provider_session_id,
 )
+from top_down_planning.orchestrator.review_loop_driver import ReviewLoopDriver
+from top_down_planning.orchestrator.review_loop_profile import FOCUSED_PROFILE
+from top_down_planning.orchestrator.review_loop_types import MandatoryWholeReviewSpec
+from top_down_planning.orchestrator.run_transitions import pause_for_limit_exhausted
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
-_NO_COMPLETION_SIGNALS = frozenset[str]()
 
 @dataclass(frozen=True)
 class FocusedReviewResult:
@@ -101,629 +67,300 @@ class FocusedReviewResult:
     reason: str | None = None
 
 
-class FocusedReviewOrchestrator:
-    """Drive one optional focused review loop without advancing mandatory gates."""
+def _focused_spec(loop: ReviewLoop) -> MandatoryWholeReviewSpec:
+    if loop.type == "focused_plan":
+        return MandatoryWholeReviewSpec(
+            review_type="focused_plan",
+            phase=PLANNING,
+            approved_phase=PLANNING,
+            owner_role="planner",
+            limits_key="focused_plan",
+            event_prefix="focused_review",
+            loop_id_prefix="review-focused-plan",
+            review_label="focused plan review",
+        )
+    return MandatoryWholeReviewSpec(
+        review_type="focused_output",
+        phase=PRODUCTION,
+        approved_phase=PRODUCTION,
+        owner_role="producer",
+        limits_key="focused_output",
+        event_prefix="focused_review",
+        loop_id_prefix="review-focused-output",
+        review_label="focused output review",
+    )
 
-    def __init__(
-        self,
-        store: RunStore,
-        run_id: str,
-        provider: Provider,
-    ) -> None:
+
+class FocusedReviewAdapter:
+    """Focused-review adapter for the shared review-loop driver."""
+
+    def __init__(self, store: RunStore, run_id: str) -> None:
         self._store = store
         self._run_id = run_id
-        self._provider = provider
-        self._capability_token: str | None = None
+        self._loop: ReviewLoop | None = None
+        self._driver: ReviewLoopDriver | None = None
 
-    def run(self, loop_id: str) -> FocusedReviewResult:
-        loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
-        if loop.type not in {"focused_plan", "focused_output"}:
-            raise ProviderRunError(f"review loop {loop_id} is not a focused review loop")
+    def bind_driver(self, driver: ReviewLoopDriver) -> None:
+        self._driver = driver
 
+    def bind_loop(self, loop: ReviewLoop) -> None:
+        self._loop = loop
+
+    @property
+    def profile(self):
+        return FOCUSED_PROFILE
+
+    @property
+    def spec(self) -> MandatoryWholeReviewSpec:
+        if self._loop is None:
+            raise RuntimeError("FocusedReviewAdapter loop is not bound")
+        return _focused_spec(self._loop)
+
+    def preflight(self, loop: ReviewLoop | None) -> None:
+        if loop is not None and loop.type not in {"focused_plan", "focused_output"}:
+            raise ProviderRunError(f"review loop {loop.id} is not a focused review loop")
+
+    def current_artifact_binding(self) -> tuple[int, str]:
+        loop = self._require_loop()
+        if loop.type == "focused_output":
+            production = self._store.load_production(self._run_id)
+            from top_down_planning.persistence.digests import compute_output_digest
+
+            return int(production["output_revision"]), compute_output_digest(production)
+        plan = self._store.load_plan(self._run_id)
+        from top_down_planning.persistence.digests import compute_plan_digest
+
+        return int(plan["revision"]), compute_plan_digest(plan)
+
+    def new_loop(self, loop_id: str) -> ReviewLoop:
+        raise ProviderRunError("focused review loops are created by review request")
+
+    def build_review_package(
+        self,
+        run: dict[str, Any],
+        config: dict[str, Any],
+        loop: ReviewLoop,
+    ) -> dict[str, Any]:
+        return build_focused_review_package(
+            self._run_id,
+            run,
+            config,
+            loop,
+            plan=self._store.load_plan_model(self._run_id),
+            production=(
+                self._store.load_production(self._run_id)
+                if loop.type == "focused_output"
+                else None
+            ),
+        )
+
+    def primary_owner_session_id(self, run: dict[str, Any]) -> str | None:
+        loop = self._require_loop()
+        if loop.type == "focused_plan":
+            return primary_planner_provider_session_id(run)
+        return primary_producer_provider_session_id(run)
+
+    def build_owner_request(
+        self,
+        loop: ReviewLoop,
+        config: dict[str, Any],
+        handoff: OwnerHandoff,
+    ) -> dict[str, Any]:
+        action = (
+            "address_review_findings"
+            if handoff == "revision"
+            else "address_optional_findings"
+        )
+        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
+        artifact_revision, artifact_digest = self.current_artifact_binding()
+        request: dict[str, Any] = {
+            "action": action,
+            "phase": phase,
+            "loop_id": loop.id,
+            "review_type": loop.type,
+            "target_revision": loop.target_revision,
+            "scope": dict(loop.scope),
+            **primary_review_resume_fields(
+                loop,
+                config=config,
+                artifact_revision=artifact_revision,
+                artifact_digest=artifact_digest,
+            ),
+            "tool_instructions": {
+                "record_actions": (
+                    f"tdp agent review record-actions --run {self._run_id} "
+                    "--request $TDP_AGENT_REQUESTS_DIR/review-record-actions-<loop>-a01.json"
+                ),
+                "notes": build_primary_owner_finding_guidance(
+                    handoff=handoff,
+                    loop=loop,
+                    config=config,
+                ),
+            },
+        }
+        if handoff == "revision" and loop.type == "focused_output":
+            request["revision_instructions"] = {
+                "apply_mode": "evidence_revision",
+                "evidence_revision": True,
+                "focused_review_loop_id": loop.id,
+                "tool": "production_apply",
+                "notes": (
+                    "Set evidence_revision: true on production apply for "
+                    "terminal plan_items targeted by open required findings "
+                    "within this focused_output scope. Keep existing "
+                    "dispositions unchanged; attach new output evidence IDs. "
+                    "Output revision advances for reviewer recheck."
+                ),
+            }
+        return request
+
+    def build_owner_turn_recovery(
+        self,
+        phase: str,
+        append_event: Any,
+        model: str | None,
+    ) -> Any:
+        loop = self._require_loop()
+        if loop.type == "focused_plan":
+            return build_planner_turn_recovery(
+                self._store,
+                self._run_id,
+                phase=PLANNING,
+                expected_next_action="address focused plan findings",
+                append_event=append_event,
+                model=model,
+            )
+        return build_producer_turn_recovery(
+            self._store,
+            self._run_id,
+            phase=PRODUCTION,
+            expected_next_action="address focused output findings",
+            append_event=append_event,
+            model=model,
+        )
+
+    def build_reviewer_turn_recovery(
+        self,
+        loop_id: str,
+        phase: str,
+        append_event: Any,
+        model: str | None,
+        review_package: dict[str, Any],
+    ) -> Any:
+        return build_reviewer_turn_recovery(
+            self._store,
+            self._run_id,
+            loop_id=loop_id,
+            phase=phase,
+            expected_next_action="continue reviewer turn",
+            append_event=append_event,
+            model=model,
+            review_package=review_package,
+        )
+
+    def after_owner_turn(self, session_id: str) -> None:
+        loop = self._require_loop()
+        if loop.type == "focused_output":
+            _sync_output_digest(self._store, self._run_id)
+
+    def complete_approval(self, loop: ReviewLoop) -> MandatoryWholeReviewResult:
+        raise ProviderRunError("focused reviews do not use complete_approval")
+
+    def phase_for_session(self, loop: ReviewLoop, run: dict[str, Any]) -> str:
+        return PLANNING if loop.type == "focused_plan" else PRODUCTION
+
+    def prepare_recheck_transition(
+        self, loop: ReviewLoop, target_revision: int
+    ) -> ReviewLoop:
+        return prepare_focused_verification_recheck(
+            loop,
+            target_revision=target_revision,
+        )
+
+    def enter_revision_cycle(
+        self, loop: ReviewLoop, revision_cycles: int
+    ) -> ReviewLoop:
+        return replace(
+            loop,
+            status="pending",
+            revision_cycles=revision_cycles,
+        )
+
+    def complete_success(self, loop: ReviewLoop) -> FocusedReviewResult:
+        revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
+        if self._driver is not None:
+            self._driver.append_event(
+                "focused_review_approved",
+                loop_id=loop.id,
+                review_type=loop.type,
+                target_revision=loop.target_revision,
+            )
+        return FocusedReviewResult(
+            ok=True,
+            loop_id=loop.id,
+            status=loop.status,
+            reviewer_session_id=reviewer_loop_provider_session_id(loop),
+            revision_cycles=loop.revision_cycles,
+        )
+
+    def handle_blocked(self, loop: ReviewLoop) -> FocusedReviewResult:
+        revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
+        return FocusedReviewResult(
+            ok=False,
+            loop_id=loop.id,
+            status=loop.status,
+            reviewer_session_id=reviewer_loop_provider_session_id(loop),
+            revision_cycles=loop.revision_cycles,
+            reason="focused reviewer blocked the scoped review",
+        )
+
+    def handle_limit_exhausted(
+        self, loop: ReviewLoop, revision_cycles: int
+    ) -> FocusedReviewResult:
         config = self._store.load_resolved_config(self._run_id)
         max_revision_cycles = focused_review_revision_limit_from_config(
             config,
             loop.type,  # type: ignore[arg-type]
         )
-        loop, reviewer_turn_delivered = self._normalize_loop_for_resume(loop)
-        deliver_on_existing_session = (
-            reviewer_loop_provider_session_id(loop) is not None
-            and not reviewer_turn_delivered
-        )
-
-        while True:
-            if loop.status == "pending":
-                session_id = reviewer_loop_provider_session_id(loop)
-                phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-                if session_id is None:
-                    session_id, self._capability_token = self._start_reviewer_session(loop)
-                    loop = self._reload_loop(loop.id)
-                    deliver_on_existing_session = False
-                elif deliver_on_existing_session:
-                    run = self._store.load_run(self._run_id)
-                    config = self._store.load_resolved_config(self._run_id)
-                    role_context = resolve_role_session_context(config, run, "reviewer")
-                    package = build_focused_review_package(
-                        self._run_id,
-                        run,
-                        config,
-                        loop,
-                        plan=self._store.load_plan_model(self._run_id),
-                        production=(
-                            self._store.load_production(self._run_id)
-                            if loop.type == "focused_output"
-                            else None
-                        ),
-                    )
-                    self._capability_token = resume_reviewer_session_with_package(
-                        self._provider,
-                        self._store,
-                        self._run_id,
-                        session_id=session_id,
-                        loop_id=loop.id,
-                        phase=phase,
-                        review_package=package,
-                        model=role_context.model,
-                    )
-                    emit_reviewer_session_resumed(
-                        self._append_event,
-                        self._provider,
-                        phase=phase,
-                        session_id=session_id,
-                        loop=self._reload_loop(loop.id),
-                    )
-                    deliver_on_existing_session = False
-                decision = self._consume_reviewer_turn(session_id, loop.id)
-                loop = self._reload_loop(loop.id)
-                if decision is None:
-                    raise reviewer_decision_missing_error()
-                if loop.status == "pending":
-                    phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-                    self._capability_token = rotate_session_capability(
-                        self._store,
-                        self._run_id,
-                        current_token=self._capability_token,
-                        role="reviewer",
-                        phase=phase,
-                        session_id=session_id,
-                        session_kind="reviewer",
-                        loop_id=loop.id,
-                    )
-                    bind_provider_capability(self._provider, self._capability_token)
-            else:
-                decision = loop.status
-
-            if decision in {"approved", "verified"}:
-                return self._result_from_loop(loop, ok=True)
-
-            if decision == "needs_revision":
-                decision = "changes_requested"
-
-            if decision == "blocked":
-                return self._result_from_loop(
-                    loop,
-                    ok=False,
-                    reason="focused reviewer blocked the scoped review",
-                )
-
-            if decision == "review_incomplete" or loop.status == "review_incomplete":
-                marker = loop.review_incomplete or {}
-                return self._result_from_loop(
-                    loop,
-                    ok=False,
-                    reason=str(
-                        marker.get("reason")
-                        or "focused review could not be completed"
-                    ),
-                )
-
-            if decision in {"advisory_pending", "pending"}:
-                loop = self._handle_advisory_handoff(loop)
-                if loop.status == "review_incomplete":
-                    return self._result_review_incomplete(loop)
-                if loop.status == "approved":
-                    return self._result_from_loop(loop, ok=True)
-                if required_open_findings(loop.findings, loop_revise_at(loop)):
-                    decision = "changes_requested"
-                elif verification_required_for_loop(loop):
-                    active = finding_actions_for_active_set(loop)
-                    if owner_actions_require_revision(active):
-                        decision = "changes_requested"
-                    else:
-                        # Challenge-only: verification/recheck without revision budget.
-                        loop = self._prepare_recheck(loop)
-                        continue
-                elif needs_advisory_handoff(loop):
-                    loop = self._pause_advisory_handoff_incomplete(loop)
-                    return self._result_review_incomplete(loop)
-                else:
-                    raise OrchestratorInvariantError(
-                        "advisory handoff completed without resolving optional "
-                        "finding policy"
-                    )
-
-            if decision != "changes_requested":
-                raise ProviderRunError(f"unexpected review decision: {decision}")
-
-            revision_cycles = loop.revision_cycles + 1
-            loop = self._persist_loop(
-                replace(
-                    loop,
-                    status="pending",
-                    revision_cycles=revision_cycles,
-                )
-            )
-
-            if revision_cycles >= max_revision_cycles:
-                loop = self._persist_loop(
-                    replace(
-                        loop,
-                        status="blocked",
-                        revision_cycles=revision_cycles,
-                    )
-                )
-                phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-                limit_name = "max_revision_cycles_per_loop"
-                message = (
-                    "focused review exceeded max_revision_cycles_per_loop "
-                    f"({max_revision_cycles})"
-                )
-                pause_for_limit_exhausted(
-                    self._store,
-                    self._run_id,
-                    phase=phase,
-                    message=message,
-                    limit=limit_name,
-                    consumed=revision_cycles,
-                    configured=max_revision_cycles,
-                    role="reviewer",
-                    revoke_phase=phase,
-                    loop_id=loop.id,
-                    review_type=loop.type,
-                )
-                self._append_event(
-                    "focused_review_limit_exceeded",
-                    loop_id=loop.id,
-                    review_type=loop.type,
-                    reason=message,
-                )
-                run = self._store.load_run(self._run_id)
-                revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
-                return FocusedReviewResult(
-                    ok=False,
-                    loop_id=loop.id,
-                    status=str(run.get("status") or "paused"),
-                    reviewer_session_id=reviewer_loop_provider_session_id(loop),
-                    revision_cycles=loop.revision_cycles,
-                    reason=message,
-                )
-
-            self._resume_primary_with_findings(loop)
-            loop = self._prepare_recheck(loop)
-
-    def _normalize_loop_for_resume(self, loop: ReviewLoop) -> tuple[ReviewLoop, bool]:
-        if loop.status == "review_incomplete":
-            retried = prepare_review_incomplete_retry(loop)
-            retried, _finding_set_id = allocate_discovery_finding_set_id(retried)
-            return self._persist_loop(retried), False
-
-        if loop.status != "changes_requested":
-            return loop, False
-
-        current_revision = _current_target_revision(self._store, self._run_id, loop.type)
-        if current_revision <= loop.target_revision:
-            return loop, False
-
-        return self._prepare_recheck(loop), True
-
-    def _handle_advisory_handoff(self, loop: ReviewLoop) -> ReviewLoop:
-        if not needs_advisory_handoff(loop):
-            return self._persist_loop(
-                complete_advisory_handoff_if_owner_responses_recorded(loop)
-            )
-        if not advisory_handoff_allowed(loop):
-            raise ProviderRunError(
-                f"advisory handoff already completed for finding_set_id "
-                f"{loop.finding_set_id!r}"
-            )
-        before_budgets = budgets_snapshot(loop)
-        self._append_event(
-            "review_advisory_handoff_started",
-            loop_id=loop.id,
-            review_type=loop.type,
-            finding_set_id=loop.finding_set_id,
-            **policy_observability_fields(
-                loop.findings,
-                loop.finding_actions,
-                loop_revise_at(loop),
-                finding_set_id=loop.finding_set_id,
-            ),
-        )
-        self._resume_primary_advisory_handoff(loop)
-        loop = self._reload_loop(loop.id)
-        if needs_advisory_handoff(loop):
-            return self._pause_advisory_handoff_incomplete(loop)
-        after_budgets = budgets_snapshot(loop)
-        if after_budgets != before_budgets and not owner_actions_require_revision(
-            finding_actions_for_active_set(loop)
-        ):
-            # Defensive: defer/accept/challenge must not consume revision budget.
-            raise OrchestratorInvariantError(
-                "advisory handoff must not consume revision budget without a fix"
-            )
-        return self._persist_loop(mark_advisory_handoff_completed(loop))
-
-    def _resume_primary_advisory_handoff(self, loop: ReviewLoop) -> None:
-        run = self._store.load_run(self._run_id)
-        if loop.type == "focused_plan":
-            session_id = primary_planner_provider_session_id(run)
-            phase = PLANNING
-            role = "planner"
-        else:
-            session_id = primary_producer_provider_session_id(run)
-            phase = PRODUCTION
-            role = "producer"
-
-        if session_id is None:
-            raise ProviderRunError(
-                f"primary {role} session is missing for advisory handoff"
-            )
-
-        self._capability_token = issue_session_capability(
-            self._store,
-            self._run_id,
-            role=role,
-            phase=phase,
-            session_id=session_id,
-            session_kind="primary",
-        )
-        bind_provider_capability(self._provider, self._capability_token)
-
-        config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, role)
-        resume_primary_session_with_audit(
-            self._append_event,
-            self._provider,
-            role=role,
-            phase=phase,
-            session_id=session_id,
-            request={
-                "action": "address_optional_findings",
-                "phase": phase,
-                "loop_id": loop.id,
-                "review_type": loop.type,
-                "target_revision": loop.target_revision,
-                "scope": dict(loop.scope),
-                **primary_review_resume_fields(loop, config=config),
-                "tool_instructions": {
-                    "record_actions": (
-                        f"tdp agent review record-actions --run {self._run_id} "
-                        "--request $TDP_AGENT_REQUESTS_DIR/review-record-actions-<loop>-a01.json"
-                    ),
-                    "notes": build_primary_owner_finding_guidance(
-                        handoff="advisory",
-                        loop=loop,
-                        config=config,
-                    ),
-                },
-            },
-            model=role_context.model,
-            loop_id=loop.id,
-            review_type=loop.type,
-        )
-        self._consume_primary_turn(session_id, loop.type)
-        if loop.type == "focused_output":
-            self._sync_output_digest()
-
-    def _start_reviewer_session(self, loop: ReviewLoop) -> tuple[str, str]:
-        run = self._store.load_run(self._run_id)
-        config = self._store.load_resolved_config(self._run_id)
-        loop, _finding_set_id = allocate_discovery_finding_set_id(loop)
-        loop = self._persist_loop(loop)
-        package = build_focused_review_package(
-            self._run_id,
-            run,
-            config,
-            loop,
-            plan=self._store.load_plan_model(self._run_id),
-            production=(
-                self._store.load_production(self._run_id)
-                if loop.type == "focused_output"
-                else None
-            ),
-        )
-        role_context = resolve_role_session_context(config, run, "reviewer")
-        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-        session_id, capability_token = begin_reviewer_review(
-            self._provider,
-            self._store,
-            self._run_id,
-            loop_id=loop.id,
-            review_package=package,
-            phase=phase,
-            model=role_context.model,
-        )
-        emit_reviewer_session_started(
-            self._append_event,
-            self._provider,
-            phase=phase,
-            session_id=session_id,
-            loop=loop,
-            scope=loop.scope,
-        )
-        return session_id, capability_token
-
-    def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
-        run = self._store.load_run(self._run_id)
-        config = self._store.load_resolved_config(self._run_id)
-        loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
-        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-        package = build_focused_review_package(
-            self._run_id,
-            run,
-            config,
-            loop,
-            plan=self._store.load_plan_model(self._run_id),
-            production=(
-                self._store.load_production(self._run_id)
-                if loop.type == "focused_output"
-                else None
-            ),
-        )
-        role_context = resolve_role_session_context(config, run, "reviewer")
-        try:
-            turn_outcome = consume_provider_turn_with_session_recovery(
-                self._store,
-                self._run_id,
-                self._provider,
-                session_id,
-                allowed_signals=_NO_COMPLETION_SIGNALS,
-                recovery=build_reviewer_turn_recovery(
-                    self._store,
-                    self._run_id,
-                    loop_id=loop_id,
-                    phase=phase,
-                    expected_next_action="continue reviewer turn",
-                    append_event=self._append_event,
-                    model=role_context.model,
-                    review_package=package,
-                ),
-            )
-        except SessionRecoveryPaused as exc:
-            raise ProviderRunError(str(exc)) from exc
-        session_id = turn_outcome.session_id
-        if turn_outcome.replaced:
-            self._capability_token = adopt_replacement_capability(
-                self._store,
-                self._run_id,
-                current_token=self._capability_token,
-                replacement_token=turn_outcome.capability_token,
-                provider=self._provider,
-            )
-        sync_reviewer_loop_session_id(
-            self._provider,
-            self._store,
-            self._run_id,
-            loop_id,
-            session_id,
-        )
-        return release_reviewer_session_after_decision(
-            self._append_event,
-            self._provider,
-            self._store,
-            self._run_id,
-            phase=phase,
-            loop_id=loop_id,
-            session_id=session_id,
-        )
-
-    def _resume_primary_with_findings(self, loop: ReviewLoop) -> None:
-        run = self._store.load_run(self._run_id)
-        if loop.type == "focused_plan":
-            session_id = primary_planner_provider_session_id(run)
-            phase = PLANNING
-            role = "planner"
-        else:
-            session_id = primary_producer_provider_session_id(run)
-            phase = PRODUCTION
-            role = "producer"
-
-        if session_id is None:
-            raise ProviderRunError(f"primary {role} session is missing for focused revision")
-
-        self._capability_token = issue_session_capability(
-            self._store,
-            self._run_id,
-            role=role,
-            phase=phase,
-            session_id=session_id,
-            session_kind="primary",
-        )
-        bind_provider_capability(self._provider, self._capability_token)
-
-        config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, role)
-        resume_primary_session_with_audit(
-            self._append_event,
-            self._provider,
-            role=role,
-            phase=phase,
-            session_id=session_id,
-            request={
-                "action": "address_review_findings",
-                "phase": phase,
-                "loop_id": loop.id,
-                "review_type": loop.type,
-                "target_revision": loop.target_revision,
-                "scope": dict(loop.scope),
-                **primary_review_resume_fields(loop, config=config),
-                "tool_instructions": {
-                    "record_actions": (
-                        f"tdp agent review record-actions --run {self._run_id} "
-                        "--request $TDP_AGENT_REQUESTS_DIR/review-record-actions-<loop>-a01.json"
-                    ),
-                    "notes": build_primary_owner_finding_guidance(
-                        handoff="revision",
-                        loop=loop,
-                        config=config,
-                    ),
-                },
-                **(
-                    {
-                        "revision_instructions": {
-                            "apply_mode": "evidence_revision",
-                            "evidence_revision": True,
-                            "focused_review_loop_id": loop.id,
-                            "tool": "production_apply",
-                            "notes": (
-                                "Set evidence_revision: true on production apply for "
-                                "terminal plan_items targeted by open required findings "
-                                "within this focused_output scope. Keep existing "
-                                "dispositions unchanged; attach new output evidence IDs. "
-                                "Output revision advances for reviewer recheck."
-                            ),
-                        }
-                    }
-                    if loop.type == "focused_output"
-                    else {}
-                ),
-            },
-            model=role_context.model,
-            loop_id=loop.id,
-            review_type=loop.type,
-        )
-        self._consume_primary_turn(session_id, loop.type)
-        if loop.type == "focused_output":
-            self._sync_output_digest()
-
-    def _consume_primary_turn(self, session_id: str, review_type: str) -> None:
-        run = self._store.load_run(self._run_id)
-        config = self._store.load_resolved_config(self._run_id)
-        if review_type == "focused_plan":
-            role_context = resolve_role_session_context(config, run, "planner")
-            recovery = build_planner_turn_recovery(
-                self._store,
-                self._run_id,
-                phase=PLANNING,
-                expected_next_action="address focused plan findings",
-                append_event=self._append_event,
-                model=role_context.model,
-            )
-        else:
-            role_context = resolve_role_session_context(config, run, "producer")
-            recovery = build_producer_turn_recovery(
-                self._store,
-                self._run_id,
-                phase=PRODUCTION,
-                expected_next_action="address focused output findings",
-                append_event=self._append_event,
-                model=role_context.model,
-            )
-        try:
-            consume_provider_turn_with_session_recovery(
-                self._store,
-                self._run_id,
-                self._provider,
-                session_id,
-                allowed_signals=_NO_COMPLETION_SIGNALS,
-                recovery=recovery,
-            )
-        except SessionRecoveryPaused as exc:
-            raise ProviderRunError(str(exc)) from exc
-
-    def _sync_output_digest(self) -> None:
-        run = self._store.load_run(self._run_id)
-        production = self._store.load_production(self._run_id)
-        expected_revision = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        digests = dict(run.get("digests") or {})
-        digests["output"] = compute_output_digest(production)
-        run["digests"] = digests
-        self._store.save_run(self._run_id, run, expected_revision)
-
-    def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
-        current_revision = _current_target_revision(self._store, self._run_id, loop.type)
-        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
-        run = self._store.load_run(self._run_id)
-        config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, "reviewer")
-        updated = prepare_focused_verification_recheck(
-            loop,
-            target_revision=current_revision,
-        )
-        verification_request = verification_recheck_request(
-            phase=phase,
-            loop=updated,
-            target_revision=current_revision,
-        )
-        try:
-            session_id = resolve_reviewer_session_for_recheck(
-                loop,
-                target_revision=loop.target_revision,
-                current_revision=current_revision,
-            )
-        except ReviewerRecheckRequiresNewSession:
-            loop = self._persist_loop(loop.with_reviewer_session_released())
-            updated = self._persist_loop(updated)
-            session_id, self._capability_token = begin_reviewer_review(
-                self._provider,
-                self._store,
-                self._run_id,
-                loop_id=loop.id,
-                review_package=verification_request,
-                phase=phase,
-                model=role_context.model,
-            )
-            emit_reviewer_session_started(
-                self._append_event,
-                self._provider,
-                phase=phase,
-                session_id=session_id,
-                loop=updated,
-                scope=loop.scope,
-                replacement=True,
-            )
-            return ReviewLoop.from_dict(self._store.load_review(self._run_id, loop.id))
-
-        updated = updated.with_reviewer_provider_session_id(session_id)
-        self._persist_loop(updated)
-        self._capability_token = deliver_reviewer_turn(
-            self._provider,
-            self._store,
-            self._run_id,
-            session_id=session_id,
-            loop_id=loop.id,
-            phase=phase,
-            request=verification_request,
-            model=role_context.model,
-        )
-        emit_reviewer_session_resumed(
-            self._append_event,
-            self._provider,
-            phase=phase,
-            session_id=session_id,
-            loop=updated,
-        )
-        return updated
-
-    def _persist_loop(self, loop: ReviewLoop) -> ReviewLoop:
+        loop = replace(loop, status="blocked", revision_cycles=revision_cycles)
         self._store.save_review(self._run_id, loop.to_dict())
-        return loop
-
-    def _reload_loop(self, loop_id: str) -> ReviewLoop:
-        return ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
-
-    def _pause_advisory_handoff_incomplete(self, loop: ReviewLoop) -> ReviewLoop:
-        loop, _reason = pause_advisory_handoff_incomplete(
+        phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
+        message = (
+            "focused review exceeded max_revision_cycles_per_loop "
+            f"({max_revision_cycles})"
+        )
+        pause_for_limit_exhausted(
             self._store,
             self._run_id,
-            loop,
-            pause_run=False,
+            phase=phase,
+            message=message,
+            limit="max_revision_cycles_per_loop",
+            consumed=revision_cycles,
+            configured=max_revision_cycles,
+            role="reviewer",
+            revoke_phase=phase,
+            loop_id=loop.id,
+            review_type=loop.type,
         )
-        return self._persist_loop(loop)
+        if self._driver is not None:
+            self._driver.append_event(
+                "focused_review_limit_exceeded",
+                loop_id=loop.id,
+                review_type=loop.type,
+                reason=message,
+            )
+        run = self._store.load_run(self._run_id)
+        revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
+        return FocusedReviewResult(
+            ok=False,
+            loop_id=loop.id,
+            status=str(run.get("status") or "paused"),
+            reviewer_session_id=reviewer_loop_provider_session_id(loop),
+            revision_cycles=loop.revision_cycles,
+            reason=message,
+        )
 
-    def _result_review_incomplete(self, loop: ReviewLoop) -> FocusedReviewResult:
+    def handle_review_incomplete(self, loop: ReviewLoop) -> FocusedReviewResult:
         marker = loop.review_incomplete or {}
         reason = str(
             marker.get("reason") or "focused review could not be completed"
@@ -739,33 +376,38 @@ class FocusedReviewOrchestrator:
             reason=reason,
         )
 
-    def _result_from_loop(
-        self,
-        loop: ReviewLoop,
-        *,
-        ok: bool,
-        reason: str | None = None,
-    ) -> FocusedReviewResult:
-        revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
-        if ok:
-            self._append_event(
-                "focused_review_approved",
-                loop_id=loop.id,
-                review_type=loop.type,
-                target_revision=loop.target_revision,
-            )
-        return FocusedReviewResult(
-            ok=ok,
-            loop_id=loop.id,
-            status=loop.status,
-            reviewer_session_id=reviewer_loop_provider_session_id(loop),
-            revision_cycles=loop.revision_cycles,
-            reason=reason,
-        )
+    def reviewer_session_started_scope(self, loop: ReviewLoop) -> dict[str, Any] | None:
+        return {"scope": dict(loop.scope)}
 
-    def _append_event(self, event_type: str, **fields: Any) -> None:
-        payload = {"type": event_type, "run_id": self._run_id, **fields}
-        self._store.append_event(self._run_id, payload)
+    def _require_loop(self) -> ReviewLoop:
+        if self._loop is None:
+            raise RuntimeError("FocusedReviewAdapter loop is not bound")
+        return self._loop
+
+
+class FocusedReviewOrchestrator:
+    """Drive one optional focused review loop without advancing mandatory gates."""
+
+    def __init__(
+        self,
+        store: RunStore,
+        run_id: str,
+        provider: Provider,
+    ) -> None:
+        self._store = store
+        self._run_id = run_id
+        self._provider = provider
+
+    def run(self, loop_id: str) -> FocusedReviewResult:
+        loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+        adapter = FocusedReviewAdapter(self._store, self._run_id)
+        adapter.bind_loop(loop)
+        driver = ReviewLoopDriver(self._store, self._run_id, self._provider, adapter)
+        adapter.bind_driver(driver)
+        result = driver.run(loop_id)
+        if not isinstance(result, FocusedReviewResult):
+            raise ProviderRunError("focused review driver returned unexpected result")
+        return result
 
 
 def build_focused_review_package(
@@ -792,25 +434,38 @@ def build_focused_review_package(
         extra_instructions["plan_snapshot"] = (
             f"tdp agent plan snapshot --run {run_id} --view active"
         )
-    tool_instructions = build_reviewer_tool_instructions(run_id, **extra_instructions)
+    tool_instructions = build_reviewer_tool_instructions(
+        run_id,
+        review_type=loop.type,
+        **extra_instructions,
+    )
 
     package: dict[str, Any] = attach_role_context_to_manifest(
         {
-        "run_id": run_id,
-        "phase": phase,
-        "type": loop.type,
-        "loop_id": loop.id,
-        "finding_set_id": loop.finding_set_id,
-        "purpose": f"Optional focused {revision_label} review within declared scope",
-        "scope": dict(loop.scope),
-        "target_revision": loop.target_revision,
-        **plan_execution_contract_fields(plan),
-        "digests": digests,
-        "review_policy": reviewer_package_policy_guidance(),
-        "protocol_instructions": build_reviewer_protocol_instructions(
-            review_type=loop.type,
-        ),
-        "tool_instructions": tool_instructions,
+            "run_id": run_id,
+            "phase": phase,
+            "type": loop.type,
+            "loop_id": loop.id,
+            "finding_set_id": loop.finding_set_id,
+            "purpose": f"Optional focused {revision_label} review within declared scope",
+            "scope": dict(loop.scope),
+            "target_revision": loop.target_revision,
+            **plan_execution_contract_fields(plan),
+            "digests": digests,
+            "review_policy": reviewer_package_policy_guidance(),
+            "instance_ref_guidance": {
+                "optional": True,
+                "notes": (
+                    "Prefer structured instance_ref on findings that target a "
+                    "specific plan field, dependency, or output artifact within "
+                    "scope.item_ids. Flat target_refs remain valid."
+                ),
+            },
+            "protocol_instructions": build_reviewer_protocol_instructions(
+                stage=loop.active_stage,
+                review_type=loop.type,
+            ),
+            "tool_instructions": tool_instructions,
         },
         config=config,
         run=run,
@@ -826,8 +481,7 @@ def build_focused_review_package(
         package["production"] = build_production_review_snapshot(production)
         if loop.type == "focused_output":
             scope_item_ids = [
-                str(item_id)
-                for item_id in (loop.scope.get("item_ids") or [])
+                str(item_id) for item_id in (loop.scope.get("item_ids") or [])
             ]
             traceability = build_output_traceability(
                 plan,
@@ -836,11 +490,31 @@ def build_focused_review_package(
             )
             package["plan_contracts"] = traceability["plan_contracts"]
             package["evidence_by_item"] = traceability["evidence_by_item"]
+    if loop.active_stage == "finding_verification":
+        package.update(_focused_verification_package_fields(loop))
+        package.update(build_active_findings_view(loop))
+        if loop_uses_finding_families(loop):
+            artifact_revision = (
+                plan.revision
+                if loop.type == "focused_plan"
+                else int(production["output_revision"]) if production else loop.target_revision
+            )
+            digest_key = "plan" if loop.type == "focused_plan" else "output"
+            package["active_families"] = build_active_family_view(
+                loop,
+                artifact_revision=artifact_revision,
+                artifact_digest=digests.get(digest_key),
+            )
     return package
 
 
-def _current_target_revision(store: RunStore, run_id: str, review_type: str) -> int:
-    if review_type == "focused_output":
-        return int(store.load_production(run_id)["output_revision"])
-    return int(store.load_plan(run_id)["revision"])
-
+def _sync_output_digest(store: RunStore, run_id: str) -> None:
+    run = store.load_run(run_id)
+    production = store.load_production(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    digests = dict(run.get("digests") or {})
+    digests["output"] = compute_output_digest(production)
+    run["digests"] = digests
+    store.save_run(run_id, run, expected_revision)

@@ -52,7 +52,32 @@ def test_reviewer_protocol_discourages_host_planning_artifacts() -> None:
     assert "host planning modes" in protocol
 
 
-def test_whole_plan_discovery_protocol_includes_family_procedure() -> None:
+def test_whole_output_discovery_protocol_includes_family_procedure() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(
+            stage="initial_review",
+            review_type="whole_output",
+        )
+    ).lower()
+    assert "traceability" in protocol
+    assert "candidate_refs" in protocol
+    assert "discovery_sweep" in protocol
+    assert "audit attestation" in protocol
+    assert "reopens_family_id" in protocol
+
+
+def test_whole_output_verification_protocol_includes_bounded_family_sweep() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(
+            stage="finding_verification",
+            review_type="whole_output",
+        )
+    ).lower()
+    assert "family_results" in protocol
+    assert "verification_sweep" in protocol
+    assert "not a new broad discovery pass" in protocol
+
+
     protocol = " ".join(
         build_reviewer_protocol_instructions(
             stage="initial_review",
@@ -112,18 +137,37 @@ def test_tool_instructions_discourage_uv_run() -> None:
 
 
 def test_tool_instructions_use_contract_specific_scope_examples() -> None:
-    legacy = build_reviewer_tool_instructions("run-test", family_protocol=False)
-    assert "review-respond-scope-v1" in legacy["examples"]
-    assert "review-respond-verification" in legacy["examples"]
-    legacy_examples = {part.strip() for part in legacy["examples"].split(";")}
-    assert "tdp agent example review-respond-scope-v1" in legacy_examples
-    assert "tdp agent example review-respond-scope" not in legacy_examples
+    focused_plan = build_reviewer_tool_instructions(
+        "run-test", review_type="focused_plan"
+    )
+    focused_examples = {part.strip() for part in focused_plan["examples"].split(";")}
+    assert "tdp agent example review-respond" in focused_examples
+    assert "tdp agent example review-respond-focused-with-instance-ref" in focused_examples
+    assert "tdp agent example review-respond-family-discovery-focused-plan" in focused_examples
+    assert "tdp agent example review-respond-verification" in focused_examples
+    assert "tdp agent example review-respond-scope" not in focused_examples
+    assert "tdp agent example review-respond-scope-v1" not in focused_examples
+
+    focused_output = build_reviewer_tool_instructions(
+        "run-test", review_type="focused_output"
+    )
+    output_examples = {part.strip() for part in focused_output["examples"].split(";")}
+    assert "tdp agent example review-respond-family-discovery-focused-output" in output_examples
+    assert "tdp agent example review-respond-scope-v1" not in output_examples
 
     family = build_reviewer_tool_instructions("run-test", family_protocol=True)
     family_examples = {part.strip() for part in family["examples"].split(";")}
     assert "tdp agent example review-respond-scope" in family_examples
     assert "tdp agent example review-respond-family-discovery" in family_examples
     assert "tdp agent example review-respond-scope-v1" not in family_examples
+
+
+def test_tool_instructions_use_output_family_examples_for_whole_output() -> None:
+    output = build_reviewer_tool_instructions("run-test", review_type="whole_output")
+    output_examples = {part.strip() for part in output["examples"].split(";")}
+    assert "tdp agent example review-respond-family-discovery-output" in output_examples
+    assert "tdp agent example review-respond-family-verification-output" in output_examples
+    assert "tdp agent example review-respond-family-discovery" not in output_examples
 
 
 def test_begin_reviewer_review_starts_session_with_review_package(tmp_path: Path) -> None:

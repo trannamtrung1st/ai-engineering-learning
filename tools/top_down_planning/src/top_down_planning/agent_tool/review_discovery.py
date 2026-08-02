@@ -1,4 +1,4 @@
-"""Whole-plan discovery respond parsing and application."""
+"""Mandatory discovery respond parsing and application."""
 
 from __future__ import annotations
 
@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from top_down_planning.domain.artifact_refs import parse_artifact_ref_list
+from top_down_planning.domain.artifact_refs import (
+    parse_artifact_ref_list,
+    validate_artifact_ref_kinds,
+)
 from top_down_planning.domain.finding_families import (
     AuditAttestationPass,
     AuditAttestationRun,
@@ -23,6 +26,8 @@ from top_down_planning.domain.reviews import (
     DiscoveryDerivedOutcome,
     ReviewFinding,
     ReviewLoop,
+    active_finding_ids_for_advisory_policy,
+    apply_discovery_response,
     derive_discovery_outcome,
     assert_reported_finding_ids_unused,
     finding_by_id,
@@ -198,7 +203,7 @@ def _normalize_discovery_sweep(
     )
 
 
-def _parse_whole_plan_families(
+def _parse_mandatory_discovery_families(
     request: Mapping[str, Any],
     *,
     loop: ReviewLoop,
@@ -326,7 +331,34 @@ def _parse_whole_plan_families(
     return families, sweeps, reported
 
 
-def apply_whole_plan_discovery_response(
+def _validate_mandatory_discovery_artifact_refs(
+    families: list[FindingFamily],
+    findings: list[ReviewFinding],
+    *,
+    allowed_artifact_ref_kinds: frozenset[str],
+    family_scope_kind: str,
+) -> None:
+    for family in families:
+        if family.scope_kind != family_scope_kind:
+            raise ValueError(
+                f"family {family.id!r} scope_kind {family.scope_kind!r} does not "
+                f"match mandatory review scope {family_scope_kind!r}"
+            )
+        validate_artifact_ref_kinds(
+            family.candidate_refs,
+            allowed_artifact_ref_kinds,
+            context=f"family {family.id!r} candidate_refs",
+        )
+    for finding in findings:
+        if finding.instance_ref is not None:
+            validate_artifact_ref_kinds(
+                [finding.instance_ref],
+                allowed_artifact_ref_kinds,
+                context=f"finding {finding.id!r} instance_ref",
+            )
+
+
+def apply_mandatory_discovery_response(
     loop: ReviewLoop,
     request: Mapping[str, Any],
     *,
@@ -335,8 +367,11 @@ def apply_whole_plan_discovery_response(
     artifact_revision: int,
     artifact_digest: str,
     rubric: list[str],
+    allowed_artifact_ref_kinds: frozenset[str] = frozenset(),
+    family_scope_kind: str = "active-plan",
+    require_audit: bool = True,
 ) -> tuple[ReviewLoop, list[ReviewFinding], DiscoveryDerivedOutcome, list[dict[str, Any]]]:
-    """Apply whole-plan discovery respond payload with families and audit attestation."""
+    """Apply mandatory discovery respond payload with families and audit attestation."""
 
     _reject_agent_reopen_fields(request)
     explicit_blocked = bool(request.get("block_review"))
@@ -365,15 +400,17 @@ def apply_whole_plan_discovery_response(
     finding_set_id = validate_finding_set_id_echo(loop, request)
     review_completed = bool(request.get("review_completed"))
     rubric_items = rubric_items_with_ids([str(item) for item in rubric])
-    audit_run = _validate_audit_attestation(
-        request,
-        review_type=review_type,
-        artifact_revision=artifact_revision,
-        artifact_digest=artifact_digest,
-        rubric_items=rubric_items,
-        review_completed=review_completed,
-    )
-    families, sweeps, reported = _parse_whole_plan_families(
+    audit_run = None
+    if require_audit:
+        audit_run = _validate_audit_attestation(
+            request,
+            review_type=review_type,
+            artifact_revision=artifact_revision,
+            artifact_digest=artifact_digest,
+            rubric_items=rubric_items,
+            review_completed=review_completed,
+        )
+    families, sweeps, reported = _parse_mandatory_discovery_families(
         request,
         loop=loop,
         finding_set_id=finding_set_id,
@@ -382,16 +419,27 @@ def apply_whole_plan_discovery_response(
         artifact_revision=artifact_revision,
         artifact_digest=artifact_digest,
     )
+    _validate_mandatory_discovery_artifact_refs(
+        families,
+        reported,
+        allowed_artifact_ref_kinds=allowed_artifact_ref_kinds,
+        family_scope_kind=family_scope_kind,
+    )
     merged = merge_discovery_findings(loop, reported)
     incoming_actions = parse_request_finding_actions(request)
     finding_actions = list(loop.finding_actions) + incoming_actions
     threshold = loop_revise_at(loop)
+    active_for_handoff = active_finding_ids_for_advisory_policy(
+        loop,
+        reported_finding_ids=[finding.id for finding in reported],
+    )
     outcome = derive_discovery_outcome(
         merged,
         finding_actions,
         threshold,
         review_completed=review_completed,
         finding_set_id=finding_set_id,
+        finding_ids_in_active_set=active_for_handoff,
     )
     incomplete = None
     if outcome == "review_incomplete":
@@ -467,3 +515,39 @@ def apply_whole_plan_discovery_response(
     if is_mandatory_review_loop(loop) and outcome == "review_incomplete":
         updated = replace(updated, lifecycle_status="review_incomplete")
     return updated, merged, outcome, events
+
+
+def apply_focused_discovery_response(
+    loop: ReviewLoop,
+    request: Mapping[str, Any],
+    *,
+    stage: str | None,
+    review_type: str,
+    artifact_revision: int,
+    artifact_digest: str,
+    allowed_artifact_ref_kinds: frozenset[str],
+    family_scope_kind: str,
+) -> tuple[ReviewLoop, list[ReviewFinding], DiscoveryDerivedOutcome, list[dict[str, Any]]]:
+    """Apply focused discovery respond; optional families when payload is non-empty."""
+
+    raw_families = request.get("finding_families") or []
+    if not raw_families:
+        updated, findings, outcome = apply_discovery_response(
+            loop,
+            request,
+            stage=stage,
+        )
+        return updated, findings, outcome, []
+
+    return apply_mandatory_discovery_response(
+        loop,
+        request,
+        stage=stage,
+        review_type=review_type,
+        artifact_revision=artifact_revision,
+        artifact_digest=artifact_digest,
+        rubric=[],
+        allowed_artifact_ref_kinds=allowed_artifact_ref_kinds,
+        family_scope_kind=family_scope_kind,
+        require_audit=False,
+    )

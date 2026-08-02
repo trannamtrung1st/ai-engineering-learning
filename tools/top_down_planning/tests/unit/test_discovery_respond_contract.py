@@ -56,6 +56,17 @@ def test_allocate_reuses_id_when_review_incomplete() -> None:
     assert updated is loop
 
 
+def test_allocate_reuses_id_for_scope_review_stage() -> None:
+    loop = _loop(
+        finding_set_id="review-focused-plan-01-fs-02",
+        active_stage="scope_review",
+        lifecycle_status="scope_review_pending",
+    )
+    updated, finding_set_id = allocate_discovery_finding_set_id(loop)
+    assert finding_set_id == "review-focused-plan-01-fs-02"
+    assert updated is loop
+
+
 def test_echo_mismatch_rejected() -> None:
     loop = _loop()
     with pytest.raises(ValueError, match="finding_set_id mismatch"):
@@ -173,6 +184,66 @@ def test_focused_package_includes_allocated_finding_set_id(tmp_path: Path) -> No
         run_id, run, config, loop, plan=plan
     )
     assert package["finding_set_id"] == finding_set_id
+    examples = package["tool_instructions"]["examples"]
+    assert "review-respond-focused-with-instance-ref" in examples
+    assert "review-respond-family-discovery-focused-plan" in examples
+
+
+def test_focused_verification_package_includes_stage_fields(tmp_path: Path) -> None:
+    from top_down_planning.domain.models import Plan, PlanItem
+    from top_down_planning.domain.reviews import ReviewFinding
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000001-d15c01"
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+        outcome="Done.",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=1,
+        output_goal="Deliver.",
+        items={"item-root": root},
+    )
+    store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path))
+    config = store.load_resolved_config(run_id)
+    run = store.load_run(run_id)
+    loop = make_review_loop(
+        id="review-focused-plan-01",
+        type="focused_plan",
+        reviewer_session_id=None,
+        target_revision=1,
+        scope={"kind": "focused_plan", "item_ids": ["item-root"]},
+        revise_at="blocker",
+        active_stage="finding_verification",
+        finding_set_id="review-focused-plan-01-fs-01",
+        findings=[
+            ReviewFinding(
+                id="finding-001",
+                severity="blocker",  # type: ignore[arg-type]
+                category="other",
+                target_refs=["item-root"],
+                issue="issue",
+                recommended_change="fix",
+                status="unresolved",
+            )
+        ],
+        finding_ids_by_set={"review-focused-plan-01-fs-01": ["finding-001"]},
+    )
+    package = build_focused_review_package(
+        run_id, run, config, loop, plan=plan
+    )
+    assert package["stage"] == "finding_verification"
+    assert "verification_guidance" in package
+    assert package["respond_contract"]["stage"] == "finding_verification"
+    assert "verification_targets" in package
+    protocol = " ".join(package["protocol_instructions"]).lower()
+    assert "finding_verification" in protocol
+    assert "broad discovery pass" in protocol
 
 
 def test_review_service_rejects_finding_set_id_mismatch(tmp_path: Path) -> None:

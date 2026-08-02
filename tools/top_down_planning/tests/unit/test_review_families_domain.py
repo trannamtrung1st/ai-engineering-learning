@@ -108,14 +108,14 @@ def test_new_whole_plan_review_loop_sets_contract_v2() -> None:
     assert loop.review_contract_version == CURRENT_REVIEW_CONTRACT_VERSION
 
 
-def test_new_whole_output_review_loop_uses_contract_v1() -> None:
+def test_new_whole_output_review_loop_uses_contract_v2() -> None:
     loop = new_whole_output_review_loop(
         loop_id="review-whole-output-01",
         target_revision=1,
         config={"review": {"whole_output": {"revise_at": "blocker"}}},
     )
     assert loop.review_record_schema_version == CURRENT_REVIEW_RECORD_SCHEMA_VERSION
-    assert loop.review_contract_version == 1
+    assert loop.review_contract_version == CURRENT_REVIEW_CONTRACT_VERSION
 
 
 def test_new_focused_review_loop_uses_record_v2_contract_v1() -> None:
@@ -128,6 +128,34 @@ def test_new_focused_review_loop_uses_record_v2_contract_v1() -> None:
     )
     assert loop.review_record_schema_version == CURRENT_REVIEW_RECORD_SCHEMA_VERSION
     assert loop.review_contract_version == 1
+
+
+def test_focused_plan_family_fingerprint_uses_focused_plan_scope() -> None:
+    fingerprint = compute_family_fingerprint(
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="API acceptance",
+        scope_kind="focused-plan",
+    )
+    other = compute_family_fingerprint(
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="API acceptance",
+        scope_kind="active-plan",
+    )
+    assert fingerprint != other
+
+
+def test_focused_output_family_fingerprint_uses_focused_output_scope() -> None:
+    fingerprint = compute_family_fingerprint(
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="item-api evidence",
+        scope_kind="focused-output",
+    )
+    other = compute_family_fingerprint(
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="item-api evidence",
+        scope_kind="whole-output",
+    )
+    assert fingerprint != other
 
 
 def test_family_fingerprint_is_stable_for_builtin_rules() -> None:
@@ -491,7 +519,7 @@ def test_active_families_includes_optional_open_fix_member() -> None:
 
 def test_verified_rejects_without_verification_sweep() -> None:
     from top_down_planning.agent_tool.review_verification import (
-        merge_whole_plan_verification,
+        merge_mandatory_family_verification,
     )
     from top_down_planning.domain.finding_families import FindingFamily
 
@@ -559,7 +587,7 @@ def test_verified_rejects_without_verification_sweep() -> None:
         **_FAMILY_PROTOCOL_VERSIONS,
     )
     with pytest.raises(ValueError, match="missing family_result"):
-        merge_whole_plan_verification(
+        merge_mandatory_family_verification(
             loop,
             {
                 "decision": "verified",
@@ -673,6 +701,94 @@ def test_family_fix_idempotent_replay_ignores_current_revision() -> None:
     assert actions == []
 
 
+def test_output_family_fix_records_producer_owner_sweep() -> None:
+    from top_down_planning.agent_tool.review_owner_actions import apply_family_fixes
+    from top_down_planning.domain.artifact_refs import digest_field_value
+    from top_down_planning.domain.finding_families import (
+        FindingFamily,
+        compute_family_fingerprint,
+    )
+
+    finding = ReviewFinding(
+        id="f-1",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-leaf"],
+        issue="Missing evidence.",
+        recommended_change="Add artifact.",
+        family_id="family-output-1",
+    )
+    family = FindingFamily(
+        id="family-output-1",
+        finding_set_id="set-1",
+        rule_id="custom.evidence-gap",
+        subject_key="leaf-evidence",
+        scope_kind="whole-output",
+        rule_definition="output evidence completeness gap",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="custom.evidence-gap",
+            subject_key="leaf-evidence",
+            scope_kind="whole-output",
+            rule_definition="output evidence completeness gap",
+        ),
+        title="Evidence gap",
+        seed_finding_id="f-1",
+        confirmed_finding_ids=["f-1"],
+        candidate_refs=[],
+        recommended_change="Add artifact.",
+    )
+    owner_sweep = {
+        "artifact_revision": 2,
+        "artifact_digest": "output-digest-2",
+        "searched_refs": ["production:*"],
+        "search_dimensions": ["evidence"],
+        "additional_fixed_refs": [],
+        "remaining_instance_refs": [],
+        "completed": True,
+        "summary": "Swept production evidence.",
+    }
+    loop = make_review_loop(
+        id="loop-output",
+        type="whole_output",
+        finding_set_id="set-1",
+        findings=[finding],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["f-1"]},
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    updated, actions, events = apply_family_fixes(
+        loop,
+        {
+            "family_fixes": [
+                {
+                    "family_id": "family-output-1",
+                    "target_finding_ids": [],
+                    "rationale": "Added missing evidence.",
+                    "changed_refs": [
+                        {
+                            "kind": "output_record",
+                            "record_kind": "evidence",
+                            "record_key": "evidence-01",
+                            "field": "summary",
+                            "value_digest": digest_field_value("artifact added"),
+                        }
+                    ],
+                    "owner_sweep": owner_sweep,
+                }
+            ],
+            "finding_actions": [],
+        },
+        actor_role="producer",
+        artifact_revision=2,
+        artifact_digest="output-digest-2",
+        current_artifact_revision=2,
+    )
+    assert actions
+    assert actions[0].actor_role == "producer"
+    assert any(sweep.stage == "owner_fix" for sweep in updated.family_sweeps)
+    assert any(event.get("type") == "review_family_owner_sweep_recorded" for event in events)
+
+
 def test_loop_round_trip_preserves_explicit_versions() -> None:
     loop = make_review_loop(
         id="loop-v2",
@@ -692,7 +808,7 @@ def test_digest_canonical_payload_is_deterministic() -> None:
 
 
 def test_completed_discovery_rejects_orphan_family_id() -> None:
-    from top_down_planning.agent_tool.review_discovery import _parse_whole_plan_families
+    from top_down_planning.agent_tool.review_discovery import _parse_mandatory_discovery_families
 
     loop = make_review_loop(
         id="loop-1",
@@ -701,7 +817,7 @@ def test_completed_discovery_rejects_orphan_family_id() -> None:
         **_FAMILY_PROTOCOL_VERSIONS,
     )
     with pytest.raises(ValueError, match="finding_families"):
-        _parse_whole_plan_families(
+        _parse_mandatory_discovery_families(
             {
                 "finding_families": [],
                 "reported_findings": [
@@ -735,7 +851,7 @@ def test_completed_discovery_rejects_orphan_family_id() -> None:
 
 
 def test_completed_discovery_rejects_unknown_family_reference() -> None:
-    from top_down_planning.agent_tool.review_discovery import _parse_whole_plan_families
+    from top_down_planning.agent_tool.review_discovery import _parse_mandatory_discovery_families
 
     loop = make_review_loop(
         id="loop-1",
@@ -749,7 +865,7 @@ def test_completed_discovery_rejects_unknown_family_reference() -> None:
         scope_kind="active-plan",
     )
     with pytest.raises(ValueError, match="unknown family_id"):
-        _parse_whole_plan_families(
+        _parse_mandatory_discovery_families(
             {
                 "finding_families": [
                     {
@@ -805,7 +921,7 @@ def test_completed_discovery_rejects_unknown_family_reference() -> None:
 
 
 def test_discovery_sweep_rejects_remaining_instance_refs() -> None:
-    from top_down_planning.agent_tool.review_discovery import _parse_whole_plan_families
+    from top_down_planning.agent_tool.review_discovery import _parse_mandatory_discovery_families
 
     loop = make_review_loop(
         id="loop-1",
@@ -819,7 +935,7 @@ def test_discovery_sweep_rejects_remaining_instance_refs() -> None:
         scope_kind="active-plan",
     )
     with pytest.raises(ValueError, match="remaining_instance_refs"):
-        _parse_whole_plan_families(
+        _parse_mandatory_discovery_families(
             {
                 "finding_families": [
                     {
@@ -885,7 +1001,7 @@ def test_discovery_sweep_rejects_remaining_instance_refs() -> None:
 
 def test_verification_merge_returns_findings_with_remaining_instances() -> None:
     from top_down_planning.agent_tool.review_verification import (
-        merge_whole_plan_verification,
+        merge_mandatory_family_verification,
     )
     from top_down_planning.domain.finding_families import FindingFamily
 
@@ -956,7 +1072,7 @@ def test_verification_merge_returns_findings_with_remaining_instances() -> None:
             }
         ],
     )
-    merged_findings, _, updated_loop, _ = merge_whole_plan_verification(
+    merged_findings, _, updated_loop, _ = merge_mandatory_family_verification(
         loop,
         {
             "decision": "needs_revision",
@@ -1086,11 +1202,11 @@ def _family_verification_loop() -> ReviewLoop:
 
 def test_verified_rejects_open_family_disposition() -> None:
     from top_down_planning.agent_tool.review_verification import (
-        merge_whole_plan_verification,
+        merge_mandatory_family_verification,
     )
 
     with pytest.raises(ValueError, match="disposition closed"):
-        merge_whole_plan_verification(
+        merge_mandatory_family_verification(
             _family_verification_loop(),
             {
                 "decision": "verified",
@@ -1252,12 +1368,107 @@ def test_completed_owner_sweep_requires_search_metadata() -> None:
         )
 
 
-def test_discovery_accepts_custom_rule_with_definition() -> None:
+def test_mandatory_output_discovery_rejects_plan_artifact_refs() -> None:
     from top_down_planning.agent_tool.review_discovery import (
-        apply_whole_plan_discovery_response,
+        apply_mandatory_discovery_response,
     )
     from top_down_planning.config.defaults import DEFAULT_CONFIG
-    from top_down_planning.domain.finding_families import WHOLE_PLAN_AUDIT_PASS_IDS
+    from top_down_planning.domain.mandatory_audit_passes import WHOLE_OUTPUT_AUDIT_PASS_IDS
+    from top_down_planning.orchestrator.review_analysis_context import rubric_items_with_ids
+
+    loop = make_review_loop(
+        id="loop-output",
+        type="whole_output",
+        finding_set_id="set-1",
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    rubric_items = rubric_items_with_ids(
+        [str(item) for item in DEFAULT_CONFIG["review"]["whole_output"]["rubric"]]
+    )
+    rubric_ids = [item["id"] for item in rubric_items]
+    with pytest.raises(ValueError, match="plan_item_field"):
+        apply_mandatory_discovery_response(
+            loop,
+            {
+                "finding_set_id": "set-1",
+                "review_completed": True,
+                "summary": "Invalid plan ref on output gate",
+                "target_digest": "output-digest-1",
+                "audit_attestation": {
+                    "artifact_revision": 1,
+                    "artifact_digest": "output-digest-1",
+                    "passes": [
+                        {
+                            "pass_id": pass_id,
+                            "completed": True,
+                            "scope_id": "whole-output-active-v1",
+                            "search_dimensions": ["evidence"],
+                            "inspected_refs": ["outputs:*"],
+                            "rubric_item_ids": rubric_ids,
+                            "summary": f"Completed {pass_id}.",
+                        }
+                        for pass_id in WHOLE_OUTPUT_AUDIT_PASS_IDS
+                    ],
+                },
+                "finding_families": [
+                    {
+                        "id": "family-output-1",
+                        "finding_set_id": "set-1",
+                        "rule_id": "custom.evidence-gap",
+                        "rule_definition": "output evidence completeness gap",
+                        "subject_key": "leaf",
+                        "scope_kind": "whole-output",
+                        "title": "Evidence gap",
+                        "seed_finding_id": "f-1",
+                        "confirmed_finding_ids": ["f-1"],
+                        "candidate_refs": [],
+                        "recommended_change": "Fix evidence",
+                        "discovery_sweep": {
+                            "artifact_revision": 1,
+                            "artifact_digest": "output-digest-1",
+                            "searched_refs": ["outputs:*"],
+                            "search_dimensions": ["evidence"],
+                            "completed": True,
+                            "summary": "Searched outputs.",
+                        },
+                    }
+                ],
+                "reported_findings": [
+                    {
+                        "id": "f-1",
+                        "family_id": "family-output-1",
+                        "instance_ref": {
+                            "kind": "plan_item_field",
+                            "item_id": "item-leaf",
+                            "field": "acceptance",
+                            "value_digest": "abc",
+                        },
+                        "severity": "blocker",
+                        "category": "correctness",
+                        "target_refs": ["item-leaf"],
+                        "issue": "Bad ref kind",
+                        "recommended_change": "Fix",
+                    }
+                ],
+            },
+            stage="initial_review",
+            review_type="whole_output",
+            artifact_revision=1,
+            artifact_digest="output-digest-1",
+            rubric=[
+                str(item) for item in DEFAULT_CONFIG["review"]["whole_output"]["rubric"]
+            ],
+            allowed_artifact_ref_kinds=frozenset({"output_path", "output_record"}),
+            family_scope_kind="whole-output",
+        )
+
+
+def test_discovery_accepts_custom_rule_with_definition() -> None:
+    from top_down_planning.agent_tool.review_discovery import (
+        apply_mandatory_discovery_response,
+    )
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+    from top_down_planning.domain.mandatory_audit_passes import WHOLE_PLAN_AUDIT_PASS_IDS
     from top_down_planning.orchestrator.review_analysis_context import rubric_items_with_ids
 
     loop = make_review_loop(
@@ -1276,7 +1487,7 @@ def test_discovery_accepts_custom_rule_with_definition() -> None:
         scope_kind="active-plan",
         rule_definition="Reset references must resolve through dependencies.",
     )
-    updated, findings, outcome, events = apply_whole_plan_discovery_response(
+    updated, findings, outcome, events = apply_mandatory_discovery_response(
         loop,
         {
             "finding_set_id": "set-1",
@@ -1374,7 +1585,7 @@ def test_discovery_rejects_agent_submitted_reopen_fields() -> None:
 def test_plan_apply_without_record_actions_can_resume_family_fix(tmp_path: Path) -> None:
     from top_down_planning.agent_tool import PlanAgentService, ReviewAgentService
     from top_down_planning.config.defaults import DEFAULT_CONFIG
-    from top_down_planning.domain.finding_families import WHOLE_PLAN_AUDIT_PASS_IDS
+    from top_down_planning.domain.mandatory_audit_passes import WHOLE_PLAN_AUDIT_PASS_IDS
     from top_down_planning.domain.models import Plan, PlanItem
     from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
     from top_down_planning.domain.review_loop_factory import new_whole_plan_review_loop
@@ -1786,14 +1997,12 @@ def test_optional_target_must_be_confirmed_family_member() -> None:
 
 def test_discovery_regression_links_fingerprint_and_emits_event() -> None:
     from top_down_planning.agent_tool.review_discovery import (
-        apply_whole_plan_discovery_response,
+        apply_mandatory_discovery_response,
     )
     from top_down_planning.config.defaults import DEFAULT_CONFIG
     from top_down_planning.domain.artifact_refs import digest_field_value
-    from top_down_planning.domain.finding_families import (
-        WHOLE_PLAN_AUDIT_PASS_IDS,
-        FindingFamily,
-    )
+    from top_down_planning.domain.finding_families import FindingFamily
+    from top_down_planning.domain.mandatory_audit_passes import WHOLE_PLAN_AUDIT_PASS_IDS
     from top_down_planning.orchestrator.review_analysis_context import (
         rubric_items_with_ids,
     )
@@ -1864,7 +2073,7 @@ def test_discovery_regression_links_fingerprint_and_emits_event() -> None:
         [str(item) for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]]
     )
     rubric_ids = [item["id"] for item in rubric_items]
-    updated, _, _, events = apply_whole_plan_discovery_response(
+    updated, _, _, events = apply_mandatory_discovery_response(
         loop,
         {
             "finding_set_id": "set-1",
@@ -1936,10 +2145,8 @@ def test_discovery_regression_links_fingerprint_and_emits_event() -> None:
 
 
 def test_family_observability_counts_latest_audit_run_only() -> None:
-    from top_down_planning.domain.finding_families import (
-        WHOLE_PLAN_AUDIT_PASS_IDS,
-        family_observability_fields,
-    )
+    from top_down_planning.domain.finding_families import family_observability_fields
+    from top_down_planning.domain.mandatory_audit_passes import WHOLE_PLAN_AUDIT_PASS_IDS
 
     loop = make_review_loop(
         id="loop-1",
@@ -2044,8 +2251,9 @@ def test_active_family_view_includes_discovery_sweep_dimensions() -> None:
     assert sweep["searched_refs"] == ["active-items:*"]
 
 
-def test_legacy_v1_loop_respond_stays_contract_v1(tmp_path: Path) -> None:
+def test_mandatory_whole_plan_v1_respond_rejected(tmp_path: Path) -> None:
     from top_down_planning.agent_tool import ReviewAgentService
+    from top_down_planning.agent_tool.errors import RequestError
     from top_down_planning.domain.models import Plan, PlanItem
     from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
     from top_down_planning.persistence import FileRunStore
@@ -2093,21 +2301,17 @@ def test_legacy_v1_loop_respond_stays_contract_v1(tmp_path: Path) -> None:
         loop_id=loop.id,
         session_id="sess",
     )
-    ReviewAgentService(store, run_id).respond(
-        {
-            "loop_id": loop.id,
-            "target_revision": 0,
-            "stage": "initial_review",
-            "finding_set_id": loop.finding_set_id,
-            "reported_findings": [],
-            "review_completed": True,
-            "target_digest": digest,
-            "summary": "Clear legacy review.",
-        },
-        capability_token=token,
-    )
-    restored = ReviewLoop.from_dict(
-        store.load_review(run_id, loop.id)
-    )
-    assert restored.review_contract_version == LEGACY_REVIEW_CONTRACT_VERSION
-    assert not restored.finding_families
+    with pytest.raises(RequestError, match="contract v2"):
+        ReviewAgentService(store, run_id).respond(
+            {
+                "loop_id": loop.id,
+                "target_revision": 0,
+                "stage": "initial_review",
+                "finding_set_id": loop.finding_set_id,
+                "reported_findings": [],
+                "review_completed": True,
+                "target_digest": digest,
+                "summary": "Clear legacy review.",
+            },
+            capability_token=token,
+        )
