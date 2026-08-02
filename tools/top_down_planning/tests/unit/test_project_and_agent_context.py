@@ -264,6 +264,48 @@ agent_context:
     assert len(producer.skills) == 1
 
 
+def test_role_resources_may_repeat_default_resources(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    shared_rule = workspace / ".cursor" / "rules" / "shared.mdc"
+    shared_rule.parent.mkdir(parents=True)
+    shared_rule.write_text("shared", encoding="utf-8")
+    reviewer_rule = workspace / ".cursor" / "rules" / "reviewer.mdc"
+    reviewer_rule.write_text("reviewer", encoding="utf-8")
+
+    config = resolve_config(
+        write_config(
+            tmp_path / "base.yaml",
+            """
+run:
+  input_refs:
+    - README.md
+  output_goal: Goal.
+agent_context:
+  default:
+    resources:
+      - .cursor/rules/shared.mdc
+  reviewer:
+    resources:
+      - .cursor/rules/shared.mdc
+      - .cursor/rules/reviewer.mdc
+""",
+        ),
+        cwd=workspace,
+    )
+    (workspace / "README.md").write_text("readme", encoding="utf-8")
+
+    context = resolve_effective_role_context(config, "reviewer", workspace=workspace)
+    assert [path.name for path in context.resources] == [
+        "shared.mdc",
+        "reviewer.mdc",
+    ]
+
+    spec = build_context_spec_payload(config, workspace=workspace)
+    reviewer_resources = spec["roles"]["reviewer"]["resources"]
+    assert reviewer_resources.count(str(shared_rule.resolve())) == 1
+    assert str(reviewer_rule.resolve()) in reviewer_resources
+
+
 def test_input_ref_precedence_over_supporting_resource(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     shared = workspace / "shared.md"

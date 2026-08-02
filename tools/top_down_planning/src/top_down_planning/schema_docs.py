@@ -831,11 +831,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "description": (
                     "Per-role model, advisory guidance, supporting resources, and "
                     "skills. Guidance, resources, and skills are additive with "
-                    "agent_context.default. Guidance is advisory only and does not "
+                    "agent_context.default; duplicate resource paths between default "
+                    "and a role are deduped at resolve time. Guidance is advisory only and does not "
                     "change acceptance, enforcement, or lifecycle transitions. "
                     "Run contracts (run.input_refs, run.output_goal / "
                     "run.output_goal_file) are supplied automatically and must not "
-                    "be repeated here."
+                    "be repeated under resources."
                 ),
                 "properties": {
                     role: {
@@ -2397,8 +2398,9 @@ include:
   do not use host planning modes or planning-only artifacts)
 - `tool_instructions` — concrete `tdp agent` command templates for the active role
 - `agent_context` — supporting `guidance`, `resources`, and optional `skills`
-  (do not repeat `run.input_refs` or the output-goal file under `resources`;
-  overlaps are rejected). Guidance is advisory and not merged into
+  (inherit `agent_context.default`; duplicate resource paths between default and
+  role are deduped; do not repeat `run.input_refs` or the output-goal file under
+  `resources`). Guidance is advisory and not merged into
   `protocol_instructions`.
 - Producer packages include `approved_plan` (plan metadata plus canonical item
   contracts from `build_item_production_contract`)

@@ -174,6 +174,39 @@ def _normalize_resource_selection(
     return tuple(selected)
 
 
+def _merge_supporting_resource_selection(
+    default_selection: tuple[str, ...],
+    role_selection: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Merge default then role resource keys, deduping role repeats of default."""
+
+    merged = list(default_selection)
+    seen = set(default_selection)
+    for item in role_selection:
+        if item in seen:
+            continue
+        seen.add(item)
+        merged.append(item)
+    return tuple(merged)
+
+
+def _merge_resolved_resource_paths(
+    default_resources: tuple[Path, ...],
+    role_resources: tuple[Path, ...],
+) -> tuple[Path, ...]:
+    """Merge default then role paths, deduping role repeats of default."""
+
+    seen = {path.resolve() for path in default_resources}
+    merged = list(default_resources)
+    for path in role_resources:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        merged.append(path)
+    return tuple(merged)
+
+
 def _agent_context_sections(
     config: dict[str, Any],
     role: AgentRole,
@@ -202,14 +235,17 @@ def _resource_selection_for_role(
     default_section, role_section = _agent_context_sections(config, role)
     default_entries = list(default_section.get("resources") or [])
     role_entries = list(role_section.get("resources") or [])
-    return _normalize_resource_selection(
-        default_entries,
-        workspace=workspace,
-        field="agent_context.default.resources",
-    ) + _normalize_resource_selection(
-        role_entries,
-        workspace=workspace,
-        field=f"agent_context.{role}.resources",
+    return _merge_supporting_resource_selection(
+        _normalize_resource_selection(
+            default_entries,
+            workspace=workspace,
+            field="agent_context.default.resources",
+        ),
+        _normalize_resource_selection(
+            role_entries,
+            workspace=workspace,
+            field=f"agent_context.{role}.resources",
+        ),
     )
 
 
@@ -755,15 +791,13 @@ def resolve_effective_role_context(
         forbidden=forbidden,
         field="agent_context.default.resources",
     )
-    forbidden |= set(default_resources)
-
     role_resources = _resolve_supporting_resources(
         role_entries,
         workspace=workspace,
         forbidden=forbidden,
         field=f"agent_context.{role}.resources",
     )
-    resources = default_resources + role_resources
+    resources = _merge_resolved_resource_paths(default_resources, role_resources)
     skills = _skills_for_role(config, role, workspace=workspace)
     guidance_entries = _guidance_entries_for_role(config, role, workspace=workspace)
 

@@ -331,7 +331,7 @@ def _parse_mandatory_discovery_families(
     return families, sweeps, reported
 
 
-def _validate_mandatory_discovery_artifact_refs(
+def _validate_discovery_artifact_refs(
     families: list[FindingFamily],
     findings: list[ReviewFinding],
     *,
@@ -342,7 +342,7 @@ def _validate_mandatory_discovery_artifact_refs(
         if family.scope_kind != family_scope_kind:
             raise ValueError(
                 f"family {family.id!r} scope_kind {family.scope_kind!r} does not "
-                f"match mandatory review scope {family_scope_kind!r}"
+                f"match expected scope_kind {family_scope_kind!r}"
             )
         validate_artifact_ref_kinds(
             family.candidate_refs,
@@ -419,7 +419,7 @@ def apply_mandatory_discovery_response(
         artifact_revision=artifact_revision,
         artifact_digest=artifact_digest,
     )
-    _validate_mandatory_discovery_artifact_refs(
+    _validate_discovery_artifact_refs(
         families,
         reported,
         allowed_artifact_ref_kinds=allowed_artifact_ref_kinds,
