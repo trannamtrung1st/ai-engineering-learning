@@ -18,6 +18,7 @@ from top_down_planning.domain.production import (
     build_production_review_snapshot,
 )
 from top_down_planning.domain.review_policy import resolved_revise_at
+from top_down_planning.domain.review_loop_factory import new_whole_output_review_loop
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     allocate_discovery_finding_set_id,
@@ -636,16 +637,10 @@ class WholeOutputReviewOrchestrator:
         output_revision = int(self._store.load_production(self._run_id)["output_revision"])
         loop_id = self._next_loop_id()
         config = self._store.load_resolved_config(self._run_id)
-        loop = ReviewLoop(
-            id=loop_id,
-            type="whole_output",
+        loop = new_whole_output_review_loop(
+            loop_id=loop_id,
             target_revision=output_revision,
-            scope={"kind": "whole_output"},
-            status="pending",
-            lifecycle_status="review_pending",
-            active_stage=None,
-            scope_review_rounds=0,
-            revise_at=resolved_revise_at(config, "whole_output"),
+            config=config,
         )
         self._store.save_review(self._run_id, loop.to_dict())
         self._append_event(

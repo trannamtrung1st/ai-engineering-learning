@@ -6,6 +6,8 @@ alwaysApply: false
 
 # Tools CLI Parameters
 
+Companion to `.cursor/skills/tools-dev/SKILL.md` (authoritative for all `tools/` work). This rule is a focused CLI quick-reference when editing source under `tools/**/src/**`.
+
 Packages under `tools/` share a config-first CLI model (`core_tools.config.apply_cli_overrides`).
 
 ## Two config tiers

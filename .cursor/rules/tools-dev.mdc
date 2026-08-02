@@ -1,0 +1,20 @@
+---
+description: Require tools-dev skill when editing anything under tools/
+globs: "tools/**"
+alwaysApply: true
+---
+
+# Tools Development
+
+When creating, editing, or reviewing **any** file under `tools/` (source, tests, config, docs, packaging), **read and follow** `.cursor/skills/tools-dev/SKILL.md` as your **first action** before planning or changing code.
+
+Do not improvise conventions for `tools/` packages. The skill is the authoritative source for CLI design, provider orchestration, test fakes, and package helpers.
+
+## Companion rules
+
+These narrower rules may also apply when their globs match. If anything conflicts, follow the skill:
+
+- `.cursor/rules/tools-cli.mdc` — `tools/**/src/**/*.{py,yaml,md}`
+- `.cursor/rules/unit-tests.mdc` — `**/tests/**/*.py` (includes `tools/**/tests/**`)
+
+For mixed tasks spanning `tools/` and other directories, still read the skill before touching `tools/` files.

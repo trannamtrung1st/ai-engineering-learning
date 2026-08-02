@@ -10,7 +10,13 @@ from top_down_planning.domain.reviews import ReviewFinding, ReviewLoop, policy_o
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
-from tests.helpers import create_run_kwargs, grant_capability, minimal_resolved_config, make_review_loop
+from tests.helpers import (
+    create_run_kwargs,
+    enrich_whole_plan_review_respond_payload,
+    grant_capability,
+    minimal_resolved_config,
+    make_review_loop,
+)
 
 
 def test_policy_observability_includes_counts() -> None:
@@ -93,25 +99,29 @@ def test_review_respond_emits_observability_events(tmp_path: Path) -> None:
 
     digest = compute_plan_digest(plan)
     response = ReviewAgentService(store, run_id).respond(
-        {
-            "loop_id": loop.id,
-            "target_revision": 0,
-            "stage": "initial_review",
-            "finding_set_id": loop.finding_set_id,
-            "reported_findings": [
-                {
-                    "id": "f-major",
-                    "severity": "major",
-                    "category": "other",
-                    "target_refs": ["item-a"],
-                    "issue": "gap",
-                    "recommended_change": "fix",
-                }
-            ],
-            "review_completed": True,
-            "target_digest": digest,
-            "summary": "Required finding.",
-        },
+        enrich_whole_plan_review_respond_payload(
+            store,
+            run_id,
+            {
+                "loop_id": loop.id,
+                "target_revision": 0,
+                "stage": "initial_review",
+                "finding_set_id": loop.finding_set_id,
+                "reported_findings": [
+                    {
+                        "id": "f-major",
+                        "severity": "major",
+                        "category": "other",
+                        "target_refs": ["item-a"],
+                        "issue": "gap",
+                        "recommended_change": "fix",
+                    }
+                ],
+                "review_completed": True,
+                "target_digest": digest,
+                "summary": "Required finding.",
+            },
+        ),
         capability_token=token,
     )
     assert response["revise_at"] == "major"

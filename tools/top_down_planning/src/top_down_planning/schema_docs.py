@@ -9,6 +9,7 @@ from core_tools.schema import validate_against_schema
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS
+from top_down_planning.domain.finding_families import WHOLE_PLAN_AUDIT_PASS_IDS
 from top_down_planning.domain.review_policy import (
     CATEGORY_DEFINITIONS,
     FINDING_CATEGORY_ORDER,
@@ -38,7 +39,10 @@ PUBLIC_EXAMPLES: tuple[str, ...] = (
     "review-respond-initial-approved",
     "review-respond-verification",
     "review-respond-scope",
+    "review-respond-family-discovery",
+    "review-respond-family-verification",
     "review-record-finding-actions",
+    "review-record-family-fix",
     "focused-review-request",
     "amendment-request",
     "completion-claim",
@@ -248,6 +252,157 @@ _REVIEW_FINDING_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+_FAMILY_PROTOCOL_FINDING_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": [
+        "id",
+        "family_id",
+        "instance_ref",
+        "severity",
+        "category",
+        "target_refs",
+        "issue",
+        "recommended_change",
+    ],
+    "properties": {
+        "id": {"type": "string", "maxLength": 128},
+        "family_id": {"type": "string", "maxLength": 128},
+        "instance_ref": {"type": "object"},
+        "severity": {
+            "type": "string",
+            "enum": list(SEVERITY_ORDER),
+        },
+        "category": {
+            "type": "string",
+            "enum": list(FINDING_CATEGORY_ORDER),
+        },
+        "target_refs": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 128},
+        },
+        "issue": {"type": "string", "maxLength": 4000},
+        "evidence": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 512},
+        },
+        "recommended_change": {"type": "string", "maxLength": 4000},
+        "status": {
+            "type": "string",
+            "enum": [
+                "unresolved",
+                "partially_resolved",
+                "resolved",
+                "superseded",
+                "invalid",
+            ],
+        },
+    },
+    "additionalProperties": False,
+}
+
+_DISCOVERY_SWEEP_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["artifact_revision", "artifact_digest", "completed"],
+    "properties": {
+        "artifact_revision": {"type": "integer"},
+        "artifact_digest": {"type": "string", "minLength": 1},
+        "searched_refs": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 256},
+        },
+        "search_dimensions": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 128},
+        },
+        "completed": {"type": "boolean"},
+        "summary": {"type": "string", "maxLength": 4000},
+        "evidence": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 512},
+        },
+    },
+    "additionalProperties": False,
+}
+
+_VERIFICATION_SWEEP_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["artifact_revision", "artifact_digest", "completed"],
+    "properties": {
+        "artifact_revision": {"type": "integer"},
+        "artifact_digest": {"type": "string", "minLength": 1},
+        "searched_refs": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 256},
+        },
+        "search_dimensions": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 128},
+        },
+        "remaining_instance_refs": {
+            "type": "array",
+            "items": {"type": "object"},
+        },
+        "completed": {"type": "boolean"},
+        "summary": {"type": "string", "maxLength": 4000},
+        "evidence": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 512},
+        },
+    },
+    "additionalProperties": False,
+}
+
+_OWNER_SWEEP_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["artifact_revision", "artifact_digest", "completed"],
+    "properties": {
+        "artifact_revision": {"type": "integer"},
+        "artifact_digest": {"type": "string", "minLength": 1},
+        "searched_refs": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 256},
+        },
+        "search_dimensions": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 128},
+        },
+        "additional_fixed_refs": {
+            "type": "array",
+            "items": {"type": "object"},
+        },
+        "remaining_instance_refs": {
+            "type": "array",
+            "items": {"type": "object"},
+        },
+        "completed": {"type": "boolean"},
+        "summary": {"type": "string", "maxLength": 4000},
+        "evidence": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 512},
+        },
+    },
+    "additionalProperties": False,
+}
+
+_FAMILY_FIX_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["family_id", "owner_sweep"],
+    "properties": {
+        "family_id": {"type": "string", "maxLength": 128},
+        "target_finding_ids": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 128},
+        },
+        "rationale": {"type": "string", "maxLength": 4000},
+        "changed_refs": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 128},
+        },
+        "owner_sweep": _OWNER_SWEEP_SCHEMA,
+    },
+    "additionalProperties": False,
+}
+
 _FINDING_VERIFICATION_ENTRY_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": ["finding_id", "disposition"],
@@ -379,6 +534,126 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
         "additionalProperties": False,
     },
     {
+        "title": "MandatoryFamilyDiscoveryRespond",
+        "type": "object",
+        "required": [
+            "loop_id",
+            "target_revision",
+            "stage",
+            "finding_set_id",
+            "target_digest",
+            "reported_findings",
+            "finding_families",
+            "audit_attestation",
+            "review_completed",
+            "summary",
+        ],
+        "properties": {
+            "loop_id": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "stage": {
+                "type": "string",
+                "enum": ["initial_review", "scope_review"],
+            },
+            "finding_set_id": {"type": "string"},
+            "target_digest": {"type": "string", "minLength": 1},
+            "reported_findings": {
+                "type": "array",
+                "items": _FAMILY_PROTOCOL_FINDING_SCHEMA,
+            },
+            "finding_families": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "id",
+                        "rule_id",
+                        "subject_key",
+                        "scope_kind",
+                        "title",
+                        "seed_finding_id",
+                        "confirmed_finding_ids",
+                        "recommended_change",
+                        "discovery_sweep",
+                    ],
+                    "properties": {
+                        "id": {"type": "string", "maxLength": 128},
+                        "finding_set_id": {"type": "string", "maxLength": 128},
+                        "rule_id": {"type": "string", "maxLength": 128},
+                        "subject_key": {"type": "string", "maxLength": 256},
+                        "scope_kind": {
+                            "type": "string",
+                            "enum": [
+                                "active-plan",
+                                "focused-plan",
+                                "whole-output",
+                                "focused-output",
+                            ],
+                        },
+                        "rule_definition": {"type": "string", "maxLength": 4000},
+                        "title": {"type": "string", "maxLength": 512},
+                        "seed_finding_id": {"type": "string", "maxLength": 128},
+                        "confirmed_finding_ids": {
+                            "type": "array",
+                            "items": {"type": "string", "maxLength": 128},
+                        },
+                        "candidate_refs": {
+                            "type": "array",
+                            "items": {"type": "object"},
+                        },
+                        "recommended_change": {"type": "string", "maxLength": 4000},
+                        "discovery_sweep": _DISCOVERY_SWEEP_SCHEMA,
+                    },
+                    "additionalProperties": False,
+                },
+            },
+            "audit_attestation": {
+                "type": "object",
+                "required": ["artifact_revision", "artifact_digest", "passes"],
+                "properties": {
+                    "artifact_revision": {"type": "integer"},
+                    "artifact_digest": {"type": "string", "minLength": 1},
+                    "passes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["pass_id", "completed"],
+                            "properties": {
+                                "pass_id": {"type": "string", "maxLength": 128},
+                                "completed": {"type": "boolean"},
+                                "scope_id": {"type": "string", "maxLength": 128},
+                                "search_dimensions": {
+                                    "type": "array",
+                                    "items": {"type": "string", "maxLength": 128},
+                                },
+                                "inspected_refs": {
+                                    "type": "array",
+                                    "items": {"type": "string", "maxLength": 256},
+                                },
+                                "rubric_item_ids": {
+                                    "type": "array",
+                                    "items": {"type": "string", "maxLength": 128},
+                                },
+                                "summary": {"type": "string", "maxLength": 4000},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "additionalProperties": False,
+            },
+            "review_completed": {"type": "boolean"},
+            "summary": {"type": "string"},
+            "block_review": {"type": "boolean"},
+            "scope_id": {"type": "string"},
+            "acceptance_criteria_checked": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+        "additionalProperties": False,
+    },
+    {
         "title": "MandatoryFindingVerificationRespond",
         "type": "object",
         "required": [
@@ -412,6 +687,26 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             "new_direct_side_effect_findings": {
                 "type": "array",
                 "items": _REVIEW_FINDING_SCHEMA,
+            },
+            "family_results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["family_id", "disposition", "verification_sweep"],
+                    "properties": {
+                        "family_id": {"type": "string", "maxLength": 128},
+                        "disposition": {
+                            "type": "string",
+                            "enum": ["closed", "open"],
+                        },
+                        "verification_sweep": _VERIFICATION_SWEEP_SCHEMA,
+                        "remaining_instance_findings": {
+                            "type": "array",
+                            "items": _FAMILY_PROTOCOL_FINDING_SCHEMA,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
             },
             "summary": {"type": "string"},
         },
@@ -1008,6 +1303,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "loop_id": {"type": "string"},
             "artifact_revision": {"type": "integer"},
+            "artifact_digest": {"type": "string"},
             "default_optional_action": {
                 "type": "string",
                 "enum": ["defer", "accept_as_is"],
@@ -1059,6 +1355,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     },
                     "additionalProperties": False,
                 },
+            },
+            "family_fixes": {
+                "type": "array",
+                "items": _FAMILY_FIX_SCHEMA,
+                "description": (
+                    "Whole-plan family-level owner fix sweeps; service expands required "
+                    "open members into finding_actions."
+                ),
             },
         },
         "additionalProperties": False,
@@ -1122,6 +1426,21 @@ SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 _SCHEMAS = SCHEMAS
+
+
+def _example_whole_plan_audit_passes() -> list[dict[str, Any]]:
+    return [
+        {
+            "pass_id": pass_id,
+            "completed": True,
+            "search_dimensions": ["acceptance"],
+            "inspected_refs": ["active-items:*"],
+            "rubric_item_ids": ["rubric-1-example"],
+            "summary": f"Completed {pass_id}.",
+        }
+        for pass_id in WHOLE_PLAN_AUDIT_PASS_IDS
+    ]
+
 
 _EXAMPLES: dict[str, dict[str, Any]] = {
     "expand-branch": {
@@ -1422,6 +1741,138 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "summary": "No remaining material issues in current scope.",
         },
     },
+    "review-respond-family-discovery": {
+        "schema": "review-respond",
+        "description": (
+            "Whole-plan discovery with audit attestation and finding families."
+        ),
+        "payload": {
+            "loop_id": "review-whole-plan-01",
+            "target_revision": 1,
+            "stage": "initial_review",
+            "finding_set_id": "review-whole-plan-01-fs-01",
+            "review_completed": True,
+            "summary": "Reported dependency capability family.",
+            "target_digest": "<plan-digest>",
+            "audit_attestation": {
+                "artifact_revision": 1,
+                "artifact_digest": "<plan-digest>",
+                "passes": _example_whole_plan_audit_passes(),
+            },
+            "finding_families": [
+                {
+                    "id": "family-dependency-capability-reset",
+                    "finding_set_id": "review-whole-plan-01-fs-01",
+                    "rule_id": "dependency.acceptance_capability_available",
+                    "subject_key": "reset-control",
+                    "scope_kind": "active-plan",
+                    "title": "Acceptance references unavailable capability",
+                    "seed_finding_id": "sf-001",
+                    "confirmed_finding_ids": ["sf-001"],
+                    "candidate_refs": [],
+                    "recommended_change": "Move concrete integration to the owning leaf.",
+                    "discovery_sweep": {
+                        "artifact_revision": 1,
+                        "artifact_digest": "<plan-digest>",
+                        "searched_refs": ["active-items:*"],
+                        "search_dimensions": ["acceptance", "depends_on"],
+                        "completed": True,
+                        "summary": "Searched active plan for equivalent references.",
+                        "evidence": [],
+                    },
+                }
+            ],
+            "reported_findings": [
+                {
+                    "id": "sf-001",
+                    "family_id": "family-dependency-capability-reset",
+                    "instance_ref": {
+                        "kind": "plan_item_field",
+                        "item_id": "item-write",
+                        "field": "acceptance",
+                        "value_digest": "<opaque>",
+                        "duplicate_ordinal": 0,
+                    },
+                    "severity": "major",
+                    "category": "architecture",
+                    "target_refs": ["item-write"],
+                    "issue": "Acceptance tests Reset before Reset exists.",
+                    "recommended_change": "Test only the reserved shell action slot.",
+                }
+            ],
+        },
+    },
+    "review-respond-family-verification": {
+        "schema": "review-respond",
+        "description": (
+            "Whole-plan finding_verification with family_results and verified decision."
+        ),
+        "payload": {
+            "loop_id": "review-whole-plan-01",
+            "target_revision": 2,
+            "stage": "finding_verification",
+            "target_digest": "<plan-digest>",
+            "finding_set_id": "review-whole-plan-01-fs-01",
+            "decision": "verified",
+            "finding_results": [
+                {
+                    "finding_id": "sf-001",
+                    "disposition": "resolved",
+                    "evidence": ["Normalized Reset references"],
+                    "direct_side_effects": [],
+                }
+            ],
+            "family_results": [
+                {
+                    "family_id": "family-dependency-capability-reset",
+                    "disposition": "closed",
+                    "verification_sweep": {
+                        "artifact_revision": 2,
+                        "artifact_digest": "<plan-digest>",
+                        "searched_refs": ["active-items:*"],
+                        "search_dimensions": ["acceptance", "depends_on"],
+                        "remaining_instance_refs": [],
+                        "completed": True,
+                        "summary": "No equivalent active instance remains.",
+                        "evidence": [],
+                    },
+                    "remaining_instance_findings": [],
+                }
+            ],
+            "new_direct_side_effect_findings": [],
+            "summary": "Families verified; no remaining instances.",
+        },
+    },
+    "review-record-family-fix": {
+        "schema": "review-record-finding-actions",
+        "description": (
+            "Whole-plan owner family fix sweep with generated fix actions for required members."
+        ),
+        "payload": {
+            "loop_id": "review-whole-plan-01",
+            "artifact_revision": 2,
+            "artifact_digest": "<plan-digest>",
+            "family_fixes": [
+                {
+                    "family_id": "family-reset",
+                    "target_finding_ids": [],
+                    "rationale": "Normalized all instances",
+                    "changed_refs": ["item-a", "item-b"],
+                    "owner_sweep": {
+                        "artifact_revision": 2,
+                        "artifact_digest": "<plan-digest>",
+                        "searched_refs": ["active-items:*"],
+                        "search_dimensions": ["acceptance"],
+                        "additional_fixed_refs": [],
+                        "remaining_instance_refs": [],
+                        "completed": True,
+                        "summary": "No remaining instances",
+                    },
+                }
+            ],
+            "finding_actions": [],
+        },
+    },
     "review-record-finding-actions": {
         "schema": "review-record-finding-actions",
         "description": (
@@ -1693,7 +2144,8 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    Stages: `initial_review` (discovery), optional `finding_verification` (close known
    findings after revisions), then fresh `scope_review` (complete-scope discovery).
    Each stage requires `stage` plus Result Contract fields — see
-   `review-respond-initial`, `review-respond-initial-approved`, `review-respond-verification`, and `review-respond-scope`.
+   `review-respond-family-discovery`, `review-respond-family-verification`,
+   `review-respond-initial-approved`, and `review-respond-scope`.
    Review packages include an embedded plan tree, `review_policy.category_definitions`,
    and optional `rubric` on initial review only; refresh with
    `plan snapshot --view active` when revising after

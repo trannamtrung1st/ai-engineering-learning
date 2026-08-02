@@ -10,6 +10,7 @@ from top_down_planning.agent_tool.views import build_plan_review_snapshot
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.review_policy import resolved_revise_at
+from top_down_planning.domain.review_loop_factory import new_whole_plan_review_loop
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     allocate_discovery_finding_set_id,
@@ -28,8 +29,18 @@ from top_down_planning.domain.reviews import (
     owner_actions_require_revision,
     policy_observability_fields,
     primary_review_resume_fields,
+    uses_finding_family_protocol,
     required_open_findings,
     verification_required_for_loop,
+)
+from top_down_planning.domain.finding_families import (
+    build_active_family_view,
+    build_family_verification_view,
+)
+from top_down_planning.orchestrator.review_analysis_context import (
+    build_plan_analysis_context,
+    contract_fields,
+    rubric_items_with_ids,
 )
 from top_down_planning.orchestrator.mandatory_review_stages import (
     approved_means_final_approval,
@@ -592,16 +603,10 @@ class WholePlanReviewOrchestrator:
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])
         loop_id = self._next_loop_id()
         config = self._store.load_resolved_config(self._run_id)
-        loop = ReviewLoop(
-            id=loop_id,
-            type="whole_plan",
+        loop = new_whole_plan_review_loop(
+            loop_id=loop_id,
             target_revision=plan_revision,
-            scope={"kind": "whole_plan"},
-            status="pending",
-            lifecycle_status="review_pending",
-            active_stage=None,
-            scope_review_rounds=0,
-            revise_at=resolved_revise_at(config, "whole_plan"),
+            config=config,
         )
         self._store.save_review(self._run_id, loop.to_dict())
         self._append_event(
@@ -750,7 +755,7 @@ class WholePlanReviewOrchestrator:
                 "phase": WHOLE_PLAN_REVIEW,
                 "loop_id": loop.id,
                 "target_revision": loop.target_revision,
-                **primary_review_resume_fields(loop, config=config),
+                **self._primary_resume_fields(loop, config),
                 "tool_instructions": {
                     "record_actions": (
                         f"tdp agent review record-actions --run {self._run_id} "
@@ -832,7 +837,7 @@ class WholePlanReviewOrchestrator:
                 "phase": WHOLE_PLAN_REVIEW,
                 "loop_id": loop.id,
                 "target_revision": loop.target_revision,
-                **primary_review_resume_fields(loop, config=config),
+                **self._primary_resume_fields(loop, config),
                 "tool_instructions": {
                     "record_actions": (
                         f"tdp agent review record-actions --run {self._run_id} "
@@ -974,6 +979,25 @@ class WholePlanReviewOrchestrator:
         payload = {"type": event_type, "run_id": self._run_id, **fields}
         self._store.append_event(self._run_id, payload)
 
+    def _plan_artifact_binding(self) -> tuple[int, str]:
+        plan = self._store.load_plan(self._run_id)
+        from top_down_planning.persistence.digests import compute_plan_digest
+
+        return int(plan["revision"]), compute_plan_digest(plan)
+
+    def _primary_resume_fields(
+        self,
+        loop: ReviewLoop,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        revision, digest = self._plan_artifact_binding()
+        return primary_review_resume_fields(
+            loop,
+            config=config,
+            artifact_revision=revision,
+            artifact_digest=digest,
+        )
+
 
 def build_whole_plan_review_package(
     run_id: str,
@@ -991,7 +1015,14 @@ def build_whole_plan_review_package(
         review_cfg.get("rubric")
         or DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
     )
+    rubric_items = rubric_items_with_ids([str(item) for item in rubric])
     quality_warnings = plan_advisory_warning_messages(plan)
+    analysis_context = build_plan_analysis_context(
+        plan,
+        config,
+        stage=loop.active_stage,
+        review_type="whole_plan",
+    )
     package: dict[str, Any] = {
         "run_id": run_id,
         "phase": WHOLE_PLAN_REVIEW,
@@ -1007,9 +1038,11 @@ def build_whole_plan_review_package(
         "plan_revision": plan.revision,
         "plan": build_plan_review_snapshot(plan, limits=limits),
         "warnings": quality_warnings,
+        "analysis_context": analysis_context,
         **plan_execution_contract_fields(plan),
         "digests": digests,
         **stage_package_fields(loop),
+        **contract_fields(loop),
         "protocol_instructions": build_reviewer_protocol_instructions(
             stage=loop.active_stage or "initial_review",
             review_type=loop.type,
@@ -1017,14 +1050,31 @@ def build_whole_plan_review_package(
         "tool_instructions": {
             **build_reviewer_tool_instructions(
                 run_id,
+                family_protocol=uses_finding_family_protocol(loop),
                 plan_snapshot=(
                     f"tdp agent plan snapshot --run {run_id} --view active"
                 ),
             ),
         },
     }
-    if loop.active_stage != "scope_review":
-        package["rubric"] = rubric
+    package["rubric_items"] = rubric_items
+    package["required_audit_passes"] = analysis_context["audit_passes"]
+    if loop.active_stage == "finding_verification":
+        package["family_verification_view"] = build_family_verification_view(
+            loop,
+            artifact_revision=plan.revision,
+            artifact_digest=digests.get("plan"),
+        )
+    elif loop.lifecycle_status in {
+        "findings_open",
+        "revision_in_progress",
+        "verification_pending",
+    }:
+        package["active_families"] = build_active_family_view(
+            loop,
+            artifact_revision=plan.revision,
+            artifact_digest=digests.get("plan"),
+        )
     return attach_role_context_to_manifest(
         package,
         config=config,

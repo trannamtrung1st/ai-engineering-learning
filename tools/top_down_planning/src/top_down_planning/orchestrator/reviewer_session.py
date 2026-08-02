@@ -194,6 +194,32 @@ def build_reviewer_protocol_instructions(
                 ),
             ]
         )
+    if normalized_type == "whole_plan":
+        instructions.extend(
+            [
+                (
+                    "Whole-plan review: complete every required audit pass in order "
+                    "and submit audit_attestation bound to the current artifact "
+                    "revision and digest."
+                ),
+                (
+                    "Group every confirmed defect into a finding family with a "
+                    "completed discovery_sweep. Search the whole active plan for "
+                    "equivalent instances before marking review_completed true."
+                ),
+                (
+                    "Do not submit reopens_family_id or reopens_finding_id; the "
+                    "service derives regression lineage after scope review."
+                ),
+            ]
+        )
+        if normalized == "finding_verification":
+            instructions.append(
+                (
+                    "Re-run each active family's rule and search dimensions during "
+                    "verification; report family_results with verification_sweep."
+                )
+            )
     instructions.append(
         (
             "Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR. "
@@ -206,10 +232,23 @@ def build_reviewer_protocol_instructions(
 
 def build_reviewer_tool_instructions(
     run_id: str,
+    *,
+    family_protocol: bool = False,
     **extra: str,
 ) -> dict[str, str]:
     """CLI instructions embedded in reviewer review packages."""
 
+    if family_protocol:
+        examples = (
+            "tdp agent example review-respond-family-discovery ; "
+            "tdp agent example review-respond-family-verification ; "
+            "tdp agent example review-respond-scope"
+        )
+    else:
+        examples = (
+            "tdp agent example review-respond-verification ; "
+            "tdp agent example review-respond-scope"
+        )
     instructions = {
         "authorization": (
             "Mutating commands require the session capability token exported "
@@ -223,10 +262,7 @@ def build_reviewer_tool_instructions(
             "(invoke `tdp` directly; do not wrap with `uv run`)"
         ),
         "schema": "tdp agent schema review-respond",
-        "examples": (
-            "tdp agent example review-respond-verification ; "
-            "tdp agent example review-respond-scope"
-        ),
+        "examples": examples,
     }
     instructions.update(extra)
     return instructions

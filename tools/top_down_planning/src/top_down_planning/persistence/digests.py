@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import copy
-from typing import Any
+from typing import Any, Mapping
 
 from core_tools.persistence.digests import digest_json
 
+from top_down_planning.domain.digest import (
+    digest_canonical_payload as _digest_canonical_payload,
+)
 from top_down_planning.domain.models import Plan
 
 from top_down_planning.domain.production import build_production_digest_payload
@@ -16,6 +19,7 @@ __all__ = [
     "compute_config_execution_digest",
     "contract_config_projection",
     "digest_binding_payload",
+    "digest_canonical_payload",
     "compute_output_digest",
     "compute_plan_digest",
     "execution_config_projection",
@@ -79,6 +83,12 @@ def digest_binding_payload(payload: dict[str, Any]) -> str:
     """Deterministic digest of a canonical context spec or snapshot payload."""
 
     return digest_json(payload)
+
+
+def digest_canonical_payload(payload: Mapping[str, Any]) -> str:
+    """Re-export for persistence callers."""
+
+    return _digest_canonical_payload(payload)
 
 
 def compute_output_digest(production: dict[str, Any]) -> str:

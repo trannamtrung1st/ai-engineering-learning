@@ -102,6 +102,25 @@ DEFAULT_CONFIG: dict[str, Any] = {
                     "risks on the lowest owning item? Are plan-level risks reserved "
                     "for cross-cutting threats without duplicating item-level risks?"
                 ),
+                (
+                    "Aggregate purity: Aggregates must not own executable production "
+                    "work. Acceptance on aggregates may express roll-up constraints "
+                    "but not batch sequencing or owner workflow instructions."
+                ),
+                (
+                    "Behavioral completeness: Testing coverage requires observable "
+                    "expected outcomes for every material branch."
+                ),
+                (
+                    "Requirement modality preservation: Preserve mandatory, "
+                    "conditional, optional, and library-dependent modality from "
+                    "authoritative inputs."
+                ),
+                (
+                    "Per-acceptance dependency closure: Every capability named in "
+                    "acceptance must be produced by the item or an active transitive "
+                    "dependency."
+                ),
             ],
         },
         "whole_output": {

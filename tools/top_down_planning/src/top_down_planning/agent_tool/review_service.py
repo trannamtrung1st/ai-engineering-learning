@@ -6,6 +6,15 @@ from typing import Any
 
 from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import RequestError
+from top_down_planning.agent_tool.review_discovery import (
+    apply_whole_plan_discovery_response,
+)
+from top_down_planning.agent_tool.review_owner_actions import (
+    apply_family_fixes,
+)
+from top_down_planning.agent_tool.review_verification import (
+    merge_whole_plan_verification,
+)
 from top_down_planning.agent_tool.request_audit import (
     AgentRequestContext,
     apply_request_audit_fields,
@@ -17,6 +26,7 @@ from top_down_planning.domain.approval_digests import (
     reject_legacy_approved_config_digest,
 )
 from top_down_planning.domain.review_policy import resolved_revise_at
+from top_down_planning.domain.review_loop_factory import new_focused_review_loop
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     ScopeReviewResult,
@@ -38,6 +48,7 @@ from top_down_planning.domain.reviews import (
     focused_loop_count,
     policy_observability_fields,
     require_review_respond_stage,
+    uses_finding_family_protocol,
     validate_findings_within_scope,
     validate_focused_scope,
     validate_mandatory_stage_decision,
@@ -117,13 +128,12 @@ class ReviewAgentService:
             target_revision = int(self._store.load_plan(self._run_id)["revision"])
 
         loop_id = _next_focused_loop_id(reviews, review_type)
-        loop = ReviewLoop(
-            id=loop_id,
-            type=review_type,  # type: ignore[arg-type]
+        loop = new_focused_review_loop(
+            loop_id=loop_id,
+            review_type=review_type,  # type: ignore[arg-type]
             target_revision=target_revision,
             scope=scope,
-            status="pending",
-            revise_at=resolved_revise_at(config, review_type),
+            config=config,
         )
         loop, _finding_set_id = allocate_discovery_finding_set_id(loop)
         self._store.commit(
@@ -255,6 +265,7 @@ class ReviewAgentService:
         derived_outcome = None
         updated: ReviewLoop | None = None
         findings: list = []
+        family_events: list[dict[str, Any]] = []
 
         if discovery_mode:
             if not (
@@ -267,11 +278,39 @@ class ReviewAgentService:
                     "mandatory initial_review / scope_review stages"
                 )
             try:
-                updated, findings, derived_outcome = apply_discovery_response(
-                    loop,
-                    request,
-                    stage=stage,
-                )
+                if uses_finding_family_protocol(loop):
+                    config = self._store.load_resolved_config(self._run_id)
+                    review_cfg = (config.get("review") or {}).get("whole_plan") or {}
+                    rubric = list(
+                        review_cfg.get("rubric")
+                        or DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
+                    )
+                    artifact_digest = str(
+                        request.get("target_digest")
+                        or request.get("artifact_digest")
+                        or ""
+                    ).strip()
+                    if not artifact_digest:
+                        raise RequestError(
+                            "whole-plan discovery respond requires target_digest"
+                        )
+                    updated, findings, derived_outcome, family_events = (
+                        apply_whole_plan_discovery_response(
+                            loop,
+                            request,
+                            stage=stage,
+                            review_type=loop.type,
+                            artifact_revision=target_revision,
+                            artifact_digest=artifact_digest,
+                            rubric=[str(item) for item in rubric],
+                        )
+                    )
+                else:
+                    updated, findings, derived_outcome = apply_discovery_response(
+                        loop,
+                        request,
+                        stage=stage,
+                    )
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
             if loop.type in {"focused_plan", "focused_output"}:
@@ -323,12 +362,37 @@ class ReviewAgentService:
                 )
         elif stage == "finding_verification":
             try:
-                findings, verification_result = merge_verification_findings(
-                    loop, request
-                )
+                if uses_finding_family_protocol(loop):
+                    artifact_digest = str(request.get("target_digest") or "").strip()
+                    if not artifact_digest:
+                        raise RequestError(
+                            "whole-plan verification respond requires target_digest"
+                        )
+                    findings, verification_result, updated_loop, family_events = (
+                        merge_whole_plan_verification(
+                            loop,
+                            request,
+                            artifact_revision=target_revision,
+                            artifact_digest=artifact_digest,
+                        )
+                    )
+                    verification_payload = verification_result.to_dict()
+                    updated = apply_review_response(
+                        updated_loop,
+                        target_revision=target_revision,
+                        decision=decision,
+                        findings=findings,
+                        approved_digests=None,
+                        verification_result=verification_payload,
+                        scope_review_result=None,
+                    )
+                else:
+                    findings, verification_result = merge_verification_findings(
+                        loop, request
+                    )
+                    verification_payload = verification_result.to_dict()
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
-            verification_payload = verification_result.to_dict()
         else:
             raise RequestError("unsupported review respond payload")
 
@@ -524,7 +588,7 @@ class ReviewAgentService:
                     self._run_id,
                     CommitSpec(
                         reviews=[updated.to_dict()],
-                        events=[event, *extra_events, incomplete_event],
+                        events=[event, *extra_events, *family_events, incomplete_event],
                     ),
                 )
             else:
@@ -542,7 +606,7 @@ class ReviewAgentService:
                     self._run_id,
                     CommitSpec(
                         reviews=[updated.to_dict()],
-                        events=[event, *extra_events, incomplete_event],
+                        events=[event, *extra_events, *family_events, incomplete_event],
                         run=run_patch,
                         run_expected_revision=expected_run_revision,
                     ),
@@ -552,7 +616,7 @@ class ReviewAgentService:
                 self._run_id,
                 CommitSpec(
                     reviews=[updated.to_dict()],
-                    events=[event, *extra_events],
+                    events=[event, *extra_events, *family_events],
                 ),
             )
 
@@ -607,12 +671,17 @@ class ReviewAgentService:
             raw_actions = []
         if not isinstance(raw_actions, list):
             raise RequestError("finding_actions must be a list")
+        raw_fixes = request.get("family_fixes") or []
+        if not isinstance(raw_fixes, list):
+            raise RequestError("family_fixes must be a list")
         default_optional = request.get("default_optional_action")
-        if not raw_actions and (
-            default_optional is None or not str(default_optional).strip()
+        if (
+            not raw_actions
+            and not raw_fixes
+            and (default_optional is None or not str(default_optional).strip())
         ):
             raise RequestError(
-                "record_finding_actions requires finding_actions or "
+                "record_finding_actions requires finding_actions, family_fixes, or "
                 "default_optional_action"
             )
 
@@ -622,38 +691,80 @@ class ReviewAgentService:
             )
         else:
             artifact_revision = int(self._store.load_plan(self._run_id)["revision"])
-        if "artifact_revision" in request:
-            try:
-                requested_revision = int(request["artifact_revision"])
-            except (TypeError, ValueError) as exc:
-                raise RequestError(
-                    "artifact_revision must be an integer"
-                ) from exc
-            if requested_revision != artifact_revision:
-                raise RequestError(
-                    f"artifact_revision {requested_revision} does not match current "
-                    f"revision {artifact_revision}"
-                )
 
+        family_events: list[dict[str, Any]] = []
         try:
-            expanded_actions = expand_finding_actions_with_default(
-                loop,
-                raw_actions,
-                default_optional_action=(
-                    str(default_optional).strip()
-                    if default_optional is not None
-                    and str(default_optional).strip()
-                    else None
-                ),
-                actor_role=role,
-                artifact_revision=artifact_revision,
-            )
-            updated, parsed = apply_owner_finding_actions(
-                loop,
-                expanded_actions,
-                actor_role=role,
-                artifact_revision=artifact_revision,
-            )
+            if raw_fixes and uses_finding_family_protocol(loop):
+                artifact_digest = str(request.get("artifact_digest") or "").strip()
+                if not artifact_digest:
+                    raise RequestError("family_fixes require artifact_digest")
+                requested_revision = artifact_revision
+                if "artifact_revision" in request:
+                    try:
+                        requested_revision = int(request["artifact_revision"])
+                    except (TypeError, ValueError) as exc:
+                        raise RequestError(
+                            "artifact_revision must be an integer"
+                        ) from exc
+                updated, parsed, family_events = apply_family_fixes(
+                    loop,
+                    request,
+                    actor_role=role,
+                    artifact_revision=requested_revision,
+                    artifact_digest=artifact_digest,
+                    current_artifact_revision=artifact_revision,
+                )
+            else:
+                if "artifact_revision" in request:
+                    try:
+                        requested_revision = int(request["artifact_revision"])
+                    except (TypeError, ValueError) as exc:
+                        raise RequestError(
+                            "artifact_revision must be an integer"
+                        ) from exc
+                    if requested_revision != artifact_revision:
+                        raise RequestError(
+                            f"artifact_revision {requested_revision} does not match current "
+                            f"revision {artifact_revision}"
+                        )
+
+                artifact_digest = str(request.get("artifact_digest") or "").strip()
+                if not artifact_digest:
+                    if loop.type in {"whole_output", "focused_output"}:
+                        from top_down_planning.persistence.digests import (
+                            compute_output_digest,
+                        )
+
+                        artifact_digest = compute_output_digest(
+                            self._store.load_production(self._run_id)
+                        )
+                    else:
+                        from top_down_planning.persistence.digests import (
+                            compute_plan_digest,
+                        )
+
+                        artifact_digest = compute_plan_digest(
+                            self._store.load_plan(self._run_id)
+                        )
+
+                expanded_actions = expand_finding_actions_with_default(
+                    loop,
+                    raw_actions,
+                    default_optional_action=(
+                        str(default_optional).strip()
+                        if default_optional is not None
+                        and str(default_optional).strip()
+                        else None
+                    ),
+                    actor_role=role,
+                    artifact_revision=artifact_revision,
+                )
+                updated, parsed = apply_owner_finding_actions(
+                    loop,
+                    expanded_actions,
+                    actor_role=role,
+                    artifact_revision=artifact_revision,
+                )
         except ValueError as exc:
             raise RequestError(str(exc)) from exc
 
@@ -683,7 +794,7 @@ class ReviewAgentService:
             self._run_id,
             CommitSpec(
                 reviews=[updated.to_dict()],
-                events=[event],
+                events=[event, *family_events],
             ),
         )
 

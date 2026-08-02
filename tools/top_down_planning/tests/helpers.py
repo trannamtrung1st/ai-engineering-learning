@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.approval_digests import (
@@ -382,6 +382,140 @@ def _normalize_reported_findings(
     return reported
 
 
+def _loop_uses_family_protocol(loop: Mapping[str, Any]) -> bool:
+    return int(loop.get("review_contract_version") or 1) == 2
+
+
+def _synthetic_whole_plan_families(
+    reported_findings: list[dict[str, Any]],
+    *,
+    finding_set_id: str,
+    review_completed: bool,
+    artifact_revision: int,
+    artifact_digest: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build minimal finding families for whole-plan discovery test payloads."""
+
+    if not reported_findings:
+        return reported_findings, []
+
+    from top_down_planning.domain.artifact_refs import digest_field_value
+    from top_down_planning.domain.finding_families import compute_family_fingerprint
+
+    family_id = "family-test-default"
+    rule_id = "coverage.traceability_gap"
+    subject_key = "test-subject"
+    fingerprint = compute_family_fingerprint(
+        rule_id=rule_id,
+        subject_key=subject_key,
+        scope_kind="active-plan",
+    )
+    confirmed_ids: list[str] = []
+    enriched: list[dict[str, Any]] = []
+    for index, raw in enumerate(reported_findings):
+        finding = dict(raw)
+        finding_id = str(finding.get("id") or f"finding-{index + 1:02d}")
+        finding["id"] = finding_id
+        finding.setdefault("family_id", family_id)
+        target_refs = finding.get("target_refs") or ["item-root"]
+        item_id = str(target_refs[0]) if target_refs else "item-root"
+        if finding.get("instance_ref") is None:
+            finding["instance_ref"] = {
+                "kind": "plan_item_field",
+                "item_id": item_id,
+                "field": "acceptance",
+                "value_digest": digest_field_value(str(finding.get("issue") or "test")),
+                "duplicate_ordinal": 0,
+            }
+        enriched.append(finding)
+        confirmed_ids.append(finding_id)
+
+    seed_id = confirmed_ids[0]
+    family = {
+        "id": family_id,
+        "finding_set_id": finding_set_id,
+        "rule_id": rule_id,
+        "subject_key": subject_key,
+        "scope_kind": "active-plan",
+        "family_fingerprint": fingerprint,
+        "title": "Synthetic test family",
+        "seed_finding_id": seed_id,
+        "confirmed_finding_ids": confirmed_ids,
+        "candidate_refs": [],
+        "recommended_change": str(enriched[0].get("recommended_change") or "Fix"),
+        "discovery_sweep": {
+            "artifact_revision": artifact_revision,
+            "artifact_digest": artifact_digest,
+            "searched_refs": ["active-items:*"],
+            "search_dimensions": ["acceptance"],
+            "completed": review_completed,
+            "summary": "Synthetic discovery sweep.",
+        },
+    }
+    return enriched, [family]
+
+
+def _whole_plan_discovery_extras(
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    target_revision: int,
+    review_completed: bool,
+    reported_findings: list[dict[str, Any]],
+    finding_set_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    try:
+        loop = store.load_review(run_id, loop_id)
+    except Exception:
+        return {}, reported_findings
+    if loop.get("type") != "whole_plan":
+        return {}, reported_findings
+    if not _loop_uses_family_protocol(loop):
+        return {}, reported_findings
+
+    from top_down_planning.config.defaults import DEFAULT_CONFIG
+    from top_down_planning.domain.finding_families import WHOLE_PLAN_AUDIT_PASS_IDS
+    from top_down_planning.orchestrator.review_analysis_context import rubric_items_with_ids
+
+    digest = mandatory_plan_digest(store, run_id)
+    rubric_items = rubric_items_with_ids(
+        [
+            str(item)
+            for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
+        ]
+    )
+    rubric_ids = [item["id"] for item in rubric_items]
+    passes = [
+        {
+            "pass_id": pass_id,
+            "completed": review_completed,
+            "scope_id": "whole-plan-active-v1",
+            "search_dimensions": ["acceptance"],
+            "inspected_refs": ["active-items:*"],
+            "rubric_item_ids": rubric_ids,
+            "summary": f"Completed {pass_id}.",
+        }
+        for pass_id in WHOLE_PLAN_AUDIT_PASS_IDS
+    ]
+    enriched_findings, families = _synthetic_whole_plan_families(
+        reported_findings,
+        finding_set_id=finding_set_id,
+        review_completed=review_completed,
+        artifact_revision=target_revision,
+        artifact_digest=digest,
+    )
+    extras: dict[str, Any] = {
+        "audit_attestation": {
+            "artifact_revision": target_revision,
+            "artifact_digest": digest,
+            "passes": passes,
+        },
+        "finding_families": families,
+    }
+    return extras, enriched_findings
+
+
 def mandatory_initial_respond_request(
     store: Any,
     run_id: str,
@@ -422,6 +556,18 @@ def mandatory_initial_respond_request(
         payload["block_review"] = True
     if decision == "approved":
         payload["target_digest"] = digest
+    if review_type == "whole_plan":
+        extras, reported = _whole_plan_discovery_extras(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            review_completed=decision != "blocked",
+            reported_findings=reported,
+            finding_set_id=finding_set_id,
+        )
+        payload.update(extras)
+        payload["reported_findings"] = reported
     return payload
 
 
@@ -447,7 +593,7 @@ def mandatory_scope_review_respond_request(
     finding_set_id = str(loop.get("finding_set_id") or "").strip()
     if not finding_set_id:
         finding_set_id = f"{loop_id}-fs-01"
-    return {
+    payload = {
         "loop_id": loop_id,
         "target_revision": target_revision,
         "stage": "scope_review",
@@ -459,6 +605,19 @@ def mandatory_scope_review_respond_request(
         "acceptance_criteria_checked": ["Core Invariant"],
         "summary": "No remaining required findings.",
     }
+    if review_type == "whole_plan":
+        extras, reported = _whole_plan_discovery_extras(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            review_completed=True,
+            reported_findings=payload["reported_findings"],
+            finding_set_id=finding_set_id,
+        )
+        payload.update(extras)
+        payload["reported_findings"] = reported
+    return payload
 
 
 def mandatory_scope_review_found_respond_request(
@@ -484,7 +643,7 @@ def mandatory_scope_review_found_respond_request(
     if not finding_set_id:
         finding_set_id = f"{loop_id}-fs-01"
     reported = _normalize_reported_findings(findings)
-    return {
+    payload: dict[str, Any] = {
         "loop_id": loop_id,
         "target_revision": target_revision,
         "stage": "scope_review",
@@ -495,6 +654,64 @@ def mandatory_scope_review_found_respond_request(
         "scope_id": scope_id,
         "summary": "Required findings remain.",
     }
+    if review_type == "whole_plan":
+        extras, reported = _whole_plan_discovery_extras(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=target_revision,
+            review_completed=True,
+            reported_findings=reported,
+            finding_set_id=finding_set_id,
+        )
+        payload.update(extras)
+        payload["reported_findings"] = reported
+    return payload
+
+
+def _synthetic_family_verification_results(
+    store: Any,
+    run_id: str,
+    *,
+    loop_id: str,
+    target_revision: int,
+    review_type: str,
+    disposition: str = "closed",
+) -> list[dict[str, Any]]:
+    if review_type != "whole_plan":
+        return []
+    try:
+        loop = store.load_review(run_id, loop_id)
+    except Exception:
+        return []
+    if not _loop_uses_family_protocol(loop):
+        return []
+    families = loop.get("finding_families") or []
+    if not families:
+        return []
+    digest = mandatory_plan_digest(store, run_id)
+    results: list[dict[str, Any]] = []
+    for family in families:
+        family_id = str(family.get("id") or "").strip()
+        if not family_id:
+            continue
+        results.append(
+            {
+                "family_id": family_id,
+                "disposition": disposition,
+                "verification_sweep": {
+                    "completed": True,
+                    "artifact_revision": target_revision,
+                    "artifact_digest": digest,
+                    "searched_refs": ["active-items:*"],
+                    "search_dimensions": ["acceptance"],
+                    "remaining_instance_refs": [],
+                    "summary": "No remaining policy-relevant instances.",
+                },
+                "remaining_instance_findings": [],
+            }
+        )
+    return results
 
 
 def mandatory_verification_respond_request(
@@ -512,7 +729,7 @@ def mandatory_verification_respond_request(
         if review_type == "whole_plan"
         else mandatory_output_digest(store, run_id)
     )
-    return {
+    payload: dict[str, Any] = {
         "loop_id": loop_id,
         "target_revision": target_revision,
         "stage": "finding_verification",
@@ -523,6 +740,16 @@ def mandatory_verification_respond_request(
         "target_digest": digest,
         "summary": "Findings verified.",
     }
+    family_results = _synthetic_family_verification_results(
+        store,
+        run_id,
+        loop_id=loop_id,
+        target_revision=target_revision,
+        review_type=review_type,
+    )
+    if family_results:
+        payload["family_results"] = family_results
+    return payload
 
 
 def mandatory_verification_needs_revision_request(
@@ -540,7 +767,7 @@ def mandatory_verification_needs_revision_request(
         if review_type == "whole_plan"
         else mandatory_output_digest(store, run_id)
     )
-    return {
+    payload: dict[str, Any] = {
         "loop_id": loop_id,
         "target_revision": target_revision,
         "stage": "finding_verification",
@@ -551,6 +778,17 @@ def mandatory_verification_needs_revision_request(
         "target_digest": digest,
         "summary": "Findings still need revision.",
     }
+    family_results = _synthetic_family_verification_results(
+        store,
+        run_id,
+        loop_id=loop_id,
+        target_revision=target_revision,
+        review_type=review_type,
+        disposition="unresolved",
+    )
+    if family_results:
+        payload["family_results"] = family_results
+    return payload
 
 
 def whole_plan_approval_record(store: Any, run_id: str, **fields: Any) -> dict[str, Any]:
@@ -981,6 +1219,55 @@ def request_focused_review(
     return mutate
 
 
+def enrich_whole_plan_review_respond_payload(
+    store: Any,
+    run_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Add audit attestation and finding families to whole-plan discovery responds."""
+
+    enriched = dict(payload)
+    loop_id = str(enriched.get("loop_id") or "").strip()
+    if not loop_id:
+        return enriched
+    try:
+        loop = store.load_review(run_id, loop_id)
+    except Exception:
+        return enriched
+    if loop.get("type") != "whole_plan":
+        return enriched
+    if not _loop_uses_family_protocol(loop):
+        return enriched
+    stage = str(enriched.get("stage") or "").strip()
+    finding_set_id = str(enriched.get("finding_set_id") or loop.get("finding_set_id") or "").strip()
+    if not finding_set_id:
+        finding_set_id = f"{loop_id}-fs-01"
+        enriched["finding_set_id"] = finding_set_id
+    if stage in {"initial_review", "scope_review"} and "reported_findings" in enriched:
+        extras, reported = _whole_plan_discovery_extras(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=int(enriched.get("target_revision") or 0),
+            review_completed=bool(enriched.get("review_completed")),
+            reported_findings=list(enriched.get("reported_findings") or []),
+            finding_set_id=finding_set_id,
+        )
+        enriched.update(extras)
+        enriched["reported_findings"] = reported
+    elif stage == "finding_verification" and "family_results" not in enriched:
+        family_results = _synthetic_family_verification_results(
+            store,
+            run_id,
+            loop_id=loop_id,
+            target_revision=int(enriched.get("target_revision") or 0),
+            review_type="whole_plan",
+        )
+        if family_results:
+            enriched["family_results"] = family_results
+    return enriched
+
+
 def respond_review(
     store: Any,
     run_id: str,
@@ -1035,6 +1322,7 @@ def respond_review(
                 payload["finding_set_id"] = finding_set_id
             except Exception:
                 pass
+        payload = enrich_whole_plan_review_respond_payload(store, run_id, payload)
         ReviewAgentService(store, run_id).respond(payload, capability_token=token)
 
     return mutate

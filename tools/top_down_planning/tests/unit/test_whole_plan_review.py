@@ -586,7 +586,9 @@ def test_whole_plan_package_includes_default_rubric(tmp_path: Path) -> None:
         plan,
         loop,
     )
-    assert package["rubric"] == DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
+    assert [
+        item["text"] for item in package["rubric_items"]
+    ] == DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
     assert package["plan_revision"] == 0
     assert "plan" in package
     assert package["plan"]["view"] == "active"
@@ -724,7 +726,10 @@ def test_whole_plan_package_preserves_custom_rubric(tmp_path: Path) -> None:
         plan,
         loop,
     )
-    assert package["rubric"] == ["coverage", "custom-quality"]
+    assert [item["text"] for item in package["rubric_items"]] == [
+        "coverage",
+        "custom-quality",
+    ]
 
 
 def test_review_whole_plan_rubric_config_path_is_allowed(tmp_path: Path) -> None:

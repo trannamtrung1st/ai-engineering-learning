@@ -4,13 +4,14 @@ description: >-
   Develop and test packages under tools/ (core_tools, top_down_planning). Prefer
   YAML + --set path=value for CLI config; avoid redundant dedicated flags. Generate
   fast unit tests using fakes, stubs, and mocks instead of live I/O, providers, or
-  long sleeps. Use when working in tools/, writing pytest files, or when the user
-  asks for unit test coverage.
+  long sleeps. Required for any work under tools/ (see .cursor/rules/tools-dev.mdc).
+  Also use when writing pytest files under tools/ or when the user asks for unit
+  test coverage.
 ---
 
 # Tools Dev
 
-Conventions for developing packages under `tools/`. When writing tests, keep them fast — live providers, network calls, subprocesses, and long sleeps make the suite slow.
+Conventions for developing packages under `tools/`. Required by `.cursor/rules/tools-dev.mdc` whenever you touch files under `tools/`. When writing tests, keep them fast — live providers, network calls, subprocesses, and long sleeps make the suite slow.
 
 ## Decision order
 

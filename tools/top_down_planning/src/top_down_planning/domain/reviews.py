@@ -6,6 +6,19 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
+from top_down_planning.domain.finding_families import (
+    AuditAttestationRun,
+    FamilySweepRecord,
+    FindingFamily,
+    parse_audit_runs,
+    parse_family_sweeps,
+    parse_finding_families,
+)
+from top_down_planning.domain.artifact_refs import (
+    ArtifactRef,
+    artifact_ref_to_dict,
+    parse_artifact_ref,
+)
 from top_down_planning.domain.session_bindings import (
     SessionBinding,
     binding_provider_session_id,
@@ -26,7 +39,12 @@ from top_down_planning.domain.review_policy import (
 )
 
 # Persisted review-record schema version (separate from run-record schema_version).
-CURRENT_REVIEW_SCHEMA_VERSION = 1
+LEGACY_REVIEW_RECORD_SCHEMA_VERSION = 1
+LEGACY_REVIEW_CONTRACT_VERSION = 1
+CURRENT_REVIEW_RECORD_SCHEMA_VERSION = 2
+CURRENT_REVIEW_CONTRACT_VERSION = 2
+SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS = frozenset({1, 2})
+SUPPORTED_REVIEW_CONTRACT_VERSIONS = frozenset({1, 2})
 
 _ACTIVE_REVIEW_BLOCKING_STATUSES = frozenset(
     {"changes_requested", "needs_revision"}
@@ -292,6 +310,8 @@ class ReviewFinding:
     status: FindingStatus = "unresolved"
     evidence: list[str] = field(default_factory=list)
     reopens_finding_id: str | None = None
+    family_id: str | None = None
+    instance_ref: ArtifactRef | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -306,6 +326,10 @@ class ReviewFinding:
         }
         if self.reopens_finding_id is not None:
             payload["reopens_finding_id"] = self.reopens_finding_id
+        if self.family_id is not None:
+            payload["family_id"] = self.family_id
+        if self.instance_ref is not None:
+            payload["instance_ref"] = artifact_ref_to_dict(self.instance_ref)
         return payload
 
     @classmethod
@@ -335,6 +359,19 @@ class ReviewFinding:
             raise ValueError("finding evidence must be a list")
         evidence = [str(item) for item in evidence_raw]
 
+        family_raw = payload.get("family_id")
+        family_id = (
+            str(family_raw).strip()
+            if family_raw is not None and str(family_raw).strip()
+            else None
+        )
+        instance_ref_raw = payload.get("instance_ref")
+        instance_ref = (
+            parse_artifact_ref(instance_ref_raw)
+            if isinstance(instance_ref_raw, Mapping)
+            else None
+        )
+
         return cls(
             id=str(payload["id"]),
             severity=severity,
@@ -345,6 +382,8 @@ class ReviewFinding:
             status=str(payload.get("status") or "unresolved"),  # type: ignore[arg-type]
             evidence=evidence,
             reopens_finding_id=reopens_finding_id,
+            family_id=family_id,
+            instance_ref=instance_ref,
         )
 
 
@@ -533,6 +572,50 @@ def validate_reopens_finding_id(
         )
 
 
+def uses_finding_family_protocol(loop: ReviewLoop) -> bool:
+    """True when discovery/verification must use finding families and audit attestation."""
+
+    return loop.review_contract_version == CURRENT_REVIEW_CONTRACT_VERSION
+
+
+def parse_review_version_fields(payload: Mapping[str, Any]) -> tuple[int, int]:
+    """Parse persisted review record and contract schema versions."""
+
+    record_raw = payload.get("review_record_schema_version")
+    legacy_raw = payload.get("review_schema_version")
+
+    if record_raw is None and legacy_raw is None:
+        record_version = LEGACY_REVIEW_RECORD_SCHEMA_VERSION
+    elif record_raw is not None and legacy_raw is not None:
+        record_int = int(record_raw)
+        legacy_int = int(legacy_raw)
+        if record_int != legacy_int:
+            raise ValueError(
+                "review_record_schema_version and review_schema_version disagree"
+            )
+        record_version = record_int
+    else:
+        record_version = int(record_raw if record_raw is not None else legacy_raw)
+
+    if record_version not in SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS:
+        raise ValueError(
+            f"unsupported review_record_schema_version: {record_version!r}; "
+            f"supported: {sorted(SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS)}"
+        )
+
+    contract_raw = payload.get("review_contract_version")
+    if contract_raw is None:
+        contract_version = LEGACY_REVIEW_CONTRACT_VERSION
+    else:
+        contract_version = int(contract_raw)
+    if contract_version not in SUPPORTED_REVIEW_CONTRACT_VERSIONS:
+        raise ValueError(
+            f"unsupported review_contract_version: {contract_version!r}; "
+            f"supported: {sorted(SUPPORTED_REVIEW_CONTRACT_VERSIONS)}"
+        )
+    return record_version, contract_version
+
+
 @dataclass
 class ReviewLoop:
     id: str
@@ -554,12 +637,16 @@ class ReviewLoop:
     scope_review_result: dict[str, Any] | None = None
     exhausted_budget: ExhaustedReviewBudget | None = None
     # Severity-threshold review fields (proposal review-record model).
-    review_schema_version: int = CURRENT_REVIEW_SCHEMA_VERSION
+    review_record_schema_version: int = LEGACY_REVIEW_RECORD_SCHEMA_VERSION
+    review_contract_version: int = LEGACY_REVIEW_CONTRACT_VERSION
     revise_at: ReviewSeverity | None = None
     finding_actions: list[FindingAction] = field(default_factory=list)
     review_incomplete: dict[str, Any] | None = None
     advisory_handoffs_completed: list[str] = field(default_factory=list)
     finding_ids_by_set: dict[str, list[str]] = field(default_factory=dict)
+    finding_families: list[FindingFamily] = field(default_factory=list)
+    family_sweeps: list[FamilySweepRecord] = field(default_factory=list)
+    audit_runs: list[AuditAttestationRun] = field(default_factory=list)
 
     @property
     def reviewer_session_id(self) -> str | None:
@@ -576,7 +663,8 @@ class ReviewLoop:
             "findings": [finding.to_dict() for finding in self.findings],
             "revision_cycles": self.revision_cycles,
             "revision": int(self.revision),
-            "review_schema_version": self.review_schema_version,
+            "review_record_schema_version": self.review_record_schema_version,
+            "review_contract_version": self.review_contract_version,
             "finding_actions": [action.to_dict() for action in self.finding_actions],
             "review_incomplete": (
                 dict(self.review_incomplete)
@@ -610,6 +698,16 @@ class ReviewLoop:
             payload["scope_review_result"] = dict(self.scope_review_result)
         if self.exhausted_budget is not None:
             payload["exhausted_budget"] = normalize_exhausted_budget(self.exhausted_budget)
+        if self.finding_families:
+            payload["finding_families"] = [
+                family.to_dict() for family in self.finding_families
+            ]
+        if self.family_sweeps:
+            payload["family_sweeps"] = [
+                sweep.to_dict() for sweep in self.family_sweeps
+            ]
+        if self.audit_runs:
+            payload["audit_runs"] = [run.to_dict() for run in self.audit_runs]
         return payload
 
     def with_reviewer_session_released(self) -> ReviewLoop:
@@ -709,16 +807,9 @@ class ReviewLoop:
                 "use scope_review_rounds"
             )
         scope_review_rounds = int(rounds_raw or 0)
-        schema_raw = payload.get("review_schema_version")
-        if schema_raw is None:
-            review_schema_version = CURRENT_REVIEW_SCHEMA_VERSION
-        else:
-            try:
-                review_schema_version = int(schema_raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "review_schema_version must be an integer"
-                ) from exc
+        review_record_schema_version, review_contract_version = (
+            parse_review_version_fields(payload)
+        )
 
         revise_raw = payload.get("revise_at")
         revise_at: ReviewSeverity | None = None
@@ -769,6 +860,10 @@ class ReviewLoop:
                 "legacy review field reviewer_session_id is not accepted; use reviewer_binding"
             )
 
+        finding_families = parse_finding_families(payload.get("finding_families"))
+        family_sweeps = parse_family_sweeps(payload.get("family_sweeps"))
+        audit_runs = parse_audit_runs(payload.get("audit_runs"))
+
         return cls(
             id=str(payload["id"]),
             type=str(raw_type).strip(),  # type: ignore[arg-type]
@@ -787,12 +882,16 @@ class ReviewLoop:
             verification_result=verification_result,
             scope_review_result=scope_review_result,
             exhausted_budget=exhausted_budget,  # type: ignore[arg-type]
-            review_schema_version=review_schema_version,
+            review_record_schema_version=review_record_schema_version,
+            review_contract_version=review_contract_version,
             revise_at=revise_at,
             finding_actions=finding_actions,
             review_incomplete=review_incomplete,
             advisory_handoffs_completed=advisory_handoffs_completed,
             finding_ids_by_set=finding_ids_by_set,
+            finding_families=finding_families,
+            family_sweeps=family_sweeps,
+            audit_runs=audit_runs,
         )
 
 
@@ -2423,11 +2522,13 @@ def primary_review_resume_fields(
     loop: ReviewLoop,
     *,
     config: Mapping[str, Any],
+    artifact_revision: int | None = None,
+    artifact_digest: str | None = None,
 ) -> dict[str, Any]:
     """Fields for primary-agent revision/advisory packages (includes revise_at)."""
 
     threshold = loop_revise_at(loop)
-    return {
+    fields: dict[str, Any] = {
         "revise_at": threshold,
         "finding_set_id": loop.finding_set_id,
         **build_active_findings_view(loop),
@@ -2439,6 +2540,15 @@ def primary_review_resume_fields(
         ),
         "review_budget": build_review_budget_fields(loop, config),
     }
+    if uses_finding_family_protocol(loop):
+        from top_down_planning.domain.finding_families import build_active_family_view
+
+        fields["active_families"] = build_active_family_view(
+            loop,
+            artifact_revision=artifact_revision,
+            artifact_digest=artifact_digest,
+        )
+    return fields
 
 
 def verification_required_for_loop(loop: ReviewLoop) -> bool:

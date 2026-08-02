@@ -462,6 +462,8 @@ def test_review_respond_rejects_stale_target_digest(tmp_path: Path) -> None:
             "active_stage": "scope_review",
             "scope_review_rounds": 1,
             "finding_set_id": "review-whole-plan-01-fs-01",
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
         },
     )
     token = grant_capability(
@@ -473,19 +475,25 @@ def test_review_respond_rejects_stale_target_digest(tmp_path: Path) -> None:
         session_id="stub-session-reviewer",
         loop_id="review-whole-plan-01",
     )
-    with pytest.raises(RequestError, match="target_digest"):
+    from tests.helpers import enrich_whole_plan_review_respond_payload
+
+    with pytest.raises(RequestError, match="audit_attestation artifact_digest mismatch"):
         ReviewAgentService(store, run_id).respond(
-            {
-                "loop_id": "review-whole-plan-01",
-                "target_revision": 0,
-                "stage": "scope_review",
-                "finding_set_id": "review-whole-plan-01-fs-01",
-                "reported_findings": [],
-                "review_completed": True,
-                "target_digest": "not-the-current-plan-digest",
-                "scope_id": "whole_plan",
-                "summary": "clear",
-            },
+            enrich_whole_plan_review_respond_payload(
+                store,
+                run_id,
+                {
+                    "loop_id": "review-whole-plan-01",
+                    "target_revision": 0,
+                    "stage": "scope_review",
+                    "finding_set_id": "review-whole-plan-01-fs-01",
+                    "reported_findings": [],
+                    "review_completed": True,
+                    "target_digest": "not-the-current-plan-digest",
+                    "scope_id": "whole_plan",
+                    "summary": "clear",
+                },
+            ),
             capability_token=token,
         )
 
