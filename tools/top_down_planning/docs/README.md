@@ -51,6 +51,8 @@ Whole-output examples append `-output` (e.g. `review-respond-family-discovery-ou
 
 Schema: `tdp agent schema review-respond`
 
+Mandatory discovery: `audit_attestation` rubric ids come from the review package `rubric_items`; `rule_id` values from `tdp agent readme` (section Built-in finding-family rule_id values) or `custom.<slug>`.
+
 List all examples: `tdp agent example`
 
 ## Plan mutations: `depends_on`
@@ -89,9 +91,12 @@ To change dependencies on an **existing** item, use `add_dependency`, `remove_de
 | `revision_conflict` | `tdp agent plan snapshot` or `production snapshot`; retry with current revision |
 | `capability_denied` | Ensure `TDP_CAPABILITY_TOKEN` is exported; mutating commands need an active session |
 | `operation_error` + `hint` | Read `hint` in the JSON error; often points to `tdp agent example <name>` |
+| `request_error` + `hint` | Review validation failures include `hint` (e.g. rubric union mismatch, invalid `rule_id`); see `tdp agent readme` |
 | `unknown item id: <id>` | Unknown dependency target; check temp_id spelling and `tdp agent example expand-branch` |
 | `duplicate temp_id in transaction` | Each `temp_id` must be unique within one `plan apply` batch |
 | `production_evidence_incomplete` | Add every changed workspace path to batch `outputs` |
 | `production_context_mutation_unauthorized` | Revert unauthorized skill/guidance drift |
+| `audit attestation rubric_item_ids union mismatch` | Set `rubric_item_ids` from review package `rubric_items` (union across passes must equal every id); see `tdp agent readme` (Audit attestation) |
+| `rule_id ... must be a built-in rule or match custom.<slug>` | Pick a built-in from `tdp agent readme` or use `custom.<slug>` + `rule_definition`; see `review-respond-family-discovery-output` for custom pattern |
 
 Run status and `agent_requests_dir`: `tdp agent run status --run <id>`

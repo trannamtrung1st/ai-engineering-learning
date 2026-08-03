@@ -119,6 +119,22 @@ def build_reviewer_protocol_instructions(
             )
         )
         instructions.append(PLAN_ROOT_REVIEWER_INSTRUCTION)
+    if normalized_type in {"focused_plan", "focused_output"} and normalized != "finding_verification":
+        instructions.extend(
+            [
+                (
+                    "When submitting finding_families, use rule_id values from "
+                    "tdp agent readme (section Built-in finding-family rule_id "
+                    "values) or custom.<slug> with rule_definition; do not invent "
+                    "rule_id strings."
+                ),
+                (
+                    "Discover contracts via tool_instructions.discover (tdp agent "
+                    "readme, tdp agent schema review-respond, stage examples). "
+                    "Do not read TDP Python source to discover payload shapes."
+                ),
+            ]
+        )
     if normalized == "finding_verification":
         instructions.extend(
             [
@@ -251,6 +267,24 @@ def build_reviewer_protocol_instructions(
                         "true until audit attestation and all family discovery "
                         "sweeps are complete."
                     ),
+                    (
+                        "For audit_attestation: use rubric_items and "
+                        "required_audit_passes from the delivered review package. "
+                        "Do not copy rubric_item_ids from static tdp agent example "
+                        "payloads."
+                    ),
+                    (
+                        "For finding_families.rule_id: use built-in ids from "
+                        "tdp agent readme (section Built-in finding-family rule_id "
+                        "values) or custom.<slug> with rule_definition; do not "
+                        "invent rule_id strings."
+                    ),
+                    (
+                        "Discover contracts via tool_instructions.discover "
+                        "(tdp agent readme, tdp agent schema review-respond, stage "
+                        "examples). Do not read TDP Python source to discover "
+                        "payload shapes."
+                    ),
                 ]
             )
         if normalized == "finding_verification":
@@ -323,6 +357,11 @@ def build_reviewer_tool_instructions(
             "tdp agent example review-respond ; "
             "tdp agent example review-respond-verification"
         )
+    readme_sections = (
+        "Audit attestation; Built-in finding-family rule_id values"
+        if mandatory_family
+        else "Built-in finding-family rule_id values"
+    )
     instructions = {
         "authorization": (
             "Mutating commands require the session capability token exported "
@@ -338,7 +377,8 @@ def build_reviewer_tool_instructions(
         "schema": "tdp agent schema review-respond",
         "examples": examples,
         "discover": (
-            "tdp agent readme; tdp agent schema review-respond; "
+            f"tdp agent readme ({readme_sections}); "
+            "tdp agent schema review-respond; "
             f"{examples}. Packaged reviewer skills are in agent_context.skills."
         ),
     }

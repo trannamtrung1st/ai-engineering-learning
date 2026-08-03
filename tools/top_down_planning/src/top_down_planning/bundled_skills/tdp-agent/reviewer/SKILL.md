@@ -57,6 +57,19 @@ Focused reviews are **requested** by planner/producer via `review request` — r
 
 Discover schema: `tdp agent schema review-respond`
 
+## Adapting examples
+
+Static `tdp agent example` payloads are structural templates. Before `review respond`, substitute runtime values from the delivered review package:
+
+| Field | Source |
+| --- | --- |
+| `audit_attestation.passes[].rubric_item_ids` | Review package `rubric_items[].id` (union across passes must equal every id) |
+| `audit_attestation.passes[].pass_id` | Review package `required_audit_passes` |
+| `finding_families[].rule_id` | `tdp agent readme` (Built-in finding-family rule_id values) or `custom.<slug>` with `rule_definition` |
+| Structure / `instance_ref` | `tdp agent example <stage-example>` |
+
+Do not read TDP Python source to discover contracts; use the review package, `tdp agent readme`, and stage examples.
+
 ## Stages (mandatory gates)
 
 1. `initial_review` — discovery; contract v2 requires `audit_attestation`, `finding_families`, `target_digest`.
@@ -78,7 +91,7 @@ Classify each finding with `severity` and `category` from `review_policy.categor
 ## Discover
 
 ```bash
-tdp agent readme
+tdp agent readme          # Audit attestation; Built-in finding-family rule_id values
 tdp agent schema review-respond
 tdp agent example review-respond-family-discovery
 ```

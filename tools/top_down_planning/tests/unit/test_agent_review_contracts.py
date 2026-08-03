@@ -619,3 +619,86 @@ def test_review_service_rejects_respond_after_gate_approve(tmp_path: Path) -> No
             ),
             capability_token=token,
         )
+
+
+def test_discovery_request_error_includes_rubric_hint() -> None:
+    from top_down_planning.agent_tool.review_service import _value_error_as_request_error
+
+    err = _value_error_as_request_error(
+        ValueError("audit attestation rubric_item_ids union mismatch")
+    )
+    assert err.hint is not None
+    assert "rubric_items" in err.hint
+    assert "union" in err.hint.lower()
+    assert "hint" in err.to_dict()
+
+
+def test_discovery_request_error_includes_rule_id_hint() -> None:
+    from top_down_planning.agent_tool.review_service import _value_error_as_request_error
+
+    err = _value_error_as_request_error(
+        ValueError("rule_id 'bad' must be a built-in rule or match custom.<slug>")
+    )
+    assert err.hint is not None
+    assert "rule_id" in err.hint.lower()
+    assert "hint" in err.to_dict()
+
+
+def test_review_respond_invalid_rule_id_includes_hint(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T003501-003501"
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=1,
+        output_goal="Deliver.",
+        items={"item-root": root},
+    )
+    store.create_run(
+        run_id,
+        plan=plan,
+        **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
+        phase=WHOLE_PLAN_REVIEW,
+    )
+    save_review_payload(
+        store,
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "review_contract_version": 2,
+            "revise_at": "blocker",
+            "reviewer_session_id": "stub-session-reviewer",
+            "target_revision": 1,
+            "scope": {"kind": "whole_plan"},
+            "status": "pending",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "review_pending",
+            "active_stage": "initial_review",
+            "finding_set_id": "review-whole-plan-01-fs-01",
+        },
+    )
+    service = ReviewAgentService(store, run_id)
+    token = grant_capability(
+        store,
+        run_id,
+        role="reviewer",
+        phase=WHOLE_PLAN_REVIEW,
+        session_kind="reviewer",
+        session_id="stub-session-reviewer",
+        loop_id="review-whole-plan-01",
+    )
+    payload = dict(show_example("review-respond-family-discovery")["payload"])
+    payload["finding_families"][0]["rule_id"] = "invalid.rule"
+    with pytest.raises(RequestError) as exc_info:
+        service.respond(payload, capability_token=token)
+    assert "must be a built-in rule" in str(exc_info.value)
+    assert exc_info.value.hint is not None
+    assert "rule_id" in exc_info.value.hint.lower()

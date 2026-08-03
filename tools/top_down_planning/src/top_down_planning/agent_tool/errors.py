@@ -28,6 +28,22 @@ class AgentToolError(Exception):
 class RequestError(AgentToolError):
     code = "request_error"
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        action: str | None = None,
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(message, action=action)
+        self.hint = hint
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = super().to_dict()
+        if self.hint:
+            payload["hint"] = self.hint
+        return payload
+
 
 class RevisionConflictError(AgentToolError):
     code = "revision_conflict"

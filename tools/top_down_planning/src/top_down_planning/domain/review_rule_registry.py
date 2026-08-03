@@ -37,6 +37,39 @@ KNOWN_RULE_IDS: frozenset[str] = frozenset(
     }
 )
 
+BUILTIN_RULE_DESCRIPTIONS: dict[str, str] = {
+    "dependency.acceptance_capability_available": (
+        "Acceptance or dependency references a capability not yet available in scope."
+    ),
+    "hierarchy.aggregate_executable_work": (
+        "Aggregate parent lacks executable decomposition or mixes grouping with work."
+    ),
+    "requirements.modality_preservation": (
+        "Requirement modality (must/shall vs may/optional) is weakened or inverted."
+    ),
+    "acceptance.branch_completeness": (
+        "Acceptance criteria omit branches or cases implied by the outcome."
+    ),
+    "hierarchy.executable_parent_overlap": (
+        "Executable parent scope overlaps executable descendant work."
+    ),
+    "dependencies.duplicate_target": (
+        "Duplicate dependency edges to the same target for one item."
+    ),
+    "dependencies.cycle": (
+        "Dependency graph contains a cycle among active items."
+    ),
+    "contract.ownership_placement": (
+        "Acceptance or contract field attached to the wrong owning item."
+    ),
+    "coverage.traceability_gap": (
+        "Material input requirement lacks a planned outcome or verification path."
+    ),
+    "scope.field_placement": (
+        "Field used inconsistently (e.g. source_refs vs scope.includes, risks vs acceptance)."
+    ),
+}
+
 _CUSTOM_RULE_PATTERN = re.compile(r"^custom\.[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 

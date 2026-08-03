@@ -116,6 +116,25 @@ def _resolve_focused_artifact_digest(
     return current
 
 
+def _value_error_as_request_error(exc: ValueError) -> RequestError:
+    message = str(exc)
+    hint: str | None = None
+    if "rubric_item_ids union mismatch" in message:
+        hint = (
+            "Set audit_attestation.passes[].rubric_item_ids from the delivered "
+            "review package rubric_items (union across passes must equal every "
+            "rubric_items[].id). See tdp agent readme, section Audit attestation."
+        )
+    elif "must be a built-in rule or match custom" in message:
+        hint = (
+            "Pick a built-in rule_id from tdp agent readme (section Built-in "
+            "finding-family rule_id values) or use custom.<slug> with "
+            "rule_definition. See tdp agent example "
+            "review-respond-family-discovery-output for a custom rule example."
+        )
+    return RequestError(message, hint=hint)
+
+
 class ReviewAgentService:
     """Structured review interaction for agents against a persisted run."""
 
@@ -313,7 +332,7 @@ class ReviewAgentService:
                         )
                     decision = None
         except ValueError as exc:
-            raise RequestError(str(exc)) from exc
+            raise _value_error_as_request_error(exc) from exc
 
         verification_payload = None
         scope_review_payload = None
@@ -398,7 +417,7 @@ class ReviewAgentService:
                         f"unsupported review loop type for discovery respond: {loop.type}"
                     )
             except ValueError as exc:
-                raise RequestError(str(exc)) from exc
+                raise _value_error_as_request_error(exc) from exc
             if loop.type in {"focused_plan", "focused_output"}:
                 try:
                     validate_findings_within_scope(
@@ -413,7 +432,7 @@ class ReviewAgentService:
                             review_type=loop.type,
                         )
                 except ValueError as exc:
-                    raise RequestError(str(exc)) from exc
+                    raise _value_error_as_request_error(exc) from exc
             decision = map_discovery_outcome_to_loop_status(
                 derived_outcome,
                 stage=stage,
@@ -508,7 +527,7 @@ class ReviewAgentService:
                         f"unsupported review loop type for verification respond: {loop.type}"
                     )
             except ValueError as exc:
-                raise RequestError(str(exc)) from exc
+                raise _value_error_as_request_error(exc) from exc
             if loop.type in {"focused_plan", "focused_output"}:
                 try:
                     validate_findings_within_scope(
@@ -519,7 +538,7 @@ class ReviewAgentService:
                         review_type=loop.type,
                     )
                 except ValueError as exc:
-                    raise RequestError(str(exc)) from exc
+                    raise _value_error_as_request_error(exc) from exc
         else:
             raise RequestError("unsupported review respond payload")
 
@@ -615,7 +634,7 @@ class ReviewAgentService:
                     scope_review_result=scope_review_payload,
                 )
             except ValueError as exc:
-                raise RequestError(str(exc)) from exc
+                raise _value_error_as_request_error(exc) from exc
         elif decision == "approved" and approved_digests is not None:
             updated = replace_loop_approved_digests(updated, approved_digests)
 
@@ -911,7 +930,7 @@ class ReviewAgentService:
                     artifact_revision=artifact_revision,
                 )
         except ValueError as exc:
-            raise RequestError(str(exc)) from exc
+            raise _value_error_as_request_error(exc) from exc
 
         event: dict[str, Any] = apply_request_audit_fields(
             {

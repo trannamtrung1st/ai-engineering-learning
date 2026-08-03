@@ -61,7 +61,7 @@ Emit as the **final assistant line** or `done.signal` metadata when work is read
 - JSON or YAML object via `--request` under `$TDP_AGENT_REQUESTS_DIR` or stdin
 - List published schemas: `tdp agent schema`
 - List published examples: `tdp agent example`
-- Examples validate against schemas; copy and adapt an example before inventing payloads
+- Examples validate against schemas; copy structure from an example and adapt ids from the session package (review packages expose `rubric_items`, `required_audit_passes`, etc.)
 
 ## Do not
 
@@ -69,6 +69,7 @@ Emit as the **final assistant line** or `done.signal` metadata when work is read
 - Modify orchestrator-owned run files under the run store
 - Pass `--role` on the CLI (authorization is session-bound)
 - Wrap `tdp` with `uv run` inside provider turns
+- Read TDP Python source to discover `review respond` payload shapes
 
 ## Further reading
 

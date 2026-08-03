@@ -10,6 +10,7 @@ import pytest
 from core_tools.schema import validate_against_schema
 from top_down_planning import schema_docs
 from top_down_planning.domain.review_policy import FINDING_CATEGORY_ORDER
+from top_down_planning.domain.review_rule_registry import KNOWN_RULE_IDS
 from tests.conftest import run_cli
 
 
@@ -28,9 +29,51 @@ def test_agent_readme_documents_finding_families() -> None:
     assert "candidate_refs" in readme
     assert "target_finding_ids" in readme
     assert "reopens_family_id" in readme
+    assert "built-in finding-family rule_id values" in readme
+    assert "audit attestation" in readme
     assert "review-respond-family-discovery" in readme
     assert "review-respond-scope" in readme
     assert "review-respond-initial-approved" not in readme
+
+
+def test_agent_readme_documents_audit_attestation() -> None:
+    readme = schema_docs.AGENT_README_TEXT.lower()
+    assert "## audit attestation" in readme
+    assert "required_audit_passes" in readme
+    assert "rubric_items" in readme
+    assert "do not copy rubric" in readme
+
+
+def test_agent_readme_documents_builtin_rule_ids() -> None:
+    readme = schema_docs.AGENT_README_TEXT
+    assert "## Built-in finding-family rule_id" in readme
+    for rule_id in KNOWN_RULE_IDS:
+        assert rule_id in readme
+
+
+def test_family_discovery_example_describes_adapting_rubric_ids() -> None:
+    example = schema_docs.show_example("review-respond-family-discovery")
+    desc = example["description"].lower()
+    assert "rubric_items" in desc
+    assert "required_audit_passes" in desc
+
+
+def test_family_discovery_example_uses_default_config_rubric_ids() -> None:
+    example = schema_docs.show_example("review-respond-family-discovery")
+    passes = example["payload"]["audit_attestation"]["passes"]
+    rubric_ids = {rid for pass_item in passes for rid in pass_item["rubric_item_ids"]}
+    assert "rubric-1-example" not in rubric_ids
+    assert rubric_ids
+    assert all(rid.startswith("rubric-") for rid in rubric_ids)
+
+
+def test_builtin_rule_descriptions_cover_known_rule_ids() -> None:
+    from top_down_planning.domain.review_rule_registry import (
+        BUILTIN_RULE_DESCRIPTIONS,
+        KNOWN_RULE_IDS,
+    )
+
+    assert set(BUILTIN_RULE_DESCRIPTIONS) == set(KNOWN_RULE_IDS)
 
 
 def test_agent_help_points_to_finding_categories() -> None:

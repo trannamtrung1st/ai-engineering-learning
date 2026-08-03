@@ -89,6 +89,10 @@ def test_whole_output_verification_protocol_includes_bounded_family_sweep() -> N
     assert "discovery_sweep" in protocol
     assert "audit attestation" in protocol
     assert "reopens_family_id" in protocol
+    assert "rubric_items" in protocol
+    assert "do not copy rubric_item_ids from static" in protocol
+    assert "built-in finding-family rule_id" in protocol
+    assert "do not read tdp python source" in protocol
 
 
 def test_whole_plan_verification_protocol_includes_bounded_family_sweep() -> None:
@@ -129,14 +133,32 @@ def test_whole_plan_verification_protocol_omits_audit_attestation() -> None:
 
 
 def test_tool_instructions_discourage_uv_run() -> None:
-    instructions = build_reviewer_tool_instructions("run-test")
+    instructions = build_reviewer_tool_instructions("run-test", review_type="whole_plan")
     assert "discover" in instructions
     assert "agent_context.skills" in instructions["discover"]
     assert "tdp agent readme" in instructions["discover"].lower()
+    assert "audit attestation" in instructions["discover"].lower()
+    assert "built-in finding-family rule_id" in instructions["discover"].lower()
     assert "uv run" in instructions["respond"]
     assert "TDP_CAPABILITY_TOKEN" in instructions["authorization"]
     assert instructions["agent_requests_dir"] == "$TDP_AGENT_REQUESTS_DIR"
     assert "TDP_AGENT_REQUESTS_DIR" in instructions["respond"]
+
+
+def test_focused_tool_instructions_discover_omits_audit_attestation() -> None:
+    instructions = build_reviewer_tool_instructions("run-test", review_type="focused_plan")
+    discover = instructions["discover"].lower()
+    assert "built-in finding-family rule_id" in discover
+    assert "audit attestation" not in discover
+
+
+def test_focused_plan_protocol_includes_rule_id_guidance() -> None:
+    protocol = " ".join(
+        build_reviewer_protocol_instructions(review_type="focused_plan")
+    ).lower()
+    assert "finding_families" in protocol
+    assert "built-in finding-family rule_id" in protocol
+    assert "do not read tdp python source" in protocol
 
 
 def test_tool_instructions_use_contract_specific_scope_examples() -> None:

@@ -18,6 +18,8 @@ from top_down_planning.domain.review_policy import (
     FINDING_CATEGORY_ORDER,
     SEVERITY_ORDER,
 )
+from top_down_planning.domain.review_rule_registry import BUILTIN_RULE_DESCRIPTIONS
+from top_down_planning.orchestrator.review_analysis_context import rubric_items_with_ids
 
 PUBLIC_SCHEMAS: tuple[str, ...] = (
     "config",
@@ -504,6 +506,33 @@ _FOCUSED_REVIEW_BRANCH_SCHEMAS = [
     for review_type in ("focused_plan", "focused_output")
 ]
 
+_FAMILY_RULE_ID_PROPERTY: dict[str, Any] = {
+    "type": "string",
+    "maxLength": 128,
+    "description": (
+        "Built-in rule from `tdp agent readme` (section Built-in finding-family "
+        "rule_id values) or custom.<slug> (lowercase slug, hyphens) with "
+        "rule_definition. Built-in rules must not include rule_definition."
+    ),
+}
+
+_AUDIT_PASS_RUBRIC_ITEM_IDS_PROPERTY: dict[str, Any] = {
+    "type": "array",
+    "items": {"type": "string", "maxLength": 128},
+    "description": (
+        "Ids from the delivered review package `rubric_items` (union across passes "
+        "must equal the set of every rubric_items[].id when review_completed is "
+        "true; no missing or extra ids). Do not copy ids from static examples."
+    ),
+}
+
+_MANDATORY_FAMILY_ADAPTATION = (
+    "Adapt before submit: rubric_item_ids from review package rubric_items "
+    "(union across passes must equal every rubric_items[].id); pass_id from "
+    "required_audit_passes; rule_id from tdp agent readme built-ins or "
+    "custom.<slug>; instance_ref shape from the matching example."
+)
+
 _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
     {
         "title": "FocusedDiscoveryRespond",
@@ -571,7 +600,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
                     "properties": {
                         "id": {"type": "string", "maxLength": 128},
                         "finding_set_id": {"type": "string", "maxLength": 128},
-                        "rule_id": {"type": "string", "maxLength": 128},
+                        "rule_id": _FAMILY_RULE_ID_PROPERTY,
                         "subject_key": {"type": "string", "maxLength": 256},
                         "scope_kind": {
                             "type": "string",
@@ -695,7 +724,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
                     "properties": {
                         "id": {"type": "string", "maxLength": 128},
                         "finding_set_id": {"type": "string", "maxLength": 128},
-                        "rule_id": {"type": "string", "maxLength": 128},
+                        "rule_id": _FAMILY_RULE_ID_PROPERTY,
                         "subject_key": {"type": "string", "maxLength": 256},
                         "scope_kind": {
                             "type": "string",
@@ -725,6 +754,12 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             },
             "audit_attestation": {
                 "type": "object",
+                "description": (
+                    "Mandatory discovery attestation. pass_id values must match "
+                    "delivered required_audit_passes; rubric_item_ids union must "
+                    "equal every rubric_items[].id when review_completed is true. "
+                    "See `tdp agent readme`, section Audit attestation."
+                ),
                 "required": ["artifact_revision", "artifact_digest", "passes"],
                 "properties": {
                     "artifact_revision": {"type": "integer"},
@@ -735,7 +770,14 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
                             "type": "object",
                             "required": ["pass_id", "completed"],
                             "properties": {
-                                "pass_id": {"type": "string", "maxLength": 128},
+                                "pass_id": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "description": (
+                                        "Must match a pass from delivered "
+                                        "required_audit_passes."
+                                    ),
+                                },
                                 "completed": {"type": "boolean"},
                                 "scope_id": {"type": "string", "maxLength": 128},
                                 "search_dimensions": {
@@ -746,10 +788,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
                                     "type": "array",
                                     "items": {"type": "string", "maxLength": 256},
                                 },
-                                "rubric_item_ids": {
-                                    "type": "array",
-                                    "items": {"type": "string", "maxLength": 128},
-                                },
+                                "rubric_item_ids": _AUDIT_PASS_RUBRIC_ITEM_IDS_PROPERTY,
                                 "summary": {"type": "string", "maxLength": 4000},
                             },
                             "additionalProperties": False,
@@ -1399,8 +1438,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "Each reported finding requires `severity` and `category` from "
             "the built-in taxonomy (see `tdp agent readme`, section Review "
             "finding categories). Mandatory whole_plan / whole_output loops "
-            "require `stage` and stage-native decisions per branch below. "
-            "Focused reviews omit `stage` and use "
+            "require `stage`, audit attestation (see readme section Audit "
+            "attestation), finding families with valid `rule_id` (see readme "
+            "section Built-in finding-family rule_id values), and stage-native "
+            "decisions per branch below. Focused reviews omit `stage` and use "
             "approved|changes_requested|blocked."
         ),
         "oneOf": _REVIEW_RESPOND_ONE_OF,
@@ -1563,14 +1604,23 @@ SCHEMAS: dict[str, dict[str, Any]] = {
 _SCHEMAS = SCHEMAS
 
 
+def _example_rubric_ids(review_type: str) -> list[str]:
+    rubric = DEFAULT_CONFIG["review"][review_type]["rubric"]
+    return [
+        item["id"]
+        for item in rubric_items_with_ids([str(entry) for entry in rubric])
+    ]
+
+
 def _example_whole_plan_audit_passes() -> list[dict[str, Any]]:
+    rubric_ids = _example_rubric_ids("whole_plan")
     return [
         {
             "pass_id": pass_id,
             "completed": True,
             "search_dimensions": ["acceptance"],
             "inspected_refs": ["active-items:*"],
-            "rubric_item_ids": ["rubric-1-example"],
+            "rubric_item_ids": rubric_ids,
             "summary": f"Completed {pass_id}.",
         }
         for pass_id in WHOLE_PLAN_AUDIT_PASS_IDS
@@ -1578,13 +1628,14 @@ def _example_whole_plan_audit_passes() -> list[dict[str, Any]]:
 
 
 def _example_whole_output_audit_passes() -> list[dict[str, Any]]:
+    rubric_ids = _example_rubric_ids("whole_output")
     return [
         {
             "pass_id": pass_id,
             "completed": True,
             "search_dimensions": ["evidence"],
             "inspected_refs": ["production:*"],
-            "rubric_item_ids": ["rubric-1-example"],
+            "rubric_item_ids": rubric_ids,
             "summary": f"Completed {pass_id}.",
         }
         for pass_id in WHOLE_OUTPUT_AUDIT_PASS_IDS
@@ -1831,13 +1882,14 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "schema": "review-respond",
         "description": (
             "Optional focused_plan family discovery (no audit attestation; "
-            "no scope_review stage)."
+            "no scope_review stage). rule_id from tdp agent readme built-ins "
+            "or custom.<slug> with rule_definition."
         ),
         "payload": {
             "loop_id": "review-focused-plan-01",
             "target_revision": 0,
             "finding_set_id": "review-focused-plan-01-fs-01",
-            "target_digest": "plan-digest-placeholder",
+            "target_digest": "<plan-digest>",
             "finding_families": [
                 {
                     "id": "family-001",
@@ -1851,7 +1903,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "recommended_change": "Add measurable acceptance checks.",
                     "discovery_sweep": {
                         "artifact_revision": 0,
-                        "artifact_digest": "plan-digest-placeholder",
+                        "artifact_digest": "<plan-digest>",
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance"],
                         "completed": True,
@@ -1884,13 +1936,15 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
     "review-respond-family-discovery-focused-output": {
         "schema": "review-respond",
         "description": (
-            "Optional focused_output family discovery within scope.item_ids."
+            "Optional focused_output family discovery within scope.item_ids. "
+            "rule_id from tdp agent readme built-ins or custom.<slug> with "
+            "rule_definition."
         ),
         "payload": {
             "loop_id": "review-focused-output-01",
             "target_revision": 1,
             "finding_set_id": "review-focused-output-01-fs-01",
-            "target_digest": "output-digest-placeholder",
+            "target_digest": "<output-digest>",
             "finding_families": [
                 {
                     "id": "family-001",
@@ -1904,7 +1958,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "recommended_change": "Attach evidence for item-api.",
                     "discovery_sweep": {
                         "artifact_revision": 1,
-                        "artifact_digest": "output-digest-placeholder",
+                        "artifact_digest": "<output-digest>",
                         "searched_refs": ["production:*"],
                         "search_dimensions": ["evidence"],
                         "completed": True,
@@ -1944,7 +1998,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "loop_id": "review-focused-output-01",
             "target_revision": 1,
             "stage": "finding_verification",
-            "target_digest": "output-digest-abc",
+            "target_digest": "<output-digest>",
             "finding_set_id": "review-focused-output-01-fs-01",
             "decision": "verified",
             "finding_results": [
@@ -1964,19 +2018,19 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "description": (
             "Mandatory whole_plan or whole_output contract v2 fresh scope_review: "
             "clear approved outcome with audit attestation and finding families "
-            "(empty when clear)."
+            "(empty when clear). " + _MANDATORY_FAMILY_ADAPTATION
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
             "target_revision": 1,
             "stage": "scope_review",
             "finding_set_id": "review-whole-plan-01-fs-02",
-            "target_digest": "plan-digest-abc",
+            "target_digest": "<plan-digest>",
             "reported_findings": [],
             "finding_families": [],
             "audit_attestation": {
                 "artifact_revision": 1,
-                "artifact_digest": "plan-digest-abc",
+                "artifact_digest": "<plan-digest>",
                 "passes": _example_whole_plan_audit_passes(),
             },
             "review_completed": True,
@@ -1987,7 +2041,8 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "schema": "review-respond",
         "description": (
             "Mandatory whole_plan discovery with audit attestation and finding "
-            "families (see review-respond-family-discovery-output for whole_output)."
+            "families (see review-respond-family-discovery-output for whole_output). "
+            + _MANDATORY_FAMILY_ADAPTATION
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
@@ -2049,7 +2104,8 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "schema": "review-respond",
         "description": (
             "Mandatory whole_output discovery with audit attestation and finding "
-            "families."
+            "families. Shows custom rule_id pattern (custom.evidence-gap). "
+            + _MANDATORY_FAMILY_ADAPTATION
         ),
         "payload": {
             "loop_id": "review-whole-output-01",
@@ -2113,7 +2169,7 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "description": (
             "Mandatory whole_plan finding_verification with family_results and "
             "verified decision (see review-respond-family-verification-output for "
-            "whole_output)."
+            "whole_output). Adapt target_digest and loop ids from the review package."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
@@ -2155,7 +2211,8 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "schema": "review-respond",
         "description": (
             "Mandatory whole_output finding_verification with family_results and "
-            "verified decision."
+            "verified decision. Adapt target_digest and loop ids from the review "
+            "package."
         ),
         "payload": {
             "loop_id": "review-whole-output-01",
@@ -2353,6 +2410,9 @@ Review:
   tdp agent review respond --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/review-respond-<stage>-r<rev>-a01.json
   Finding categories: review_policy.category_definitions in reviewer packages;
   tdp agent readme (Review finding categories); tdp agent schema review-respond
+  Mandatory reviewers: rubric_items and required_audit_passes in the review
+  package; built-in rule_id list in tdp agent readme (Built-in finding-family
+  rule_id values)
 
 Whole-plan and focused_plan reviewers receive an embedded plan snapshot in the
 review package; call `tdp agent plan snapshot --run <run-id> --view active` to
@@ -2459,7 +2519,12 @@ include:
   contracts from `build_item_production_contract`)
 - Review packages include `plan_scope`, `boundaries`, `acceptance`, and `risks` from persisted
   plan metadata (not static run config), plus `review_policy` with
-  `severity_definitions` and `category_definitions` for classifying findings
+  `severity_definitions` and `category_definitions` for classifying findings.
+  Mandatory whole_plan and whole_output packages also include `rubric_items`,
+  `required_audit_passes`, and `analysis_context` for discovery attestation.
+  Use `tdp agent readme` (sections Audit attestation and Built-in finding-family
+  rule_id values) and stage examples — not TDP Python source — to shape
+  `review respond` payloads.
 
 The provider adapter formats these payloads for the agent. Follow
 `protocol_instructions` and `tool_instructions`; host IDE planning artifacts are
@@ -2540,6 +2605,11 @@ structured `instance_ref`.
 - **Scope-review regression** — do not submit `reopens_family_id` or
   `reopens_finding_id`; the service links regressions from fingerprint and
   `instance_ref` match after a fresh scope review.
+- **`rule_id`** — each family requires a built-in id or `custom.<slug>` with
+  `rule_definition` (see readme section Built-in finding-family rule_id values).
+- **Audit attestation** — mandatory discovery also requires attestation bound to
+  `rubric_items` and `required_audit_passes` from the review package (see readme
+  section Audit attestation).
 
 Whole-plan examples: `review-respond-family-discovery`,
 `review-respond-family-verification`, `review-record-family-fix`,
@@ -2557,6 +2627,55 @@ Record schema version 2 carries persisted family state; contract version 2
 governs mandatory discovery and verification payloads.
 
 """
+
+
+def _audit_attestation_readme_section() -> str:
+    return """## Audit attestation (mandatory whole_plan and whole_output discovery)
+
+On `initial_review` and `scope_review` with `review_completed: true`, contract v2
+payloads require `audit_attestation`:
+
+- **`passes[].pass_id`** — must include every id from the delivered review package
+  `required_audit_passes` (also listed in `analysis_context.audit_passes`).
+- **`passes[].rubric_item_ids`** — union across all passes must equal the set of
+  every `id` from the delivered `rubric_items` (no missing or extra ids). Do not
+  copy rubric ids from static `tdp agent example` payloads; they reflect default
+  config only.
+- **`artifact_revision`** and **`artifact_digest`** — must match `target_digest`
+  on the respond payload.
+
+Workflow: read the delivered review package → `tdp agent example
+review-respond-family-discovery` (or `-output`) for **structure** → substitute
+`loop_id`, `finding_set_id`, `target_digest`, and all `rubric_item_ids` from the
+package before `tdp agent review respond`.
+
+"""
+
+
+def _builtin_rule_readme_section() -> str:
+    lines = [
+        "## Built-in finding-family rule_id values",
+        "",
+        "Each `finding_families[]` entry requires a valid `rule_id`. Use a built-in "
+        "id below or `custom.<slug>` (lowercase slug, hyphens) with `rule_definition`. "
+        "Built-in rules must **not** include `rule_definition`. Custom rules **require** "
+        "`rule_definition`.",
+        "",
+        "Built-in ids (same enum as runtime validation):",
+        "",
+    ]
+    for rule_id in sorted(BUILTIN_RULE_DESCRIPTIONS):
+        lines.append(f"- **{rule_id}** — {BUILTIN_RULE_DESCRIPTIONS[rule_id]}")
+    lines.extend(
+        [
+            "",
+            "Examples: built-in `dependency.acceptance_capability_available` in "
+            "`review-respond-family-discovery`; custom `custom.evidence-gap` with "
+            "`rule_definition` in `review-respond-family-discovery-output`.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 _AGENT_README_PLAN_DEPENDENCIES = """## Plan apply: dependencies
@@ -2602,10 +2721,13 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    findings after revisions), then fresh `scope_review` (complete-scope discovery).
    Contract v2 payloads require `audit_attestation`, `finding_families`, and
    `target_digest` on discovery stages — see `review-respond-family-discovery`,
-   `review-respond-family-verification`, and `review-respond-scope`.
+   `review-respond-family-verification`, and `review-respond-scope`, plus readme
+   sections Audit attestation and Built-in finding-family rule_id values.
    Review packages include an embedded plan tree, `review_policy.category_definitions`,
-   `rubric_items` on every stage, and optional configured rubric themes on initial
-   review; refresh with `plan snapshot --view active` when revising after
+   `rubric_items` and `required_audit_passes` on every stage, and optional configured
+   rubric themes on initial review; adapt example payloads using package ids
+   (do not copy rubric ids from static examples). Refresh with
+   `plan snapshot --view active` when revising after
    `needs_revision` or initial `changes_requested`. Reviewers prioritize plan
    correctness and internal consistency. Approval requires a clear
    fresh `scope_review` against the current artifact digest — finding closure alone is not
@@ -2618,8 +2740,10 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    Same mandatory contract-v2 gate as whole-plan review (`initial_review`, then
    repeatable verification and fresh `scope_review` rounds). Review packages include
    production traceability, `review_policy.category_definitions`, stable
-   `rubric_items` on every stage, `required_audit_passes`, and reviewer guidance
+   `rubric_items` and `required_audit_passes` on every stage, and reviewer guidance
    that prioritizes output correctness and cross-artifact consistency. Use
+   `tdp agent readme` (Audit attestation; Built-in finding-family rule_id values)
+   and stage examples for `review respond` payloads — not TDP source. Use
    `review-respond-family-discovery-output`, `review-respond-family-verification-output`,
    and `review-record-family-fix-output` for whole-output payloads. After
    `needs_revision` or initial `changes_requested`, the producer must use
@@ -2782,6 +2906,8 @@ AGENT_README_TEXT = (
     AGENT_README_PREFIX
     + _finding_category_readme_section()
     + _finding_family_readme_section()
+    + _audit_attestation_readme_section()
+    + _builtin_rule_readme_section()
     + _AGENT_README_PLAN_DEPENDENCIES
     + _AGENT_README_WORKFLOW_AND_BEYOND
 )
