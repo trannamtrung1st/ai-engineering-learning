@@ -75,7 +75,19 @@ def default_process_runner(
         raise ProviderTurnError("Cursor CLI stdout pipe was not available")
 
     try:
-        for line in proc.stdout:
+        while True:
+            if proc.poll() is not None:
+                if proc.stdout is not None:
+                    for line in proc.stdout:
+                        stripped = line.strip()
+                        if stripped:
+                            yield stripped
+                break
+            if proc.stdout is None:
+                break
+            line = proc.stdout.readline()
+            if not line:
+                break
             stripped = line.strip()
             if stripped:
                 yield stripped
@@ -192,6 +204,7 @@ class _CursorSession:
     pending_argv: list[str] | None = None
     turn_running: bool = False
     turn_complete: bool = False
+    turn_aborted: bool = False
     turn_error: ProviderTurnError | None = None
     collector_thread: threading.Thread | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -372,6 +385,9 @@ class CursorProvider:
         session = self._sessions.get(canonical_id)
         if session is None:
             return
+        with session.condition:
+            session.pending_events.clear()
+            session.turn_aborted = True
         self._abort_session_turn(session, error=None)
         self._terminate_tracked_turn_procs_for_session(canonical_id)
 
@@ -576,6 +592,7 @@ class CursorProvider:
             session.pending_argv = argv
             session.turn_running = False
             session.turn_complete = False
+            session.turn_aborted = False
             session.turn_error = None
             session.collector_thread = None
 
@@ -609,6 +626,8 @@ class CursorProvider:
                 session.turn_error = exc
         except ProviderTurnError as exc:
             with session.condition:
+                if session.turn_aborted:
+                    return
                 session.turn_error = reclassify_provider_turn_error(
                     exc,
                     session_id=session_id,
@@ -623,6 +642,8 @@ class CursorProvider:
         if self._shutting_down:
             return True
         with session.condition:
+            if session.turn_aborted:
+                return True
             error = session.turn_error
             if error is None:
                 return False
@@ -732,9 +753,14 @@ class CursorProvider:
                     )
                     self._emit_provider_event(enriched)
                     with session.condition:
+                        if session.turn_aborted or session.turn_complete:
+                            return
                         session.pending_events.append(enriched)
                         session.condition.notify_all()
 
+            with session.condition:
+                if session.turn_aborted:
+                    return
             if provider_session_id is None or provider_session_id.startswith(
                 _CURSOR_TRANSIENT_SESSION_PREFIX
             ):

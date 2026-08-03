@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,10 @@ from top_down_planning.orchestrator import ProductionPhaseOrchestrator, Provider
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
+from core_tools.provider.cursor import CursorProvider
+from core_tools.provider.errors import ProviderSessionNotFoundError
+from top_down_planning.domain.session_lineage import SESSION_PROVIDER_ID_BOUND
+from top_down_planning.orchestrator.session_events import commit_primary_provider_session_binding
 from tests.helpers import (
     apply_plan,
     apply_production,
@@ -603,3 +609,190 @@ def test_resume_preserves_batch_agent_turn_budget(tmp_path: Path) -> None:
     run = store.load_run("run-20260101T000201-000201")
     assert run["status"] == "paused"
     assert run["stop"]["code"] == "limit_exhausted"
+
+
+class _StallingAfterEventsProvider(StubProvider):
+    """Simulate a Cursor turn that stalls after events stop (zombie-like hang)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._release = threading.Event()
+
+    def stream_events(self, session_id: str):
+        if session_id in self._not_found_sessions:
+            raise ProviderSessionNotFoundError(
+                f"provider session not found: {session_id}",
+                provider="stub",
+                session_id=session_id,
+            )
+        session = self._require_session(session_id)
+        if session.pending_hook is not None:
+            hook = session.pending_hook
+            session.pending_hook = None
+            hook()
+        while session.pending_events:
+            yield session.pending_events.popleft()
+        self._release.wait(timeout=1)
+
+    def abort_turn(self, session_id: str) -> None:
+        self._release.set()
+        super().abort_turn(session_id)
+
+
+def test_producer_turn_closes_when_batch_recorded_while_stream_stalls(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    provider = _StallingAfterEventsProvider()
+    run_id = "run-20260101T000201-000201"
+    provider.script_turn(done_events(text="producer session start"))
+    provider.script_turn(
+        [{"type": "assistant", "text": "recorded first batch"}],
+        mutate_store=apply_production(
+            store,
+            run_id,
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "completed"}},
+            ),
+            handler="apply",
+        ),
+    )
+    provider.script_turn(
+        done_events(text="second batch turn"),
+        mutate_store=lambda: (
+            apply_production(
+                store,
+                run_id,
+                _batch_apply_request(
+                    plan_items=["item-second"],
+                    dispositions={"item-second": {"disposition": "completed"}},
+                    production_revision=1,
+                ),
+                handler="apply",
+            )(),
+            apply_production(
+                store,
+                run_id,
+                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                handler="submit_completion",
+            )(),
+        ),
+    )
+
+    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.phase == WHOLE_OUTPUT_REVIEW
+    assert result.batch_count == 2
+
+
+def test_producer_turn_persists_durable_session_id_before_turn_completes(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    run_id = "run-20260101T000201-000201"
+    commit_primary_provider_session_binding(
+        store,
+        run_id,
+        role="producer",
+        provider_session_id="cursor-pending-1",
+        provider="cursor",
+    )
+
+    release = threading.Event()
+    durable_id = "e64e3d1a-1eba-4ca4-b291-fe1957bc7ad9"
+    stream_lines = [
+        json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": durable_id,
+            }
+        ),
+        json.dumps(
+            {
+                "type": "assistant",
+                "session_id": durable_id,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "working"}],
+                },
+            }
+        ),
+    ]
+
+    def fake_runner(argv: list[str], cwd: Path):
+        for line in stream_lines:
+            yield line
+        release.wait(timeout=1)
+        yield json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": durable_id,
+                "is_error": False,
+                "result": "done",
+            }
+        )
+
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    provider = CursorProvider(
+        {"limits": {"provider": {"max_retries_per_call": 0}}},
+        workspace=tmp_path,
+        runner=fake_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+    session_id = provider.start_primary_session("producer", {"phase": PRODUCTION})
+    assert session_id == "cursor-pending-1"
+    provider.resume_primary_session(session_id, {"action": "continue", "phase": PRODUCTION})
+
+    bound_before_done = threading.Event()
+
+    def consume() -> None:
+        from top_down_planning.orchestrator.provider_turns import (
+            build_producer_turn_recovery,
+            consume_producer_provider_turn_with_session_recovery,
+        )
+
+        consume_producer_provider_turn_with_session_recovery(
+            store,
+            run_id,
+            provider,
+            session_id,
+            recovery=build_producer_turn_recovery(
+                store,
+                run_id,
+                phase=PRODUCTION,
+                expected_next_action="continue production turn",
+                append_event=lambda *_args, **_kwargs: None,
+                model=None,
+            ),
+        )
+
+    thread = threading.Thread(target=consume)
+    thread.start()
+    for _ in range(40):
+        run = store.load_run(run_id)
+        binding = run["sessions"]["primary_producer"]
+        if binding.get("provider_session_id") == durable_id and binding.get("state") == "bound":
+            bound_before_done.set()
+            break
+        threading.Event().wait(0.01)
+    assert bound_before_done.is_set()
+    release.set()
+    thread.join(timeout=1)
+
+    assert not thread.is_alive()
+    events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == SESSION_PROVIDER_ID_BOUND
+    ]
+    assert len(events) == 1
+    assert events[0]["provider_session_id"] == durable_id
+    assert events[0]["role"] == "producer"

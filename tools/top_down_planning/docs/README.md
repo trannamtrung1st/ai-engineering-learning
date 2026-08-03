@@ -37,7 +37,7 @@ Schema: `tdp agent schema plan-transaction`
 
 Schema: `tdp agent schema production-apply`
 
-Producer turns close when `production apply` persists a batch.
+Producer turns close when `production apply` persists a batch; the orchestrator also polls for new batches while the turn is open so a stalled agent cannot block progress after apply.
 
 ### Reviewer
 

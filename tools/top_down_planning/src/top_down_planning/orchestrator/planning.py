@@ -39,7 +39,6 @@ from top_down_planning.orchestrator.session_events import (
     commit_primary_provider_session_binding,
     emit_primary_session_started,
     resume_primary_session_with_audit,
-    sync_persisted_session_id,
 )
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
@@ -182,13 +181,6 @@ class PlanningPhaseOrchestrator:
                     replacement_token=turn_outcome.capability_token,
                     provider=self._provider,
                 )
-            session_id = sync_persisted_session_id(
-                self._provider,
-                self._store,
-                self._run_id,
-                session_id,
-                role="planner",
-            )
             run_pending_focused_review(
                 self._store,
                 self._run_id,

@@ -86,8 +86,6 @@ from top_down_planning.orchestrator.session_events import (
     emit_reviewer_session_started,
     release_reviewer_session_after_decision,
     resume_primary_session_with_audit,
-    sync_persisted_session_id,
-    sync_reviewer_loop_session_id,
 )
 from top_down_planning.orchestrator.review_loop_types import (
     MandatoryWholeReviewResult,
@@ -752,13 +750,6 @@ class ReviewLoopDriver:
                 replacement_token=turn_outcome.capability_token,
                 provider=self._provider,
             )
-        sync_reviewer_loop_session_id(
-            self._provider,
-            self._store,
-            self._run_id,
-            loop_id,
-            session_id,
-        )
         return release_reviewer_session_after_decision(
             self._append_event,
             self._provider,
@@ -891,13 +882,6 @@ class ReviewLoopDriver:
             )
         except SessionRecoveryPaused as exc:
             raise ProviderRunError(str(exc)) from exc
-        sync_persisted_session_id(
-            self._provider,
-            self._store,
-            self._run_id,
-            session_id,
-            role=spec.owner_role,
-        )
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         artifact_revision, _digest = self._adapter.current_artifact_binding()

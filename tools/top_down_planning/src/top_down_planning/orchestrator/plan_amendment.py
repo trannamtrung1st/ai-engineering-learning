@@ -37,7 +37,6 @@ from top_down_planning.orchestrator.provider_turns import (
 from top_down_planning.orchestrator.agent_context import resolve_role_session_context
 from top_down_planning.orchestrator.session_events import (
     resume_primary_session_with_audit,
-    sync_persisted_session_id,
 )
 from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
 from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
@@ -396,7 +395,6 @@ class PlanAmendmentOrchestrator:
             )
         except SessionRecoveryPaused as exc:
             raise ProviderRunError(str(exc)) from exc
-        session_id = turn_outcome.session_id
         if turn_outcome.replaced:
             self._capability_token = adopt_replacement_capability(
                 self._store,
@@ -405,15 +403,7 @@ class PlanAmendmentOrchestrator:
                 replacement_token=turn_outcome.capability_token,
                 provider=self._provider,
             )
-        signal = turn_outcome.signal
-        sync_persisted_session_id(
-            self._provider,
-            self._store,
-            self._run_id,
-            session_id,
-            role="planner",
-        )
-        return signal
+        return turn_outcome.signal
 
     def _persist_amendment_revision_cycles(
         self,

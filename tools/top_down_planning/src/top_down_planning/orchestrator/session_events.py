@@ -238,8 +238,9 @@ def commit_primary_provider_session_binding(
 ) -> dict[str, Any]:
     """Persist a provider session id on the primary binding.
 
-    Transient ``cursor-pending-*`` ids are stored in ``state: starting``; lineage
-    events emit only after a durable id is bound.
+    Transient ``cursor-pending-*`` ids are stored in ``state: starting``; durable
+    ids are promoted to ``state: bound`` during provider turn drain and emit
+    ``session_provider_id_bound`` lineage events when first persisted.
     """
 
     run = store.load_run(run_id)
@@ -291,7 +292,11 @@ def sync_persisted_session_id(
     *,
     role: str,
 ) -> str:
-    """Persist the provider-native session id when it differs from the stored ref."""
+    """Persist the provider-native session id when it differs from the stored ref.
+
+    Called during provider turn drain so durable ids are written before the
+    turn finishes; orchestrators must not duplicate this after turn completion.
+    """
 
     if role not in _PRIMARY_ROLES:
         raise ValueError(f"unsupported primary session role: {role}")
@@ -351,8 +356,9 @@ def sync_reviewer_loop_session_id(
 ) -> str:
     """Persist the canonical durable reviewer session id on the review loop record.
 
-    Transient ``cursor-pending-*`` ids are ignored. When a durable id is known,
-    the binding is promoted to ``state: bound``.
+    Called during provider turn drain. Transient ``cursor-pending-*`` ids are
+    ignored. When a durable id is known, the binding is promoted to
+    ``state: bound``.
     """
 
     resolved = provider.canonical_session_id(session_id)

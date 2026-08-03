@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -34,6 +35,10 @@ from top_down_planning.orchestrator.producer_session import PRODUCER_BATCH_COMPL
 from top_down_planning.orchestrator.reviewer_session import reviewer_loop_provider_session_id
 from top_down_planning.orchestrator.run_transitions import generate_phase_action_id
 from top_down_planning.orchestrator.session_lineage import emit_session_replacement_failed
+from top_down_planning.orchestrator.session_events import (
+    sync_persisted_session_id,
+    sync_reviewer_loop_session_id,
+)
 from top_down_planning.orchestrator.session_recovery import (
     PrimarySessionRecoverySpec,
     ReviewerSessionRecoverySpec,
@@ -198,37 +203,141 @@ def _abort_provider_turn(provider: Provider, session_id: str) -> None:
     provider.abort_turn(session_id)
 
 
+def _session_binding_syncer(
+    provider: Provider,
+    store: RunStore,
+    run_id: str,
+    recovery: PrimarySessionRecoverySpec | ReviewerSessionRecoverySpec,
+) -> Callable[[str], str] | None:
+    if isinstance(recovery, PrimarySessionRecoverySpec):
+        role = recovery.role
+
+        def sync_primary(session_id: str) -> str:
+            return sync_persisted_session_id(
+                provider,
+                store,
+                run_id,
+                session_id,
+                role=role,
+            )
+
+        return sync_primary
+
+    loop_id = recovery.loop_id
+
+    def sync_reviewer(session_id: str) -> str:
+        return sync_reviewer_loop_session_id(
+            provider,
+            store,
+            run_id,
+            loop_id,
+            session_id,
+        )
+
+    return sync_reviewer
+
+
+def _start_boundary_poll(
+    provider: Provider,
+    session_id_holder: list[str],
+    on_boundary: Callable[[], str | None],
+) -> tuple[threading.Event, list[str | None], threading.Thread]:
+    """Poll store-driven turn boundaries while the provider stream is idle."""
+
+    stop = threading.Event()
+    boundary_signal: list[str | None] = [None]
+
+    def poll() -> None:
+        while not stop.is_set():
+            signal = on_boundary()
+            if signal is not None:
+                boundary_signal[0] = signal
+                _abort_provider_turn(provider, session_id_holder[0])
+                return
+            stop.wait(0.05)
+
+    thread = threading.Thread(target=poll, daemon=True)
+    thread.start()
+    return stop, boundary_signal, thread
+
+
+def _boundary_poll_triggered(boundary_signal: list[str | None] | None) -> bool:
+    return boundary_signal is not None and boundary_signal[0] is not None
+
+
 def _drain_provider_turn(
     provider: Provider,
     session_id: str,
     *,
     allowed_signals: frozenset[str],
     on_boundary: Callable[[], str | None] | None = None,
+    sync_session_id: Callable[[str], str] | None = None,
 ) -> str | None:
+    """Drain one provider turn.
+
+    When ``sync_session_id`` is set, durable provider session ids are persisted
+    on each streamed event. When ``on_boundary`` is set, the hook runs after each
+    event and on a background poll so store-driven turn closure still works when
+    the provider stream stalls after a mutation (for example production apply).
+    """
+    active_session_id = session_id
+    session_id_holder = [session_id]
     accumulator = TurnTextAccumulator()
-    for event in provider.stream_events(session_id):
-        event_type = str(event.get("type") or "")
-        if event_type == "error":
-            text = event.get("text") or "provider error"
-            raise ProviderRunError(str(text))
-        if event_type in {"assistant", "done"}:
-            accumulator.ingest(event)
-        if event_type == "done":
-            if event.get("is_error"):
-                text = event.get("text") or "provider turn failed"
+    stop_poll: threading.Event | None = None
+    boundary_signal: list[str | None] | None = None
+    poll_thread: threading.Thread | None = None
+
+    if on_boundary is not None:
+        stop_poll, boundary_signal, poll_thread = _start_boundary_poll(
+            provider,
+            session_id_holder,
+            on_boundary,
+        )
+
+    try:
+        for event in provider.stream_events(active_session_id):
+            if _boundary_poll_triggered(boundary_signal):
+                break
+
+            event_type = str(event.get("type") or "")
+            if event_type == "error":
+                text = event.get("text") or "provider error"
                 raise ProviderRunError(str(text))
-            break
-        if on_boundary is not None:
-            implicit_signal = on_boundary()
-            if implicit_signal is not None:
-                _abort_provider_turn(provider, session_id)
-                return implicit_signal
+            if event_type in {"assistant", "done"}:
+                accumulator.ingest(event)
+            if sync_session_id is not None:
+                active_session_id = sync_session_id(active_session_id)
+                session_id_holder[0] = active_session_id
+            if on_boundary is not None:
+                implicit_signal = on_boundary()
+                if implicit_signal is not None:
+                    _abort_provider_turn(provider, active_session_id)
+                    session_id_holder[0] = active_session_id
+                    if sync_session_id is not None:
+                        active_session_id = sync_session_id(active_session_id)
+                        session_id_holder[0] = active_session_id
+                    return implicit_signal
+            if event_type == "done":
+                if event.get("is_error"):
+                    text = event.get("text") or "provider turn failed"
+                    raise ProviderRunError(str(text))
+                break
+            if _boundary_poll_triggered(boundary_signal):
+                break
+    finally:
+        if stop_poll is not None:
+            stop_poll.set()
+        if poll_thread is not None:
+            poll_thread.join(timeout=0.2)
+
+    if _boundary_poll_triggered(boundary_signal):
+        if sync_session_id is not None:
+            active_session_id = sync_session_id(session_id_holder[0])
+        return boundary_signal[0]  # type: ignore[index]
 
     resolved = accumulator.resolve_signal(allowed_signals)
     if resolved is not None:
         return resolved
-    if on_boundary is not None:
-        return on_boundary()
     return None
 
 
@@ -297,6 +406,7 @@ def _consume_provider_turn_with_session_recovery(
     run = store.load_run(run_id)
     phase_action_id = str(run.get("phase_action_id") or generate_phase_action_id())
     role, phase, loop_id = _recovery_role_phase_loop(recovery)
+    sync_session_id = _session_binding_syncer(provider, store, run_id, recovery)
 
     try:
         signal = _drain_provider_turn(
@@ -304,6 +414,7 @@ def _consume_provider_turn_with_session_recovery(
             session_id,
             allowed_signals=allowed_signals,
             on_boundary=on_boundary,
+            sync_session_id=sync_session_id,
         )
         domain_budget_committed = _finalize_phase_action_turn(store, run_id, phase_action_id)
         return ProviderTurnOutcome(
@@ -380,6 +491,7 @@ def _consume_provider_turn_with_session_recovery(
                 new_session_id,
                 allowed_signals=allowed_signals,
                 on_boundary=on_boundary,
+                sync_session_id=sync_session_id,
             )
         except ProviderSessionNotFoundError as exc:
             fail_session_recovery_exhausted(
