@@ -228,3 +228,114 @@ def test_cursor_provider_abort_turn_before_durable_id_does_not_raise(tmp_path: P
 
     assert not thread.is_alive()
     assert errors == []
+
+
+def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) -> None:
+    import json
+
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    release = threading.Event()
+    durable_id = "chat-producer-stall"
+
+    def stalling_runner(argv: list[str], cwd: Path):
+        yield json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": durable_id,
+            }
+        )
+        release.wait(timeout=2)
+        yield json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": durable_id,
+                "is_error": False,
+                "result": "done",
+            }
+        )
+
+    provider = CursorProvider(
+        {"limits": {"provider": {"max_retries_per_call": 0}}},
+        workspace=tmp_path,
+        runner=stalling_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+    session_id = provider.start_primary_session("producer", {"goal": "x"})
+    provider.resume_primary_session(session_id, {"goal": "turn-1"})
+
+    errors: list[BaseException] = []
+
+    def consume() -> None:
+        try:
+            list(provider.stream_events(session_id))
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=consume)
+    thread.start()
+    time.sleep(0.05)
+    provider.abort_turn(session_id)
+    provider.resume_primary_session(session_id, {"goal": "turn-2"})
+    release.set()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert errors == []
+    assert provider._sessions[durable_id].pending_argv is not None
+
+
+def test_cursor_provider_abort_turn_waits_for_collector(tmp_path: Path) -> None:
+    import json
+
+    agent_path = tmp_path / "agent"
+    agent_path.write_text("", encoding="utf-8")
+    release = threading.Event()
+    durable_id = "chat-producer-abort-wait"
+
+    def stalling_runner(argv: list[str], cwd: Path):
+        yield json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": durable_id,
+            }
+        )
+        release.wait(timeout=2)
+        yield json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "session_id": durable_id,
+                "is_error": False,
+                "result": "done",
+            }
+        )
+
+    provider = CursorProvider(
+        {"limits": {"provider": {"max_retries_per_call": 0}}},
+        workspace=tmp_path,
+        runner=stalling_runner,
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+    session_id = provider.start_primary_session("producer", {"goal": "x"})
+    provider.resume_primary_session(session_id, {"goal": "turn-1"})
+
+    def consume() -> None:
+        list(provider.stream_events(session_id))
+
+    thread = threading.Thread(target=consume)
+    thread.start()
+    time.sleep(0.05)
+    provider.abort_turn(session_id)
+    release.set()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    session = provider._sessions[durable_id]
+    assert not session.turn_running
+    assert session.collector_thread is None or not session.collector_thread.is_alive()

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -390,6 +391,7 @@ class CursorProvider:
             session.turn_aborted = True
         self._abort_session_turn(session, error=None)
         self._terminate_tracked_turn_procs_for_session(canonical_id)
+        self.wait_turn_settled(canonical_id)
 
     def terminate_all_sessions(self) -> list[dict[str, Any]]:
         """Stop in-flight turns and drop tracked provider sessions."""
@@ -577,13 +579,41 @@ class CursorProvider:
         )
         return session_id
 
+    def wait_turn_settled(self, session_id: str, *, timeout: float = 30.0) -> None:
+        """Block until the in-flight collector thread for this session has finished."""
+
+        canonical_id = self.canonical_session_id(session_id)
+        session = self._sessions.get(canonical_id)
+        if session is None:
+            return
+
+        deadline = time.monotonic() + timeout
+        with session.condition:
+            while session.turn_running:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ProviderTurnError(
+                        "timed out waiting for provider turn to settle for session "
+                        f"{canonical_id}",
+                        session_id=canonical_id,
+                    )
+                session.condition.wait(timeout=min(remaining, 0.05))
+            thread = session.collector_thread
+
+        if thread is not None and thread.is_alive():
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                thread.join(timeout=remaining)
+            if thread.is_alive():
+                raise ProviderTurnError(
+                    "timed out waiting for provider collector to finish for session "
+                    f"{canonical_id}",
+                    session_id=canonical_id,
+                )
+
     def _queue_turn(self, session_id: str, *, prompt: str) -> None:
         session = self._require_session(session_id)
-        if session.turn_running:
-            raise ProviderTurnError(
-                f"provider turn already in progress for session {session_id}",
-                session_id=session_id,
-            )
+        self.wait_turn_settled(session_id)
         argv = build_agent_argv(
             self._config,
             binary=self._binary,
@@ -593,6 +623,11 @@ class CursorProvider:
             model=session.model,
         )
         with session.condition:
+            if session.turn_running:
+                raise ProviderTurnError(
+                    f"provider turn already in progress for session {session_id}",
+                    session_id=session_id,
+                )
             session.pending_events.clear()
             session.pending_argv = argv
             session.turn_running = False

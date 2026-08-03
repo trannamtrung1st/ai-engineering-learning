@@ -37,6 +37,7 @@ provider.script_turn(done_events(text="planning turn"))
 
 - `script_session_turn(session_id, events)` for reviewer-specific sessions.
 - `mutate_store=callable` to update persistence mid-turn without sleeping.
+- Producer batch boundaries abort the in-flight turn, wait for `wait_turn_settled`, then queue the next turn on the same session. `CursorProvider.abort_turn()` also waits for settlement before returning. For collector-thread races, test with `CursorProvider(..., runner=fake_runner)` — not only `StubProvider`.
 
 ### Config and run setup
 

@@ -19,6 +19,7 @@ from top_down_planning.orchestrator.agent_process_cleanup import (
     finalize_user_cancel,
     kill_orphan_agents,
 )
+from core_tools.provider.errors import ProviderTurnError
 from top_down_planning.orchestrator.errors import (
     OrchestratorInvariantError,
     ProviderRunError,
@@ -326,7 +327,7 @@ class RunEngine:
                 )
                 self._emit_done(result, started_at=started_at)
                 return result
-            except ProviderRunError as exc:
+            except (ProviderRunError, ProviderTurnError) as exc:
                 stop = StopRecord(
                     code="provider_turn_failed",
                     category="operational",

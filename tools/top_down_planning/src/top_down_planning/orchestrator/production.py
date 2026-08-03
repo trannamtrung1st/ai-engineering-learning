@@ -282,6 +282,11 @@ class ProductionPhaseOrchestrator:
             if turn_signal == PRODUCER_BATCH_COMPLETE_SIGNAL:
                 batch_agent_turns = 0
                 _persist_batch_agent_turns(self._store, self._run_id, 0)
+                if (
+                    not self._has_completion_claim()
+                    and self._batch_count() < loop_limits["max_batches"]
+                ):
+                    self._resume_producer_turn(session_id, role_context)
                 continue
 
             if self._has_completion_claim():
@@ -299,30 +304,39 @@ class ProductionPhaseOrchestrator:
                     session_id=session_id,
                 )
 
-            run = self._store.load_run(self._run_id)
-            phase = str(run.get("phase") or PRODUCTION)
-            resume_primary_session_with_audit(
-                self._append_event,
-                self._provider,
-                role="producer",
-                phase=phase,
-                session_id=session_id,
-                request=self._producer_resume_request(),
-                model=role_context.model,
-            )
+            self._resume_producer_turn(session_id, role_context)
 
-            run = self._store.load_run(self._run_id)
-            phase = str(run.get("phase") or PRODUCTION)
-            self._capability_token = rotate_session_capability(
-                self._store,
-                self._run_id,
-                current_token=self._capability_token,
-                role="producer",
-                phase=phase,
-                session_id=session_id,
-                session_kind="primary",
-            )
-            bind_provider_capability(self._provider, self._capability_token, store=self._store, run_id=self._run_id)
+    def _resume_producer_turn(self, session_id: str, role_context: Any) -> None:
+        session_id = self._provider.canonical_session_id(session_id)
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or PRODUCTION)
+        resume_primary_session_with_audit(
+            self._append_event,
+            self._provider,
+            role="producer",
+            phase=phase,
+            session_id=session_id,
+            request=self._producer_resume_request(),
+            model=role_context.model,
+        )
+
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or PRODUCTION)
+        self._capability_token = rotate_session_capability(
+            self._store,
+            self._run_id,
+            current_token=self._capability_token,
+            role="producer",
+            phase=phase,
+            session_id=session_id,
+            session_kind="primary",
+        )
+        bind_provider_capability(
+            self._provider,
+            self._capability_token,
+            store=self._store,
+            run_id=self._run_id,
+        )
 
     def _has_completion_claim(self) -> bool:
         production = self._store.load_production(self._run_id)

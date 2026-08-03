@@ -203,6 +203,12 @@ def _abort_provider_turn(provider: Provider, session_id: str) -> None:
     provider.abort_turn(session_id)
 
 
+def _wait_provider_turn_settled(provider: Provider, session_id: str) -> None:
+    """Block until the provider session has no in-flight collector turn."""
+
+    provider.wait_turn_settled(session_id)
+
+
 def _session_binding_syncer(
     provider: Provider,
     store: RunStore,
@@ -279,6 +285,8 @@ def _drain_provider_turn(
     on each streamed event. When ``on_boundary`` is set, the hook runs after each
     event and on a background poll so store-driven turn closure still works when
     the provider stream stalls after a mutation (for example production apply).
+    The drain always waits for the provider session to settle before returning so
+    follow-up turns are not queued while a collector thread is still running.
     """
     active_session_id = session_id
     session_id_holder = [session_id]
@@ -328,7 +336,8 @@ def _drain_provider_turn(
         if stop_poll is not None:
             stop_poll.set()
         if poll_thread is not None:
-            poll_thread.join(timeout=0.2)
+            poll_thread.join()
+        _wait_provider_turn_settled(provider, session_id_holder[0])
 
     if _boundary_poll_triggered(boundary_signal):
         if sync_session_id is not None:

@@ -55,6 +55,9 @@ class Provider(Protocol):
     def abort_turn(self, session_id: str) -> None:
         """End the current in-flight turn without dropping the durable session."""
 
+    def wait_turn_settled(self, session_id: str, *, timeout: float = 30.0) -> None:
+        """Block until the session has no in-flight collector turn."""
+
     def terminate_all_sessions(self) -> list[dict[str, Any]]:
         """Stop in-flight turns and drop tracked provider sessions.
 

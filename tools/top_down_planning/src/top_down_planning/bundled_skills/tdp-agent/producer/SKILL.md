@@ -46,7 +46,7 @@ Discover schema: `tdp agent schema production-apply`
 ## Workflow
 
 1. `production snapshot --view ready` → pick `ready_item_ids` / `ready_items`.
-2. Implement work in the workspace → `production apply` with evidence (one batch per provider turn; the orchestrator closes the turn when apply persists).
+2. Implement work in the workspace → `production apply` with evidence (one batch per provider turn; the orchestrator closes the turn when apply persists, waits for the provider session to settle, then queues the next turn).
 3. When all applicable items have terminal dispositions, `submit-completion` with `goal_met: true` and `goal_assessment`.
 
 ## Evidence revision

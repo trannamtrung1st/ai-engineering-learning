@@ -2445,7 +2445,9 @@ shell commands; those commands persist mutations to the run store. The orchestra
 observes store changes after each provider turn, runs pending review loops, and
 advances phases when agents emit explicit completion signals (`candidate_plan_ready`,
 `amendment_revision_ready`, etc.) as the final assistant line or `done.signal`
-metadata. Producer batch turns close when `production apply` persists a batch.
+metadata. Producer batch turns close when `production apply` persists a batch:
+the orchestrator aborts the in-flight provider turn, waits for the session
+collector to settle, then queues the next turn on the same session.
 
 ## Session roles and authorization
 

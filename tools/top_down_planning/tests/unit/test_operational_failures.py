@@ -149,6 +149,33 @@ def test_engine_provider_run_error_sets_failed_status(tmp_path: Path) -> None:
     assert any(event.get("type") == "run_paused" for event in events)
 
 
+def test_engine_provider_turn_error_pauses_run(tmp_path: Path) -> None:
+    from core_tools.provider.errors import ProviderTurnError
+
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+    )
+
+    with patch.object(
+        PlanningPhaseOrchestrator,
+        "run",
+        side_effect=ProviderTurnError(
+            "provider turn already in progress for session cursor-abc",
+            session_id="cursor-abc",
+        ),
+    ):
+        result = engine.continue_run("run-20260101T001701-001701", single_step=True)
+
+    assert result.ok is False
+    run = store.load_run("run-20260101T001701-001701")
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "provider_turn_failed"
+    assert run["stop"]["category"] == "operational"
+
+
 def test_engine_orchestrator_invariant_error_fails_run(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store, phase=PLANNING)

@@ -183,6 +183,10 @@ class StubProvider:
         session.pending_events.clear()
         session.pending_hook = None
 
+    def wait_turn_settled(self, session_id: str, *, timeout: float = 30.0) -> None:
+        """No-op for the synchronous stub provider."""
+        return
+
     def terminate_all_sessions(self) -> list[dict[str, Any]]:
         self._sessions.clear()
         return []
