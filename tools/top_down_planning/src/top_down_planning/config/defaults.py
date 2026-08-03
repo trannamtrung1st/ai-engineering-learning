@@ -25,6 +25,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
     },
     "agent_context": {
+        "bundled_skills": True,
         "default": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
         "planner": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
         "producer": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
@@ -212,6 +213,10 @@ ALLOWED_AGENT_CONTEXT_ROLES: frozenset[str] = frozenset(
     {"default", "planner", "producer", "reviewer"}
 )
 
+ALLOWED_AGENT_CONTEXT_KEYS: frozenset[str] = ALLOWED_AGENT_CONTEXT_ROLES | frozenset(
+    {"bundled_skills"}
+)
+
 ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
     {
         "version",
@@ -224,6 +229,7 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "run.acceptance",
         "context_snapshot.excludes.defaults",
         "context_snapshot.excludes.patterns",
+        "agent_context.bundled_skills",
         "agent_context.default.model",
         "agent_context.default.guidance",
         "agent_context.default.resources",

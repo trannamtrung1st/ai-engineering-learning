@@ -49,8 +49,8 @@ def build_planner_protocol_instructions() -> list[str]:
         ),
         (
             "Discover request contracts with tdp agent readme, tdp agent "
-            "schema, and tdp agent example. Role skill: "
-            "tools/top_down_planning/skills/tdp-agent/planner."
+            "schema, and tdp agent example. Packaged planner skills are "
+            "already in agent_context.skills on this manifest."
         ),
         (
             "For new items in the same plan apply batch, set depends_on inline on "

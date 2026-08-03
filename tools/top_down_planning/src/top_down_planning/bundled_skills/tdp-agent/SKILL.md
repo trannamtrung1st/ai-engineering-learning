@@ -2,8 +2,8 @@
 name: tdp-agent
 description: >-
   Runtime guide for TDP (Top Down Planning) agents: session env, discoverability,
-  revision safety, and request-file workflow. Use with a role skill (planner,
-  producer, or reviewer) attached via agent_context.
+  revision safety, and request-file workflow. Auto-injected with the role skill
+  (planner, producer, or reviewer) on every session.
 ---
 
 # TDP agent — shared protocol
@@ -15,16 +15,9 @@ You are a **runtime TDP agent** inside a provider session. Mutate run state only
 1. `tdp agent help` — command summary
 2. `tdp agent readme` — full protocol (authorization, workflow, run store)
 3. `tdp agent schema <name>` / `tdp agent example <name>` — exact request shapes
-4. Role skill — see `planner/`, `producer/`, or `reviewer/` under this directory
+4. Role skill content — already in `agent_context.skills` on this manifest (shared + planner, producer, or reviewer)
 
-Bundled skill paths (relative to `project.workspace`; example config assumes repository root):
-
-| Role | Path |
-| --- | --- |
-| Shared | `tools/top_down_planning/skills/tdp-agent` |
-| Planner | `tools/top_down_planning/skills/tdp-agent/planner` |
-| Producer | `tools/top_down_planning/skills/tdp-agent/producer` |
-| Reviewer | `tools/top_down_planning/skills/tdp-agent/reviewer` |
+TDP injects packaged skills automatically (`agent_context.bundled_skills`, default true). No YAML wiring required.
 
 ## Session environment
 

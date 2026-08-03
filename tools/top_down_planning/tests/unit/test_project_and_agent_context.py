@@ -23,6 +23,7 @@ from top_down_planning.config import (
     resolve_workspace,
 )
 from top_down_planning.config import ConfigError
+from top_down_planning.config.bundled_skills import BUNDLED_SKILL_BINDING_PREFIX
 from top_down_planning.orchestrator import (
     build_focused_review_package,
     build_planner_context_manifest,
@@ -33,7 +34,7 @@ from top_down_planning.orchestrator import (
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, write_config, make_review_loop
+from tests.helpers import create_run_kwargs, minimal_resolved_config, write_config, make_review_loop
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -233,6 +234,7 @@ run:
     - README.md
   output_goal: Goal.
 agent_context:
+  bundled_skills: false
   default:
     model: default-model
     resources:
@@ -797,6 +799,18 @@ agent_context:
     guide.unlink()
     after = compute_context_spec_digest_from_config(config, workspace=workspace)
     assert before == after
+
+
+def test_context_spec_declares_builtin_skill_keys(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config = minimal_resolved_config()
+    spec = build_context_spec_payload(config, workspace=workspace)
+    planner_skills = spec["roles"]["planner"]["skills"]
+    assert planner_skills == [
+        f"{BUNDLED_SKILL_BINDING_PREFIX}SKILL.md",
+        f"{BUNDLED_SKILL_BINDING_PREFIX}planner/SKILL.md",
+    ]
 
 
 def test_context_spec_and_snapshot_payloads_cover_supporting_context_only(

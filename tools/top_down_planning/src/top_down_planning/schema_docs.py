@@ -860,8 +860,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "object",
                 "description": (
                     "Per-role model, advisory guidance, supporting resources, and "
-                    "skills. Guidance, resources, and skills are additive with "
-                    "agent_context.default; duplicate resource paths between default "
+                    "skills. Packaged TDP agent skills are auto-injected for every "
+                    "role unless agent_context.bundled_skills is false. Guidance, "
+                    "resources, and configured skills are additive "
+                    "with agent_context.default; duplicate resource paths between default "
                     "and a role are deduped at resolve time. Guidance is advisory only and does not "
                     "change acceptance, enforcement, or lifecycle transitions. "
                     "Run contracts (run.input_refs, run.output_goal / "
@@ -869,6 +871,16 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "be repeated under resources."
                 ),
                 "properties": {
+                    "bundled_skills": {
+                        "type": "boolean",
+                        "description": (
+                            "When true (default), inject packaged TDP agent skills "
+                            "(shared + role-specific) into every session without "
+                            "listing them under agent_context.*.skills."
+                        ),
+                        "default": True,
+                    },
+                    **{
                     role: {
                         "type": "object",
                         "properties": {
@@ -929,6 +941,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         "additionalProperties": False,
                     }
                     for role in ("default", "planner", "producer", "reviewer")
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -2313,11 +2326,7 @@ AGENT_HELP_TEXT = """Top Down Planning agent CLI (tdp agent)
 Start here:
   1. tdp agent readme
   2. tdp agent schema <name>  /  tdp agent example <name>
-  3. Role skills (under project.workspace):
-       shared   tools/top_down_planning/skills/tdp-agent
-       planner  tools/top_down_planning/skills/tdp-agent/planner
-       producer tools/top_down_planning/skills/tdp-agent/producer
-       reviewer tools/top_down_planning/skills/tdp-agent/reviewer
+  3. Packaged role skills are auto-injected into agent_context.skills (agent_context.bundled_skills, default true)
      Agent hub: tools/top_down_planning/docs/README.md
 
 Discover contracts without reading source:
@@ -2440,10 +2449,11 @@ include:
   provider prompt (for example: mutate run state only through `tdp agent` commands;
   do not use host planning modes or planning-only artifacts)
 - `tool_instructions` — concrete `tdp agent` command templates for the active role
-- `agent_context` — supporting `guidance`, `resources`, and optional `skills`
-  (inherit `agent_context.default`; duplicate resource paths between default and
-  role are deduped; do not repeat `run.input_refs` or the output-goal file under
-  `resources`). Guidance is advisory and not merged into
+- `agent_context` — supporting `guidance`, `resources`, and `skills`
+  (packaged TDP agent skills are auto-injected when agent_context.bundled_skills
+  is true; configured skills inherit `agent_context.default`; duplicate resource
+  paths between default and role are deduped; do not repeat `run.input_refs` or
+  the output-goal file under `resources`). Guidance is advisory and not merged into
   `protocol_instructions`.
 - Producer packages include `approved_plan` (plan metadata plus canonical item
   contracts from `build_item_production_contract`)
@@ -2562,8 +2572,8 @@ on `add_item.item.depends_on`:
 - Each `temp_id` must be **unique** within one `plan apply` batch.
 
 Example: `tdp agent example expand-branch` (UI item depends on API via inline
-`depends_on`). Bundled planner skill:
-`tools/top_down_planning/skills/tdp-agent/planner`.
+`depends_on`). Packaged planner skill content is in `agent_context.skills` on the
+session manifest.
 
 To change dependencies on **existing** items, use `add_dependency`,
 `remove_dependency`, or `replace_dependencies`. `update_item` patch cannot change
@@ -2641,7 +2651,8 @@ commands typically need only `--run <run-id>`. Run ids use
 `parent_id`). Depth is required on load and recomputed on save.
 
 `digests.context_spec` binds agent-context **declarations** at run creation: role models,
-configured guidance entries, resource path selection, skill paths, and the resolved
+configured guidance entries, resource path selection, skill declarations (workspace-relative
+paths or `tdp:builtin:` keys for packaged skills), and the resolved
 `context_snapshot` exclusion policy (defaults, ordered patterns, built-in policy version).
 `digests.context_snapshot` binds materialized resource bytes, skill contents, and guidance
 text/file digests via `context_snapshot_binding` (compact relative-path → bare SHA-256 hex
@@ -2764,7 +2775,6 @@ use `production snapshot` or `production check` for plan validation.
 ## Further reading
 
 Agent hub: tools/top_down_planning/docs/README.md
-Bundled skills: tools/top_down_planning/skills/tdp-agent/
 Package README: tools/top_down_planning/README.md
 """
 

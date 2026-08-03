@@ -58,8 +58,8 @@ def build_producer_protocol_instructions() -> list[str]:
         ),
         (
             "Discover request contracts with tdp agent readme, tdp agent "
-            "schema, and tdp agent example. Role skill: "
-            "tools/top_down_planning/skills/tdp-agent/producer."
+            "schema, and tdp agent example. Packaged producer skills are "
+            "already in agent_context.skills on this manifest."
         ),
         (
             "Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR. "

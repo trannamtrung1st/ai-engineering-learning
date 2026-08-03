@@ -40,7 +40,7 @@ def test_agent_help_points_to_finding_categories() -> None:
 def test_agent_help_includes_start_here_and_role_skills() -> None:
     help_text = schema_docs.AGENT_HELP_TEXT.lower()
     assert "start here" in help_text
-    assert "tools/top_down_planning/skills/tdp-agent/planner" in help_text
+    assert "auto-injected" in help_text or "bundled_skills" in help_text
     assert "tools/top_down_planning/docs/readme.md" in help_text
 
 
@@ -49,7 +49,7 @@ def test_agent_readme_documents_plan_apply_dependencies() -> None:
     assert "## plan apply: dependencies" in readme
     assert "expand-branch" in readme
     assert "unique" in readme and "temp_id" in readme
-    assert "tools/top_down_planning/skills/tdp-agent" in readme
+    assert "agent_context.skills" in readme
 
 
 def test_expand_branch_example_uses_inline_depends_on() -> None:

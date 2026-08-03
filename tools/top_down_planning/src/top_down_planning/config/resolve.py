@@ -18,7 +18,7 @@ from core_tools.config import (
 from core_tools.config.errors import ConfigError
 
 from top_down_planning.config.defaults import (
-    ALLOWED_AGENT_CONTEXT_ROLES,
+    ALLOWED_AGENT_CONTEXT_KEYS,
     ALLOWED_OVERRIDE_PATHS,
     DEFAULT_CONFIG,
 )
@@ -42,11 +42,17 @@ def _validate_agent_context_roles(config: dict[str, Any]) -> None:
             path="agent_context",
         )
     for role_name in agent_context:
-        if role_name not in ALLOWED_AGENT_CONTEXT_ROLES:
+        if role_name not in ALLOWED_AGENT_CONTEXT_KEYS:
             raise ConfigError(
                 f"unknown agent_context role: {role_name!r}",
                 path=f"agent_context.{role_name}",
             )
+    bundled_skills = agent_context.get("bundled_skills")
+    if bundled_skills is not None and not isinstance(bundled_skills, bool):
+        raise ConfigError(
+            "agent_context.bundled_skills must be a boolean",
+            path="agent_context.bundled_skills",
+        )
 
 
 def _validate_context_snapshot(config: dict[str, Any]) -> None:

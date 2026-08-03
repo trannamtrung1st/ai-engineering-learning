@@ -2,7 +2,7 @@
 
 Planning and production orchestration: receive an input and output goal, build a top-down plan, review and validate it, produce output in coherent batches, and resolve a final quality outcome.
 
-**Runtime agents:** start with `tdp agent readme`, then role skills under `tools/top_down_planning/skills/tdp-agent/` (see [docs/README.md](docs/README.md)). Schemas and examples: `tdp agent schema` / `tdp agent example`.
+**Runtime agents:** start with `tdp agent readme`. Packaged role skills are auto-injected (see [docs/README.md](docs/README.md)). Schemas and examples: `tdp agent schema` / `tdp agent example`.
 
 Agent protocol: `tdp agent readme` · schemas and examples: `tdp agent schema` / `tdp agent example`
 
@@ -238,14 +238,9 @@ agent_context:
     model: reasoning-model
     resources:
       - docs/planning-guidelines.md
-    skills:
-      - tools/top_down_planning/skills/tdp-agent
-      - tools/top_down_planning/skills/tdp-agent/planner
 
   producer:
     model: coding-model
-    skills:
-      - tools/top_down_planning/skills/tdp-agent/producer
     guidance:
       - text: >
           Work in coherent batches. Consider focused review and useful
@@ -253,15 +248,15 @@ agent_context:
 
   reviewer:
     model: review-model
-    skills:
-      - tools/top_down_planning/skills/tdp-agent/reviewer
 ```
 
-Role `guidance`, `resources`, and `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. Effective context is attached to fresh planner, producer, and reviewer sessions.
+Packaged TDP agent skills (`bundled_skills/tdp-agent/`) are auto-injected for every role when `agent_context.bundled_skills` is true (the default). Add extra project skills under `agent_context.*.skills` as needed.
+
+Role `guidance`, `resources`, and configured `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. Effective context is attached to fresh planner, producer, and reviewer sessions.
 
 Run contracts bind via `digests.input` and `digests.output_goal` at run creation. Supporting agent context uses a **spec vs snapshot** split:
 
-- `digests.context_spec` — stable declarations (role models, guidance entries, resource path selection, skill paths) plus the resolved snapshot exclusion policy (`context_snapshot.excludes` and built-in policy version).
+- `digests.context_spec` — stable declarations (role models, guidance entries, resource path selection, skill declarations including packaged `tdp:builtin:` keys) plus the resolved snapshot exclusion policy (`context_snapshot.excludes` and built-in policy version).
 - `digests.context_snapshot` — materialized resource file bytes, skill contents, and guidance text/file digests, persisted in `context_snapshot_binding` on the run record.
 
 Resume always validates `context_spec`. `context_snapshot` is skipped only during the `production` phase so in-flight authorized mutations are allowed. Each `production apply` validates cumulative snapshot drift against the candidate batch (including proposed outputs) and rejects incomplete evidence before persistence. Production completion re-validates the same invariant, rebases `context_snapshot` when authorized, emits `context_snapshot_rebased` after the run record is persisted, then enters `whole_output_review`. Unauthorized workspace changes block apply retry or completion and later phase entry.

@@ -17,6 +17,11 @@ from core_tools.config.errors import ConfigError
 from core_tools.config.paths import assert_path_within_workspace
 from core_tools.persistence.digests import digest_file, digest_text
 
+from top_down_planning.config.bundled_skills import (
+    bundled_skill_binding_key,
+    bundled_skills_enabled,
+    load_bundled_skills_for_role,
+)
 from top_down_planning.config.resolve import resolve_output_goal_text
 from top_down_planning.config.snapshot_policy import _has_glob_metacharacters
 
@@ -249,6 +254,27 @@ def _resource_selection_for_role(
     )
 
 
+def _dedupe_skill_entries(entries: list[SkillEntry]) -> list[SkillEntry]:
+    seen: set[Path] = set()
+    deduped: list[SkillEntry] = []
+    for entry in entries:
+        resolved = entry.path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        deduped.append(entry)
+    return deduped
+
+
+def _skill_digest_key(entry: SkillEntry, *, workspace: Path) -> str:
+    from top_down_planning.config.snapshot_policy import canonicalize_workspace_path
+
+    bundled_key = bundled_skill_binding_key(entry.path)
+    if bundled_key is not None:
+        return bundled_key
+    return canonicalize_workspace_path(entry.path, workspace=workspace)
+
+
 def _skills_for_role(
     config: dict[str, Any],
     role: AgentRole,
@@ -256,16 +282,22 @@ def _skills_for_role(
     workspace: Path,
 ) -> tuple[SkillEntry, ...]:
     default_section, role_section = _agent_context_sections(config, role)
-    skill_entries: list[Any] = []
-    skill_entries.extend(default_section.get("skills") or [])
-    skill_entries.extend(role_section.get("skills") or [])
-    return tuple(
-        load_skills(
-            skill_entries,
-            workspace=workspace,
-            field="skills",
+    loaded: list[SkillEntry] = []
+    if bundled_skills_enabled(config):
+        loaded.extend(load_bundled_skills_for_role(role))
+
+    configured_entries: list[Any] = []
+    configured_entries.extend(default_section.get("skills") or [])
+    configured_entries.extend(role_section.get("skills") or [])
+    if configured_entries:
+        loaded.extend(
+            load_skills(
+                configured_entries,
+                workspace=workspace,
+                field="skills",
+            )
         )
-    )
+    return tuple(_dedupe_skill_entries(loaded))
 
 
 def _validate_guidance_entry(
@@ -497,6 +529,32 @@ def _guidance_snapshot_entry(
     }
 
 
+def _skill_declarations_for_role(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    workspace: Path,
+) -> list[str]:
+    """Stable skill declarations for context_spec (configured paths or builtin keys)."""
+
+    del workspace
+    declarations: list[str] = []
+    if bundled_skills_enabled(config):
+        for entry in load_bundled_skills_for_role(role):
+            binding_key = bundled_skill_binding_key(entry.path)
+            if binding_key is not None:
+                declarations.append(binding_key)
+
+    default_section, role_section = _agent_context_sections(config, role)
+    for configured in list(default_section.get("skills") or []) + list(
+        role_section.get("skills") or []
+    ):
+        value = str(configured).strip()
+        if value and value not in declarations:
+            declarations.append(value)
+    return declarations
+
+
 def _role_context_spec_from_config(
     config: dict[str, Any],
     role: AgentRole,
@@ -505,12 +563,11 @@ def _role_context_spec_from_config(
 ) -> dict[str, Any]:
     """Stable agent-context declaration: models, guidance, resource selection, skill paths."""
 
-    skills = _skills_for_role(config, role, workspace=workspace)
     return {
         "model": resolve_provider_model(config, role),
         "guidance": _guidance_declarations_for_role(config, role, workspace=workspace),
         "resources": list(_resource_selection_for_role(config, role, workspace=workspace)),
-        "skills": [str(entry.path) for entry in skills],
+        "skills": _skill_declarations_for_role(config, role, workspace=workspace),
     }
 
 
@@ -602,14 +659,13 @@ def _all_skill_digest_entries(
 ) -> dict[str, str]:
     from top_down_planning.config.snapshot_policy import (
         CanonicalPathCollisionError,
-        canonicalize_workspace_path,
     )
 
     digests: dict[str, str] = {}
     paths_by_key: dict[str, Path] = {}
     for role in ("planner", "producer", "reviewer"):
         for entry in _skills_for_role(config, role, workspace=workspace):
-            key = canonicalize_workspace_path(entry.path, workspace=workspace)
+            key = _skill_digest_key(entry, workspace=workspace)
             prior = paths_by_key.get(key)
             if prior is not None and prior.resolve() != entry.path.resolve():
                 raise CanonicalPathCollisionError(key, prior, entry.path)

@@ -2,7 +2,8 @@
 name: tdp-agent-producer
 description: >-
   TDP producer role: record production batches, completion claims, blockers, and
-  amendment requests via production commands. Use with the shared tdp-agent skill.
+  amendment requests via production commands. Auto-injected with the shared
+  tdp-agent skill.
 ---
 
 # TDP producer

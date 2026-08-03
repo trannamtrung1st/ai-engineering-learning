@@ -433,7 +433,7 @@ def test_example_config_and_stub_instructions_are_present(
     example_text = example_config.read_text(encoding="utf-8")
     assert "provider:" in example_text
     assert "name: cursor" in example_text
-    assert "tools/top_down_planning/skills/tdp-agent" in example_text
+    assert "bundled_skills" in example_text or "auto-injected" in example_text
 
     readme_text = readme.read_text(encoding="utf-8")
     assert "tests default to `stub`" in readme_text

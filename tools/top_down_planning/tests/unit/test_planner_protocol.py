@@ -50,6 +50,11 @@ def test_planner_protocol_documents_inline_depends_on() -> None:
     assert "expand-branch" in protocol
 
 
+def test_planner_protocol_points_to_injected_skills() -> None:
+    protocol = " ".join(build_planner_protocol_instructions()).lower()
+    assert "agent_context.skills" in protocol
+
+
 def test_planner_tool_instructions_include_discover_and_depends_on() -> None:
     instructions = build_planner_tool_instructions("run-test")
     assert "discover" in instructions

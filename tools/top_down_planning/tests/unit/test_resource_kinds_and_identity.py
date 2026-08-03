@@ -156,6 +156,7 @@ def test_skills_not_filtered_by_excludes(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
+  bundled_skills: false
   producer:
     skills:
       - skills/demo

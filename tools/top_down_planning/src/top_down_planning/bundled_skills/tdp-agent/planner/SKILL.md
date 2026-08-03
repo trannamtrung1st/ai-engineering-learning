@@ -2,7 +2,7 @@
 name: tdp-agent-planner
 description: >-
   TDP planner role: expand the plan tree via plan snapshot/apply/check, optional
-  focused review requests, and candidate_plan_ready. Use with the shared
+  focused review requests, and candidate_plan_ready. Auto-injected with the shared
   tdp-agent skill.
 ---
 

@@ -4,16 +4,12 @@ Navigation for **runtime TDP agents** (planner, producer, reviewer) inside provi
 
 ## Start here
 
-1. `tdp agent help` — command cheat sheet with role skill paths
+1. `tdp agent help` — command cheat sheet
 2. `tdp agent readme` — full agent protocol (authorization, workflow, run store)
-3. Role skill (loaded via `agent_context.*.skills` when configured):
-   - Shared: `tools/top_down_planning/skills/tdp-agent`
-   - Planner: `tools/top_down_planning/skills/tdp-agent/planner`
-   - Producer: `tools/top_down_planning/skills/tdp-agent/producer`
-   - Reviewer: `tools/top_down_planning/skills/tdp-agent/reviewer`
+3. Packaged role skills — auto-injected into `agent_context.skills` on every session (`agent_context.bundled_skills`, default true): shared protocol plus planner, producer, or reviewer guide
 4. `tdp agent schema <name>` / `tdp agent example <name>` — exact request shapes
 
-Example config with skills wired: [examples/top-down-planning.yaml](../examples/top-down-planning.yaml). Launch `tdp` from the **repository root** when `project.workspace: .` and skill paths use `tools/top_down_planning/skills/...`.
+Example config: [examples/top-down-planning.yaml](../examples/top-down-planning.yaml). Set `agent_context.bundled_skills: false` only when you want to disable packaged skills. Add extra project skills under `agent_context.*.skills`.
 
 ## By role
 

@@ -3,7 +3,7 @@ name: tdp-agent-reviewer
 description: >-
   TDP reviewer role: submit review findings and decisions via review respond and
   record-actions. Stage-specific examples for whole-plan, whole-output, and
-  focused reviews. Use with the shared tdp-agent skill.
+  focused reviews. Auto-injected with the shared tdp-agent skill.
 ---
 
 # TDP reviewer

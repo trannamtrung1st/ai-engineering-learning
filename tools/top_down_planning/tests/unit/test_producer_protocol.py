@@ -1,14 +1,20 @@
-"""Producer protocol guidance for production item contracts."""
+"""Producer session tool instruction coverage."""
 
 from __future__ import annotations
 
 from top_down_planning.orchestrator.producer_session import (
     build_producer_protocol_instructions,
+    build_producer_tool_instructions,
 )
 
 
-def test_producer_protocol_requires_effective_scope_boundaries() -> None:
+def test_producer_protocol_points_to_injected_skills() -> None:
     protocol = " ".join(build_producer_protocol_instructions()).lower()
-    assert "effective_scope" in protocol
-    assert "effective_boundaries" in protocol
-    assert "item-owned slice" in protocol
+    assert "agent_context.skills" in protocol
+
+
+def test_producer_tool_instructions_include_discover() -> None:
+    instructions = build_producer_tool_instructions("run-test")
+    assert "discover" in instructions
+    assert "batch-result" in instructions["discover"]
+    assert "production-apply" in instructions["discover"]
