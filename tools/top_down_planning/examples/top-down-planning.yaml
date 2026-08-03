@@ -66,8 +66,8 @@ agent_context:
 
 planning:
   stop_hint: "Stop when each item has one coherent outcome, clear boundaries, material dependencies, and acceptance expectations."
-  max_depth: 4
-  max_expansion_per_item: 7
+  max_depth: 2
+  max_expansion_per_item: 12
 
 review:
   focused_plan:
