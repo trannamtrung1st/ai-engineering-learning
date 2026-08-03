@@ -359,10 +359,21 @@ class CursorProvider:
 
     def terminate_session(self, session_id: str) -> None:
         canonical_id = self.canonical_session_id(session_id)
+        self.abort_turn(canonical_id)
         self._sessions.pop(canonical_id, None)
         for alias, target in list(self._session_aliases.items()):
             if target == canonical_id or alias == canonical_id:
                 self._session_aliases.pop(alias, None)
+
+    def abort_turn(self, session_id: str) -> None:
+        """End the current in-flight turn without dropping the durable session."""
+
+        canonical_id = self.canonical_session_id(session_id)
+        session = self._sessions.get(canonical_id)
+        if session is None:
+            return
+        self._abort_session_turn(session, error=None)
+        self._terminate_tracked_turn_procs_for_session(canonical_id)
 
     def terminate_all_sessions(self) -> list[dict[str, Any]]:
         """Stop in-flight turns and drop tracked provider sessions."""
@@ -386,13 +397,19 @@ class CursorProvider:
         self._shutting_down = False
         return terminated
 
-    def _terminate_tracked_turn_procs(self) -> list[dict[str, Any]]:
+    def _terminate_tracked_turn_procs(
+        self,
+        *,
+        session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         terminated: list[dict[str, Any]] = []
         with self._turn_proc_lock:
             tracked = dict(self._tracked_turn_procs)
 
         seen_pids: set[int] = set()
-        for pid, (session_id, role) in tracked.items():
+        for pid, (tracked_session_id, role) in tracked.items():
+            if session_id is not None and tracked_session_id != session_id:
+                continue
             if pid in seen_pids:
                 continue
             seen_pids.add(pid)
@@ -402,23 +419,40 @@ class CursorProvider:
                     {
                         "pid": pid,
                         "role": role,
-                        "session_id": session_id,
+                        "session_id": tracked_session_id,
                         "reason": "terminated",
                     }
                 )
         return terminated
 
+    def _terminate_tracked_turn_procs_for_session(
+        self,
+        session_id: str,
+    ) -> list[dict[str, Any]]:
+        return self._terminate_tracked_turn_procs(session_id=session_id)
+
+    def _abort_session_turn(
+        self,
+        session: _CursorSession,
+        *,
+        error: ProviderTurnError | None,
+    ) -> None:
+        with session.condition:
+            session.turn_running = False
+            session.turn_complete = True
+            if error is not None:
+                session.turn_error = error
+            session.condition.notify_all()
+
     def _abort_inflight_sessions(self) -> None:
         for session_id, session in list(self._sessions.items()):
-            with session.condition:
-                session.turn_running = False
-                session.turn_complete = True
-                if session.turn_error is None:
-                    session.turn_error = ProviderTurnError(
-                        "provider session terminated",
-                        session_id=session_id,
-                    )
-                session.condition.notify_all()
+            self._abort_session_turn(
+                session,
+                error=ProviderTurnError(
+                    "provider session terminated",
+                    session_id=session_id,
+                ),
+            )
 
     def set_capability_token(self, token: str | None) -> None:
         if token:

@@ -2444,8 +2444,8 @@ AGENT_README_PREFIX = """# Top Down Planning — agent protocol
 shell commands; those commands persist mutations to the run store. The orchestrator
 observes store changes after each provider turn, runs pending review loops, and
 advances phases when agents emit explicit completion signals (`candidate_plan_ready`,
-`batch_complete`, `amendment_revision_ready`, etc.) as the final assistant line or
-`done.signal` metadata.
+`amendment_revision_ready`, etc.) as the final assistant line or `done.signal`
+metadata. Producer batch turns close when `production apply` persists a batch.
 
 ## Session roles and authorization
 

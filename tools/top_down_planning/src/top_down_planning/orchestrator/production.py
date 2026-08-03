@@ -51,7 +51,7 @@ from top_down_planning.orchestrator.run_transitions import (
 )
 from top_down_planning.orchestrator.provider_turns import (
     build_producer_turn_recovery,
-    consume_provider_turn_with_session_recovery,
+    consume_producer_provider_turn_with_session_recovery,
     run_pending_focused_review,
 )
 from top_down_planning.workspace import run_workspace
@@ -67,7 +67,6 @@ from top_down_planning.persistence.session_bindings import primary_provider_sess
 from core_tools.provider import Provider
 
 _PRODUCTION_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["production"]
-_COMPLETION_SIGNALS = frozenset({PRODUCER_BATCH_COMPLETE_SIGNAL})
 
 
 @dataclass(frozen=True)
@@ -220,12 +219,11 @@ class ProductionPhaseOrchestrator:
             )
 
             try:
-                turn_outcome = consume_provider_turn_with_session_recovery(
+                turn_outcome = consume_producer_provider_turn_with_session_recovery(
                     self._store,
                     self._run_id,
                     self._provider,
                     session_id,
-                    allowed_signals=_COMPLETION_SIGNALS,
                     recovery=build_producer_turn_recovery(
                         self._store,
                         self._run_id,
@@ -279,6 +277,9 @@ class ProductionPhaseOrchestrator:
             if turn_signal == PRODUCER_BATCH_COMPLETE_SIGNAL:
                 batch_agent_turns = 0
                 _persist_batch_agent_turns(self._store, self._run_id, 0)
+                continue
+
+            if self._has_completion_claim():
                 continue
 
             if batch_agent_turns > loop_limits["max_agent_turns_per_batch"]:

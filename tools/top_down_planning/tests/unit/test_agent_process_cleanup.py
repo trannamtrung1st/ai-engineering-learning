@@ -20,11 +20,13 @@ from top_down_planning.orchestrator.agent_process_cleanup import (
     scan_orphan_agent_pids,
     workspace_has_orphan_agents,
 )
+from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.engine import RunEngine
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
 from top_down_planning.persistence import FileRunStore
+from tests.helpers import create_run_kwargs, minimal_resolved_config
 from tests.unit.test_operational_failures import _create_run
 
 
@@ -179,6 +181,64 @@ def test_engine_keyboard_interrupt_persists_terminated_pids_and_audit(tmp_path: 
     events = store.load_events("run-20260101T001701-001701")
     assert any(event.get("type") == "agent_terminated" for event in events)
     assert any(event.get("type") == "planner_session_ended" for event in events)
+
+
+def test_keyboard_interrupt_after_production_phase_entry_records_production_stop_phase(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION
+    from top_down_planning.orchestrator.production import ProductionPhaseOrchestrator
+    from tests.helpers import whole_plan_approval_record
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T001801-001801"
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root},
+    )
+    store.create_run(
+        run_id,
+        plan=plan,
+        **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
+        phase=PLAN_VALIDATED,
+    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+
+    provider = StubProvider()
+
+    def enter_production_and_interrupt(self: ProductionPhaseOrchestrator) -> None:
+        run = store.load_run(run_id)
+        expected_revision = int(run["revision"])
+        updated = dict(run)
+        updated["revision"] = expected_revision + 1
+        updated["phase"] = PRODUCTION
+        store.save_run(run_id, updated, expected_revision)
+        raise KeyboardInterrupt
+
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: provider,
+        observability=ObservabilityContext(run_id=run_id),
+    )
+
+    with patch.object(ProductionPhaseOrchestrator, "run", enter_production_and_interrupt):
+        result = engine.continue_run(run_id, single_step=True)
+
+    assert result.cancelled is True
+    assert result.phase == PRODUCTION
+    run = store.load_run(run_id)
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "user_cancelled"
+    assert run["stop"]["phase"] == PRODUCTION
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")

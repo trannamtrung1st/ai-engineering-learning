@@ -53,8 +53,9 @@ Emit as the **final assistant line** or `done.signal` metadata when work is read
 | Role | Signal |
 | --- | --- |
 | Planner | `candidate_plan_ready` |
-| Producer (batch) | `batch_complete` |
 | Producer (amendment) | `amendment_revision_ready` |
+
+Producer batch turns close when `production apply` persists a batch; no completion token is required.
 
 ## Request files
 

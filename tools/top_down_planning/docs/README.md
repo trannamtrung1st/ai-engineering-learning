@@ -34,9 +34,10 @@ Schema: `tdp agent schema plan-transaction`
 | Completion | `tdp agent production submit-completion --run <id> --request ...` | `completion-claim` |
 | Evidence revision | `production apply` with `evidence_revision: true` | `evidence-revision` |
 | Amendment | `tdp agent production request-amendment --run <id> --request ...` | `amendment-request` |
-| Batch done | Emit `batch_complete` | — |
 
 Schema: `tdp agent schema production-apply`
+
+Producer turns close when `production apply` persists a batch.
 
 ### Reviewer
 

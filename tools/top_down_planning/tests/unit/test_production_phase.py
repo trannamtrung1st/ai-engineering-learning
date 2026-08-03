@@ -186,6 +186,116 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
     assert_primary_session_id(run, "producer", result.session_id)
 
 
+def test_producer_turn_ends_when_batch_recorded_without_batch_complete_signal(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    provider = StubProvider()
+
+    run_id = "run-20260101T000201-000201"
+    provider.script_turn(done_events(text="producer session start"))
+    provider.script_turn(
+        [{"type": "assistant", "text": "recorded first batch"}],
+        mutate_store=apply_production(
+            store,
+            run_id,
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "completed"}},
+            ),
+            handler="apply",
+        ),
+    )
+    provider.script_turn(
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=lambda: (
+            apply_production(
+                store,
+                run_id,
+                _batch_apply_request(
+                    plan_items=["item-second"],
+                    dispositions={"item-second": {"disposition": "completed"}},
+                    production_revision=1,
+                ),
+                handler="apply",
+            )(),
+            apply_production(
+                store,
+                run_id,
+                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                handler="submit_completion",
+            )(),
+        ),
+    )
+
+    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.phase == WHOLE_OUTPUT_REVIEW
+    assert result.batch_count == 2
+
+
+def test_producer_turn_aborts_inflight_stream_when_batch_recorded(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    aborted_sessions: list[str] = []
+
+    class _AbortTrackingProvider(StubProvider):
+        def abort_turn(self, session_id: str) -> None:
+            aborted_sessions.append(session_id)
+            super().abort_turn(session_id)
+
+    provider = _AbortTrackingProvider()
+    run_id = "run-20260101T000201-000201"
+    provider.script_turn(done_events(text="producer session start"))
+    provider.script_turn(
+        [
+            {"type": "assistant", "text": "recorded first batch"},
+            {"type": "assistant", "text": "still streaming without done"},
+        ],
+        mutate_store=apply_production(
+            store,
+            run_id,
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "completed"}},
+            ),
+            handler="apply",
+        ),
+    )
+    provider.script_turn(
+        done_events(text="second batch turn"),
+        mutate_store=lambda: (
+            apply_production(
+                store,
+                run_id,
+                _batch_apply_request(
+                    plan_items=["item-second"],
+                    dispositions={"item-second": {"disposition": "completed"}},
+                    production_revision=1,
+                ),
+                handler="apply",
+            )(),
+            apply_production(
+                store,
+                run_id,
+                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                handler="submit_completion",
+            )(),
+        ),
+    )
+
+    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.phase == WHOLE_OUTPUT_REVIEW
+    assert result.batch_count == 2
+    assert aborted_sessions
+
+
 def test_ready_set_blocks_item_with_unmet_dependency(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)

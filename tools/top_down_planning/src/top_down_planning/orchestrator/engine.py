@@ -379,20 +379,23 @@ class RunEngine:
                     audit_cancel=cancelled,
                 )
                 if cancelled:
+                    run = self._store.load_run(run_id)
+                    cancel_phase = str(run.get("phase") or phase)
                     finalize_user_cancel(
                         self._store,
                         run_id,
-                        phase=phase,
+                        phase=cancel_phase,
                         provider_terminated_pids=terminated_pids,
                         exclude_pids=frozenset({os.getpid()}),
                     )
 
             if cancelled:
                 run = self._store.load_run(run_id)
+                cancel_phase = str(run.get("phase") or phase)
                 return RunContinuationResult(
                     ok=False,
                     run_id=run_id,
-                    phase=phase,
+                    phase=cancel_phase,
                     status=str(run.get("status") or ""),
                     outcome=run.get("outcome"),
                     steps=steps,

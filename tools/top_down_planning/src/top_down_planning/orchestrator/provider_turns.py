@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +30,7 @@ from top_down_planning.orchestrator.recovery_manifest import (
     build_producer_recovery_manifest,
     build_reviewer_recovery_manifest,
 )
+from top_down_planning.orchestrator.producer_session import PRODUCER_BATCH_COMPLETE_SIGNAL
 from top_down_planning.orchestrator.reviewer_session import reviewer_loop_provider_session_id
 from top_down_planning.orchestrator.run_transitions import generate_phase_action_id
 from top_down_planning.orchestrator.session_lineage import emit_session_replacement_failed
@@ -190,11 +192,18 @@ def _finalize_phase_action_turn(
     return finalize_successful_phase_action_turn(store, run_id, phase_action_id)
 
 
+def _abort_provider_turn(provider: Provider, session_id: str) -> None:
+    """Stop an in-flight provider turn when orchestration closes the turn early."""
+
+    provider.abort_turn(session_id)
+
+
 def _drain_provider_turn(
     provider: Provider,
     session_id: str,
     *,
     allowed_signals: frozenset[str],
+    on_boundary: Callable[[], str | None] | None = None,
 ) -> str | None:
     accumulator = TurnTextAccumulator()
     for event in provider.stream_events(session_id):
@@ -208,7 +217,19 @@ def _drain_provider_turn(
             if event.get("is_error"):
                 text = event.get("text") or "provider turn failed"
                 raise ProviderRunError(str(text))
-    return accumulator.resolve_signal(allowed_signals)
+            break
+        if on_boundary is not None:
+            implicit_signal = on_boundary()
+            if implicit_signal is not None:
+                _abort_provider_turn(provider, session_id)
+                return implicit_signal
+
+    resolved = accumulator.resolve_signal(allowed_signals)
+    if resolved is not None:
+        return resolved
+    if on_boundary is not None:
+        return on_boundary()
+    return None
 
 
 def consume_provider_turn(
@@ -249,6 +270,29 @@ def consume_provider_turn_with_session_recovery(
 ) -> ProviderTurnOutcome:
     """Resume an existing session, replacing it once when the provider reports not-found."""
 
+    return _consume_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        session_id,
+        allowed_signals=allowed_signals,
+        recovery=recovery,
+        on_boundary=None,
+    )
+
+
+def _consume_provider_turn_with_session_recovery(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    session_id: str,
+    *,
+    allowed_signals: frozenset[str],
+    recovery: PrimarySessionRecoverySpec | ReviewerSessionRecoverySpec,
+    on_boundary: Callable[[], str | None] | None,
+) -> ProviderTurnOutcome:
+    """Internal session-recovery turn drain with optional store-driven boundary hooks."""
+
     ensure_phase_action_id(store, run_id)
     run = store.load_run(run_id)
     phase_action_id = str(run.get("phase_action_id") or generate_phase_action_id())
@@ -259,6 +303,7 @@ def consume_provider_turn_with_session_recovery(
             provider,
             session_id,
             allowed_signals=allowed_signals,
+            on_boundary=on_boundary,
         )
         domain_budget_committed = _finalize_phase_action_turn(store, run_id, phase_action_id)
         return ProviderTurnOutcome(
@@ -334,6 +379,7 @@ def consume_provider_turn_with_session_recovery(
                 provider,
                 new_session_id,
                 allowed_signals=allowed_signals,
+                on_boundary=on_boundary,
             )
         except ProviderSessionNotFoundError as exc:
             fail_session_recovery_exhausted(
@@ -469,6 +515,51 @@ def build_producer_turn_recovery(
         model=model,
         build_recovery_manifest=build_manifest,
         workspace=workspace,
+    )
+
+
+def production_batch_count(store: RunStore, run_id: str) -> int:
+    production = store.load_production(run_id)
+    batches = production.get("batches")
+    if not isinstance(batches, list):
+        return 0
+    return len(batches)
+
+
+def build_producer_batch_boundary_observer(
+    store: RunStore,
+    run_id: str,
+) -> Callable[[], str | None]:
+    """Return a hook that signals batch completion when production apply persists a batch."""
+
+    baseline_batches = production_batch_count(store, run_id)
+
+    def observe() -> str | None:
+        if production_batch_count(store, run_id) > baseline_batches:
+            return PRODUCER_BATCH_COMPLETE_SIGNAL
+        return None
+
+    return observe
+
+
+def consume_producer_provider_turn_with_session_recovery(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    session_id: str,
+    *,
+    recovery: PrimarySessionRecoverySpec,
+) -> ProviderTurnOutcome:
+    """Drain a producer turn; close it when a production batch is persisted."""
+
+    return _consume_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        session_id,
+        allowed_signals=frozenset(),
+        recovery=recovery,
+        on_boundary=build_producer_batch_boundary_observer(store, run_id),
     )
 
 

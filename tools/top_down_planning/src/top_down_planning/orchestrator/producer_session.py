@@ -52,9 +52,10 @@ def build_producer_protocol_instructions() -> list[str]:
             "authorized through outputs."
         ),
         (
-            "Emit batch_complete_signal after each recorded batch when more "
-            "work remains. Submit completion with goal_met and "
-            "goal_assessment when the output goal is met."
+            "Record one production batch per provider turn. The orchestrator "
+            "closes the turn when production apply persists a batch. Submit "
+            "completion with goal_met and goal_assessment when the output goal "
+            "is met."
         ),
         (
             "Discover request contracts with tdp agent readme, tdp agent "
@@ -107,7 +108,6 @@ def build_producer_tool_instructions(run_id: str) -> dict[str, str]:
             f"tdp agent review request --run {run_id} "
             "--request $TDP_AGENT_REQUESTS_DIR/review-request-<scope>-a01.json"
         ),
-        "batch_complete_signal": PRODUCER_BATCH_COMPLETE_SIGNAL,
         "discover": (
             "tdp agent readme; tdp agent schema production-apply; "
             "tdp agent example batch-result; tdp agent example completion-claim"

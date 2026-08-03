@@ -477,7 +477,7 @@ def test_producer_manifest_includes_protocol_instructions(tmp_path: Path) -> Non
     assert "approved_plan_revision" not in manifest
     protocol = " ".join(manifest["protocol_instructions"])
     assert "tdp agent production" in protocol
-    assert manifest["tool_instructions"]["batch_complete_signal"] == "batch_complete"
+    assert "one production batch per provider turn" in protocol.lower()
 
 
 def test_reviewer_packages_include_contracts(tmp_path: Path) -> None:
