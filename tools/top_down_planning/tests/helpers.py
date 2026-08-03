@@ -13,7 +13,11 @@ from top_down_planning.domain.approval_digests import (
     PLAN_APPROVAL_DIGEST_KEYS,
 )
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
-from top_down_planning.persistence.capabilities import CAPABILITY_ENV_VAR
+from top_down_planning.persistence.capabilities import (
+    CAPABILITY_TOKEN_FILE_ENV_VAR,
+    clear_capability_token_file,
+    write_capability_token_file,
+)
 
 
 def plan_root_item(
@@ -1176,13 +1180,21 @@ def grant_capability(
     )
 
 
-def set_capability_env(monkeypatch: Any, token: str | None) -> None:
-    """Set or clear TDP_CAPABILITY_TOKEN for CLI and service tests."""
+def set_capability_token_file(
+    monkeypatch: Any,
+    store: Any,
+    run_id: str,
+    token: str | None,
+) -> Path | None:
+    """Write the active capability token file and export its path for CLI tests."""
 
     if token is None:
-        monkeypatch.delenv(CAPABILITY_ENV_VAR, raising=False)
-    else:
-        monkeypatch.setenv(CAPABILITY_ENV_VAR, token)
+        monkeypatch.delenv(CAPABILITY_TOKEN_FILE_ENV_VAR, raising=False)
+        clear_capability_token_file(store, run_id)
+        return None
+    path = write_capability_token_file(store, run_id, token)
+    monkeypatch.setenv(CAPABILITY_TOKEN_FILE_ENV_VAR, str(path))
+    return path
 
 
 def write_agent_request_file(

@@ -19,7 +19,7 @@ from tests.helpers import (
     save_review_payload,
     create_run_kwargs,
     grant_capability,
-    set_capability_env,
+    set_capability_token_file,
     write_agent_request_file,
     whole_plan_approval_record,
 )
@@ -598,8 +598,10 @@ def test_producer_capability_denied_for_apply(tmp_path: Path) -> None:
 def test_cli_plan_commands_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    set_capability_env(
+    set_capability_token_file(
         monkeypatch,
+        store,
+        "run-20260101T000001-000001",
         grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
     )
 
@@ -680,8 +682,10 @@ def test_cli_stale_revision_returns_actionable_error(
 ) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    set_capability_env(
+    set_capability_token_file(
         monkeypatch,
+        store,
+        "run-20260101T000001-000001",
         grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
     )
 
@@ -727,8 +731,10 @@ def test_cli_unknown_dependency_returns_hint(
 ) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
-    set_capability_env(
+    set_capability_token_file(
         monkeypatch,
+        store,
+        "run-20260101T000001-000001",
         grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
     )
 
@@ -892,8 +898,10 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
         ),
         production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
     )
-    set_capability_env(
+    set_capability_token_file(
         monkeypatch,
+        store,
+        "run-20260101T000001-000001",
         grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
     )
 

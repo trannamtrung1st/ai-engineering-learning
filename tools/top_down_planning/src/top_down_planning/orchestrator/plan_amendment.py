@@ -16,6 +16,7 @@ from top_down_planning.orchestrator.capability import (
     adopt_replacement_capability,
     bind_provider_capability,
     issue_session_capability,
+    rebind_primary_session_capability,
     revoke_capabilities_for_phase,
     rotate_session_capability,
 )
@@ -122,7 +123,7 @@ class PlanAmendmentOrchestrator:
                 session_id=planner_session_id,
                 session_kind="primary",
             )
-            bind_provider_capability(self._provider, self._capability_token)
+            bind_provider_capability(self._provider, self._capability_token, store=self._store, run_id=self._run_id)
             revision_cycles = int(amendment.get("revision_cycles") or 0)
             config = self._store.load_resolved_config(self._run_id)
             max_revision_cycles = _amendment_revision_limit(config)
@@ -167,7 +168,7 @@ class PlanAmendmentOrchestrator:
                     session_id=planner_session_id,
                     session_kind="primary",
                 )
-                bind_provider_capability(self._provider, self._capability_token)
+                bind_provider_capability(self._provider, self._capability_token, store=self._store, run_id=self._run_id)
 
             run = self._transition_to_whole_plan_review()
             run = self._activate_amendment_execution()
@@ -342,6 +343,12 @@ class PlanAmendmentOrchestrator:
         self._append_event(
             "plan_amendment_production_resumed",
             approved_plan_revision=plan_revision,
+        )
+        rebind_primary_session_capability(
+            self._store,
+            self._run_id,
+            self._provider,
+            role="producer",
         )
         return self._store.load_run(self._run_id)
 

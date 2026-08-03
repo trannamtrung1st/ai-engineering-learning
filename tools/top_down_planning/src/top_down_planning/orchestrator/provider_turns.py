@@ -483,7 +483,7 @@ def _consume_provider_turn_with_session_recovery(
             session_kind=session_kind,
             loop_id=loop_id_for_cap,
         )
-        bind_provider_capability(provider, capability_token)
+        bind_provider_capability(provider, capability_token, store=store, run_id=run_id)
 
         try:
             signal = _drain_provider_turn(
@@ -738,8 +738,11 @@ def run_pending_focused_review(
     provider: Provider,
     *,
     review_type: str,
-) -> None:
-    """Run a focused review loop when the store shows one is due."""
+) -> bool:
+    """Run a focused review loop when the store shows one is due.
+
+    Returns True when a focused review loop ran to completion.
+    """
 
     from top_down_planning.orchestrator.focused_review import FocusedReviewOrchestrator
 
@@ -749,13 +752,44 @@ def run_pending_focused_review(
         review_type=review_type,
     )
     if loop_id is None:
-        return
+        return False
 
     result = FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
     if not result.ok:
         raise ProviderRunError(
             result.reason or f"{review_type} focused review did not complete successfully"
         )
+    return True
+
+
+def restore_primary_capability_after_focused_review(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    *,
+    review_type: str,
+    role: str,
+    current_token: str | None,
+) -> str | None:
+    """Run a pending focused review and rebind the primary role capability when needed."""
+
+    from top_down_planning.orchestrator.capability import rebind_primary_session_capability
+
+    if not run_pending_focused_review(
+        store,
+        run_id,
+        provider,
+        review_type=review_type,
+    ):
+        return current_token
+
+    rebound = rebind_primary_session_capability(
+        store,
+        run_id,
+        provider,
+        role=role,
+    )
+    return rebound if rebound is not None else current_token
 
 
 def review_decision_from_store(

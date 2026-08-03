@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
-CAPABILITY_ENV_VAR = "TDP_CAPABILITY_TOKEN"
+from core_tools.persistence import atomic_write_text
+
+from top_down_planning.persistence.interface import RunStore
+
+CAPABILITY_TOKEN_FILE_ENV_VAR = "TDP_CAPABILITY_TOKEN_FILE"
 
 MUTATING_OPS = frozenset(
     {
@@ -132,7 +138,7 @@ def new_capability_record(
 
 
 def capability_token_value(token_id: str, raw_secret: str) -> str:
-    """Serialize a capability token for env export or CLI use."""
+    """Serialize a capability token for persistence or CLI authorization."""
 
     return f"{token_id}.{raw_secret}"
 
@@ -146,3 +152,43 @@ def parse_capability_token(value: str) -> tuple[str, str]:
     if not token_id or not secret:
         raise ValueError("capability token must contain id and secret")
     return token_id, secret
+
+
+def capability_token_file_path(store: RunStore, run_id: str) -> Path:
+    """Return the orchestrator-owned path for the active session capability token."""
+
+    return store.capabilities_dir(run_id).parent / "capability" / "current"
+
+
+def read_capability_token_file(path: Path) -> str | None:
+    """Read a serialized capability token from disk when present."""
+
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not text:
+        return None
+    return text
+
+
+def write_capability_token_file(store: RunStore, run_id: str, token: str) -> Path:
+    """Persist the active capability token for agent CLI reads at invocation time."""
+
+    path = capability_token_file_path(store, run_id)
+    atomic_write_text(path, f"{str(token).strip()}\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return path
+
+
+def clear_capability_token_file(store: RunStore, run_id: str) -> None:
+    """Remove the active capability token file when a session ends."""
+
+    path = capability_token_file_path(store, run_id)
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass

@@ -32,7 +32,7 @@ from top_down_planning.orchestrator.planner_session import (
 from top_down_planning.orchestrator.provider_turns import (
     build_planner_turn_recovery,
     consume_provider_turn_with_session_recovery,
-    run_pending_focused_review,
+    restore_primary_capability_after_focused_review,
     sync_planning_items_added,
 )
 from top_down_planning.orchestrator.session_events import (
@@ -130,14 +130,16 @@ class PlanningPhaseOrchestrator:
             session_id=session_id,
             session_kind="primary",
         )
-        bind_provider_capability(self._provider, self._capability_token)
+        bind_provider_capability(self._provider, self._capability_token, store=self._store, run_id=self._run_id)
 
         while True:
-            run_pending_focused_review(
+            self._capability_token = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
                 self._provider,
                 review_type="focused_plan",
+                role="planner",
+                current_token=self._capability_token,
             )
 
             plan_item_ids_before = set(
@@ -181,11 +183,13 @@ class PlanningPhaseOrchestrator:
                     replacement_token=turn_outcome.capability_token,
                     provider=self._provider,
                 )
-            run_pending_focused_review(
+            self._capability_token = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
                 self._provider,
                 review_type="focused_plan",
+                role="planner",
+                current_token=self._capability_token,
             )
             sync_planning_items_added(
                 self._store,
@@ -295,7 +299,7 @@ class PlanningPhaseOrchestrator:
                 session_id=session_id,
                 session_kind="primary",
             )
-            bind_provider_capability(self._provider, self._capability_token)
+            bind_provider_capability(self._provider, self._capability_token, store=self._store, run_id=self._run_id)
 
             resume_primary_session_with_audit(
                 self._append_event,

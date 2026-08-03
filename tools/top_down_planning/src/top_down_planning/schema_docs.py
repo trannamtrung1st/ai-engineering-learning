@@ -2424,7 +2424,7 @@ Run status:
 Run store: agent commands use --runs-dir, $TDP_RUNS_DIR, or ./runs. Run ids use
 run-YYYYMMDDTHHMMSS-<6hex> (UTC creation time plus random suffix). Provider
 subprocesses receive TDP_RUNS_DIR, TDP_RUN_ID, TDP_AGENT_REQUESTS_DIR, and a
-session-scoped TDP_CAPABILITY_TOKEN before turns that may call mutating commands.
+session-scoped TDP_CAPABILITY_TOKEN_FILE before turns that may call mutating commands.
 Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR.
 Reviewer sessions allocate a provider session id, bind the token, then deliver the
 review package on the next turn. Mutating commands require the token; authorization
@@ -2450,8 +2450,8 @@ metadata. Producer batch turns close when `production apply` persists a batch.
 ## Session roles and authorization
 
 The orchestrator binds one primary planner, producer, or reviewer session per phase.
-Mutating `tdp agent` commands require the session capability token exported as
-`TDP_CAPABILITY_TOKEN` on the provider subprocess that runs the turn. Reviewer
+Mutating `tdp agent` commands read the session capability token from
+`TDP_CAPABILITY_TOKEN_FILE` on the provider subprocess that runs the turn. Reviewer
 sessions allocate a provider session id, bind the token, then deliver the review
 package (or a mandatory `finding_verification` recheck) via `send` before the agent may call
 `tdp agent review respond`. Authorization checks phase, allowed operations, the bound
@@ -2475,7 +2475,7 @@ outside commit transactions. Payloads may contain sensitive workspace or review
 content — treat exported run directories accordingly.
 
 Provider subprocesses also receive `TDP_RUNS_DIR`, `TDP_RUN_ID`, and
-`TDP_CAPABILITY_TOKEN`. When capability context is active, `TDP_RUN_ID` must match
+`TDP_CAPABILITY_TOKEN_FILE`. When capability context is active, `TDP_RUN_ID` must match
 `--run`. All `--request` file paths must resolve inside `agent-requests/`.
 
 Each mutating invocation emits two correlated audit events in `events.jsonl`,
@@ -2767,7 +2767,7 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
 
 Agent commands locate runs via `--runs-dir`, `$TDP_RUNS_DIR`, or `./runs` (in that
 precedence). Provider subprocesses receive `TDP_RUNS_DIR`, `TDP_RUN_ID`,
-`TDP_AGENT_REQUESTS_DIR`, and a session-scoped `TDP_CAPABILITY_TOKEN`, so in-agent
+`TDP_AGENT_REQUESTS_DIR`, and `TDP_CAPABILITY_TOKEN_FILE`, so in-agent
 commands typically need only `--run <run-id>`. Run ids use
 `run-YYYYMMDDTHHMMSS-<6hex>` (UTC creation time plus random suffix).
 

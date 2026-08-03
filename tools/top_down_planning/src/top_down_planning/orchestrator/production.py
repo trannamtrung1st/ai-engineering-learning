@@ -52,7 +52,11 @@ from top_down_planning.orchestrator.run_transitions import (
 from top_down_planning.orchestrator.provider_turns import (
     build_producer_turn_recovery,
     consume_producer_provider_turn_with_session_recovery,
-    run_pending_focused_review,
+    restore_primary_capability_after_focused_review,
+)
+from top_down_planning.persistence.capabilities import (
+    capability_token_file_path,
+    read_capability_token_file,
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.orchestrator.session_events import (
@@ -157,7 +161,7 @@ class ProductionPhaseOrchestrator:
             session_id=session_id,
             session_kind="primary",
         )
-        bind_provider_capability(self._provider, self._capability_token)
+        bind_provider_capability(self._provider, self._capability_token, store=self._store, run_id=self._run_id)
 
         batch_agent_turns = _load_batch_agent_turns(self._store, self._run_id)
         while True:
@@ -178,6 +182,11 @@ class ProductionPhaseOrchestrator:
                         session_id=session_id,
                         reason=amendment_result.reason,
                     )
+                producer_token = read_capability_token_file(
+                    capability_token_file_path(self._store, self._run_id)
+                )
+                if producer_token:
+                    self._capability_token = producer_token
                 session_id = amendment_result.producer_session_id or session_id
                 batch_agent_turns = 0
                 _persist_batch_agent_turns(self._store, self._run_id, 0)
@@ -210,11 +219,13 @@ class ProductionPhaseOrchestrator:
                     session_id=session_id,
                 )
 
-            run_pending_focused_review(
+            self._capability_token = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
                 self._provider,
                 review_type="focused_output",
+                role="producer",
+                current_token=self._capability_token,
             )
 
             try:
@@ -256,11 +267,13 @@ class ProductionPhaseOrchestrator:
                     replacement_token=turn_outcome.capability_token,
                     provider=self._provider,
                 )
-            run_pending_focused_review(
+            self._capability_token = restore_primary_capability_after_focused_review(
                 self._store,
                 self._run_id,
                 self._provider,
                 review_type="focused_output",
+                role="producer",
+                current_token=self._capability_token,
             )
             agent_turns = 1 if turn_outcome.domain_budget_committed else 0
             batch_agent_turns += agent_turns
@@ -309,7 +322,7 @@ class ProductionPhaseOrchestrator:
                 session_id=session_id,
                 session_kind="primary",
             )
-            bind_provider_capability(self._provider, self._capability_token)
+            bind_provider_capability(self._provider, self._capability_token, store=self._store, run_id=self._run_id)
 
     def _has_completion_claim(self) -> bool:
         production = self._store.load_production(self._run_id)

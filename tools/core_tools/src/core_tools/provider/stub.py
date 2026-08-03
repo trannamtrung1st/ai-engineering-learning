@@ -45,6 +45,7 @@ class StubProvider:
         self._session_script_hooks: dict[str, list[Callable[[], None] | None]] = {}
         self._counter = 0
         self._capability_token: str | None = None
+        self._capability_token_file: str | None = None
         self._on_provider_event = on_provider_event
         self._not_found_sessions: set[str] = set()
 
@@ -186,8 +187,14 @@ class StubProvider:
         self._sessions.clear()
         return []
 
-    def set_capability_token(self, token: str | None) -> None:
+    def set_capability_token(
+        self,
+        token: str | None,
+        *,
+        token_file: str | None = None,
+    ) -> None:
         self._capability_token = token
+        self._capability_token_file = token_file
 
     def _new_session_id(self) -> str:
         self._counter += 1

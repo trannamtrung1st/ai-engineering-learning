@@ -26,7 +26,7 @@ Provider subprocesses export:
 - `TDP_RUNS_DIR` — run store root
 - `TDP_RUN_ID` — must match `--run`
 - `TDP_AGENT_REQUESTS_DIR` — write mutating request JSON/YAML **only** here
-- `TDP_CAPABILITY_TOKEN` — required for mutating commands; bound to phase and session role
+- `TDP_CAPABILITY_TOKEN_FILE` — orchestrator-written current token; mutating CLI reads this at invocation time
 
 Typical mutating invocation:
 

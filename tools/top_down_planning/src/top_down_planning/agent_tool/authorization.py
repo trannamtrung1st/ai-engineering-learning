@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
@@ -13,9 +14,10 @@ from top_down_planning.domain.capability_binding import (
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.session_bindings import binding_provider_session_id
 from top_down_planning.persistence.capabilities import (
-    CAPABILITY_ENV_VAR,
+    CAPABILITY_TOKEN_FILE_ENV_VAR,
     MUTATING_OPS,
     parse_capability_token,
+    read_capability_token_file,
     verify_capability_secret,
 )
 from top_down_planning.persistence.interface import RunStore
@@ -23,14 +25,15 @@ from top_down_planning.persistence.session_bindings import get_primary_binding
 
 
 def resolve_capability_token(explicit: str | None = None) -> str | None:
-    """Resolve a capability token from an explicit value or process env."""
+    """Resolve a capability token from an explicit value or the session token file."""
 
     if explicit is not None and str(explicit).strip():
         return str(explicit).strip()
-    env_value = os.environ.get(CAPABILITY_ENV_VAR)
-    if env_value is None or not str(env_value).strip():
+
+    file_path = os.environ.get(CAPABILITY_TOKEN_FILE_ENV_VAR)
+    if file_path is None or not str(file_path).strip():
         return None
-    return str(env_value).strip()
+    return read_capability_token_file(Path(str(file_path).strip()))
 
 
 def _assert_capability_binding_matches(
@@ -72,8 +75,8 @@ def authorize_mutation(
     token = resolve_capability_token(capability_token)
     if token is None:
         raise CapabilityDeniedError(
-            "mutating agent commands require a capability token "
-            f"({CAPABILITY_ENV_VAR} or capability_token parameter)",
+            "mutating agent commands require a session capability token "
+            f"({CAPABILITY_TOKEN_FILE_ENV_VAR} or capability_token parameter)",
             operation=operation,
         )
 
@@ -84,13 +87,28 @@ def authorize_mutation(
 
     record = store.load_capability(run_id, token_id)
     if record.get("revoked") is True:
-        raise CapabilityDeniedError("capability token has been revoked", operation=operation)
+        raise CapabilityDeniedError(
+            "capability token has been revoked",
+            operation=operation,
+            action=(
+                "The orchestrator rotated or ended this session token. "
+                f"Mutating commands read the current token from {CAPABILITY_TOKEN_FILE_ENV_VAR} "
+                "at invocation time; retry without caching capability state in the shell."
+            ),
+        )
 
     secret_hash = str(record.get("secret_hash") or "")
     if not secret_hash:
         raise CapabilityDeniedError("capability token is invalid", operation=operation)
     if not verify_capability_secret(secret, secret_hash):
-        raise CapabilityDeniedError("capability token is invalid", operation=operation)
+        raise CapabilityDeniedError(
+            "capability token secret does not match the run store",
+            operation=operation,
+            action=(
+                f"Ensure {CAPABILITY_TOKEN_FILE_ENV_VAR} points at the orchestrator-written "
+                "capability file for this run and retry without caching the token in the shell."
+            ),
+        )
 
     run = store.load_run(run_id)
     status = str(run.get("status") or "running")

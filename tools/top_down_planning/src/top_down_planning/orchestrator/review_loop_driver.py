@@ -318,7 +318,12 @@ class ReviewLoopDriver:
                         session_kind="reviewer",
                         loop_id=loop.id,
                     )
-                    bind_provider_capability(self._provider, self._capability_token)
+                    bind_provider_capability(
+                        self._provider,
+                        self._capability_token,
+                        store=self._store,
+                        run_id=self._run_id,
+                    )
                     continue
 
             stage_decision = self._resolve_stage_decision(loop, reviewer_decision)
@@ -783,7 +788,12 @@ class ReviewLoopDriver:
             session_id=session_id,
             session_kind="primary",
         )
-        bind_provider_capability(self._provider, self._capability_token)
+        bind_provider_capability(
+            self._provider,
+            self._capability_token,
+            store=self._store,
+            run_id=self._run_id,
+        )
 
         config = self._store.load_resolved_config(self._run_id)
         role_context = resolve_role_session_context(config, run, spec.owner_role)
@@ -847,7 +857,12 @@ class ReviewLoopDriver:
             session_id=session_id,
             session_kind="primary",
         )
-        bind_provider_capability(self._provider, self._capability_token)
+        bind_provider_capability(
+            self._provider,
+            self._capability_token,
+            store=self._store,
+            run_id=self._run_id,
+        )
         config = self._store.load_resolved_config(self._run_id)
         role_context = resolve_role_session_context(config, run, spec.owner_role)
         resume_primary_session_with_audit(

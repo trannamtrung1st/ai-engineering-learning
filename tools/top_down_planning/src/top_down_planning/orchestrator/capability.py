@@ -10,12 +10,16 @@ from top_down_planning.domain.capability_binding import (
     resolve_primary_capability_binding,
     resolve_reviewer_capability_binding,
 )
+from top_down_planning.domain.session_bindings import is_transient_provider_session_id
 from top_down_planning.persistence.capabilities import (
     capability_token_value,
+    clear_capability_token_file,
     ops_for_session,
     parse_capability_token,
+    write_capability_token_file,
 )
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.session_bindings import get_primary_binding
 
 
 def revoke_capability_token(store: RunStore, run_id: str, token: str | None) -> None:
@@ -47,6 +51,7 @@ def revoke_capabilities_for_phase(store: RunStore, run_id: str, phase: str) -> N
         capability_id = str(record.get("id") or "")
         if capability_id:
             store.revoke_capability(run_id, capability_id)
+    clear_capability_token_file(store, run_id)
 
 
 def revoke_capabilities_for_loop(store: RunStore, run_id: str, loop_id: str) -> None:
@@ -61,6 +66,7 @@ def revoke_capabilities_for_loop(store: RunStore, run_id: str, loop_id: str) -> 
         capability_id = str(record.get("id") or "")
         if capability_id:
             store.revoke_capability(run_id, capability_id)
+    clear_capability_token_file(store, run_id)
 
 
 def revoke_capabilities_for_session_binding(
@@ -216,12 +222,90 @@ def rotate_session_capability(
     )
 
 
-def bind_provider_capability(provider: Any, token: str | None) -> None:
-    """Export a capability token to provider subprocesses when supported."""
+def bind_provider_capability(
+    provider: Any,
+    token: str | None,
+    *,
+    store: RunStore,
+    run_id: str,
+) -> None:
+    """Write the active capability token and export its file path to the provider."""
+
+    if token is not None and str(token).strip():
+        token_file = str(write_capability_token_file(store, run_id, str(token).strip()))
+    else:
+        clear_capability_token_file(store, run_id)
+        token_file = None
 
     setter = getattr(provider, "set_capability_token", None)
-    if setter is not None and token is not None:
-        setter(token)
+    if setter is not None:
+        setter(token, token_file=token_file)
+
+
+def rebind_primary_session_capability(
+    store: RunStore,
+    run_id: str,
+    provider: Any,
+    *,
+    role: str,
+) -> str | None:
+    """Issue and export a capability token for the bound primary provider session."""
+
+    run = store.load_run(run_id)
+    phase = str(run.get("phase") or "")
+    binding = get_primary_binding(run, role)
+    if binding is None:
+        return None
+    session_id = str(binding.provider_session_id or "").strip()
+    if not session_id or is_transient_provider_session_id(session_id):
+        return None
+
+    token = issue_session_capability(
+        store,
+        run_id,
+        role=role,
+        phase=phase,
+        session_id=session_id,
+        session_kind="primary",
+        revoke_existing=True,
+    )
+    bind_provider_capability(provider, token, store=store, run_id=run_id)
+    return token
+
+
+def rebind_reviewer_session_capability(
+    store: RunStore,
+    run_id: str,
+    provider: Any,
+    *,
+    loop_id: str,
+) -> str | None:
+    """Issue and export a capability token for the bound reviewer session."""
+
+    from top_down_planning.domain.reviews import ReviewLoop
+
+    run = store.load_run(run_id)
+    phase = str(run.get("phase") or "")
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    binding = loop.reviewer_binding
+    if binding is None:
+        return None
+    session_id = str(binding.provider_session_id or "").strip()
+    if not session_id or is_transient_provider_session_id(session_id):
+        return None
+
+    token = issue_session_capability(
+        store,
+        run_id,
+        role="reviewer",
+        phase=phase,
+        session_id=session_id,
+        session_kind="reviewer",
+        loop_id=loop_id,
+        revoke_existing=True,
+    )
+    bind_provider_capability(provider, token, store=store, run_id=run_id)
+    return token
 
 
 def adopt_replacement_capability(
@@ -237,5 +321,10 @@ def adopt_replacement_capability(
     if replacement_token is None:
         return current_token
     revoke_capability_token(store, run_id, current_token)
-    bind_provider_capability(provider, replacement_token)
+    bind_provider_capability(
+        provider,
+        replacement_token,
+        store=store,
+        run_id=run_id,
+    )
     return replacement_token

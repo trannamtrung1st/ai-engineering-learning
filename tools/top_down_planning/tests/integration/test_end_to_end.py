@@ -348,7 +348,9 @@ def test_capability_guardrails_reject_missing_token(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("TDP_CAPABILITY_TOKEN", raising=False)
+    from top_down_planning.persistence.capabilities import clear_capability_token_file
+
+    monkeypatch.delenv("TDP_CAPABILITY_TOKEN_FILE", raising=False)
     runs_dir = tmp_path / "runs"
     store = FileRunStore(runs_dir)
     config_path = write_e2e_config(tmp_path / "run.yaml")
@@ -367,6 +369,7 @@ def test_capability_guardrails_reject_missing_token(
             ]
         ).json()["run_id"]
 
+    clear_capability_token_file(store, run_id)
     request_path = write_agent_request(
         store.agent_requests_dir(run_id) / "plan-apply.json",
         {"base_revision": 0, "operations": []},

@@ -90,7 +90,7 @@ To change dependencies on an **existing** item, use `add_dependency`, `remove_de
 | Error | What to do |
 | --- | --- |
 | `revision_conflict` | `tdp agent plan snapshot` or `production snapshot`; retry with current revision |
-| `capability_denied` | Ensure `TDP_CAPABILITY_TOKEN` is exported; mutating commands need an active session |
+| `capability_denied` | Ensure `TDP_CAPABILITY_TOKEN_FILE` is exported; mutating commands need an active session |
 | `operation_error` + `hint` | Read `hint` in the JSON error; often points to `tdp agent example <name>` |
 | `request_error` + `hint` | Review validation failures include `hint` (e.g. rubric union mismatch, invalid `rule_id`); see `tdp agent readme` |
 | `unknown item id: <id>` | Unknown dependency target; check temp_id spelling and `tdp agent example expand-branch` |

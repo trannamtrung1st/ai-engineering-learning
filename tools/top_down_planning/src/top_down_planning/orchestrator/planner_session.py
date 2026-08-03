@@ -6,6 +6,7 @@ from typing import Any
 
 from top_down_planning.domain.plan_tree import PLAN_ROOT_PLANNER_INSTRUCTION
 from top_down_planning.domain.session_bindings import SessionBinding
+from top_down_planning.persistence.capabilities import CAPABILITY_TOKEN_FILE_ENV_VAR
 from top_down_planning.persistence.session_bindings import (
     get_primary_binding,
     primary_provider_session_id,
@@ -101,8 +102,8 @@ def build_planner_tool_instructions(run_id: str) -> dict[str, str]:
 
     return {
         "authorization": (
-            "Mutating commands require the session capability token exported "
-            "as TDP_CAPABILITY_TOKEN."
+            "Mutating commands require the session capability token from "
+            f"{CAPABILITY_TOKEN_FILE_ENV_VAR}."
         ),
         "agent_requests_dir": "$TDP_AGENT_REQUESTS_DIR",
         "snapshot": f"tdp agent plan snapshot --run {run_id} --view active",

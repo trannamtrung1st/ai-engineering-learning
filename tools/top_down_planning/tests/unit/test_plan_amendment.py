@@ -7,11 +7,16 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.agent_tool import ProductionAgentService, RequestError
+from top_down_planning.agent_tool.authorization import authorize_mutation
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import PlanAmendmentOrchestrator, ProductionPhaseOrchestrator, ProviderRunError
 from top_down_planning.orchestrator.phases import PLAN_AMENDMENT, PRODUCTION, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
+from top_down_planning.persistence.capabilities import (
+    capability_token_file_path,
+    read_capability_token_file,
+)
 from core_tools.provider import StubProvider
 from tests.helpers import (
     apply_plan,
@@ -248,6 +253,20 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
     assert amendment_result.planner_session_id == planner_session_id
     assert amendment_result.producer_session_id == producer_session_id
 
+    token_path = capability_token_file_path(store, run_id)
+    assert token_path.is_file()
+    producer_capability = read_capability_token_file(token_path)
+    assert producer_capability
+    assert (
+        authorize_mutation(
+            store,
+            run_id,
+            operation="production_apply",
+            capability_token=producer_capability,
+        )
+        == "producer"
+    )
+
     plan = store.load_plan_model("run-20260101T001901-001901")
     new_item_ids = sorted(
         item_id
@@ -267,11 +286,11 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
             },
             production_revision=int(production["revision"]),
         ),
-        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
+        capability_token=producer_capability,
     )
     service.submit_completion(
         {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-        capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
+        capability_token=producer_capability,
     )
 
     production = store.load_production("run-20260101T001901-001901")

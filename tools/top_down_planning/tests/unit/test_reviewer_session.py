@@ -140,7 +140,7 @@ def test_tool_instructions_discourage_uv_run() -> None:
     assert "audit attestation" in instructions["discover"].lower()
     assert "built-in finding-family rule_id" in instructions["discover"].lower()
     assert "uv run" in instructions["respond"]
-    assert "TDP_CAPABILITY_TOKEN" in instructions["authorization"]
+    assert "TDP_CAPABILITY_TOKEN_FILE" in instructions["authorization"]
     assert instructions["agent_requests_dir"] == "$TDP_AGENT_REQUESTS_DIR"
     assert "TDP_AGENT_REQUESTS_DIR" in instructions["respond"]
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from top_down_planning.domain.session_bindings import SessionBinding
+from top_down_planning.persistence.capabilities import CAPABILITY_TOKEN_FILE_ENV_VAR
 from top_down_planning.persistence.session_bindings import (
     get_primary_binding,
     primary_provider_session_id,
@@ -45,6 +46,12 @@ def build_producer_protocol_instructions() -> list[str]:
             "production_revision."
         ),
         (
+            "When production apply reports capability_denied, "
+            f"{CAPABILITY_TOKEN_FILE_ENV_VAR} is missing or the orchestrator has "
+            "not bound a session capability. Retry apply without caching capability "
+            "state in the shell."
+        ),
+        (
             "When production apply reports "
             "production_context_mutation_unauthorized, revert or reconcile "
             "unauthorized snapshot-bound context changes (skills, file or inline "
@@ -82,8 +89,8 @@ def build_producer_tool_instructions(run_id: str) -> dict[str, str]:
 
     return {
         "authorization": (
-            "Mutating commands require the session capability token exported "
-            "as TDP_CAPABILITY_TOKEN."
+            "Mutating commands require the session capability token from "
+            f"{CAPABILITY_TOKEN_FILE_ENV_VAR}."
         ),
         "agent_requests_dir": "$TDP_AGENT_REQUESTS_DIR",
         "snapshot": f"tdp agent production snapshot --run {run_id} --view ready",

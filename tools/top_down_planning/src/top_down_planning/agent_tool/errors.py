@@ -88,7 +88,7 @@ class CapabilityDeniedError(AgentToolError):
             action=action
             or (
                 "Mutating agent commands require a valid session capability token. "
-                f"Ensure {__import__('top_down_planning.persistence.capabilities', fromlist=['CAPABILITY_ENV_VAR']).CAPABILITY_ENV_VAR} "
+                f"Ensure {__import__('top_down_planning.persistence.capabilities', fromlist=['CAPABILITY_TOKEN_FILE_ENV_VAR']).CAPABILITY_TOKEN_FILE_ENV_VAR} "
                 "is exported to the provider subprocess."
             ),
         )

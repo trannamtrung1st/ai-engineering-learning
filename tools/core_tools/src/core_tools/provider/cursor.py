@@ -470,11 +470,16 @@ class CursorProvider:
                 ),
             )
 
-    def set_capability_token(self, token: str | None) -> None:
-        if token:
-            self._extra_env["TDP_CAPABILITY_TOKEN"] = token
+    def set_capability_token(
+        self,
+        _token: str | None,
+        *,
+        token_file: str | None = None,
+    ) -> None:
+        if token_file:
+            self._extra_env["TDP_CAPABILITY_TOKEN_FILE"] = token_file
         else:
-            self._extra_env.pop("TDP_CAPABILITY_TOKEN", None)
+            self._extra_env.pop("TDP_CAPABILITY_TOKEN_FILE", None)
         self._subprocess_env = self._build_subprocess_env(self._extra_env)
 
     def _probe_binary(self) -> None:

@@ -9,6 +9,10 @@ from top_down_planning.domain.reviews import ReviewLoop, is_mandatory_review_loo
 from top_down_planning.domain.session_bindings import (
     is_transient_provider_session_id,
 )
+from top_down_planning.orchestrator.capability import (
+    rebind_primary_session_capability,
+    rebind_reviewer_session_capability,
+)
 from top_down_planning.orchestrator.session_lineage import emit_session_provider_id_bound
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.review_commit import (
@@ -316,6 +320,7 @@ def sync_persisted_session_id(
         provider_session_id=resolved,
         provider="cursor",
     )
+    rebind_primary_session_capability(store, run_id, provider, role=role)
     return resolved
 
 
@@ -379,6 +384,7 @@ def sync_reviewer_loop_session_id(
     updated = loop.with_reviewer_provider_session_id(resolved, provider="cursor")
     store.save_review(run_id, updated.to_dict())
     _emit_reviewer_provider_id_bound(store, run_id, updated)
+    rebind_reviewer_session_capability(store, run_id, provider, loop_id=loop_id)
     return resolved
 
 

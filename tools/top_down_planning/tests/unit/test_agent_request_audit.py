@@ -41,7 +41,7 @@ from tests.helpers import (
     mandatory_scope_review_respond_request,
     minimal_resolved_config,
     prepare_loop_for_scope_review_respond,
-    set_capability_env,
+    set_capability_token_file,
     write_agent_request_file,
 )
 
@@ -148,7 +148,7 @@ def test_malformed_json_emits_rejected_completion(
     request_path = store.agent_requests_dir(run_id) / "bad.json"
     request_path.write_text("{not json", encoding="utf-8")
     token = grant_capability(store, run_id, role="planner", phase=PLANNING)
-    set_capability_env(monkeypatch, token)
+    set_capability_token_file(monkeypatch, store, run_id, token)
 
     result = run_cli(
         [
@@ -250,7 +250,7 @@ def test_post_read_persistence_failure_emits_failed_completion(
     request_path = store.agent_requests_dir(run_id) / "plan-apply-r0-a01.json"
     request_path.write_text(json.dumps(_apply_request()), encoding="utf-8")
     token = grant_capability(store, run_id, role="planner", phase=PLANNING)
-    set_capability_env(monkeypatch, token)
+    set_capability_token_file(monkeypatch, store, run_id, token)
 
     def boom(*_args: object, **_kwargs: object) -> dict:
         raise RuntimeError("simulated persistence failure")
@@ -340,7 +340,7 @@ def test_capability_run_id_mismatch_rejected_before_read(
     run_id = "run-20260101T000001-000001"
     _create_run(store, run_id)
     token = grant_capability(store, run_id, role="planner", phase=PLANNING)
-    set_capability_env(monkeypatch, token)
+    set_capability_token_file(monkeypatch, store, run_id, token)
     monkeypatch.setenv(RUN_ID_ENV_VAR, "run-other")
     request_path = store.agent_requests_dir(run_id) / "plan.json"
     request_path.write_text("{}", encoding="utf-8")
@@ -558,7 +558,7 @@ def test_review_respond_under_agent_requests_records_request_id(
         loop_id=loop_id,
         session_id="sess",
     )
-    set_capability_env(monkeypatch, token)
+    set_capability_token_file(monkeypatch, store, run_id, token)
     request_path = write_agent_request_file(
         store,
         run_id,

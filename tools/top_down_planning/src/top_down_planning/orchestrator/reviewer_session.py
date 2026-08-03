@@ -16,14 +16,15 @@ from top_down_planning.orchestrator.capability import (
     issue_session_capability,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.persistence.capabilities import CAPABILITY_TOKEN_FILE_ENV_VAR
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
 REVIEWER_DECISION_MISSING = (
     "reviewer turn completed without a decision; "
     "ensure `tdp agent review respond` succeeded "
-    "(mutating commands require TDP_CAPABILITY_TOKEN from the active reviewer "
-    "session — invoke `tdp` directly, not `uv run tdp`)"
+    f"(mutating commands require {CAPABILITY_TOKEN_FILE_ENV_VAR} from the active "
+    "reviewer session — invoke `tdp` directly, not `uv run tdp`)"
 )
 
 _FORBIDDEN_STAGE_LABELS = (
@@ -364,9 +365,9 @@ def build_reviewer_tool_instructions(
     )
     instructions = {
         "authorization": (
-            "Mutating commands require the session capability token exported "
-            "as TDP_CAPABILITY_TOKEN on the provider subprocess that runs your "
-            "review turn."
+            "Mutating commands require the session capability token from "
+            f"{CAPABILITY_TOKEN_FILE_ENV_VAR} on the provider subprocess that runs "
+            "your review turn."
         ),
         "agent_requests_dir": "$TDP_AGENT_REQUESTS_DIR",
         "respond": (
@@ -408,7 +409,7 @@ def _issue_reviewer_capability(
         session_kind="reviewer",
         loop_id=loop_id,
     )
-    bind_provider_capability(provider, token)
+    bind_provider_capability(provider, token, store=store, run_id=run_id)
     return token
 
 

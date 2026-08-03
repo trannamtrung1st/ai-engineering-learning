@@ -22,7 +22,7 @@ from tests.helpers import (
     create_run_kwargs,
     grant_capability,
     plan_root_item,
-    set_capability_env,
+    set_capability_token_file,
     write_agent_request_file,
     whole_plan_approval_record,
 )
@@ -293,8 +293,10 @@ def test_production_check_reports_open_items(tmp_path: Path) -> None:
 def test_cli_production_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    set_capability_env(
+    set_capability_token_file(
         monkeypatch,
+        store,
+        "run-20260101T000201-000201",
         grant_capability(store, "run-20260101T000201-000201", role="producer", phase=PRODUCTION),
     )
 
@@ -379,8 +381,10 @@ def test_cli_reviewer_denied_for_production_apply(
 ) -> None:
     store = FileRunStore(tmp_path)
     _create_production_run(store)
-    set_capability_env(
+    set_capability_token_file(
         monkeypatch,
+        store,
+        "run-20260101T000201-000201",
         grant_capability(
             store,
             "run-20260101T000201-000201",

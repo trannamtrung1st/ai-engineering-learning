@@ -88,6 +88,7 @@ result = run_cli(["run", "--config", str(config_path), "--set", "limits.planning
 Read `tests/helpers.py` first. Common utilities:
 
 - `done_events()`, `respond_review()`, `apply_plan()`, `apply_production()`
+- `set_capability_token_file()` for CLI tests that exercise mutating `tdp agent` commands
 - `mandatory_initial_respond_request()`
 - `ensure_input_ref_files()` for config input refs on `tmp_path`
 
