@@ -1636,6 +1636,10 @@ def respond_review(
     session_id: str | None = None,
 ) -> Any:
     from top_down_planning.agent_tool import ReviewAgentService
+    from top_down_planning.persistence.capabilities import (
+        capability_token_file_path,
+        read_capability_token_file,
+    )
 
     resolved_loop_id = loop_id or str(request.get("loop_id") or "")
 
@@ -1651,7 +1655,11 @@ def respond_review(
                     resolved_session_id = loop_session
             except Exception:
                 pass
-        token = grant_capability(
+        token_path = capability_token_file_path(store, run_id)
+        file_token = (
+            read_capability_token_file(token_path) if token_path.exists() else None
+        )
+        token = file_token or grant_capability(
             store,
             run_id,
             role=role,

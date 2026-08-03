@@ -38,7 +38,7 @@ provider.script_turn(done_events(text="planning turn"))
 - `script_session_turn(session_id, events)` for reviewer-specific sessions.
 - `mark_session_stalled(session_id)` to simulate `ProviderTurnStalledError` recovery (not-found: `mark_session_not_found`).
 - `mutate_store=callable` to update persistence mid-turn without sleeping.
-- Producer batch boundaries and reviewer `review respond` boundaries abort the in-flight turn, wait for `wait_turn_settled`, then close the turn (producer queues the next turn on the same session; reviewer releases the bounded session). `CursorProvider.abort_turn()` also waits for settlement before returning. For collector-thread races, test with `CursorProvider(..., runner=fake_runner)` — not only `StubProvider`.
+- Producer batch boundaries and reviewer `review respond` boundaries abort the in-flight turn, wait for `wait_turn_settled`, then close the turn (producer queues the next turn on the same session; reviewer releases the bounded session). Pair `CursorProvider.abort_turn()` with `wait_turn_settled()` when callers must block until the collector finishes; `terminate_session()` does both. For collector-thread races, test with `CursorProvider(..., runner=fake_runner)` — not only `StubProvider`.
 
 ### Config and run setup
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -14,6 +15,7 @@ from core_tools.provider.cursor import CursorProvider
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.session_bindings import (
     binding_provider_session_id,
+    is_transient_provider_session_id,
     new_session_binding,
 )
 from top_down_planning.domain.session_lineage import SESSION_PROVIDER_ID_BOUND
@@ -148,30 +150,46 @@ def test_whole_plan_recheck_binds_cursor_reviewer_session_after_initial_review(
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T010002-010002"
     _create_run_at_whole_plan_review(store, run_id=run_id)
-    respond = respond_review(
+    loop_id = "review-whole-plan-01"
+    respond_request = mandatory_initial_respond_request(
         store,
         run_id,
-        mandatory_initial_respond_request(
+        loop_id=loop_id,
+        target_revision=0,
+        review_type="whole_plan",
+        findings=[
+            {
+                "id": "finding-01",
+                "severity": "major",
+                "category": "correctness",
+                "target_refs": ["item-root"],
+                "issue": "Scope is empty.",
+                "recommended_change": "Populate scope.",
+                "status": "unresolved",
+            }
+        ],
+    )
+
+    def respond_after_reviewer_bound() -> None:
+        deadline = time.monotonic() + 2.0
+        bound_session_id: str | None = None
+        while time.monotonic() < deadline:
+            review = store.load_review(run_id, loop_id)
+            session_id = binding_provider_session_id(review.get("reviewer_binding"))
+            if session_id and not is_transient_provider_session_id(session_id):
+                bound_session_id = session_id
+                break
+            time.sleep(0.01)
+        assert bound_session_id is not None
+        respond_review(
             store,
             run_id,
-            loop_id="review-whole-plan-01",
-            target_revision=0,
-            review_type="whole_plan",
-            findings=[
-                {
-                    "id": "finding-01",
-                    "severity": "major",
-                    "category": "correctness",
-                    "target_refs": ["item-root"],
-                    "issue": "Scope is empty.",
-                    "recommended_change": "Populate scope.",
-                    "status": "unresolved",
-                }
-            ],
-        ),
-        phase=WHOLE_PLAN_REVIEW,
-        loop_id="review-whole-plan-01",
-    )
+            respond_request,
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+            session_id=bound_session_id,
+        )()
+
     provider = _cursor_provider(
         tmp_path,
         streams=[
@@ -179,7 +197,7 @@ def test_whole_plan_recheck_binds_cursor_reviewer_session_after_initial_review(
             _cursor_stream(session_id="chat-planner-1", text="planner revises"),
             _cursor_stream(session_id="chat-reviewer-1", text="verification recheck"),
         ],
-        on_turn_start=[respond, None, None],
+        on_turn_start=[respond_after_reviewer_bound, None, None],
     )
 
     orchestrator = WholePlanReviewOrchestrator(store, run_id, provider)
