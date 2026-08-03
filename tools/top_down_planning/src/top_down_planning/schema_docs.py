@@ -1254,7 +1254,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                 "type": "integer",
                                 "description": (
                                     "Maximum fresh scope-complete review "
-                                    "rounds per whole-plan review phase."
+                                    "rounds per whole-plan review phase. "
+                                    "Resuming after limit_exhausted with a "
+                                    "higher value continues the same review "
+                                    "loop and preserved scope_review_rounds "
+                                    "counter (does not open a new loop)."
                                 ),
                             },
                         },
@@ -1290,7 +1294,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                 "type": "integer",
                                 "description": (
                                     "Maximum fresh scope-complete review "
-                                    "rounds per whole-output review phase."
+                                    "rounds per whole-output review phase. "
+                                    "Resuming after limit_exhausted with a "
+                                    "higher value continues the same review "
+                                    "loop and preserved scope_review_rounds "
+                                    "counter (does not open a new loop)."
                                 ),
                             },
                         },
@@ -2461,7 +2469,12 @@ advances phases when agents emit explicit completion signals (`candidate_plan_re
 `amendment_revision_ready`, etc.) as the final assistant line or `done.signal`
 metadata. Producer batch turns close when `production apply` persists a batch:
 the orchestrator aborts the in-flight provider turn, waits for the session
-collector to settle, then queues the next turn on the same session.
+collector to settle, then queues the next turn on the same session. Reviewer
+turns close when `review respond` persists a decision: the orchestrator aborts
+the in-flight provider turn, waits for the session collector to settle, then
+releases the bounded reviewer session before owner revision or the next gate. A
+background poll watches for persisted batches or review decisions while the turn
+is open so a stalled agent subprocess cannot block progress after apply/respond.
 
 ## Session roles and authorization
 
@@ -2860,6 +2873,13 @@ Paused runs resume through `prepare_resume()` (read-only) and
 Limit-only increases update `digests.config_execution` only; approvals remain bound to
 `digests.config_contract`. Failed runs cannot be resumed. Replacement exhausted for the
 current `phase_action_id` blocks resume until the action completes or the run fails.
+
+For mandatory whole-plan / whole-output `limit_exhausted` pauses, `stop.details` must
+include the full limit path (`limits.whole_*_review.max_*`), integer `consumed` /
+`configured`, `loop_id`, and `exhausted_budget`. Resume requires the exhausted limit's
+candidate value to be strictly greater than consumed usage. Raising that limit revives
+the same review loop and preserves `revision_cycles` / `scope_review_rounds` — it does
+not open a new loop or reset the phase budget counter.
 
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
 The service captures content hashes and stores immutable snapshots under

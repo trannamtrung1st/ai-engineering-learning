@@ -30,6 +30,7 @@ from top_down_planning.orchestrator.production import build_producer_context_man
 from top_down_planning.orchestrator.provider_turns import (
     build_reviewer_turn_recovery,
     consume_provider_turn_with_session_recovery,
+    consume_reviewer_provider_turn_with_session_recovery,
 )
 from top_down_planning.orchestrator.recovery_manifest import (
     REPLACEMENT_SESSION_NOTICE,
@@ -311,12 +312,12 @@ def test_reviewer_session_missing_and_replaced(tmp_path: Path) -> None:
 
     provider.mark_session_not_found(session_id)
     provider.script_turn(done_events(text="replacement reviewer turn"))
-    outcome = consume_provider_turn_with_session_recovery(
+    outcome = consume_reviewer_provider_turn_with_session_recovery(
         store,
         run_id,
         provider,
         session_id,
-        allowed_signals=frozenset(),
+        loop_id=loop.id,
         recovery=build_reviewer_turn_recovery(
             store,
             run_id,

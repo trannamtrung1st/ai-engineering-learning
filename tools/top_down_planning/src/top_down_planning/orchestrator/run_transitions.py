@@ -125,20 +125,36 @@ def pause_for_limit_exhausted(
     revoke_phase: str | None = None,
     **event_fields: Any,
 ) -> dict[str, Any]:
+    limit_path = str(limit).strip()
+    if not limit_path.startswith("limits."):
+        raise ValueError(
+            f"limit_exhausted stop requires a full limits.* path; got {limit!r}"
+        )
+    details: dict[str, Any] = {
+        "limit": limit_path,
+        "consumed": consumed,
+        "configured": configured,
+    }
+    loop_id = event_fields.get("loop_id")
+    if loop_id is not None and str(loop_id).strip():
+        details["loop_id"] = str(loop_id).strip()
+    exhausted_budget = event_fields.get("exhausted_budget")
+    if exhausted_budget is not None and str(exhausted_budget).strip():
+        details["exhausted_budget"] = str(exhausted_budget).strip()
     stop = StopRecord(
         code="limit_exhausted",
         category="operational",
         phase=phase,
         role=role,
         message=message,
-        details={"limit": limit, "consumed": consumed, "configured": configured},
+        details=details,
     )
     return pause_run(
         store,
         run_id,
         stop=stop,
         revoke_phase=revoke_phase,
-        limit=limit,
+        limit=limit_path,
         consumed=consumed,
         configured=configured,
         **event_fields,

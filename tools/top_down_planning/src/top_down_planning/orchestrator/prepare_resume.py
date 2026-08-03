@@ -275,6 +275,7 @@ def prepare_resume(
     comparison = validate_resume_config_comparison(
         compare_resume_configs(stored_config, candidate_config),
         consumed_limits=consumed_limits or consumed_limits_from_run(run),
+        candidate_config=candidate_config,
     )
     if not comparison.ok:
         blockers.extend(comparison.errors)

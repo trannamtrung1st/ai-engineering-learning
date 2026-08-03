@@ -896,6 +896,232 @@ def test_driver_scope_review_round_limit_pauses(tmp_path: Path) -> None:
     assert review.get("lifecycle_status") == "limit_reached"
 
 
+def test_driver_continues_same_loop_after_scope_limit_extension(tmp_path: Path) -> None:
+    """Raising max_scope_review_rounds resumes the same loop with preserved rounds."""
+
+    import copy
+
+    from top_down_planning.orchestrator.apply_resume import apply_resume_plan_atomically
+    from top_down_planning.orchestrator.prepare_resume import prepare_resume
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000410-000410"
+    planner_session_id, loop_id = _create_driver_run(
+        store,
+        run_id,
+        provider=provider,
+        limits={"max_revision_cycles": 5, "max_scope_review_rounds": 1},
+    )
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+
+    # Seed a limit_reached loop that already consumed one scope round.
+    save_review_payload(
+        store,
+        run_id,
+        {
+            "id": loop_id,
+            "type": "whole_plan",
+            "revise_at": "blocker",
+            "target_revision": 0,
+            "scope": {"kind": "whole_plan"},
+            "status": "blocked",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "limit_reached",
+            "active_stage": "finding_verification",
+            "scope_review_rounds": 1,
+            "exhausted_budget": "scope_review",
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
+        },
+    )
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "limit_exhausted",
+        "category": "operational",
+        "phase": WHOLE_PLAN_REVIEW,
+        "message": "whole-plan review exceeded max_scope_review_rounds (1)",
+        "details": {
+            "limit": "limits.whole_plan_review.max_scope_review_rounds",
+            "consumed": 1,
+            "configured": 1,
+            "loop_id": loop_id,
+            "exhausted_budget": "scope_review",
+        },
+    }
+    store.save_run(run_id, run, expected_revision)
+
+    stored = store.load_resolved_config(run_id)
+    candidate = copy.deepcopy(stored)
+    candidate["limits"]["whole_plan_review"]["max_scope_review_rounds"] = 3
+    resume_plan = prepare_resume(store, run_id, candidate)
+    apply_resume_plan_atomically(
+        store,
+        resume_plan,
+        resolved_config=candidate,
+        invocation=store.load_invocation(run_id),
+    )
+
+    review_after_apply = store.load_review(run_id, loop_id)
+    assert review_after_apply["scope_review_rounds"] == 1
+    assert review_after_apply["lifecycle_status"] == "findings_closed"
+
+    def _scope_approve() -> None:
+        loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+        if loop.active_stage != "scope_review":
+            prepare_loop_for_scope_review_respond(
+                store,
+                run_id,
+                loop_id,
+                target_revision=0,
+            )
+        respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(done_events(text="turn complete"), mutate_store=_scope_approve)
+    result = ReviewLoopDriver(store, run_id, provider, adapter).run()
+    assert result.ok is True
+    assert result.loop_id == loop_id
+    review = store.load_review(run_id, loop_id)
+    assert review["scope_review_rounds"] == 2
+    assert review.get("exhausted_budget") is None
+    whole_plan_loops = [
+        payload
+        for payload in store.list_reviews(run_id)
+        if payload.get("type") == "whole_plan"
+    ]
+    assert [payload["id"] for payload in whole_plan_loops] == [loop_id]
+
+
+def test_get_or_create_does_not_resurrect_older_limit_reached_after_approved(
+    tmp_path: Path,
+) -> None:
+    """A newer approved whole-plan loop must not revive an older limit_reached."""
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000411-000411"
+    planner_session_id, _loop_id = _create_driver_run(store, run_id, provider=provider)
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+    revision, _digest = adapter.current_artifact_binding()
+
+    save_review_payload(
+        store,
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "revise_at": "blocker",
+            "target_revision": revision,
+            "scope": {"kind": "whole_plan"},
+            "status": "blocked",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "limit_reached",
+            "active_stage": None,
+            "scope_review_rounds": 1,
+            "exhausted_budget": "scope_review",
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
+        },
+    )
+    save_review_payload(
+        store,
+        run_id,
+        {
+            "id": "review-whole-plan-02",
+            "type": "whole_plan",
+            "revise_at": "blocker",
+            "target_revision": revision,
+            "scope": {"kind": "whole_plan"},
+            "status": "approved",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "approved",
+            "active_stage": "scope_review",
+            "scope_review_rounds": 1,
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
+        },
+    )
+
+    driver = ReviewLoopDriver(store, run_id, provider, adapter)
+    selected = driver._get_or_create_active_loop()
+    assert selected.id == "review-whole-plan-03"
+    assert selected.lifecycle_status != "limit_reached"
+
+
+def test_get_or_create_prefers_newer_active_over_older_limit_reached(
+    tmp_path: Path,
+) -> None:
+    """Do not walk past a newer non-terminal loop to an older limit_reached."""
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000412-000412"
+    planner_session_id, _loop_id = _create_driver_run(store, run_id, provider=provider)
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+
+    save_review_payload(
+        store,
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "revise_at": "blocker",
+            "target_revision": 0,
+            "scope": {"kind": "whole_plan"},
+            "status": "blocked",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "limit_reached",
+            "scope_review_rounds": 1,
+            "exhausted_budget": "scope_review",
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
+        },
+    )
+    save_review_payload(
+        store,
+        run_id,
+        {
+            "id": "review-whole-plan-02",
+            "type": "whole_plan",
+            "revise_at": "blocker",
+            "target_revision": 0,  # lags current artifact revision
+            "scope": {"kind": "whole_plan"},
+            "status": "pending",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "review_pending",
+            "scope_review_rounds": 0,
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
+        },
+    )
+
+    driver = ReviewLoopDriver(store, run_id, provider, adapter)
+    selected = driver._get_or_create_active_loop()
+    assert selected.id == "review-whole-plan-02"
+    assert selected.lifecycle_status == "review_pending"
+
+
 def test_driver_unexpected_decision_raises_provider_error(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
@@ -1573,7 +1799,7 @@ def test_driver_reviewer_session_replace_adopts_capability(tmp_path: Path) -> No
 
     import top_down_planning.orchestrator.review_loop_driver as driver_module
 
-    real_consume = driver_module.consume_provider_turn_with_session_recovery
+    real_consume = driver_module.consume_reviewer_provider_turn_with_session_recovery
     consume_calls = 0
 
     def _consume_side_effect(*args: Any, **kwargs: Any) -> ProviderTurnOutcome:
@@ -1591,7 +1817,7 @@ def test_driver_reviewer_session_replace_adopts_capability(tmp_path: Path) -> No
 
     with patch.object(
         driver_module,
-        "consume_provider_turn_with_session_recovery",
+        "consume_reviewer_provider_turn_with_session_recovery",
         side_effect=_consume_side_effect,
     ) as consume_turn:
         with patch.object(

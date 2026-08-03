@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -20,7 +21,7 @@ from top_down_planning.orchestrator import ProviderRunError, WholePlanReviewOrch
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.provider_turns import (
     build_reviewer_turn_recovery,
-    consume_provider_turn_with_session_recovery,
+    consume_reviewer_provider_turn_with_session_recovery,
 )
 from top_down_planning.orchestrator.reviewer_session import (
     ReviewerRecheckRequiresNewSession,
@@ -79,10 +80,12 @@ def _cursor_provider(
     def fake_runner(argv: list[str], cwd: Path):
         index = call_index["value"]
         call_index["value"] = index + 1
-        if index < len(hooks) and hooks[index] is not None:
-            hooks[index]()
-        for line in streams[index]:
+        hook = hooks[index] if index < len(hooks) else None
+        stream = streams[index]
+        for line_index, line in enumerate(stream):
             yield line
+            if line_index == 0 and hook is not None:
+                threading.Thread(target=hook, daemon=True).start()
 
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
@@ -255,12 +258,12 @@ def test_consume_provider_turn_returns_canonical_reviewer_session_id(
     )
     session_id = provider.start_reviewer_session({"loop_id": "review-whole-plan-01"})
 
-    outcome = consume_provider_turn_with_session_recovery(
+    outcome = consume_reviewer_provider_turn_with_session_recovery(
         store,
         run_id,
         provider,
         session_id,
-        allowed_signals=frozenset(),
+        loop_id="review-whole-plan-01",
         recovery=build_reviewer_turn_recovery(
             store,
             run_id,

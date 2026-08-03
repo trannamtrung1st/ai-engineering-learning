@@ -288,7 +288,7 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
     assert provider._sessions[durable_id].pending_argv is not None
 
 
-def test_cursor_provider_abort_turn_waits_for_collector(tmp_path: Path) -> None:
+def test_cursor_provider_wait_turn_settled_after_abort(tmp_path: Path) -> None:
     import json
 
     agent_path = tmp_path / "agent"
@@ -332,6 +332,7 @@ def test_cursor_provider_abort_turn_waits_for_collector(tmp_path: Path) -> None:
     thread.start()
     time.sleep(0.05)
     provider.abort_turn(session_id)
+    provider.wait_turn_settled(session_id)
     release.set()
     thread.join(timeout=2)
 

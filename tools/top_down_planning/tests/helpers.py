@@ -1165,7 +1165,18 @@ def grant_capability(
             )
             save_review_payload(store, run_id, loop.to_dict())
         else:
-            if loop.reviewer_session_id != resolved_session_id:
+            from top_down_planning.domain.session_bindings import (
+                is_transient_provider_session_id,
+            )
+
+            current_session_id = loop.reviewer_session_id
+            if (
+                current_session_id
+                and not is_transient_provider_session_id(current_session_id)
+                and is_transient_provider_session_id(resolved_session_id)
+            ):
+                resolved_session_id = current_session_id
+            elif loop.reviewer_session_id != resolved_session_id:
                 updated = loop.with_reviewer_provider_session_id(resolved_session_id)
                 save_review_payload(store, run_id, updated.to_dict())
 

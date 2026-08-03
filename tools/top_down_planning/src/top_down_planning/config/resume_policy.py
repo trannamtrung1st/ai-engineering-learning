@@ -222,6 +222,7 @@ def validate_resume_config_comparison(
     comparison: ResumeConfigComparison,
     *,
     consumed_limits: dict[str, int] | None = None,
+    candidate_config: dict[str, Any] | None = None,
 ) -> ResumeConfigComparison:
     """Apply resume allowlist and limit-increase rules to a comparison result."""
 
@@ -255,6 +256,15 @@ def validate_resume_config_comparison(
             blocked.append(change)
         else:
             allowed.append(change)
+
+    if consumed_limits and candidate_config is not None:
+        for path, consumed in sorted(consumed_limits.items()):
+            candidate_value = get_config_value(candidate_config, path)
+            if not isinstance(candidate_value, (int, float)) or candidate_value <= consumed:
+                errors.append(
+                    f"resume from limit_exhausted requires {path!r} strictly greater "
+                    f"than consumed usage (consumed={consumed}, candidate={candidate_value!r})"
+                )
 
     return ResumeConfigComparison(
         changes=comparison.changes,

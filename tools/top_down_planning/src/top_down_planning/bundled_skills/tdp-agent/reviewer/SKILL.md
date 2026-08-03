@@ -85,7 +85,7 @@ Classify each finding with `severity` and `category` from `review_policy.categor
 ## Workflow
 
 1. Read the review package on the first turn (do not call `review respond` before the package is delivered).
-2. `tdp agent example <name>` → adapt payload → `review respond`.
+2. `tdp agent example <name>` → adapt payload → `review respond` (one decision per provider turn; the orchestrator closes the turn when respond persists, waits for the provider session to settle, then releases the bounded reviewer session).
 3. For mandatory family protocol: discovery → owner revisions + `record-actions` → verification → scope review.
 
 ## Discover

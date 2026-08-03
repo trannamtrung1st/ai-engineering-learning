@@ -376,13 +376,19 @@ class CursorProvider:
     def terminate_session(self, session_id: str) -> None:
         canonical_id = self.canonical_session_id(session_id)
         self.abort_turn(canonical_id)
+        self.wait_turn_settled(canonical_id)
         self._sessions.pop(canonical_id, None)
         for alias, target in list(self._session_aliases.items()):
             if target == canonical_id or alias == canonical_id:
                 self._session_aliases.pop(alias, None)
 
     def abort_turn(self, session_id: str) -> None:
-        """End the current in-flight turn without dropping the durable session."""
+        """End the current in-flight turn without dropping the durable session.
+
+        Marks the turn aborted and wakes ``stream_events`` waiters. Callers that
+        need the collector thread to finish must invoke ``wait_turn_settled`` after
+        draining or closing the turn.
+        """
 
         canonical_id = self.canonical_session_id(session_id)
         session = self._sessions.get(canonical_id)
@@ -393,7 +399,6 @@ class CursorProvider:
             session.turn_aborted = True
         self._abort_session_turn(session, error=None)
         self._terminate_tracked_turn_procs_for_session(canonical_id)
-        self.wait_turn_settled(canonical_id)
 
     def terminate_all_sessions(self) -> list[dict[str, Any]]:
         """Stop in-flight turns and drop tracked provider sessions."""

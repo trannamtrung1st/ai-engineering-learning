@@ -441,7 +441,11 @@ def test_operational_paused_run_cannot_be_resumed(tmp_path: Path) -> None:
         "category": "operational",
         "phase": PLANNING,
         "message": "limit reached",
-        "details": {"limit": "max_agent_turns", "consumed": 1, "configured": 1},
+        "details": {
+            "limit": "limits.planning.max_agent_turns",
+            "consumed": 1,
+            "configured": 1,
+        },
     }
     store.save_run("run-20260101T001701-001701", run, expected_revision)
 

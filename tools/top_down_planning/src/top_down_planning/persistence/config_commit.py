@@ -66,6 +66,7 @@ def validate_and_prepare_resume_config_update(
     comparison = validate_resume_config_comparison(
         compare_resume_configs(stored_config, candidate_config),
         consumed_limits=consumed_limits,
+        candidate_config=candidate_config,
     )
     if not comparison.ok:
         detail = comparison.errors[0] if comparison.errors else "resume config change blocked"

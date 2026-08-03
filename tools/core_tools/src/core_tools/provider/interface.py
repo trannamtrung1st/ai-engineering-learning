@@ -53,7 +53,11 @@ class Provider(Protocol):
         """Terminate a provider session when orchestration no longer needs it."""
 
     def abort_turn(self, session_id: str) -> None:
-        """End the current in-flight turn without dropping the durable session."""
+        """End the current in-flight turn without dropping the durable session.
+
+        Wakes ``stream_events`` waiters; pair with ``wait_turn_settled`` when the
+        caller must block until the collector thread finishes.
+        """
 
     def wait_turn_settled(self, session_id: str, *, timeout: float = 30.0) -> None:
         """Block until the session has no in-flight collector turn."""

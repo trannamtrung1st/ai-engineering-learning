@@ -180,3 +180,110 @@ def test_exhausted_budget_never_approves_even_when_stages_clear() -> None:
         )
         is True
     )
+
+
+def test_prepare_limit_reached_retry_preserves_scope_budget() -> None:
+    from tests.helpers import make_review_loop
+    from top_down_planning.domain.reviews import (
+        is_limit_reached_review_loop,
+        is_review_respond_closed,
+        is_terminal_review_loop,
+        prepare_limit_reached_retry,
+    )
+
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="blocked",
+        lifecycle_status="limit_reached",
+        active_stage="finding_verification",
+        scope_review_rounds=15,
+        revision_cycles=2,
+        exhausted_budget="scope_review",
+        revise_at="blocker",
+    )
+    assert is_limit_reached_review_loop(loop) is True
+    assert is_terminal_review_loop(loop) is True
+    assert is_review_respond_closed(loop) is True
+
+    revived = prepare_limit_reached_retry(loop)
+    assert revived.scope_review_rounds == 15
+    assert revived.revision_cycles == 2
+    assert revived.lifecycle_status == "findings_closed"
+    assert revived.status == "approved"
+    assert revived.exhausted_budget is None
+    assert is_limit_reached_review_loop(revived) is False
+    assert is_terminal_review_loop(revived) is False
+
+
+def test_limit_reached_loop_is_terminal_for_conflict_detection() -> None:
+    from tests.helpers import make_review_loop
+    from top_down_planning.domain.reviews import (
+        find_conflicting_active_review_loops,
+        is_terminal_review_loop,
+    )
+
+    limit_reached = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess-wp",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="blocked",
+        lifecycle_status="limit_reached",
+        exhausted_budget="scope_review",
+        revise_at="blocker",
+    )
+    focused = make_review_loop(
+        id="review-focused-plan-01",
+        type="focused_plan",
+        reviewer_session_id="sess-fp",
+        target_revision=0,
+        scope={"kind": "focused_plan", "item_ids": ["item-a"]},
+        status="changes_requested",
+        revise_at="blocker",
+    )
+    assert is_terminal_review_loop(limit_reached) is True
+    assert find_conflicting_active_review_loops(
+        [limit_reached.to_dict(), focused.to_dict()]
+    ) == []
+
+
+def test_prepare_limit_reached_retry_preserves_revision_budget() -> None:
+    from tests.helpers import make_review_loop
+    from top_down_planning.domain.reviews import prepare_limit_reached_retry
+
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="blocked",
+        lifecycle_status="limit_reached",
+        active_stage="finding_verification",
+        scope_review_rounds=3,
+        revision_cycles=5,
+        exhausted_budget="verification_revision",
+        revise_at="blocker",
+        findings=[
+            {
+                "id": "finding-1",
+                "severity": "blocker",
+                "category": "correctness",
+                "target_refs": ["item-a"],
+                "issue": "open",
+                "recommended_change": "fix",
+                "status": "unresolved",
+            }
+        ],
+    )
+    revived = prepare_limit_reached_retry(loop)
+    assert revived.revision_cycles == 5
+    assert revived.scope_review_rounds == 3
+    assert revived.lifecycle_status == "revision_in_progress"
+    assert revived.status == "pending"
+    assert revived.exhausted_budget is None

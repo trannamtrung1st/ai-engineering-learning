@@ -334,7 +334,11 @@ class FocusedReviewAdapter:
             self._run_id,
             phase=phase,
             message=message,
-            limit="max_revision_cycles_per_loop",
+            limit=(
+                "limits.focused_plan_review.max_revision_cycles_per_loop"
+                if loop.type == "focused_plan"
+                else "limits.focused_output_review.max_revision_cycles_per_loop"
+            ),
             consumed=revision_cycles,
             configured=max_revision_cycles,
             role="reviewer",

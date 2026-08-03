@@ -7,7 +7,12 @@ from typing import Any
 from core_tools.persistence import StoreRevisionConflictError
 
 from top_down_planning.domain.resume_limits import consumed_limits_from_run
-from top_down_planning.domain.reviews import ReviewLoop, prepare_review_incomplete_retry
+from top_down_planning.domain.resume_plan import ResumePlan
+from top_down_planning.domain.reviews import (
+    ReviewLoop,
+    prepare_limit_reached_retry,
+    prepare_review_incomplete_retry,
+)
 from top_down_planning.domain.run_ownership import (
     RunOwnershipError,
     assert_expected_run_revision,
@@ -33,15 +38,15 @@ class ApplyResumeError(OrchestratorError):
 
 
 def _review_updates_for_resume_apply(
-    store: FileRunStore,
-    run_id: str,
-    run: dict[str, Any],
     *,
     review_loop: ReviewLoop | None,
 ) -> list[dict[str, Any]]:
     if review_loop is None:
         return []
-    normalized = prepare_review_incomplete_retry(review_loop)
+    if review_loop.lifecycle_status == "limit_reached":
+        normalized = prepare_limit_reached_retry(review_loop)
+    else:
+        normalized = prepare_review_incomplete_retry(review_loop)
     if normalized.to_dict() == review_loop.to_dict():
         return []
     return [normalized.to_dict()]
@@ -154,12 +159,7 @@ def apply_resume_plan_atomically(
         run_expected_revision=expected_revision,
         resolved_config=config_update.resolved_config,
         invocation=config_update.invocation,
-        reviews=_review_updates_for_resume_apply(
-            store,
-            run_id,
-            run,
-            review_loop=review_loop,
-        ),
+        reviews=_review_updates_for_resume_apply(review_loop=review_loop),
         events=events,
     )
 

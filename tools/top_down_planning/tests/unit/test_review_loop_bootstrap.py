@@ -28,6 +28,8 @@ def _loop(**overrides) -> ReviewLoop:
         ],
         revision_cycles=1,
         revise_at="blocker",
+        lifecycle_status="revision_in_progress",
+        active_stage="finding_verification",
     )
     return make_review_loop(
         id=overrides.get("id", base.id),
@@ -39,6 +41,8 @@ def _loop(**overrides) -> ReviewLoop:
         findings=overrides.get("findings", base.findings),
         revision_cycles=overrides.get("revision_cycles", base.revision_cycles),
         revise_at=overrides.get("revise_at", base.revise_at),
+        lifecycle_status=overrides.get("lifecycle_status", base.lifecycle_status),
+        active_stage=overrides.get("active_stage", base.active_stage),
     )
 
 
@@ -71,4 +75,89 @@ def test_bootstrap_whole_review_loop_skips_duplicate_delivery_after_interrupt() 
 
     assert resumed == ["review-whole-output-01"]
     assert updated.target_revision == 5
+    assert deliver_on_existing_session is False
+
+
+def test_bootstrap_skips_owner_resume_after_verification_recheck() -> None:
+    """normalize prepare_recheck must not be followed by primary owner resume."""
+
+    loop = _loop(status="changes_requested", lifecycle_status="findings_open")
+    resumed: list[str] = []
+
+    def resume_interrupted(current: ReviewLoop) -> ReviewLoop:
+        resumed.append(current.id)
+        return current
+
+    def normalize(current: ReviewLoop) -> tuple[ReviewLoop, bool]:
+        # Simulate prepare_recheck delivery.
+        return (
+            make_review_loop(
+                id=current.id,
+                type=current.type,
+                target_revision=5,
+                scope=current.scope,
+                status="pending",
+                findings=current.findings,
+                revision_cycles=current.revision_cycles,
+                revise_at=current.revise_at,
+                lifecycle_status="verification_pending",
+                active_stage="finding_verification",
+            ),
+            True,
+        )
+
+    updated, deliver_on_existing_session = bootstrap_whole_review_loop(
+        loop,
+        current_revision=5,
+        resume_interrupted_revision=resume_interrupted,
+        normalize_loop_for_resume=normalize,
+    )
+
+    assert resumed == []
+    assert updated.lifecycle_status == "verification_pending"
+    assert deliver_on_existing_session is False
+
+
+def test_bootstrap_normalizes_limit_reached_before_primary_revision_resume() -> None:
+    """limit_reached revival must run before needs_primary_revision_resume."""
+
+    from top_down_planning.domain.reviews import prepare_limit_reached_retry
+
+    loop = make_review_loop(
+        id="review-whole-output-01",
+        type="whole_output",
+        target_revision=4,
+        scope={"kind": "whole_output"},
+        status="blocked",
+        findings=_loop().findings,
+        revision_cycles=1,
+        revise_at="blocker",
+        lifecycle_status="limit_reached",
+        exhausted_budget="verification_revision",
+        active_stage="finding_verification",
+        review_record_schema_version=2,
+        review_contract_version=2,
+    )
+    order: list[str] = []
+
+    def normalize(current: ReviewLoop) -> tuple[ReviewLoop, bool]:
+        order.append("normalize")
+        revived = prepare_limit_reached_retry(current)
+        return revived, False
+
+    def resume_interrupted(current: ReviewLoop) -> ReviewLoop:
+        order.append("resume_interrupted")
+        assert current.status == "pending"
+        assert current.lifecycle_status == "revision_in_progress"
+        return current
+
+    updated, deliver_on_existing_session = bootstrap_whole_review_loop(
+        loop,
+        current_revision=4,
+        resume_interrupted_revision=resume_interrupted,
+        normalize_loop_for_resume=normalize,
+    )
+
+    assert order == ["normalize", "resume_interrupted"]
+    assert updated.lifecycle_status == "revision_in_progress"
     assert deliver_on_existing_session is False

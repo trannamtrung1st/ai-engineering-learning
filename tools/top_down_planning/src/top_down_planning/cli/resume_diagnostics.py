@@ -131,6 +131,7 @@ def build_resume_plan_summary(
     comparison = validate_resume_config_comparison(
         compare_resume_configs(stored_config, candidate_config),
         consumed_limits=consumed_limits,
+        candidate_config=candidate_config,
     )
     limit_diagnostics = build_limit_diagnostics(
         run,

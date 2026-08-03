@@ -457,7 +457,7 @@ class PlanAmendmentOrchestrator:
             self._run_id,
             phase=PLAN_AMENDMENT,
             message=message,
-            limit=limit,
+            limit=f"limits.amendment.{limit}",
             consumed=consumed,
             configured=configured,
             role="planner",

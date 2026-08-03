@@ -7,6 +7,7 @@ from pathlib import Path
 from top_down_planning.agent_tool import ReviewAgentService
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import PlanningPhaseOrchestrator
+from top_down_planning.orchestrator.phases import WHOLE_OUTPUT_REVIEW
 from top_down_planning.orchestrator.provider_turns import (
     TurnTextAccumulator,
     clear_phase_action_id,
@@ -18,7 +19,15 @@ from top_down_planning.orchestrator.provider_turns import (
 )
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, grant_capability, plan_root_item, respond_review
+from tests.helpers import (
+    create_run_kwargs,
+    done_events,
+    grant_capability,
+    mandatory_initial_respond_request,
+    plan_root_item,
+    respond_review,
+)
+from tests.unit.test_whole_output_review import _create_run_at_whole_output_review
 
 
 def test_ensure_phase_action_id_assigns_and_reuses(tmp_path: Path) -> None:
@@ -127,6 +136,77 @@ def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
         run_id,
         review_type="focused_plan",
     ) == "review-focused-plan-01"
+
+
+def test_build_reviewer_decision_boundary_observer_detects_terminal_decision(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import (
+        build_reviewer_decision_boundary_observer,
+    )
+    from top_down_planning.orchestrator.reviewer_session import (
+        REVIEWER_DECISION_COMPLETE_SIGNAL,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    observe = build_reviewer_decision_boundary_observer(
+        store,
+        run_id,
+        "review-whole-output-01",
+    )
+
+    assert observe() is None
+
+    production = store.load_production(run_id)
+    respond_review(
+        store,
+        run_id,
+        mandatory_initial_respond_request(
+            store,
+            run_id,
+            loop_id="review-whole-output-01",
+            target_revision=int(production["output_revision"]),
+            review_type="whole_output",
+        ),
+        phase=WHOLE_OUTPUT_REVIEW,
+        loop_id="review-whole-output-01",
+    )()
+
+    assert observe() == REVIEWER_DECISION_COMPLETE_SIGNAL
+
+
+def test_reviewer_boundary_observer_ignores_prior_decision(tmp_path: Path) -> None:
+    from top_down_planning.orchestrator.provider_turns import (
+        build_reviewer_decision_boundary_observer,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    production = store.load_production(run_id)
+    respond_review(
+        store,
+        run_id,
+        mandatory_initial_respond_request(
+            store,
+            run_id,
+            loop_id="review-whole-output-01",
+            target_revision=int(production["output_revision"]),
+            review_type="whole_output",
+        ),
+        phase=WHOLE_OUTPUT_REVIEW,
+        loop_id="review-whole-output-01",
+    )()
+
+    observe = build_reviewer_decision_boundary_observer(
+        store,
+        run_id,
+        "review-whole-output-01",
+    )
+
+    assert observe() is None
 
 
 def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:

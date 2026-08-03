@@ -400,9 +400,9 @@ def release_reviewer_session_after_decision(
 ) -> str | None:
     """Return the review decision and release the reviewer session when terminal.
 
-    Releases only when ``review_decision_from_store`` returns a non-pending
-    decision (approved, changes_requested, etc.). Pending reviews keep the
-    session registered for follow-up turns.
+    Releases only when ``review_decision_from_store`` returns a non-``pending``
+    status (approved, changes_requested, advisory_pending, etc.). Pending loops
+    keep the session registered for follow-up turns.
     """
 
     from top_down_planning.orchestrator.provider_turns import review_decision_from_store

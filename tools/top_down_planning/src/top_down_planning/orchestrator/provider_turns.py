@@ -32,7 +32,10 @@ from top_down_planning.orchestrator.recovery_manifest import (
     build_reviewer_recovery_manifest,
 )
 from top_down_planning.orchestrator.producer_session import PRODUCER_BATCH_COMPLETE_SIGNAL
-from top_down_planning.orchestrator.reviewer_session import reviewer_loop_provider_session_id
+from top_down_planning.orchestrator.reviewer_session import (
+    REVIEWER_DECISION_COMPLETE_SIGNAL,
+    reviewer_loop_provider_session_id,
+)
 from top_down_planning.orchestrator.run_transitions import generate_phase_action_id
 from top_down_planning.orchestrator.session_lineage import emit_session_replacement_failed
 from top_down_planning.orchestrator.session_events import (
@@ -48,6 +51,9 @@ from top_down_planning.orchestrator.session_recovery import (
 )
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.workspace import run_workspace
+
+_NO_COMPLETION_SIGNALS = frozenset[str]()
+NO_COMPLETION_SIGNALS = _NO_COMPLETION_SIGNALS
 
 
 def extract_completion_signal_from_text(
@@ -332,12 +338,15 @@ def _drain_provider_turn(
                     raise ProviderRunError(str(text))
                 break
             if _boundary_poll_triggered(boundary_signal):
+                _abort_provider_turn(provider, active_session_id)
                 break
     finally:
         if stop_poll is not None:
             stop_poll.set()
         if poll_thread is not None:
             poll_thread.join()
+        if sync_session_id is not None:
+            session_id_holder[0] = sync_session_id(session_id_holder[0])
         _wait_provider_turn_settled(provider, session_id_holder[0])
 
     if _boundary_poll_triggered(boundary_signal):
@@ -385,9 +394,13 @@ def consume_provider_turn_with_session_recovery(
     session_id: str,
     *,
     allowed_signals: frozenset[str],
-    recovery: PrimarySessionRecoverySpec | ReviewerSessionRecoverySpec,
+    recovery: PrimarySessionRecoverySpec,
 ) -> ProviderTurnOutcome:
-    """Resume an existing session, replacing it once on missing or stalled provider sessions."""
+    """Resume an existing session, replacing it once on missing or stalled provider sessions.
+
+    Reviewer turns must use ``consume_reviewer_provider_turn_with_session_recovery``
+    so store-driven ``review respond`` closure can abort stalled provider subprocesses.
+    """
 
     return _consume_provider_turn_with_session_recovery(
         store,
@@ -651,6 +664,33 @@ def production_batch_count(store: RunStore, run_id: str) -> int:
     return len(batches)
 
 
+def review_respond_count(store: RunStore, run_id: str, loop_id: str) -> int:
+    """Count durable ``review_responded`` audit events for a review loop."""
+
+    return sum(
+        1
+        for event in store.load_events(run_id)
+        if event.get("type") == "review_responded"
+        and str(event.get("loop_id") or "") == loop_id
+    )
+
+
+def reviewer_turn_closure_ready(
+    store: RunStore,
+    run_id: str,
+    loop_id: str,
+    *,
+    baseline_responds: int,
+    baseline_decision: str | None,
+) -> bool:
+    """Return True when review respond persisted a new closure signal for this turn."""
+
+    if review_respond_count(store, run_id, loop_id) > baseline_responds:
+        return True
+    decision = review_decision_from_store(store, run_id, loop_id)
+    return baseline_decision is None and decision is not None
+
+
 def build_producer_batch_boundary_observer(
     store: RunStore,
     run_id: str,
@@ -662,6 +702,30 @@ def build_producer_batch_boundary_observer(
     def observe() -> str | None:
         if production_batch_count(store, run_id) > baseline_batches:
             return PRODUCER_BATCH_COMPLETE_SIGNAL
+        return None
+
+    return observe
+
+
+def build_reviewer_decision_boundary_observer(
+    store: RunStore,
+    run_id: str,
+    loop_id: str,
+) -> Callable[[], str | None]:
+    """Return a hook that signals turn closure when review respond persists."""
+
+    baseline_responds = review_respond_count(store, run_id, loop_id)
+    baseline_decision = review_decision_from_store(store, run_id, loop_id)
+
+    def observe() -> str | None:
+        if reviewer_turn_closure_ready(
+            store,
+            run_id,
+            loop_id,
+            baseline_responds=baseline_responds,
+            baseline_decision=baseline_decision,
+        ):
+            return REVIEWER_DECISION_COMPLETE_SIGNAL
         return None
 
     return observe
@@ -682,9 +746,31 @@ def consume_producer_provider_turn_with_session_recovery(
         run_id,
         provider,
         session_id,
-        allowed_signals=frozenset(),
+        allowed_signals=_NO_COMPLETION_SIGNALS,
         recovery=recovery,
         on_boundary=build_producer_batch_boundary_observer(store, run_id),
+    )
+
+
+def consume_reviewer_provider_turn_with_session_recovery(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    session_id: str,
+    *,
+    loop_id: str,
+    recovery: ReviewerSessionRecoverySpec,
+) -> ProviderTurnOutcome:
+    """Drain a reviewer turn; close it when review respond records a decision."""
+
+    return _consume_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        session_id,
+        allowed_signals=_NO_COMPLETION_SIGNALS,
+        recovery=recovery,
+        on_boundary=build_reviewer_decision_boundary_observer(store, run_id, loop_id),
     )
 
 
@@ -810,7 +896,7 @@ def review_decision_from_store(
     run_id: str,
     loop_id: str,
 ) -> str | None:
-    """Return a terminal review decision recorded in the run store."""
+    """Return the persisted review loop status when it is no longer ``pending``."""
 
     review = store.load_review(run_id, loop_id)
     status = str(review.get("status") or "")

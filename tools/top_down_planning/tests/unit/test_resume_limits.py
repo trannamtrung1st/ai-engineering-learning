@@ -20,15 +20,28 @@ def test_consumed_limits_from_limit_exhausted_stop_details() -> None:
     }
 
 
-def test_consumed_limits_from_planning_counters_when_stop_details_missing() -> None:
+def test_consumed_limits_ignores_short_limit_leaf_names() -> None:
     run = {
-        "stop": {"code": "limit_exhausted", "details": {}},
+        "stop": {
+            "code": "limit_exhausted",
+            "details": {"limit": "max_agent_turns", "consumed": 4},
+        },
         "planning": {"agent_turns": 4, "items_added": 2},
     }
-    assert consumed_limits_from_run(run) == {
-        "limits.planning.max_agent_turns": 4,
-        "limits.planning.max_items_added": 2,
+    assert consumed_limits_from_run(run) is None
+
+
+def test_consumed_limits_rejects_bool_consumed() -> None:
+    run = {
+        "stop": {
+            "code": "limit_exhausted",
+            "details": {
+                "limit": "limits.planning.max_agent_turns",
+                "consumed": True,
+            },
+        }
     }
+    assert consumed_limits_from_run(run) is None
 
 
 def test_consumed_limits_returns_none_for_non_limit_stop() -> None:

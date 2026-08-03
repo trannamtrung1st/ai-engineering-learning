@@ -67,7 +67,7 @@ def _operational_stop(**overrides: object) -> dict:
         category="operational",
         phase="planning",
         message="planning turn limit exhausted",
-        details={"limit": "max_agent_turns", "consumed": 5, "configured": 5},
+        details={"limit": "limits.planning.max_agent_turns", "consumed": 5, "configured": 5},
     ).to_dict()
     base.update(overrides)
     return base

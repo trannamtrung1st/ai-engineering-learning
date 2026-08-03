@@ -27,6 +27,8 @@ REVIEWER_DECISION_MISSING = (
     "reviewer session — invoke `tdp` directly, not `uv run tdp`)"
 )
 
+REVIEWER_DECISION_COMPLETE_SIGNAL = "review_decision_complete"
+
 _FORBIDDEN_STAGE_LABELS = (
     "full review",
     "confirmation review",
@@ -583,6 +585,7 @@ def resolve_reviewer_session_for_recheck(
 
 
 __all__ = [
+    "REVIEWER_DECISION_COMPLETE_SIGNAL",
     "REVIEWER_DECISION_MISSING",
     "ReviewerRecheckRequiresNewSession",
     "begin_reviewer_review",

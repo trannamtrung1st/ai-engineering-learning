@@ -467,7 +467,7 @@ class ProductionPhaseOrchestrator:
             self._run_id,
             phase=PRODUCTION,
             message=message,
-            limit=limit,
+            limit=f"limits.production.{limit}",
             consumed=consumed,
             configured=configured,
             role="producer",

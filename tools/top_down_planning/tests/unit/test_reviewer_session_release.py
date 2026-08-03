@@ -8,9 +8,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from core_tools.provider import StubProvider
+from core_tools.provider.errors import ProviderTurnError
 from top_down_planning.domain.reviews import ReviewLoop
-from top_down_planning.orchestrator import ProviderRunError, RunEngine, WholePlanReviewOrchestrator
-from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator import ProviderRunError, RunEngine, WholeOutputReviewOrchestrator, WholePlanReviewOrchestrator
+from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_OUTPUT_REVIEW, WHOLE_PLAN_REVIEW
 from top_down_planning.observability import ObservabilityContext
 from top_down_planning.orchestrator.session_events import (
     end_reviewer_session_with_audit,
@@ -28,6 +29,7 @@ from tests.helpers import (
 )
 from tests.integration.e2e_helpers import script_whole_plan_review
 from tests.unit.test_whole_plan_review import _create_run_at_whole_plan_review
+from tests.unit.test_whole_output_review import _create_run_at_whole_output_review
 
 
 def test_reviewer_session_audit_fields_includes_stage_for_mandatory_only() -> None:
@@ -319,3 +321,65 @@ def test_whole_plan_recheck_resumes_after_changes_requested_release(tmp_path: Pa
     assert resumed
     assert any(event["session_id"] == canonical for event in resumed)
     assert canonical in provider._sessions
+
+
+def test_reviewer_turn_aborts_inflight_stream_when_decision_recorded(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    aborted_sessions: list[str] = []
+
+    class _AbortTrackingProvider(StubProvider):
+        def abort_turn(self, session_id: str) -> None:
+            aborted_sessions.append(session_id)
+            super().abort_turn(session_id)
+
+    provider = _AbortTrackingProvider()
+    _create_run_at_whole_output_review(store, provider=provider)
+    run_id = "run-20260101T000801-000801"
+    production = store.load_production(run_id)
+    target_revision = int(production["output_revision"])
+
+    provider.script_turn(
+        [
+            {"type": "assistant", "text": "reviewing output"},
+            {"type": "assistant", "text": "still streaming without done"},
+        ],
+        mutate_store=respond_review(
+            store,
+            run_id,
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id="review-whole-output-01",
+                target_revision=target_revision,
+                review_type="whole_output",
+                decision="changes_requested",
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "severity": "blocker",
+                        "category": "correctness",
+                        "target_refs": ["item-leaf"],
+                        "issue": "Output evidence is missing.",
+                        "recommended_change": "Add artifact reference.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id="review-whole-output-01",
+        ),
+    )
+
+    with pytest.raises((ProviderRunError, ProviderTurnError)):
+        WholeOutputReviewOrchestrator(store, run_id, provider).run()
+
+    assert aborted_sessions
+    events = store.load_events(run_id)
+    ended = [event for event in events if event.get("type") == "reviewer_session_ended"]
+    assert ended
+    assert not any(
+        session.get("role") == "reviewer"
+        for session in provider.list_active_sessions()
+    )

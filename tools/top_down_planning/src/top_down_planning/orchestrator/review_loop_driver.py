@@ -22,9 +22,12 @@ from top_down_planning.domain.reviews import (
     build_primary_owner_finding_guidance,
     owner_actions_require_revision,
     policy_observability_fields_for_loop,
+    prepare_limit_reached_retry,
     prepare_review_incomplete_retry,
     required_open_findings,
+    scope_review_budget_exhausted,
     verification_required_for_loop,
+    verification_revision_budget_exhausted,
 )
 from top_down_planning.orchestrator.mandatory_review_stages import (
     approved_means_final_approval,
@@ -79,7 +82,9 @@ from top_down_planning.orchestrator.run_transitions import (
     pause_for_limit_exhausted,
 )
 from top_down_planning.orchestrator.provider_turns import (
+    NO_COMPLETION_SIGNALS,
     consume_provider_turn_with_session_recovery,
+    consume_reviewer_provider_turn_with_session_recovery,
 )
 from top_down_planning.orchestrator.session_events import (
     emit_reviewer_session_resumed,
@@ -95,8 +100,6 @@ from top_down_planning.orchestrator.review_loop_types import (
 )
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
-
-_NO_COMPLETION_SIGNALS = frozenset[str]()
 
 
 class ReviewLoopAdapter(Protocol):
@@ -355,7 +358,11 @@ class ReviewLoopDriver:
                 if self.profile.is_mandatory_gate:
                     revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
                     if loop.lifecycle_status == "limit_reached":
-                        exhausted = loop.exhausted_budget or "verification_revision"
+                        exhausted = loop.exhausted_budget
+                        if not exhausted:
+                            raise ProviderRunError(
+                                f"limit_reached loop {loop.id} missing exhausted_budget"
+                            )
                         return self._pause_for_limit(
                             limit_message(
                                 limits,
@@ -566,20 +573,24 @@ class ReviewLoopDriver:
         limits: Any,
     ) -> MandatoryWholeReviewResult:
         spec = self.spec
+        if loop is None:
+            raise ProviderRunError(
+                f"{spec.review_label} limit pause requires an active review loop"
+            )
+        limits_section = f"{spec.limits_key}_review"
         if exhausted == "verification_revision":
-            limit = "max_revision_cycles"
-            consumed = int(
-                loop.revision_cycles if loop is not None else limits.max_revision_cycles
-            )
+            leaf = "max_revision_cycles"
+            consumed = int(loop.revision_cycles)
             configured = int(limits.max_revision_cycles)
-        else:
-            limit = "max_scope_review_rounds"
-            consumed = int(
-                loop.scope_review_rounds
-                if loop is not None
-                else limits.max_scope_review_rounds
-            )
+        elif exhausted == "scope_review":
+            leaf = "max_scope_review_rounds"
+            consumed = int(loop.scope_review_rounds)
             configured = int(limits.max_scope_review_rounds)
+        else:
+            raise ProviderRunError(
+                f"unknown exhausted budget for {spec.review_label}: {exhausted!r}"
+            )
+        limit = f"limits.{limits_section}.{leaf}"
         pause_for_limit_exhausted(
             self._store,
             self._run_id,
@@ -590,13 +601,13 @@ class ReviewLoopDriver:
             configured=configured,
             role="reviewer",
             revoke_phase=spec.phase,
-            loop_id=loop.id if loop is not None else None,
+            loop_id=loop.id,
             exhausted_budget=exhausted,
         )
         self._append_event(
             f"{spec.event_prefix}_review_limit_exceeded",
             message=message,
-            loop_id=loop.id if loop is not None else None,
+            loop_id=loop.id,
             exhausted_budget=exhausted,
         )
         run = self._store.load_run(self._run_id)
@@ -633,6 +644,27 @@ class ReviewLoopDriver:
         return self.result_from_run(run, ok=False, reason=message)
 
     def _normalize_loop_for_resume(self, loop: ReviewLoop) -> tuple[ReviewLoop, bool]:
+        if loop.lifecycle_status == "limit_reached":
+            config = self._store.load_resolved_config(self._run_id)
+            limits = mandatory_review_limits_from_config(config, self.spec.limits_key)
+            exhausted = loop.exhausted_budget
+            if not exhausted:
+                raise ProviderRunError(
+                    f"limit_reached loop {loop.id} missing exhausted_budget"
+                )
+            if exhausted == "scope_review" and scope_review_budget_exhausted(
+                loop.scope_review_rounds,
+                limits,
+            ):
+                return loop, False
+            if exhausted == "verification_revision" and verification_revision_budget_exhausted(
+                loop.revision_cycles,
+                limits,
+            ):
+                return loop, False
+            revived = prepare_limit_reached_retry(loop)
+            return self._persist_loop(revived), False
+
         if loop.status == "review_incomplete":
             retried = prepare_review_incomplete_retry(loop)
             retried, _finding_set_id = allocate_discovery_finding_set_id(retried)
@@ -649,15 +681,19 @@ class ReviewLoopDriver:
 
     def _get_or_create_active_loop(self) -> ReviewLoop:
         spec = self.spec
-        artifact_revision, _digest = self._adapter.current_artifact_binding()
         for payload in reversed(self._store.list_reviews(self._run_id)):
             if payload.get("type") != spec.review_type:
                 continue
             loop = ReviewLoop.from_dict(payload)
-            if loop.target_revision != artifact_revision:
-                continue
+            # Newest limit_reached loop keeps the phase budget across resume.
+            if loop.lifecycle_status == "limit_reached":
+                return loop
+            # A newer approved/true-blocked loop means the phase moved on; do not
+            # resurrect an older limit_reached further down the list.
             if is_terminal_review_loop(loop):
-                continue
+                break
+            # Newest non-terminal loop owns the phase (revision lag is handled by
+            # normalize / recheck). Do not walk past it to an older limit_reached.
             return loop
         return self._create_loop()
 
@@ -730,12 +766,12 @@ class ReviewLoopDriver:
         role_context = resolve_role_session_context(config, run, "reviewer")
         phase = self._adapter.phase_for_session(loop, run)
         try:
-            turn_outcome = consume_provider_turn_with_session_recovery(
+            turn_outcome = consume_reviewer_provider_turn_with_session_recovery(
                 self._store,
                 self._run_id,
                 self._provider,
                 session_id,
-                allowed_signals=_NO_COMPLETION_SIGNALS,
+                loop_id=loop_id,
                 recovery=self._adapter.build_reviewer_turn_recovery(
                     loop_id,
                     phase,
@@ -888,7 +924,7 @@ class ReviewLoopDriver:
                 self._run_id,
                 self._provider,
                 session_id,
-                allowed_signals=_NO_COMPLETION_SIGNALS,
+                allowed_signals=NO_COMPLETION_SIGNALS,
                 recovery=self._adapter.build_owner_turn_recovery(
                     phase,
                     self._append_event,

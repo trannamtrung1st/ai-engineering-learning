@@ -52,6 +52,8 @@ Whole-output examples append `-output` (e.g. `review-respond-family-discovery-ou
 
 Schema: `tdp agent schema review-respond`
 
+Reviewer turns close when `review respond` persists a decision: the orchestrator aborts the in-flight provider turn, waits for the session collector to settle, then releases the bounded reviewer session (`reviewer_session_ended`) before owner revision or the next gate. A background poll also watches for persisted review decisions while the turn is open so a stalled agent subprocess cannot block progress after respond.
+
 Mandatory discovery: `audit_attestation` rubric ids come from the review package `rubric_items`; `rule_id` values from `tdp agent readme` (section Built-in finding-family rule_id values) or `custom.<slug>`.
 
 List all examples: `tdp agent example`

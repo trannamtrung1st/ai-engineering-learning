@@ -100,6 +100,7 @@ def test_resume_rejects_limit_equal_to_consumed_usage() -> None:
     validated = validate_resume_config_comparison(
         comparison,
         consumed_limits={"limits.planning.max_agent_turns": 41},
+        candidate_config=candidate,
     )
     assert not validated.ok
     assert any("strictly greater than consumed" in error for error in validated.errors)
@@ -112,9 +113,25 @@ def test_resume_rejects_limit_below_consumed_usage() -> None:
     validated = validate_resume_config_comparison(
         comparison,
         consumed_limits={"limits.planning.max_agent_turns": 55},
+        candidate_config=candidate,
     )
     assert not validated.ok
     assert any("strictly greater than consumed" in error for error in validated.errors)
+
+
+def test_resume_from_limit_exhausted_requires_candidate_above_consumed() -> None:
+    stored = resolve_config(None, ["limits.planning.max_agent_turns=5"])
+    candidate = resolve_config(None, ["limits.planning.max_agent_turns=5"])
+    comparison = compare_resume_configs(stored, candidate)
+    validated = validate_resume_config_comparison(
+        comparison,
+        consumed_limits={"limits.planning.max_agent_turns": 5},
+        candidate_config=candidate,
+    )
+    assert not validated.ok
+    assert any(
+        "strictly greater than consumed usage" in error for error in validated.errors
+    )
 
 
 def test_resume_allows_provider_retry_increase() -> None:

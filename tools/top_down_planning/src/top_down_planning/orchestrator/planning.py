@@ -375,7 +375,7 @@ class PlanningPhaseOrchestrator:
             self._run_id,
             phase=PLANNING,
             message=message,
-            limit=limit,
+            limit=f"limits.planning.{limit}",
             consumed=consumed,
             configured=configured,
             role="planner",

@@ -206,7 +206,8 @@ MANDATORY_REVIEW_TRANSITIONS: Mapping[str, frozenset[str]] = {
     ),
     "approved": frozenset(),
     "blocked": frozenset(),
-    "limit_reached": frozenset(),
+    # Resume after limit extension revives the same loop (budgets preserved).
+    "limit_reached": frozenset({"findings_closed", "revision_in_progress"}),
     "review_incomplete": frozenset(
         {
             "review_pending",
@@ -935,7 +936,18 @@ def is_mandatory_review_loop(loop: ReviewLoop) -> bool:
     return loop.type in {"whole_plan", "whole_output"}
 
 
+def is_limit_reached_review_loop(loop: ReviewLoop) -> bool:
+    """True when a mandatory loop paused on Loop Bounds exhaustion."""
+
+    return (
+        is_mandatory_review_loop(loop)
+        and loop.lifecycle_status == "limit_reached"
+    )
+
+
 def is_terminal_review_loop(loop: ReviewLoop) -> bool:
+    # limit_reached uses status=blocked, so it is terminal for mutation/conflict
+    # purposes. Resume selection continues that loop via _get_or_create_active_loop.
     if loop.status == "blocked":
         return True
     if is_mandatory_review_loop(loop):
@@ -946,6 +958,7 @@ def is_terminal_review_loop(loop: ReviewLoop) -> bool:
 def is_review_respond_closed(loop: ReviewLoop) -> bool:
     """True when ``review respond`` must reject further reviewer decisions."""
 
+    # limit_reached uses status=blocked, so is_terminal_review_loop covers it.
     if is_terminal_review_loop(loop):
         return True
     if (
@@ -2592,6 +2605,48 @@ def prepare_review_incomplete_retry(loop: ReviewLoop) -> ReviewLoop:
     )
 
 
+def prepare_limit_reached_retry(loop: ReviewLoop) -> ReviewLoop:
+    """Revive a ``limit_reached`` mandatory loop after a limit extension.
+
+    Preserves ``revision_cycles`` / ``scope_review_rounds`` so an extended
+    ``max_*`` continues the same phase budget instead of opening a new loop.
+    """
+
+    if not is_limit_reached_review_loop(loop):
+        return loop
+
+    exhausted = normalize_exhausted_budget(loop.exhausted_budget)
+    if exhausted == "scope_review":
+        # Re-enter the path that calls ``_begin_scope_review`` with the same
+        # consumed scope_review_rounds under the raised max.
+        assert_mandatory_review_transition("limit_reached", "findings_closed")
+        return replace(
+            loop,
+            status="approved",
+            lifecycle_status="findings_closed",
+            active_stage=None,
+            exhausted_budget=None,
+            scope_review_result=None,
+        ).with_reviewer_session_released()
+
+    if exhausted == "verification_revision":
+        # Re-enter primary owner revision for the already-consumed cycle
+        # (needs_primary_revision_resume) without double-counting.
+        assert_mandatory_review_transition("limit_reached", "revision_in_progress")
+        return replace(
+            loop,
+            status="pending",
+            lifecycle_status="revision_in_progress",
+            active_stage="finding_verification",
+            exhausted_budget=None,
+        ).with_reviewer_session_released()
+
+    raise ValueError(
+        f"cannot retry limit_reached loop without exhausted_budget; "
+        f"got {loop.exhausted_budget!r}"
+    )
+
+
 def budgets_snapshot(loop: ReviewLoop) -> dict[str, int]:
     return {
         "revision_cycles": int(loop.revision_cycles),
@@ -3663,9 +3718,11 @@ def build_limit_reached_terminal(
     findings: list[ReviewFinding],
     limits: MandatoryReviewLimits,
 ) -> LimitReachedTerminal:
-    """Build a ``limit_reached`` terminal that preserves unresolved findings.
+    """Build a ``limit_reached`` pause that preserves unresolved findings.
 
-    ``limit_reached`` must never convert into approval (Loop Bounds).
+    ``limit_reached`` must never convert into approval (Loop Bounds). Resume
+    after raising the exhausted limit revives the same loop via
+    ``prepare_limit_reached_retry`` (budgets preserved).
     """
 
     exhausted = normalize_exhausted_budget(exhausted_budget) or exhausted_budget

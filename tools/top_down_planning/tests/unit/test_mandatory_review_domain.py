@@ -192,7 +192,6 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
         "review_pending": {
             "findings_open",
             "scope_review_pending",
-            "scope_review_pending",
             "review_incomplete",
         },
         "findings_open": {"revision_in_progress", "blocked", "review_incomplete"},
@@ -206,15 +205,7 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
         },
         "findings_closed": {
             "scope_review_pending",
-            "scope_review_pending",
             "limit_reached",
-        },
-        "scope_review_pending": {
-            "approved",
-            "findings_open",
-            "blocked",
-            "limit_reached",
-            "review_incomplete",
         },
         "scope_review_pending": {
             "approved",
@@ -225,11 +216,10 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
         },
         "approved": set(),
         "blocked": set(),
-        "limit_reached": set(),
+        "limit_reached": {"findings_closed", "revision_in_progress"},
         "review_incomplete": {
             "review_pending",
             "findings_open",
-            "scope_review_pending",
             "scope_review_pending",
             "verification_pending",
         },
@@ -238,10 +228,11 @@ def test_mandatory_lifecycle_transitions_match_state_model() -> None:
         expected
     )
     assert can_transition_mandatory_review("findings_closed", "scope_review_pending")
-    assert can_transition_mandatory_review("findings_closed", "scope_review_pending")
+    assert can_transition_mandatory_review("limit_reached", "findings_closed")
+    assert can_transition_mandatory_review("limit_reached", "revision_in_progress")
     assert not can_transition_mandatory_review("findings_open", "approved")
     assert_mandatory_review_transition("scope_review_pending", "approved")
-    assert_mandatory_review_transition("scope_review_pending", "approved")
+    assert_mandatory_review_transition("limit_reached", "findings_closed")
     with pytest.raises(ValueError, match="illegal mandatory review transition"):
         assert_mandatory_review_transition("limit_reached", "approved")
     assert validate_mandatory_lifecycle_status("limit_reached") == "limit_reached"
