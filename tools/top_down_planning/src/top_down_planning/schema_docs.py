@@ -72,12 +72,38 @@ _PLAN_ITEM_INPUT_SCHEMA: dict[str, Any] = {
             "additionalProperties": False,
         },
         "boundaries": {"type": "array", "items": {"type": "string"}},
-        "depends_on": {"type": "array", "items": {"type": "string"}},
+        "depends_on": {
+            "description": (
+                "Execution prerequisites: stable item ids or temp_id values from "
+                "other add_item ops in the same transaction. Accepts a string or "
+                "array at runtime (coerced to array)."
+            ),
+            "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}},
+            ],
+        },
         "acceptance": {"type": "array", "items": {"type": "string"}},
         "risks": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "source_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
     },
     "additionalProperties": False,
+}
+
+_SINGLE_DEPENDENCY_EDGE_SCHEMA: dict[str, Any] = {
+    "description": (
+        "One dependency target: stable item id or temp_id. Accepts a string or "
+        "single-element array at runtime."
+    ),
+    "oneOf": [
+        {"type": "string"},
+        {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "maxItems": 1,
+        },
+    ],
 }
 
 _PLAN_ITEM_PATCH_SCHEMA: dict[str, Any] = {
@@ -178,10 +204,14 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
         {
             "type": "object",
             "required": ["op", "item_id", "depends_on"],
+            "description": (
+                "Add one dependency edge to an existing item. For new items in the "
+                "same batch, prefer inline add_item.item.depends_on."
+            ),
             "properties": {
                 "op": {"const": "add_dependency"},
                 "item_id": {"type": "string"},
-                "depends_on": {"type": "string"},
+                "depends_on": _SINGLE_DEPENDENCY_EDGE_SCHEMA,
             },
             "additionalProperties": True,
         },
@@ -191,7 +221,7 @@ _PLAN_OPERATION_SCHEMA: dict[str, Any] = {
             "properties": {
                 "op": {"const": "remove_dependency"},
                 "item_id": {"type": "string"},
-                "depends_on": {"type": "string"},
+                "depends_on": _SINGLE_DEPENDENCY_EDGE_SCHEMA,
             },
             "additionalProperties": True,
         },
@@ -1552,7 +1582,9 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
     "expand-branch": {
         "schema": "plan-transaction",
         "description": (
-            "Set plan-level contract, populate the seeded root, and expand a branch."
+            "Set plan-level contract, populate the seeded root, and expand a branch. "
+            "UI depends on API via inline add_item.item.depends_on with temp_id "
+            "resolution in the same transaction."
         ),
         "payload": {
             "base_revision": 0,
@@ -1602,12 +1634,8 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                         "kind": "work",
                         "title": "UI layer",
                         "outcome": "UI consumes the API.",
+                        "depends_on": ["item-api"],
                     },
-                },
-                {
-                    "op": "add_dependency",
-                    "item_id": "item-ui",
-                    "depends_on": "item-api",
                 },
             ],
         },
@@ -2282,6 +2310,16 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
 
 AGENT_HELP_TEXT = """Top Down Planning agent CLI (tdp agent)
 
+Start here:
+  1. tdp agent readme
+  2. tdp agent schema <name>  /  tdp agent example <name>
+  3. Role skills (under project.workspace):
+       shared   tools/top_down_planning/skills/tdp-agent
+       planner  tools/top_down_planning/skills/tdp-agent/planner
+       producer tools/top_down_planning/skills/tdp-agent/producer
+       reviewer tools/top_down_planning/skills/tdp-agent/reviewer
+     Agent hub: tools/top_down_planning/docs/README.md
+
 Discover contracts without reading source:
   tdp agent help
   tdp agent readme
@@ -2511,6 +2549,28 @@ governs mandatory discovery and verification payloads.
 """
 
 
+_AGENT_README_PLAN_DEPENDENCIES = """## Plan apply: dependencies
+
+For new items in the same `operations` batch, set execution prerequisites **inline**
+on `add_item.item.depends_on`:
+
+- Values may be **stable item ids** or **temp_id** strings from other `add_item`
+  ops in the same batch.
+- Accepts a **string** (`"item-api"`) or **array** (`["item-api"]`).
+- Operation order within the batch does not need to list dependencies before
+  dependents; temp ids are pre-registered for the transaction.
+- Each `temp_id` must be **unique** within one `plan apply` batch.
+
+Example: `tdp agent example expand-branch` (UI item depends on API via inline
+`depends_on`). Bundled planner skill:
+`tools/top_down_planning/skills/tdp-agent/planner`.
+
+To change dependencies on **existing** items, use `add_dependency`,
+`remove_dependency`, or `replace_dependencies`. `update_item` patch cannot change
+`depends_on`.
+
+"""
+
 _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
 
 1. Planner expands the plan with `plan apply` until `candidate_plan_ready`.
@@ -2521,6 +2581,8 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    revise plan-level `scope`, `boundaries`, `constraints`, `assumptions`,
    `acceptance`, and `risks` (seeded from `run.boundaries` / `run.acceptance` at run creation).
    Item-level `risks` and `source_refs` use `add_item` / `update_item`.
+   For dependencies between new items in the same batch, set `depends_on` inline on
+   `add_item` (see Plan apply: dependencies above and `expand-branch`).
    Every `work` leaf must also set item-level `scope.includes`, `scope.excludes`,
    and/or `boundaries` (approval mode errors when all three are empty).
    Once `item-root` has active children, deterministic validation requires a
@@ -2701,6 +2763,8 @@ use `production snapshot` or `production check` for plan validation.
 
 ## Further reading
 
+Agent hub: tools/top_down_planning/docs/README.md
+Bundled skills: tools/top_down_planning/skills/tdp-agent/
 Package README: tools/top_down_planning/README.md
 """
 
@@ -2708,6 +2772,7 @@ AGENT_README_TEXT = (
     AGENT_README_PREFIX
     + _finding_category_readme_section()
     + _finding_family_readme_section()
+    + _AGENT_README_PLAN_DEPENDENCIES
     + _AGENT_README_WORKFLOW_AND_BEYOND
 )
 

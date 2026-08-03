@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from top_down_planning.orchestrator.planner_session import build_planner_protocol_instructions
+from top_down_planning.orchestrator.planner_session import (
+    build_planner_protocol_instructions,
+    build_planner_tool_instructions,
+)
 
 
 def test_planner_protocol_includes_classification_guide() -> None:
@@ -39,3 +42,17 @@ def test_planner_protocol_includes_family_repair_guidance() -> None:
     assert "target_finding_ids" in protocol
     assert "remaining_instance_refs" in protocol
     assert "seed finding" in protocol
+
+
+def test_planner_protocol_documents_inline_depends_on() -> None:
+    protocol = " ".join(build_planner_protocol_instructions()).lower()
+    assert "depends_on" in protocol
+    assert "expand-branch" in protocol
+
+
+def test_planner_tool_instructions_include_discover_and_depends_on() -> None:
+    instructions = build_planner_tool_instructions("run-test")
+    assert "discover" in instructions
+    assert "expand-branch" in instructions["discover"]
+    assert "plan_depends_on" in instructions
+    assert "temp_id" in instructions["plan_depends_on"].lower()

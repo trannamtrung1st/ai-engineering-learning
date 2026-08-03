@@ -1,8 +1,9 @@
 # Example Top Down Planning configuration (proposal §14).
 #
-# From the repository root:
+# From the repository root (project.workspace: . resolves against cwd):
 #   tdp run --config tools/top_down_planning/examples/top-down-planning.yaml
 #
+# Bundled agent skills use workspace-relative paths under tools/top_down_planning/skills/.
 # Path resolution:
 #   project.workspace resolves against the process working directory.
 #   run.input_refs, run.output_goal_file, and all
@@ -12,6 +13,9 @@
 # Stub provider is for scripted tests only (provider.name=stub + script_turn()).
 # Agent discoverability:
 #   tdp agent help
+#   tdp agent readme
+#   tools/top_down_planning/docs/README.md
+#   tools/top_down_planning/skills/tdp-agent/  (wired below)
 #   tdp agent schema config
 #   tdp agent example expand-branch
 #
@@ -47,22 +51,26 @@ agent_context:
   default:
     model: auto
     resources: []
-    skills: []
+    skills:
+      - tools/top_down_planning/skills/tdp-agent
 
   planner:
     model: auto
     resources: []
-    skills: []
+    skills:
+      - tools/top_down_planning/skills/tdp-agent/planner
 
   producer:
     model: auto
     resources: []
-    skills: []
+    skills:
+      - tools/top_down_planning/skills/tdp-agent/producer
 
   reviewer:
     model: auto
     resources: []
-    skills: []
+    skills:
+      - tools/top_down_planning/skills/tdp-agent/reviewer
 
 planning:
   stop_hint: "Stop when each item has one coherent outcome, clear boundaries, material dependencies, and acceptance expectations."

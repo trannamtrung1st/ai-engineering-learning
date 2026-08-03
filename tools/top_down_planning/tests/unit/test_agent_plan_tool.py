@@ -113,6 +113,78 @@ def test_apply_persists_multi_op_transaction(tmp_path: Path) -> None:
     assert any(event["type"] == "plan_applied" for event in events)
 
 
+def test_apply_inline_depends_on_with_temp_id(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+    token = grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING)
+    result = service.apply(
+        {
+            "base_revision": 0,
+            "operations": [
+                {
+                    "op": "add_item",
+                    "temp_id": "item-api",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {"kind": "work", "title": "API", "outcome": "API exists."},
+                },
+                {
+                    "op": "add_item",
+                    "temp_id": "item-ui",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {
+                        "kind": "work",
+                        "title": "UI",
+                        "outcome": "UI exists.",
+                        "depends_on": "item-api",
+                    },
+                },
+            ],
+        },
+        capability_token=token,
+    )
+
+    api_id = result["id_map"]["item-api"]
+    ui_id = result["id_map"]["item-ui"]
+    saved = store.load_plan_model("run-20260101T000001-000001")
+    assert saved.items[ui_id].depends_on == [api_id]
+
+
+def test_apply_unknown_dependency_includes_hint(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+
+    service = PlanAgentService(store, "run-20260101T000001-000001")
+    token = grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING)
+    with pytest.raises(OperationError) as exc_info:
+        service.apply(
+            {
+                "base_revision": 0,
+                "operations": [
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-ui",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {
+                            "kind": "work",
+                            "title": "UI",
+                            "outcome": "UI exists.",
+                            "depends_on": ["item-missing"],
+                        },
+                    },
+                ],
+            },
+            capability_token=token,
+        )
+
+    assert exc_info.value.hint is not None
+    assert "expand-branch" in exc_info.value.hint
+
+
 def test_stale_revision_apply_fails_with_snapshot_instruction(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)
@@ -647,6 +719,59 @@ def test_cli_stale_revision_returns_actionable_error(
     assert payload["ok"] is False
     assert payload["error"]["code"] == "revision_conflict"
     assert "snapshot" in payload["error"]["action"].lower()
+
+
+def test_cli_unknown_dependency_returns_hint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store)
+    set_capability_env(
+        monkeypatch,
+        grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING),
+    )
+
+    request_path = write_agent_request_file(
+        store,
+        "run-20260101T000001-000001",
+        "bad-dep.json",
+        {
+            "base_revision": 0,
+            "operations": [
+                {
+                    "op": "add_item",
+                    "temp_id": "item-ui",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {
+                        "kind": "work",
+                        "title": "UI",
+                        "depends_on": ["item-missing"],
+                    },
+                },
+            ],
+        },
+    )
+
+    result = run_cli(
+        [
+            "agent",
+            "plan",
+            "apply",
+            "--run",
+            "run-20260101T000001-000001",
+            "--runs-dir",
+            str(tmp_path),
+            "--request",
+            str(request_path),
+        ]
+    )
+    assert result.exit_code == 1
+    payload = result.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "operation_error"
+    assert "expand-branch" in payload["error"]["hint"]
 
 
 def test_main_help_still_works() -> None:

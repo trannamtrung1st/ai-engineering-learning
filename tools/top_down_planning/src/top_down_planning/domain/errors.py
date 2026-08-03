@@ -21,9 +21,10 @@ class RevisionConflictError(DomainError):
 class UnknownItemError(DomainError):
     """Referenced plan item id does not exist."""
 
-    def __init__(self, item_id: str) -> None:
+    def __init__(self, item_id: str, *, hint: str | None = None) -> None:
         super().__init__(f"unknown item id: {item_id}")
         self.item_id = item_id
+        self.hint = hint
 
 
 class InvalidMutationError(DomainError):

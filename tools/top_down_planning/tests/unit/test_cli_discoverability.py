@@ -37,6 +37,30 @@ def test_agent_help_points_to_finding_categories() -> None:
     assert "category_definitions" in schema_docs.AGENT_HELP_TEXT
 
 
+def test_agent_help_includes_start_here_and_role_skills() -> None:
+    help_text = schema_docs.AGENT_HELP_TEXT.lower()
+    assert "start here" in help_text
+    assert "tools/top_down_planning/skills/tdp-agent/planner" in help_text
+    assert "tools/top_down_planning/docs/readme.md" in help_text
+
+
+def test_agent_readme_documents_plan_apply_dependencies() -> None:
+    readme = schema_docs.AGENT_README_TEXT.lower()
+    assert "## plan apply: dependencies" in readme
+    assert "expand-branch" in readme
+    assert "unique" in readme and "temp_id" in readme
+    assert "tools/top_down_planning/skills/tdp-agent" in readme
+
+
+def test_expand_branch_example_uses_inline_depends_on() -> None:
+    example = schema_docs.show_example("expand-branch")
+    operations = example["payload"]["operations"]
+    op_names = [op["op"] for op in operations]
+    assert "add_dependency" not in op_names
+    ui_op = next(op for op in operations if op.get("temp_id") == "item-ui")
+    assert ui_op["item"]["depends_on"] == ["item-api"]
+
+
 def test_review_finding_schema_uses_builtin_category_enum() -> None:
     schema = schema_docs.show_schema("review-respond")
     finding_schemas: list[dict[str, Any]] = []
@@ -80,6 +104,23 @@ def test_review_respond_schema_rejects_invalid_finding_category() -> None:
         schema_docs.show_schema("review-respond"),
     )
     assert issues
+
+
+def test_add_dependency_schema_accepts_single_element_array() -> None:
+    issues = validate_against_schema(
+        {
+            "base_revision": 0,
+            "operations": [
+                {
+                    "op": "add_dependency",
+                    "item_id": "item-second",
+                    "depends_on": ["item-first"],
+                }
+            ],
+        },
+        schema_docs.show_schema("plan-transaction"),
+    )
+    assert issues == []
 
 
 def test_agent_help_lists_core_verbs() -> None:

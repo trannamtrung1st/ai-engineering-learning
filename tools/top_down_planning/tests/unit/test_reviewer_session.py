@@ -130,6 +130,8 @@ def test_whole_plan_verification_protocol_omits_audit_attestation() -> None:
 
 def test_tool_instructions_discourage_uv_run() -> None:
     instructions = build_reviewer_tool_instructions("run-test")
+    assert "discover" in instructions
+    assert "tdp agent readme" in instructions["discover"].lower()
     assert "uv run" in instructions["respond"]
     assert "TDP_CAPABILITY_TOKEN" in instructions["authorization"]
     assert instructions["agent_requests_dir"] == "$TDP_AGENT_REQUESTS_DIR"

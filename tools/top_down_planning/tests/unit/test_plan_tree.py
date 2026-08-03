@@ -213,6 +213,133 @@ def test_add_item_resolves_depends_on_temp_ids_in_same_transaction() -> None:
     assert result.plan.items[ui_id].depends_on == [api_id]
 
 
+def test_add_item_accepts_string_depends_on_with_temp_id() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "add_item",
+                "temp_id": "temp-api",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {"kind": "work", "title": "API"},
+            },
+            {
+                "op": "add_item",
+                "temp_id": "temp-ui",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {
+                    "kind": "work",
+                    "title": "UI",
+                    "depends_on": "temp-api",
+                },
+            },
+        ],
+    )
+
+    api_id = result.id_map["temp-api"]
+    ui_id = result.id_map["temp-ui"]
+    assert result.plan.items[ui_id].depends_on == [api_id]
+
+
+def test_add_item_depends_on_temp_id_allows_reverse_operation_order() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "add_item",
+                "temp_id": "temp-ui",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {
+                    "kind": "work",
+                    "title": "UI",
+                    "depends_on": ["temp-api"],
+                },
+            },
+            {
+                "op": "add_item",
+                "temp_id": "temp-api",
+                "parent_id": "item-root",
+                "placement": {"last_child": True},
+                "item": {"kind": "work", "title": "API"},
+            },
+        ],
+    )
+
+    api_id = result.id_map["temp-api"]
+    ui_id = result.id_map["temp-ui"]
+    assert result.plan.items[ui_id].depends_on == [api_id]
+
+
+def test_duplicate_temp_id_in_transaction_is_rejected() -> None:
+    plan = _sample_plan()
+
+    with pytest.raises(InvalidMutationError, match="duplicate temp_id"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "add_item",
+                    "temp_id": "dup",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {"kind": "work", "title": "A"},
+                },
+                {
+                    "op": "add_item",
+                    "temp_id": "dup",
+                    "parent_id": "item-root",
+                    "placement": {"last_child": True},
+                    "item": {"kind": "work", "title": "B"},
+                },
+            ],
+        )
+
+
+def test_add_dependency_rejects_multi_element_array_depends_on() -> None:
+    plan = _sample_plan()
+
+    with pytest.raises(InvalidMutationError, match="exactly one dependency target"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "add_dependency",
+                    "item_id": "item-second",
+                    "depends_on": ["item-first", "item-root"],
+                }
+            ],
+        )
+
+
+def test_add_dependency_accepts_single_element_array_depends_on() -> None:
+    plan = _sample_plan()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "add_dependency",
+                "item_id": "item-second",
+                "depends_on": ["item-first"],
+            }
+        ],
+    )
+
+    assert result.plan.items["item-second"].depends_on == ["item-first"]
+
+
 def test_exceeding_max_depth_warns_without_rejecting() -> None:
     plan = Plan(
         id="plan-deep",

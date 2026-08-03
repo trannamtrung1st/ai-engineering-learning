@@ -2,6 +2,8 @@
 
 Planning and production orchestration: receive an input and output goal, build a top-down plan, review and validate it, produce output in coherent batches, and resolve a final quality outcome.
 
+**Runtime agents:** start with `tdp agent readme`, then role skills under `tools/top_down_planning/skills/tdp-agent/` (see [docs/README.md](docs/README.md)). Schemas and examples: `tdp agent schema` / `tdp agent example`.
+
 Agent protocol: `tdp agent readme` · schemas and examples: `tdp agent schema` / `tdp agent example`
 
 ## Quickstart
@@ -237,10 +239,13 @@ agent_context:
     resources:
       - docs/planning-guidelines.md
     skills:
-      - .agents/skills/top-down-planning/
+      - tools/top_down_planning/skills/tdp-agent
+      - tools/top_down_planning/skills/tdp-agent/planner
 
   producer:
     model: coding-model
+    skills:
+      - tools/top_down_planning/skills/tdp-agent/producer
     guidance:
       - text: >
           Work in coherent batches. Consider focused review and useful
@@ -248,6 +253,8 @@ agent_context:
 
   reviewer:
     model: review-model
+    skills:
+      - tools/top_down_planning/skills/tdp-agent/reviewer
 ```
 
 Role `guidance`, `resources`, and `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. Effective context is attached to fresh planner, producer, and reviewer sessions.

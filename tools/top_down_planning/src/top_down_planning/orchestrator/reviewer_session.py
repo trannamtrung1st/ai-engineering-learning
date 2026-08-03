@@ -337,6 +337,10 @@ def build_reviewer_tool_instructions(
         ),
         "schema": "tdp agent schema review-respond",
         "examples": examples,
+        "discover": (
+            "tdp agent readme; tdp agent schema review-respond; "
+            f"{examples}. Role skill: tools/top_down_planning/skills/tdp-agent/reviewer."
+        ),
     }
     instructions.update(extra)
     return instructions

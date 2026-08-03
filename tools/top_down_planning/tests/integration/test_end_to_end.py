@@ -420,15 +420,20 @@ def test_planning_turn_limit_yields_paused_not_accepted(
 
 
 @pytest.mark.integration
-def test_example_config_and_stub_instructions_are_present(tmp_path: Path) -> None:
+def test_example_config_and_stub_instructions_are_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     examples_dir = Path(__file__).resolve().parents[2] / "examples"
     example_config = examples_dir / "top-down-planning.yaml"
     readme = Path(__file__).resolve().parents[2] / "README.md"
+    repo_root = Path(__file__).resolve().parents[4]
 
     assert example_config.exists()
     example_text = example_config.read_text(encoding="utf-8")
     assert "provider:" in example_text
     assert "name: cursor" in example_text
+    assert "tools/top_down_planning/skills/tdp-agent" in example_text
 
     readme_text = readme.read_text(encoding="utf-8")
     assert "tests default to `stub`" in readme_text
@@ -436,6 +441,7 @@ def test_example_config_and_stub_instructions_are_present(tmp_path: Path) -> Non
 
     from top_down_planning.config import resolve_config
 
+    monkeypatch.chdir(repo_root)
     resolved = resolve_config(example_config, ["provider.name=stub", "run.input_refs=[]"])
     assert resolved["provider"]["name"] == "stub"
 

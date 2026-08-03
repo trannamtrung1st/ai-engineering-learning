@@ -58,7 +58,8 @@ def build_producer_protocol_instructions() -> list[str]:
         ),
         (
             "Discover request contracts with tdp agent readme, tdp agent "
-            "schema, and tdp agent example."
+            "schema, and tdp agent example. Role skill: "
+            "tools/top_down_planning/skills/tdp-agent/producer."
         ),
         (
             "Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR. "
@@ -107,6 +108,10 @@ def build_producer_tool_instructions(run_id: str) -> dict[str, str]:
             "--request $TDP_AGENT_REQUESTS_DIR/review-request-<scope>-a01.json"
         ),
         "batch_complete_signal": PRODUCER_BATCH_COMPLETE_SIGNAL,
+        "discover": (
+            "tdp agent readme; tdp agent schema production-apply; "
+            "tdp agent example batch-result; tdp agent example completion-claim"
+        ),
     }
 
 

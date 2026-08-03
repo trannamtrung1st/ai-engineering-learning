@@ -31,6 +31,8 @@ from top_down_planning.domain.reviews import item_referenced_in_reviews
 
 Operation = dict[str, Any]
 
+_EXPAND_BRANCH_HINT = "See tdp agent example expand-branch for inline depends_on with temp ids."
+
 
 def _stable_id(prefix: str = "item") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
@@ -38,6 +40,58 @@ def _stable_id(prefix: str = "item") -> str:
 
 def _resolve_id(item_id: str, id_map: dict[str, str]) -> str:
     return id_map.get(item_id, item_id)
+
+
+def _normalize_depends_on(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        return list(raw)
+    raise InvalidMutationError(
+        "depends_on must be a string or array of item ids or temp_id values"
+    )
+
+
+def _normalize_single_dependency(raw: Any, *, field: str = "depends_on") -> str:
+    values = _normalize_depends_on(raw)
+    if len(values) != 1:
+        raise InvalidMutationError(
+            f"{field} requires exactly one dependency target (string or single-element array)"
+        )
+    return values[0]
+
+
+def _claim_temp_id(temp_id: str | None, materialized_temp_ids: set[str]) -> None:
+    if not temp_id:
+        return
+    if temp_id in materialized_temp_ids:
+        raise InvalidMutationError(f"duplicate temp_id in transaction: {temp_id!r}")
+    materialized_temp_ids.add(temp_id)
+
+
+def _preregister_temp_ids(operations: list[Operation], id_map: dict[str, str]) -> None:
+    for op in operations:
+        if op.get("op") not in {"add_item", "supersede_item"}:
+            continue
+        temp_id = op.get("temp_id")
+        if temp_id and temp_id not in id_map:
+            id_map[temp_id] = _stable_id()
+
+
+def _dependency_error_hint(dep_raw: str, resolved: str, id_map: dict[str, str]) -> str:
+    del id_map
+    if dep_raw != resolved:
+        return (
+            f"Unknown temp_id {dep_raw!r}; reference temp_id values from add_item ops "
+            f"in the same batch. {_EXPAND_BRANCH_HINT}"
+        )
+    return _EXPAND_BRANCH_HINT
+
+
+def _raise_unknown_dependency(dep_raw: str, resolved: str, id_map: dict[str, str]) -> None:
+    raise UnknownItemError(resolved, hint=_dependency_error_hint(dep_raw, resolved, id_map))
 
 
 def _require_item(plan: Plan, item_id: str) -> PlanItem:
@@ -65,16 +119,22 @@ def _validate_depends_on(
     id_map: dict[str, str],
     *,
     item_id: str | None = None,
+    dep_raw_values: list[str] | None = None,
 ) -> None:
-    for dep in depends_on:
-        resolved = _resolve_id(dep, id_map)
+    pending_stable_ids = set(id_map.values())
+    raw_values = dep_raw_values if dep_raw_values is not None else depends_on
+
+    for index, dep in enumerate(depends_on):
+        dep_raw = raw_values[index] if index < len(raw_values) else dep
+        resolved = _resolve_id(dep_raw, id_map)
         if item_id is not None and resolved == item_id:
             raise InvalidMutationError("self-dependency is not allowed")
         if resolved not in plan.items:
-            raise UnknownItemError(resolved)
+            if resolved in pending_stable_ids:
+                continue
+            _raise_unknown_dependency(dep_raw, resolved, id_map)
         if not is_active_item(plan.items[resolved]):
             raise InvalidMutationError(f"dependency target is not active: {resolved}")
-
 
 
 def _item_payload_from_op(op: Operation) -> dict[str, Any]:
@@ -121,11 +181,25 @@ def _inbound_dependency_users(plan: Plan, item_id: str) -> list[str]:
     ]
 
 
-def _apply_add_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
-    temp_id = op.get("temp_id")
-    stable = _stable_id()
+def _stable_id_for_temp(temp_id: str | None, id_map: dict[str, str]) -> str:
     if temp_id:
-        id_map[temp_id] = stable
+        if temp_id not in id_map:
+            id_map[temp_id] = _stable_id()
+        return id_map[temp_id]
+    return _stable_id()
+
+
+def _apply_add_item(
+    plan: Plan,
+    op: Operation,
+    id_map: dict[str, str],
+    changed: set[str],
+    *,
+    materialized_temp_ids: set[str],
+) -> None:
+    temp_id = op.get("temp_id")
+    _claim_temp_id(temp_id, materialized_temp_ids)
+    stable = _stable_id_for_temp(temp_id, id_map)
 
     parent_id = op.get("parent_id")
     if parent_id is not None:
@@ -139,8 +213,15 @@ def _apply_add_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: 
         }
 
     payload = _item_payload_from_op(op)
-    depends_on = [_resolve_id(dep, id_map) for dep in payload.get("depends_on") or []]
-    _validate_depends_on(plan, depends_on, id_map, item_id=stable)
+    raw_depends_on = _normalize_depends_on(payload.get("depends_on"))
+    depends_on = [_resolve_id(dep, id_map) for dep in raw_depends_on]
+    _validate_depends_on(
+        plan,
+        depends_on,
+        id_map,
+        item_id=stable,
+        dep_raw_values=raw_depends_on,
+    )
     payload = dict(payload)
     payload["depends_on"] = depends_on
     item = _build_item(stable, parent_id, "0000000000", payload)
@@ -255,7 +336,14 @@ def _apply_move_subtree(plan: Plan, op: Operation, id_map: dict[str, str], chang
         changed.add(new_parent_id)
 
 
-def _apply_supersede_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
+def _apply_supersede_item(
+    plan: Plan,
+    op: Operation,
+    id_map: dict[str, str],
+    changed: set[str],
+    *,
+    materialized_temp_ids: set[str],
+) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
     old_item = _require_active_item(plan, item_id)
     if children_of(plan, item_id):
@@ -263,10 +351,9 @@ def _apply_supersede_item(plan: Plan, op: Operation, id_map: dict[str, str], cha
             "supersede_item requires the item to have no active children"
         )
 
-    temp_id = op.get("temp_id")
-    replacement_id = _stable_id()
-    if temp_id:
-        id_map[temp_id] = replacement_id
+    replacement_temp_id = op.get("temp_id")
+    _claim_temp_id(replacement_temp_id, materialized_temp_ids)
+    replacement_id = _stable_id_for_temp(replacement_temp_id, id_map)
 
     payload = op.get("replacement")
     if payload is None:
@@ -330,9 +417,16 @@ def _apply_remove_item(
 
 def _apply_add_dependency(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
-    depends_on = _resolve_id(op["depends_on"], id_map)
+    dep_raw = _normalize_single_dependency(op["depends_on"])
+    depends_on = _resolve_id(dep_raw, id_map)
     item = _require_active_item(plan, item_id)
-    _validate_depends_on(plan, [depends_on], id_map, item_id=item_id)
+    _validate_depends_on(
+        plan,
+        [depends_on],
+        id_map,
+        item_id=item_id,
+        dep_raw_values=[dep_raw],
+    )
     if depends_on in item.depends_on:
         raise InvalidMutationError(f"duplicate dependency edge: {item_id} -> {depends_on}")
 
@@ -343,7 +437,8 @@ def _apply_add_dependency(plan: Plan, op: Operation, id_map: dict[str, str], cha
 
 def _apply_remove_dependency(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
-    depends_on = _resolve_id(op["depends_on"], id_map)
+    dep_raw = _normalize_single_dependency(op["depends_on"])
+    depends_on = _resolve_id(dep_raw, id_map)
     item = _require_active_item(plan, item_id)
     if depends_on not in item.depends_on:
         raise InvalidMutationError(f"missing dependency edge: {item_id} -> {depends_on}")
@@ -359,10 +454,17 @@ def _apply_replace_dependencies(
 ) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
     item = _require_active_item(plan, item_id)
-    depends_on = [_resolve_id(dep, id_map) for dep in op.get("depends_on") or []]
+    raw_depends_on = _normalize_depends_on(op.get("depends_on"))
+    depends_on = [_resolve_id(dep, id_map) for dep in raw_depends_on]
     if len(set(depends_on)) != len(depends_on):
         raise InvalidMutationError("duplicate dependency targets in replace_dependencies")
-    _validate_depends_on(plan, depends_on, id_map, item_id=item_id)
+    _validate_depends_on(
+        plan,
+        depends_on,
+        id_map,
+        item_id=item_id,
+        dep_raw_values=raw_depends_on,
+    )
 
     item.depends_on = depends_on
     changed.add(item_id)
@@ -370,11 +472,9 @@ def _apply_replace_dependencies(
 
 
 _APPLY_HANDLERS = {
-    "add_item": _apply_add_item,
     "update_item": _apply_update_item,
     "update_plan": _apply_update_plan,
     "move_subtree": _apply_move_subtree,
-    "supersede_item": _apply_supersede_item,
     "add_dependency": _apply_add_dependency,
     "remove_dependency": _apply_remove_dependency,
     "replace_dependencies": _apply_replace_dependencies,
@@ -398,16 +498,39 @@ def apply_operations(
     working = clone_plan(plan)
     id_map: dict[str, str] = {}
     changed: set[str] = set()
+    materialized_temp_ids: set[str] = set()
+
+    _preregister_temp_ids(operations, id_map)
 
     for op in operations:
         op_name = op.get("op")
         if op_name == "remove_item":
             _apply_remove_item(working, op, id_map, changed, reviews=reviews)
             continue
+        if op_name == "add_item":
+            _apply_add_item(
+                working,
+                op,
+                id_map,
+                changed,
+                materialized_temp_ids=materialized_temp_ids,
+            )
+            continue
+        if op_name == "supersede_item":
+            _apply_supersede_item(
+                working,
+                op,
+                id_map,
+                changed,
+                materialized_temp_ids=materialized_temp_ids,
+            )
+            continue
         handler = _APPLY_HANDLERS.get(op_name)
         if handler is None:
             raise InvalidMutationError(f"unsupported operation: {op_name!r}")
         handler(working, op, id_map, changed)
+
+    assert_no_dependency_cycles(working)
 
     working.revision = plan.revision + 1
     warnings, budgets = collect_budget_warnings(working, changed, limits)

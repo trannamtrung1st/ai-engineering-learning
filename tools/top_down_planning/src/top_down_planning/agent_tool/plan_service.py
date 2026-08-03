@@ -154,7 +154,9 @@ class PlanAgentService:
                 expected=exc.expected,
                 actual=exc.actual,
             ) from exc
-        except (InvalidMutationError, UnknownItemError) as exc:
+        except UnknownItemError as exc:
+            raise OperationError(str(exc), hint=exc.hint) from exc
+        except InvalidMutationError as exc:
             raise OperationError(str(exc)) from exc
         except DomainError as exc:
             raise OperationError(str(exc)) from exc
