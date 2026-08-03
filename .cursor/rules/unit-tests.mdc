@@ -1,10 +1,25 @@
 ---
-description: Fast unit tests — prefer fakes/stubs over live I/O; avoid slow sleeps
+description: TDD test-first + fast unit tests — fakes/stubs over live I/O
 globs: "**/tests/**/*.py"
 alwaysApply: false
 ---
 
-# Unit Test Performance
+# Unit Tests
+
+## Test-first (TDD)
+
+When adding or changing behavior covered by these tests:
+
+1. Write the failing test from **expected outcomes** (spec, domain rules) — not from current code.
+2. Run → confirm **red** (wrong/missing behavior, not setup typos).
+3. Implement minimum production code → **green**.
+4. Refactor if needed; tests stay green.
+
+Do not implement first and adjust assertions to match what was built. See `.cursor/skills/tdd/SKILL.md`.
+
+For tests under `tools/**`, also follow `.cursor/skills/tools-dev/SKILL.md` for fakes, stubs, and helpers.
+
+## Performance
 
 Unit tests must be fast. Prefer fakes, stubs, and mocks over live implementations.
 
@@ -42,5 +57,7 @@ Using `provider="cursor"` or session ids like `cursor-abc` as **metadata strings
 
 ## Before finishing
 
+- [ ] New/changed behavior: failing test existed before production code (TDD red → green)
+- [ ] Assertions match requirements, not whatever the code currently returns
 - Reuse package test helpers before inventing new setup (`top_down_planning`: `tests/helpers.py`, `tests/conftest.py`).
 - One behavior per test; no unnecessary fixtures or multi-second setup.

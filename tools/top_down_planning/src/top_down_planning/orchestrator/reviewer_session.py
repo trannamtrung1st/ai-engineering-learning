@@ -20,11 +20,11 @@ from top_down_planning.persistence.capabilities import CAPABILITY_TOKEN_FILE_ENV
 from top_down_planning.persistence.interface import RunStore
 from core_tools.provider import Provider
 
-REVIEWER_DECISION_MISSING = (
-    "reviewer turn completed without a decision; "
-    "ensure `tdp agent review respond` succeeded "
-    f"(mutating commands require {CAPABILITY_TOKEN_FILE_ENV_VAR} from the active "
-    "reviewer session — invoke `tdp` directly, not `uv run tdp`)"
+REVIEWER_GATE_CONTINUE_BLOCKED_REASON = (
+    "The previous reviewer provider turn ended without a persisted "
+    "`tdp agent review respond` decision. The orchestrator advances only from "
+    "review respond payloads — reading the spec, readme, or schema does not "
+    "count. Submit your decision now."
 )
 
 REVIEWER_DECISION_COMPLETE_SIGNAL = "review_decision_complete"
@@ -67,6 +67,22 @@ def build_reviewer_protocol_instructions(
     """Provider-agnostic reviewer behavior instructions for review packages."""
 
     instructions = [
+        (
+            "Every reviewer provider turn MUST end with a successful "
+            "`tdp agent review respond`. Assistant prose, spec notes, or host "
+            "plan artifacts do not advance the run."
+        ),
+        (
+            "Submit respond before the turn ends. Partial discovery is acceptable "
+            "— use changes_requested or needs_revision with what you have rather "
+            "than deferring respond to read the entire spec."
+        ),
+        (
+            "If a turn ends without respond, the orchestrator queues another "
+            "reviewer turn with a nudge (bounded by "
+            "limits.review.max_agent_turns_per_gate) before pausing with "
+            "limit_exhausted."
+        ),
         (
             "You are the TDP reviewer. Inspect the delivered review package and "
             "submit a structured decision through tdp agent review respond in "
@@ -377,6 +393,11 @@ def build_reviewer_tool_instructions(
             "--request $TDP_AGENT_REQUESTS_DIR/review-respond-<stage>-r<rev>-a01.json "
             "(invoke `tdp` directly; do not wrap with `uv run`)"
         ),
+        "completion_requirement": (
+            "End every reviewer provider turn with a successful review respond. "
+            "Discovery may be partial; do not spend the full turn on readme/schema/"
+            "spec reads without submitting respond."
+        ),
         "schema": "tdp agent schema review-respond",
         "examples": examples,
         "discover": (
@@ -389,8 +410,40 @@ def build_reviewer_tool_instructions(
     return instructions
 
 
-def reviewer_decision_missing_error() -> ProviderRunError:
-    return ProviderRunError(REVIEWER_DECISION_MISSING)
+def build_reviewer_gate_continue_request(
+    *,
+    stage: str | None,
+    turn: int,
+    max_turns: int,
+    review_type: str | None = None,
+) -> dict[str, Any]:
+    """Nudge payload when a reviewer turn ended without review respond."""
+
+    stage_label = str(stage or "review").strip() or "review"
+    remaining = max(0, max_turns - turn)
+    return {
+        "action": "continue",
+        "phase": "review",
+        "review_type": review_type,
+        "stage": stage,
+        "blocked_reason": (
+            f"{REVIEWER_GATE_CONTINUE_BLOCKED_REASON} "
+            f"(gate turn {turn}/{max_turns}; {remaining} retry "
+            f"{'turn' if remaining == 1 else 'turns'} remaining)."
+        ),
+        "required_action": (
+            "Write review-respond JSON under $TDP_AGENT_REQUESTS_DIR and run "
+            "`tdp agent review respond --run <run-id> --request "
+            "$TDP_AGENT_REQUESTS_DIR/review-respond-<stage>-r<rev>-a01.json`. "
+            "Invoke `tdp` directly; do not wrap with `uv run`."
+        ),
+        "reviewer_gate": {
+            "stage": stage_label,
+            "agent_turn": turn,
+            "max_agent_turns": max_turns,
+            "turns_remaining": remaining,
+        },
+    }
 
 
 def _issue_reviewer_capability(
@@ -586,17 +639,16 @@ def resolve_reviewer_session_for_recheck(
 
 __all__ = [
     "REVIEWER_DECISION_COMPLETE_SIGNAL",
-    "REVIEWER_DECISION_MISSING",
     "ReviewerRecheckRequiresNewSession",
     "begin_reviewer_review",
     "bind_reviewer_session_capability",
+    "build_reviewer_gate_continue_request",
     "build_reviewer_protocol_instructions",
     "build_reviewer_tool_instructions",
     "deliver_reviewer_turn",
     "recheck_requires_reviewer_session_replacement",
     "resolve_reviewer_session_for_recheck",
     "resume_reviewer_session_with_package",
-    "reviewer_decision_missing_error",
     "reviewer_loop_binding",
     "reviewer_loop_provider_session_id",
     "start_reviewer_review_session",

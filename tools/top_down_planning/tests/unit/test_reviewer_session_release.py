@@ -221,23 +221,45 @@ def test_completed_reviewer_turn_releases_session_before_phase_return(tmp_path: 
     assert len(ended) == 2
 
 
-def test_pending_reviewer_turn_does_not_release_session(tmp_path: Path) -> None:
+def test_reviewer_auto_retries_when_turn_ends_without_decision(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
-    _create_run_at_whole_plan_review(store, provider=provider)
     run_id = "run-20260101T000301-000301"
+    _create_run_at_whole_plan_review(store, run_id=run_id, provider=provider)
+    provider.script_turn(done_events(text="review turn without respond"))
+    script_whole_plan_review(provider, store, run_id, decision="approved")
+
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.phase == PLAN_VALIDATED
+    events = store.load_events(run_id)
+    assert any(event.get("type") == "reviewer_gate_turn_retried" for event in events)
+
+
+def test_reviewer_gate_turn_limit_pauses_run(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000301-000301"
+    _create_run_at_whole_plan_review(
+        store,
+        run_id=run_id,
+        provider=provider,
+        limits={"review": {"max_agent_turns_per_gate": 1}},
+    )
     provider.script_turn(done_events(text="review turn without respond"))
 
-    with pytest.raises(ProviderRunError, match="without a decision"):
-        WholePlanReviewOrchestrator(store, run_id, provider).run()
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 
-    assert provider.list_active_sessions()
-    ended = [
-        event
-        for event in store.load_events(run_id)
-        if event.get("type") == "reviewer_session_ended"
-    ]
-    assert ended == []
+    assert result.ok is False
+    run = store.load_run(run_id)
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "limit_exhausted"
+    assert (
+        run["stop"]["details"]["limit"] == "limits.review.max_agent_turns_per_gate"
+    )
+    events = store.load_events(run_id)
+    assert any(event.get("type") == "reviewer_gate_turns_exhausted" for event in events)
 
 
 def test_run_engine_does_not_duplicate_reviewer_session_ended(tmp_path: Path) -> None:
@@ -271,7 +293,11 @@ def test_run_engine_does_not_duplicate_reviewer_session_ended(tmp_path: Path) ->
 def test_whole_plan_recheck_resumes_after_changes_requested_release(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
-    _create_run_at_whole_plan_review(store, provider=provider)
+    _create_run_at_whole_plan_review(
+        store,
+        provider=provider,
+        limits={"review": {"max_agent_turns_per_gate": 1}},
+    )
     run_id = "run-20260101T000301-000301"
     provider.script_turn(
         done_events(text="review turn"),
@@ -304,8 +330,9 @@ def test_whole_plan_recheck_resumes_after_changes_requested_release(tmp_path: Pa
     provider.script_turn(done_events(text="planner revises after findings"))
     provider.script_turn(done_events(text="verification recheck queued"))
 
-    with pytest.raises(ProviderRunError, match="without a decision"):
-        WholePlanReviewOrchestrator(store, run_id, provider).run()
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
+    assert result.ok is False
+    assert store.load_run(run_id)["stop"]["code"] == "limit_exhausted"
 
     review = store.load_review(run_id, "review-whole-plan-01")
     canonical = binding_provider_session_id(review.get("reviewer_binding"))

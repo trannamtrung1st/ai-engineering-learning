@@ -17,6 +17,8 @@ _PHASE_TO_MANDATORY_REVIEW_TYPE = {
     WHOLE_OUTPUT_REVIEW: "whole_output",
 }
 
+_REVIEW_GATE_LIMIT_PATH = "limits.review.max_agent_turns_per_gate"
+
 _EXHAUSTED_BUDGET_TO_LIMIT_LEAF = {
     "scope_review": "max_scope_review_rounds",
     "verification_revision": "max_revision_cycles",
@@ -59,17 +61,68 @@ def validate_review_incomplete_stop(
     return loop
 
 
+def _validate_review_gate_turn_limit_exhausted(
+    store: RunStore,
+    run_id: str,
+    run: dict[str, Any],
+    stop: dict[str, Any],
+    *,
+    details: dict[str, Any],
+) -> ReviewLoop:
+    phase = str(run.get("phase") or stop.get("phase") or "")
+    loop_id = str(details.get("loop_id") or "").strip()
+    if not loop_id:
+        raise ResumeStopValidationError(
+            f"limit_exhausted stop for {_REVIEW_GATE_LIMIT_PATH!r} requires "
+            "details.loop_id"
+        )
+    try:
+        payload = store.load_review(run_id, loop_id)
+    except Exception as exc:
+        raise ResumeStopValidationError(
+            f"limit_exhausted loop {loop_id!r} is missing"
+        ) from exc
+    loop = ReviewLoop.from_dict(payload)
+    mandatory_type = _PHASE_TO_MANDATORY_REVIEW_TYPE.get(phase)
+    if mandatory_type is not None:
+        if loop.type != mandatory_type:
+            raise ResumeStopValidationError(
+                f"limit_exhausted loop {loop_id!r} type {loop.type!r} does not match "
+                f"phase {phase!r}"
+            )
+    elif loop.type not in {"focused_plan", "focused_output"}:
+        raise ResumeStopValidationError(
+            f"limit_exhausted stop for {_REVIEW_GATE_LIMIT_PATH!r} in phase {phase!r} "
+            f"requires a focused review loop; got {loop.type!r}"
+        )
+    if is_limit_reached_review_loop(loop):
+        raise ResumeStopValidationError(
+            f"review loop {loop_id!r} is limit_reached; gate-turn pause expects an "
+            "in-progress review loop"
+        )
+    loop_consumed = int(loop.gate_agent_turns)
+    stop_consumed = details["consumed"]
+    if stop_consumed != loop_consumed:
+        raise ResumeStopValidationError(
+            f"stop consumed {stop_consumed} does not match loop gate_agent_turns "
+            f"{loop_consumed}"
+        )
+    return loop
+
+
 def validate_limit_exhausted_stop(
     store: RunStore,
     run_id: str,
     run: dict[str, Any],
     stop: dict[str, Any],
 ) -> ReviewLoop | None:
-    """Return the ``limit_reached`` mandatory loop when the pause is a review budget.
+    """Return a review loop needing normalization on resume when applicable.
 
     All ``limit_exhausted`` stops require ``stop.details.limit`` as a full
-    ``limits.*`` path. Whole-plan / whole-output pauses also require ``loop_id``,
-    ``exhausted_budget``, and a matching ``limit_reached`` review record.
+    ``limits.*`` path. Mandatory whole-plan / whole-output budget pauses require
+    ``limit_reached`` loops with ``exhausted_budget``. Gate-turn pauses use
+    ``limits.review.max_agent_turns_per_gate`` with in-progress loops.
+    Returns ``None`` for non-review phase limits (e.g. planning).
     """
 
     details = stop.get("details") or {}
@@ -90,6 +143,15 @@ def validate_limit_exhausted_stop(
     if type(details.get("configured")) is not int:
         raise ResumeStopValidationError(
             "limit_exhausted stop requires integer details.configured"
+        )
+
+    if limit_path == _REVIEW_GATE_LIMIT_PATH:
+        return _validate_review_gate_turn_limit_exhausted(
+            store,
+            run_id,
+            run,
+            stop,
+            details=details,
         )
 
     phase = str(run.get("phase") or stop.get("phase") or "")

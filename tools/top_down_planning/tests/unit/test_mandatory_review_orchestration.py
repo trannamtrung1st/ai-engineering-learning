@@ -139,7 +139,12 @@ def test_whole_plan_scope_review_round_limit_rejects(tmp_path: Path) -> None:
     provider = StubProvider()
     _create_run_at_whole_plan_review(
         store,
-        limits={"max_revision_cycles": 5, "max_scope_review_rounds": 1},
+        limits={
+            "whole_plan_review": {
+                "max_revision_cycles": 5,
+                "max_scope_review_rounds": 1,
+            }
+        },
         provider=provider,
     )
     run_id = "run-20260101T000301-000301"
@@ -230,6 +235,10 @@ def test_whole_plan_scope_review_round_limit_rejects(tmp_path: Path) -> None:
         phase=WHOLE_PLAN_REVIEW,
         loop_id="review-whole-plan-01",
     )()
+
+    review_before = store.load_review(run_id, "review-whole-plan-01")
+    assert int(review_before.get("scope_review_rounds") or 0) == 1
+    assert review_before.get("verification_result", {}).get("decision") == "verified"
 
     result = WholePlanReviewOrchestrator(store, run_id, provider).run()
 

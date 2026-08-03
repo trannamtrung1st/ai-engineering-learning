@@ -45,7 +45,7 @@ When adding a configurable field:
 - Extend `schema_docs.py` / README; reject unknown keys
 - **Presentation** paths under `observability.*` are auto-included in `RESUME_PRESENTATION_ALLOWLIST`; new presentation sections need an update in `config/resume_policy.py`
 - **Semantic** limit paths under `limits.*` map to `RESUME_EXECUTION_POLICY_ALLOWLIST` (also derived)
-- Test with in-process `run_cli([..., "--set", "path=value"])`
+- TDD: write failing CLI test from expected exit/output first (`.cursor/skills/tdd/SKILL.md`), then implement; use in-process `run_cli([..., "--set", "path=value"])`
 
 ## When dedicated CLI flags are justified
 

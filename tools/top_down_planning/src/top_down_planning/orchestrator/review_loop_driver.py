@@ -13,6 +13,7 @@ from top_down_planning.domain.reviews import (
     complete_advisory_handoff_if_owner_responses_recorded,
     finding_actions_for_active_set,
     focused_review_revision_limit_from_config,
+    increment_gate_agent_turns,
     is_revision_requested_status,
     is_terminal_review_loop,
     loop_revise_at,
@@ -25,6 +26,8 @@ from top_down_planning.domain.reviews import (
     prepare_limit_reached_retry,
     prepare_review_incomplete_retry,
     required_open_findings,
+    reset_gate_agent_turns,
+    review_gate_limits_from_config,
     scope_review_budget_exhausted,
     verification_required_for_loop,
     verification_revision_budget_exhausted,
@@ -62,9 +65,9 @@ from top_down_planning.orchestrator.capability import (
 from top_down_planning.orchestrator.reviewer_session import (
     ReviewerRecheckRequiresNewSession,
     begin_reviewer_review,
+    build_reviewer_gate_continue_request,
     deliver_reviewer_turn,
     resume_reviewer_session_with_package,
-    reviewer_decision_missing_error,
     reviewer_loop_provider_session_id,
     resolve_reviewer_session_for_recheck,
 )
@@ -273,61 +276,85 @@ class ReviewLoopDriver:
 
         while True:
             if loop.status == "pending":
-                session_id = reviewer_loop_provider_session_id(loop)
-                run = self._store.load_run(self._run_id)
-                phase = self._adapter.phase_for_session(loop, run)
-                if session_id is None:
-                    session_id, self._capability_token = self._start_reviewer_session(loop)
-                    loop = self._reload_loop(loop.id)
-                    deliver_on_existing_session = False
-                elif deliver_on_existing_session:
-                    config = self._store.load_resolved_config(self._run_id)
-                    role_context = resolve_role_session_context(
-                        config, run, "reviewer"
-                    )
-                    package = self._adapter.build_review_package(run, config, loop)
-                    self._capability_token = resume_reviewer_session_with_package(
-                        self._provider,
-                        self._store,
-                        self._run_id,
-                        session_id=session_id,
-                        loop_id=loop.id,
-                        phase=phase,
-                        review_package=package,
-                        model=role_context.model,
-                    )
-                    emit_reviewer_session_resumed(
-                        self._append_event,
-                        self._provider,
-                        phase=phase,
-                        session_id=session_id,
-                        loop=self._reload_loop(loop.id),
-                    )
-                    deliver_on_existing_session = False
-                reviewer_decision = self._consume_reviewer_turn(session_id, loop.id)
-                loop = self._reload_loop(loop.id)
-                if reviewer_decision is None:
-                    raise reviewer_decision_missing_error()
-                if loop.status == "pending":
+                consumed_persisted_decision = False
+                if self.profile.is_mandatory_gate:
+                    persisted_decision = mandatory_orchestration_decision(loop)
+                    if (
+                        persisted_decision not in {"pending", "advisory_pending"}
+                        and reviewer_loop_provider_session_id(loop) is None
+                    ):
+                        reviewer_decision = persisted_decision
+                        loop = self._persist_loop(reset_gate_agent_turns(loop))
+                        consumed_persisted_decision = True
+                if not consumed_persisted_decision:
+                    session_id = reviewer_loop_provider_session_id(loop)
                     run = self._store.load_run(self._run_id)
                     phase = self._adapter.phase_for_session(loop, run)
-                    self._capability_token = rotate_session_capability(
-                        self._store,
-                        self._run_id,
-                        current_token=self._capability_token,
-                        role="reviewer",
-                        phase=phase,
-                        session_id=session_id,
-                        session_kind="reviewer",
-                        loop_id=loop.id,
-                    )
-                    bind_provider_capability(
-                        self._provider,
-                        self._capability_token,
-                        store=self._store,
-                        run_id=self._run_id,
-                    )
-                    continue
+                    if session_id is None:
+                        session_id, self._capability_token = self._start_reviewer_session(loop)
+                        loop = self._reload_loop(loop.id)
+                        deliver_on_existing_session = False
+                    elif deliver_on_existing_session:
+                        config = self._store.load_resolved_config(self._run_id)
+                        role_context = resolve_role_session_context(
+                            config, run, "reviewer"
+                        )
+                        package = self._adapter.build_review_package(run, config, loop)
+                        self._capability_token = resume_reviewer_session_with_package(
+                            self._provider,
+                            self._store,
+                            self._run_id,
+                            session_id=session_id,
+                            loop_id=loop.id,
+                            phase=phase,
+                            review_package=package,
+                            model=role_context.model,
+                        )
+                        emit_reviewer_session_resumed(
+                            self._append_event,
+                            self._provider,
+                            phase=phase,
+                            session_id=session_id,
+                            loop=self._reload_loop(loop.id),
+                        )
+                        deliver_on_existing_session = False
+                    reviewer_decision = self._consume_reviewer_turn(session_id, loop.id)
+                    loop = self._reload_loop(loop.id)
+                    if reviewer_decision is None:
+                        reviewer_decision = self._persisted_reviewer_decision_after_turn(
+                            loop
+                        )
+                        if reviewer_decision is not None:
+                            loop = self._persist_loop(reset_gate_agent_turns(loop))
+                    if reviewer_decision is None:
+                        limit_pause = self._continue_reviewer_after_missing_decision(
+                            loop,
+                            session_id,
+                        )
+                        if limit_pause is not None:
+                            return limit_pause
+                        continue
+                    loop = self._persist_loop(reset_gate_agent_turns(loop))
+                    if loop.status == "pending":
+                        run = self._store.load_run(self._run_id)
+                        phase = self._adapter.phase_for_session(loop, run)
+                        self._capability_token = rotate_session_capability(
+                            self._store,
+                            self._run_id,
+                            current_token=self._capability_token,
+                            role="reviewer",
+                            phase=phase,
+                            session_id=session_id,
+                            session_kind="reviewer",
+                            loop_id=loop.id,
+                        )
+                        bind_provider_capability(
+                            self._provider,
+                            self._capability_token,
+                            store=self._store,
+                            run_id=self._run_id,
+                        )
+                        continue
 
             stage_decision = self._resolve_stage_decision(loop, reviewer_decision)
             reviewer_decision = None
@@ -757,6 +784,95 @@ class ReviewLoopDriver:
             **extra,
         )
         return session_id, self._capability_token
+
+    def _persisted_reviewer_decision_after_turn(
+        self,
+        loop: ReviewLoop,
+    ) -> str | None:
+        """Return a stage-native decision when respond landed after turn drain."""
+
+        from top_down_planning.orchestrator.provider_turns import (
+            orchestration_decision_from_store,
+        )
+
+        return orchestration_decision_from_store(self._store, self._run_id, loop.id)
+
+    def _continue_reviewer_after_missing_decision(
+        self,
+        loop: ReviewLoop,
+        session_id: str,
+    ) -> MandatoryWholeReviewResult | None:
+        """Queue another reviewer turn when respond was not persisted; pause at limit."""
+
+        config = self._store.load_resolved_config(self._run_id)
+        gate_limits = review_gate_limits_from_config(config)
+        max_turns = int(gate_limits["max_agent_turns_per_gate"])
+        loop = self._persist_loop(increment_gate_agent_turns(loop))
+        consumed = int(loop.gate_agent_turns)
+        run = self._store.load_run(self._run_id)
+        phase = self._adapter.phase_for_session(loop, run)
+        stage = loop.active_stage
+
+        if consumed >= max_turns:
+            message = (
+                "reviewer exceeded max_agent_turns_per_gate "
+                f"({max_turns}) without a persisted review respond decision "
+                f"for stage {stage!r}"
+            )
+            pause_for_limit_exhausted(
+                self._store,
+                self._run_id,
+                phase=phase,
+                message=message,
+                limit="limits.review.max_agent_turns_per_gate",
+                consumed=consumed,
+                configured=max_turns,
+                role="reviewer",
+                revoke_phase=phase,
+                loop_id=loop.id,
+            )
+            self._append_event(
+                "reviewer_gate_turns_exhausted",
+                loop_id=loop.id,
+                stage=stage,
+                consumed=consumed,
+                configured=max_turns,
+            )
+            run = self._store.load_run(self._run_id)
+            return self.result_from_run(run, ok=False, loop=loop, reason=message)
+
+        role_context = resolve_role_session_context(config, run, "reviewer")
+        request = build_reviewer_gate_continue_request(
+            stage=stage,
+            turn=consumed,
+            max_turns=max_turns,
+            review_type=loop.type,
+        )
+        self._capability_token = deliver_reviewer_turn(
+            self._provider,
+            self._store,
+            self._run_id,
+            session_id=session_id,
+            loop_id=loop.id,
+            phase=phase,
+            request=request,
+            model=role_context.model,
+        )
+        emit_reviewer_session_resumed(
+            self._append_event,
+            self._provider,
+            phase=phase,
+            session_id=session_id,
+            loop=loop,
+        )
+        self._append_event(
+            "reviewer_gate_turn_retried",
+            loop_id=loop.id,
+            stage=stage,
+            consumed=consumed,
+            configured=max_turns,
+        )
+        return None
 
     def _consume_reviewer_turn(self, session_id: str, loop_id: str) -> str | None:
         run = self._store.load_run(self._run_id)

@@ -11,16 +11,17 @@ from top_down_planning.agent_tool import RequestError, ReviewAgentService
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import ProviderRunError, WholePlanReviewOrchestrator
+from top_down_planning.orchestrator.mandatory_whole_review import ReviewLoopDriver
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest
 from core_tools.provider import StubProvider
 from tests.helpers import (
+    apply_plan,
     make_review_loop,
     plan_root_item,
     ensure_plan_work_scope_contracts,
     save_review_payload,
-    apply_plan,
     create_run_kwargs,
     done_events,
     grant_capability,
@@ -80,7 +81,12 @@ def _create_run_at_whole_plan_review(
         },
     }
     if limits:
-        config["limits"]["whole_plan_review"].update(limits)
+        for key, value in limits.items():
+            existing = config["limits"].get(key)
+            if isinstance(value, dict) and isinstance(existing, dict):
+                existing.update(value)
+            else:
+                config["limits"][key] = value
 
     store.create_run(
         run_id,
@@ -307,18 +313,31 @@ def test_approval_at_stale_revision_is_rejected(tmp_path: Path) -> None:
         )
 
 
+from tests.unit.test_mandatory_whole_review_driver import _FakeAdapter, _create_driver_run
+
+
 def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
-    _create_run_at_whole_plan_review(store, limits={"max_revision_cycles": 1}, provider=provider)
-
     run_id = "run-20260101T000301-000301"
+    planner_session_id, loop_id = _create_driver_run(
+        store,
+        run_id,
+        provider=provider,
+        limits={"max_revision_cycles": 1},
+    )
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(
             store,
             run_id,
-            _review_respond_request(
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
                 decision="changes_requested",
                 findings=[
                     {
@@ -331,25 +350,47 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                         "status": "unresolved",
                     }
                 ],
-                store=store,
-                run_id=run_id,
             ),
             phase=WHOLE_PLAN_REVIEW,
-            loop_id="review-whole-plan-01",
+            loop_id=loop_id,
         ),
     )
-    provider.script_turn(done_events(text="turn complete"))
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-api",
+                    "patch": {
+                        "acceptance": [
+                            "API behavior is verifiable.",
+                            "Health check exists.",
+                        ]
+                    },
+                }
+            ],
+            phase=WHOLE_PLAN_REVIEW,
+        ),
+    )
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(
             store,
             run_id,
-            _review_respond_request(
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=1,
+                review_type="whole_plan",
                 decision="changes_requested",
-                target_revision=0,
                 findings=[
                     {
-                        "id": "finding-01",
+                        "id": "finding-02",
                         "severity": "blocker",
                         "category": "correctness",
                         "target_refs": ["item-api"],
@@ -358,22 +399,20 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                         "status": "unresolved",
                     }
                 ],
-                store=store,
-                run_id=run_id,
             ),
             phase=WHOLE_PLAN_REVIEW,
-            loop_id="review-whole-plan-01",
+            loop_id=loop_id,
         ),
     )
 
-    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
+    result = ReviewLoopDriver(store, run_id, provider, adapter).run()
 
     assert result.ok is False
     assert result.outcome is None
     assert result.reason is not None
     assert "max_revision_cycles" in result.reason
 
-    run = store.load_run("run-20260101T000301-000301")
+    run = store.load_run(run_id)
     assert run["phase"] == WHOLE_PLAN_REVIEW
     assert run["status"] == "paused"
     assert run["outcome"] is None
@@ -589,6 +628,12 @@ def test_whole_plan_package_includes_default_rubric(tmp_path: Path) -> None:
     assert package["plan"]["view"] == "active"
     assert "analysis_context" in package
     assert "validation_issues" in package["analysis_context"]
+    assert package["review_budgets"] == {
+        "revision_cycles": 0,
+        "scope_review_rounds": 0,
+        "gate_agent_turns": 0,
+        "max_agent_turns_per_gate": 5,
+    }
 
 
 def test_whole_plan_package_declares_contract_v2_and_analysis_context(

@@ -23,6 +23,7 @@ from top_down_planning.domain.reviews import (
     mandatory_review_limits_from_config,
     mandatory_approval_allowed,
     primary_review_resume_fields,
+    review_gate_budgets_for_package,
 )
 from top_down_planning.domain.finding_families import (
     build_active_family_view,
@@ -435,6 +436,7 @@ def build_whole_output_review_package(
         "digests": digests,
         **stage_package_fields(loop),
         **contract_fields(loop),
+        "review_budgets": review_gate_budgets_for_package(loop, config),
         "protocol_instructions": build_reviewer_protocol_instructions(
             stage=loop.active_stage or "initial_review",
             review_type=loop.type,

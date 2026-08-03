@@ -224,6 +224,48 @@ def test_whole_plan_recheck_binds_cursor_reviewer_session_after_initial_review(
     )
 
 
+def test_sync_reviewer_loop_session_id_ignores_unrelated_durable_session_id(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T010004-010004"
+    _create_run_at_whole_plan_review(store, run_id=run_id)
+    binding = (
+        new_session_binding(role="reviewer", kind="reviewer", state="starting")
+        .with_provider_session_id("chat-reviewer-1")
+    )
+    store.save_review(
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "revise_at": "major",
+            "target_revision": 0,
+            "scope": {"kind": "whole_plan"},
+            "status": "pending",
+            "findings": [],
+            "revision_cycles": 0,
+            "lifecycle_status": "review_pending",
+            "reviewer_binding": binding.to_dict(),
+        },
+    )
+
+    class _CanonicalProvider:
+        def canonical_session_id(self, session_id: str) -> str:
+            return session_id
+
+    sync_reviewer_loop_session_id(
+        _CanonicalProvider(),
+        store,
+        run_id,
+        "review-whole-plan-01",
+        "chat-planner-1",
+    )
+
+    review = store.load_review(run_id, "review-whole-plan-01")
+    assert binding_provider_session_id(review.get("reviewer_binding")) == "chat-reviewer-1"
+
+
 def test_resolve_reviewer_session_for_recheck_raises_when_replacement_required() -> None:
     binding = (
         new_session_binding(role="reviewer", kind="reviewer", state="starting")

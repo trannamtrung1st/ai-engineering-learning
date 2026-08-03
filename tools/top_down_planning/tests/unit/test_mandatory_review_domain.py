@@ -187,7 +187,24 @@ def test_mark_verification_pending_updates_target_when_already_pending() -> None
     assert updated.active_stage == "finding_verification"
 
 
-def test_mandatory_lifecycle_transitions_match_state_model() -> None:
+def test_mark_verification_pending_resets_gate_agent_turns() -> None:
+    loop = make_review_loop(
+        id="review-whole-plan-1",
+        type="whole_plan",
+        reviewer_session_id="rev-1",
+        target_revision=20,
+        scope={"kind": "whole_plan"},
+        status="changes_requested",
+        lifecycle_status="revision_in_progress",
+        active_stage="finding_verification",
+        gate_agent_turns=3,
+        revise_at="major",
+    )
+
+    updated = mark_verification_pending(loop, target_revision=21)
+
+    assert updated.gate_agent_turns == 0
+    assert updated.lifecycle_status == "verification_pending"
     expected = {
         "review_pending": {
             "findings_open",

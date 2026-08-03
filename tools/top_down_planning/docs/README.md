@@ -52,7 +52,7 @@ Whole-output examples append `-output` (e.g. `review-respond-family-discovery-ou
 
 Schema: `tdp agent schema review-respond`
 
-Reviewer turns close when `review respond` persists a decision: the orchestrator aborts the in-flight provider turn, waits for the session collector to settle, then releases the bounded reviewer session (`reviewer_session_ended`) before owner revision or the next gate. A background poll also watches for persisted review decisions while the turn is open so a stalled agent subprocess cannot block progress after respond.
+Reviewer turns close when `review respond` persists a decision: the orchestrator aborts the in-flight provider turn, waits for the session collector to settle, then releases the bounded reviewer session (`reviewer_session_ended`) before owner revision or the next gate. A turn that ends without `review respond` queues another reviewer turn with a nudge (bounded by `limits.review.max_agent_turns_per_gate`) before pausing with `limit_exhausted`. A background poll also watches for persisted review decisions while the turn is open so a stalled agent subprocess cannot block progress after respond.
 
 Mandatory discovery: `audit_attestation` rubric ids come from the review package `rubric_items`; `rule_id` values from `tdp agent readme` (section Built-in finding-family rule_id values) or `custom.<slug>`.
 
@@ -101,5 +101,6 @@ To change dependencies on an **existing** item, use `add_dependency`, `remove_de
 | `production_context_mutation_unauthorized` | Revert unauthorized skill/guidance drift |
 | `audit attestation rubric_item_ids union mismatch` | Set `rubric_item_ids` from review package `rubric_items` (union across passes must equal every id); see `tdp agent readme` (Audit attestation) |
 | `rule_id ... must be a built-in rule or match custom.<slug>` | Pick a built-in from `tdp agent readme` or use `custom.<slug>` + `rule_definition`; see `review-respond-family-discovery-output` for custom pattern |
+| `limit_exhausted` + `limits.review.max_agent_turns_per_gate` | Reviewer turns ended without `review respond`; resume with `--set limits.review.max_agent_turns_per_gate=<n>` strictly above consumed `gate_agent_turns` |
 
 Run status and `agent_requests_dir`: `tdp agent run status --run <id>`

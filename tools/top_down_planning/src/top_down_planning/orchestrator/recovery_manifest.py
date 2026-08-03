@@ -17,9 +17,9 @@ from top_down_planning.domain.production import (
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     build_active_findings_view,
-    budgets_snapshot,
     loop_revise_at,
     required_open_findings,
+    review_gate_budgets_for_package,
 )
 from top_down_planning.orchestrator.agent_context import plan_execution_contract_fields
 from top_down_planning.persistence.interface import RunStore
@@ -248,7 +248,7 @@ def build_reviewer_recovery_manifest(
     }
     manifest["finding_set"] = _open_findings_payload(loop)
     manifest["verification_state"] = loop.verification_result
-    manifest["review_limits"] = budgets_snapshot(loop)
+    manifest["review_limits"] = review_gate_budgets_for_package(loop, config)
     return manifest
 
 

@@ -2,18 +2,21 @@
 name: tools-dev
 description: >-
   Develop and test packages under tools/ (core_tools, top_down_planning). Prefer
-  YAML + --set path=value for CLI config; avoid redundant dedicated flags. Generate
-  fast unit tests using fakes, stubs, and mocks instead of live I/O, providers, or
-  long sleeps. Required for any work under tools/ (see .cursor/rules/tools-dev.mdc).
-  Also use when writing pytest files under tools/ or when the user asks for unit
-  test coverage.
+  YAML + --set path=value for CLI config; avoid redundant dedicated flags. Use TDD
+  red-green-refactor: tests from expected outcomes first, then minimal implementation.
+  Generate fast unit tests using fakes, stubs, and mocks instead of live I/O,
+  providers, or long sleeps. Required for any work under tools/ (see
+  .cursor/rules/tools-dev.mdc). Also use when writing pytest files under tools/
+  or when the user asks for unit test coverage.
 ---
 
 # Tools Dev
 
-Conventions for developing packages under `tools/`. Required by `.cursor/rules/tools-dev.mdc` whenever you touch files under `tools/`. When writing tests, keep them fast — live providers, network calls, subprocesses, and long sleeps make the suite slow.
+Conventions for developing packages under `tools/`. Required by `.cursor/rules/tools-dev.mdc` whenever you touch files under `tools/`. For behavior changes, also follow `.cursor/skills/tdd/SKILL.md` (test-first red → green → refactor). When writing tests, keep them fast — live providers, network calls, subprocesses, and long sleeps make the suite slow.
 
-## Decision order
+## Fake/stub decision order
+
+After writing the failing test (TDD red), pick the lightest fake for dependencies:
 
 1. **Direct call** — test with plain inputs; no provider or filesystem needed.
 2. **Stub/fake** — `StubProvider`, in-memory stores, `tmp_path`, injected `fake_runner`.
@@ -120,6 +123,18 @@ provider = CursorProvider(
 ## Anti-patterns
 
 ```python
+# BAD — implement orchestration first, then assert whatever the store ended up with
+engine.continue_run(run_id)
+assert store.get_run(run_id)["status"] == "planning"  # copied from a debug run
+
+# GOOD — spec says resume after mandatory review clears → status "planning"
+def test_resume_after_mandatory_review_clears_sets_planning(tmp_path):
+    ...
+    assert store.get_run(run_id)["status"] == "planning"
+# run → red → implement continue_run path → green
+```
+
+```python
 # BAD — live provider in orchestration test
 config = minimal_resolved_config(provider={"name": "cursor"})
 engine.run(...)  # would spawn real agent
@@ -168,16 +183,23 @@ engine.continue_run(run_id, single_step=True)
 # import + injected list_live_pids/read_pid_environ in test_agent_process_cleanup.py
 ```
 
-## Workflow
+## Workflow (TDD + fakes)
 
-1. Identify the unit under test and its dependencies (provider, store, filesystem, CLI).
-2. Choose the lightest fake: direct args → stub → patch → short sleep (last resort).
-3. Check existing tests in the same module for patterns to copy.
-4. Place under `tests/unit/` unless the test needs a multi-phase lifecycle (`tests/integration/`, still use `stub`).
-5. Run the single test file and confirm it finishes quickly.
+Follow `.cursor/skills/tdd/SKILL.md` — red → green → refactor. Under `tools/`, combine with the fake/stub decision order above.
+
+1. **Red** — from spec/requirements, write a failing test with expected observable outcome (return value, store state, CLI exit/message).
+2. Identify dependencies (provider, store, filesystem, CLI) and choose the lightest fake: direct args → stub → patch → short sleep (last resort).
+3. Run the test; confirm it fails for the right reason (missing/wrong behavior).
+4. **Green** — minimal production change; re-run until pass.
+5. Check existing tests in the same module for patterns to copy.
+6. Place under `tests/unit/` unless the test needs a multi-phase lifecycle (`tests/integration/`, still use `stub`).
+7. **Refactor** if needed; confirm the file still finishes quickly.
+
+Do not implement orchestration/CLI logic first and then write assertions that mirror the accident.
 
 ## Checklist
 
+- [ ] Failing test written from expected outcomes before production code (TDD)
 - [ ] Semantic config via YAML + `--set` only; no mirrored `--param` flags
 - [ ] New paths in `ALLOWED_OVERRIDE_PATHS`, `defaults.py`, `schema_docs.py`
 - [ ] Presentation fields wired through `invocation.py` if dedicated flags added

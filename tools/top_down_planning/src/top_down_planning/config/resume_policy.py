@@ -40,6 +40,7 @@ _RESUME_LIMIT_PREFIXES = (
     "limits.focused_output_review.",
     "limits.production.",
     "limits.amendment.",
+    "limits.review.",
 )
 
 RESUME_EXECUTION_POLICY_ALLOWLIST: frozenset[str] = frozenset(

@@ -13,6 +13,7 @@ from top_down_planning.domain.reviews import (
     build_limit_reached_terminal,
     mandatory_review_limits_from_config,
     reject_approval_when_budget_exhausted,
+    review_gate_limits_from_config,
 )
 from top_down_planning.schema_docs import show_schema
 
@@ -69,6 +70,15 @@ def test_default_mandatory_review_limits_include_stage_budgets() -> None:
     assert (
         "limits.whole_output_review.max_scope_review_rounds" in ALLOWED_OVERRIDE_PATHS
     )
+    assert "limits.review.max_agent_turns_per_gate" in ALLOWED_OVERRIDE_PATHS
+    assert review_gate_limits_from_config(DEFAULT_CONFIG) == {
+        "max_agent_turns_per_gate": 5,
+    }
+
+
+def test_config_schema_documents_review_gate_turn_limit() -> None:
+    review_limits = show_schema("config")["properties"]["limits"]["properties"]["review"]
+    assert "max_agent_turns_per_gate" in review_limits["properties"]
 
 
 def test_config_schema_documents_scope_review_rounds() -> None:
@@ -202,6 +212,7 @@ def test_prepare_limit_reached_retry_preserves_scope_budget() -> None:
         active_stage="finding_verification",
         scope_review_rounds=15,
         revision_cycles=2,
+        gate_agent_turns=3,
         exhausted_budget="scope_review",
         revise_at="blocker",
     )
@@ -212,6 +223,7 @@ def test_prepare_limit_reached_retry_preserves_scope_budget() -> None:
     revived = prepare_limit_reached_retry(loop)
     assert revived.scope_review_rounds == 15
     assert revived.revision_cycles == 2
+    assert revived.gate_agent_turns == 0
     assert revived.lifecycle_status == "findings_closed"
     assert revived.status == "approved"
     assert revived.exhausted_budget is None

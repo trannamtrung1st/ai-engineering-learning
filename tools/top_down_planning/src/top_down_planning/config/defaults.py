@@ -203,6 +203,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "max_requests": 3,
             "max_revision_cycles_per_request": 3,
         },
+        "review": {
+            "max_agent_turns_per_gate": 5,
+        },
         "provider": {
             "max_retries_per_call": 2,
             "turn_idle_timeout_seconds": 0,
@@ -276,6 +279,7 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "limits.whole_output_review.max_scope_review_rounds",
         "limits.amendment.max_requests",
         "limits.amendment.max_revision_cycles_per_request",
+        "limits.review.max_agent_turns_per_gate",
         "limits.provider.max_retries_per_call",
         "limits.provider.turn_idle_timeout_seconds",
         "observability.log_level",

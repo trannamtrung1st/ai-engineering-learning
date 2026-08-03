@@ -668,6 +668,7 @@ class ReviewLoop:
     finding_families: list[FindingFamily] = field(default_factory=list)
     family_sweeps: list[FamilySweepRecord] = field(default_factory=list)
     audit_runs: list[AuditAttestationRun] = field(default_factory=list)
+    gate_agent_turns: int = 0
 
     @property
     def reviewer_session_id(self) -> str | None:
@@ -729,6 +730,7 @@ class ReviewLoop:
             ]
         if self.audit_runs:
             payload["audit_runs"] = [run.to_dict() for run in self.audit_runs]
+        payload["gate_agent_turns"] = int(self.gate_agent_turns)
         return payload
 
     def with_reviewer_session_released(self) -> ReviewLoop:
@@ -913,7 +915,38 @@ class ReviewLoop:
             finding_families=finding_families,
             family_sweeps=family_sweeps,
             audit_runs=audit_runs,
+            gate_agent_turns=int(payload.get("gate_agent_turns") or 0),
         )
+
+
+_REVIEW_GATE_LIMIT_DEFAULTS = {"max_agent_turns_per_gate": 5}
+
+
+def review_gate_limits_from_config(
+    config: Mapping[str, Any] | None,
+) -> dict[str, int]:
+    """Load per-gate reviewer turn budget from resolved run config."""
+
+    section = ((config or {}).get("limits") or {}).get("review")
+    if section is not None and not isinstance(section, Mapping):
+        raise ValueError("limits.review must be an object")
+    mapping = section if isinstance(section, Mapping) else {}
+    return {
+        "max_agent_turns_per_gate": int(
+            mapping.get(
+                "max_agent_turns_per_gate",
+                _REVIEW_GATE_LIMIT_DEFAULTS["max_agent_turns_per_gate"],
+            )
+        ),
+    }
+
+
+def increment_gate_agent_turns(loop: ReviewLoop) -> ReviewLoop:
+    return replace(loop, gate_agent_turns=int(loop.gate_agent_turns) + 1)
+
+
+def reset_gate_agent_turns(loop: ReviewLoop) -> ReviewLoop:
+    return replace(loop, gate_agent_turns=0)
 
 
 def with_loop_revise_at(
@@ -2620,26 +2653,30 @@ def prepare_limit_reached_retry(loop: ReviewLoop) -> ReviewLoop:
         # Re-enter the path that calls ``_begin_scope_review`` with the same
         # consumed scope_review_rounds under the raised max.
         assert_mandatory_review_transition("limit_reached", "findings_closed")
-        return replace(
-            loop,
-            status="approved",
-            lifecycle_status="findings_closed",
-            active_stage=None,
-            exhausted_budget=None,
-            scope_review_result=None,
-        ).with_reviewer_session_released()
+        return reset_gate_agent_turns(
+            replace(
+                loop,
+                status="approved",
+                lifecycle_status="findings_closed",
+                active_stage=None,
+                exhausted_budget=None,
+                scope_review_result=None,
+            ).with_reviewer_session_released()
+        )
 
     if exhausted == "verification_revision":
         # Re-enter primary owner revision for the already-consumed cycle
         # (needs_primary_revision_resume) without double-counting.
         assert_mandatory_review_transition("limit_reached", "revision_in_progress")
-        return replace(
-            loop,
-            status="pending",
-            lifecycle_status="revision_in_progress",
-            active_stage="finding_verification",
-            exhausted_budget=None,
-        ).with_reviewer_session_released()
+        return reset_gate_agent_turns(
+            replace(
+                loop,
+                status="pending",
+                lifecycle_status="revision_in_progress",
+                active_stage="finding_verification",
+                exhausted_budget=None,
+            ).with_reviewer_session_released()
+        )
 
     raise ValueError(
         f"cannot retry limit_reached loop without exhausted_budget; "
@@ -2651,6 +2688,20 @@ def budgets_snapshot(loop: ReviewLoop) -> dict[str, int]:
     return {
         "revision_cycles": int(loop.revision_cycles),
         "scope_review_rounds": int(loop.scope_review_rounds),
+        "gate_agent_turns": int(loop.gate_agent_turns),
+    }
+
+
+def review_gate_budgets_for_package(
+    loop: ReviewLoop,
+    config: dict[str, Any],
+) -> dict[str, int]:
+    """Budget counters and configured gate-turn cap for reviewer packages."""
+
+    limits = review_gate_limits_from_config(config)
+    return {
+        **budgets_snapshot(loop),
+        "max_agent_turns_per_gate": int(limits["max_agent_turns_per_gate"]),
     }
 
 
@@ -2977,6 +3028,41 @@ def validate_mandatory_stage_decision(stage: str, decision: str) -> MandatorySta
 def mandatory_stage_respond_decision(loop: ReviewLoop) -> str:
     """Stage-native decision from result payloads (initial_review uses loop status)."""
 
+    stage = loop.active_stage or "initial_review"
+
+    if is_scope_review_stage_name(stage):
+        blocker = loop.scope_review_result
+        if isinstance(blocker, dict):
+            raw = str(blocker.get("decision") or "").strip()
+            canonical = validate_scope_review_decision_value(raw)
+            if canonical not in {"approved", "changes_requested", "blocked"}:
+                raise ValueError(f"invalid scope_review_result.decision: {raw!r}")
+            return canonical
+        if loop.status == "pending":
+            return "pending"
+        if loop.status == "approved":
+            return "pending"
+        if loop.status in {"changes_requested", "blocked", "advisory_pending"}:
+            return loop.status
+        raise ValueError("scope_review loop missing scope_review_result")
+
+    if stage == "finding_verification":
+        verification = loop.verification_result
+        if isinstance(verification, dict):
+            raw = str(verification.get("decision") or "").strip()
+            if raw not in {"verified", "needs_revision", "blocked"}:
+                raise ValueError(
+                    f"invalid verification_result.decision: {raw!r}"
+                )
+            return raw
+        if loop.status == "pending":
+            return "pending"
+        if loop.status in {"changes_requested", "blocked", "approved"}:
+            return loop.status
+        raise ValueError(
+            "finding_verification loop missing verification_result"
+        )
+
     if loop.status == "pending":
         return "pending"
     if loop.status == "advisory_pending":
@@ -2985,33 +3071,6 @@ def mandatory_stage_respond_decision(loop: ReviewLoop) -> str:
         return "blocked"
     if loop.status == "review_incomplete":
         return "review_incomplete"
-
-    stage = loop.active_stage or "initial_review"
-
-    if is_scope_review_stage_name(stage):
-        blocker = loop.scope_review_result
-        if not isinstance(blocker, dict):
-            if loop.status == "approved":
-                return "pending"
-            raise ValueError("scope_review loop missing scope_review_result")
-        raw = str(blocker.get("decision") or "").strip()
-        canonical = validate_scope_review_decision_value(raw)
-        if canonical not in {"approved", "changes_requested", "blocked"}:
-            raise ValueError(f"invalid scope_review_result.decision: {raw!r}")
-        return canonical
-
-    if stage == "finding_verification":
-        verification = loop.verification_result
-        if not isinstance(verification, dict):
-            raise ValueError(
-                "finding_verification loop missing verification_result"
-            )
-        raw = str(verification.get("decision") or "").strip()
-        if raw not in {"verified", "needs_revision", "blocked"}:
-            raise ValueError(
-                f"invalid verification_result.decision: {raw!r}"
-            )
-        return raw
 
     if loop.status in {"approved", "changes_requested", "blocked"}:
         return loop.status

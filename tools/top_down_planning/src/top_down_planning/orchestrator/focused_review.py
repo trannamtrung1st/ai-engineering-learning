@@ -20,6 +20,7 @@ from top_down_planning.domain.reviews import (
     primary_review_resume_fields,
     reviewer_package_policy_guidance,
     loop_uses_finding_families,
+    review_gate_budgets_for_package,
 )
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
@@ -457,6 +458,7 @@ def build_focused_review_package(
             **plan_execution_contract_fields(plan),
             "digests": digests,
             "review_policy": reviewer_package_policy_guidance(),
+            "review_budgets": review_gate_budgets_for_package(loop, config),
             "instance_ref_guidance": {
                 "optional": True,
                 "notes": (

@@ -1,0 +1,33 @@
+---
+description: TDD red-green-refactor — tests from expected outcomes before implementation
+alwaysApply: true
+---
+
+# Test-Driven Development
+
+When adding or changing behavior, **write tests from expected outcomes first**, then implement the minimum code to pass. Do not implement first and retrofit tests to match the code.
+
+Applies to features, bug fixes, and behavior changes — not docs-only or pure refactors with no behavior change.
+
+## Red → Green → Refactor
+
+1. **Red** — failing test from spec/requirements (happy path, then edges).
+2. **Green** — smallest production change that passes.
+3. **Refactor** — clean up; tests stay green.
+
+## Rules
+
+- Expected values come from specs and domain rules, **not** from reading current implementation.
+- Assert observable behavior (outputs, errors, state), not private internals.
+- Test fails → fix **production code** unless the requirement was wrong.
+- Bug fix: reproduce with a failing test for correct behavior, then fix code.
+
+## Anti-patterns
+
+- Implement feature, then write tests that mirror what was built
+- Change assertions to match bugs ("the code does X")
+- Skip or delete tests to green CI
+
+Full workflow and examples: `.cursor/skills/tdd/SKILL.md`.
+
+Under `tools/`, also read `.cursor/skills/tools-dev/SKILL.md` (required by `tools-dev.mdc`) for fakes, stubs, and package test helpers.

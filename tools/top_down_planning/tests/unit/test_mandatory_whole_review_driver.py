@@ -189,8 +189,17 @@ def _create_driver_run(
     config["limits"]["whole_plan_review"] = {
         "max_revision_cycles": 5,
         "max_scope_review_rounds": 3,
-        **(limits or {}),
     }
+    if limits:
+        for key, value in limits.items():
+            if key in ("max_revision_cycles", "max_scope_review_rounds"):
+                config["limits"]["whole_plan_review"][key] = value
+                continue
+            existing = config["limits"].get(key)
+            if isinstance(value, dict) and isinstance(existing, dict):
+                existing.update(value)
+            else:
+                config["limits"][key] = value
     store.create_run(
         run_id,
         plan=_minimal_plan(),
@@ -668,7 +677,12 @@ def test_driver_verification_needs_revision_enters_owner_cycle(
     store = FileRunStore(tmp_path)
     provider = StubProvider()
     run_id = "run-20260101T000309-000309"
-    planner_session_id, loop_id = _create_driver_run(store, run_id, provider=provider)
+    planner_session_id, loop_id = _create_driver_run(
+        store,
+        run_id,
+        provider=provider,
+        limits={"review": {"max_agent_turns_per_gate": 1}},
+    )
     adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
     findings = [
         {
@@ -763,8 +777,9 @@ def test_driver_verification_needs_revision_enters_owner_cycle(
         ),
     )
     provider.script_turn(done_events(text="turn complete"))
-    with pytest.raises(ProviderRunError):
-        ReviewLoopDriver(store, run_id, provider, adapter).run()
+    result = ReviewLoopDriver(store, run_id, provider, adapter).run()
+    assert result.ok is False
+    assert store.load_run(run_id)["stop"]["code"] == "limit_exhausted"
     review = store.load_review(run_id, loop_id)
     assert review["lifecycle_status"] == "verification_pending"
     assert review["revision_cycles"] == 2

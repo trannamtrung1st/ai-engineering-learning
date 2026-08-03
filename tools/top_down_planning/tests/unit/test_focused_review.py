@@ -231,8 +231,6 @@ def test_focused_plan_review_changes_then_approve_does_not_advance_phase(
         ],
     )()
     provider.script_turn(done_events(text="recheck delivery without respond"))
-    with pytest.raises(ProviderRunError, match="without a decision"):
-        FocusedReviewOrchestrator(store, run_id, provider).run("review-focused-plan-01")
     provider.script_turn(
         done_events(text="reviewer verify"),
         mutate_store=respond_review(

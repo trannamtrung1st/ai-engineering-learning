@@ -675,6 +675,29 @@ def review_respond_count(store: RunStore, run_id: str, loop_id: str) -> int:
     )
 
 
+def orchestration_decision_from_store(
+    store: RunStore,
+    run_id: str,
+    loop_id: str,
+) -> str | None:
+    """Return the persisted orchestration decision when the loop is no longer pending."""
+
+    review = store.load_review(run_id, loop_id)
+    review_type = str(review.get("type") or "")
+    if review_type in {"whole_plan", "whole_output"}:
+        from top_down_planning.domain.reviews import ReviewLoop
+        from top_down_planning.orchestrator.mandatory_review_stages import (
+            mandatory_orchestration_decision,
+        )
+
+        loop = ReviewLoop.from_dict(review)
+        decision = mandatory_orchestration_decision(loop)
+        if decision not in {"pending", "advisory_pending"}:
+            return decision
+        return review_decision_from_store(store, run_id, loop_id)
+    return review_decision_from_store(store, run_id, loop_id)
+
+
 def reviewer_turn_closure_ready(
     store: RunStore,
     run_id: str,
@@ -687,8 +710,10 @@ def reviewer_turn_closure_ready(
 
     if review_respond_count(store, run_id, loop_id) > baseline_responds:
         return True
-    decision = review_decision_from_store(store, run_id, loop_id)
-    return baseline_decision is None and decision is not None
+    decision = orchestration_decision_from_store(store, run_id, loop_id)
+    if baseline_decision is None:
+        return decision is not None
+    return decision is not None and decision != baseline_decision
 
 
 def build_producer_batch_boundary_observer(
@@ -715,7 +740,7 @@ def build_reviewer_decision_boundary_observer(
     """Return a hook that signals turn closure when review respond persists."""
 
     baseline_responds = review_respond_count(store, run_id, loop_id)
-    baseline_decision = review_decision_from_store(store, run_id, loop_id)
+    baseline_decision = orchestration_decision_from_store(store, run_id, loop_id)
 
     def observe() -> str | None:
         if reviewer_turn_closure_ready(

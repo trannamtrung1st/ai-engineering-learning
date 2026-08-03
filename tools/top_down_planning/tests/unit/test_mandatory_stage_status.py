@@ -51,8 +51,23 @@ def test_mandatory_stage_respond_decision_requires_result_payloads() -> None:
         scope_review_result=None,
         revise_at="blocker",
     )
-    with pytest.raises(ValueError, match="missing scope_review_result"):
-        mandatory_stage_respond_decision(blocker_pending)
+    assert mandatory_stage_respond_decision(blocker_pending) == "changes_requested"
+
+
+def test_mandatory_stage_respond_decision_honors_persisted_verification_while_pending() -> None:
+    loop = make_review_loop(
+        id="r4",
+        type="whole_plan",
+        reviewer_session_id="s",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        lifecycle_status="verification_pending",
+        active_stage="finding_verification",
+        verification_result={"decision": "verified"},
+        revise_at="blocker",
+    )
+    assert mandatory_stage_respond_decision(loop) == "verified"
 
 
 def test_validate_mandatory_stage_decision_returns_stage_native_values() -> None:

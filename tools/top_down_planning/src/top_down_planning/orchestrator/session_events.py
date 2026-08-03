@@ -370,6 +370,16 @@ def sync_reviewer_loop_session_id(
     if is_transient_provider_session_id(resolved):
         return resolved
 
+    run = store.load_run(run_id)
+    from top_down_planning.persistence.session_bindings import (
+        primary_provider_session_id,
+    )
+
+    for role in ("planner", "producer"):
+        primary_id = primary_provider_session_id(run, role)
+        if primary_id and provider.canonical_session_id(primary_id) == resolved:
+            return resolved
+
     review = dict(store.load_review(run_id, loop_id))
     loop = ReviewLoop.from_dict(review)
     binding = loop.reviewer_binding
@@ -378,6 +388,13 @@ def sync_reviewer_loop_session_id(
         prior_provider_id == resolved
         and binding is not None
         and binding.state == "bound"
+    ):
+        return resolved
+    if (
+        prior_provider_id
+        and not is_transient_provider_session_id(prior_provider_id)
+        and not is_transient_provider_session_id(resolved)
+        and resolved != prior_provider_id
     ):
         return resolved
 
@@ -400,14 +417,15 @@ def release_reviewer_session_after_decision(
 ) -> str | None:
     """Return the review decision and release the reviewer session when terminal.
 
-    Releases only when ``review_decision_from_store`` returns a non-``pending``
-    status (approved, changes_requested, advisory_pending, etc.). Pending loops
-    keep the session registered for follow-up turns.
+    Releases only when a non-``pending`` orchestration decision is persisted.
+    Pending loops keep the session registered for follow-up turns.
     """
 
-    from top_down_planning.orchestrator.provider_turns import review_decision_from_store
+    from top_down_planning.orchestrator.provider_turns import (
+        orchestration_decision_from_store,
+    )
 
-    decision = review_decision_from_store(store, run_id, loop_id)
+    decision = orchestration_decision_from_store(store, run_id, loop_id)
     if decision is not None:
         loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
         end_reviewer_session_with_audit(

@@ -22,6 +22,7 @@ from top_down_planning.domain.reviews import (
     ready_for_mandatory_final_approval,
     reviewer_package_policy_guidance,
     needs_fresh_scope_review_clear,
+    reset_gate_agent_turns,
 )
 
 ReviewArtifactKind = Literal["plan", "output"]
@@ -109,7 +110,7 @@ def mark_findings_open(loop: ReviewLoop) -> ReviewLoop:
         revision_cycles = loop.revision_cycles
         target = "findings_open"
 
-    return replace(
+    updated = replace(
         loop,
         lifecycle_status=target,  # type: ignore[arg-type]
         active_stage="finding_verification",
@@ -118,6 +119,7 @@ def mark_findings_open(loop: ReviewLoop) -> ReviewLoop:
         approved_digests=None,
         scope_review_result=None,
     )
+    return reset_gate_agent_turns(updated)
 
 
 def mark_revision_in_progress(loop: ReviewLoop) -> ReviewLoop:
@@ -165,11 +167,16 @@ def mark_verification_pending(loop: ReviewLoop, *, target_revision: int) -> Revi
         status="pending",
         active_stage="finding_verification",
         approved_digests=None,
+        verification_result=None,
     )
     if current == "verification_pending":
-        return replace(pending, lifecycle_status="verification_pending")
+        return reset_gate_agent_turns(
+            replace(pending, lifecycle_status="verification_pending")
+        )
     assert_mandatory_review_transition(current, "verification_pending")
-    return replace(pending, lifecycle_status="verification_pending")
+    return reset_gate_agent_turns(
+        replace(pending, lifecycle_status="verification_pending")
+    )
 
 
 def mark_findings_closed(loop: ReviewLoop) -> ReviewLoop:
@@ -209,7 +216,7 @@ def prepare_scope_review_loop(loop: ReviewLoop) -> ReviewLoop:
         scope_review_result=None,
     )
     prepared, _finding_set_id = allocate_discovery_finding_set_id(prepared)
-    return prepared.with_reviewer_session_released()
+    return reset_gate_agent_turns(prepared.with_reviewer_session_released())
 
 
 def mark_mandatory_approved(loop: ReviewLoop) -> ReviewLoop:
@@ -418,12 +425,15 @@ def prepare_focused_verification_recheck(
 ) -> ReviewLoop:
     """Enter focused finding_verification without mandatory lifecycle transitions."""
 
-    return replace(
-        loop,
-        target_revision=target_revision,
-        status="pending",
-        active_stage="finding_verification",
-        approved_digests=None,
+    return reset_gate_agent_turns(
+        replace(
+            loop,
+            target_revision=target_revision,
+            status="pending",
+            active_stage="finding_verification",
+            approved_digests=None,
+            verification_result=None,
+        )
     )
 
 

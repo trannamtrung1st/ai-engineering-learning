@@ -1168,6 +1168,9 @@ def grant_capability(
             from top_down_planning.domain.session_bindings import (
                 is_transient_provider_session_id,
             )
+            from top_down_planning.persistence.session_bindings import (
+                primary_provider_session_id,
+            )
 
             current_session_id = loop.reviewer_session_id
             if (
@@ -1177,8 +1180,18 @@ def grant_capability(
             ):
                 resolved_session_id = current_session_id
             elif loop.reviewer_session_id != resolved_session_id:
-                updated = loop.with_reviewer_provider_session_id(resolved_session_id)
-                save_review_payload(store, run_id, updated.to_dict())
+                run = store.load_run(run_id)
+                primary_ids = {
+                    sid
+                    for sid in (
+                        primary_provider_session_id(run, "planner"),
+                        primary_provider_session_id(run, "producer"),
+                    )
+                    if sid
+                }
+                if resolved_session_id not in primary_ids:
+                    updated = loop.with_reviewer_provider_session_id(resolved_session_id)
+                    save_review_payload(store, run_id, updated.to_dict())
 
     return issue_session_capability(
         store,

@@ -1312,6 +1312,22 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         },
                         "additionalProperties": False,
                     },
+                    "review": {
+                        "type": "object",
+                        "properties": {
+                            "max_agent_turns_per_gate": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum reviewer provider turns per review "
+                                    "gate (initial_review, finding_verification, "
+                                    "scope_review) before pausing with "
+                                    "limit_exhausted when review respond was not "
+                                    "persisted."
+                                ),
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
                     "provider": {
                         "type": "object",
                         "properties": {
@@ -2473,8 +2489,11 @@ collector to settle, then queues the next turn on the same session. Reviewer
 turns close when `review respond` persists a decision: the orchestrator aborts
 the in-flight provider turn, waits for the session collector to settle, then
 releases the bounded reviewer session before owner revision or the next gate. A
-background poll watches for persisted batches or review decisions while the turn
-is open so a stalled agent subprocess cannot block progress after apply/respond.
+turn that ends without `review respond` queues another reviewer turn with a nudge
+(bounded by `limits.review.max_agent_turns_per_gate`) before pausing with
+`limit_exhausted`. A background poll watches for persisted batches or review
+decisions while the turn is open so a stalled agent subprocess cannot block
+progress after apply/respond.
 
 ## Session roles and authorization
 
@@ -2880,6 +2899,12 @@ include the full limit path (`limits.whole_*_review.max_*`), integer `consumed` 
 candidate value to be strictly greater than consumed usage. Raising that limit revives
 the same review loop and preserves `revision_cycles` / `scope_review_rounds` — it does
 not open a new loop or reset the phase budget counter.
+
+When a reviewer gate turn ends without `review respond`, the run pauses with
+`limits.review.max_agent_turns_per_gate` once the per-gate turn budget is exhausted.
+`stop.details` carries `loop_id` and consumed `gate_agent_turns` (no `exhausted_budget`).
+Resume requires raising `limits.review.max_agent_turns_per_gate` strictly above the
+consumed gate-turn count; the in-progress review loop is preserved.
 
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
 The service captures content hashes and stores immutable snapshots under

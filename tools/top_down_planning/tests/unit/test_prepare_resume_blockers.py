@@ -10,7 +10,7 @@ import pytest
 
 from top_down_planning.config import resolve_config
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
+from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.prepare_resume import (
     PrepareResumeBlockedError,
     prepare_resume,
@@ -18,6 +18,7 @@ from top_down_planning.orchestrator.prepare_resume import (
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
     create_run_kwargs,
+    make_review_loop,
     minimal_resolved_config,
     whole_plan_approval_record,
     write_config,
@@ -369,6 +370,53 @@ def test_prepare_resume_planning_paused_without_approval(tmp_path: Path) -> None
     assert plan.state_transition is not None
     assert plan.state_transition.from_status == "paused"
     assert plan.state_transition.to_status == "running"
+
+
+def test_prepare_resume_blocks_gate_turn_limit_without_increase(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T002101-002101"
+    store.create_run(
+        run_id,
+        plan=_sample_plan(),
+        phase=WHOLE_PLAN_REVIEW,
+        **create_run_kwargs(store.root),
+    )
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        status="pending",
+        lifecycle_status="review_pending",
+        gate_agent_turns=2,
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        revise_at="blocker",
+    )
+    store.save_review(run_id, loop.to_dict())
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "limit_exhausted",
+        "category": "operational",
+        "phase": WHOLE_PLAN_REVIEW,
+        "message": "gate turns exhausted",
+        "details": {
+            "limit": "limits.review.max_agent_turns_per_gate",
+            "consumed": 2,
+            "configured": 2,
+            "loop_id": loop.id,
+        },
+    }
+    store.save_run(run_id, run, expected_revision)
+    stored = store.load_resolved_config(run_id)
+    candidate = copy.deepcopy(stored)
+    candidate.setdefault("limits", {})
+    candidate["limits"].setdefault("review", {})
+    candidate["limits"]["review"]["max_agent_turns_per_gate"] = 2
+    with pytest.raises(PrepareResumeBlockedError, match="max_agent_turns_per_gate"):
+        prepare_resume(store, run_id, candidate)
 
 
 def test_prepare_resume_blocks_replacement_exhausted_for_phase_action(

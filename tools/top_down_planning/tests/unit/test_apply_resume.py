@@ -182,6 +182,60 @@ def test_resume_limit_only_counters_unchanged(tmp_path: Path) -> None:
     assert after == before
 
 
+def test_resume_gate_turn_limit_whole_plan_review(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T001401-001401"
+    store.create_run(
+        run_id,
+        plan=_sample_plan(),
+        phase=WHOLE_PLAN_REVIEW,
+        **create_run_kwargs(store.root),
+    )
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        status="pending",
+        lifecycle_status="review_pending",
+        gate_agent_turns=1,
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        revise_at="blocker",
+    )
+    store.save_review(run_id, loop.to_dict())
+    _set_paused_stop(
+        store,
+        run_id,
+        {
+            "code": "limit_exhausted",
+            "category": "operational",
+            "phase": WHOLE_PLAN_REVIEW,
+            "message": "gate turns exhausted",
+            "details": {
+                "limit": "limits.review.max_agent_turns_per_gate",
+                "consumed": 1,
+                "configured": 1,
+                "loop_id": loop.id,
+            },
+        },
+    )
+    stored = store.load_resolved_config(run_id)
+    candidate = copy.deepcopy(stored)
+    candidate.setdefault("limits", {})
+    candidate["limits"].setdefault("review", {})
+    candidate["limits"]["review"]["max_agent_turns_per_gate"] = 5
+    plan = prepare_resume(store, run_id, candidate)
+    apply_resume_plan_atomically(
+        store,
+        plan,
+        resolved_config=candidate,
+        invocation=store.load_invocation(run_id),
+    )
+    run = store.load_run(run_id)
+    assert run["status"] == "running"
+    review = store.load_review(run_id, loop.id)
+    assert review["gate_agent_turns"] == 1
+
+
 def _set_paused_stop(
     store: FileRunStore,
     run_id: str,

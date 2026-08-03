@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.orchestrator import WholePlanReviewOrchestrator
-from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
@@ -37,7 +36,11 @@ def _blocker_finding() -> dict:
 def test_in_process_scope_review_changes_requested_emits_event_and_enters_revision(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
-    _create_run_at_whole_plan_review(store, provider=provider)
+    _create_run_at_whole_plan_review(
+        store,
+        provider=provider,
+        limits={"review": {"max_agent_turns_per_gate": 1}},
+    )
     run_id = "run-20260101T000301-000301"
 
     provider.script_turn(
@@ -96,8 +99,9 @@ def test_in_process_scope_review_changes_requested_emits_event_and_enters_revisi
     )
     provider.script_turn(done_events(text="verification delivery"))
 
-    with pytest.raises(ProviderRunError, match="without a decision"):
-        WholePlanReviewOrchestrator(store, run_id, provider).run()
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
+    assert result.ok is False
+    assert store.load_run(run_id)["stop"]["code"] == "limit_exhausted"
 
     review = store.load_review(run_id, "review-whole-plan-01")
     events = store.load_events(run_id)
@@ -120,7 +124,11 @@ def test_in_process_needs_revision_enters_revision_without_illegal_transition(
 ) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
-    _create_run_at_whole_plan_review(store, provider=provider)
+    _create_run_at_whole_plan_review(
+        store,
+        provider=provider,
+        limits={"review": {"max_agent_turns_per_gate": 1}},
+    )
     run_id = "run-20260101T000301-000301"
 
     provider.script_turn(
@@ -226,8 +234,9 @@ def test_in_process_needs_revision_enters_revision_without_illegal_transition(
     )
     provider.script_turn(done_events(text="verification delivery again"))
 
-    with pytest.raises(ProviderRunError, match="without a decision"):
-        WholePlanReviewOrchestrator(store, run_id, provider).run()
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
+    assert result.ok is False
+    assert store.load_run(run_id)["stop"]["code"] == "limit_exhausted"
 
     review = store.load_review(run_id, "review-whole-plan-01")
     assert review["lifecycle_status"] == "verification_pending"
