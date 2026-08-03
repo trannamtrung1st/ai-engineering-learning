@@ -470,6 +470,9 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
     if mapped is None:
         return None
     category, message = mapped
+    reason = fields.get("reason")
+    if isinstance(reason, str) and reason.strip():
+        message = f"{message} ({reason.strip()})"
     if event_type == "context_snapshot_collected":
         summary = fields.get("summary")
         if isinstance(summary, str) and summary.strip():

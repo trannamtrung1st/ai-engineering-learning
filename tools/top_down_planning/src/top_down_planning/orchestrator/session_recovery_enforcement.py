@@ -118,7 +118,7 @@ def assert_replacement_allowed(
         role=role,
         phase_action_id=phase_action_id,
         message=(
-            "provider session is still missing after the allowed replacement "
+            "provider session recovery failed after the allowed replacement "
             f"attempt for phase_action_id {phase_action_id}"
         ),
         loop_id=loop_id,

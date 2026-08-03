@@ -35,3 +35,7 @@ class ProviderSessionNotFoundError(ProviderSessionError):
 
 class ProviderTurnError(ProviderError):
     """A provider turn failed during execution or parsing."""
+
+
+class ProviderTurnStalledError(ProviderTurnError):
+    """A provider turn produced no stream output within the configured idle window."""

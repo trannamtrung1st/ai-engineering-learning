@@ -31,6 +31,7 @@ __all__ = [
     "ProviderSessionError",
     "ProviderSessionNotFoundError",
     "ProviderTurnError",
+    "ProviderTurnStalledError",
     "StubProvider",
     "build_agent_argv",
     "create_provider",

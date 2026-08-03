@@ -25,10 +25,11 @@ from top_down_planning.orchestrator.agent_context import plan_execution_contract
 from top_down_planning.persistence.interface import RunStore
 
 REPLACEMENT_SESSION_NOTICE = (
-    "The previous provider session is unavailable. Continue from the canonical "
-    "durable run state below. Do not assume access to prior hidden conversation "
-    "history. Reconcile the next action with the supplied revisions, findings, "
-    "evidence, and phase contract."
+    "The previous provider session is unavailable or produced no stream output "
+    "within the configured idle window. Continue from the canonical durable run "
+    "state below. Do not assume access to prior hidden conversation history. "
+    "Reconcile the next action with the supplied revisions, findings, evidence, "
+    "and phase contract."
 )
 
 

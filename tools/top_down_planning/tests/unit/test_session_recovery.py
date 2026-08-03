@@ -12,7 +12,15 @@ from top_down_planning.agent_tool.artifacts import (
     validate_production_evidence_integrity,
 )
 from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.session_lineage import (
+    REASON_PROVIDER_SESSION_NOT_FOUND,
+    REASON_PROVIDER_TURN_STALLED,
+)
 from top_down_planning.domain.reviews import ReviewLoop
+from core_tools.provider.errors import (
+    ProviderSessionNotFoundError,
+    ProviderTurnStalledError,
+)
 from top_down_planning.orchestrator import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.errors import ProducerReplacementBlocked
 from top_down_planning.orchestrator.focused_review import build_focused_review_package
@@ -29,7 +37,11 @@ from top_down_planning.orchestrator.recovery_manifest import (
     build_producer_recovery_manifest,
 )
 from top_down_planning.orchestrator.reviewer_session import begin_reviewer_review
-from top_down_planning.orchestrator.session_recovery import replace_primary_session
+from top_down_planning.orchestrator.session_recovery import (
+    is_recoverable_provider_session_loss,
+    recovery_reason_for_session_loss,
+    replace_primary_session,
+)
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import update_primary_binding
 from top_down_planning.workspace import WorkspaceIntegrityError, validate_run_workspace_integrity
@@ -145,6 +157,108 @@ def test_planner_session_missing_and_replaced(tmp_path: Path) -> None:
     assert "session_replacement_started" in events
     assert "session_replaced" in events
     assert "session_provider_id_bound" in events
+
+
+def test_planner_session_stalled_and_replaced(tmp_path: Path) -> None:
+    """Stalled provider turn triggers one replacement with provider_turn_stalled reason."""
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    provider = StubProvider()
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    plan = store.load_plan_model(run_id)
+    provider.script_turn(done_events(text="initial planner start"))
+    session_id = provider.start_primary_session(
+        "planner",
+        build_planner_context_manifest(run_id, run, config, plan),
+    )
+    list(provider.stream_events(session_id))
+    _bind_primary_session(store, run_id, role="planner", session_id=session_id)
+
+    provider.mark_session_stalled(session_id)
+    provider.script_turn(done_events(text="replacement planner start"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="replacement turn"))
+    result = PlanningPhaseOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.session_id != session_id
+    events = store.load_events(run_id)
+    replacement_started = [
+        event
+        for event in events
+        if str(event.get("type") or "") == "session_replacement_started"
+    ]
+    assert replacement_started
+    assert replacement_started[-1]["reason"] == REASON_PROVIDER_TURN_STALLED
+    resume_failed = [
+        event
+        for event in events
+        if str(event.get("type") or "") == "session_resume_failed"
+    ]
+    assert resume_failed
+    assert resume_failed[-1]["reason"] == REASON_PROVIDER_TURN_STALLED
+
+
+def test_recovery_reason_helpers() -> None:
+    not_found = ProviderSessionNotFoundError(
+        "missing",
+        provider="cursor",
+        session_id="chat-old",
+    )
+    stalled = ProviderTurnStalledError("stall", session_id="chat-old")
+
+    assert is_recoverable_provider_session_loss(not_found)
+    assert is_recoverable_provider_session_loss(stalled)
+    assert not is_recoverable_provider_session_loss(ValueError("nope"))
+    assert recovery_reason_for_session_loss(not_found) == REASON_PROVIDER_SESSION_NOT_FOUND
+    assert recovery_reason_for_session_loss(stalled) == REASON_PROVIDER_TURN_STALLED
+
+
+def test_replace_primary_session_releases_old_provider_session(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    provider = StubProvider()
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    plan = store.load_plan_model(run_id)
+    provider.script_turn(done_events(text="old planner start"))
+    old_session_id = provider.start_primary_session(
+        "planner",
+        build_planner_context_manifest(run_id, run, config, plan),
+    )
+    list(provider.stream_events(old_session_id))
+    _bind_primary_session(store, run_id, role="planner", session_id=old_session_id)
+
+    provider.script_turn(done_events(text="replacement planner start"))
+    manifest = build_planner_recovery_manifest(
+        store,
+        run_id,
+        config,
+        plan,
+        phase_action_id="action-replace-01",
+        expected_next_action="continue planning",
+    )
+    new_session_id = replace_primary_session(
+        store,
+        run_id,
+        provider,
+        role="planner",
+        phase=PLANNING,
+        old_provider_session_id=old_session_id,
+        phase_action_id="action-replace-01",
+        append_event=lambda *_args, **_kwargs: None,
+        model=None,
+        manifest=manifest,
+        recovery_reason=REASON_PROVIDER_TURN_STALLED,
+    )
+
+    assert new_session_id != old_session_id
+    active_ids = {entry["session_id"] for entry in provider.list_active_sessions()}
+    assert old_session_id not in active_ids
+    assert new_session_id in active_ids
 
 
 def test_reviewer_session_missing_and_replaced(tmp_path: Path) -> None:

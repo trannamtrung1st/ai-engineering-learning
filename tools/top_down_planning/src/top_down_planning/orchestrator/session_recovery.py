@@ -1,4 +1,4 @@
-"""Resume-then-replace orchestration for missing provider sessions (§12.3)."""
+"""Resume-then-replace orchestration for unrecoverable provider sessions (§12.3)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,21 @@ from pathlib import Path
 from typing import Any, Literal
 
 from core_tools.provider import Provider
-from core_tools.provider.errors import ProviderError, ProviderSessionNotFoundError, ProviderTurnError
+from core_tools.provider.errors import (
+    ProviderError,
+    ProviderSessionNotFoundError,
+    ProviderTurnError,
+    ProviderTurnStalledError,
+)
 from top_down_planning.agent_tool.artifacts import (
     EvidenceIntegrityError,
     validate_production_evidence_integrity,
 )
 from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.session_lineage import (
+    REASON_PROVIDER_SESSION_NOT_FOUND,
+    REASON_PROVIDER_TURN_STALLED,
+)
 from top_down_planning.domain.session_bindings import is_transient_provider_session_id
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import (
@@ -54,6 +63,32 @@ from top_down_planning.workspace import (
     WorkspaceIntegrityError,
     validate_run_workspace_integrity,
 )
+
+
+def is_recoverable_provider_session_loss(exc: BaseException) -> bool:
+    """Return True when orchestration may replace the provider session once."""
+
+    return isinstance(exc, (ProviderSessionNotFoundError, ProviderTurnStalledError))
+
+
+def recovery_reason_for_session_loss(exc: BaseException) -> str:
+    """Map a recoverable provider session loss to a session-lineage reason token."""
+
+    if not is_recoverable_provider_session_loss(exc):
+        raise TypeError(f"unsupported recoverable session loss: {exc!r}")
+    if isinstance(exc, ProviderTurnStalledError):
+        return REASON_PROVIDER_TURN_STALLED
+    return REASON_PROVIDER_SESSION_NOT_FOUND
+
+
+def _release_replaced_provider_session(provider: Provider, provider_session_id: str) -> None:
+    """Drop a replaced provider session from the in-memory adapter registry."""
+
+    canonical_id = provider.canonical_session_id(provider_session_id)
+    try:
+        provider.terminate_session(canonical_id)
+    except Exception:
+        return
 
 
 @dataclass(frozen=True)
@@ -139,6 +174,7 @@ def replace_primary_session(
     model: str | None,
     manifest: dict[str, Any],
     workspace: Path | None = None,
+    recovery_reason: str = REASON_PROVIDER_SESSION_NOT_FOUND,
 ) -> str:
     """Perform one primary-session replacement with lease/revision CAS."""
 
@@ -159,10 +195,12 @@ def replace_primary_session(
             role=role,
             session_instance_id=binding.session_instance_id,
             generation=binding.generation,
-            reason="provider_session_not_found",
+            reason=recovery_reason,
             provider_session_id=old_provider_session_id,
             phase_action_id=phase_action_id,
         )
+
+        _release_replaced_provider_session(provider, old_provider_session_id)
 
         updated_sessions = bump_primary_binding_generation(
             dict(run.get("sessions") or {}),
@@ -191,7 +229,7 @@ def replace_primary_session(
             role=role,
             session_instance_id=new_binding.session_instance_id,
             generation=new_binding.generation,
-            reason="provider_session_not_found",
+            reason=recovery_reason,
             old_provider_session_id=old_provider_session_id,
             phase_action_id=phase_action_id,
         )
@@ -248,7 +286,7 @@ def replace_primary_session(
             old_session_instance_id=binding.session_instance_id,
             new_session_instance_id=saved_binding.session_instance_id,
             generation=saved_binding.generation,
-            reason="provider_session_not_found",
+            reason=recovery_reason,
             old_provider_session_id=old_provider_session_id,
             new_provider_session_id=(
                 new_session_id
@@ -274,6 +312,7 @@ def replace_reviewer_session(
     append_event: Callable[..., None],
     model: str | None,
     manifest: dict[str, Any],
+    recovery_reason: str = REASON_PROVIDER_SESSION_NOT_FOUND,
 ) -> str:
     """Perform one reviewer-session replacement for a review loop."""
 
@@ -296,11 +335,13 @@ def replace_reviewer_session(
             role="reviewer",
             session_instance_id=binding.session_instance_id,
             generation=binding.generation,
-            reason="provider_session_not_found",
+            reason=recovery_reason,
             provider_session_id=old_provider_session_id,
             phase_action_id=phase_action_id,
             loop_id=current_loop.id,
         )
+
+        _release_replaced_provider_session(provider, old_provider_session_id)
 
         updated_binding = binding.with_next_generation()
         updated_loop = replace(
@@ -328,7 +369,7 @@ def replace_reviewer_session(
             role="reviewer",
             session_instance_id=updated_binding.session_instance_id,
             generation=updated_binding.generation,
-            reason="provider_session_not_found",
+            reason=recovery_reason,
             old_provider_session_id=old_provider_session_id,
             phase_action_id=phase_action_id,
             loop_id=loop.id,
@@ -385,7 +426,7 @@ def replace_reviewer_session(
             old_session_instance_id=binding.session_instance_id,
             new_session_instance_id=committed_binding.session_instance_id,
             generation=committed_binding.generation,
-            reason="provider_session_not_found",
+            reason=recovery_reason,
             old_provider_session_id=old_provider_session_id,
             new_provider_session_id=(
                 new_session_id
@@ -403,6 +444,8 @@ def replace_reviewer_session(
 __all__ = [
     "PrimarySessionRecoverySpec",
     "ReviewerSessionRecoverySpec",
+    "is_recoverable_provider_session_loss",
+    "recovery_reason_for_session_loss",
     "replace_primary_session",
     "replace_reviewer_session",
 ]

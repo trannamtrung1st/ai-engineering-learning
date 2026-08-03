@@ -36,6 +36,7 @@ provider.script_turn(done_events(text="planning turn"))
 ```
 
 - `script_session_turn(session_id, events)` for reviewer-specific sessions.
+- `mark_session_stalled(session_id)` to simulate `ProviderTurnStalledError` recovery (not-found: `mark_session_not_found`).
 - `mutate_store=callable` to update persistence mid-turn without sleeping.
 - Producer batch boundaries abort the in-flight turn, wait for `wait_turn_settled`, then queue the next turn on the same session. `CursorProvider.abort_turn()` also waits for settlement before returning. For collector-thread races, test with `CursorProvider(..., runner=fake_runner)` — not only `StubProvider`.
 
@@ -98,6 +99,7 @@ Extend helpers when the same stub setup repeats across tests.
 ## `core_tools` conventions
 
 - **Provider adapter**: test `CursorProvider` with an injected `fake_runner` and `skip_probe=True` — never a live agent binary.
+- **Idle stream timeout**: use short `limits.provider.turn_idle_timeout_seconds` (≤0.1s) with a blocking `fake_runner`; orchestration stall recovery uses `StubProvider.mark_session_stalled()`.
 - **Orchestration-free logic**: call functions directly; no provider needed.
 - **Process lifecycle** (`test_process_cleanup.py`): subprocess + `time.sleep(0.1)` is acceptable when termination is the behavior under test.
 

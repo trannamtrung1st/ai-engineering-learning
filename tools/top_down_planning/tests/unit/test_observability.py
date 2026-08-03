@@ -231,6 +231,25 @@ def test_map_audit_event_requires_role_and_phase_for_session_start() -> None:
     ) is None
 
 
+def test_map_audit_event_maps_session_resume_failed_reason() -> None:
+    mapped = map_audit_event(
+        {
+            "type": "session_resume_failed",
+            "run_id": "run-20260101T000001-000001",
+            "phase": "planning",
+            "role": "planner",
+            "session_instance_id": "planner-inst-1",
+            "generation": 1,
+            "reason": "provider_turn_stalled",
+            "provider_session_id": "chat-old",
+            "phase_action_id": "action-01",
+        }
+    )
+    assert mapped is not None
+    assert mapped.category == "session:lineage"
+    assert mapped.message == "session resume failed (provider_turn_stalled)"
+
+
 def test_session_lifecycle_event_builds_start_and_end() -> None:
     from top_down_planning.observability import session_lifecycle_event
 

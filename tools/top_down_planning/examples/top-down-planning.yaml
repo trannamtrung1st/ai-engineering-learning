@@ -118,3 +118,6 @@ limits:
   amendment:
     max_requests: 3
     max_revision_cycles_per_request: 3
+  provider:
+    max_retries_per_call: 2
+    turn_idle_timeout_seconds: 0  # seconds without stream-json stdout; 0 = disabled

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,7 @@ from core_tools.provider.errors import (
     ProviderSessionError,
     ProviderSessionNotFoundError,
     ProviderTurnError,
+    ProviderTurnStalledError,
 )
 from core_tools.provider.events import (
     format_manifest_prompt,
@@ -664,6 +666,11 @@ class CursorProvider:
         except ProviderSessionNotFoundError as exc:
             with session.condition:
                 session.turn_error = exc
+        except ProviderTurnStalledError as exc:
+            with session.condition:
+                if session.turn_aborted:
+                    return
+                session.turn_error = exc
         except ProviderTurnError as exc:
             with session.condition:
                 if session.turn_aborted:
@@ -708,6 +715,8 @@ class CursorProvider:
                 self._collect_turn_stream(session_id, session, argv)
                 return
             except ProviderTurnError as exc:
+                if isinstance(exc, ProviderTurnStalledError):
+                    raise exc
                 classified = reclassify_provider_turn_error(exc, session_id=session_id)
                 if isinstance(classified, ProviderSessionNotFoundError):
                     raise classified from exc
@@ -834,6 +843,54 @@ class CursorProvider:
         provider_limits = (self._config.get("limits") or {}).get("provider") or {}
         return int(provider_limits.get("max_retries_per_call", 0))
 
+    def _turn_idle_timeout_seconds(self) -> float:
+        provider_limits = (self._config.get("limits") or {}).get("provider") or {}
+        raw = provider_limits.get("turn_idle_timeout_seconds", 0)
+        try:
+            timeout = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, timeout)
+
+    @staticmethod
+    def _iter_stream_with_idle_timeout(
+        stream: Iterator[str],
+        *,
+        idle_timeout: float,
+        on_idle: Callable[[], None],
+        session_id: str | None = None,
+    ) -> Iterator[str]:
+        """Yield stdout lines, raising when no line arrives within *idle_timeout* seconds."""
+
+        line_queue: queue.Queue[str | None] = queue.Queue()
+        errors: list[BaseException] = []
+
+        def produce() -> None:
+            try:
+                for line in stream:
+                    line_queue.put(line)
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                line_queue.put(None)
+
+        thread = threading.Thread(target=produce, daemon=True)
+        thread.start()
+        while True:
+            try:
+                line = line_queue.get(timeout=idle_timeout)
+            except queue.Empty:
+                on_idle()
+                raise ProviderTurnStalledError(
+                    f"provider turn produced no stream output for {idle_timeout:g}s",
+                    session_id=session_id,
+                )
+            if line is None:
+                if errors:
+                    raise errors[0]
+                break
+            yield line
+
     def _emit_provider_event(self, event: dict[str, Any]) -> None:
         if self._on_provider_event is not None:
             self._on_provider_event(event)
@@ -862,6 +919,7 @@ class CursorProvider:
 
     def _wrap_runner(self, runner: ProcessRunner) -> ProcessRunner:
         active_proc: list[subprocess.Popen[str] | None] = [None]
+        idle_timeout = self._turn_idle_timeout_seconds()
 
         def wrapped(argv: list[str], cwd: Path) -> Iterator[str]:
             try:
@@ -874,6 +932,22 @@ class CursorProvider:
                     )
                 else:
                     stream = runner(argv, cwd)
+
+                def on_idle() -> None:
+                    proc = active_proc[0]
+                    if proc is not None and proc.poll() is None:
+                        terminate_process_tree(proc)
+
+                if idle_timeout > 0:
+                    context = self._current_collect_context
+                    stalled_session_id = context[0] if context is not None else None
+                    stream = self._iter_stream_with_idle_timeout(
+                        stream,
+                        idle_timeout=idle_timeout,
+                        on_idle=on_idle,
+                        session_id=stalled_session_id,
+                    )
+
                 for line in stream:
                     if active_proc[0] is not None:
                         self._register_tracked_turn_proc(active_proc[0])

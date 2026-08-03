@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core_tools.provider import Provider
-from core_tools.provider.errors import ProviderSessionNotFoundError
+from core_tools.provider.errors import ProviderSessionNotFoundError, ProviderTurnStalledError
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
@@ -42,6 +42,7 @@ from top_down_planning.orchestrator.session_events import (
 from top_down_planning.orchestrator.session_recovery import (
     PrimarySessionRecoverySpec,
     ReviewerSessionRecoverySpec,
+    recovery_reason_for_session_loss,
     replace_primary_session,
     replace_reviewer_session,
 )
@@ -386,7 +387,7 @@ def consume_provider_turn_with_session_recovery(
     allowed_signals: frozenset[str],
     recovery: PrimarySessionRecoverySpec | ReviewerSessionRecoverySpec,
 ) -> ProviderTurnOutcome:
-    """Resume an existing session, replacing it once when the provider reports not-found."""
+    """Resume an existing session, replacing it once on missing or stalled provider sessions."""
 
     return _consume_provider_turn_with_session_recovery(
         store,
@@ -432,7 +433,8 @@ def _consume_provider_turn_with_session_recovery(
             replaced=False,
             domain_budget_committed=domain_budget_committed,
         )
-    except ProviderSessionNotFoundError:
+    except (ProviderSessionNotFoundError, ProviderTurnStalledError) as exc:
+        recovery_reason = recovery_reason_for_session_loss(exc)
         assert_replacement_allowed(
             store,
             run_id,
@@ -458,6 +460,7 @@ def _consume_provider_turn_with_session_recovery(
                     model=recovery.model,
                     manifest=manifest,
                     workspace=recovery.workspace,
+                    recovery_reason=recovery_reason,
                 )
             else:
                 loop = ReviewLoop.from_dict(store.load_review(run_id, recovery.loop_id))
@@ -472,6 +475,7 @@ def _consume_provider_turn_with_session_recovery(
                     append_event=recovery.append_event,
                     model=recovery.model,
                     manifest=manifest,
+                    recovery_reason=recovery_reason,
                 )
         except ProducerReplacementBlocked as exc:
             _emit_replacement_blocked(store, run_id, recovery, phase_action_id, session_id, str(exc))
@@ -502,7 +506,7 @@ def _consume_provider_turn_with_session_recovery(
                 on_boundary=on_boundary,
                 sync_session_id=sync_session_id,
             )
-        except ProviderSessionNotFoundError as exc:
+        except (ProviderSessionNotFoundError, ProviderTurnStalledError) as exc:
             fail_session_recovery_exhausted(
                 store,
                 run_id,
@@ -510,8 +514,8 @@ def _consume_provider_turn_with_session_recovery(
                 role=role,
                 phase_action_id=phase_action_id,
                 message=(
-                    "replacement provider session is missing for "
-                    f"phase_action_id {phase_action_id}"
+                    "replacement provider session failed for "
+                    f"phase_action_id {phase_action_id}: {exc}"
                 ),
                 loop_id=loop_id,
             )

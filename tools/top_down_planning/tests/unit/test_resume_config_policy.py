@@ -124,6 +124,14 @@ def test_resume_allows_provider_retry_increase() -> None:
     assert comparison.ok
 
 
+def test_resume_allows_provider_idle_timeout_override() -> None:
+    stored = _base_config()
+    candidate = resolve_config(None, ["limits.provider.turn_idle_timeout_seconds=600"])
+    comparison = validate_resume_config_comparison(compare_resume_configs(stored, candidate))
+    assert comparison.ok
+    assert candidate["limits"]["provider"]["turn_idle_timeout_seconds"] == 600
+
+
 def test_resume_allows_presentation_change() -> None:
     stored = _base_config()
     candidate = resolve_config(None, ["observability.log_level=verbose"])

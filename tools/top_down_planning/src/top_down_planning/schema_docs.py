@@ -1307,7 +1307,21 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "provider": {
                         "type": "object",
                         "properties": {
-                            "max_retries_per_call": {"type": "integer"},
+                            "max_retries_per_call": {
+                                "type": "integer",
+                                "description": (
+                                    "Transient Cursor CLI failures retried on the same "
+                                    "argv before the turn fails. Does not apply to "
+                                    "ProviderTurnStalledError."
+                                ),
+                            },
+                            "turn_idle_timeout_seconds": {
+                                "type": "number",
+                                "description": (
+                                    "Seconds without Cursor stream-json stdout before "
+                                    "the provider ends the turn. 0 disables idle timeout."
+                                ),
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -2800,8 +2814,16 @@ rejected — recreate the run; there is no migrator. Prefer snapshot excludes ov
 
 `digests.config_contract` binds approval-meaning configuration (input/output goal semantics,
 boundaries, acceptance, review policy, context declarations). `digests.config_execution`
-binds operational limits and execution budgets. Approvals bind to `config_contract`, not
+binds operational limits and execution budgets (including `limits.provider.max_retries_per_call`
+and `limits.provider.turn_idle_timeout_seconds` for Cursor stream idle detection).
+Approvals bind to `config_contract`, not
 `config_execution`. The monolithic `digests.config` field is not accepted on schema v3.
+
+Provider session replacement (one attempt per `phase_action_id`) runs when Cursor reports a
+missing remote session (`provider_session_not_found`) or when a turn stalls with no
+stream-json stdout within `limits.provider.turn_idle_timeout_seconds` when that limit is
+greater than zero (`provider_turn_stalled`). Replacement exhausted for the current
+`phase_action_id` fails the run with `session_recovery_exhausted`.
 
 Run lifecycle fields on `run.json`: `status` (`running`, `paused`, `completed`, `failed`);
 `outcome` (non-null only when `status` is `completed`); `stop` (structured stop record

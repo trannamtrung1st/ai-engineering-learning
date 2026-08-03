@@ -20,6 +20,9 @@ LINEAGE_EVENT_TYPES = frozenset(
     }
 )
 
+REASON_PROVIDER_SESSION_NOT_FOUND = "provider_session_not_found"
+REASON_PROVIDER_TURN_STALLED = "provider_turn_stalled"
+
 
 def _base_fields(
     *,
@@ -191,6 +194,8 @@ def session_replacement_failed_payload(
 
 __all__ = [
     "LINEAGE_EVENT_TYPES",
+    "REASON_PROVIDER_SESSION_NOT_FOUND",
+    "REASON_PROVIDER_TURN_STALLED",
     "SESSION_PROVIDER_ID_BOUND",
     "SESSION_REPLACED",
     "SESSION_REPLACEMENT_FAILED",

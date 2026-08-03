@@ -47,6 +47,7 @@ RESUME_EXECUTION_POLICY_ALLOWLIST: frozenset[str] = frozenset(
     for path in ALLOWED_OVERRIDE_PATHS
     if path.startswith(_RESUME_LIMIT_PREFIXES)
     or path == "limits.provider.max_retries_per_call"
+    or path == "limits.provider.turn_idle_timeout_seconds"
 )
 
 RESUME_PRESENTATION_ALLOWLIST: frozenset[str] = frozenset(

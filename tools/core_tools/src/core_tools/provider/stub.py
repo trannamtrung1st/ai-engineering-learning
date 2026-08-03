@@ -13,7 +13,7 @@ from core_tools.provider.cursor import (
     format_provider_model_name,
     resolve_provider_cli_model,
 )
-from core_tools.provider.errors import ProviderSessionError, ProviderSessionNotFoundError, ProviderTurnError
+from core_tools.provider.errors import ProviderSessionError, ProviderSessionNotFoundError, ProviderTurnError, ProviderTurnStalledError
 from core_tools.provider.events import format_manifest_prompt, format_request_prompt, normalize_cursor_event
 
 ProviderEventCallback = Callable[[dict[str, Any]], None]
@@ -48,11 +48,17 @@ class StubProvider:
         self._capability_token_file: str | None = None
         self._on_provider_event = on_provider_event
         self._not_found_sessions: set[str] = set()
+        self._stalled_sessions: set[str] = set()
 
     def mark_session_not_found(self, session_id: str) -> None:
         """Simulate a missing remote session for recovery tests."""
 
         self._not_found_sessions.add(session_id)
+
+    def mark_session_stalled(self, session_id: str) -> None:
+        """Simulate a provider turn that stalled without stream output."""
+
+        self._stalled_sessions.add(session_id)
 
     def script_turn(
         self,
@@ -132,6 +138,11 @@ class StubProvider:
             raise ProviderSessionNotFoundError(
                 f"provider session not found: {session_id}",
                 provider="stub",
+                session_id=session_id,
+            )
+        if session_id in self._stalled_sessions:
+            raise ProviderTurnStalledError(
+                f"provider turn produced no stream output for test stall: {session_id}",
                 session_id=session_id,
             )
         session = self._require_session(session_id)
