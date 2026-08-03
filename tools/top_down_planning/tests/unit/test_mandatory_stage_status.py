@@ -38,8 +38,21 @@ def test_mandatory_stage_respond_decision_requires_result_payloads() -> None:
         scope_review_result=None,
         revise_at="blocker",
     )
+    assert mandatory_stage_respond_decision(blocker_loop) == "pending"
+
+    blocker_pending = make_review_loop(
+        id="r3",
+        type="whole_plan",
+        reviewer_session_id="s",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="changes_requested",
+        active_stage="scope_review",
+        scope_review_result=None,
+        revise_at="blocker",
+    )
     with pytest.raises(ValueError, match="missing scope_review_result"):
-        mandatory_stage_respond_decision(blocker_loop)
+        mandatory_stage_respond_decision(blocker_pending)
 
 
 def test_validate_mandatory_stage_decision_returns_stage_native_values() -> None:
@@ -91,3 +104,22 @@ def test_gate_approve_closes_respond_before_lifecycle_approved() -> None:
     )
     assert is_review_respond_closed(initial_clear) is False
     assert is_terminal_review_loop(initial_clear) is False
+
+    malformed = make_review_loop(
+        id="review-whole-plan-03",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="approved",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        revise_at="blocker",
+        scope_review_result={
+            "stage": "scope_review",
+            "decision": "",
+            "target_digest": "digest",
+            "scope_id": "whole_plan",
+        },
+    )
+    assert is_review_respond_closed(malformed) is False

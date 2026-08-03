@@ -20,6 +20,7 @@ from top_down_planning.domain.reviews import (
     ReviewFinding,
     ReviewLoop,
     ScopeReviewResult,
+    apply_discovery_response,
     approval_allowed_under_loop_bounds,
     is_approval_eligible,
     reject_approval_when_budget_exhausted,
@@ -120,6 +121,124 @@ def test_core_invariant_finding_closure_alone_never_approves() -> None:
     assert "findings" not in fields
     assert fields["finding_set_id"] == blocker_pending.finding_set_id
     assert blocker_pending.finding_set_id is not None
+
+
+def test_scope_review_approval_recorded_requires_approved_result() -> None:
+    from top_down_planning.domain.reviews import (
+        needs_fresh_scope_review_clear,
+        ready_for_mandatory_final_approval,
+        scope_review_approval_recorded,
+    )
+
+    without_result = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="approved",
+        active_stage="scope_review",
+        lifecycle_status="scope_review_pending",
+    )
+    assert scope_review_approval_recorded(without_result) is False
+    assert needs_fresh_scope_review_clear(without_result) is True
+    assert ready_for_mandatory_final_approval(without_result) is False
+
+    with_result = ReviewLoop.from_dict(
+        {
+            **without_result.to_dict(),
+            "scope_review_result": _clear_blocker().to_dict(),
+        }
+    )
+    assert scope_review_approval_recorded(with_result) is True
+    assert needs_fresh_scope_review_clear(with_result) is False
+    assert ready_for_mandatory_final_approval(with_result) is True
+
+    malformed = ReviewLoop.from_dict(
+        {
+            **without_result.to_dict(),
+            "scope_review_result": {
+                "stage": "scope_review",
+                "decision": "",
+                "target_digest": DIGEST,
+                "scope_id": "whole_plan",
+            },
+        }
+    )
+    assert scope_review_approval_recorded(malformed) is False
+
+
+def test_scope_review_advisory_clears_stale_scope_review_result() -> None:
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="pending",
+        active_stage="scope_review",
+        lifecycle_status="scope_review_pending",
+        finding_set_id="fs-10",
+        scope_review_result=_clear_blocker().to_dict(),
+        revise_at="major",
+    )
+    updated, _findings, outcome = apply_discovery_response(
+        loop,
+        {
+            "finding_set_id": "fs-10",
+            "reported_findings": [
+                ReviewFinding(
+                    id="finding-opt",
+                    severity="minor",
+                    category="other",
+                    target_refs=["item-a"],
+                    issue="Optional",
+                    recommended_change="Polish",
+                ).to_dict()
+            ],
+            "review_completed": True,
+            "summary": "Optional only",
+        },
+        stage="scope_review",
+    )
+    assert outcome == "pending"
+    assert updated.status == "advisory_pending"
+    assert updated.scope_review_result is None
+
+
+def test_mandatory_gate_next_actor_after_initial_review_advisory() -> None:
+    from top_down_planning.domain.reviews import mandatory_gate_next_actor
+
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="approved",
+        lifecycle_status="review_pending",
+        active_stage="initial_review",
+        revise_at="major",
+    )
+    assert mandatory_gate_next_actor(loop) == "reviewer"
+
+
+def test_mandatory_gate_next_actor_omits_reviewer_when_scope_clear_recorded() -> None:
+    from top_down_planning.domain.reviews import mandatory_gate_next_actor
+
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        status="approved",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        scope_review_result=_clear_blocker().to_dict(),
+        revise_at="blocker",
+    )
+    assert mandatory_gate_next_actor(loop) is None
 
 
 def test_core_invariant_requires_verified_clear_scope_review_and_digest_match() -> None:

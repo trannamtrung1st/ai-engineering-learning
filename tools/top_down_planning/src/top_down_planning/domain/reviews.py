@@ -957,13 +957,17 @@ def is_review_respond_closed(loop: ReviewLoop) -> bool:
         return True
     blocker = loop.scope_review_result
     if is_mandatory_review_loop(loop) and isinstance(blocker, dict):
-        decision = validate_scope_review_decision_value(
-            str(blocker.get("decision") or "")
-        )
-        if decision == "approved" and is_scope_review_stage_name(
-            str(blocker.get("stage") or loop.active_stage or "")
-        ):
-            return True
+        decision_raw = str(blocker.get("decision") or "").strip()
+        if decision_raw:
+            try:
+                decision = validate_scope_review_decision_value(decision_raw)
+            except ValueError:
+                decision = ""
+            else:
+                if decision == "approved" and is_scope_review_stage_name(
+                    str(blocker.get("stage") or loop.active_stage or "")
+                ):
+                    return True
     return False
 
 
@@ -1745,9 +1749,13 @@ def is_mandatory_gate_approval_record(payload: Mapping[str, Any]) -> bool:
         return False
     if not is_scope_review_stage_name(str(blocker_raw.get("stage") or "")):
         return False
-    decision = validate_scope_review_decision_value(
-        str(blocker_raw.get("decision") or "")
-    )
+    decision_raw = str(blocker_raw.get("decision") or "").strip()
+    if not decision_raw:
+        return False
+    try:
+        decision = validate_scope_review_decision_value(decision_raw)
+    except ValueError:
+        return False
     if decision != "approved":
         return False
     if not str(blocker_raw.get("target_digest") or "").strip():
@@ -2138,6 +2146,8 @@ def apply_discovery_response(
         review_incomplete=incomplete,
         status=status,
     )
+    if is_scope_review_stage_name(stage or "") and outcome == "pending":
+        updated = replace(updated, scope_review_result=None)
     if (
         is_scope_review_stage_name(stage or "")
         and review_completed
@@ -2774,6 +2784,12 @@ def build_primary_owner_finding_guidance(
                 "appropriate."
             ),
         ]
+        if is_mandatory_review_loop(loop):
+            lines.append(
+                "Recording owner responses does not complete mandatory review. "
+                "The reviewer must still run a scope_review respond with decision "
+                "approved on the current artifact digest before the run advances."
+            )
 
     if optional_count > 0:
         lines.append(
@@ -2835,6 +2851,8 @@ def primary_review_resume_fields(
                 artifact_digest=artifact_digest,
             )
         )
+    if is_mandatory_review_loop(loop):
+        fields.update(build_record_actions_gate_fields(loop))
     return fields
 
 
@@ -2918,6 +2936,8 @@ def mandatory_stage_respond_decision(loop: ReviewLoop) -> str:
     if is_scope_review_stage_name(stage):
         blocker = loop.scope_review_result
         if not isinstance(blocker, dict):
+            if loop.status == "approved":
+                return "pending"
             raise ValueError("scope_review loop missing scope_review_result")
         raw = str(blocker.get("decision") or "").strip()
         canonical = validate_scope_review_decision_value(raw)
@@ -3733,6 +3753,72 @@ def approval_allowed_under_loop_bounds(
         finding_actions=finding_actions,
         revise_at=revise_at,
     )
+
+
+def scope_review_approval_recorded(loop: ReviewLoop) -> bool:
+    """True when a scope-review respond with decision approved is persisted."""
+
+    raw = loop.scope_review_result
+    if not isinstance(raw, dict):
+        return False
+    stage = str(raw.get("stage") or loop.active_stage or "").strip()
+    if not is_scope_review_stage_name(stage):
+        return False
+    decision_raw = str(raw.get("decision") or "").strip()
+    if not decision_raw:
+        return False
+    try:
+        decision = validate_scope_review_decision_value(decision_raw)
+    except ValueError:
+        return False
+    return decision == "approved"
+
+
+def needs_fresh_scope_review_clear(loop: ReviewLoop) -> bool:
+    """True when scope_review stage lacks a persisted approved scope_review_result."""
+
+    return is_scope_review_stage_name(loop.active_stage) and not scope_review_approval_recorded(
+        loop
+    )
+
+
+def ready_for_mandatory_final_approval(loop: ReviewLoop) -> bool:
+    """True when mandatory gate may call complete_approval (scope clear on file)."""
+
+    return is_scope_review_stage_name(loop.active_stage) and scope_review_approval_recorded(loop)
+
+
+def mandatory_gate_next_actor(loop: ReviewLoop) -> str | None:
+    """Next actor required to advance a mandatory whole_* gate, if any."""
+
+    if not is_mandatory_review_loop(loop):
+        return None
+    if loop.lifecycle_status == "approved":
+        return None
+    if loop.status == "advisory_pending" or needs_advisory_handoff(loop):
+        return "planner"
+    if needs_fresh_scope_review_clear(loop):
+        return "reviewer"
+    if loop.status == "approved" and not ready_for_mandatory_final_approval(loop):
+        return "reviewer"
+    return None
+
+
+def build_record_actions_gate_fields(loop: ReviewLoop) -> dict[str, Any]:
+    """Gate-position fields for record-actions responses."""
+
+    fields: dict[str, Any] = {
+        "lifecycle_status": loop.lifecycle_status,
+        "active_stage": loop.active_stage,
+    }
+    if not is_mandatory_review_loop(loop):
+        return fields
+    gate_pending = loop.lifecycle_status != "approved"
+    fields["mandatory_gate_pending"] = gate_pending
+    next_actor = mandatory_gate_next_actor(loop)
+    if next_actor is not None:
+        fields["next_required_actor"] = next_actor
+    return fields
 
 
 def mandatory_approval_allowed(

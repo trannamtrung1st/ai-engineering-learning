@@ -15,6 +15,7 @@ from top_down_planning.domain.reviews import (
     apply_discovery_response,
     apply_owner_finding_actions,
     build_active_findings_view,
+    build_record_actions_gate_fields,
     build_review_convergence_warning,
     budgets_snapshot,
     complete_advisory_handoff_if_owner_responses_recorded,
@@ -637,6 +638,113 @@ def test_record_finding_actions_service_path(tmp_path: Path) -> None:
             },
             capability_token=token,
         )
+
+
+def test_record_finding_actions_reports_mandatory_gate_pending(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T000002-ac7102"
+    root = PlanItem(
+        id="item-root",
+        parent_id=None,
+        order_key="0000000000",
+        title="Root",
+        outcome="Done.",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root},
+    )
+    store.create_run(
+        run_id,
+        plan=plan,
+        **create_run_kwargs(tmp_path),
+        phase="whole_plan_review",
+    )
+    run = store.load_run(run_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["sessions"] = sessions_with_primary_session(planner="planner-sess")
+    store.save_run(run_id, run, expected)
+
+    loop = ReviewLoop.from_dict(
+        {
+            **_optional_loop(status="advisory_pending").to_dict(),
+            "type": "whole_plan",
+            "scope": {"kind": "whole_plan"},
+            "active_stage": "scope_review",
+            "lifecycle_status": "scope_review_pending",
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
+        }
+    )
+    save_review_payload(store, run_id, loop.to_dict())
+    token = grant_capability(
+        store,
+        run_id,
+        role="planner",
+        phase="whole_plan_review",
+        session_id="planner-sess",
+    )
+    response = ReviewAgentService(store, run_id).record_finding_actions(
+        {
+            "loop_id": loop.id,
+            "artifact_revision": 0,
+            "finding_actions": [
+                {
+                    "finding_id": "finding-opt",
+                    "action": "accept_as_is",
+                    "actor_role": "planner",
+                    "artifact_revision": 0,
+                    "finding_set_id": "fs-01",
+                    "rationale": "Accept for now",
+                }
+            ],
+        },
+        capability_token=token,
+    )
+    assert response["status"] == "approved"
+    assert response["lifecycle_status"] == "scope_review_pending"
+    assert response["active_stage"] == "scope_review"
+    assert response["mandatory_gate_pending"] is True
+    assert response["next_required_actor"] == "reviewer"
+
+
+def test_record_actions_gate_fields_name_planner_during_advisory_pending() -> None:
+    loop = ReviewLoop.from_dict(
+        {
+            **_optional_loop(status="advisory_pending").to_dict(),
+            "type": "whole_plan",
+            "scope": {"kind": "whole_plan"},
+            "active_stage": "scope_review",
+            "lifecycle_status": "scope_review_pending",
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
+        }
+    )
+    fields = build_record_actions_gate_fields(loop)
+    assert fields["mandatory_gate_pending"] is True
+    assert fields["next_required_actor"] == "planner"
+
+
+def test_record_actions_gate_fields_name_reviewer_after_initial_advisory_clear() -> None:
+    loop = make_review_loop(
+        id="loop-whole-plan",
+        type="whole_plan",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="approved",
+        lifecycle_status="review_pending",
+        active_stage="initial_review",
+        findings=[],
+        revise_at="major",
+    )
+    fields = build_record_actions_gate_fields(loop)
+    assert fields["mandatory_gate_pending"] is True
+    assert fields["next_required_actor"] == "reviewer"
 
 
 def test_default_optional_action_applies_to_remaining_optionals() -> None:

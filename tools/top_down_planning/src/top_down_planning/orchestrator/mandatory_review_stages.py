@@ -19,7 +19,9 @@ from top_down_planning.domain.reviews import (
     loop_revise_at,
     mandatory_stage_respond_decision,
     next_finding_set_id,
+    ready_for_mandatory_final_approval,
     reviewer_package_policy_guidance,
+    needs_fresh_scope_review_clear,
 )
 
 ReviewArtifactKind = Literal["plan", "output"]
@@ -195,7 +197,8 @@ def prepare_scope_review_loop(loop: ReviewLoop) -> ReviewLoop:
     if current == "verification_pending":
         loop = mark_findings_closed(loop)
         current = loop.lifecycle_status or "findings_closed"
-    assert_mandatory_review_transition(current, "scope_review_pending")
+    if current != "scope_review_pending":
+        assert_mandatory_review_transition(current, "scope_review_pending")
 
     prepared = replace(
         loop,
@@ -250,7 +253,7 @@ def mark_limit_reached_loop(
 
 
 def approved_means_final_approval(loop: ReviewLoop) -> bool:
-    """True when ``approved`` may complete the mandatory gate (scope clear)."""
+    """True when an approved orchestration decision applies at the scope-review stage."""
 
     return is_scope_review_stage(loop)
 

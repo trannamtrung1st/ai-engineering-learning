@@ -96,6 +96,23 @@ def test_primary_review_resume_fields_includes_review_budget() -> None:
     assert fields["review_budget"]["scope_review_rounds"]["remaining"] == 2
 
 
+def test_primary_review_resume_fields_includes_mandatory_gate_fields() -> None:
+    loop = make_review_loop(
+        id="loop-whole-plan-gate",
+        type="whole_plan",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        status="advisory_pending",
+        lifecycle_status="scope_review_pending",
+        active_stage="scope_review",
+        revise_at="major",
+        findings=[_finding("f-minor", severity="minor")],
+    )
+    fields = primary_review_resume_fields(loop, config=minimal_resolved_config())
+    assert fields["mandatory_gate_pending"] is True
+    assert fields["next_required_actor"] == "planner"
+
+
 def test_primary_review_resume_fields_requires_config() -> None:
     loop = make_review_loop(
         id="loop-whole-plan-2",
@@ -315,6 +332,25 @@ def test_advisory_guidance_mentions_default_optional_action() -> None:
     )
     assert "default_optional_action" in guidance
     assert "accept_as_is" in guidance
+
+
+def test_mandatory_whole_plan_advisory_guidance_requires_reviewer_scope_clear() -> None:
+    loop = make_review_loop(
+        id="loop-whole-plan",
+        type="whole_plan",
+        target_revision=1,
+        scope={"kind": "whole_plan"},
+        revise_at="major",
+        findings=[_finding("f-minor", severity="minor")],
+    )
+    guidance = build_primary_owner_finding_guidance(
+        handoff="advisory",
+        loop=loop,
+        config=minimal_resolved_config(),
+    )
+    assert "does not complete mandatory review" in guidance
+    assert "scope_review respond" in guidance
+    assert "decision approved" in guidance
 
 
 def test_build_review_budget_fields_rejects_unknown_loop_type() -> None:

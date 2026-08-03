@@ -36,7 +36,9 @@ from top_down_planning.orchestrator.mandatory_review_stages import (
     mark_limit_reached_loop,
     mark_verification_pending,
     mandatory_orchestration_decision,
+    needs_fresh_scope_review_clear,
     prepare_scope_review_loop,
+    ready_for_mandatory_final_approval,
     seed_mandatory_loop_fields,
     verification_recheck_request,
 )
@@ -328,6 +330,11 @@ class ReviewLoopDriver:
                 loop = self._reload_loop(loop.id)
                 if self.profile.is_mandatory_gate:
                     if approved_means_final_approval(loop):
+                        if not ready_for_mandatory_final_approval(loop):
+                            raise OrchestratorInvariantError(
+                                "approved reviewer decision missing "
+                                "scope_review_result approval record"
+                            )
                         return self._adapter.complete_approval(loop)
                     if approved_means_start_scope_review(loop):
                         transition = self._begin_scope_review(loop, limits)
@@ -398,9 +405,11 @@ class ReviewLoopDriver:
                     return self._focused_adapter().handle_review_incomplete(loop)
                 if loop.status == "approved":
                     if self.profile.is_mandatory_gate:
-                        if approved_means_final_approval(loop):
+                        if ready_for_mandatory_final_approval(loop):
                             return self._adapter.complete_approval(loop)
-                        if approved_means_start_scope_review(loop):
+                        if approved_means_start_scope_review(loop) or needs_fresh_scope_review_clear(
+                            loop
+                        ):
                             transition = self._begin_scope_review(loop, limits)
                             if isinstance(transition, MandatoryWholeReviewResult):
                                 return transition

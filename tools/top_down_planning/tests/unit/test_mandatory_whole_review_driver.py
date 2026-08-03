@@ -1088,6 +1088,212 @@ def test_driver_orchestrates_advisory_defer_through_scope(tmp_path: Path) -> Non
     assert review.get("scope_review_result")
 
 
+def test_driver_scope_review_advisory_handoff_requires_reviewer_clear(
+    tmp_path: Path,
+) -> None:
+    """Scope-review optional findings: owner accept must route to reviewer scope clear."""
+    from dataclasses import replace
+
+    from top_down_planning.agent_tool import ReviewAgentService
+    from top_down_planning.domain.reviews import (
+        ReviewLoop,
+        allocate_discovery_finding_set_id,
+        apply_discovery_response,
+        needs_advisory_handoff,
+        scope_review_approval_recorded,
+    )
+    from top_down_planning.persistence.digests import compute_plan_digest
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000317-000317"
+    planner_session_id, loop_id = _create_driver_run(store, run_id, provider=provider)
+    set_loop_revise_at(store, run_id, loop_id, revise_at="major")
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    loop, finding_set_id = allocate_discovery_finding_set_id(loop)
+    loop = replace(
+        loop,
+        active_stage="scope_review",
+        lifecycle_status="scope_review_pending",
+        scope_review_rounds=1,
+    )
+    loop, _, outcome = apply_discovery_response(
+        loop,
+        {
+            "finding_set_id": finding_set_id,
+            "reported_findings": [_minor_finding()],
+            "review_completed": True,
+            "summary": "minor only at scope review",
+            "target_digest": compute_plan_digest(store.load_plan(run_id)),
+        },
+        stage="scope_review",
+    )
+    assert outcome == "pending"
+    assert loop.status == "advisory_pending"
+    assert loop.active_stage == "scope_review"
+    assert needs_advisory_handoff(loop)
+    assert not scope_review_approval_recorded(loop)
+    save_review_payload(store, run_id, loop.to_dict())
+
+    def _planner_accepts() -> None:
+        persisted = store.load_review(run_id, loop_id)
+        token = grant_capability(
+            store,
+            run_id,
+            role="planner",
+            phase=WHOLE_PLAN_REVIEW,
+            session_id=planner_session_id,
+        )
+        ReviewAgentService(store, run_id).record_finding_actions(
+            {
+                "loop_id": loop_id,
+                "artifact_revision": 0,
+                "finding_actions": [
+                    {
+                        "finding_id": "finding-minor-01",
+                        "action": "accept_as_is",
+                        "actor_role": "planner",
+                        "artifact_revision": 0,
+                        "finding_set_id": persisted["finding_set_id"],
+                        "rationale": "Accept optional polish items.",
+                    }
+                ],
+            },
+            capability_token=token,
+        )
+
+    def _scope_clear() -> None:
+        respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(done_events(text="accepted"), mutate_store=_planner_accepts)
+    provider.script_turn(done_events(text="turn complete"), mutate_store=_scope_clear)
+    adapter.approval_result = MandatoryWholeReviewResult(
+        ok=True,
+        phase=PLAN_VALIDATED,
+        status="running",
+        outcome=None,
+        loop_id=loop_id,
+        reviewer_session_id="stub-reviewer",
+        revision_cycles=0,
+    )
+    result = ReviewLoopDriver(store, run_id, provider, adapter).run()
+    assert result.ok is True
+    review = store.load_review(run_id, loop_id)
+    assert review.get("advisory_handoffs_completed")
+    assert review.get("scope_review_result")
+    assert scope_review_approval_recorded(ReviewLoop.from_dict(review))
+
+
+def test_driver_resumes_owner_approved_scope_review_without_result(
+    tmp_path: Path,
+) -> None:
+    """Resume path: finding policy approved at scope_review without scope_review_result."""
+    from dataclasses import replace
+
+    from top_down_planning.domain.reviews import (
+        ReviewLoop,
+        allocate_discovery_finding_set_id,
+        apply_discovery_response,
+        apply_owner_finding_actions,
+        complete_advisory_handoff_if_owner_responses_recorded,
+        mandatory_stage_respond_decision,
+    )
+    from top_down_planning.persistence.digests import compute_plan_digest
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000318-000318"
+    planner_session_id, loop_id = _create_driver_run(store, run_id, provider=provider)
+    set_loop_revise_at(store, run_id, loop_id, revise_at="major")
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    loop, finding_set_id = allocate_discovery_finding_set_id(loop)
+    loop = replace(
+        loop,
+        active_stage="scope_review",
+        lifecycle_status="scope_review_pending",
+        scope_review_rounds=1,
+    )
+    loop, _, _outcome = apply_discovery_response(
+        loop,
+        {
+            "finding_set_id": finding_set_id,
+            "reported_findings": [_minor_finding()],
+            "review_completed": True,
+            "summary": "minor only at scope review",
+            "target_digest": compute_plan_digest(store.load_plan(run_id)),
+        },
+        stage="scope_review",
+    )
+    loop, _actions = apply_owner_finding_actions(
+        loop,
+        [
+            {
+                "finding_id": "finding-minor-01",
+                "action": "accept_as_is",
+                "actor_role": "planner",
+                "artifact_revision": 0,
+                "finding_set_id": finding_set_id,
+                "rationale": "Accept optional polish items.",
+            }
+        ],
+        actor_role="planner",
+        artifact_revision=0,
+    )
+    loop = complete_advisory_handoff_if_owner_responses_recorded(loop)
+    loop = replace(loop, advisory_handoffs_completed=[finding_set_id])
+    save_review_payload(store, run_id, loop.to_dict())
+    persisted = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    assert persisted.status == "approved"
+    assert persisted.scope_review_result is None
+    assert mandatory_stage_respond_decision(persisted) == "pending"
+
+    def _scope_clear() -> None:
+        respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(done_events(text="turn complete"), mutate_store=_scope_clear)
+    adapter.approval_result = MandatoryWholeReviewResult(
+        ok=True,
+        phase=PLAN_VALIDATED,
+        status="running",
+        outcome=None,
+        loop_id=loop_id,
+        reviewer_session_id="stub-reviewer",
+        revision_cycles=0,
+    )
+    result = ReviewLoopDriver(store, run_id, provider, adapter).run()
+    assert result.ok is True
+    review = store.load_review(run_id, loop_id)
+    assert review.get("scope_review_result")
+
+
 def test_driver_interrupted_owner_revision_resumes_recheck(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()

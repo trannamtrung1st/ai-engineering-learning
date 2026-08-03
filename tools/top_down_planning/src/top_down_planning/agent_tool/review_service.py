@@ -39,9 +39,11 @@ from top_down_planning.domain.reviews import (
     apply_owner_finding_actions,
     expand_finding_actions_with_default,
     apply_review_response,
+    build_record_actions_gate_fields,
     validate_review_stage,
     find_overlapping_active_focused_loop,
     is_discovery_respond_payload,
+    is_mandatory_review_loop,
     is_review_respond_closed,
     is_scope_review_stage_name,
     is_terminal_review_loop,
@@ -790,7 +792,16 @@ class ReviewAgentService:
             )
 
         loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
-        if is_terminal_review_loop(loop) or loop.status == "approved":
+        if is_terminal_review_loop(loop):
+            raise RequestError(
+                f"review loop {loop_id} is already closed: {loop.status}"
+            )
+        if loop.status == "approved":
+            if is_mandatory_review_loop(loop):
+                raise RequestError(
+                    f"review loop {loop_id} already satisfied finding policy: "
+                    f"{loop.status}"
+                )
             raise RequestError(
                 f"review loop {loop_id} is already closed: {loop.status}"
             )
@@ -932,6 +943,7 @@ class ReviewAgentService:
             "finding_actions": [action.to_dict() for action in updated.finding_actions],
             "recorded_actions": [action.to_dict() for action in parsed],
             **policy_observability_fields_for_loop(updated),
+            **build_record_actions_gate_fields(updated),
         }
 
 

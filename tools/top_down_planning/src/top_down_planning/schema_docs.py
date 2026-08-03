@@ -1382,6 +1382,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "Primary resume handoffs also include `tool_instructions.notes` with "
             "budget-aware owner guidance (prefer defer/accept_as_is for optional "
             "findings; use default_optional_action to bulk-close). "
+            "Successful responses also include lifecycle_status, active_stage, and "
+            "for mandatory whole_* loops mandatory_gate_pending plus "
+            "next_required_actor (planner during advisory handoff, reviewer when "
+            "scope_review approval is still required; status reflects finding "
+            "disposition policy, not gate clearance). "
             "Persisted review loops may include `finding_ids_by_set` mapping each "
             "discovery finding_set_id to finding ids introduced in that set."
         ),
