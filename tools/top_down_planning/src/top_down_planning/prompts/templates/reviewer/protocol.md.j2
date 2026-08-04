@@ -24,8 +24,6 @@
 {% if is_mandatory_family_review %}
 {% if requires_audit_attestation %}
 {% include "reviewer/mandatory-audit.md.j2" %}
-{% endif %}
-{% if requires_audit_attestation %}
 {% include "reviewer/mandatory-no-reopen.md.j2" %}
 {% endif %}
 {% if include_mandatory_discovery_blocks %}

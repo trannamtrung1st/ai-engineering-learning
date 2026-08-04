@@ -41,14 +41,10 @@ from tests.helpers import (
     minimal_resolved_config,
 )
 
-_FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS = (
-    "full review",
-    "confirmation review",
-    "holistic review",
-    "spot check",
+from top_down_planning.prompts.contexts import (
+    FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS,
+    _format_forbidden_scope_review_phrase,
 )
-
-
 def test_review_respond_schema_accepts_stage_contracts() -> None:
     schema = show_schema("review-respond")
     assert "oneOf" in schema
@@ -337,12 +333,12 @@ def test_scope_review_package_omits_prior_finding_framing(tmp_path: Path) -> Non
     protocol = package["protocol_instructions"].lower()
     assert "scope_review" in protocol
     assert "fresh discovery" in protocol
-    for banned in _FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
-        # Allowed only as negation in the freshness instruction.
-        if banned == "full review":
-            assert "do not call this a full" in protocol
-            continue
-        assert banned not in protocol
+    assert (
+        f"do not call this a {_format_forbidden_scope_review_phrase()}"
+        in protocol
+    )
+    for label in FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
+        assert label in protocol
     assert package["respond_contract"]["stage"] == "scope_review"
 
 
@@ -383,7 +379,7 @@ def test_verification_package_and_recheck_include_finding_guidance() -> None:
 def test_verification_protocol_avoids_forbidden_names() -> None:
     protocol = build_reviewer_protocol_instructions(stage="finding_verification").lower()
     assert "finding_verification" in protocol
-    for banned in _FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
+    for banned in FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
         assert banned not in protocol
 
 

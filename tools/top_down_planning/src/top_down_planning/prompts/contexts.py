@@ -12,6 +12,20 @@ _VALID_REVIEWER_STAGES = frozenset(
     {"initial_review", "finding_verification", "scope_review"}
 )
 
+FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS = (
+    "full review",
+    "confirmation review",
+    "holistic review",
+    "spot check",
+)
+
+
+def _format_forbidden_scope_review_phrase() -> str:
+    labels = FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS
+    if len(labels) == 1:
+        return labels[0]
+    return ", ".join(labels[:-1]) + ", or " + labels[-1]
+
 
 def planner_protocol_context() -> dict[str, str]:
     return {
@@ -94,10 +108,12 @@ def reviewer_protocol_context(
         "include_mandatory_verification_sweep": (
             is_mandatory_family_review and is_finding_verification
         ),
+        "forbidden_scope_review_phrase": _format_forbidden_scope_review_phrase(),
     }
 
 
 __all__ = [
+    "FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS",
     "planner_protocol_context",
     "producer_protocol_context",
     "reviewer_protocol_context",

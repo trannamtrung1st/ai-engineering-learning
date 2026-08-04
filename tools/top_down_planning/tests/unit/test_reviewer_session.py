@@ -178,7 +178,7 @@ def test_tool_instructions_use_contract_specific_scope_examples() -> None:
     assert "tdp agent example review-respond-family-discovery-focused-output" in output_examples
     assert "tdp agent example review-respond-scope-v1" not in output_examples
 
-    family = build_reviewer_tool_instructions("run-test", family_protocol=True)
+    family = build_reviewer_tool_instructions("run-test", review_type="whole_plan")
     family_examples = {part.strip() for part in family["examples"].split(";")}
     assert "tdp agent example review-respond-scope" in family_examples
     assert "tdp agent example review-respond-family-discovery" in family_examples

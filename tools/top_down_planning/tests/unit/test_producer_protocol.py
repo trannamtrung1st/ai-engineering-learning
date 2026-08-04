@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from top_down_planning.persistence.capabilities import CAPABILITY_TOKEN_FILE_ENV_VAR
 from top_down_planning.orchestrator.producer_session import (
     build_producer_protocol_instructions,
     build_producer_tool_instructions,
@@ -14,6 +15,10 @@ def test_producer_protocol_points_to_injected_skills() -> None:
     assert "one production batch per provider turn" in protocol
     assert "submit-completion" in protocol
     assert "completion claim" in protocol
+    assert CAPABILITY_TOKEN_FILE_ENV_VAR.lower() in protocol
+    assert "production_evidence_incomplete" in protocol
+    assert "production_context_mutation_unauthorized" in protocol
+    assert "$tdp_agent_requests_dir" in protocol
 
 
 def test_producer_tool_instructions_include_discover() -> None:

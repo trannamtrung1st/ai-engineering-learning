@@ -30,6 +30,9 @@ tdp = "top_down_planning.cli.main:main"
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/top_down_planning"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

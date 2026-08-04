@@ -70,13 +70,12 @@ def build_reviewer_protocol_instructions(
 def build_reviewer_tool_instructions(
     run_id: str,
     *,
-    family_protocol: bool = False,
     review_type: str | None = None,
     **extra: str,
 ) -> dict[str, str]:
     """CLI instructions embedded in reviewer review packages."""
 
-    mandatory_family = family_protocol or review_type in {"whole_plan", "whole_output"}
+    mandatory_family = review_type in {"whole_plan", "whole_output"}
     if mandatory_family:
         if review_type == "whole_output":
             examples = (

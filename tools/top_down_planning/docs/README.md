@@ -9,6 +9,8 @@ Navigation for **runtime TDP agents** (planner, producer, reviewer) inside provi
 3. Packaged role skills — auto-injected into `agent_context.skills` on every session (`agent_context.bundled_skills`, default true): shared protocol plus planner, producer, or reviewer guide
 4. `tdp agent schema <name>` / `tdp agent example <name>` — exact request shapes
 
+Role `protocol_instructions` in planner, producer, and reviewer manifests are rendered Markdown strings from package-owned Jinja templates under `src/top_down_planning/prompts/templates/`. Edit those templates (and `prompts/contexts.py` context flags) rather than inline Python strings in orchestrator session modules. Templates ship in the wheel; `jinja2` is a runtime dependency.
+
 Example config: [examples/top-down-planning.yaml](../examples/top-down-planning.yaml). Set `agent_context.bundled_skills: false` only when you want to disable packaged skills. Add extra project skills under `agent_context.*.skills`.
 
 ## By role
