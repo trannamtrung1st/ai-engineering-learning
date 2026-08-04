@@ -353,11 +353,13 @@ def build_whole_plan_review_package(
     }
     package["rubric_items"] = rubric_items
     package["required_audit_passes"] = analysis_context["audit_passes"]
+    plan_revision = int(plan.revision)
+    plan_digest = compute_plan_digest(plan)
     if loop.active_stage == "finding_verification":
         package["family_verification_view"] = build_family_verification_view(
             loop,
-            artifact_revision=plan.revision,
-            artifact_digest=digests.get("plan"),
+            artifact_revision=plan_revision,
+            artifact_digest=plan_digest,
         )
     elif loop.lifecycle_status in {
         "findings_open",
@@ -366,8 +368,8 @@ def build_whole_plan_review_package(
     }:
         package["active_families"] = build_active_family_view(
             loop,
-            artifact_revision=plan.revision,
-            artifact_digest=digests.get("plan"),
+            artifact_revision=plan_revision,
+            artifact_digest=plan_digest,
         )
     return attach_role_context_to_manifest(
         package,

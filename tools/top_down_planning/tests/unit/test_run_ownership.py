@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -13,7 +14,6 @@ from top_down_planning.domain.run_ownership import (
     RunOwnershipError,
     acquire_run_ownership,
     assert_expected_run_revision,
-    assert_no_live_process_owns_run,
     clear_stale_resume_lock,
     is_resume_lock_stale,
     read_resume_lock,
@@ -93,9 +93,35 @@ def test_run_ownership_context_manager_releases_on_exit(tmp_path: Path) -> None:
     assert read_resume_lock(run_dir) is None
 
 
-def test_assert_no_live_process_owns_run_with_exclude_token(tmp_path: Path) -> None:
+def test_nested_run_ownership_reuses_outer_lock(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
-    token = acquire_run_ownership("run-1", run_dir=run_dir)
-    assert_no_live_process_owns_run("run-1", run_dir=run_dir, exclude_token=token)
-    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+    with run_ownership("run-1", run_dir=run_dir) as outer_token:
+        assert read_resume_lock(run_dir) is not None
+        with run_ownership("run-1", run_dir=run_dir) as inner_token:
+            assert inner_token == outer_token
+            assert read_resume_lock(run_dir) is not None
+        assert read_resume_lock(run_dir) is not None
+    assert read_resume_lock(run_dir) is None
+
+
+def test_nested_run_ownership_blocks_other_context(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    barrier = threading.Barrier(2)
+    error: list[BaseException] = []
+
+    def competing_acquire() -> None:
+        try:
+            barrier.wait()
+            acquire_run_ownership("run-1", run_dir=run_dir)
+        except BaseException as exc:  # pragma: no cover - threaded assertion path
+            error.append(exc)
+
+    with run_ownership("run-1", run_dir=run_dir):
+        thread = threading.Thread(target=competing_acquire)
+        thread.start()
+        barrier.wait()
+        thread.join()
+    assert len(error) == 1
+    assert isinstance(error[0], RunOwnershipError)

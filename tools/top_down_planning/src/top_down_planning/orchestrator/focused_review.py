@@ -53,8 +53,12 @@ from top_down_planning.orchestrator.review_loop_driver import ReviewLoopDriver
 from top_down_planning.orchestrator.review_loop_profile import FOCUSED_PROFILE
 from top_down_planning.orchestrator.review_loop_types import MandatoryWholeReviewSpec
 from top_down_planning.orchestrator.run_transitions import pause_for_limit_exhausted
-from top_down_planning.persistence.digests import compute_output_digest
+from top_down_planning.persistence.digests import compute_output_digest, compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.review_commit import (
+    review_record_revision,
+    save_review_with_expected_revision,
+)
 from core_tools.provider import Provider
 
 
@@ -323,8 +327,18 @@ class FocusedReviewAdapter:
             config,
             loop.type,  # type: ignore[arg-type]
         )
-        loop = replace(loop, status="blocked", revision_cycles=revision_cycles)
-        self._store.save_review(self._run_id, loop.to_dict())
+        stored_loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop.id))
+        loop = replace(
+            stored_loop,
+            status="blocked",
+            revision_cycles=revision_cycles,
+        )
+        save_review_with_expected_revision(
+            self._store,
+            self._run_id,
+            loop,
+            expected_revision=review_record_revision(stored_loop.to_dict()),
+        )
         phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
         message = (
             "focused review exceeded max_revision_cycles_per_loop "
@@ -500,16 +514,22 @@ def build_focused_review_package(
         package.update(_focused_verification_package_fields(loop))
         package.update(build_active_findings_view(loop))
         if loop_uses_finding_families(loop):
-            artifact_revision = (
-                plan.revision
-                if loop.type == "focused_plan"
-                else int(production["output_revision"]) if production else loop.target_revision
-            )
-            digest_key = "plan" if loop.type == "focused_plan" else "output"
+            if loop.type == "focused_plan":
+                artifact_revision = int(plan.revision)
+                artifact_digest = compute_plan_digest(plan)
+            else:
+                artifact_revision = (
+                    int(production["output_revision"])
+                    if production is not None
+                    else int(loop.target_revision)
+                )
+                artifact_digest = (
+                    compute_output_digest(production) if production is not None else None
+                )
             package["active_families"] = build_active_family_view(
                 loop,
                 artifact_revision=artifact_revision,
-                artifact_digest=digests.get(digest_key),
+                artifact_digest=artifact_digest,
             )
     return package
 

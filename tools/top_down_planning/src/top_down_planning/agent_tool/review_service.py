@@ -65,6 +65,7 @@ from top_down_planning.domain.reviews import (
 )
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.review_commit import review_record_revision
 
 _FOCUSED_PLAN_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_plan_review"]
 _FOCUSED_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_output_review"]
@@ -811,6 +812,7 @@ class ReviewAgentService:
             )
 
         loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+        expected_review_revision = review_record_revision(loop.to_dict())
         if is_terminal_review_loop(loop):
             raise RequestError(
                 f"review loop {loop_id} is already closed: {loop.status}"
@@ -952,6 +954,7 @@ class ReviewAgentService:
             CommitSpec(
                 reviews=[updated.to_dict()],
                 events=[event, *family_events],
+                review_expected_revisions={loop_id: expected_review_revision},
             ),
         )
 

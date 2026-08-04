@@ -21,7 +21,7 @@ from core_tools.provider.errors import (
     ProviderSessionNotFoundError,
     ProviderTurnStalledError,
 )
-from top_down_planning.orchestrator import PlanningPhaseOrchestrator
+from top_down_planning.orchestrator import PlanningPhaseOrchestrator, RunEngine
 from top_down_planning.orchestrator.errors import ProducerReplacementBlocked
 from top_down_planning.orchestrator.focused_review import build_focused_review_package
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION
@@ -44,7 +44,10 @@ from top_down_planning.orchestrator.session_recovery import (
     replace_primary_session,
 )
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.persistence.session_bindings import update_primary_binding
+from top_down_planning.persistence.session_bindings import (
+    primary_provider_session_id,
+    update_primary_binding,
+)
 from top_down_planning.workspace import WorkspaceIntegrityError, validate_run_workspace_integrity
 from core_tools.provider import StubProvider
 from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, whole_plan_approval_record, make_review_loop
@@ -200,6 +203,44 @@ def test_planner_session_stalled_and_replaced(tmp_path: Path) -> None:
     ]
     assert resume_failed
     assert resume_failed[-1]["reason"] == REASON_PROVIDER_TURN_STALLED
+
+
+def test_continue_run_replaces_stalled_session_without_ownership_conflict(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    provider = StubProvider()
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    plan = store.load_plan_model(run_id)
+    provider.script_turn(done_events(text="initial planner start"))
+    session_id = provider.start_primary_session(
+        "planner",
+        build_planner_context_manifest(run_id, run, config, plan),
+    )
+    list(provider.stream_events(session_id))
+    _bind_primary_session(store, run_id, role="planner", session_id=session_id)
+
+    provider.mark_session_stalled(session_id)
+    provider.script_turn(done_events(text="replacement planner start"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="replacement turn"))
+
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: provider,
+    )
+    result = engine.continue_run(run_id, single_step=True)
+
+    assert result.ok is True
+    run = store.load_run(run_id)
+    assert run["status"] != "failed"
+    stop = run.get("stop")
+    if isinstance(stop, dict):
+        assert stop.get("code") != "orchestrator_invariant_failure"
+    assert "session_replaced" in _event_types(store, run_id)
+    assert primary_provider_session_id(run, "planner") != session_id
 
 
 def test_recovery_reason_helpers() -> None:

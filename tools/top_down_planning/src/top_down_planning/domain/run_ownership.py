@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import uuid
@@ -18,6 +19,10 @@ DEFAULT_OWNERSHIP_STALE_SECONDS = 4 * 60 * 60
 
 _RESUME_LOCK_FILENAME = ".resume.lock"
 _PROCESS_REGISTRY: dict[str, str] = {}
+_NESTED_OWNERSHIP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
+    "_NESTED_OWNERSHIP",
+    default=None,
+)
 
 
 class RunOwnershipError(DomainError):
@@ -145,12 +150,11 @@ def assert_no_live_process_owns_run(
     run_id: str,
     *,
     run_dir: Path | None = None,
-    exclude_token: str | None = None,
 ) -> None:
     """Refuse resume mutation when another live process owns the run."""
 
     active_token = _PROCESS_REGISTRY.get(run_id)
-    if active_token is not None and active_token != exclude_token:
+    if active_token is not None:
         raise RunOwnershipError(
             f"run {run_id} is owned by a live in-process continuation",
             code="run_owned_by_live_process",
@@ -162,8 +166,6 @@ def assert_no_live_process_owns_run(
     clear_stale_resume_lock(run_dir)
     lock = read_resume_lock(run_dir)
     if lock is None:
-        return
-    if exclude_token is not None and lock.owner_token == exclude_token:
         return
     if lock.run_id != run_id:
         raise RunOwnershipError(
@@ -223,12 +225,25 @@ def release_run_ownership(
 
 @contextmanager
 def run_ownership(run_id: str, *, run_dir: Path) -> Iterator[str]:
-    """Hold live-process ownership for the duration of a run-driving operation."""
+    """Hold live-process ownership for the duration of a run-driving operation.
+
+    Nested scopes in the same execution context reuse the outer token so session
+    replacement can run under an active ``continue_run`` continuation.
+    """
+
+    nested = _NESTED_OWNERSHIP.get()
+    if nested is not None and run_id in nested:
+        yield nested[run_id]
+        return
 
     owner_token = acquire_run_ownership(run_id, run_dir=run_dir)
+    new_nested = {} if nested is None else dict(nested)
+    new_nested[run_id] = owner_token
+    reset_token = _NESTED_OWNERSHIP.set(new_nested)
     try:
         yield owner_token
     finally:
+        _NESTED_OWNERSHIP.reset(reset_token)
         release_run_ownership(run_id, run_dir=run_dir, owner_token=owner_token)
 
 

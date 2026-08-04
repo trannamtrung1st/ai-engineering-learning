@@ -105,7 +105,12 @@ from top_down_planning.orchestrator.review_loop_types import (
     OwnerHandoff,
     reject_nonterminal_mandatory_contract_v1_loop,
 )
+from core_tools.persistence import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.review_commit import (
+    review_record_revision,
+    save_review_with_expected_revision,
+)
 from core_tools.provider import Provider
 
 
@@ -1090,6 +1095,7 @@ class ReviewLoopDriver:
             raise ProviderRunError(str(exc)) from exc
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
+        loop = self._reload_loop(loop.id)
         artifact_revision, _digest = self._adapter.current_artifact_binding()
         run = self._store.load_run(self._run_id)
         phase = self._adapter.phase_for_session(loop, run)
@@ -1176,8 +1182,18 @@ class ReviewLoopDriver:
         self._append_event(event_type, **fields)
 
     def _persist_loop(self, loop: ReviewLoop) -> ReviewLoop:
-        self._store.save_review(self._run_id, loop.to_dict())
-        return loop
+        stored = self._store.load_review(self._run_id, loop.id)
+        stored_revision = review_record_revision(stored)
+        loop_revision = int(loop.revision or 0)
+        if loop_revision != stored_revision:
+            raise StoreRevisionConflictError(loop_revision, stored_revision)
+        save_review_with_expected_revision(
+            self._store,
+            self._run_id,
+            loop,
+            expected_revision=stored_revision,
+        )
+        return self._reload_loop(loop.id)
 
     def _reload_loop(self, loop_id: str) -> ReviewLoop:
         return ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))

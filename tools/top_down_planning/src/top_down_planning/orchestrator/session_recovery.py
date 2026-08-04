@@ -154,6 +154,8 @@ def _run_with_ownership(
     run_id: str,
     operation: Callable[[], str],
 ) -> str:
+    """Run replacement mutations under the run resume lock when a run dir exists."""
+
     run_dir = resolve_run_dir(store, run_id)
     if run_dir is None:
         return operation()

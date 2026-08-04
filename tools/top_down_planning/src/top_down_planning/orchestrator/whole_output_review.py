@@ -450,11 +450,13 @@ def build_whole_output_review_package(
     }
     package["rubric_items"] = rubric_items
     package["required_audit_passes"] = analysis_context["audit_passes"]
+    output_revision = int(production["output_revision"])
+    output_digest = compute_output_digest(production)
     if loop.active_stage == "finding_verification":
         package["family_verification_view"] = build_family_verification_view(
             loop,
-            artifact_revision=int(production["output_revision"]),
-            artifact_digest=digests.get("output"),
+            artifact_revision=output_revision,
+            artifact_digest=output_digest,
         )
     elif loop.lifecycle_status in {
         "findings_open",
@@ -463,8 +465,8 @@ def build_whole_output_review_package(
     }:
         package["active_families"] = build_active_family_view(
             loop,
-            artifact_revision=int(production["output_revision"]),
-            artifact_digest=digests.get("output"),
+            artifact_revision=output_revision,
+            artifact_digest=output_digest,
         )
     return attach_role_context_to_manifest(
         package,

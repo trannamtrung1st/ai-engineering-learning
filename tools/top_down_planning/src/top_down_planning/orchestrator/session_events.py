@@ -399,7 +399,12 @@ def sync_reviewer_loop_session_id(
         return resolved
 
     updated = loop.with_reviewer_provider_session_id(resolved, provider="cursor")
-    store.save_review(run_id, updated.to_dict())
+    save_review_with_expected_revision(
+        store,
+        run_id,
+        updated,
+        expected_revision=review_record_revision(review),
+    )
     _emit_reviewer_provider_id_bound(store, run_id, updated)
     rebind_reviewer_session_capability(store, run_id, provider, loop_id=loop_id)
     return resolved
