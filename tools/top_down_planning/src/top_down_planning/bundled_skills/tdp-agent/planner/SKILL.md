@@ -71,7 +71,7 @@ Run `tdp agent example expand-branch` for a full transaction.
 
 ## After whole-plan review
 
-When revising after `changes_requested`, treat each **finding family** as one repair unit. Search the whole active plan, fix all equivalent locations in one apply where possible, then record owner sweeps via `tdp agent review record-actions` (see reviewer skill for family protocol).
+When revising after `changes_requested`, treat each **finding family** as one repair unit. Search the whole active plan, fix all equivalent locations in one apply where possible, then record owner sweeps via `tdp agent review record-actions` at the current `target_revision` and `target_digest` (see reviewer skill for family protocol). `record-actions` rejects stale `target_digest` values. After the artifact revision advances, call `record-actions` again at the new revision and digest to rebind sweeps without duplicating fix actions.
 
 ## Discover
 

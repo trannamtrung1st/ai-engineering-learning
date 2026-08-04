@@ -865,6 +865,321 @@ def test_family_fix_idempotent_replay_ignores_current_revision() -> None:
     assert actions == []
 
 
+def test_family_fix_rebinds_owner_sweep_at_new_digest_without_duplicate_actions() -> None:
+    from top_down_planning.agent_tool.review_owner_actions import apply_family_fixes
+    from top_down_planning.domain.finding_families import FindingFamily
+
+    finding = ReviewFinding(
+        id="wo-001",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-a"],
+        issue="noop save mutates state",
+        recommended_change="skip unchanged saves",
+        family_id="family-noop",
+    )
+    family = FindingFamily(
+        id="family-noop",
+        finding_set_id="set-1",
+        rule_id="custom.noop-durable-mutation",
+        subject_key="noop-save",
+        scope_kind="whole-output",
+        rule_definition="semantic no-op must not mutate durable state",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="custom.noop-durable-mutation",
+            subject_key="noop-save",
+            scope_kind="whole-output",
+            rule_definition="semantic no-op must not mutate durable state",
+        ),
+        title="No-op durable mutation",
+        seed_finding_id="wo-001",
+        confirmed_finding_ids=["wo-001"],
+        candidate_refs=[],
+        recommended_change="skip unchanged saves",
+    )
+    owner_sweep_body = {
+        "searched_refs": ["src/domain/cardCommands.ts"],
+        "search_dimensions": ["semantic no-op detection"],
+        "additional_fixed_refs": [],
+        "remaining_instance_refs": [],
+        "completed": True,
+        "summary": "Card edit returns unchanged result.",
+    }
+    loop = make_review_loop(
+        id="loop-output",
+        type="whole_output",
+        finding_set_id="set-1",
+        target_revision=22,
+        revise_at="blocker",
+        findings=[finding],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["wo-001"]},
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    stale_digest = "digest-revision-22"
+    corrected_digest = "digest-revision-23"
+
+    updated, first_actions, first_events = apply_family_fixes(
+        loop,
+        {
+            "family_fixes": [
+                {
+                    "family_id": "family-noop",
+                    "target_finding_ids": [],
+                    "rationale": "Fixed noop save.",
+                    "changed_refs": ["item-a"],
+                    "owner_sweep": owner_sweep_body,
+                }
+            ],
+            "finding_actions": [],
+        },
+        actor_role="producer",
+        artifact_revision=23,
+        artifact_digest=stale_digest,
+        current_artifact_revision=23,
+    )
+    assert len(first_actions) == 1
+    assert first_actions[0].finding_id == "wo-001"
+    assert any(
+        event.get("type") == "review_family_owner_sweep_recorded" for event in first_events
+    )
+    owner_sweeps = [sweep for sweep in updated.family_sweeps if sweep.stage == "owner_fix"]
+    assert len(owner_sweeps) == 1
+    assert owner_sweeps[0].artifact_digest == stale_digest
+    assert (
+        derive_family_operational_status(
+            updated,
+            "family-noop",
+            artifact_revision=23,
+            artifact_digest=corrected_digest,
+        )
+        == "owner_sweep_pending"
+    )
+
+    rebound, rebound_actions, rebound_events = apply_family_fixes(
+        updated,
+        {
+            "family_fixes": [
+                {
+                    "family_id": "family-noop",
+                    "target_finding_ids": ["wo-001"],
+                    "rationale": "Rebound sweep to corrected digest.",
+                    "changed_refs": ["item-a"],
+                    "owner_sweep": owner_sweep_body,
+                }
+            ],
+            "finding_actions": [],
+        },
+        actor_role="producer",
+        artifact_revision=23,
+        artifact_digest=corrected_digest,
+        current_artifact_revision=23,
+    )
+
+    assert rebound_actions == []
+    assert any(
+        event.get("type") == "review_family_owner_sweep_recorded" for event in rebound_events
+    )
+    owner_sweeps = [sweep for sweep in rebound.family_sweeps if sweep.stage == "owner_fix"]
+    assert len(owner_sweeps) == 2
+    assert owner_sweeps[-1].artifact_digest == corrected_digest
+    assert len(rebound.finding_actions) == 1
+    assert (
+        derive_family_operational_status(
+            rebound,
+            "family-noop",
+            artifact_revision=23,
+            artifact_digest=corrected_digest,
+        )
+        == "verification_pending"
+    )
+
+
+def test_family_fix_rebinds_owner_sweep_at_new_artifact_revision() -> None:
+    from top_down_planning.agent_tool.review_owner_actions import apply_family_fixes
+    from top_down_planning.domain.finding_families import FindingFamily
+
+    finding = ReviewFinding(
+        id="wo-001",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-a"],
+        issue="noop save mutates state",
+        recommended_change="skip unchanged saves",
+        family_id="family-noop",
+    )
+    family = FindingFamily(
+        id="family-noop",
+        finding_set_id="set-1",
+        rule_id="custom.noop-durable-mutation",
+        subject_key="noop-save",
+        scope_kind="whole-output",
+        rule_definition="semantic no-op must not mutate durable state",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="custom.noop-durable-mutation",
+            subject_key="noop-save",
+            scope_kind="whole-output",
+            rule_definition="semantic no-op must not mutate durable state",
+        ),
+        title="No-op durable mutation",
+        seed_finding_id="wo-001",
+        confirmed_finding_ids=["wo-001"],
+        candidate_refs=[],
+        recommended_change="skip unchanged saves",
+    )
+    owner_sweep_body = {
+        "searched_refs": ["src/domain/cardCommands.ts"],
+        "search_dimensions": ["semantic no-op detection"],
+        "additional_fixed_refs": [],
+        "remaining_instance_refs": [],
+        "completed": True,
+        "summary": "Card edit returns unchanged result.",
+    }
+    loop = make_review_loop(
+        id="loop-output",
+        type="whole_output",
+        finding_set_id="set-1",
+        target_revision=22,
+        revise_at="blocker",
+        findings=[finding],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["wo-001"]},
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    digest_rev_23 = "digest-revision-23"
+    digest_rev_24 = "digest-revision-24"
+
+    updated, first_actions, _ = apply_family_fixes(
+        loop,
+        {
+            "family_fixes": [
+                {
+                    "family_id": "family-noop",
+                    "target_finding_ids": [],
+                    "rationale": "Fixed noop save.",
+                    "changed_refs": ["item-a"],
+                    "owner_sweep": owner_sweep_body,
+                }
+            ],
+            "finding_actions": [],
+        },
+        actor_role="producer",
+        artifact_revision=23,
+        artifact_digest=digest_rev_23,
+        current_artifact_revision=23,
+    )
+    assert len(first_actions) == 1
+
+    rebound, rebound_actions, _ = apply_family_fixes(
+        updated,
+        {
+            "family_fixes": [
+                {
+                    "family_id": "family-noop",
+                    "target_finding_ids": [],
+                    "rationale": "Rebound after evidence-only revision bump.",
+                    "changed_refs": ["item-a"],
+                    "owner_sweep": owner_sweep_body,
+                }
+            ],
+            "finding_actions": [],
+        },
+        actor_role="producer",
+        artifact_revision=24,
+        artifact_digest=digest_rev_24,
+        current_artifact_revision=24,
+    )
+
+    assert rebound_actions == []
+    owner_sweeps = [sweep for sweep in rebound.family_sweeps if sweep.stage == "owner_fix"]
+    assert len(owner_sweeps) == 2
+    assert owner_sweeps[-1].artifact_revision == 24
+    assert owner_sweeps[-1].artifact_digest == digest_rev_24
+    assert (
+        derive_family_operational_status(
+            rebound,
+            "family-noop",
+            artifact_revision=24,
+            artifact_digest=digest_rev_24,
+        )
+        == "verification_pending"
+    )
+
+
+def test_family_fix_sweep_rebind_requires_existing_owner_fix_actions() -> None:
+    from top_down_planning.agent_tool.review_owner_actions import apply_family_fixes
+    from top_down_planning.domain.finding_families import FindingFamily
+
+    finding = ReviewFinding(
+        id="wo-001",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-a"],
+        issue="noop save mutates state",
+        recommended_change="skip unchanged saves",
+        family_id="family-noop",
+        status="resolved",
+    )
+    family = FindingFamily(
+        id="family-noop",
+        finding_set_id="set-1",
+        rule_id="custom.noop-durable-mutation",
+        subject_key="noop-save",
+        scope_kind="whole-output",
+        rule_definition="semantic no-op must not mutate durable state",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="custom.noop-durable-mutation",
+            subject_key="noop-save",
+            scope_kind="whole-output",
+            rule_definition="semantic no-op must not mutate durable state",
+        ),
+        title="No-op durable mutation",
+        seed_finding_id="wo-001",
+        confirmed_finding_ids=["wo-001"],
+        candidate_refs=[],
+        recommended_change="skip unchanged saves",
+    )
+    loop = make_review_loop(
+        id="loop-output",
+        type="whole_output",
+        finding_set_id="set-1",
+        target_revision=22,
+        revise_at="blocker",
+        findings=[finding],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["wo-001"]},
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+
+    with pytest.raises(ValueError, match="produced no new fix actions"):
+        apply_family_fixes(
+            loop,
+            {
+                "family_fixes": [
+                    {
+                        "family_id": "family-noop",
+                        "target_finding_ids": ["wo-001"],
+                        "rationale": "Attempted sweep without prior fix.",
+                        "changed_refs": ["item-a"],
+                        "owner_sweep": {
+                            "searched_refs": ["src/domain/cardCommands.ts"],
+                            "search_dimensions": ["semantic no-op detection"],
+                            "additional_fixed_refs": [],
+                            "remaining_instance_refs": [],
+                            "completed": True,
+                            "summary": "No prior owner fix exists.",
+                        },
+                    }
+                ],
+                "finding_actions": [],
+            },
+            actor_role="producer",
+            artifact_revision=23,
+            artifact_digest="digest-revision-23",
+            current_artifact_revision=23,
+        )
+
+
 def test_output_family_fix_records_producer_owner_sweep() -> None:
     from top_down_planning.agent_tool.review_owner_actions import apply_family_fixes
     from top_down_planning.domain.artifact_refs import digest_field_value

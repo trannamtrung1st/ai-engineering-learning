@@ -603,3 +603,250 @@ def test_partial_family_fix_surfaces_remaining_instance(tmp_path: Path) -> None:
                 store, run_id, role="reviewer", loop_id=loop_id, phase=PLANNING
             ),
         )
+
+
+def test_record_family_fix_rejects_stale_target_digest(tmp_path: Path) -> None:
+    from top_down_planning.agent_tool.errors import RequestError
+    from tests.helpers import make_review_loop, save_review_payload
+
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T130001-abcdef"
+    root = PlanItem(
+        id=PLAN_ROOT_ITEM_ID,
+        parent_id=None,
+        order_key="0000000000",
+        title="Deliver",
+        outcome="Deliver the output.",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+    )
+    store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path))
+    loop_id = "review-whole-plan-01"
+    save_review_payload(
+        store,
+        run_id,
+        make_review_loop(
+            id=loop_id,
+            type="whole_plan",
+            reviewer_session_id="sess",
+            target_revision=0,
+            scope={"kind": "whole_plan"},
+            finding_set_id="review-whole-plan-01-fs-01",
+            review_record_schema_version=2,
+            review_contract_version=2,
+            finding_families=[
+                {
+                    "id": "family-reset",
+                    "rule_id": "dependency.acceptance_capability_available",
+                    "subject_key": "reset-control",
+                    "scope_kind": "active-plan",
+                    "title": "Reset dependency closure",
+                    "seed_finding_id": "sf-001",
+                    "confirmed_finding_ids": ["sf-001"],
+                    "candidate_refs": [],
+                    "recommended_change": "Normalize Reset references",
+                }
+            ],
+            findings=[
+                {
+                    "id": "sf-001",
+                    "severity": "blocker",
+                    "category": "architecture",
+                    "target_refs": ["item-root"],
+                    "issue": "Reset still present",
+                    "recommended_change": "Normalize Reset references",
+                    "family_id": "family-reset",
+                }
+            ],
+            finding_ids_by_set={"review-whole-plan-01-fs-01": ["sf-001"]},
+        ).to_dict(),
+    )
+
+    with pytest.raises(RequestError, match="target_digest does not match current plan digest"):
+        ReviewAgentService(store, run_id).record_finding_actions(
+            {
+                "loop_id": loop_id,
+                "target_revision": 0,
+                "target_digest": "stale-plan-digest",
+                "finding_set_id": "review-whole-plan-01-fs-01",
+                "family_fixes": [
+                    {
+                        "family_id": "family-reset",
+                        "target_finding_ids": [],
+                        "rationale": "Normalized Reset references",
+                        "changed_refs": ["item-root"],
+                        "owner_sweep": {
+                            "searched_refs": ["active-items:*"],
+                            "search_dimensions": ["acceptance"],
+                            "additional_fixed_refs": [],
+                            "remaining_instance_refs": [],
+                            "completed": True,
+                            "summary": "No concrete Reset references remain",
+                        },
+                    }
+                ],
+                "finding_actions": [],
+            },
+            capability_token=grant_capability(
+                store, run_id, role="planner", phase=PLANNING
+            ),
+        )
+
+
+def test_record_family_fix_rebinds_owner_sweep_without_duplicate_actions(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import make_review_loop, save_review_payload
+
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T130002-abcdef"
+    root = PlanItem(
+        id=PLAN_ROOT_ITEM_ID,
+        parent_id=None,
+        order_key="0000000000",
+        title="Deliver",
+        outcome="Deliver the output.",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+    )
+    store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path))
+    loop_id = "review-whole-plan-01"
+    finding_set_id = "review-whole-plan-01-fs-01"
+    save_review_payload(
+        store,
+        run_id,
+        make_review_loop(
+            id=loop_id,
+            type="whole_plan",
+            reviewer_session_id="sess",
+            target_revision=0,
+            scope={"kind": "whole_plan"},
+            finding_set_id=finding_set_id,
+            review_record_schema_version=2,
+            review_contract_version=2,
+            finding_families=[
+                {
+                    "id": "family-reset",
+                    "rule_id": "dependency.acceptance_capability_available",
+                    "subject_key": "reset-control",
+                    "scope_kind": "active-plan",
+                    "title": "Reset dependency closure",
+                    "seed_finding_id": "sf-001",
+                    "confirmed_finding_ids": ["sf-001"],
+                    "candidate_refs": [],
+                    "recommended_change": "Normalize Reset references",
+                }
+            ],
+            findings=[
+                {
+                    "id": "sf-001",
+                    "severity": "blocker",
+                    "category": "architecture",
+                    "target_refs": [PLAN_ROOT_ITEM_ID],
+                    "issue": "Reset still present",
+                    "recommended_change": "Normalize Reset references",
+                    "family_id": "family-reset",
+                }
+            ],
+            finding_ids_by_set={finding_set_id: ["sf-001"]},
+        ).to_dict(),
+    )
+
+    PlanAgentService(store, run_id).apply(
+        {
+            "base_revision": 0,
+            "operations": [
+                {
+                    "op": "update_item",
+                    "item_id": PLAN_ROOT_ITEM_ID,
+                    "patch": {"acceptance": ["Reset normalized"]},
+                }
+            ],
+        },
+        capability_token=grant_capability(store, run_id, role="planner", phase=PLANNING),
+    )
+    revision_1 = int(store.load_plan(run_id)["revision"])
+    digest_1 = mandatory_plan_digest(store, run_id)
+
+    owner_fix_request = {
+        "loop_id": loop_id,
+        "target_revision": revision_1,
+        "target_digest": digest_1,
+        "finding_set_id": finding_set_id,
+        "family_fixes": [
+            {
+                "family_id": "family-reset",
+                "target_finding_ids": [],
+                "rationale": "Normalized Reset references",
+                "changed_refs": [PLAN_ROOT_ITEM_ID],
+                "owner_sweep": {
+                    "searched_refs": ["active-items:*"],
+                    "search_dimensions": ["acceptance"],
+                    "additional_fixed_refs": [],
+                    "remaining_instance_refs": [],
+                    "completed": True,
+                    "summary": "No concrete Reset references remain",
+                },
+            }
+        ],
+        "finding_actions": [],
+    }
+    planner_token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    first = ReviewAgentService(store, run_id).record_finding_actions(
+        owner_fix_request,
+        capability_token=planner_token,
+    )
+    assert first["recorded_actions"]
+
+    PlanAgentService(store, run_id).apply(
+        {
+            "base_revision": revision_1,
+            "operations": [
+                {
+                    "op": "update_item",
+                    "item_id": PLAN_ROOT_ITEM_ID,
+                    "patch": {"acceptance": ["Reset normalized again"]},
+                }
+            ],
+        },
+        capability_token=planner_token,
+    )
+    revision_2 = int(store.load_plan(run_id)["revision"])
+    digest_2 = mandatory_plan_digest(store, run_id)
+
+    second = ReviewAgentService(store, run_id).record_finding_actions(
+        {
+            **owner_fix_request,
+            "target_revision": revision_2,
+            "target_digest": digest_2,
+            "family_fixes": [
+                {
+                    **owner_fix_request["family_fixes"][0],
+                    "rationale": "Rebound sweep after plan revision bump.",
+                }
+            ],
+        },
+        capability_token=planner_token,
+    )
+    assert second["recorded_actions"] == []
+
+    loop_payload = store.load_review(run_id, loop_id)
+    owner_sweeps = [
+        sweep
+        for sweep in loop_payload.get("family_sweeps", [])
+        if sweep.get("stage") == "owner_fix"
+    ]
+    assert len(owner_sweeps) == 2
+    assert owner_sweeps[-1]["artifact_revision"] == revision_2
+    assert owner_sweeps[-1]["artifact_digest"] == digest_2
+    assert len(loop_payload.get("finding_actions", [])) == 1

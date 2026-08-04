@@ -1473,6 +1473,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "proposed_disposition, and rationale. Use default_optional_action "
             "(defer|accept_as_is) to batch-apply a default to remaining optional "
             "findings in the current finding set. "
+            "When family_fixes is present, target_revision and target_digest must "
+            "match the current artifact revision and digest (same rule as review "
+            "respond). Repeat record-actions at the current digest rebinds owner "
+            "sweeps without duplicating existing owner fix actions. "
             "Owner/advisory packages expose an active-findings view: "
             "`new_findings`, `carried_open_findings`, `verification_targets`, "
             "`current_finding_actions`, `history_summary` (`total`, `closed`, "
@@ -1546,8 +1550,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "array",
                 "items": _FAMILY_FIX_SCHEMA,
                 "description": (
-                    "Whole-plan family-level owner fix sweeps; service expands required "
-                    "open members into finding_actions."
+                    "Family-level owner fix sweeps bound to target_revision and "
+                    "target_digest. The service expands required open members into "
+                    "finding_actions on the first sweep. When owner fix actions "
+                    "already exist, a repeat call at the current target_digest "
+                    "records a new owner sweep without duplicating fix actions "
+                    "(sweep rebind after digest correction)."
                 ),
             },
         },
@@ -2242,7 +2250,9 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "schema": "review-record-finding-actions",
         "description": (
             "Whole-plan owner family fix sweep with generated fix actions for "
-            "required members (see review-record-family-fix-output for producer)."
+            "required members on the first sweep. Repeat at the current "
+            "target_digest to rebind an owner sweep without duplicating fix "
+            "actions (see review-record-family-fix-output for producer)."
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
@@ -2271,8 +2281,10 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
     "review-record-family-fix-output": {
         "schema": "review-record-finding-actions",
         "description": (
-            "Whole-output producer family fix sweep after evidence revision with "
-            "generated fix actions for required members."
+            "Whole-output producer family fix sweep after evidence revision. "
+            "First call generates fix actions for required members. Repeat at "
+            "the current target_digest to rebind an owner sweep without "
+            "duplicating fix actions."
         ),
         "payload": {
             "loop_id": "review-whole-output-01",
@@ -2600,7 +2612,11 @@ structured `instance_ref`.
 - **Owner blast-radius sweep** — after revising the artifact, the planner or
   producer records one `family_fix` with `owner_sweep.completed: true` and empty
   `remaining_instance_refs`. Required open members are included automatically;
-  list optional members in `target_finding_ids`.
+  list optional members in `target_finding_ids`. Bind `target_revision` and
+  `target_digest` to the current artifact snapshot; `record-actions` rejects a
+  stale `target_digest`. After the artifact revision advances, call
+  `record-actions` again at the new revision and digest to rebind owner sweeps
+  without duplicating existing owner fix actions.
 - **Family closure** — a policy-relevant family is `closed` only after owner
   sweep (when required) and reviewer `verification_sweep` when verification
   members remain. Fixing only the seed finding does not close the family.

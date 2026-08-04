@@ -15,6 +15,7 @@ from top_down_planning.domain.finding_families import (
     family_by_id,
     family_fix_idempotency_key,
     family_required_members,
+    family_verification_members,
 )
 from top_down_planning.domain.reviews import (
     FindingAction,
@@ -22,7 +23,6 @@ from top_down_planning.domain.reviews import (
     apply_owner_finding_actions,
     effective_owner_actions,
     finding_by_id,
-    loop_revise_at,
     parse_finding_action,
 )
 
@@ -104,9 +104,9 @@ def apply_family_fixes(
         explicit_actions.append(parse_finding_action(payload))
 
     generated_actions: list[dict[str, Any]] = []
+    proposed_generated_actions: list[FindingAction] = []
     new_sweeps: list[FamilySweepRecord] = []
     events: list[dict[str, Any]] = []
-    effective_union: set[str] = set()
     for raw in raw_fixes:
         if not isinstance(raw, Mapping):
             raise ValueError("each family_fix must be an object")
@@ -119,7 +119,10 @@ def apply_family_fixes(
             for item in (raw.get("target_finding_ids") or [])
             if str(item).strip()
         ]
-        effective_prior = _effective_actions(loop, explicit_actions)
+        effective_prior = _effective_actions(
+            loop,
+            [*explicit_actions, *proposed_generated_actions],
+        )
         required_ids = {
             finding.id for finding in family_required_members(loop, family_id)
         }
@@ -158,7 +161,27 @@ def apply_family_fixes(
                 f"{sorted(overlap)} "
                 f"({_owner_action_context(loop, artifact_revision=artifact_revision)})"
             )
-        effective_union.update(effective_ids)
+        pending_fix_ids = [
+            finding_id
+            for finding_id in effective_ids
+            if finding_id not in effective_prior
+        ]
+        if not pending_fix_ids:
+            member_ids = {
+                finding.id for finding in family_verification_members(loop, family_id)
+            }
+            has_existing_fixes = any(
+                effective_prior.get(finding_id) is not None
+                and effective_prior[finding_id].action == "fix"
+                for finding_id in member_ids
+            )
+            if not has_existing_fixes:
+                raise ValueError(
+                    f"family {family_id!r} family_fix produced no new fix actions; "
+                    "record the initial owner sweep while required findings are still "
+                    "open, or rebind only after owner fix actions exist "
+                    f"({_owner_action_context(loop, artifact_revision=artifact_revision)})"
+                )
         owner_sweep_raw = raw.get("owner_sweep")
         if not isinstance(owner_sweep_raw, Mapping):
             raise ValueError("family_fix requires owner_sweep")
@@ -269,17 +292,17 @@ def apply_family_fixes(
                 request_digest=request_digest,
             )
         )
-        for finding_id in effective_ids:
-            generated_actions.append(
-                {
-                    "finding_id": finding_id,
-                    "action": "fix",
-                    "actor_role": actor_role,
-                    "artifact_revision": artifact_revision,
-                    "finding_set_id": resolved_finding_set_id,
-                    "rationale": str(raw.get("rationale") or ""),
-                }
-            )
+        for finding_id in pending_fix_ids:
+            action_payload = {
+                "finding_id": finding_id,
+                "action": "fix",
+                "actor_role": actor_role,
+                "artifact_revision": artifact_revision,
+                "finding_set_id": resolved_finding_set_id,
+                "rationale": str(raw.get("rationale") or ""),
+            }
+            generated_actions.append(action_payload)
+            proposed_generated_actions.append(parse_finding_action(action_payload))
         events.append(
             {
                 "type": "review_family_owner_sweep_recorded",
@@ -304,12 +327,15 @@ def apply_family_fixes(
     merged_raw_actions = list(generated_actions) + [
         action.to_dict() for action in explicit_actions
     ]
-    updated, parsed = apply_owner_finding_actions(
-        loop,
-        merged_raw_actions,
-        actor_role=actor_role,
-        artifact_revision=artifact_revision,
-    )
+    if merged_raw_actions:
+        updated, parsed = apply_owner_finding_actions(
+            loop,
+            merged_raw_actions,
+            actor_role=actor_role,
+            artifact_revision=artifact_revision,
+        )
+    else:
+        updated, parsed = loop, []
     updated = replace(
         updated,
         family_sweeps=list(updated.family_sweeps) + new_sweeps,

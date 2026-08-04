@@ -55,7 +55,7 @@ After reviewer `changes_requested` on output:
 
 - `production apply` with `evidence_revision: true` and **new** output evidence IDs on targeted terminal items (dispositions unchanged).
 - During `production` focused-output loops: also set `focused_review_loop_id`; `production apply` closes the owner revision turn when the batch persists.
-- Record owner `family_fix` sweeps via `tdp agent review record-actions` when using finding families.
+- Record owner `family_fix` sweeps via `tdp agent review record-actions` when using finding families. `target_revision` and `target_digest` must match the current artifact snapshot; stale digests are rejected. To correct a sweep after the artifact advances, call `record-actions` again at the new revision and digest — existing owner fix actions are not duplicated.
 - During mandatory whole-output review: re-submit completion with `goal_assessment`; the owner revision turn closes when that claim persists.
 
 ## Discover

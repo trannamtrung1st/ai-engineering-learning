@@ -104,6 +104,7 @@ def test_record_finding_actions_bumps_review_record_revision(tmp_path: Path) -> 
     run_id = "run-20260101T000801-000801"
     loop_id = "review-whole-output-01"
     loop_payload = dict(store.load_review(run_id, loop_id))
+    loop_payload["target_revision"] = 0
     loop_payload["finding_set_id"] = "review-whole-output-01-fs-01"
     loop_payload["finding_families"] = [
         {
@@ -126,6 +127,20 @@ def test_record_finding_actions_bumps_review_record_revision(tmp_path: Path) -> 
             "recommended_change": "Add artifact reference.",
         }
     ]
+    loop_payload["findings"] = [
+        {
+            "id": "finding-01",
+            "severity": "blocker",
+            "category": "traceability",
+            "target_refs": ["item-leaf"],
+            "issue": "Missing evidence.",
+            "recommended_change": "Add artifact reference.",
+            "family_id": "family-output-01",
+        }
+    ]
+    loop_payload["finding_ids_by_set"] = {
+        "review-whole-output-01-fs-01": ["finding-01"]
+    }
     store.save_review(run_id, loop_payload)
 
     revision = int(store.load_production(run_id)["output_revision"])

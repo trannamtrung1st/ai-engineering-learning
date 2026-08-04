@@ -2864,10 +2864,14 @@ def build_primary_owner_finding_guidance(
                     "candidate_refs, and search dimensions before fixing. Apply all "
                     "confirmed and newly discovered equivalent locations in one plan "
                     "apply where possible, then record one family_fix with a completed "
-                    "owner_sweep (empty remaining_instance_refs). Use "
-                    "target_finding_ids to list optional members explicitly; required "
-                    "open members are included automatically. Fixing only the seed "
-                    "finding does not close the family."
+                    "owner_sweep (empty remaining_instance_refs) at the current "
+                    "target_revision and target_digest. Use target_finding_ids to "
+                    "list optional members explicitly; required open members are "
+                    "included automatically. `record-actions` rejects stale "
+                    "target_digest values. After the artifact revision advances, "
+                    "re-call record-actions at the new revision and digest to "
+                    "rebind the sweep without duplicating fix actions. Fixing only "
+                    "the seed finding does not close the family."
                 )
             )
         elif loop_uses_finding_families(loop):

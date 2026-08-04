@@ -94,6 +94,17 @@ def _current_focused_artifact_digest(store: RunStore, run_id: str, loop_type: st
     return compute_plan_digest(store.load_plan(run_id))
 
 
+def _current_mandatory_artifact_digest(store: RunStore, run_id: str, loop_type: str) -> str:
+    from top_down_planning.persistence.digests import (
+        compute_output_digest,
+        compute_plan_digest,
+    )
+
+    if loop_type == "whole_output":
+        return compute_output_digest(store.load_production(run_id))
+    return compute_plan_digest(store.load_plan_model(run_id))
+
+
 def _resolve_focused_artifact_digest(
     store: RunStore,
     run_id: str,
@@ -131,6 +142,17 @@ def _value_error_as_request_error(exc: ValueError) -> RequestError:
             "finding-family rule_id values) or use custom.<slug> with "
             "rule_definition. See tdp agent example "
             "review-respond-family-discovery-output for a custom rule example."
+        )
+    elif "produced no new fix actions" in message:
+        hint = (
+            "Record the initial family_fix while required findings are still open, "
+            "or rebind only after owner fix actions exist at the current "
+            "target_revision and target_digest."
+        )
+    elif "target_digest does not match current" in message:
+        hint = (
+            "Set target_digest from the delivered review package or production "
+            "snapshot at the current artifact revision."
         )
     return RequestError(message, hint=hint)
 
@@ -875,6 +897,16 @@ class ReviewAgentService:
                 target_digest = str(request.get("target_digest") or "").strip()
                 if not target_digest:
                     raise RequestError("family_fixes require target_digest")
+                current_digest = _current_mandatory_artifact_digest(
+                    self._store,
+                    self._run_id,
+                    loop.type,
+                )
+                if target_digest != current_digest:
+                    label = "output" if loop.type == "whole_output" else "plan"
+                    raise RequestError(
+                        f"target_digest does not match current {label} digest"
+                    )
                 updated, parsed, family_events = apply_family_fixes(
                     loop,
                     request,
