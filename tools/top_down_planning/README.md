@@ -180,15 +180,17 @@ Absolute paths are used directly. Launch `tdp` from the intended working directo
 
 ### Sub-TDP execution mode
 
-For objectives too large for one practical production run, set `execution.mode: sub_tdps` on the parent config. After whole-plan approval the parent skips `production`, derives ordered Sub-TDP units from direct active children of `item-root`, runs each as a normal child `tdp` under `sub-tdps/<unit>/`, synthesizes parent `production.json`, then enters mandatory `whole_output_review`.
+For objectives too large for one practical production run, set `execution.mode: sub_tdps` on the parent config. After whole-plan approval the parent skips `production`, derives ordered Sub-TDP units from direct active children of `item-root`, runs each as a normal child `tdp` under `temp/sub-tdps/<unit>/` (local sandbox under `tools/top_down_planning/temp/`, gitignored), synthesizes parent `production.json`, then enters mandatory `whole_output_review`.
 
 ```yaml
 execution:
   mode: sub_tdps
-  state_file: sub-tdps/state.yaml   # optional YAML export; authoritative state in parent production.json
+  state_file: temp/sub-tdps/state.yaml   # optional YAML export; authoritative state in parent production.json
 ```
 
-Children are independently runnable (`tdp run --config sub-tdps/<unit>/config.yaml`). Rejoin manual child runs with `tdp sub-tdp attach --parent <parent-run-id> --unit <plan_item_id> --child <child-run-id>`. Child configs omit `execution` (implicit `single`); `execution.mode: sub_tdps` is rejected on child runs.
+Children are independently runnable (`tdp run --config temp/sub-tdps/<unit>/config.yaml`). Rejoin manual child runs with `tdp sub-tdp attach --parent <parent-run-id> --unit <plan_item_id> --child <child-run-id>`. Child configs omit `execution` (implicit `single`); `execution.mode: sub_tdps` is rejected on child runs.
+
+Local Sub-TDP sandboxes and manual runs live under `tools/top_down_planning/temp/` (gitignored). Do not commit that directory.
 
 Authoritative orchestration lives in parent `production.json` → `sub_tdps` (journaled via `RunStore.commit`). Do not hand-edit orchestration state or `state.yaml`.
 

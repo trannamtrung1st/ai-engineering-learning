@@ -26,7 +26,7 @@ def test_write_sub_tdp_artifacts_creates_files_within_workspace(tmp_path: Path) 
         tmp_path,
         units,
         parent_config=parent_config,
-        state_file="sub-tdps/state.yaml",
+        state_file="temp/sub-tdps/state.yaml",
     )
     assert root_dir.is_dir()
     unit_dir = root_dir / units[0].directory
@@ -48,7 +48,7 @@ def test_build_child_config_omits_execution_section() -> None:
     child = build_child_config(
         parent,
         unit=unit,
-        unit_relative_dir="sub-tdps/01-test",
+        unit_relative_dir="temp/sub-tdps/01-test",
         workspace=Path("/tmp/ws"),
     )
     assert "execution" not in child

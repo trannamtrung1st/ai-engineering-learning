@@ -8,14 +8,16 @@ from typing import Any
 
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 
+SUB_TDP_ORCHESTRATION_ROOT = "temp/sub-tdps"
+
 
 def orchestration_root_relative(state_file: str | None) -> str:
     if state_file:
         path = Path(state_file)
         if path.name == "state.yaml":
-            return str(path.parent).replace("\\", "/") or "sub-tdps"
+            return str(path.parent).replace("\\", "/") or SUB_TDP_ORCHESTRATION_ROOT
         return str(path).replace("\\", "/")
-    return "sub-tdps"
+    return SUB_TDP_ORCHESTRATION_ROOT
 
 
 def build_child_task_markdown(unit: SubTdpUnit, *, parent_input_hint: str) -> str:
@@ -55,6 +57,7 @@ def build_child_config(
 
 
 __all__ = [
+    "SUB_TDP_ORCHESTRATION_ROOT",
     "build_child_config",
     "build_child_task_markdown",
     "orchestration_root_relative",
