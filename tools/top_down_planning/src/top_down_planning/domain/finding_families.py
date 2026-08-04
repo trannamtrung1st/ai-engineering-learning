@@ -671,17 +671,16 @@ def active_families(
     for family in loop.finding_families:
         if family.finding_set_id != finding_set_id:
             continue
-        if family_has_open_policy_relevant_members(loop, family.id):
-            active.append(family)
-            continue
-        if family_requires_reviewer_verification(loop, family.id):
-            if not _has_valid_verification_sweep(
+        if (
+            derive_family_operational_status(
                 loop,
                 family.id,
                 artifact_revision=artifact_revision,
                 artifact_digest=artifact_digest,
-            ):
-                active.append(family)
+            )
+            != "closed"
+        ):
+            active.append(family)
     return active
 
 
@@ -721,13 +720,6 @@ def required_open_family_ids(
             artifact_revision=artifact_revision,
             artifact_digest=artifact_digest,
         )
-        if derive_family_operational_status(
-            loop,
-            family.id,
-            artifact_revision=artifact_revision,
-            artifact_digest=artifact_digest,
-        )
-        != "closed"
     )
 
 

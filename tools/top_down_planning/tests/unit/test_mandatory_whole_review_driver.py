@@ -1426,6 +1426,39 @@ def test_driver_advisory_handoff_closes_on_record_actions_while_stream_stalls(
     assert review.get("advisory_handoffs_completed")
 
 
+def test_owner_revision_turn_uses_record_actions_boundary(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    run_id = "run-20260101T000317-000317"
+    planner_session_id, loop_id = _create_driver_run(store, run_id, provider=provider)
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+    driver = ReviewLoopDriver(store, run_id, provider, adapter)
+    calls: list[str] = []
+
+    def _fake_consume(*_args, **kwargs):
+        calls.append(str(kwargs.get("loop_id")))
+        return ProviderTurnOutcome(
+            signal=None,
+            session_id=planner_session_id,
+            replaced=False,
+            domain_budget_committed=False,
+        )
+
+    with patch(
+        "top_down_planning.orchestrator.review_loop_driver."
+        "consume_owner_finding_action_turn_with_session_recovery",
+        side_effect=_fake_consume,
+    ):
+        driver._consume_owner_turn(
+            planner_session_id,
+            WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+            handoff="revision",
+        )
+
+    assert calls == [loop_id]
+
+
 def test_driver_scope_review_advisory_handoff_requires_reviewer_clear(
     tmp_path: Path,
 ) -> None:

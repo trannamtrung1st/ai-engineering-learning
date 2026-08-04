@@ -382,6 +382,170 @@ def test_active_families_includes_family_pending_verification_sweep() -> None:
     assert active_families(loop, artifact_revision=1, artifact_digest="digest-1")
 
 
+def test_active_families_includes_family_pending_owner_sweep() -> None:
+    from top_down_planning.domain.finding_families import (
+        FindingFamily,
+        derive_family_operational_status,
+    )
+
+    finding = ReviewFinding(
+        id="f-1",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-a"],
+        issue="x",
+        recommended_change="y",
+        family_id="family-1",
+        status="resolved",
+    )
+    family = FindingFamily(
+        id="family-1",
+        finding_set_id="set-1",
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset",
+        scope_kind="active-plan",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="dependency.acceptance_capability_available",
+            subject_key="reset",
+            scope_kind="active-plan",
+        ),
+        title="t",
+        seed_finding_id="f-1",
+        confirmed_finding_ids=["f-1"],
+        candidate_refs=[],
+        recommended_change="fix",
+    )
+    loop = make_review_loop(
+        id="loop-1",
+        type="whole_plan",
+        finding_set_id="set-1",
+        findings=[finding],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["f-1"]},
+        finding_actions=[
+            {
+                "finding_id": "f-1",
+                "action": "fix",
+                "actor_role": "planner",
+                "artifact_revision": 1,
+                "finding_set_id": "set-1",
+            }
+        ],
+        family_sweeps=[
+            {
+                "id": "sweep-verify-1",
+                "family_id": "family-1",
+                "actor_role": "reviewer",
+                "stage": "verification",
+                "artifact_revision": 1,
+                "artifact_digest": "digest-1",
+                "finding_set_id": "set-1",
+                "searched_refs": ["active-items:*"],
+                "search_dimensions": ["acceptance"],
+                "additional_fixed_refs": [],
+                "remaining_instance_refs": [],
+                "completed": True,
+                "summary": "verified",
+                "evidence": [],
+            }
+        ],
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    assert (
+        derive_family_operational_status(
+            loop,
+            "family-1",
+            artifact_revision=1,
+            artifact_digest="digest-1",
+        )
+        == "owner_sweep_pending"
+    )
+    active = active_families(loop, artifact_revision=1, artifact_digest="digest-1")
+    assert [item.id for item in active] == ["family-1"]
+
+
+def test_owner_sweep_pending_family_surfaces_in_owner_package_views() -> None:
+    from top_down_planning.domain.finding_families import (
+        FindingFamily,
+        build_active_family_view,
+        family_observability_fields,
+    )
+
+    finding = ReviewFinding(
+        id="f-1",
+        severity="blocker",
+        category="correctness",
+        target_refs=["item-a"],
+        issue="x",
+        recommended_change="y",
+        family_id="family-1",
+        status="resolved",
+    )
+    family = FindingFamily(
+        id="family-1",
+        finding_set_id="set-1",
+        rule_id="dependency.acceptance_capability_available",
+        subject_key="reset",
+        scope_kind="active-plan",
+        family_fingerprint=compute_family_fingerprint(
+            rule_id="dependency.acceptance_capability_available",
+            subject_key="reset",
+            scope_kind="active-plan",
+        ),
+        title="t",
+        seed_finding_id="f-1",
+        confirmed_finding_ids=["f-1"],
+        candidate_refs=[],
+        recommended_change="fix",
+    )
+    loop = make_review_loop(
+        id="loop-1",
+        type="whole_plan",
+        finding_set_id="set-1",
+        findings=[finding],
+        finding_families=[family.to_dict()],
+        finding_ids_by_set={"set-1": ["f-1"]},
+        finding_actions=[
+            {
+                "finding_id": "f-1",
+                "action": "fix",
+                "actor_role": "planner",
+                "artifact_revision": 1,
+                "finding_set_id": "set-1",
+            }
+        ],
+        family_sweeps=[
+            {
+                "id": "sweep-verify-1",
+                "family_id": "family-1",
+                "actor_role": "reviewer",
+                "stage": "verification",
+                "artifact_revision": 1,
+                "artifact_digest": "digest-1",
+                "finding_set_id": "set-1",
+                "searched_refs": ["active-items:*"],
+                "search_dimensions": ["acceptance"],
+                "additional_fixed_refs": [],
+                "remaining_instance_refs": [],
+                "completed": True,
+                "summary": "verified",
+                "evidence": [],
+            }
+        ],
+        **_FAMILY_PROTOCOL_VERSIONS,
+    )
+    view = build_active_family_view(loop, artifact_revision=1, artifact_digest="digest-1")
+    observability = family_observability_fields(
+        loop,
+        artifact_revision=1,
+        artifact_digest="digest-1",
+    )
+    assert [item["id"] for item in view["families"]] == ["family-1"]
+    assert view["families"][0]["operational_status"] == "owner_sweep_pending"
+    assert observability["families_awaiting_owner_sweep"] == ["family-1"]
+    assert observability["required_open_family_ids"] == ["family-1"]
+
+
 def test_active_families_excludes_fully_closed_family() -> None:
     from top_down_planning.domain.finding_families import FindingFamily
 
@@ -1003,7 +1167,10 @@ def test_verification_merge_returns_findings_with_remaining_instances() -> None:
     from top_down_planning.agent_tool.review_verification import (
         merge_mandatory_family_verification,
     )
-    from top_down_planning.domain.finding_families import FindingFamily
+    from top_down_planning.domain.finding_families import (
+        FamilySweepRecord,
+        FindingFamily,
+    )
 
     finding = ReviewFinding(
         id="f-1",
@@ -1054,22 +1221,24 @@ def test_verification_merge_returns_findings_with_remaining_instances() -> None:
     loop = replace(
         loop,
         family_sweeps=[
-            {
-                "id": "sweep-owner-1",
-                "family_id": "family-1",
-                "actor_role": "planner",
-                "stage": "owner_fix",
-                "artifact_revision": 1,
-                "artifact_digest": "digest-1",
-                "finding_set_id": "set-1",
-                "searched_refs": ["active-items:*"],
-                "search_dimensions": ["acceptance"],
-                "additional_fixed_refs": [],
-                "remaining_instance_refs": [],
-                "completed": True,
-                "summary": "swept",
-                "evidence": [],
-            }
+            FamilySweepRecord.from_dict(
+                {
+                    "id": "sweep-owner-1",
+                    "family_id": "family-1",
+                    "actor_role": "planner",
+                    "stage": "owner_fix",
+                    "artifact_revision": 1,
+                    "artifact_digest": "digest-1",
+                    "finding_set_id": "set-1",
+                    "searched_refs": ["active-items:*"],
+                    "search_dimensions": ["acceptance"],
+                    "additional_fixed_refs": [],
+                    "remaining_instance_refs": [],
+                    "completed": True,
+                    "summary": "swept",
+                    "evidence": [],
+                }
+            )
         ],
     )
     merged_findings, _, updated_loop, _ = merge_mandatory_family_verification(
