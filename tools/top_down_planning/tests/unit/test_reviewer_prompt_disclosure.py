@@ -109,9 +109,15 @@ def test_verification_package_guidance_mentions_side_effect_categories() -> None
             finding_set_id="fs-1",
         )
     )
-    guidance = " ".join(fields["verification_guidance"]).lower()
-    assert "new_direct_side_effect_findings" in guidance
-    assert "category" in guidance
+    assert fields["verification_guidance"] == [
+        "Follow protocol_instructions for finding_verification stage behavior."
+    ]
+    protocol = build_reviewer_protocol_instructions(
+        stage="finding_verification",
+        review_type="whole_plan",
+    ).lower()
+    assert "new_direct_side_effect_findings" in protocol
+    assert "category" in protocol
 
 
 def test_whole_scope_review_guidance_prioritizes_consistency_and_correctness() -> None:
@@ -238,4 +244,7 @@ def test_focused_and_whole_packages_omit_revise_at(tmp_path: Path) -> None:
     assert whole_pkg["review_policy"]["category_definitions"] == {
         category: CATEGORY_DEFINITIONS[category] for category in FINDING_CATEGORY_ORDER
     }
-    assert whole_pkg["freshness"]["purpose"].lower().find("every material") >= 0
+    assert whole_pkg["freshness"]["purpose"] == (
+        "Fresh scope review per protocol_instructions; omit prior finding framing."
+    )
+    assert "every material issue" in whole_pkg["protocol_instructions"].lower()

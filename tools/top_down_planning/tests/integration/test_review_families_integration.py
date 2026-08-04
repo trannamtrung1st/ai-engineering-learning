@@ -27,6 +27,53 @@ from tests.helpers import (
 )
 
 
+def test_whole_plan_review_package_includes_rendered_protocol(tmp_path: Path) -> None:
+    from top_down_planning.orchestrator.whole_plan_review import (
+        build_whole_plan_review_package,
+    )
+    from tests.helpers import make_review_loop
+
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T120001-abcdef"
+    config = minimal_resolved_config()
+    root = PlanItem(
+        id=PLAN_ROOT_ITEM_ID,
+        parent_id=None,
+        order_key="0000000000",
+        title="Deliver",
+        outcome="Deliver the output.",
+        kind="aggregate",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+    )
+    store.create_run(run_id, plan=plan, **create_run_kwargs(tmp_path, resolved_config=config))
+    loop = make_review_loop(
+        id="review-whole-plan-01",
+        type="whole_plan",
+        reviewer_session_id="sess",
+        target_revision=0,
+        scope={"kind": "whole_plan"},
+        finding_set_id="review-whole-plan-01-fs-01",
+    )
+    package = build_whole_plan_review_package(
+        run_id,
+        store.load_run(run_id),
+        config,
+        store.load_plan_model(run_id),
+        loop,
+    )
+    protocol = package["protocol_instructions"]
+    assert isinstance(protocol, str)
+    assert "tdp agent review respond" in protocol.lower()
+    assert package["initial_review_guidance"] == [
+        "Follow protocol_instructions for mandatory whole_* initial_review behavior."
+    ]
+
+
 def _audit_attestation(*, target_revision: int, digest: str) -> dict:
     rubric_items = rubric_items_with_ids(
         [str(item) for item in DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]]

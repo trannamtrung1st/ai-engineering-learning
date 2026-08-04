@@ -12,6 +12,14 @@ _PROTOCOL_BUILDER_FILES = (
     Path("orchestrator/reviewer_session.py"),
 )
 
+_STAGE_GUIDANCE_DUPLICATE_PATTERNS = (
+    "Mandatory whole-plan gate",
+    "Mandatory whole-output gate",
+    "Report every material issue with severity and category",
+    "Complete audit_attestation and a discovery_sweep",
+    "Verify disposition of prior findings and direct revision side effects",
+)
+
 _INLINE_PROTOCOL_PATTERNS = (
     "instructions.append(",
     "PLAN_ROOT_PLANNER_INSTRUCTION",
@@ -35,3 +43,14 @@ def test_protocol_builders_delegate_to_render_prompt() -> None:
             if pattern in text:
                 violations.append(f"{rel}: {pattern}")
     assert not violations, "inline protocol remnants:\n" + "\n".join(violations)
+
+
+def test_mandatory_stage_guidance_defers_to_protocol_instructions() -> None:
+    stage_path = _SRC_ROOT / "orchestrator/mandatory_review_stages.py"
+    text = stage_path.read_text(encoding="utf-8")
+    violations = [
+        pattern
+        for pattern in _STAGE_GUIDANCE_DUPLICATE_PATTERNS
+        if pattern in text
+    ]
+    assert not violations, "duplicate stage guidance prose:\n" + "\n".join(violations)

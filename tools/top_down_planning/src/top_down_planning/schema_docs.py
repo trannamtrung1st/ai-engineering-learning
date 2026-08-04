@@ -2482,9 +2482,12 @@ include:
 - `input_refs` — resolved authoritative input paths (from `run.input_refs`)
 - `output_goal` — frozen deliverable contract text (from `plan.output_goal`)
 - `protocol_instructions` — rendered Markdown string from package-owned Jinja
-  templates; role behavior rules surfaced at the top of the provider prompt
-  (for example: mutate run state only through `tdp agent` commands; do not use
-  host planning modes or planning-only artifacts).
+  templates under `top_down_planning/prompts/templates/`; role behavior rules
+  surfaced at the top of the provider prompt (for example: mutate run state only
+  through `tdp agent` commands; do not use host planning modes or planning-only
+  artifacts). Stage-specific reviewer guidance in review packages defers to
+  `protocol_instructions`; dimensional checklists such as `scope_review_guidance`
+  are search dimensions, not a second behavioral contract.
 - `tool_instructions` — concrete `tdp agent` command templates for the active role
 - `agent_context` — supporting `guidance`, `resources`, and `skills`
   (packaged TDP agent skills are auto-injected when agent_context.bundled_skills

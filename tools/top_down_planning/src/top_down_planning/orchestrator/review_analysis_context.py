@@ -16,7 +16,7 @@ from top_down_planning.domain.output_validators import validate_production_check
 from top_down_planning.domain.production import build_output_traceability
 from top_down_planning.domain.reviews import (
     ReviewLoop,
-    is_mandatory_whole_review,
+    uses_finding_family_protocol,
 )
 from top_down_planning.domain.validators import collect_plan_analysis_validation_issues
 
@@ -88,7 +88,7 @@ def contract_fields(loop: ReviewLoop) -> dict[str, Any]:
     return {
         "review_record_schema_version": loop.review_record_schema_version,
         "review_contract_version": loop.review_contract_version,
-        "family_protocol_enabled": is_mandatory_whole_review(loop),
+        "family_protocol_enabled": uses_finding_family_protocol(loop),
     }
 
 

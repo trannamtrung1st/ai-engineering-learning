@@ -23,9 +23,8 @@ from core_tools.provider import Provider
 
 REVIEWER_GATE_CONTINUE_BLOCKED_REASON = (
     "The previous reviewer provider turn ended without a persisted "
-    "`tdp agent review respond` decision. The orchestrator advances only from "
-    "review respond payloads — reading the spec, readme, or schema does not "
-    "count. Submit your decision now."
+    "`tdp agent review respond` decision. Follow protocol_instructions and "
+    "submit your decision now."
 )
 
 REVIEWER_DECISION_COMPLETE_SIGNAL = "review_decision_complete"
@@ -126,9 +125,7 @@ def build_reviewer_tool_instructions(
             "(invoke `tdp` directly; do not wrap with `uv run`)"
         ),
         "completion_requirement": (
-            "End every reviewer provider turn with a successful review respond. "
-            "Discovery may be partial; do not spend the full turn on readme/schema/"
-            "spec reads without submitting respond."
+            "See protocol_instructions for reviewer turn completion requirements."
         ),
         "schema": "tdp agent schema review-respond",
         "examples": examples,

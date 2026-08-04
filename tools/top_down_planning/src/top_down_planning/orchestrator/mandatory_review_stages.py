@@ -27,6 +27,16 @@ from top_down_planning.domain.reviews import (
 
 ReviewArtifactKind = Literal["plan", "output"]
 
+_FOLLOW_PROTOCOL_INITIAL_REVIEW = (
+    "Follow protocol_instructions for mandatory whole_* initial_review behavior."
+)
+_FOLLOW_PROTOCOL_VERIFICATION = (
+    "Follow protocol_instructions for finding_verification stage behavior."
+)
+_FRESH_SCOPE_REVIEW_PURPOSE = (
+    "Fresh scope review per protocol_instructions; omit prior finding framing."
+)
+
 _INITIAL_STAGES = frozenset({None, "initial_review"})
 _VERIFICATION_STAGES = frozenset({"finding_verification"})
 _SCOPE_REVIEW_STAGES = frozenset({"scope_review"})
@@ -288,13 +298,7 @@ def _focused_verification_package_fields(loop: ReviewLoop) -> dict[str, Any]:
     }
     if loop.finding_set_id is not None:
         fields["finding_set_id"] = loop.finding_set_id
-    fields["verification_guidance"] = [
-        "Verify disposition of prior findings",
-        "Confirm required outcomes and evidence",
-        "Check direct revision side effects only",
-        "Classify new_direct_side_effect_findings with severity and category",
-        "Do not perform a broad discovery pass",
-    ]
+    fields["verification_guidance"] = [_FOLLOW_PROTOCOL_VERIFICATION]
     fields["respond_contract"] = {
         "stage": "finding_verification",
         "decisions": ["verified", "needs_revision", "blocked"],
@@ -337,11 +341,7 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
         fields["freshness"] = {
             "omit_prior_finding_framing": True,
             "include_prior_findings": False,
-            "purpose": (
-                "Fresh scope review: report every material issue in the current "
-                "scope without anchoring on prior finding discussion. Do not omit "
-                "lower-severity issues because they may not force revision."
-            ),
+            "purpose": _FRESH_SCOPE_REVIEW_PURPOSE,
         }
         if loop.type == "whole_plan":
             fields["scope_review_guidance"] = [
@@ -377,13 +377,7 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
     elif stage == "finding_verification":
         if loop.finding_set_id is not None:
             fields["finding_set_id"] = loop.finding_set_id
-        fields["verification_guidance"] = [
-            "Verify disposition of prior findings and direct revision side effects",
-            "Re-run each active family's rule components and search dimensions",
-            "Report family_results with verification_sweep for each active policy-relevant family",
-            "Classify new_direct_side_effect_findings with severity and category",
-            "Do not search for unrelated new defect classes",
-        ]
+        fields["verification_guidance"] = [_FOLLOW_PROTOCOL_VERIFICATION]
         fields["respond_contract"] = _mandatory_family_verification_contract()
     else:
         if loop.finding_set_id is not None:
@@ -392,27 +386,9 @@ def stage_package_fields(loop: ReviewLoop) -> dict[str, Any]:
             "initial_review"
         )
         if loop.type == "whole_plan":
-            fields["initial_review_guidance"] = [
-                "Mandatory whole-plan gate: prioritize correctness and internal consistency",
-                "Report contradictions, unverifiable claims, and overlapping executable scope",
-                "Report every material issue with severity and category",
-                "Complete audit_attestation and a discovery_sweep for every finding family",
-                "Group confirmed instances under families before marking review_completed true",
-                "Clear initial discovery still requires a separate fresh scope review",
-                "Do not treat this pass as final approval",
-                "Echo finding_set_id unchanged; service derives lifecycle outcomes",
-                "Do not omit lower-severity issues because they may not force revision",
-            ]
+            fields["initial_review_guidance"] = [_FOLLOW_PROTOCOL_INITIAL_REVIEW]
         elif loop.type == "whole_output":
-            fields["initial_review_guidance"] = [
-                "Mandatory whole-output gate: prioritize correctness and cross-artifact consistency",
-                "Report mismatches between evidence, dispositions, outputs, and plan contracts",
-                "Report every material issue with severity and category",
-                "Clear initial discovery still requires a separate fresh scope review",
-                "Do not treat this pass as final approval",
-                "Echo finding_set_id unchanged; service derives lifecycle outcomes",
-                "Do not omit lower-severity issues because they may not force revision",
-            ]
+            fields["initial_review_guidance"] = [_FOLLOW_PROTOCOL_INITIAL_REVIEW]
         else:
             raise ValueError(
                 f"initial_review guidance is only defined for mandatory whole_* loops; "

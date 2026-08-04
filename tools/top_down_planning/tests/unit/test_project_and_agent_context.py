@@ -552,6 +552,9 @@ def test_reviewer_packages_include_contracts(tmp_path: Path) -> None:
     )
     assert whole_plan["input_refs"] == [str(task.resolve())]
     assert whole_plan["output_goal"] == "Goal."
+    whole_protocol = whole_plan["protocol_instructions"]
+    assert isinstance(whole_protocol, str)
+    assert "TDP reviewer" in whole_protocol
 
     production = {
         "revision": 0,

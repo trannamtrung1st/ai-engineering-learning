@@ -116,16 +116,25 @@ def test_whole_plan_v2_respond_contract_requires_family_fields() -> None:
         replace(loop, active_stage="finding_verification")
     )
     assert "family_results" in verification_fields["respond_contract"]["required_fields"]
-    guidance = " ".join(verification_fields["verification_guidance"]).lower()
-    assert "family" in guidance
-    assert "verification_sweep" in guidance
+    protocol = build_reviewer_protocol_instructions(
+        stage="finding_verification",
+        review_type="whole_plan",
+    ).lower()
+    assert "family_results" in protocol
+    assert "verification_sweep" in protocol
 
     initial_fields = stage_package_fields(
         replace(loop, active_stage="initial_review")
     )
-    initial_guidance = " ".join(initial_fields["initial_review_guidance"]).lower()
-    assert "audit_attestation" in initial_guidance
-    assert "discovery_sweep" in initial_guidance
+    assert initial_fields["initial_review_guidance"] == [
+        "Follow protocol_instructions for mandatory whole_* initial_review behavior."
+    ]
+    initial_protocol = build_reviewer_protocol_instructions(
+        stage="initial_review",
+        review_type="whole_plan",
+    ).lower()
+    assert "audit_attestation" in initial_protocol
+    assert "discovery_sweep" in initial_protocol
 
 
 def test_review_respond_schema_rejects_cross_stage_fields() -> None:
