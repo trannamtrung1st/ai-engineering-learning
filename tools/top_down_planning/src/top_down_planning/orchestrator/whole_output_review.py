@@ -195,7 +195,9 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
                     "Set evidence_revision: true on production apply for terminal "
                     "plan_items targeted by open required findings. Keep existing "
                     "dispositions unchanged; attach new outputs or contributions. "
-                    "Then submit-completion with goal_met: true."
+                    "Then submit-completion with goal_met: true. The orchestrator "
+                    "closes the owner revision turn when the completion claim "
+                    "persists; stop immediately afterward."
                 ),
             }
         return request

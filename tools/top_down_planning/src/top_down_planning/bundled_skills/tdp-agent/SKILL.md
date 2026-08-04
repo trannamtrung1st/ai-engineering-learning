@@ -55,7 +55,7 @@ Emit as the **final assistant line** or `done.signal` metadata when work is read
 | Planner | `candidate_plan_ready` |
 | Producer (amendment) | `amendment_revision_ready` |
 
-Producer batch turns close when `production apply` persists a batch; no completion token is required.
+Producer batch turns close when `production apply` persists a batch; completion turns close when `submit-completion` persists a valid completion claim. Owner advisory turns close when `review record-actions` persists. No completion token is required. Stop working after submit-completion; no summary or cleanup turn is required.
 
 ## Request files
 

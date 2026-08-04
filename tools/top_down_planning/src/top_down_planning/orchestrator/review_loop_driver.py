@@ -84,8 +84,12 @@ from top_down_planning.orchestrator.run_transitions import (
     complete_run_with_outcome,
     pause_for_limit_exhausted,
 )
+from top_down_planning.orchestrator.phases import WHOLE_OUTPUT_REVIEW
 from top_down_planning.orchestrator.provider_turns import (
     NO_COMPLETION_SIGNALS,
+    consume_owner_finding_action_turn_with_session_recovery,
+    consume_producer_owner_provider_turn_with_session_recovery,
+    consume_producer_provider_turn_with_session_recovery,
     consume_provider_turn_with_session_recovery,
     consume_reviewer_provider_turn_with_session_recovery,
 )
@@ -959,7 +963,7 @@ class ReviewLoopDriver:
             model=role_context.model,
             loop_id=loop.id,
         )
-        self._consume_owner_turn(session_id, phase)
+        self._consume_owner_turn(session_id, phase, loop_id=loop.id, handoff="revision")
         self._adapter.after_owner_turn(session_id)
 
     def _handle_advisory_handoff(self, loop: ReviewLoop) -> ReviewLoop:
@@ -1027,26 +1031,61 @@ class ReviewLoopDriver:
             model=role_context.model,
             loop_id=loop.id,
         )
-        self._consume_owner_turn(session_id, phase)
+        self._consume_owner_turn(session_id, phase, loop_id=loop.id, handoff="advisory")
 
-    def _consume_owner_turn(self, session_id: str, phase: str) -> None:
+    def _consume_owner_turn(
+        self,
+        session_id: str,
+        phase: str,
+        *,
+        loop_id: str,
+        handoff: OwnerHandoff,
+    ) -> None:
         spec = self.spec
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
         role_context = resolve_role_session_context(config, run, spec.owner_role)
+        recovery = self._adapter.build_owner_turn_recovery(
+            phase,
+            self._append_event,
+            role_context.model,
+        )
         try:
-            consume_provider_turn_with_session_recovery(
-                self._store,
-                self._run_id,
-                self._provider,
-                session_id,
-                allowed_signals=NO_COMPLETION_SIGNALS,
-                recovery=self._adapter.build_owner_turn_recovery(
-                    phase,
-                    self._append_event,
-                    role_context.model,
-                ),
-            )
+            if handoff == "advisory":
+                consume_owner_finding_action_turn_with_session_recovery(
+                    self._store,
+                    self._run_id,
+                    self._provider,
+                    session_id,
+                    loop_id=loop_id,
+                    recovery=recovery,
+                )
+            elif spec.owner_role == "producer":
+                if phase == WHOLE_OUTPUT_REVIEW:
+                    consume_producer_owner_provider_turn_with_session_recovery(
+                        self._store,
+                        self._run_id,
+                        self._provider,
+                        session_id,
+                        recovery=recovery,
+                    )
+                else:
+                    consume_producer_provider_turn_with_session_recovery(
+                        self._store,
+                        self._run_id,
+                        self._provider,
+                        session_id,
+                        recovery=recovery,
+                    )
+            else:
+                consume_provider_turn_with_session_recovery(
+                    self._store,
+                    self._run_id,
+                    self._provider,
+                    session_id,
+                    allowed_signals=NO_COMPLETION_SIGNALS,
+                    recovery=recovery,
+                )
         except SessionRecoveryPaused as exc:
             raise ProviderRunError(str(exc)) from exc
 

@@ -12,6 +12,7 @@ from top_down_planning.persistence.session_bindings import (
 )
 
 PRODUCER_BATCH_COMPLETE_SIGNAL = "batch_complete"
+PRODUCER_COMPLETION_COMPLETE_SIGNAL = "completion_claimed"
 
 
 def primary_producer_provider_session_id(run: dict[str, Any]) -> str | None:
@@ -63,7 +64,9 @@ def build_producer_protocol_instructions() -> list[str]:
             "closes the turn when production apply persists a batch, waits for "
             "the provider session to settle, then queues the next turn. Submit "
             "completion with goal_met and goal_assessment when the output goal "
-            "is met."
+            "is met; the orchestrator closes that turn when the completion claim "
+            "is persisted. Stop working after submit-completion; no summary or "
+            "cleanup turn is required."
         ),
         (
             "Discover request contracts with tdp agent readme, tdp agent "
@@ -125,6 +128,7 @@ def build_producer_tool_instructions(run_id: str) -> dict[str, str]:
 
 __all__ = [
     "PRODUCER_BATCH_COMPLETE_SIGNAL",
+    "PRODUCER_COMPLETION_COMPLETE_SIGNAL",
     "build_producer_protocol_instructions",
     "build_producer_tool_instructions",
     "primary_producer_binding",

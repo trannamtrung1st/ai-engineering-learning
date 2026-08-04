@@ -28,6 +28,7 @@ REVIEWER_GATE_CONTINUE_BLOCKED_REASON = (
 )
 
 REVIEWER_DECISION_COMPLETE_SIGNAL = "review_decision_complete"
+OWNER_FINDING_ACTION_COMPLETE_SIGNAL = "owner_finding_action_complete"
 
 _FORBIDDEN_STAGE_LABELS = (
     "full review",
@@ -638,6 +639,7 @@ def resolve_reviewer_session_for_recheck(
 
 
 __all__ = [
+    "OWNER_FINDING_ACTION_COMPLETE_SIGNAL",
     "REVIEWER_DECISION_COMPLETE_SIGNAL",
     "ReviewerRecheckRequiresNewSession",
     "begin_reviewer_review",

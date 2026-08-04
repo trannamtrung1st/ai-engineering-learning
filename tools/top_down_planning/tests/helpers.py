@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import copy
 import json
+import threading
 from pathlib import Path
 from typing import Any, Mapping
 
+from core_tools.provider import StubProvider
+from core_tools.provider.errors import ProviderSessionNotFoundError
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.approval_digests import (
     OUTPUT_APPROVAL_DIGEST_KEYS,
@@ -1498,6 +1501,34 @@ def script_mandatory_clear_approval(
         phase=phase,
         loop_id=loop_id,
     )()
+
+
+class StallingAfterEventsProvider(StubProvider):
+    """Simulate a provider turn that stalls after scripted events (no done)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._release = threading.Event()
+
+    def stream_events(self, session_id: str):
+        if session_id in self._not_found_sessions:
+            raise ProviderSessionNotFoundError(
+                f"provider session not found: {session_id}",
+                provider="stub",
+                session_id=session_id,
+            )
+        session = self._require_session(session_id)
+        if session.pending_hook is not None:
+            hook = session.pending_hook
+            session.pending_hook = None
+            hook()
+        while session.pending_events:
+            yield session.pending_events.popleft()
+        self._release.wait(timeout=1)
+
+    def abort_turn(self, session_id: str) -> None:
+        self._release.set()
+        super().abort_turn(session_id)
 
 
 def done_events(*, signal: str | None = None, text: str = "ok") -> list[dict]:

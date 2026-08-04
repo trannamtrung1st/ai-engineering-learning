@@ -2483,17 +2483,21 @@ shell commands; those commands persist mutations to the run store. The orchestra
 observes store changes after each provider turn, runs pending review loops, and
 advances phases when agents emit explicit completion signals (`candidate_plan_ready`,
 `amendment_revision_ready`, etc.) as the final assistant line or `done.signal`
-metadata. Producer batch turns close when `production apply` persists a batch:
-the orchestrator aborts the in-flight provider turn, waits for the session
-collector to settle, then queues the next turn on the same session. Reviewer
+metadata. Producer batch turns close when `production apply` persists a batch;
+completion turns close when `submit-completion` persists a valid completion claim.
+In both cases the orchestrator aborts the in-flight provider turn, waits for the
+session collector to settle, then queues the next turn on the same session.
+Reviewer
 turns close when `review respond` persists a decision: the orchestrator aborts
 the in-flight provider turn, waits for the session collector to settle, then
-releases the bounded reviewer session before owner revision or the next gate. A
+releases the bounded reviewer session before owner revision or the next gate. Owner
+advisory turns close when `review record-actions` persists. A
 turn that ends without `review respond` queues another reviewer turn with a nudge
 (bounded by `limits.review.max_agent_turns_per_gate`) before pausing with
-`limit_exhausted`. A background poll watches for persisted batches or review
-decisions while the turn is open so a stalled agent subprocess cannot block
-progress after apply/respond.
+`limit_exhausted`. A background poll watches for persisted batches, completion
+claims, owner record-actions, or review decisions while the turn is open so a
+stalled agent subprocess cannot block progress after apply, submit-completion,
+record-actions, or respond.
 
 ## Session roles and authorization
 
@@ -2781,7 +2785,8 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    fresh `scope_review` against the current artifact digest — finding closure alone is not
    enough.
 3. Producer records batches with `production apply`, then `submit-completion` with
-   `goal_met: true` and a `goal_assessment` rationale. Production `ready` snapshots
+   `goal_met: true` and a `goal_assessment` rationale. Batch turns close when apply
+   persists; the completion turn closes when the claim persists. Production `ready` snapshots
    expose `ready_items` (canonical contracts per ready leaf, including
    `effective_scope` / `effective_boundaries`) alongside `ready_item_ids`.
 4. Mandatory whole-output review must complete the gate before `outcome: accepted`.
@@ -2798,7 +2803,8 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    `production apply` with `evidence_revision: true` and **new** output evidence IDs
    on terminal items targeted by unresolved required findings (dispositions unchanged),
    record owner `family_fix` sweeps via `tdp agent review record-actions`, then
-   re-submit completion with `goal_met: true`. During production, focused-output
+   re-submit completion with `goal_met: true` (the owner revision turn closes
+   when that completion claim persists). During production, focused-output
    evidence revision also requires `focused_review_loop_id` bound to the loop's
    `target_revision`. Plan amendment is not available during whole-output review.
 5. Optional focused reviews use `review request` with bounded `scope.item_ids`.

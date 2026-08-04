@@ -20,12 +20,15 @@ from top_down_planning.orchestrator.provider_turns import (
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.helpers import (
+    apply_production,
     create_run_kwargs,
     done_events,
     grant_capability,
     mandatory_initial_respond_request,
     plan_root_item,
+    record_finding_actions,
     respond_review,
+    save_review_payload,
 )
 from tests.unit.test_whole_output_review import _create_run_at_whole_output_review
 
@@ -205,6 +208,163 @@ def test_reviewer_boundary_observer_ignores_prior_decision(tmp_path: Path) -> No
         run_id,
         "review-whole-output-01",
     )
+
+    assert observe() is None
+
+
+def test_build_producer_batch_boundary_observer_ignores_prior_batch(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import (
+        build_producer_batch_boundary_observer,
+        production_batch_count,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    assert production_batch_count(store, run_id) > 0
+
+    observe = build_producer_batch_boundary_observer(store, run_id)
+
+    assert observe() is None
+
+
+def test_build_producer_turn_boundary_observer_detects_completion_claim(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import (
+        PRODUCER_COMPLETION_COMPLETE_SIGNAL,
+        build_producer_turn_boundary_observer,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    observe = build_producer_turn_boundary_observer(store, run_id)
+
+    assert observe() is None
+
+    apply_production(
+        store,
+        run_id,
+        {"goal_assessment": "Revised output goal is met.", "goal_met": True},
+        handler="submit_completion",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+
+    assert observe() == PRODUCER_COMPLETION_COMPLETE_SIGNAL
+
+
+def test_build_owner_finding_action_boundary_observer_detects_record_actions(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import (
+        build_owner_finding_action_boundary_observer,
+    )
+    from top_down_planning.orchestrator.reviewer_session import (
+        OWNER_FINDING_ACTION_COMPLETE_SIGNAL,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    loop_id = "review-whole-output-01"
+    save_review_payload(
+        store,
+        run_id,
+        {
+            **dict(store.load_review(run_id, loop_id)),
+            "finding_set_id": "review-whole-output-01-fs-01",
+            "findings": [
+                {
+                    "id": "finding-01",
+                    "severity": "minor",
+                    "category": "maintainability",
+                    "target_refs": ["item-leaf"],
+                    "issue": "Optional polish.",
+                    "recommended_change": "Improve wording.",
+                    "status": "unresolved",
+                }
+            ],
+        },
+    )
+    observe = build_owner_finding_action_boundary_observer(store, run_id, loop_id)
+
+    assert observe() is None
+
+    record_finding_actions(
+        store,
+        run_id,
+        {
+            "loop_id": loop_id,
+            "artifact_revision": 1,
+            "finding_actions": [
+                {
+                    "finding_id": "finding-01",
+                    "action": "defer",
+                    "actor_role": "producer",
+                    "artifact_revision": 1,
+                    "finding_set_id": "review-whole-output-01-fs-01",
+                    "rationale": "Defer polish",
+                }
+            ],
+        },
+        role="producer",
+        phase=WHOLE_OUTPUT_REVIEW,
+        loop_id=loop_id,
+    )()
+
+    assert observe() == OWNER_FINDING_ACTION_COMPLETE_SIGNAL
+
+
+def test_build_producer_completion_boundary_observer_detects_new_claim(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import (
+        build_producer_completion_boundary_observer,
+    )
+    from top_down_planning.orchestrator.producer_session import (
+        PRODUCER_COMPLETION_COMPLETE_SIGNAL,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    observe = build_producer_completion_boundary_observer(store, run_id)
+
+    assert observe() is None
+
+    apply_production(
+        store,
+        run_id,
+        {"goal_assessment": "Revised output goal is met.", "goal_met": True},
+        handler="submit_completion",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+
+    assert observe() == PRODUCER_COMPLETION_COMPLETE_SIGNAL
+
+
+def test_producer_completion_boundary_observer_ignores_prior_claim(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.provider_turns import (
+        build_producer_completion_boundary_observer,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000902-000902"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    apply_production(
+        store,
+        run_id,
+        {"goal_assessment": "Initial completion claim.", "goal_met": True},
+        handler="submit_completion",
+        phase=WHOLE_OUTPUT_REVIEW,
+    )()
+
+    observe = build_producer_completion_boundary_observer(store, run_id)
 
     assert observe() is None
 

@@ -46,6 +46,7 @@ from tests.helpers import (
     seed_mandatory_interrupted_owner_revision_loop,
     seed_mandatory_scope_review_decision_loop,
     set_loop_revise_at,
+    StallingAfterEventsProvider,
 )
 
 
@@ -1327,6 +1328,102 @@ def test_driver_orchestrates_advisory_defer_through_scope(tmp_path: Path) -> Non
     assert review.get("advisory_handoffs_completed")
     assert review["revision_cycles"] == 0
     assert review.get("scope_review_result")
+
+
+def test_driver_advisory_handoff_closes_on_record_actions_while_stream_stalls(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StallingAfterEventsProvider()
+    run_id = "run-20260101T000316-000316"
+    planner_session_id, loop_id = _create_driver_run(store, run_id, provider=provider)
+    set_loop_revise_at(store, run_id, loop_id, revise_at="major")
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+    from top_down_planning.agent_tool import ReviewAgentService
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
+                findings=[_minor_finding()],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        ),
+    )
+
+    def _planner_defers() -> None:
+        persisted = store.load_review(run_id, loop_id)
+        token = grant_capability(
+            store,
+            run_id,
+            role="planner",
+            phase=WHOLE_PLAN_REVIEW,
+            session_id=planner_session_id,
+        )
+        ReviewAgentService(store, run_id).record_finding_actions(
+            {
+                "loop_id": loop_id,
+                "artifact_revision": 0,
+                "finding_actions": [
+                    {
+                        "finding_id": "finding-minor-01",
+                        "action": "defer",
+                        "actor_role": "planner",
+                        "artifact_revision": 0,
+                        "finding_set_id": persisted["finding_set_id"],
+                        "rationale": "Defer polish",
+                    }
+                ],
+            },
+            capability_token=token,
+        )
+
+    def _scope_clear() -> None:
+        respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(
+        [
+            {"type": "assistant", "text": "deferring optional finding"},
+            {"type": "assistant", "text": "still streaming without done"},
+        ],
+        mutate_store=_planner_defers,
+    )
+    provider.script_turn(done_events(text="turn complete"), mutate_store=_scope_clear)
+    adapter.approval_result = MandatoryWholeReviewResult(
+        ok=True,
+        phase=PLAN_VALIDATED,
+        status="running",
+        outcome=None,
+        loop_id=loop_id,
+        reviewer_session_id="stub-reviewer",
+        revision_cycles=0,
+    )
+
+    result = ReviewLoopDriver(store, run_id, provider, adapter).run()
+
+    assert result.ok is True
+    review = store.load_review(run_id, loop_id)
+    assert review.get("advisory_handoffs_completed")
 
 
 def test_driver_scope_review_advisory_handoff_requires_reviewer_clear(

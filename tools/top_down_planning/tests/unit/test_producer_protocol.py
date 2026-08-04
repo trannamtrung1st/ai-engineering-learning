@@ -12,6 +12,8 @@ def test_producer_protocol_points_to_injected_skills() -> None:
     protocol = " ".join(build_producer_protocol_instructions()).lower()
     assert "agent_context.skills" in protocol
     assert "one production batch per provider turn" in protocol
+    assert "submit-completion" in protocol
+    assert "completion claim" in protocol
 
 
 def test_producer_tool_instructions_include_discover() -> None:

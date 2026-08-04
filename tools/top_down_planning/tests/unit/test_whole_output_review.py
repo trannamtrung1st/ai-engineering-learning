@@ -15,7 +15,7 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from core_tools.provider import StubProvider
-from tests.helpers import apply_production, create_run_kwargs, done_events, ensure_plan_work_scope_contracts, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, mandatory_scope_review_respond_request, mandatory_verification_respond_request, plan_root_item, record_finding_actions, respond_review, save_review_payload, script_mandatory_clear_approval, script_verification_then_scope_review_approval, sessions_with_primary_session, whole_plan_approval_record
+from tests.helpers import apply_production, create_run_kwargs, done_events, ensure_plan_work_scope_contracts, grant_capability, mandatory_initial_respond_request, mandatory_output_digest, mandatory_scope_review_respond_request, mandatory_verification_respond_request, plan_root_item, record_finding_actions, respond_review, save_review_payload, script_mandatory_clear_approval, script_verification_then_scope_review_approval, sessions_with_primary_session, StallingAfterEventsProvider, whole_plan_approval_record
 
 
 def _create_run_at_whole_output_review(
@@ -286,6 +286,157 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
     assert result.ok is True
     assert result.outcome == "accepted"
     review = store.load_review(run_id, "review-whole-output-01")
+    assert review.get("verification_result")
+    assert review.get("scope_review_result")
+
+
+def test_whole_output_owner_revision_closes_on_completion_claim_while_stream_stalls(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    provider = StallingAfterEventsProvider()
+    _create_run_at_whole_output_review(store, provider=provider)
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    (artifacts_dir / "leaf.txt").write_text("leaf artifact", encoding="utf-8")
+
+    run_id = "run-20260101T000801-000801"
+    loop_id = "review-whole-output-01"
+    findings = [
+        {
+            "id": "finding-01",
+            "severity": "blocker",
+            "category": "correctness",
+            "target_refs": ["item-leaf"],
+            "issue": "Output evidence is missing.",
+            "recommended_change": "Add artifact reference.",
+            "status": "unresolved",
+        }
+    ]
+
+    provider.script_turn(
+        done_events(text="initial review complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=1,
+                review_type="whole_output",
+                decision="changes_requested",
+                findings=findings,
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=loop_id,
+        ),
+    )
+
+    def _producer_revision() -> None:
+        apply_production(
+            store,
+            run_id,
+            {
+                "production_revision": 2,
+                "evidence_revision": True,
+                "plan_items": ["item-leaf"],
+                "dispositions": {
+                    "item-leaf": {
+                        "disposition": "completed",
+                        "evidence": "Added artifact reference.",
+                    }
+                },
+                "outputs": [
+                    {
+                        "id": "output-leaf",
+                        "type": "artifact",
+                        "ref": "artifacts/leaf.txt",
+                    }
+                ],
+                "contributions": [
+                    {
+                        "item_id": "item-leaf",
+                        "output_refs": ["output-leaf"],
+                        "summary": "Revised evidence.",
+                    }
+                ],
+                "summary": "Addressed reviewer finding.",
+            },
+            handler="apply",
+            phase=WHOLE_OUTPUT_REVIEW,
+        )()
+        apply_production(
+            store,
+            run_id,
+            {
+                "goal_assessment": "Output goal is fully met after revision.",
+                "goal_met": True,
+            },
+            handler="submit_completion",
+            phase=WHOLE_OUTPUT_REVIEW,
+        )()
+
+    provider.script_turn(
+        [
+            {"type": "assistant", "text": "revising output evidence"},
+            {"type": "assistant", "text": "still streaming without done"},
+        ],
+        mutate_store=_producer_revision,
+    )
+
+    def _verification_respond() -> None:
+        loop = store.load_review(run_id, loop_id)
+        finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
+        target_revision = int(store.load_production(run_id)["output_revision"])
+        respond_review(
+            store,
+            run_id,
+            mandatory_verification_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=target_revision,
+                review_type="whole_output",
+                finding_set_id=finding_set_id,
+                finding_results=[
+                    {
+                        "finding_id": "finding-01",
+                        "disposition": "resolved",
+                        "evidence": ["artifact added"],
+                        "direct_side_effects": [],
+                    }
+                ],
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(done_events(text="verification complete"), mutate_store=_verification_respond)
+
+    def _scope_respond() -> None:
+        target_revision = int(store.load_production(run_id)["output_revision"])
+        respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=target_revision,
+                review_type="whole_output",
+            ),
+            phase=WHOLE_OUTPUT_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(done_events(text="scope review complete"), mutate_store=_scope_respond)
+
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.outcome == "accepted"
+    review = store.load_review(run_id, loop_id)
     assert review.get("verification_result")
     assert review.get("scope_review_result")
 

@@ -47,15 +47,16 @@ Discover schema: `tdp agent schema production-apply`
 
 1. `production snapshot --view ready` → pick `ready_item_ids` / `ready_items`.
 2. Implement work in the workspace → `production apply` with evidence (one batch per provider turn; the orchestrator closes the turn when apply persists, waits for the provider session to settle, then queues the next turn).
-3. When all applicable items have terminal dispositions, `submit-completion` with `goal_met: true` and `goal_assessment`.
+3. When all applicable items have terminal dispositions, `submit-completion` with `goal_met: true` and `goal_assessment`. The orchestrator closes that turn when the completion claim persists; stop immediately afterward.
 
 ## Evidence revision
 
 After reviewer `changes_requested` on output:
 
 - `production apply` with `evidence_revision: true` and **new** output evidence IDs on targeted terminal items (dispositions unchanged).
-- During `production` focused-output loops: also set `focused_review_loop_id`.
+- During `production` focused-output loops: also set `focused_review_loop_id`; `production apply` closes the owner revision turn when the batch persists.
 - Record owner `family_fix` sweeps via `tdp agent review record-actions` when using finding families.
+- During mandatory whole-output review: re-submit completion with `goal_met: true`; the owner revision turn closes when that claim persists.
 
 ## Discover
 

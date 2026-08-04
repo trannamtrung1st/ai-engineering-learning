@@ -26,6 +26,7 @@ from tests.helpers import (
     create_run_kwargs,
     done_events,
     grant_capability,
+    StallingAfterEventsProvider,
     whole_plan_approval_record,
 )
 
@@ -300,6 +301,60 @@ def test_producer_turn_aborts_inflight_stream_when_batch_recorded(
     assert result.phase == WHOLE_OUTPUT_REVIEW
     assert result.batch_count == 2
     assert aborted_sessions
+
+
+def test_producer_turn_closes_when_completion_claimed_while_stream_stalls(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store)
+    provider = StallingAfterEventsProvider()
+    run_id = "run-20260101T000201-000201"
+    provider.script_turn(done_events(text="producer session start"))
+    provider.script_turn(
+        [{"type": "assistant", "text": "recorded first batch"}],
+        mutate_store=apply_production(
+            store,
+            run_id,
+            _batch_apply_request(
+                plan_items=["item-first"],
+                dispositions={"item-first": {"disposition": "completed"}},
+            ),
+            handler="apply",
+        ),
+    )
+    provider.script_turn(
+        [{"type": "assistant", "text": "recorded second batch"}],
+        mutate_store=apply_production(
+            store,
+            run_id,
+            _batch_apply_request(
+                plan_items=["item-second"],
+                dispositions={"item-second": {"disposition": "completed"}},
+                production_revision=1,
+            ),
+            handler="apply",
+        ),
+    )
+    provider.script_turn(
+        [
+            {"type": "assistant", "text": "submitting completion"},
+            {"type": "assistant", "text": "still streaming without done"},
+        ],
+        mutate_store=apply_production(
+            store,
+            run_id,
+            {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+            handler="submit_completion",
+        ),
+    )
+
+    result = ProductionPhaseOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    assert result.phase == WHOLE_OUTPUT_REVIEW
+    assert result.batch_count == 2
+    assert store.load_production(run_id)["completion_claim"]["goal_met"] is True
 
 
 def test_ready_set_blocks_item_with_unmet_dependency(tmp_path: Path) -> None:
@@ -611,40 +666,12 @@ def test_resume_preserves_batch_agent_turn_budget(tmp_path: Path) -> None:
     assert run["stop"]["code"] == "limit_exhausted"
 
 
-class _StallingAfterEventsProvider(StubProvider):
-    """Simulate a Cursor turn that stalls after events stop (zombie-like hang)."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._release = threading.Event()
-
-    def stream_events(self, session_id: str):
-        if session_id in self._not_found_sessions:
-            raise ProviderSessionNotFoundError(
-                f"provider session not found: {session_id}",
-                provider="stub",
-                session_id=session_id,
-            )
-        session = self._require_session(session_id)
-        if session.pending_hook is not None:
-            hook = session.pending_hook
-            session.pending_hook = None
-            hook()
-        while session.pending_events:
-            yield session.pending_events.popleft()
-        self._release.wait(timeout=1)
-
-    def abort_turn(self, session_id: str) -> None:
-        self._release.set()
-        super().abort_turn(session_id)
-
-
 def test_producer_turn_closes_when_batch_recorded_while_stream_stalls(
     tmp_path: Path,
 ) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)
-    provider = _StallingAfterEventsProvider()
+    provider = StallingAfterEventsProvider()
     run_id = "run-20260101T000201-000201"
     provider.script_turn(done_events(text="producer session start"))
     provider.script_turn(

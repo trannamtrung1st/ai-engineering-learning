@@ -31,8 +31,12 @@ from top_down_planning.orchestrator.recovery_manifest import (
     build_producer_recovery_manifest,
     build_reviewer_recovery_manifest,
 )
-from top_down_planning.orchestrator.producer_session import PRODUCER_BATCH_COMPLETE_SIGNAL
+from top_down_planning.orchestrator.producer_session import (
+    PRODUCER_BATCH_COMPLETE_SIGNAL,
+    PRODUCER_COMPLETION_COMPLETE_SIGNAL,
+)
 from top_down_planning.orchestrator.reviewer_session import (
+    OWNER_FINDING_ACTION_COMPLETE_SIGNAL,
     REVIEWER_DECISION_COMPLETE_SIGNAL,
     reviewer_loop_provider_session_id,
 )
@@ -398,8 +402,9 @@ def consume_provider_turn_with_session_recovery(
 ) -> ProviderTurnOutcome:
     """Resume an existing session, replacing it once on missing or stalled provider sessions.
 
-    Reviewer turns must use ``consume_reviewer_provider_turn_with_session_recovery``
-    so store-driven ``review respond`` closure can abort stalled provider subprocesses.
+    Producer and reviewer turns must use their dedicated ``consume_*`` helpers so
+    store-driven batch, completion-claim, owner record-actions, or ``review respond``
+    boundaries can abort stalled provider subprocesses.
     """
 
     return _consume_provider_turn_with_session_recovery(
@@ -664,6 +669,35 @@ def production_batch_count(store: RunStore, run_id: str) -> int:
     return len(batches)
 
 
+def production_completion_claim_count(store: RunStore, run_id: str) -> int:
+    """Count durable ``production_completion_claimed`` audit events for a run."""
+
+    return sum(
+        1
+        for event in store.load_events(run_id)
+        if event.get("type") == "production_completion_claimed"
+    )
+
+
+_OWNER_FINDING_ACTION_EVENT_TYPES = frozenset(
+    {
+        "review_finding_action_recorded",
+        "review_challenge_submitted",
+    }
+)
+
+
+def owner_finding_action_count(store: RunStore, run_id: str, loop_id: str) -> int:
+    """Count durable owner finding-action audit events for a review loop."""
+
+    return sum(
+        1
+        for event in store.load_events(run_id)
+        if event.get("type") in _OWNER_FINDING_ACTION_EVENT_TYPES
+        and str(event.get("loop_id") or "") == loop_id
+    )
+
+
 def review_respond_count(store: RunStore, run_id: str, loop_id: str) -> int:
     """Count durable ``review_responded`` audit events for a review loop."""
 
@@ -732,6 +766,57 @@ def build_producer_batch_boundary_observer(
     return observe
 
 
+def build_owner_finding_action_boundary_observer(
+    store: RunStore,
+    run_id: str,
+    loop_id: str,
+) -> Callable[[], str | None]:
+    """Return a hook that signals turn closure when owner record-actions persists."""
+
+    baseline_actions = owner_finding_action_count(store, run_id, loop_id)
+
+    def observe() -> str | None:
+        if owner_finding_action_count(store, run_id, loop_id) > baseline_actions:
+            return OWNER_FINDING_ACTION_COMPLETE_SIGNAL
+        return None
+
+    return observe
+
+
+def build_producer_completion_boundary_observer(
+    store: RunStore,
+    run_id: str,
+) -> Callable[[], str | None]:
+    """Return a hook that signals turn closure when submit-completion persists."""
+
+    baseline_claims = production_completion_claim_count(store, run_id)
+
+    def observe() -> str | None:
+        if production_completion_claim_count(store, run_id) > baseline_claims:
+            return PRODUCER_COMPLETION_COMPLETE_SIGNAL
+        return None
+
+    return observe
+
+
+def build_producer_turn_boundary_observer(
+    store: RunStore,
+    run_id: str,
+) -> Callable[[], str | None]:
+    """Return a hook that closes producer turns on batch apply or completion claim."""
+
+    batch_observer = build_producer_batch_boundary_observer(store, run_id)
+    completion_observer = build_producer_completion_boundary_observer(store, run_id)
+
+    def observe() -> str | None:
+        signal = batch_observer()
+        if signal is not None:
+            return signal
+        return completion_observer()
+
+    return observe
+
+
 def build_reviewer_decision_boundary_observer(
     store: RunStore,
     run_id: str,
@@ -764,7 +849,7 @@ def consume_producer_provider_turn_with_session_recovery(
     *,
     recovery: PrimarySessionRecoverySpec,
 ) -> ProviderTurnOutcome:
-    """Drain a producer turn; close it when a production batch is persisted."""
+    """Drain a producer turn; close it when a batch or completion claim persists."""
 
     return _consume_provider_turn_with_session_recovery(
         store,
@@ -773,7 +858,54 @@ def consume_producer_provider_turn_with_session_recovery(
         session_id,
         allowed_signals=_NO_COMPLETION_SIGNALS,
         recovery=recovery,
-        on_boundary=build_producer_batch_boundary_observer(store, run_id),
+        on_boundary=build_producer_turn_boundary_observer(store, run_id),
+    )
+
+
+def consume_producer_owner_provider_turn_with_session_recovery(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    session_id: str,
+    *,
+    recovery: PrimarySessionRecoverySpec,
+) -> ProviderTurnOutcome:
+    """Drain a whole-output owner revision turn; close on submit-completion."""
+
+    return _consume_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        session_id,
+        allowed_signals=_NO_COMPLETION_SIGNALS,
+        recovery=recovery,
+        on_boundary=build_producer_completion_boundary_observer(store, run_id),
+    )
+
+
+def consume_owner_finding_action_turn_with_session_recovery(
+    store: RunStore,
+    run_id: str,
+    provider: Provider,
+    session_id: str,
+    *,
+    loop_id: str,
+    recovery: PrimarySessionRecoverySpec,
+) -> ProviderTurnOutcome:
+    """Drain an owner advisory turn; close when record-actions persists."""
+
+    return _consume_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        session_id,
+        allowed_signals=_NO_COMPLETION_SIGNALS,
+        recovery=recovery,
+        on_boundary=build_owner_finding_action_boundary_observer(
+            store,
+            run_id,
+            loop_id,
+        ),
     )
 
 

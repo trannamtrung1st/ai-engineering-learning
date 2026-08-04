@@ -37,7 +37,7 @@ Schema: `tdp agent schema plan-transaction`
 
 Schema: `tdp agent schema production-apply`
 
-Producer turns close when `production apply` persists a batch: the orchestrator aborts the in-flight provider turn, waits for the session collector to settle, then queues the next turn on the same session. A background poll also watches for persisted batches while the turn is open so a stalled agent subprocess cannot block progress after apply.
+Producer batch turns close when `production apply` persists a batch; completion turns close when `submit-completion` persists a valid completion claim. In both cases the orchestrator aborts the in-flight provider turn, waits for the session collector to settle, then queues the next turn on the same session. A background poll also watches for persisted batches and completion claims while the turn is open so a stalled agent subprocess cannot block progress after apply or submit-completion.
 
 ### Reviewer
 
@@ -52,7 +52,7 @@ Whole-output examples append `-output` (e.g. `review-respond-family-discovery-ou
 
 Schema: `tdp agent schema review-respond`
 
-Reviewer turns close when `review respond` persists a decision: the orchestrator aborts the in-flight provider turn, waits for the session collector to settle, then releases the bounded reviewer session (`reviewer_session_ended`) before owner revision or the next gate. A turn that ends without `review respond` queues another reviewer turn with a nudge (bounded by `limits.review.max_agent_turns_per_gate`) before pausing with `limit_exhausted`. A background poll also watches for persisted review decisions while the turn is open so a stalled agent subprocess cannot block progress after respond.
+Reviewer turns close when `review respond` persists a decision: the orchestrator aborts the in-flight provider turn, waits for the session collector to settle, then releases the bounded reviewer session (`reviewer_session_ended`) before owner revision or the next gate. Owner advisory turns close when `review record-actions` persists. A turn that ends without `review respond` queues another reviewer turn with a nudge (bounded by `limits.review.max_agent_turns_per_gate`) before pausing with `limit_exhausted`. A background poll also watches for persisted review decisions while the turn is open so a stalled agent subprocess cannot block progress after respond.
 
 Mandatory discovery: `audit_attestation` rubric ids come from the review package `rubric_items`; `rule_id` values from `tdp agent readme` (section Built-in finding-family rule_id values) or `custom.<slug>`.
 
