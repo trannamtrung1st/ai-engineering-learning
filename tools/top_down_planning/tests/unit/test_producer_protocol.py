@@ -9,7 +9,7 @@ from top_down_planning.orchestrator.producer_session import (
 
 
 def test_producer_protocol_points_to_injected_skills() -> None:
-    protocol = " ".join(build_producer_protocol_instructions()).lower()
+    protocol = build_producer_protocol_instructions().lower()
     assert "agent_context.skills" in protocol
     assert "one production batch per provider turn" in protocol
     assert "submit-completion" in protocol

@@ -452,7 +452,8 @@ def test_planner_manifest_includes_resolved_contracts(tmp_path: Path) -> None:
     assert "input_refs" not in manifest["agent_context"]
     assert "output_goal" not in manifest["agent_context"]
     assert [str(planning.resolve())] == manifest["agent_context"]["resources"]
-    protocol = " ".join(manifest["protocol_instructions"])
+    protocol = manifest["protocol_instructions"]
+    assert isinstance(protocol, str)
     assert "plan-tree decomposition" in protocol
     assert manifest["tool_instructions"]["completion_signal"] == "candidate_plan_ready"
 
@@ -488,7 +489,8 @@ def test_producer_manifest_includes_protocol_instructions(tmp_path: Path) -> Non
     assert manifest["approved_plan"] is not None
     assert manifest["approved_plan"]["revision"] == 1
     assert "approved_plan_revision" not in manifest
-    protocol = " ".join(manifest["protocol_instructions"])
+    protocol = manifest["protocol_instructions"]
+    assert isinstance(protocol, str)
     assert "tdp agent production" in protocol
     assert "one production batch per provider turn" in protocol.lower()
     assert "submit-completion" in protocol.lower()

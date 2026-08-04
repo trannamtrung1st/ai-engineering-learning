@@ -14,22 +14,6 @@ ACTIVE_PLANNING_STATUS = "open"
 PLAN_ROOT_ITEM_ID = "item-root"
 DEFAULT_PLAN_ROOT_TITLE = "Root"
 
-PLAN_ROOT_PLANNER_INSTRUCTION = (
-    f"Seeded root contract: the run seeds aggregate {PLAN_ROOT_ITEM_ID} "
-    f"(title {DEFAULT_PLAN_ROOT_TITLE!r}). Before adding decomposition children "
-    f"under {PLAN_ROOT_ITEM_ID}, use update_item on {PLAN_ROOT_ITEM_ID} to set a "
-    "meaningful title and outcome that top-level children will decompose. Use "
-    "update_plan for plan-level scope, boundaries, constraints, assumptions, "
-    "acceptance, and risks — do not duplicate those fields on the root unless "
-    "item-owned."
-)
-
-PLAN_ROOT_REVIEWER_INSTRUCTION = (
-    f"Root contract: when {PLAN_ROOT_ITEM_ID} has active child items, it must "
-    f"not keep the seeded title {DEFAULT_PLAN_ROOT_TITLE!r} and must have a "
-    "non-empty outcome that its children genuinely decompose."
-)
-
 
 def is_active_item(item: PlanItem) -> bool:
     return item.planning_status == ACTIVE_PLANNING_STATUS

@@ -488,7 +488,7 @@ def build_focused_review_package(
                 ),
             },
             "protocol_instructions": build_reviewer_protocol_instructions(
-                stage=loop.active_stage,
+                stage=loop.active_stage or "initial_review",
                 review_type=loop.type,
             ),
             "tool_instructions": tool_instructions,

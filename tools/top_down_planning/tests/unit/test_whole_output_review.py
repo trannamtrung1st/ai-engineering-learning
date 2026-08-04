@@ -783,7 +783,7 @@ def test_whole_output_package_includes_contract_v2_rubric_fields(tmp_path: Path)
     assert package["review_contract_version"] == 2
     assert package["family_protocol_enabled"] is True
     assert "review-respond-family-discovery-output" in package["tool_instructions"]["examples"]
-    protocol = " ".join(package["protocol_instructions"]).lower()
+    protocol = package["protocol_instructions"].lower()
     assert "primary gate focus" in protocol
     assert "correctness" in protocol
 

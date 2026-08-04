@@ -26,9 +26,9 @@ from top_down_planning.orchestrator.mandatory_review_stages import (
 )
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.reviewer_session import (
-    _FORBIDDEN_STAGE_LABELS,
     build_reviewer_protocol_instructions,
 )
+from top_down_planning.prompts import FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS
 from top_down_planning.orchestrator.whole_plan_review import build_whole_plan_review_package
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.schema_docs import PUBLIC_EXAMPLES, show_example, show_schema
@@ -328,10 +328,10 @@ def test_scope_review_package_omits_prior_finding_framing(tmp_path: Path) -> Non
     assert package["freshness"]["include_prior_findings"] is False
     assert "findings" not in package
     assert package["finding_set_id"] == "review-whole-plan-01-fs-01"
-    protocol = " ".join(package["protocol_instructions"]).lower()
+    protocol = package["protocol_instructions"].lower()
     assert "scope_review" in protocol
     assert "fresh discovery" in protocol
-    for banned in _FORBIDDEN_STAGE_LABELS:
+    for banned in FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
         # Allowed only as negation in the freshness instruction.
         if banned == "full review":
             assert "do not call this a full" in protocol
@@ -369,17 +369,15 @@ def test_verification_package_and_recheck_include_finding_guidance() -> None:
     assert "verification_targets" in recheck
     assert "history_ref" in recheck
     assert "findings" not in recheck
-    protocol = " ".join(recheck["protocol_instructions"]).lower()
+    protocol = recheck["protocol_instructions"].lower()
     assert "finding_verification" in protocol
     assert "direct" in protocol and "side effect" in protocol
 
 
 def test_verification_protocol_avoids_forbidden_names() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(stage="finding_verification")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(stage="finding_verification").lower()
     assert "finding_verification" in protocol
-    for banned in _FORBIDDEN_STAGE_LABELS:
+    for banned in FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
         assert banned not in protocol
 
 

@@ -241,7 +241,7 @@ def test_focused_verification_package_includes_stage_fields(tmp_path: Path) -> N
     assert "verification_guidance" in package
     assert package["respond_contract"]["stage"] == "finding_verification"
     assert "verification_targets" in package
-    protocol = " ".join(package["protocol_instructions"]).lower()
+    protocol = package["protocol_instructions"].lower()
     assert "finding_verification" in protocol
     assert "broad discovery pass" in protocol
 

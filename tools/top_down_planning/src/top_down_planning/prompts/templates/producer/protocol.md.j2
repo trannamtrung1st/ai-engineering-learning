@@ -1,0 +1,10 @@
+- You are the TDP producer. Record batches, evidence, and dispositions through tdp agent production commands in tool_instructions.
+- Do not use host planning modes or planning-only tools. Production state advances only through persisted tdp agent commands.
+- Include every changed snapshot-bound artifact in each batch's outputs before calling production apply. Git diff may help discovery, but only declared output refs authorize snapshot drift.
+- When production apply reports production_evidence_incomplete, add every listed workspace path to outputs and retry with the current production_revision.
+- When production apply reports capability_denied, {{ capability_token_env_var }} is missing or the orchestrator has not bound a session capability. Retry apply without caching capability state in the shell.
+- When production apply reports production_context_mutation_unauthorized, revert or reconcile unauthorized snapshot-bound context changes (skills, file or inline guidance, and similar binding keys). Those paths cannot be authorized through outputs.
+- Record one production batch per provider turn. The orchestrator closes the turn when production apply persists a batch, waits for the provider session to settle, then queues the next turn. Submit completion with goal_assessment when the output goal is met; the orchestrator closes that turn when the completion claim is persisted. Stop working after submit-completion; no summary or cleanup turn is required.
+- Discover request contracts with tdp agent readme, tdp agent schema, and tdp agent example. Packaged producer skills are already in agent_context.skills on this manifest.
+- Each production batch must stay within the plan item's effective_scope and effective_boundaries. Item scope and boundaries are the item-owned slice; effective_* is the union with plan-level guardrails. Use item acceptance and risks as the verifiable batch contract.
+- {% include "shared/mutation-safety.md.j2" %}

@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "core-tools @ file:../core_tools",
+  "jinja2>=3.1",
   "pathspec>=0.12",
 ]
 
@@ -19,6 +20,7 @@ notifications = [
 ]
 dev = [
   "build",
+  "hatchling",
   "pytest>=8.0",
 ]
 

@@ -18,60 +18,48 @@ from tests.helpers import create_run_kwargs, minimal_resolved_config, make_revie
 
 
 def test_whole_plan_protocol_flags_risk_field_placement() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(review_type="whole_plan")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(review_type="whole_plan").lower()
     assert "scope.includes" in protocol
     assert "source_refs" in protocol
     assert "requirements placed in risks instead of acceptance" in protocol
 
 
 def test_focused_plan_protocol_includes_risk_field_placement_guidance() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(review_type="focused_plan")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(review_type="focused_plan").lower()
     assert "focused plan review" in protocol
     assert "scope.includes" in protocol
     assert "source_refs" in protocol
 
 
 def test_whole_plan_protocol_prioritizes_correctness_and_consistency() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(review_type="whole_plan")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(review_type="whole_plan").lower()
     assert "correctness" in protocol
     assert "internal consistency" in protocol
     assert "contradictions" in protocol
 
 
 def test_whole_plan_protocol_checks_populated_root_contract() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(review_type="whole_plan")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(review_type="whole_plan").lower()
     assert "item-root" in protocol
     assert "root contract" in protocol
     assert "non-empty outcome" in protocol
 
 
 def test_focused_plan_protocol_checks_populated_root_contract() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(review_type="focused_plan")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(review_type="focused_plan").lower()
     assert "item-root" in protocol
     assert "root contract" in protocol
 
 
 def test_whole_output_protocol_prioritizes_correctness_and_consistency() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(review_type="whole_output")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(review_type="whole_output").lower()
     assert "correctness" in protocol
     assert "consistency" in protocol
     assert "plan contracts" in protocol
 
 
 def test_discovery_protocol_requires_full_material_disclosure() -> None:
-    protocol = " ".join(build_reviewer_protocol_instructions()).lower()
+    protocol = build_reviewer_protocol_instructions().lower()
     assert "every material issue" in protocol
     assert "do not omit lower-severity" in protocol
     assert "category_definitions" in protocol
@@ -79,9 +67,7 @@ def test_discovery_protocol_requires_full_material_disclosure() -> None:
 
 
 def test_scope_review_protocol_is_not_blocker_only() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(stage="scope_review")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(stage="scope_review").lower()
     assert "every material issue" in protocol
     assert "remaining approval blockers within the current scope only" not in protocol
     assert "do not raise optional style" not in protocol
@@ -89,28 +75,22 @@ def test_scope_review_protocol_is_not_blocker_only() -> None:
 
 
 def test_verification_protocol_mentions_side_effect_category_guidance() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(stage="finding_verification")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(stage="finding_verification").lower()
     assert "new_direct_side_effect_findings" in protocol
     assert "category_definitions" in protocol
 
 
 def test_verification_protocol_stays_narrow() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(stage="finding_verification")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(stage="finding_verification").lower()
     assert "broad discovery" in protocol
     assert "direct revision side effects" in protocol
     assert "every material issue" not in protocol
 
 
 def test_verification_protocol_omits_mandatory_gate_focus() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(
-            stage="finding_verification",
-            review_type="whole_plan",
-        )
+    protocol = build_reviewer_protocol_instructions(
+        stage="finding_verification",
+        review_type="whole_plan",
     ).lower()
     assert "primary gate focus" not in protocol
     assert "internal consistency" not in protocol
@@ -238,7 +218,7 @@ def test_focused_and_whole_packages_omit_revise_at(tmp_path: Path) -> None:
     assert focused_pkg["review_policy"]["category_definitions"] == {
         category: CATEGORY_DEFINITIONS[category] for category in FINDING_CATEGORY_ORDER
     }
-    protocol = " ".join(focused_pkg["protocol_instructions"]).lower()
+    protocol = focused_pkg["protocol_instructions"].lower()
     assert "every material issue" in protocol
 
     whole = make_review_loop(

@@ -1,0 +1,43 @@
+{% include "reviewer/_base.md.j2" %}
+{% if include_whole_plan_gate_focus %}
+{% include "reviewer/gate-focus-whole-plan.md.j2" %}
+{% endif %}
+{% if include_whole_output_gate_focus %}
+{% include "reviewer/gate-focus-whole-output.md.j2" %}
+{% endif %}
+{% if include_focused_plan_guidance %}
+{% include "reviewer/focused-plan-guidance.md.j2" %}
+{% endif %}
+{% if include_root_contract %}
+{% include "shared/plan-root-contract-reviewer.md.j2" %}
+{% endif %}
+{% if include_focused_rule_id_guidance %}
+{% include "reviewer/focused-rule-id.md.j2" %}
+{% endif %}
+{% if is_finding_verification %}
+{% include "reviewer/stage-finding-verification.md.j2" %}
+{% elif is_scope_review %}
+{% include "reviewer/stage-scope-review.md.j2" %}
+{% else %}
+{% include "reviewer/stage-default-discovery.md.j2" %}
+{% endif %}
+{% if is_mandatory_family_review %}
+{% if requires_audit_attestation %}
+{% include "reviewer/mandatory-audit.md.j2" %}
+{% endif %}
+{% if requires_audit_attestation %}
+{% include "reviewer/mandatory-no-reopen.md.j2" %}
+{% endif %}
+{% if include_mandatory_discovery_blocks %}
+{% if review_type == "whole_plan" %}
+{% include "reviewer/discovery-whole-plan.md.j2" %}
+{% elif review_type == "whole_output" %}
+{% include "reviewer/discovery-whole-output.md.j2" %}
+{% endif %}
+{% include "reviewer/mandatory-family-blocks.md.j2" %}
+{% endif %}
+{% if include_mandatory_verification_sweep %}
+{% include "reviewer/mandatory-verification-sweep.md.j2" %}
+{% endif %}
+{% endif %}
+- {% include "shared/mutation-safety.md.j2" %}

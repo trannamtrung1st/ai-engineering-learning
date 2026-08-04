@@ -46,15 +46,10 @@ _TOOL_DETAIL_KEYS = (
 
 
 def _format_protocol_instructions(protocol: Any) -> str | None:
-    if isinstance(protocol, str):
-        stripped = protocol.strip()
-        return stripped or None
-    if isinstance(protocol, list):
-        lines = "\n".join(
-            f"- {str(item).strip()}" for item in protocol if str(item).strip()
-        )
-        return lines or None
-    return None
+    if not isinstance(protocol, str):
+        return None
+    stripped = protocol.strip()
+    return stripped or None
 
 
 def _format_advisory_guidance(payload: dict[str, Any]) -> str | None:

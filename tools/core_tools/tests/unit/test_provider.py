@@ -31,22 +31,38 @@ from core_tools.provider.events import (
 
 
 def test_format_manifest_prompt_surfaces_protocol_instructions() -> None:
+    protocol = (
+        "- Mutate plan state only through tdp agent plan commands.\n"
+        "- Do not use host planning modes."
+    )
     prompt = format_manifest_prompt(
         "planner",
         {
             "phase": "planning",
-            "protocol_instructions": [
-                "Mutate plan state only through tdp agent plan commands.",
-                "Do not use host planning modes.",
-            ],
+            "protocol_instructions": protocol,
         },
     )
 
     assert prompt.startswith("Role: planner\n\nProtocol:\n")
-    assert "- Mutate plan state only through tdp agent plan commands." in prompt
-    assert "- Do not use host planning modes." in prompt
+    assert protocol in prompt
     assert "\nContext manifest:\n" in prompt
     assert '"phase": "planning"' in prompt
+
+
+def test_format_manifest_prompt_preserves_string_protocol_markdown() -> None:
+    protocol = "- First bullet.\n- Second bullet with\n  wrapped detail."
+    prompt = format_manifest_prompt(
+        "planner",
+        {
+            "phase": "planning",
+            "protocol_instructions": protocol,
+        },
+    )
+
+    assert prompt.startswith("Role: planner\n\nProtocol:\n")
+    assert protocol in prompt
+    assert "- First bullet." in prompt
+    assert "wrapped detail." in prompt
 
 
 def test_format_manifest_prompt_surfaces_advisory_guidance() -> None:
@@ -54,7 +70,7 @@ def test_format_manifest_prompt_surfaces_advisory_guidance() -> None:
         "producer",
         {
             "phase": "production",
-            "protocol_instructions": ["Record batches through tdp agent production."],
+            "protocol_instructions": "Record batches through tdp agent production.",
             "agent_context": {
                 "role": "producer",
                 "guidance": [
@@ -80,16 +96,30 @@ def test_format_request_prompt_surfaces_protocol_and_role_from_agent_context() -
         {
             "phase": "whole_plan_review",
             "agent_context": {"role": "reviewer"},
-            "protocol_instructions": [
-                "Submit decisions only through tdp agent review respond.",
-            ],
+            "protocol_instructions": (
+                "- Submit decisions only through tdp agent review respond."
+            ),
         },
     )
 
     assert prompt.startswith("Role: reviewer\n\nProtocol:\n")
-    assert "- Submit decisions only through tdp agent review respond." in prompt
+    assert "Submit decisions only through tdp agent review respond." in prompt
     assert "\nRequest:\n" in prompt
     assert '"phase": "whole_plan_review"' in prompt
+
+
+def test_format_manifest_prompt_omits_non_string_protocol_instructions() -> None:
+    prompt = format_manifest_prompt(
+        "planner",
+        {
+            "phase": "planning",
+            "protocol_instructions": [
+                "Legacy list payloads are not accepted.",
+            ],
+        },
+    )
+
+    assert "Protocol:" not in prompt
 
 
 def test_stub_start_send_stream_round_trip() -> None:

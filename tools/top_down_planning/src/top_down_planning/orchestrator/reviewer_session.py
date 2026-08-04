@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from top_down_planning.domain.plan_tree import PLAN_ROOT_REVIEWER_INSTRUCTION
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.session_bindings import is_transient_provider_session_id
+from top_down_planning.prompts import render_prompt
+from top_down_planning.prompts.contexts import reviewer_protocol_context
 from top_down_planning.domain.session_bindings import (
     SessionBinding,
     resumable_binding_provider_session_id,
@@ -29,13 +30,6 @@ REVIEWER_GATE_CONTINUE_BLOCKED_REASON = (
 
 REVIEWER_DECISION_COMPLETE_SIGNAL = "review_decision_complete"
 OWNER_FINDING_ACTION_COMPLETE_SIGNAL = "owner_finding_action_complete"
-
-_FORBIDDEN_STAGE_LABELS = (
-    "full review",
-    "confirmation review",
-    "holistic review",
-    "spot check",
-)
 
 
 class ReviewerRecheckRequiresNewSession(Exception):
@@ -64,275 +58,13 @@ def build_reviewer_protocol_instructions(
     *,
     stage: str | None = None,
     review_type: str | None = None,
-) -> list[str]:
+) -> str:
     """Provider-agnostic reviewer behavior instructions for review packages."""
 
-    instructions = [
-        (
-            "Every reviewer provider turn MUST end with a successful "
-            "`tdp agent review respond`. Assistant prose, spec notes, or host "
-            "plan artifacts do not advance the run."
-        ),
-        (
-            "Submit respond before the turn ends. Partial discovery is acceptable "
-            "— use changes_requested or needs_revision with what you have rather "
-            "than deferring respond to read the entire spec."
-        ),
-        (
-            "If a turn ends without respond, the orchestrator queues another "
-            "reviewer turn with a nudge (bounded by "
-            "limits.review.max_agent_turns_per_gate) before pausing with "
-            "limit_exhausted."
-        ),
-        (
-            "You are the TDP reviewer. Inspect the delivered review package and "
-            "submit a structured decision through tdp agent review respond in "
-            "tool_instructions."
-        ),
-        (
-            "Do not use host planning modes or planning-only tools. The "
-            "orchestrator persists review outcomes only from review respond "
-            "payloads."
-        ),
-        (
-            "Assistant prose or host plan artifacts alone do not advance the "
-            "run. Invoke `tdp` directly for mutating commands; do not wrap "
-            "with `uv run`."
-        ),
-    ]
-    normalized_type = str(review_type or "").strip() or None
-    normalized = str(stage or "").strip() or None
-    if normalized_type in {"whole_plan", "whole_output"} and normalized != "finding_verification":
-        if normalized_type == "whole_plan":
-            instructions.append(
-                (
-                    "Primary gate focus: plan correctness and internal consistency. "
-                    "Flag contradictions between outcomes, acceptance criteria, "
-                    "dependencies, and titles; impossible or cyclic dependencies; "
-                    "overlapping executable scope; and claims that cannot be "
-                    "verified before production. Flag generic or meaningless risks, "
-                    "requirements placed in risks instead of acceptance, risks "
-                    "duplicated across levels, architecture suggestions in acceptance, "
-                    "source references in scope.includes instead of source_refs, and "
-                    "material risks implied by inputs but omitted from the plan."
-                )
-            )
-            instructions.append(PLAN_ROOT_REVIEWER_INSTRUCTION)
-        else:
-            instructions.append(
-                (
-                    "Primary gate focus: output correctness and consistency. "
-                    "Verify deliverables satisfy the approved plan contracts, "
-                    "evidence supports claimed dispositions, and outputs do not "
-                    "contradict each other, the plan acceptance criteria, or the "
-                    "completion claim."
-                )
-            )
-    elif normalized_type == "focused_plan" and normalized != "finding_verification":
-        instructions.append(
-            (
-                "Focused plan review: flag generic or misplaced risks, requirements "
-                "placed in risks instead of acceptance, risks duplicated across "
-                "levels, architecture suggestions in acceptance, source references "
-                "in scope.includes instead of source_refs, and material risks "
-                "implied by inputs but omitted from the scoped items."
-            )
-        )
-        instructions.append(PLAN_ROOT_REVIEWER_INSTRUCTION)
-    if normalized_type in {"focused_plan", "focused_output"} and normalized != "finding_verification":
-        instructions.extend(
-            [
-                (
-                    "When submitting finding_families, use rule_id values from "
-                    "tdp agent readme (section Built-in finding-family rule_id "
-                    "values) or custom.<slug> with rule_definition; do not invent "
-                    "rule_id strings."
-                ),
-                (
-                    "Discover contracts via tool_instructions.discover (tdp agent "
-                    "readme, tdp agent schema review-respond, stage examples). "
-                    "Do not read TDP Python source to discover payload shapes."
-                ),
-            ]
-        )
-    if normalized == "finding_verification":
-        instructions.extend(
-            [
-                (
-                    "Stage: finding_verification (Verify revisions). Verify the "
-                    "disposition of prior findings and direct revision side "
-                    "effects. Do not perform a broad discovery pass; the next "
-                    "fresh scope review handles newly discovered unrelated issues."
-                ),
-                (
-                    "Respond with stage finding_verification. Prefer decision "
-                    "verified|needs_revision|blocked and finding_results "
-                    "dispositions "
-                    "resolved|partially_resolved|unresolved|superseded|invalid."
-                ),
-                (
-                    "When reporting new_direct_side_effect_findings, classify "
-                    "each entry by severity and category using review_policy "
-                    "severity_definitions and category_definitions."
-                ),
-            ]
-        )
-    elif normalized == "scope_review":
-        instructions.extend(
-            [
-                (
-                    "Stage: scope_review (fresh scope review). This is a "
-                    "fresh discovery pass: do not use prior finding or family "
-                    "text as framing. Do not anchor on prior finding lists "
-                    "or revision discussion. Review the complete current scope "
-                    "and report every material issue you find. Create new "
-                    "families from what you independently observe."
-                ),
-                (
-                    "Classify each finding by severity and category using "
-                    "review_policy severity_definitions and category_definitions. "
-                    "Report every material "
-                    "issue you discover; do not omit lower-severity issues "
-                    "because they may not force revision. Do not report purely "
-                    "subjective preferences unless they are clearly marked as "
-                    "suggestions. Do not raise out-of-scope issues. Do not call "
-                    "this a full, confirmation, holistic, or spot-check review."
-                ),
-                (
-                    "Respond with stage scope_review using finding_set_id, "
-                    "reported_findings, review_completed, target_digest, and "
-                    "summary. Echo finding_set_id unchanged. Do not decide whether "
-                    "policy forces revision; the service derives that. Finding "
-                    "closure alone must not approve the artifact."
-                ),
-            ]
-        )
-    else:
-        instructions.extend(
-            [
-                (
-                    "Review the complete current scope and report every material "
-                    "issue you find. Classify each finding by severity and "
-                    "category using review_policy severity_definitions and "
-                    "category_definitions. Report every material issue you "
-                    "discover; do not omit "
-                    "lower-severity issues because they may not force revision. "
-                    "Do not report purely subjective preferences unless they are "
-                    "clearly marked as suggestions. Do not raise out-of-scope "
-                    "issues."
-                ),
-                (
-                    "Respond with finding_set_id, reported_findings, "
-                    "review_completed, and summary. Echo finding_set_id unchanged. "
-                    "Do not decide whether policy forces revision; the service "
-                    "derives lifecycle outcomes from findings. Set "
-                    "review_completed false only when inputs prevent a reliable "
-                    "review. For mandatory whole_* reviews, clear discovery still "
-                    "requires a later fresh scope review before run approval."
-                ),
-            ]
-        )
-    if normalized_type in {"whole_plan", "whole_output"}:
-        gate_label = "Whole-plan" if normalized_type == "whole_plan" else "Whole-output"
-        if normalized != "finding_verification":
-            instructions.extend(
-                [
-                    (
-                        f"{gate_label} review: complete every required audit pass in "
-                        "order and submit audit_attestation bound to the current "
-                        "artifact revision and digest."
-                    ),
-                    (
-                        "Do not submit reopens_family_id or reopens_finding_id; the "
-                        "service derives regression lineage after scope review."
-                    ),
-                ]
-            )
-        if normalized in {None, "initial_review", "scope_review"}:
-            if normalized_type == "whole_plan":
-                instructions.extend(
-                    [
-                        (
-                            "Discovery procedure: treat preflight_candidates in "
-                            "analysis_context as candidates, not "
-                            "automatically valid findings. For every confirmed issue, "
-                            "identify the general violated rule. Search the complete "
-                            "current scope for equivalent instances and report all "
-                            "confirmed instances under one finding family. Keep "
-                            "uncertain matches in candidate_refs; do not inflate "
-                            "findings."
-                        ),
-                    ]
-                )
-            else:
-                instructions.extend(
-                    [
-                        (
-                            "Discovery procedure: treat analysis_context preflight "
-                            "candidates and traceability warnings as candidates, not "
-                            "automatically valid findings. For every confirmed issue, "
-                            "identify the general violated rule. Search the complete "
-                            "current whole-output scope for equivalent instances and "
-                            "report all confirmed instances under one finding family. "
-                            "Keep uncertain matches in candidate_refs; do not inflate "
-                            "findings."
-                        ),
-                    ]
-                )
-            instructions.extend(
-                [
-                    (
-                        "Group every confirmed defect into a finding family with a "
-                        "completed discovery_sweep. Do not mark review_completed "
-                        "true until audit attestation and all family discovery "
-                        "sweeps are complete."
-                    ),
-                    (
-                        "For audit_attestation: use rubric_items and "
-                        "required_audit_passes from the delivered review package. "
-                        "Do not copy rubric_item_ids from static tdp agent example "
-                        "payloads."
-                    ),
-                    (
-                        "For finding_families.rule_id: use built-in ids from "
-                        "tdp agent readme (section Built-in finding-family rule_id "
-                        "values) or custom.<slug> with rule_definition; do not "
-                        "invent rule_id strings."
-                    ),
-                    (
-                        "Discover contracts via tool_instructions.discover "
-                        "(tdp agent readme, tdp agent schema review-respond, stage "
-                        "examples). Do not read TDP Python source to discover "
-                        "payload shapes."
-                    ),
-                ]
-            )
-        if normalized == "finding_verification":
-            instructions.extend(
-                [
-                    (
-                        "Verification is still bounded to prior findings and direct "
-                        "revision side effects. In addition, re-run each active "
-                        "family's rule components and search dimensions across the "
-                        "active finding set. This family search is part of "
-                        "verification scope, not a new broad discovery pass."
-                    ),
-                    (
-                        "Report remaining same-family instances in family_results. "
-                        "Do not search for unrelated new defect classes. Report "
-                        "family_results with verification_sweep for each active "
-                        "policy-relevant family."
-                    ),
-                ]
-            )
-    instructions.append(
-        (
-            "Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR. "
-            "Do not create .tdp-* or .review-* dotfiles in the project workspace "
-            "or harness folders. Do not modify orchestrator-owned run files."
-        )
+    return render_prompt(
+        "reviewer/protocol.md.j2",
+        reviewer_protocol_context(stage=stage, review_type=review_type),
     )
-    return instructions
 
 
 def build_reviewer_tool_instructions(

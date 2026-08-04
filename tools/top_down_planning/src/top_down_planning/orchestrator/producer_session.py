@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from top_down_planning.domain.session_bindings import SessionBinding
+from top_down_planning.prompts import render_prompt
+from top_down_planning.prompts.contexts import producer_protocol_context
 from top_down_planning.persistence.capabilities import CAPABILITY_TOKEN_FILE_ENV_VAR
 from top_down_planning.persistence.session_bindings import (
     get_primary_binding,
@@ -23,69 +25,10 @@ def primary_producer_binding(run: dict[str, Any]) -> SessionBinding | None:
     return get_primary_binding(run, "producer")
 
 
-def build_producer_protocol_instructions() -> list[str]:
+def build_producer_protocol_instructions() -> str:
     """Provider-agnostic producer behavior instructions for session manifests."""
 
-    return [
-        (
-            "You are the TDP producer. Record batches, evidence, and "
-            "dispositions through tdp agent production commands in "
-            "tool_instructions."
-        ),
-        (
-            "Do not use host planning modes or planning-only tools. Production "
-            "state advances only through persisted tdp agent commands."
-        ),
-        (
-            "Include every changed snapshot-bound artifact in each batch's "
-            "outputs before calling production apply. Git diff may help "
-            "discovery, but only declared output refs authorize snapshot drift."
-        ),
-        (
-            "When production apply reports production_evidence_incomplete, "
-            "add every listed workspace path to outputs and retry with the current "
-            "production_revision."
-        ),
-        (
-            "When production apply reports capability_denied, "
-            f"{CAPABILITY_TOKEN_FILE_ENV_VAR} is missing or the orchestrator has "
-            "not bound a session capability. Retry apply without caching capability "
-            "state in the shell."
-        ),
-        (
-            "When production apply reports "
-            "production_context_mutation_unauthorized, revert or reconcile "
-            "unauthorized snapshot-bound context changes (skills, file or inline "
-            "guidance, and similar binding keys). Those paths cannot be "
-            "authorized through outputs."
-        ),
-        (
-            "Record one production batch per provider turn. The orchestrator "
-            "closes the turn when production apply persists a batch, waits for "
-            "the provider session to settle, then queues the next turn. Submit "
-            "completion with goal_assessment when the output goal "
-            "is met; the orchestrator closes that turn when the completion claim "
-            "is persisted. Stop working after submit-completion; no summary or "
-            "cleanup turn is required."
-        ),
-        (
-            "Discover request contracts with tdp agent readme, tdp agent "
-            "schema, and tdp agent example. Packaged producer skills are "
-            "already in agent_context.skills on this manifest."
-        ),
-        (
-            "Write mutating request payloads only under $TDP_AGENT_REQUESTS_DIR. "
-            "Do not create .tdp-* or .review-* dotfiles in the project workspace "
-            "or harness folders. Do not modify orchestrator-owned run files."
-        ),
-        (
-            "Each production batch must stay within the plan item's "
-            "effective_scope and effective_boundaries. Item scope and "
-            "boundaries are the item-owned slice; effective_* is the union "
-            "with plan-level guardrails. Use item acceptance and risks as the "
-            "verifiable batch contract."
-        ),
-    ]
+    return render_prompt("producer/protocol.md.j2", producer_protocol_context())
 
 
 def build_producer_tool_instructions(run_id: str) -> dict[str, str]:

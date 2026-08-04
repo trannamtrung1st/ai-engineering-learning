@@ -47,17 +47,15 @@ def _create_review_run(store: FileRunStore, run_id: str) -> None:
 
 
 def test_reviewer_protocol_discourages_host_planning_artifacts() -> None:
-    protocol = " ".join(build_reviewer_protocol_instructions())
+    protocol = build_reviewer_protocol_instructions()
     assert "review respond" in protocol
     assert "host planning modes" in protocol
 
 
 def test_whole_output_discovery_protocol_includes_family_procedure() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(
-            stage="initial_review",
-            review_type="whole_output",
-        )
+    protocol = build_reviewer_protocol_instructions(
+        stage="initial_review",
+        review_type="whole_output",
     ).lower()
     assert "traceability" in protocol
     assert "candidate_refs" in protocol
@@ -67,22 +65,19 @@ def test_whole_output_discovery_protocol_includes_family_procedure() -> None:
 
 
 def test_whole_output_verification_protocol_includes_bounded_family_sweep() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(
-            stage="finding_verification",
-            review_type="whole_output",
-        )
+    protocol = build_reviewer_protocol_instructions(
+        stage="finding_verification",
+        review_type="whole_output",
     ).lower()
     assert "family_results" in protocol
     assert "verification_sweep" in protocol
     assert "not a new broad discovery pass" in protocol
 
 
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(
-            stage="initial_review",
-            review_type="whole_plan",
-        )
+def test_whole_plan_discovery_protocol_includes_family_procedure() -> None:
+    protocol = build_reviewer_protocol_instructions(
+        stage="initial_review",
+        review_type="whole_plan",
     ).lower()
     assert "preflight_candidates" in protocol
     assert "candidate_refs" in protocol
@@ -96,11 +91,9 @@ def test_whole_output_verification_protocol_includes_bounded_family_sweep() -> N
 
 
 def test_whole_plan_verification_protocol_includes_bounded_family_sweep() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(
-            stage="finding_verification",
-            review_type="whole_plan",
-        )
+    protocol = build_reviewer_protocol_instructions(
+        stage="finding_verification",
+        review_type="whole_plan",
     ).lower()
     assert "family_results" in protocol
     assert "verification_sweep" in protocol
@@ -108,11 +101,9 @@ def test_whole_plan_verification_protocol_includes_bounded_family_sweep() -> Non
 
 
 def test_scope_review_protocol_is_prior_finding_independent() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(
-            stage="scope_review",
-            review_type="whole_plan",
-        )
+    protocol = build_reviewer_protocol_instructions(
+        stage="scope_review",
+        review_type="whole_plan",
     ).lower()
     assert "do not use prior finding or family text as framing" in protocol
     assert "independently observe" in protocol
@@ -122,11 +113,9 @@ def test_scope_review_protocol_is_prior_finding_independent() -> None:
 
 
 def test_whole_plan_verification_protocol_omits_audit_attestation() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(
-            stage="finding_verification",
-            review_type="whole_plan",
-        )
+    protocol = build_reviewer_protocol_instructions(
+        stage="finding_verification",
+        review_type="whole_plan",
     ).lower()
     assert "audit_attestation" not in protocol
     assert "family_results" in protocol
@@ -153,9 +142,7 @@ def test_focused_tool_instructions_discover_omits_audit_attestation() -> None:
 
 
 def test_focused_plan_protocol_includes_rule_id_guidance() -> None:
-    protocol = " ".join(
-        build_reviewer_protocol_instructions(review_type="focused_plan")
-    ).lower()
+    protocol = build_reviewer_protocol_instructions(review_type="focused_plan").lower()
     assert "finding_families" in protocol
     assert "built-in finding-family rule_id" in protocol
     assert "do not read tdp python source" in protocol
