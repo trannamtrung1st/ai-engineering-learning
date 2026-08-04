@@ -90,6 +90,17 @@ def test_whole_plan_discovery_protocol_includes_family_procedure() -> None:
     assert "do not read tdp python source" in protocol
 
 
+def test_whole_plan_discovery_continues_until_a_sweep_finds_nothing_new() -> None:
+    protocol = build_reviewer_protocol_instructions(
+        stage="initial_review",
+        review_type="whole_plan",
+    ).lower()
+    assert "do not stop after the first finding" in protocol
+    assert "complete gap-seeking sweep produces no additional" in protocol
+    assert "remaining turn budget" in protocol
+    assert "set review_completed false" in protocol
+
+
 def test_whole_plan_verification_protocol_includes_bounded_family_sweep() -> None:
     protocol = build_reviewer_protocol_instructions(
         stage="finding_verification",

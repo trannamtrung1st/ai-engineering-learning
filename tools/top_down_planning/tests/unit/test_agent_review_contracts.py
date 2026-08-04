@@ -28,7 +28,6 @@ from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.reviewer_session import (
     build_reviewer_protocol_instructions,
 )
-from top_down_planning.prompts import FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS
 from top_down_planning.orchestrator.whole_plan_review import build_whole_plan_review_package
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.schema_docs import PUBLIC_EXAMPLES, show_example, show_schema
@@ -40,6 +39,13 @@ from tests.helpers import (
     mandatory_scope_review_respond_request,
     mandatory_plan_digest,
     minimal_resolved_config,
+)
+
+_FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS = (
+    "full review",
+    "confirmation review",
+    "holistic review",
+    "spot check",
 )
 
 
@@ -331,7 +337,7 @@ def test_scope_review_package_omits_prior_finding_framing(tmp_path: Path) -> Non
     protocol = package["protocol_instructions"].lower()
     assert "scope_review" in protocol
     assert "fresh discovery" in protocol
-    for banned in FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
+    for banned in _FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
         # Allowed only as negation in the freshness instruction.
         if banned == "full review":
             assert "do not call this a full" in protocol
@@ -377,7 +383,7 @@ def test_verification_package_and_recheck_include_finding_guidance() -> None:
 def test_verification_protocol_avoids_forbidden_names() -> None:
     protocol = build_reviewer_protocol_instructions(stage="finding_verification").lower()
     assert "finding_verification" in protocol
-    for banned in FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
+    for banned in _FORBIDDEN_SCOPE_REVIEW_STAGE_LABELS:
         assert banned not in protocol
 
 

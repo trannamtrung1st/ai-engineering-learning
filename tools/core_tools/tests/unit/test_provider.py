@@ -108,18 +108,17 @@ def test_format_request_prompt_surfaces_protocol_and_role_from_agent_context() -
     assert '"phase": "whole_plan_review"' in prompt
 
 
-def test_format_manifest_prompt_omits_non_string_protocol_instructions() -> None:
-    prompt = format_manifest_prompt(
-        "planner",
-        {
-            "phase": "planning",
-            "protocol_instructions": [
-                "Legacy list payloads are not accepted.",
-            ],
-        },
-    )
-
-    assert "Protocol:" not in prompt
+def test_format_manifest_prompt_rejects_non_string_protocol_instructions() -> None:
+    with pytest.raises(TypeError, match="protocol_instructions must be a Markdown string"):
+        format_manifest_prompt(
+            "planner",
+            {
+                "phase": "planning",
+                "protocol_instructions": [
+                    "Legacy list payloads are not accepted.",
+                ],
+            },
+        )
 
 
 def test_stub_start_send_stream_round_trip() -> None:

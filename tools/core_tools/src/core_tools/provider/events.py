@@ -46,8 +46,10 @@ _TOOL_DETAIL_KEYS = (
 
 
 def _format_protocol_instructions(protocol: Any) -> str | None:
-    if not isinstance(protocol, str):
+    if protocol is None:
         return None
+    if not isinstance(protocol, str):
+        raise TypeError("protocol_instructions must be a Markdown string")
     stripped = protocol.strip()
     return stripped or None
 
