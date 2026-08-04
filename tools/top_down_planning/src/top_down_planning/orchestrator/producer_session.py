@@ -63,7 +63,7 @@ def build_producer_protocol_instructions() -> list[str]:
             "Record one production batch per provider turn. The orchestrator "
             "closes the turn when production apply persists a batch, waits for "
             "the provider session to settle, then queues the next turn. Submit "
-            "completion with goal_met and goal_assessment when the output goal "
+            "completion with goal_assessment when the output goal "
             "is met; the orchestrator closes that turn when the completion claim "
             "is persisted. Stop working after submit-completion; no summary or "
             "cleanup turn is required."

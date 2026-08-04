@@ -20,6 +20,7 @@ from top_down_planning.agent_tool.request_audit import (
     AgentRequestContext,
     apply_request_audit_fields,
 )
+from top_down_planning.agent_tool.request_schema import validate_agent_request
 from top_down_planning.agent_tool.views import (
     build_hierarchy_snapshot,
     build_ready_view,
@@ -77,6 +78,19 @@ _PRODUCTION_SNAPSHOT_ACTION = (
 )
 
 
+def _disposition_summary(dispositions: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in dispositions.values():
+        if isinstance(value, str):
+            key = value
+        elif isinstance(value, dict):
+            key = str(value.get("disposition") or "unknown")
+        else:
+            key = "unknown"
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 class ProductionAgentService:
     """Structured production interaction for agents against a persisted run."""
 
@@ -108,6 +122,12 @@ class ProductionAgentService:
                 reviews=reviews,
                 review_types=OUTPUT_REVIEW_TYPES,
             )
+            payload["disposition_summary"] = _disposition_summary(dispositions)
+        elif view == "dispositions":
+            payload = {
+                "view": "dispositions",
+                "dispositions": dict(dispositions),
+            }
         else:
             raise RequestError(f"unsupported production snapshot view: {view!r}")
 
@@ -117,7 +137,6 @@ class ProductionAgentService:
         payload["production_revision"] = int(production["revision"])
         payload["output_revision"] = int(production["output_revision"])
         payload["batch_count"] = len(production["batches"])
-        payload["dispositions"] = dict(dispositions)
         return payload
 
     def apply(
@@ -133,6 +152,7 @@ class ProductionAgentService:
             operation="production_apply",
             capability_token=capability_token,
         )
+        validate_agent_request("production_apply", request)
 
         plan = self._store.load_plan_model(self._run_id)
         self._require_production_context(plan)
@@ -286,12 +306,16 @@ class ProductionAgentService:
             if issues:
                 raise RequestError("; ".join(issues))
 
-        batch_id = str(request.get("batch_id") or next_batch_id(production.get("batches") or []))
+        batch_id = next_batch_id(production.get("batches") or [])
+        run = self._store.load_run(self._run_id)
+        production_loop = run.get("production_loop") or {}
+        batch_agent_turns = int(production_loop.get("current_batch_agent_turns") or 0)
+        agent_turns = batch_agent_turns if batch_agent_turns > 0 else 1
         batch = ProductionBatch(
             id=batch_id,
             plan_items=[str(item_id) for item_id in plan_items],
             status="completed",
-            agent_turns=int(request.get("agent_turns") or 1),
+            agent_turns=agent_turns,
             intent=_optional_text(request.get("intent")),
             result=BatchResult(
                 outputs=[],
@@ -365,12 +389,14 @@ class ProductionAgentService:
             ) from exc
 
         merged_dispositions = self._dispositions(updated)
+        changed_dispositions = disposition_map_from_records(disposition_records)
         return {
             "ok": True,
             "batch_id": batch_id,
             "production_revision": next_revision,
             "output_revision": updated["output_revision"],
-            "dispositions": dict(merged_dispositions),
+            "changed_disposition_count": len(changed_dispositions),
+            "changed_dispositions": dict(changed_dispositions),
             "all_applicable_items_processed": all_applicable_items_processed(
                 plan,
                 merged_dispositions,
@@ -408,6 +434,7 @@ class ProductionAgentService:
             operation="production_request_amendment",
             capability_token=capability_token,
         )
+        validate_agent_request("production_request_amendment", request)
 
         plan = self._store.load_plan_model(self._run_id)
         self._require_production_context(plan)
@@ -503,13 +530,12 @@ class ProductionAgentService:
             operation="production_submit_completion",
             capability_token=capability_token,
         )
+        validate_agent_request("production_submit_completion", request)
 
         goal_assessment = _required_text(
             request.get("goal_assessment"),
             field="goal_assessment",
         )
-        if request.get("goal_met") is not True:
-            raise RequestError("submit-completion requires goal_met: true")
         summary = str(request.get("summary") or "").strip()
 
         plan = self._store.load_plan_model(self._run_id)
@@ -600,6 +626,7 @@ class ProductionAgentService:
             operation="production_report_blocked",
             capability_token=capability_token,
         )
+        validate_agent_request("production_report_blocked", request)
 
         evidence = _required_text(request.get("evidence"), field="evidence")
         affected_refs = _parse_affected_refs(request.get("affected_refs"))

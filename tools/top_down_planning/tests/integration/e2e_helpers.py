@@ -254,7 +254,7 @@ def production_batch_script(
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": goal_assessment, "goal_met": True},
+                {"goal_assessment": goal_assessment},
                 handler="submit_completion",
             )()
 

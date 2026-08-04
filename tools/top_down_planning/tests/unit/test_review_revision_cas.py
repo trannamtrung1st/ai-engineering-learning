@@ -140,8 +140,9 @@ def test_record_finding_actions_bumps_review_record_revision(tmp_path: Path) -> 
     ReviewAgentService(store, run_id).record_finding_actions(
         {
             "loop_id": loop_id,
-            "artifact_revision": revision,
-            "artifact_digest": digest,
+            "target_revision": revision,
+            "target_digest": digest,
+            "finding_set_id": "review-whole-output-01-fs-01",
             "family_fixes": [
                 {
                     "family_id": "family-output-01",
@@ -149,8 +150,6 @@ def test_record_finding_actions_bumps_review_record_revision(tmp_path: Path) -> 
                     "rationale": "fixed",
                     "changed_refs": ["item-leaf"],
                     "owner_sweep": {
-                        "artifact_revision": revision,
-                        "artifact_digest": digest,
                         "searched_refs": ["production:*"],
                         "search_dimensions": ["evidence"],
                         "additional_fixed_refs": [],

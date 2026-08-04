@@ -253,8 +253,8 @@ def build_reviewer_protocol_instructions(
                 instructions.extend(
                     [
                         (
-                            "Discovery procedure: treat validation_issues and preflight "
-                            "candidates in analysis_context as candidates, not "
+                            "Discovery procedure: treat preflight_candidates in "
+                            "analysis_context as candidates, not "
                             "automatically valid findings. For every confirmed issue, "
                             "identify the general violated rule. Search the complete "
                             "current scope for equivalent instances and report all "

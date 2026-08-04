@@ -32,6 +32,7 @@ from top_down_planning.domain.finding_families import (
 from top_down_planning.orchestrator.review_analysis_context import (
     build_output_analysis_context,
     contract_fields,
+    required_audit_passes,
     rubric_items_with_ids,
 )
 from top_down_planning.orchestrator.mandatory_review_stages import (
@@ -49,7 +50,6 @@ from top_down_planning.orchestrator.review_loop_adapter_mandatory import (
 )
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
-    plan_execution_contract_fields,
 )
 from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_loop,
@@ -195,7 +195,7 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
                     "Set evidence_revision: true on production apply for terminal "
                     "plan_items targeted by open required findings. Keep existing "
                     "dispositions unchanged; attach new outputs or contributions. "
-                    "Then submit-completion with goal_met: true. The orchestrator "
+                    "Then submit-completion with goal_assessment. The orchestrator "
                     "closes the owner revision turn when the completion claim "
                     "persists; stop immediately afterward."
                 ),
@@ -417,6 +417,8 @@ def build_whole_output_review_package(
         stage=loop.active_stage,
         review_type="whole_output",
     )
+    output_revision = int(production["output_revision"])
+    output_digest = compute_output_digest(production)
     package: dict[str, Any] = {
         "run_id": run_id,
         "phase": WHOLE_OUTPUT_REVIEW,
@@ -429,13 +431,11 @@ def build_whole_output_review_package(
         ),
         "scope": dict(loop.scope),
         "target_revision": loop.target_revision,
-        "output_revision": int(production["output_revision"]),
+        "target_digest": output_digest,
         "production": build_production_review_snapshot(production),
         "plan_contracts": traceability["plan_contracts"],
         "evidence_by_item": traceability["evidence_by_item"],
         "analysis_context": analysis_context,
-        **plan_execution_contract_fields(plan),
-        "digests": digests,
         **stage_package_fields(loop),
         **contract_fields(loop),
         "review_budgets": review_gate_budgets_for_package(loop, config),
@@ -448,10 +448,10 @@ def build_whole_output_review_package(
             review_type=loop.type,
         ),
     }
+    if output_revision != loop.target_revision:
+        package["output_revision"] = output_revision
     package["rubric_items"] = rubric_items
-    package["required_audit_passes"] = analysis_context["audit_passes"]
-    output_revision = int(production["output_revision"])
-    output_digest = compute_output_digest(production)
+    package["required_audit_passes"] = list(required_audit_passes("whole_output"))
     if loop.active_stage == "finding_verification":
         package["family_verification_view"] = build_family_verification_view(
             loop,

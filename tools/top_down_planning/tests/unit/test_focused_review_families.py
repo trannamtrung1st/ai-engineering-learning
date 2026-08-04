@@ -49,8 +49,6 @@ def test_focused_family_discovery_persists_families(tmp_path: Path) -> None:
                     "candidate_refs": [],
                     "recommended_change": "Add measurable checks.",
                     "discovery_sweep": {
-                        "artifact_revision": 0,
-                        "artifact_digest": store.load_run(run_id)["digests"]["plan"],
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance"],
                         "completed": True,
@@ -167,8 +165,6 @@ def test_focused_family_discovery_rejects_stale_target_digest(
                         "candidate_refs": [],
                         "recommended_change": "Add measurable checks.",
                         "discovery_sweep": {
-                            "artifact_revision": 0,
-                            "artifact_digest": "stale-plan-digest",
                             "searched_refs": ["active-items:*"],
                             "search_dimensions": ["acceptance"],
                             "completed": True,
@@ -243,8 +239,6 @@ def test_focused_family_discovery_rejects_out_of_scope_candidate_ref(
                         ],
                         "recommended_change": "Add measurable checks.",
                         "discovery_sweep": {
-                            "artifact_revision": 0,
-                            "artifact_digest": plan_digest,
                             "searched_refs": ["active-items:*"],
                             "search_dimensions": ["acceptance"],
                             "completed": True,
@@ -514,6 +508,9 @@ def test_focused_review_rejects_family_fixes(tmp_path: Path) -> None:
         service.record_finding_actions(
             {
                 "loop_id": "review-focused-plan-01",
+                "target_revision": 0,
+                "target_digest": store.load_run(run_id)["digests"]["plan"],
+                "finding_set_id": "review-focused-plan-01-fs-01",
                 "family_fixes": [
                     {
                         "family_id": "family-001",

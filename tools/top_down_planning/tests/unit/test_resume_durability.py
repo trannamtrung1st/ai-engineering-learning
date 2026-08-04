@@ -296,7 +296,7 @@ def test_interrupt_production_resume_keeps_same_session(tmp_path: Path) -> None:
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),

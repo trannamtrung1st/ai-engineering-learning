@@ -52,6 +52,15 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
 
 
+def _default_family_scope_kind(loop_type: str) -> str:
+    return {
+        "whole_plan": "active-plan",
+        "whole_output": "whole-output",
+        "focused_plan": "focused-plan",
+        "focused_output": "focused-output",
+    }.get(loop_type, "active-plan")
+
+
 def _reject_agent_reopen_fields(request: Mapping[str, Any]) -> None:
     for family in request.get("finding_families") or []:
         if not isinstance(family, Mapping):
@@ -81,10 +90,6 @@ def _validate_audit_attestation(
         return None
     if not isinstance(raw, Mapping):
         raise ValueError("audit_attestation must be an object")
-    if int(raw.get("artifact_revision") or 0) != artifact_revision:
-        raise ValueError("audit_attestation artifact_revision mismatch")
-    if str(raw.get("artifact_digest") or "").strip() != artifact_digest:
-        raise ValueError("audit_attestation artifact_digest mismatch")
     required_passes = set(required_audit_passes(review_type))
     passes_raw = raw.get("passes") or []
     if not isinstance(passes_raw, list):
@@ -144,16 +149,6 @@ def _normalize_discovery_sweep(
             f"family {family.id!r} discovery_sweep must not include "
             "remaining_instance_refs"
         )
-    sweep_revision = sweep_raw.get("artifact_revision")
-    if sweep_revision is None:
-        raise ValueError("discovery_sweep requires artifact_revision")
-    if int(sweep_revision) != artifact_revision:
-        raise ValueError("discovery_sweep artifact_revision mismatch")
-    sweep_digest = str(sweep_raw.get("artifact_digest") or "").strip()
-    if not sweep_digest:
-        raise ValueError("discovery_sweep requires artifact_digest")
-    if sweep_digest != artifact_digest:
-        raise ValueError("discovery_sweep artifact_digest mismatch")
     completed = bool(sweep_raw.get("completed"))
     searched_refs = [
         str(item).strip()
@@ -234,10 +229,18 @@ def _parse_mandatory_discovery_families(
         family_payload = dict(raw)
         family_payload.pop("discovery_sweep", None)
         family_payload.setdefault("finding_set_id", finding_set_id)
+        default_scope_kind = _default_family_scope_kind(loop.type)
+        scope_kind = str(family_payload.get("scope_kind") or default_scope_kind).strip()
+        family_payload.setdefault("scope_kind", scope_kind)
+        confirmed_raw = family_payload.get("confirmed_finding_ids") or []
+        if confirmed_raw:
+            first_confirmed = str(confirmed_raw[0]).strip()
+            if first_confirmed:
+                family_payload.setdefault("seed_finding_id", first_confirmed)
         fingerprint = compute_family_fingerprint(
             rule_id=str(family_payload.get("rule_id") or ""),
             subject_key=str(family_payload.get("subject_key") or ""),
-            scope_kind=str(family_payload.get("scope_kind") or "active-plan"),  # type: ignore[arg-type]
+            scope_kind=scope_kind,  # type: ignore[arg-type]
             rule_definition=(
                 str(family_payload.get("rule_definition"))
                 if family_payload.get("rule_definition")

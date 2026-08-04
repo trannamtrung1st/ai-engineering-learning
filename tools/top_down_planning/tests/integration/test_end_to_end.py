@@ -10,14 +10,20 @@ import pytest
 
 from top_down_planning.orchestrator.phases import (
     OUTPUT_VALIDATED,
+    PLAN_AMENDMENT,
     PLAN_VALIDATED,
+    PRODUCTION,
     WHOLE_OUTPUT_REVIEW,
     WHOLE_PLAN_REVIEW,
 )
+from top_down_planning.domain.production import ready_item_ids_for_plan
+from top_down_planning.domain.readiness import is_applicable_item
+from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
+from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
 from tests.conftest import run_cli
-from tests.helpers import apply_plan, apply_production, done_events, request_amendment, save_review_payload, make_review_loop, with_root_contract, work_item_payload
+from tests.helpers import apply_plan, apply_production, done_events, mandatory_initial_respond_request, mandatory_scope_review_respond_request, request_amendment, respond_review, save_review_payload, make_review_loop, with_root_contract, work_item_payload
 from tests.integration.e2e_helpers import (
     E2EStubProvider,
     assert_acceptance_invariant_for_run,
@@ -180,98 +186,166 @@ def test_amendment_mid_production_finishes_accepted(
 
     first_id, second_id = root_child_item_ids(store, run_id)
 
-    def remaining_production_turn(_session_id: str) -> list[dict[str, Any]]:
-        new_item_id = next(
+    def complete_remaining_production() -> None:
+        production = store.load_production(run_id)
+        production_revision = int(production["revision"])
+        dispositions = dict(production.get("dispositions") or {})
+        plan = store.load_plan_model(run_id)
+        reviews = store.list_reviews(run_id)
+        ready_ids = set(
+            ready_item_ids_for_plan(
+                plan,
+                dispositions,
+                reviews=reviews,
+            )
+        )
+        pending_ids = [
             item_id
             for item_id in root_child_item_ids(store, run_id)
-            if item_id not in {first_id, second_id}
-        )
-        production = store.load_production(run_id)
+            if item_id in ready_ids
+            and is_applicable_item(plan, item_id, dispositions)
+        ]
+        if pending_ids:
+            apply_production(
+                store,
+                run_id,
+                {
+                    "production_revision": production_revision,
+                    "plan_items": pending_ids,
+                    "dispositions": {
+                        item_id: {"disposition": "completed"} for item_id in pending_ids
+                    },
+                    "outputs": [],
+                    "contributions": [],
+                    "summary": "batch complete",
+                },
+                handler="apply",
+            )()
+        apply_production(
+            store,
+            run_id,
+            {"goal_assessment": "Output goal is fully met."},
+            handler="submit_completion",
+        )()
+
+    patch_provider.set_fallback_builder(
+        lambda _session_id: done_events(text="production idle"),
+    )
+    run = store.load_run(run_id)
+    producer_session_id = primary_producer_provider_session_id(run)
+    planner_session_id = primary_planner_provider_session_id(run)
+
+    def production_batch_and_amendment() -> None:
         apply_production(
             store,
             run_id,
             {
-                "production_revision": int(production["revision"]),
-                "plan_items": [second_id, new_item_id],
-                "dispositions": {
-                    second_id: {"disposition": "completed"},
-                    new_item_id: {"disposition": "completed"},
-                },
+                "production_revision": int(store.load_production(run_id)["revision"]),
+                "plan_items": [first_id],
+                "dispositions": {first_id: {"disposition": "completed"}},
                 "outputs": [],
                 "contributions": [],
                 "summary": "batch complete",
             },
             handler="apply",
         )()
-        apply_production(
+        request_amendment(
             store,
             run_id,
-            {"goal_assessment": "Output goal is fully met.", "goal_met": True},
-            handler="submit_completion",
+            {
+                "evidence": "Missing API branch in approved plan.",
+                "affected_refs": ["item-root"],
+                "summary": "Need API subtree.",
+            },
         )()
-        return done_events(signal="batch_complete", text="production turn")
 
-    patch_provider.set_fallback_builder(remaining_production_turn)
+    if producer_session_id:
+        patch_provider.script_session_turn(
+            producer_session_id,
+            done_events(signal="batch_complete", text="production turn"),
+            mutate_store=production_batch_and_amendment,
+        )
+    patch_provider.script_turn(done_events(text="producer start"))
     patch_provider.script_turn(
         done_events(signal="batch_complete", text="production turn"),
-        mutate_store=lambda: (
-            apply_production(
-                store,
-                run_id,
-                {
-                    "production_revision": 0,
-                    "plan_items": [first_id],
-                    "dispositions": {first_id: {"disposition": "completed"}},
-                    "outputs": [],
-                    "contributions": [],
-                    "summary": "batch complete",
-                },
-                handler="apply",
-            )(),
-            request_amendment(
-                store,
-                run_id,
-                {
-                    "evidence": "Missing API branch in approved plan.",
-                    "affected_refs": ["item-root"],
-                    "summary": "Need API subtree.",
-                },
-            )(),
-        ),
+        mutate_store=production_batch_and_amendment,
     )
+    patch_provider.script_turn(done_events(text="producer turn ack"))
+    if planner_session_id:
+        patch_provider.script_session_turn(
+            planner_session_id,
+            done_events(signal="amendment_revision_ready", text="amendment turn"),
+            mutate_store=lambda: apply_plan(
+                store,
+                run_id,
+                base_revision=current_plan_revision(store, run_id),
+                operations=with_root_contract(
+                    [
+                        {
+                            "op": "add_item",
+                            "temp_id": "item-third",
+                            "parent_id": "item-root",
+                            "placement": {"last_child": True},
+                            "item": work_item_payload(
+                                title="Third",
+                                outcome="Third outcome.",
+                                acceptance=["Third is verifiable."],
+                            ),
+                        }
+                    ]
+                ),
+                phase=PLAN_AMENDMENT,
+            )(),
+        )
     patch_provider.script_turn(
-        done_events(signal="amendment_revision_ready", text="amendment turn"),
-        mutate_store=apply_plan(
+        done_events(text="review turn"),
+        mutate_store=lambda: respond_review(
             store,
             run_id,
-            base_revision=current_plan_revision(store, run_id),
-            operations=with_root_contract(
-                [
-                    {
-                        "op": "add_item",
-                        "temp_id": "item-third",
-                        "parent_id": "item-root",
-                        "placement": {"last_child": True},
-                        "item": work_item_payload(
-                            title="Third",
-                            outcome="Third outcome.",
-                            acceptance=["Third is verifiable."],
-                        ),
-                    }
-                ]
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id="review-whole-plan-02",
+                target_revision=current_plan_revision(store, run_id),
+                review_type="whole_plan",
             ),
-            phase="plan_amendment",
-        ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-02",
+        )(),
     )
-    script_whole_plan_review(
-        patch_provider,
-        store,
-        run_id,
-        decision="approved",
-        loop_id="review-whole-plan-02",
+    patch_provider.script_turn(
+        done_events(text="blocker review turn"),
+        mutate_store=lambda: respond_review(
+            store,
+            run_id,
+            mandatory_scope_review_respond_request(
+                store,
+                run_id,
+                loop_id="review-whole-plan-02",
+                target_revision=current_plan_revision(store, run_id),
+                review_type="whole_plan",
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id="review-whole-plan-02",
+        )(),
     )
-    amendment_resume = _resume(run_id, runs_dir)
-    assert amendment_resume["ok"] is True
+    patch_provider.script_turn(
+        done_events(signal="batch_complete", text="production turn"),
+        mutate_store=complete_remaining_production,
+    )
+    patch_provider.script_turn(done_events(text="producer finish ack"))
+    production_resume = run_cli(
+        [
+            "resume",
+            "--run",
+            run_id,
+            "--runs-dir",
+            str(runs_dir),
+            "--stream-json",
+        ]
+    )
+    assert production_resume.exit_code == 0, production_resume.stderr
+    amendment_resume = production_resume.json()
     assert amendment_resume["phase"] == WHOLE_OUTPUT_REVIEW
 
     script_whole_output_review(patch_provider, store, run_id, decision="approved")

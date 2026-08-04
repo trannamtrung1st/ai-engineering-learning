@@ -24,7 +24,6 @@ from top_down_planning.domain.reviews import (
 )
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
-    plan_execution_contract_fields,
 )
 from top_down_planning.orchestrator.capability import revoke_capabilities_for_loop
 from top_down_planning.orchestrator.errors import ProviderRunError
@@ -440,9 +439,12 @@ def build_focused_review_package(
 ) -> dict[str, Any]:
     """Package a bounded focused review for a fresh reviewer session."""
 
-    digests = dict(run.get("digests") or {})
     phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
     revision_label = "plan" if loop.type == "focused_plan" else "output"
+    if loop.type == "focused_plan":
+        target_digest = compute_plan_digest(plan)
+    else:
+        target_digest = compute_output_digest(production or {})
 
     extra_instructions: dict[str, str] = {
         "scope_rule": (
@@ -469,8 +471,7 @@ def build_focused_review_package(
             "purpose": f"Optional focused {revision_label} review within declared scope",
             "scope": dict(loop.scope),
             "target_revision": loop.target_revision,
-            **plan_execution_contract_fields(plan),
-            "digests": digests,
+            "target_digest": target_digest,
             "review_policy": reviewer_package_policy_guidance(),
             "review_budgets": review_gate_budgets_for_package(loop, config),
             "instance_ref_guidance": {
@@ -494,10 +495,14 @@ def build_focused_review_package(
     )
     if loop.type == "focused_plan":
         limits = planning_limits_from_config(config)
-        package["plan_revision"] = plan.revision
+        plan_revision = int(plan.revision)
+        if plan_revision != loop.target_revision:
+            package["plan_revision"] = plan_revision
         package["plan"] = build_plan_review_snapshot(plan, limits=limits)
     if production is not None:
-        package["output_revision"] = int(production["output_revision"])
+        output_revision = int(production["output_revision"])
+        if output_revision != loop.target_revision:
+            package["output_revision"] = output_revision
         package["production"] = build_production_review_snapshot(production)
         if loop.type == "focused_output":
             scope_item_ids = [

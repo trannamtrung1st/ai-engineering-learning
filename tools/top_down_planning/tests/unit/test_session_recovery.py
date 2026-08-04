@@ -527,9 +527,8 @@ def test_planner_recovery_manifest_includes_required_fields(tmp_path: Path) -> N
         "phase_action_id",
         "expected_next_action",
         "plan_snapshot",
-        "digests",
+        "target_digest",
         "replacement_session_notice",
-        "recent_durable_events",
         "output_goal",
     ):
         assert key in manifest

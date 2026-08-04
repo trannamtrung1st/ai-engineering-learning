@@ -163,6 +163,7 @@ def test_apply_succeeds_when_outputs_cover_changed_snapshot_path(tmp_path: Path)
             "outputs": [
                 {
                     "id": "out-feature",
+                    "type": "artifact",
                     "ref": "src/feature.py",
                 }
             ],
@@ -195,6 +196,7 @@ def test_apply_fails_when_changed_snapshot_path_missing_from_outputs(tmp_path: P
                 "outputs": [
                     {
                         "id": "out-feature",
+                        "type": "artifact",
                         "ref": "src/feature.py",
                     }
                 ],
@@ -229,8 +231,8 @@ def test_retry_with_complete_outputs_succeeds(tmp_path: Path) -> None:
             dispositions={"item-first": {"disposition": "completed"}},
         ),
         "outputs": [
-            {"id": "out-feature", "ref": "src/feature.py"},
-            {"id": "out-helper", "ref": "src/helper.py"},
+            {"id": "out-feature", "type": "artifact", "ref": "src/feature.py"},
+            {"id": "out-helper", "type": "artifact", "ref": "src/helper.py"},
         ],
     }
 
@@ -241,7 +243,7 @@ def test_retry_with_complete_outputs_succeeds(tmp_path: Path) -> None:
                     plan_items=["item-first"],
                     dispositions={"item-first": {"disposition": "completed"}},
                 ),
-                "outputs": [{"id": "out-feature", "ref": "src/feature.py"}],
+                "outputs": [{"id": "out-feature", "type": "artifact", "ref": "src/feature.py"}],
             },
             capability_token=token,
         )
@@ -265,7 +267,7 @@ def test_prior_batch_evidence_authorizes_cumulative_drift(tmp_path: Path) -> Non
                 plan_items=["item-first"],
                 dispositions={"item-first": {"disposition": "completed"}},
             ),
-            "outputs": [{"id": "out-feature", "ref": "src/feature.py"}],
+            "outputs": [{"id": "out-feature", "type": "artifact", "ref": "src/feature.py"}],
         },
         capability_token=token,
     )
@@ -281,7 +283,7 @@ def test_prior_batch_evidence_authorizes_cumulative_drift(tmp_path: Path) -> Non
                     dispositions={"item-second": {"disposition": "completed"}},
                     production_revision=1,
                 ),
-                "outputs": [{"id": "out-feature-v2", "ref": "src/feature.py"}],
+                "outputs": [{"id": "out-feature-v2", "type": "artifact", "ref": "src/feature.py"}],
             },
             capability_token=token,
         )
@@ -350,7 +352,7 @@ def test_failed_apply_does_not_leave_orphan_artifact_snapshots(tmp_path: Path) -
                     plan_items=["item-first"],
                     dispositions={"item-first": {"disposition": "completed"}},
                 ),
-                "outputs": [{"id": "out-feature", "ref": "src/feature.py"}],
+                "outputs": [{"id": "out-feature", "type": "artifact", "ref": "src/feature.py"}],
             },
             capability_token=token,
         )
@@ -375,7 +377,7 @@ def test_invalidated_batch_evidence_does_not_authorize_apply_drift(tmp_path: Pat
                 plan_items=["item-first"],
                 dispositions={"item-first": {"disposition": "completed"}},
             ),
-            "outputs": [{"id": "out-feature", "ref": "src/feature.py"}],
+            "outputs": [{"id": "out-feature", "type": "artifact", "ref": "src/feature.py"}],
         },
         capability_token=token,
     )
@@ -487,7 +489,7 @@ def test_evidence_incomplete_error_includes_drift_count_reconciliation(
                     plan_items=["item-first"],
                     dispositions={"item-first": {"disposition": "completed"}},
                 ),
-                "outputs": [{"id": "out-feature", "ref": "src/feature.py"}],
+                "outputs": [{"id": "out-feature", "type": "artifact", "ref": "src/feature.py"}],
             },
             capability_token=token,
         )
@@ -519,7 +521,7 @@ def test_completion_gate_still_blocks_unauthorized_drift_after_valid_apply(
                 plan_items=["item-first"],
                 dispositions={"item-first": {"disposition": "completed"}},
             ),
-            "outputs": [{"id": "out-feature", "ref": "src/feature.py"}],
+            "outputs": [{"id": "out-feature", "type": "artifact", "ref": "src/feature.py"}],
         },
         capability_token=token,
     )
@@ -530,7 +532,7 @@ def test_completion_gate_still_blocks_unauthorized_drift_after_valid_apply(
                 dispositions={"item-second": {"disposition": "completed"}},
                 production_revision=1,
             ),
-            "outputs": [{"id": "out-feature-v2", "ref": "src/feature.py"}],
+            "outputs": [{"id": "out-feature-v2", "type": "artifact", "ref": "src/feature.py"}],
             "empty_output": False,
         },
         capability_token=token,
@@ -540,7 +542,7 @@ def test_completion_gate_still_blocks_unauthorized_drift_after_valid_apply(
     helper.write_text("orphan drift\n", encoding="utf-8")
 
     service.submit_completion(
-        {"goal_met": True, "goal_assessment": "Done."},
+        {"goal_assessment": "Done."},
         capability_token=token,
     )
 
@@ -645,7 +647,7 @@ def test_skill_drift_raises_context_mutation_not_evidence_incomplete(
                     plan_items=["item-first"],
                     dispositions={"item-first": {"disposition": "completed"}},
                 ),
-                "outputs": [{"id": "out-feature", "ref": "src/feature.py"}],
+                "outputs": [{"id": "out-feature", "type": "artifact", "ref": "src/feature.py"}],
             },
             capability_token=token,
         )
@@ -677,7 +679,7 @@ def test_mixed_snapshot_failure_reports_both_partitions_and_reconciles_counts(
                     plan_items=["item-first"],
                     dispositions={"item-first": {"disposition": "completed"}},
                 ),
-                "outputs": [{"id": "out-feature", "ref": "src/feature.py"}],
+                "outputs": [{"id": "out-feature", "type": "artifact", "ref": "src/feature.py"}],
             },
             capability_token=token,
         )

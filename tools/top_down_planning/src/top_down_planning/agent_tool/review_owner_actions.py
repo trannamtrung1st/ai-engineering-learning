@@ -78,6 +78,7 @@ def apply_family_fixes(
     actor_role: str,
     artifact_revision: int,
     artifact_digest: str,
+    finding_set_id: str | None = None,
     current_artifact_revision: int | None = None,
 ) -> tuple[ReviewLoop, list[FindingAction], list[dict[str, Any]]]:
     raw_fixes = request.get("family_fixes") or []
@@ -87,6 +88,10 @@ def apply_family_fixes(
     if not isinstance(raw_actions, list):
         raise ValueError("finding_actions must be a list")
 
+    resolved_finding_set_id = (
+        str(finding_set_id or "").strip() or str(loop.finding_set_id or "").strip()
+    )
+
     explicit_actions: list[FindingAction] = []
     for item in raw_actions:
         if not isinstance(item, Mapping):
@@ -94,16 +99,13 @@ def apply_family_fixes(
         payload = dict(item)
         payload.setdefault("actor_role", actor_role)
         payload.setdefault("artifact_revision", artifact_revision)
-        finding_set_id = str(loop.finding_set_id or "").strip()
-        if finding_set_id and not str(payload.get("finding_set_id") or "").strip():
-            payload["finding_set_id"] = finding_set_id
+        if resolved_finding_set_id and not str(payload.get("finding_set_id") or "").strip():
+            payload["finding_set_id"] = resolved_finding_set_id
         explicit_actions.append(parse_finding_action(payload))
 
     generated_actions: list[dict[str, Any]] = []
     new_sweeps: list[FamilySweepRecord] = []
     events: list[dict[str, Any]] = []
-    finding_set_id = str(loop.finding_set_id or "").strip()
-
     effective_union: set[str] = set()
     for raw in raw_fixes:
         if not isinstance(raw, Mapping):
@@ -196,7 +198,7 @@ def apply_family_fixes(
                 )
         idempotency_key = family_fix_idempotency_key(
             family_id=family_id,
-            finding_set_id=finding_set_id,
+            finding_set_id=resolved_finding_set_id,
             artifact_revision=artifact_revision,
             artifact_digest=artifact_digest,
             actor_role=actor_role,
@@ -218,7 +220,7 @@ def apply_family_fixes(
                     "type": "review_family_owner_sweep_replayed",
                     "loop_id": loop.id,
                     "family_id": family_id,
-                    "finding_set_id": finding_set_id,
+                    "finding_set_id": resolved_finding_set_id,
                     "artifact_revision": existing.artifact_revision,
                 }
             )
@@ -231,10 +233,6 @@ def apply_family_fixes(
                 f"artifact_revision {artifact_revision} does not match current "
                 f"revision {current_artifact_revision}"
             )
-        if int(owner_sweep_raw.get("artifact_revision") or 0) != artifact_revision:
-            raise ValueError("owner_sweep artifact_revision mismatch")
-        if str(owner_sweep_raw.get("artifact_digest") or "").strip() != artifact_digest:
-            raise ValueError("owner_sweep artifact_digest mismatch")
         new_sweeps.append(
             FamilySweepRecord(
                 id=_new_sweep_id(),
@@ -243,7 +241,7 @@ def apply_family_fixes(
                 stage="owner_fix",
                 artifact_revision=artifact_revision,
                 artifact_digest=artifact_digest,
-                finding_set_id=finding_set_id,
+                finding_set_id=resolved_finding_set_id,
                 searched_refs=[
                     str(item).strip()
                     for item in (owner_sweep_raw.get("searched_refs") or [])
@@ -278,7 +276,7 @@ def apply_family_fixes(
                     "action": "fix",
                     "actor_role": actor_role,
                     "artifact_revision": artifact_revision,
-                    "finding_set_id": finding_set_id,
+                    "finding_set_id": resolved_finding_set_id,
                     "rationale": str(raw.get("rationale") or ""),
                 }
             )
@@ -287,7 +285,7 @@ def apply_family_fixes(
                 "type": "review_family_owner_sweep_recorded",
                 "loop_id": loop.id,
                 "family_id": family_id,
-                "finding_set_id": finding_set_id,
+                "finding_set_id": resolved_finding_set_id,
                 "artifact_revision": artifact_revision,
             }
         )

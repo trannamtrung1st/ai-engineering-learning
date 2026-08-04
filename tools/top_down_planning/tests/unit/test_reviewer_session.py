@@ -84,7 +84,7 @@ def test_whole_output_verification_protocol_includes_bounded_family_sweep() -> N
             review_type="whole_plan",
         )
     ).lower()
-    assert "validation_issues" in protocol
+    assert "preflight_candidates" in protocol
     assert "candidate_refs" in protocol
     assert "discovery_sweep" in protocol
     assert "audit attestation" in protocol
@@ -118,7 +118,7 @@ def test_scope_review_protocol_is_prior_finding_independent() -> None:
     assert "independently observe" in protocol
     assert "reopens_family_id" in protocol
     assert "discovery_sweep" in protocol
-    assert "validation_issues" in protocol
+    assert "preflight_candidates" in protocol
 
 
 def test_whole_plan_verification_protocol_omits_audit_attestation() -> None:

@@ -106,9 +106,7 @@ def _create_planning_run(
 def _focused_plan_request(item_ids: list[str]) -> dict:
     return {
         "type": "focused_plan",
-        "revise_at": "blocker",
         "scope": {
-            "kind": "focused_plan",
             "item_ids": item_ids,
         },
     }
@@ -279,11 +277,10 @@ def test_focused_plan_scope_violation_on_request_is_rejected(tmp_path: Path) -> 
     service = ReviewAgentService(store, "run-20260101T000401-000401")
     token = grant_capability(store, "run-20260101T000401-000401", role="planner", phase=PLANNING)
 
-    with pytest.raises(RequestError, match="whole scope kind"):
+    with pytest.raises(RequestError, match="whole scope kind|unexpected properties|oneOf"):
         service.request(
             {
                 "type": "focused_plan",
-                "revise_at": "blocker",
                 "scope": {"kind": "whole_plan", "item_ids": ["item-api"]},
             },
             capability_token=token,
@@ -576,9 +573,7 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
             run_id,
             {
                 "type": "focused_output",
-                "revise_at": "blocker",
                 "scope": {
-                    "kind": "focused_output",
                     "item_ids": ["item-first"],
                 },
             },
@@ -625,7 +620,7 @@ def test_focused_output_approval_does_not_enter_whole_output_review(
         mutate_store=apply_production(
             store,
             run_id,
-            {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+            {"goal_assessment": "Output goal is fully met."},
             handler="submit_completion",
         ),
     )

@@ -166,7 +166,7 @@ def test_production_phase_completes_two_batches_with_all_items_terminal(
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),
@@ -230,7 +230,7 @@ def test_producer_turn_ends_when_batch_recorded_without_batch_complete_signal(
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),
@@ -289,7 +289,7 @@ def test_producer_turn_aborts_inflight_stream_when_batch_recorded(
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),
@@ -344,7 +344,7 @@ def test_producer_turn_closes_when_completion_claimed_while_stream_stalls(
         mutate_store=apply_production(
             store,
             run_id,
-            {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+            {"goal_assessment": "Output goal is fully met."},
             handler="submit_completion",
         ),
     )
@@ -702,7 +702,7 @@ def test_producer_turn_closes_when_batch_recorded_while_stream_stalls(
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),

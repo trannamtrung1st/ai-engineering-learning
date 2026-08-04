@@ -401,8 +401,6 @@ def _synthetic_whole_plan_families(
     *,
     finding_set_id: str,
     review_completed: bool,
-    artifact_revision: int,
-    artifact_digest: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Build minimal finding families for whole-plan discovery test payloads."""
 
@@ -443,19 +441,15 @@ def _synthetic_whole_plan_families(
     seed_id = confirmed_ids[0]
     family = {
         "id": family_id,
-        "finding_set_id": finding_set_id,
         "rule_id": rule_id,
         "subject_key": subject_key,
         "scope_kind": "active-plan",
-        "family_fingerprint": fingerprint,
         "title": "Synthetic test family",
         "seed_finding_id": seed_id,
         "confirmed_finding_ids": confirmed_ids,
         "candidate_refs": [],
         "recommended_change": str(enriched[0].get("recommended_change") or "Fix"),
         "discovery_sweep": {
-            "artifact_revision": artifact_revision,
-            "artifact_digest": artifact_digest,
             "searched_refs": ["active-items:*"],
             "search_dimensions": ["acceptance"],
             "completed": review_completed,
@@ -512,13 +506,9 @@ def _mandatory_plan_discovery_extras(
         reported_findings,
         finding_set_id=finding_set_id,
         review_completed=review_completed,
-        artifact_revision=target_revision,
-        artifact_digest=digest,
     )
     extras: dict[str, Any] = {
         "audit_attestation": {
-            "artifact_revision": target_revision,
-            "artifact_digest": digest,
             "passes": passes,
         },
         "finding_families": families,
@@ -531,8 +521,6 @@ def _synthetic_whole_output_families(
     *,
     finding_set_id: str,
     review_completed: bool,
-    artifact_revision: int,
-    artifact_digest: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if not reported_findings:
         return reported_findings, []
@@ -571,20 +559,16 @@ def _synthetic_whole_output_families(
     seed_id = confirmed_ids[0]
     family = {
         "id": family_id,
-        "finding_set_id": finding_set_id,
         "rule_id": rule_id,
         "subject_key": subject_key,
         "scope_kind": "whole-output",
         "rule_definition": rule_definition,
-        "family_fingerprint": fingerprint,
         "title": "Synthetic output test family",
         "seed_finding_id": seed_id,
         "confirmed_finding_ids": confirmed_ids,
         "candidate_refs": [],
         "recommended_change": str(enriched[0].get("recommended_change") or "Fix"),
         "discovery_sweep": {
-            "artifact_revision": artifact_revision,
-            "artifact_digest": artifact_digest,
             "searched_refs": ["production:*"],
             "search_dimensions": ["evidence"],
             "completed": review_completed,
@@ -641,13 +625,9 @@ def _mandatory_output_discovery_extras(
         reported_findings,
         finding_set_id=finding_set_id,
         review_completed=review_completed,
-        artifact_revision=target_revision,
-        artifact_digest=digest,
     )
     extras: dict[str, Any] = {
         "audit_attestation": {
-            "artifact_revision": target_revision,
-            "artifact_digest": digest,
             "passes": passes,
         },
         "finding_families": families,
@@ -886,8 +866,6 @@ def _synthetic_family_verification_results(
                 "disposition": disposition,
                 "verification_sweep": {
                     "completed": True,
-                    "artifact_revision": target_revision,
-                    "artifact_digest": digest,
                     "searched_refs": searched_refs,
                     "search_dimensions": search_dimensions,
                     "remaining_instance_refs": [],
@@ -1699,18 +1677,30 @@ def respond_review(
                     resolved_session_id = loop_session
             except Exception:
                 pass
-        token_path = capability_token_file_path(store, run_id)
-        file_token = (
-            read_capability_token_file(token_path) if token_path.exists() else None
-        )
-        token = file_token or grant_capability(
-            store,
-            run_id,
-            role=role,
-            phase=phase,
-            loop_id=resolved_loop_id,
-            session_id=resolved_session_id,
-        )
+        if role == "reviewer":
+            # Orchestrator persists planner/producer tokens to the shared file during
+            # active turns; never reuse that token for reviewer respond mutations.
+            token = grant_capability(
+                store,
+                run_id,
+                role=role,
+                phase=phase,
+                loop_id=resolved_loop_id,
+                session_id=resolved_session_id,
+            )
+        else:
+            token_path = capability_token_file_path(store, run_id)
+            file_token = (
+                read_capability_token_file(token_path) if token_path.exists() else None
+            )
+            token = file_token or grant_capability(
+                store,
+                run_id,
+                role=role,
+                phase=phase,
+                loop_id=resolved_loop_id,
+                session_id=resolved_session_id,
+            )
         payload = dict(request)
         if resolved_loop_id and (
             "reported_findings" in payload or "review_completed" in payload
@@ -1758,6 +1748,42 @@ def apply_production(
     return mutate
 
 
+def enrich_record_finding_actions_request(
+    store: Any,
+    run_id: str,
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    enriched = dict(request)
+    loop_id = str(enriched.get("loop_id") or "").strip()
+    if not loop_id:
+        return enriched
+    try:
+        loop = store.load_review(run_id, loop_id)
+    except Exception:
+        return enriched
+    loop_type = str(loop.get("type") or "")
+    if loop_type in {"whole_output", "focused_output"}:
+        production = store.load_production(run_id)
+        target_revision = int(production["output_revision"])
+        from top_down_planning.persistence.digests import compute_output_digest
+
+        target_digest = compute_output_digest(production)
+    else:
+        plan = store.load_plan(run_id)
+        target_revision = int(plan["revision"])
+        from top_down_planning.persistence.digests import compute_plan_digest
+
+        target_digest = compute_plan_digest(plan)
+    enriched.setdefault("target_revision", target_revision)
+    enriched.setdefault("target_digest", target_digest)
+    finding_set_id = str(
+        enriched.get("finding_set_id") or loop.get("finding_set_id") or ""
+    ).strip()
+    if finding_set_id:
+        enriched.setdefault("finding_set_id", finding_set_id)
+    return enriched
+
+
 def record_finding_actions(
     store: Any,
     run_id: str,
@@ -1780,7 +1806,7 @@ def record_finding_actions(
             loop_id=resolved_loop_id,
         )
         ReviewAgentService(store, run_id).record_finding_actions(
-            request,
+            enrich_record_finding_actions_request(store, run_id, request),
             capability_token=token,
         )
 

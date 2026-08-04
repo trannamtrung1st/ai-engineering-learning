@@ -488,8 +488,11 @@ def test_review_service_accepts_stage_payloads(tmp_path: Path) -> None:
                 "target_revision": 1,
                 "stage": "finding_verification",
                 "decision": "verified",
+                "target_digest": mandatory_plan_digest(store, run_id),
+                "finding_set_id": "fs-1",
                 "finding_results": [],
-                "findings": [],
+                "new_direct_side_effect_findings": [],
+                "summary": "Stage mismatch probe.",
             },
             capability_token=token,
         )
@@ -539,7 +542,7 @@ def test_mandatory_respond_requires_stage(tmp_path: Path) -> None:
         session_id="stub-session-reviewer",
         loop_id="review-whole-plan-01",
     )
-    with pytest.raises(RequestError, match="requires stage"):
+    with pytest.raises(RequestError, match="oneOf|requires stage"):
         service.respond(
             {
                 "loop_id": "review-whole-plan-01",

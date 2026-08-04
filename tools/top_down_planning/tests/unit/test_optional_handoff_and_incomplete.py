@@ -37,6 +37,7 @@ from tests.helpers import (
     make_review_loop,
     create_run_kwargs,
     grant_capability,
+    mandatory_plan_digest,
     minimal_resolved_config,
     review_loop_dict_with_binding,
     save_review_payload,
@@ -598,14 +599,14 @@ def test_record_finding_actions_service_path(tmp_path: Path) -> None:
     response = service.record_finding_actions(
         {
             "loop_id": loop.id,
-            "artifact_revision": 0,
+            "target_revision": 0,
+            "target_digest": mandatory_plan_digest(store, run_id),
+            "finding_set_id": "fs-01",
             "finding_actions": [
                 {
                     "finding_id": "finding-opt",
                     "action": "accept_as_is",
                     "actor_role": "planner",
-                    "artifact_revision": 0,
-                    "finding_set_id": "fs-01",
                     "rationale": "Accept for now",
                 }
             ],
@@ -625,13 +626,14 @@ def test_record_finding_actions_service_path(tmp_path: Path) -> None:
         service.record_finding_actions(
             {
                 "loop_id": loop.id,
+                "target_revision": 0,
+                "target_digest": mandatory_plan_digest(store, run_id),
+                "finding_set_id": "fs-01",
                 "finding_actions": [
                     {
                         "finding_id": "finding-req",
                         "action": "defer",
                         "actor_role": "planner",
-                        "artifact_revision": 0,
-                        "finding_set_id": "fs-01",
                         "rationale": "bad",
                     }
                 ],
@@ -692,14 +694,14 @@ def test_record_finding_actions_reports_mandatory_gate_pending(tmp_path: Path) -
     response = ReviewAgentService(store, run_id).record_finding_actions(
         {
             "loop_id": loop.id,
-            "artifact_revision": 0,
+            "target_revision": 0,
+            "target_digest": mandatory_plan_digest(store, run_id),
+            "finding_set_id": "fs-01",
             "finding_actions": [
                 {
                     "finding_id": "finding-opt",
                     "action": "accept_as_is",
                     "actor_role": "planner",
-                    "artifact_revision": 0,
-                    "finding_set_id": "fs-01",
                     "rationale": "Accept for now",
                 }
             ],

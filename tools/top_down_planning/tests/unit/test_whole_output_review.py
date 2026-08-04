@@ -292,7 +292,6 @@ def test_whole_output_review_changes_then_approve_reaches_accepted(
         run_id,
         {
             "goal_assessment": "Output goal is fully met after revision.",
-            "goal_met": True,
         },
         handler="submit_completion",
         phase=WHOLE_OUTPUT_REVIEW,
@@ -396,7 +395,6 @@ def test_whole_output_owner_revision_closes_on_completion_claim_while_stream_sta
             run_id,
             {
                 "goal_assessment": "Output goal is fully met after revision.",
-                "goal_met": True,
             },
             handler="submit_completion",
             phase=WHOLE_OUTPUT_REVIEW,
@@ -700,7 +698,6 @@ def test_whole_output_review_resumes_interrupted_producer_revision(
         run_id,
         {
             "goal_assessment": "Output goal is fully met after revision.",
-            "goal_met": True,
         },
         handler="submit_completion",
         phase=WHOLE_OUTPUT_REVIEW,
@@ -1025,7 +1022,6 @@ def test_whole_output_review_v2_family_owner_sweep_e2e_reaches_accepted(
             run_id,
             {
                 "goal_assessment": "Output goal is fully met after revision.",
-                "goal_met": True,
             },
             handler="submit_completion",
             phase=WHOLE_OUTPUT_REVIEW,
@@ -1041,8 +1037,9 @@ def test_whole_output_review_v2_family_owner_sweep_e2e_reaches_accepted(
             run_id,
             {
                 "loop_id": loop_id,
-                "artifact_revision": new_revision,
-                "artifact_digest": new_digest,
+                "target_revision": new_revision,
+                "target_digest": new_digest,
+                "finding_set_id": str(loop_payload.get("finding_set_id") or ""),
                 "family_fixes": [
                     {
                         "family_id": family_id,
@@ -1050,8 +1047,6 @@ def test_whole_output_review_v2_family_owner_sweep_e2e_reaches_accepted(
                         "rationale": "Added missing evidence across production.",
                         "changed_refs": ["item-leaf"],
                         "owner_sweep": {
-                            "artifact_revision": new_revision,
-                            "artifact_digest": new_digest,
                             "searched_refs": ["production:*"],
                             "search_dimensions": ["evidence"],
                             "additional_fixed_refs": [],
@@ -1248,8 +1243,9 @@ def test_prepare_recheck_preserves_owner_family_sweeps_after_record_actions(
         run_id,
         {
             "loop_id": loop_id,
-            "artifact_revision": new_revision,
-            "artifact_digest": new_digest,
+            "target_revision": new_revision,
+            "target_digest": new_digest,
+            "finding_set_id": str(store.load_review(run_id, loop_id).get("finding_set_id") or ""),
             "family_fixes": [
                 {
                     "family_id": "family-output-01",
@@ -1257,8 +1253,6 @@ def test_prepare_recheck_preserves_owner_family_sweeps_after_record_actions(
                     "rationale": "Added missing evidence across production.",
                     "changed_refs": ["item-leaf"],
                     "owner_sweep": {
-                        "artifact_revision": new_revision,
-                        "artifact_digest": new_digest,
                         "searched_refs": ["production:*"],
                         "search_dimensions": ["evidence"],
                         "additional_fixed_refs": [],

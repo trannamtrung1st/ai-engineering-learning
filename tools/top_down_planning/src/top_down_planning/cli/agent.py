@@ -75,9 +75,12 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
     _add_run_flags(snapshot_parser)
     snapshot_parser.add_argument(
         "--view",
-        choices=["active", "audit", "ready", "issues"],
+        choices=["active", "audit", "ready", "issues", "budget"],
         default="active",
-        help="Snapshot view (default: active). audit includes inactive history.",
+        help=(
+            "Snapshot view (default: active). audit includes inactive history; "
+            "budget returns planning_budget for the requested root/item subtree."
+        ),
     )
     snapshot_parser.add_argument("--root", help="Subtree root item id.")
     snapshot_parser.add_argument("--depth", type=int, help="Maximum subtree depth.")
@@ -117,9 +120,12 @@ def add_agent_subparsers(subparsers: argparse._SubParsersAction) -> None:
     _add_run_flags(production_snapshot_parser)
     production_snapshot_parser.add_argument(
         "--view",
-        choices=["tree", "ready"],
+        choices=["tree", "ready", "dispositions"],
         default="ready",
-        help="Snapshot view (default: ready).",
+        help=(
+            "Snapshot view (default: ready). dispositions returns the full "
+            "disposition map; ready includes compact disposition_summary counts."
+        ),
     )
 
     production_apply_parser = production_sub.add_parser(

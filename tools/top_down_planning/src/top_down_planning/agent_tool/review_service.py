@@ -24,6 +24,7 @@ from top_down_planning.agent_tool.request_audit import (
     AgentRequestContext,
     apply_request_audit_fields,
 )
+from top_down_planning.agent_tool.request_schema import validate_agent_request
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.approval_digests import (
     OUTPUT_APPROVAL_DIGEST_KEYS,
@@ -101,9 +102,7 @@ def _resolve_focused_artifact_digest(
     *,
     require_explicit: bool = False,
 ) -> str:
-    requested = str(
-        request.get("target_digest") or request.get("artifact_digest") or ""
-    ).strip()
+    requested = str(request.get("target_digest") or "").strip()
     current = _current_focused_artifact_digest(store, run_id, loop.type)
     if require_explicit and not requested:
         raise RequestError(f"{loop.type} respond requires target_digest")
@@ -156,6 +155,7 @@ class ReviewAgentService:
             operation="review_request",
             capability_token=capability_token,
         )
+        validate_agent_request("review_request", request)
         review_type = str(request.get("type") or "").strip()
         if review_type not in {"focused_plan", "focused_output"}:
             raise RequestError(
@@ -260,6 +260,7 @@ class ReviewAgentService:
             capability_token=capability_token,
             loop_id=loop_id,
         )
+        validate_agent_request("review_respond", request)
 
         if "target_revision" not in request:
             raise RequestError("respond requires target_revision")
@@ -355,11 +356,7 @@ class ReviewAgentService:
             try:
                 if loop.type in {"whole_plan", "whole_output"}:
                     _reject_non_family_mandatory_loop(loop)
-                    artifact_digest = str(
-                        request.get("target_digest")
-                        or request.get("artifact_digest")
-                        or ""
-                    ).strip()
+                    artifact_digest = str(request.get("target_digest") or "").strip()
                     if not artifact_digest:
                         raise RequestError(
                             f"{loop.type} discovery respond requires target_digest"
@@ -810,6 +807,7 @@ class ReviewAgentService:
             raise RequestError(
                 "review_record_finding_actions requires a planner or producer capability"
             )
+        validate_agent_request("review_record_finding_actions", request)
 
         loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
         expected_review_revision = review_record_revision(loop.to_dict())
@@ -847,33 +845,44 @@ class ReviewAgentService:
             )
 
         if loop.type in {"whole_output", "focused_output"}:
-            artifact_revision = int(
+            current_artifact_revision = int(
                 self._store.load_production(self._run_id)["output_revision"]
             )
         else:
-            artifact_revision = int(self._store.load_plan(self._run_id)["revision"])
+            current_artifact_revision = int(self._store.load_plan(self._run_id)["revision"])
+
+        root_finding_set_id = str(
+            request.get("finding_set_id") or loop.finding_set_id or ""
+        ).strip()
+
+        if "target_revision" in request:
+            try:
+                requested_revision = int(request["target_revision"])
+            except (TypeError, ValueError) as exc:
+                raise RequestError("target_revision must be an integer") from exc
+            if requested_revision != current_artifact_revision:
+                raise RequestError(
+                    f"target_revision {requested_revision} does not match current "
+                    f"revision {current_artifact_revision}"
+                )
+            artifact_revision = requested_revision
+        else:
+            artifact_revision = current_artifact_revision
 
         family_events: list[dict[str, Any]] = []
         try:
             if raw_fixes and uses_finding_family_protocol(loop):
-                artifact_digest = str(request.get("artifact_digest") or "").strip()
-                if not artifact_digest:
-                    raise RequestError("family_fixes require artifact_digest")
-                requested_revision = artifact_revision
-                if "artifact_revision" in request:
-                    try:
-                        requested_revision = int(request["artifact_revision"])
-                    except (TypeError, ValueError) as exc:
-                        raise RequestError(
-                            "artifact_revision must be an integer"
-                        ) from exc
+                target_digest = str(request.get("target_digest") or "").strip()
+                if not target_digest:
+                    raise RequestError("family_fixes require target_digest")
                 updated, parsed, family_events = apply_family_fixes(
                     loop,
                     request,
                     actor_role=role,
-                    artifact_revision=requested_revision,
-                    artifact_digest=artifact_digest,
-                    current_artifact_revision=artifact_revision,
+                    artifact_revision=artifact_revision,
+                    artifact_digest=target_digest,
+                    finding_set_id=root_finding_set_id,
+                    current_artifact_revision=current_artifact_revision,
                 )
             else:
                 if raw_fixes:
@@ -881,37 +890,6 @@ class ReviewAgentService:
                         "family_fixes apply only to mandatory whole_plan and "
                         "whole_output contract-v2 reviews"
                     )
-                if "artifact_revision" in request:
-                    try:
-                        requested_revision = int(request["artifact_revision"])
-                    except (TypeError, ValueError) as exc:
-                        raise RequestError(
-                            "artifact_revision must be an integer"
-                        ) from exc
-                    if requested_revision != artifact_revision:
-                        raise RequestError(
-                            f"artifact_revision {requested_revision} does not match current "
-                            f"revision {artifact_revision}"
-                        )
-
-                artifact_digest = str(request.get("artifact_digest") or "").strip()
-                if not artifact_digest:
-                    if loop.type in {"whole_output", "focused_output"}:
-                        from top_down_planning.persistence.digests import (
-                            compute_output_digest,
-                        )
-
-                        artifact_digest = compute_output_digest(
-                            self._store.load_production(self._run_id)
-                        )
-                    else:
-                        from top_down_planning.persistence.digests import (
-                            compute_plan_digest,
-                        )
-
-                        artifact_digest = compute_plan_digest(
-                            self._store.load_plan(self._run_id)
-                        )
 
                 expanded_actions = expand_finding_actions_with_default(
                     loop,
@@ -925,9 +903,18 @@ class ReviewAgentService:
                     actor_role=role,
                     artifact_revision=artifact_revision,
                 )
+                stamped_actions: list[dict[str, Any]] = []
+                for item in expanded_actions:
+                    payload = dict(item)
+                    payload.setdefault("artifact_revision", artifact_revision)
+                    if root_finding_set_id and not str(
+                        payload.get("finding_set_id") or ""
+                    ).strip():
+                        payload["finding_set_id"] = root_finding_set_id
+                    stamped_actions.append(payload)
                 updated, parsed = apply_owner_finding_actions(
                     loop,
-                    expanded_actions,
+                    stamped_actions,
                     actor_role=role,
                     artifact_revision=artifact_revision,
                 )
@@ -962,7 +949,6 @@ class ReviewAgentService:
             "ok": True,
             "loop_id": loop_id,
             "status": updated.status,
-            "finding_actions": [action.to_dict() for action in updated.finding_actions],
             "recorded_actions": [action.to_dict() for action in parsed],
             **policy_observability_fields_for_loop(updated),
             **build_record_actions_gate_fields(updated),

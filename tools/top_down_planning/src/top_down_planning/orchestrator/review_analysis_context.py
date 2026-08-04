@@ -49,19 +49,10 @@ def build_plan_analysis_context(
     stage: str | None,
     review_type: str,
 ) -> dict[str, Any]:
-    review_cfg = (config.get("review") or {}).get(review_type) or {}
-    rubric = list(
-        review_cfg.get("rubric")
-        or DEFAULT_CONFIG["review"].get(review_type, {}).get("rubric", [])
-    )
-    rubric_items = rubric_items_with_ids([str(item) for item in rubric])
     issues = collect_plan_analysis_validation_issues(plan)
     return {
-        "audit_passes": list(required_audit_passes(review_type)),
-        "rubric_items": rubric_items,
-        "validation_issues": [issue.to_dict() for issue in issues],
-        "preflight_is_advisory": True,
         "stage": stage,
+        "preflight_candidates": [issue.to_dict() for issue in issues],
     }
 
 
@@ -73,12 +64,6 @@ def build_output_analysis_context(
     stage: str | None,
     review_type: str,
 ) -> dict[str, Any]:
-    review_cfg = (config.get("review") or {}).get(review_type) or {}
-    rubric = list(
-        review_cfg.get("rubric")
-        or DEFAULT_CONFIG["review"].get(review_type, {}).get("rubric", [])
-    )
-    rubric_items = rubric_items_with_ids([str(item) for item in rubric])
     traceability = build_output_traceability(plan, production)
     validation_issues = [
         {
@@ -89,16 +74,13 @@ def build_output_analysis_context(
         for message in validate_production_checks(plan, production)
     ]
     return {
-        "audit_passes": list(required_audit_passes(review_type)),
-        "rubric_items": rubric_items,
-        "validation_issues": validation_issues,
-        "traceability_summary": {
+        "stage": stage,
+        "preflight_candidates": validation_issues,
+        "output_traceability_summary": {
             "plan_contract_item_count": len(traceability.get("plan_contracts") or []),
             "evidence_item_count": len(traceability.get("evidence_by_item") or {}),
             "output_revision": int(production.get("output_revision") or 0),
         },
-        "preflight_is_advisory": True,
-        "stage": stage,
     }
 
 

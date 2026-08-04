@@ -289,7 +289,7 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
         capability_token=producer_capability,
     )
     service.submit_completion(
-        {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+        {"goal_assessment": "Output goal is fully met."},
         capability_token=producer_capability,
     )
 
@@ -406,7 +406,7 @@ def test_submit_completion_rejected_while_amendment_pending(tmp_path: Path) -> N
 
     with pytest.raises(RequestError, match="paused while a plan amendment is pending"):
         service.submit_completion(
-            {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+            {"goal_assessment": "Output goal is fully met."},
             capability_token=grant_capability(store, "run-20260101T001901-001901", role="producer", phase=PRODUCTION),
         )
 

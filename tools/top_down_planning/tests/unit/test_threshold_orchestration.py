@@ -26,6 +26,7 @@ from tests.helpers import (
     create_run_kwargs,
     done_events,
     grant_capability,
+    mandatory_plan_digest,
     minimal_resolved_config,
     review_loop_dict_with_binding,
     save_review_payload,
@@ -237,14 +238,14 @@ def test_focused_orchestrator_advisory_handoff_defer_completes(
         ReviewAgentService(store, run_id).record_finding_actions(
             {
                 "loop_id": loop.id,
-                "artifact_revision": 0,
+                "target_revision": 0,
+                "target_digest": mandatory_plan_digest(store, run_id),
+                "finding_set_id": persisted["finding_set_id"],
                 "finding_actions": [
                     {
                         "finding_id": "f-minor",
                         "action": "defer",
                         "actor_role": "planner",
-                        "artifact_revision": 0,
-                        "finding_set_id": persisted["finding_set_id"],
                         "rationale": "Defer polish",
                     }
                 ],

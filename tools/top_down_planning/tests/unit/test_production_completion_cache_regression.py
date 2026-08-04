@@ -152,7 +152,7 @@ def test_production_completion_succeeds_despite_cache_noise(tmp_path: Path) -> N
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),
@@ -212,7 +212,7 @@ def test_production_completion_fails_on_unauthorized_source_not_caches(
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),
@@ -263,7 +263,7 @@ def test_production_completion_fails_on_unauthorized_deletion(tmp_path: Path) ->
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),
@@ -307,7 +307,7 @@ def test_production_completion_fails_on_unauthorized_addition(tmp_path: Path) ->
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),

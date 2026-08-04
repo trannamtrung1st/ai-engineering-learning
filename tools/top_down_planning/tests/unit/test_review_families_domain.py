@@ -1842,8 +1842,6 @@ def test_plan_apply_without_record_actions_can_resume_family_fix(tmp_path: Path)
         "summary": "One Reset instance found",
         "target_digest": digest,
         "audit_attestation": {
-            "artifact_revision": target_revision,
-            "artifact_digest": digest,
             "passes": [
                 {
                     "pass_id": pass_id,
@@ -1860,19 +1858,15 @@ def test_plan_apply_without_record_actions_can_resume_family_fix(tmp_path: Path)
         "finding_families": [
             {
                 "id": "family-reset",
-                "finding_set_id": finding_set_id,
                 "rule_id": "dependency.acceptance_capability_available",
                 "subject_key": "reset-control",
                 "scope_kind": "active-plan",
-                "family_fingerprint": fingerprint,
                 "title": "Reset dependency closure",
                 "seed_finding_id": "sf-001",
                 "confirmed_finding_ids": ["sf-001"],
                 "candidate_refs": [],
                 "recommended_change": "Normalize Reset references",
                 "discovery_sweep": {
-                    "artifact_revision": target_revision,
-                    "artifact_digest": digest,
                     "searched_refs": ["active-items:*"],
                     "search_dimensions": ["acceptance"],
                     "completed": True,
@@ -1907,8 +1901,9 @@ def test_plan_apply_without_record_actions_can_resume_family_fix(tmp_path: Path)
     ReviewAgentService(store, run_id).record_finding_actions(
         {
             "loop_id": loop.id,
-            "artifact_revision": new_revision,
-            "artifact_digest": new_digest,
+            "target_revision": new_revision,
+            "target_digest": new_digest,
+            "finding_set_id": "set-1",
             "family_fixes": [
                 {
                     "family_id": "family-reset",
@@ -1916,8 +1911,6 @@ def test_plan_apply_without_record_actions_can_resume_family_fix(tmp_path: Path)
                     "rationale": "Normalized Reset reference",
                     "changed_refs": ["item-a"],
                     "owner_sweep": {
-                        "artifact_revision": new_revision,
-                        "artifact_digest": new_digest,
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance"],
                         "additional_fixed_refs": [],

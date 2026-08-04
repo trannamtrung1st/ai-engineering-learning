@@ -41,16 +41,6 @@ def _parse_verification_sweep(
     artifact_revision: int,
     artifact_digest: str,
 ) -> FamilySweepRecord:
-    sweep_revision = sweep_raw.get("artifact_revision")
-    if sweep_revision is None:
-        raise ValueError(f"family {family_id!r} verification_sweep requires artifact_revision")
-    if int(sweep_revision) != artifact_revision:
-        raise ValueError(f"family {family_id!r} verification_sweep artifact_revision mismatch")
-    sweep_digest = str(sweep_raw.get("artifact_digest") or "").strip()
-    if not sweep_digest:
-        raise ValueError(f"family {family_id!r} verification_sweep requires artifact_digest")
-    if sweep_digest != artifact_digest:
-        raise ValueError(f"family {family_id!r} verification_sweep artifact_digest mismatch")
     completed = bool(sweep_raw.get("completed"))
     searched_refs = [
         str(item).strip()

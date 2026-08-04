@@ -18,7 +18,7 @@ from top_down_planning.domain.readiness import compute_ready_view
 from top_down_planning.domain.reviews import build_is_review_blocked_fn
 from top_down_planning.domain.validators import ValidationResult
 
-PlanView = Literal["active", "audit", "ready", "issues"]
+PlanView = Literal["active", "audit", "ready", "issues", "budget"]
 
 
 def item_snapshot(item: PlanItem, display_number: str, *, depth: int) -> dict[str, Any]:
@@ -89,6 +89,8 @@ def build_hierarchy_snapshot(
     view: str,
     root_id: str | None = None,
     depth: int | None = None,
+    include_budget: bool = False,
+    include_plan_metadata: bool = True,
 ) -> dict[str, Any]:
     visible = _visible_item_ids(plan, root_id=root_id, depth=depth)
     items: list[dict[str, Any]] = []
@@ -101,15 +103,19 @@ def build_hierarchy_snapshot(
         items.append(
             item_snapshot(item, display_number, depth=item_depth(plan, item_id))
         )
-        budgets.append(compute_planning_budget(plan, item_id, limits).to_dict())
+        if include_budget:
+            budgets.append(compute_planning_budget(plan, item_id, limits).to_dict())
 
-    return {
+    payload: dict[str, Any] = {
         "view": view,
         "revision": plan.revision,
         "items": items,
-        "planning_budget": budgets,
-        **_plan_metadata(plan),
     }
+    if include_budget:
+        payload["planning_budget"] = budgets
+    if include_plan_metadata:
+        payload.update(_plan_metadata(plan))
+    return payload
 
 
 def build_active_view(
@@ -127,6 +133,28 @@ def build_active_view(
         view="active",
         root_id=root_id,
         depth=depth,
+        include_budget=False,
+        include_plan_metadata=root_id is None,
+    )
+
+
+def build_budget_view(
+    plan: Plan,
+    *,
+    limits: PlanningLimits,
+    root_id: str | None = None,
+    depth: int | None = None,
+) -> dict[str, Any]:
+    """Planning budget inspection for a root/item subtree."""
+
+    return build_hierarchy_snapshot(
+        plan,
+        limits=limits,
+        view="budget",
+        root_id=root_id,
+        depth=depth,
+        include_budget=True,
+        include_plan_metadata=False,
     )
 
 

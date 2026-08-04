@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.agent_tool import PlanAgentService, RevisionConflictError
-from top_down_planning.agent_tool.errors import CapabilityDeniedError, OperationError
+from top_down_planning.agent_tool.errors import CapabilityDeniedError, OperationError, RequestError
 from top_down_planning.cli.main import main
 from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.orchestrator.phases import PLANNING
@@ -845,7 +845,7 @@ def test_apply_rejects_add_item_without_title(tmp_path: Path) -> None:
 
     service = PlanAgentService(store, "run-20260101T000001-000001")
     token = grant_capability(store, "run-20260101T000001-000001", role="planner", phase=PLANNING)
-    with pytest.raises(OperationError, match="item title is required"):
+    with pytest.raises(RequestError, match="oneOf|title"):
         service.apply(
             {
                 "base_revision": 0,

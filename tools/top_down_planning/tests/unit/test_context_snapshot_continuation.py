@@ -135,7 +135,7 @@ def test_continuation_into_whole_output_succeeds_after_working_resource_mutation
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),
@@ -288,7 +288,7 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),
@@ -398,7 +398,7 @@ def test_engine_enters_whole_output_review_after_production_resource_mutation(
             apply_production(
                 store,
                 run_id,
-                {"goal_assessment": "Output goal is fully met.", "goal_met": True},
+                {"goal_assessment": "Output goal is fully met."},
                 handler="submit_completion",
             )(),
         ),

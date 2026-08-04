@@ -38,6 +38,7 @@ from tests.helpers import (
     mandatory_scope_review_respond_request,
     mandatory_verification_needs_revision_request,
     mandatory_verification_respond_request,
+    mandatory_plan_digest,
     plan_root_item,
     prepare_loop_for_scope_review_respond,
     record_finding_actions,
@@ -1281,14 +1282,14 @@ def test_driver_orchestrates_advisory_defer_through_scope(tmp_path: Path) -> Non
         ReviewAgentService(store, run_id).record_finding_actions(
             {
                 "loop_id": loop_id,
-                "artifact_revision": 0,
+                "target_revision": 0,
+                "target_digest": mandatory_plan_digest(store, run_id),
+                "finding_set_id": persisted["finding_set_id"],
                 "finding_actions": [
                     {
                         "finding_id": "finding-minor-01",
                         "action": "defer",
                         "actor_role": "planner",
-                        "artifact_revision": 0,
-                        "finding_set_id": persisted["finding_set_id"],
                         "rationale": "Defer polish",
                     }
                 ],
@@ -1371,14 +1372,14 @@ def test_driver_advisory_handoff_closes_on_record_actions_while_stream_stalls(
         ReviewAgentService(store, run_id).record_finding_actions(
             {
                 "loop_id": loop_id,
-                "artifact_revision": 0,
+                "target_revision": 0,
+                "target_digest": mandatory_plan_digest(store, run_id),
+                "finding_set_id": persisted["finding_set_id"],
                 "finding_actions": [
                     {
                         "finding_id": "finding-minor-01",
                         "action": "defer",
                         "actor_role": "planner",
-                        "artifact_revision": 0,
-                        "finding_set_id": persisted["finding_set_id"],
                         "rationale": "Defer polish",
                     }
                 ],
@@ -1520,14 +1521,14 @@ def test_driver_scope_review_advisory_handoff_requires_reviewer_clear(
         ReviewAgentService(store, run_id).record_finding_actions(
             {
                 "loop_id": loop_id,
-                "artifact_revision": 0,
+                "target_revision": 0,
+                "target_digest": mandatory_plan_digest(store, run_id),
+                "finding_set_id": persisted["finding_set_id"],
                 "finding_actions": [
                     {
                         "finding_id": "finding-minor-01",
                         "action": "accept_as_is",
                         "actor_role": "planner",
-                        "artifact_revision": 0,
-                        "finding_set_id": persisted["finding_set_id"],
                         "rationale": "Accept optional polish items.",
                     }
                 ],
@@ -1810,14 +1811,14 @@ def test_driver_challenge_only_enters_verification_not_revision(tmp_path: Path) 
         ReviewAgentService(store, run_id).record_finding_actions(
             {
                 "loop_id": loop_id,
-                "artifact_revision": 0,
+                "target_revision": 0,
+                "target_digest": mandatory_plan_digest(store, run_id),
+                "finding_set_id": persisted["finding_set_id"],
                 "finding_actions": [
                     {
                         "finding_id": finding_id,
                         "action": "challenge",
                         "actor_role": "planner",
-                        "artifact_revision": 0,
-                        "finding_set_id": persisted["finding_set_id"],
                         "challenge_reason": "invalid",
                         "rationale": "not actionable",
                         "proposed_disposition": "invalid",

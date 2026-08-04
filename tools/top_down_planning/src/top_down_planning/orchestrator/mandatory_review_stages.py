@@ -32,6 +32,7 @@ _VERIFICATION_STAGES = frozenset({"finding_verification"})
 _SCOPE_REVIEW_STAGES = frozenset({"scope_review"})
 
 _MANDATORY_FAMILY_DISCOVERY_REQUIRED = (
+    "target_revision",
     "finding_set_id",
     "target_digest",
     "reported_findings",
@@ -42,6 +43,7 @@ _MANDATORY_FAMILY_DISCOVERY_REQUIRED = (
 )
 
 _MANDATORY_FAMILY_VERIFICATION_REQUIRED = (
+    "target_revision",
     "finding_results",
     "family_results",
     "new_direct_side_effect_findings",
@@ -297,6 +299,7 @@ def _focused_verification_package_fields(loop: ReviewLoop) -> dict[str, Any]:
         "stage": "finding_verification",
         "decisions": ["verified", "needs_revision", "blocked"],
         "required_fields": [
+            "target_revision",
             "finding_results",
             "new_direct_side_effect_findings",
             "target_digest",

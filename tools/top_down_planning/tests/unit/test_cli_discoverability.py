@@ -257,27 +257,27 @@ def test_default_config_validates_against_config_schema() -> None:
     assert issues == []
 
 
-def test_completion_claim_schema_rejects_goal_met_false() -> None:
+def test_completion_claim_schema_rejects_goal_met_field() -> None:
     schema = schema_docs.show_schema("completion-claim")
     issues = validate_against_schema(
-        {"goal_assessment": "Not met.", "goal_met": False},
+        {"goal_assessment": "Done.", "goal_met": True},
         schema,
     )
     assert issues
-    assert any("const" in issue for issue in issues)
+    assert any("unexpected properties" in issue for issue in issues)
 
 
-def test_focused_review_request_schema_rejects_type_kind_mismatch() -> None:
+def test_focused_review_request_schema_rejects_scope_kind() -> None:
     schema = schema_docs.show_schema("focused-review-request")
     issues = validate_against_schema(
         {
             "type": "focused_plan",
-            "revise_at": "blocker",
-            "scope": {"kind": "focused_output", "item_ids": ["item-api"]},
+            "scope": {"kind": "focused_plan", "item_ids": ["item-api"]},
         },
         schema,
     )
     assert issues
+    assert any("unexpected properties" in issue or "oneOf" in issue for issue in issues)
 
 
 def test_every_advertised_schema_loads() -> None:

@@ -348,10 +348,8 @@ _FAMILY_PROTOCOL_FINDING_SCHEMA: dict[str, Any] = {
 
 _DISCOVERY_SWEEP_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["artifact_revision", "artifact_digest", "completed"],
+    "required": ["completed"],
     "properties": {
-        "artifact_revision": {"type": "integer"},
-        "artifact_digest": {"type": "string", "minLength": 1},
         "searched_refs": {
             "type": "array",
             "items": {"type": "string", "maxLength": 256},
@@ -372,10 +370,8 @@ _DISCOVERY_SWEEP_SCHEMA: dict[str, Any] = {
 
 _VERIFICATION_SWEEP_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["artifact_revision", "artifact_digest", "completed"],
+    "required": ["completed"],
     "properties": {
-        "artifact_revision": {"type": "integer"},
-        "artifact_digest": {"type": "string", "minLength": 1},
         "searched_refs": {
             "type": "array",
             "items": {"type": "string", "maxLength": 256},
@@ -400,10 +396,8 @@ _VERIFICATION_SWEEP_SCHEMA: dict[str, Any] = {
 
 _OWNER_SWEEP_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["artifact_revision", "artifact_digest", "completed"],
+    "required": ["completed"],
     "properties": {
-        "artifact_revision": {"type": "integer"},
-        "artifact_digest": {"type": "string", "minLength": 1},
         "searched_refs": {
             "type": "array",
             "items": {"type": "string", "maxLength": 256},
@@ -472,7 +466,7 @@ _FINDING_VERIFICATION_ENTRY_SCHEMA: dict[str, Any] = {
 
 _FOCUSED_REVIEW_SCOPE_SCHEMA = {
     "type": "object",
-    "required": ["kind", "item_ids"],
+    "required": ["item_ids"],
     "properties": {
         "item_ids": {
             "type": "array",
@@ -489,17 +483,7 @@ _FOCUSED_REVIEW_BRANCH_SCHEMAS = [
         "required": ["type", "scope"],
         "properties": {
             "type": {"const": review_type},
-            "scope": {
-                **{
-                    k: v
-                    for k, v in _FOCUSED_REVIEW_SCOPE_SCHEMA.items()
-                    if k != "properties"
-                },
-                "properties": {
-                    "kind": {"const": review_type},
-                    **(_FOCUSED_REVIEW_SCOPE_SCHEMA["properties"]),
-                },
-            },
+            "scope": _FOCUSED_REVIEW_SCOPE_SCHEMA,
         },
         "additionalProperties": False,
     }
@@ -514,6 +498,49 @@ _FAMILY_RULE_ID_PROPERTY: dict[str, Any] = {
         "rule_id values) or custom.<slug> (lowercase slug, hyphens) with "
         "rule_definition. Built-in rules must not include rule_definition."
     ),
+}
+
+_FAMILY_DISCOVERY_ITEM_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": [
+        "id",
+        "rule_id",
+        "subject_key",
+        "title",
+        "confirmed_finding_ids",
+        "discovery_sweep",
+    ],
+    "properties": {
+        "id": {"type": "string", "maxLength": 128},
+        "rule_id": _FAMILY_RULE_ID_PROPERTY,
+        "subject_key": {"type": "string", "maxLength": 256},
+        "scope_kind": {
+            "type": "string",
+            "enum": [
+                "active-plan",
+                "focused-plan",
+                "whole-output",
+                "focused-output",
+            ],
+            "description": (
+                "Optional; service may derive scope_kind from review context when omitted."
+            ),
+        },
+        "rule_definition": {"type": "string", "maxLength": 4000},
+        "title": {"type": "string", "maxLength": 512},
+        "seed_finding_id": {"type": "string", "maxLength": 128},
+        "confirmed_finding_ids": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 128},
+        },
+        "candidate_refs": {
+            "type": "array",
+            "items": {"type": "object"},
+        },
+        "recommended_change": {"type": "string", "maxLength": 4000},
+        "discovery_sweep": _DISCOVERY_SWEEP_SCHEMA,
+    },
+    "additionalProperties": False,
 }
 
 _AUDIT_PASS_RUBRIC_ITEM_IDS_PROPERTY: dict[str, Any] = {
@@ -584,49 +611,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             "target_digest": {"type": "string"},
             "finding_families": {
                 "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": [
-                        "id",
-                        "rule_id",
-                        "subject_key",
-                        "scope_kind",
-                        "title",
-                        "seed_finding_id",
-                        "confirmed_finding_ids",
-                        "recommended_change",
-                        "discovery_sweep",
-                    ],
-                    "properties": {
-                        "id": {"type": "string", "maxLength": 128},
-                        "finding_set_id": {"type": "string", "maxLength": 128},
-                        "rule_id": _FAMILY_RULE_ID_PROPERTY,
-                        "subject_key": {"type": "string", "maxLength": 256},
-                        "scope_kind": {
-                            "type": "string",
-                            "enum": [
-                                "active-plan",
-                                "focused-plan",
-                                "whole-output",
-                                "focused-output",
-                            ],
-                        },
-                        "rule_definition": {"type": "string", "maxLength": 4000},
-                        "title": {"type": "string", "maxLength": 512},
-                        "seed_finding_id": {"type": "string", "maxLength": 128},
-                        "confirmed_finding_ids": {
-                            "type": "array",
-                            "items": {"type": "string", "maxLength": 128},
-                        },
-                        "candidate_refs": {
-                            "type": "array",
-                            "items": {"type": "object"},
-                        },
-                        "recommended_change": {"type": "string", "maxLength": 4000},
-                        "discovery_sweep": _DISCOVERY_SWEEP_SCHEMA,
-                    },
-                    "additionalProperties": False,
-                },
+                "items": _FAMILY_DISCOVERY_ITEM_SCHEMA,
             },
             "reported_findings": {
                 "type": "array",
@@ -708,49 +693,7 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
             },
             "finding_families": {
                 "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": [
-                        "id",
-                        "rule_id",
-                        "subject_key",
-                        "scope_kind",
-                        "title",
-                        "seed_finding_id",
-                        "confirmed_finding_ids",
-                        "recommended_change",
-                        "discovery_sweep",
-                    ],
-                    "properties": {
-                        "id": {"type": "string", "maxLength": 128},
-                        "finding_set_id": {"type": "string", "maxLength": 128},
-                        "rule_id": _FAMILY_RULE_ID_PROPERTY,
-                        "subject_key": {"type": "string", "maxLength": 256},
-                        "scope_kind": {
-                            "type": "string",
-                            "enum": [
-                                "active-plan",
-                                "focused-plan",
-                                "whole-output",
-                                "focused-output",
-                            ],
-                        },
-                        "rule_definition": {"type": "string", "maxLength": 4000},
-                        "title": {"type": "string", "maxLength": 512},
-                        "seed_finding_id": {"type": "string", "maxLength": 128},
-                        "confirmed_finding_ids": {
-                            "type": "array",
-                            "items": {"type": "string", "maxLength": 128},
-                        },
-                        "candidate_refs": {
-                            "type": "array",
-                            "items": {"type": "object"},
-                        },
-                        "recommended_change": {"type": "string", "maxLength": 4000},
-                        "discovery_sweep": _DISCOVERY_SWEEP_SCHEMA,
-                    },
-                    "additionalProperties": False,
-                },
+                "items": _FAMILY_DISCOVERY_ITEM_SCHEMA,
             },
             "audit_attestation": {
                 "type": "object",
@@ -760,10 +703,8 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
                     "equal every rubric_items[].id when review_completed is true. "
                     "See `tdp agent readme`, section Audit attestation."
                 ),
-                "required": ["artifact_revision", "artifact_digest", "passes"],
+                "required": ["passes"],
                 "properties": {
-                    "artifact_revision": {"type": "integer"},
-                    "artifact_digest": {"type": "string", "minLength": 1},
                     "passes": {
                         "type": "array",
                         "items": {
@@ -1403,7 +1344,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["production_revision", "plan_items", "dispositions"],
         "properties": {
             "production_revision": {"type": "integer"},
-            "batch_id": {"type": "string"},
             "plan_items": {
                 "type": "array",
                 "minItems": 1,
@@ -1464,7 +1404,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 ),
             },
             "intent": {"type": "string"},
-            "agent_turns": {"type": "integer", "minimum": 1},
         },
         "additionalProperties": False,
     },
@@ -1513,11 +1452,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "discovery finding_set_id to finding ids introduced in that set."
         ),
         "type": "object",
-        "required": ["loop_id"],
+        "required": ["loop_id", "target_revision", "target_digest", "finding_set_id"],
         "properties": {
             "loop_id": {"type": "string"},
-            "artifact_revision": {"type": "integer"},
-            "artifact_digest": {"type": "string"},
+            "target_revision": {"type": "integer"},
+            "target_digest": {"type": "string", "minLength": 1},
+            "finding_set_id": {"type": "string"},
             "default_optional_action": {
                 "type": "string",
                 "enum": ["defer", "accept_as_is"],
@@ -1530,13 +1470,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": [
-                        "finding_id",
-                        "action",
-                        "actor_role",
-                        "artifact_revision",
-                        "finding_set_id",
-                    ],
+                    "required": ["finding_id", "action", "actor_role"],
                     "properties": {
                         "finding_id": {"type": "string"},
                         "action": {
@@ -1547,8 +1481,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                             "type": "string",
                             "enum": ["planner", "producer"],
                         },
-                        "artifact_revision": {"type": "integer"},
-                        "finding_set_id": {"type": "string"},
                         "rationale": {"type": "string"},
                         "challenge_reason": {
                             "type": "string",
@@ -1586,7 +1518,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "FocusedReviewRequest",
         "description": (
             "Optional focused review request for `tdp agent review request`. "
-            "type must match scope.kind."
+            "Review kind is determined by type; scope lists item_ids only."
         ),
         "oneOf": _FOCUSED_REVIEW_BRANCH_SCHEMAS,
     },
@@ -1597,7 +1529,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "required": ["evidence", "affected_refs"],
         "properties": {
-            "id": {"type": "string"},
             "evidence": {"type": "string", "minLength": 1},
             "affected_refs": {
                 "type": "array",
@@ -1613,10 +1544,9 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "CompletionClaimRequest",
         "description": "Production completion claim for `tdp agent production submit-completion`.",
         "type": "object",
-        "required": ["goal_assessment", "goal_met"],
+        "required": ["goal_assessment"],
         "properties": {
             "goal_assessment": {"type": "string", "minLength": 1},
-            "goal_met": {"type": "boolean", "const": True},
             "summary": {"type": "string"},
         },
         "additionalProperties": False,
@@ -1940,8 +1870,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "candidate_refs": [],
                     "recommended_change": "Add measurable acceptance checks.",
                     "discovery_sweep": {
-                        "artifact_revision": 0,
-                        "artifact_digest": "<plan-digest>",
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance"],
                         "completed": True,
@@ -1995,8 +1923,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "candidate_refs": [],
                     "recommended_change": "Attach evidence for item-api.",
                     "discovery_sweep": {
-                        "artifact_revision": 1,
-                        "artifact_digest": "<output-digest>",
                         "searched_refs": ["production:*"],
                         "search_dimensions": ["evidence"],
                         "completed": True,
@@ -2067,8 +1993,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "reported_findings": [],
             "finding_families": [],
             "audit_attestation": {
-                "artifact_revision": 1,
-                "artifact_digest": "<plan-digest>",
                 "passes": _example_whole_plan_audit_passes(),
             },
             "review_completed": True,
@@ -2091,14 +2015,11 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "summary": "Reported dependency capability family.",
             "target_digest": "<plan-digest>",
             "audit_attestation": {
-                "artifact_revision": 1,
-                "artifact_digest": "<plan-digest>",
                 "passes": _example_whole_plan_audit_passes(),
             },
             "finding_families": [
                 {
                     "id": "family-dependency-capability-reset",
-                    "finding_set_id": "review-whole-plan-01-fs-01",
                     "rule_id": "dependency.acceptance_capability_available",
                     "subject_key": "reset-control",
                     "scope_kind": "active-plan",
@@ -2108,8 +2029,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "candidate_refs": [],
                     "recommended_change": "Move concrete integration to the owning leaf.",
                     "discovery_sweep": {
-                        "artifact_revision": 1,
-                        "artifact_digest": "<plan-digest>",
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance", "depends_on"],
                         "completed": True,
@@ -2154,14 +2073,11 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
             "summary": "Reported output evidence gap family.",
             "target_digest": "<output-digest>",
             "audit_attestation": {
-                "artifact_revision": 1,
-                "artifact_digest": "<output-digest>",
                 "passes": _example_whole_output_audit_passes(),
             },
             "finding_families": [
                 {
                     "id": "family-evidence-gap-leaf",
-                    "finding_set_id": "review-whole-output-01-fs-01",
                     "rule_id": "custom.evidence-gap",
                     "rule_definition": "output evidence completeness gap",
                     "subject_key": "item-leaf",
@@ -2172,8 +2088,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "candidate_refs": [],
                     "recommended_change": "Attach artifact evidence for item-leaf.",
                     "discovery_sweep": {
-                        "artifact_revision": 1,
-                        "artifact_digest": "<output-digest>",
                         "searched_refs": ["production:*"],
                         "search_dimensions": ["evidence"],
                         "completed": True,
@@ -2229,8 +2143,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "family_id": "family-dependency-capability-reset",
                     "disposition": "closed",
                     "verification_sweep": {
-                        "artifact_revision": 2,
-                        "artifact_digest": "<plan-digest>",
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance", "depends_on"],
                         "remaining_instance_refs": [],
@@ -2272,8 +2184,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "family_id": "family-evidence-gap-leaf",
                     "disposition": "closed",
                     "verification_sweep": {
-                        "artifact_revision": 2,
-                        "artifact_digest": "<output-digest>",
                         "searched_refs": ["production:*"],
                         "search_dimensions": ["evidence"],
                         "remaining_instance_refs": [],
@@ -2296,8 +2206,9 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         ),
         "payload": {
             "loop_id": "review-whole-plan-01",
-            "artifact_revision": 2,
-            "artifact_digest": "<plan-digest>",
+            "target_revision": 2,
+            "target_digest": "<plan-digest>",
+            "finding_set_id": "review-whole-plan-01-fs-02",
             "family_fixes": [
                 {
                     "family_id": "family-reset",
@@ -2305,8 +2216,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "rationale": "Normalized all instances",
                     "changed_refs": ["item-a", "item-b"],
                     "owner_sweep": {
-                        "artifact_revision": 2,
-                        "artifact_digest": "<plan-digest>",
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance"],
                         "additional_fixed_refs": [],
@@ -2327,8 +2236,9 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         ),
         "payload": {
             "loop_id": "review-whole-output-01",
-            "artifact_revision": 2,
-            "artifact_digest": "<output-digest>",
+            "target_revision": 2,
+            "target_digest": "<output-digest>",
+            "finding_set_id": "review-whole-output-01-fs-02",
             "family_fixes": [
                 {
                     "family_id": "family-evidence-gap-leaf",
@@ -2336,8 +2246,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "rationale": "Attached missing artifact evidence",
                     "changed_refs": ["item-leaf"],
                     "owner_sweep": {
-                        "artifact_revision": 2,
-                        "artifact_digest": "<output-digest>",
                         "searched_refs": ["production:*"],
                         "search_dimensions": ["evidence"],
                         "additional_fixed_refs": [],
@@ -2360,7 +2268,9 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         ),
         "payload": {
             "loop_id": "review-focused-plan-01",
-            "artifact_revision": 0,
+            "target_revision": 0,
+            "target_digest": "<plan-digest>",
+            "finding_set_id": "review-focused-plan-01-fs-01",
             "default_optional_action": "accept_as_is",
             "finding_actions": [
                 {
@@ -2369,8 +2279,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
                     "challenge_reason": "conflicts_with_contract",
                     "proposed_disposition": "invalid",
                     "actor_role": "planner",
-                    "artifact_revision": 0,
-                    "finding_set_id": "review-focused-plan-01-fs-01",
                     "rationale": "Conflicts with acceptance criterion 7.",
                 }
             ],
@@ -2382,7 +2290,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "payload": {
             "type": "focused_plan",
             "scope": {
-                "kind": "focused_plan",
                 "item_ids": ["item-api"],
             },
         },
@@ -2401,7 +2308,6 @@ _EXAMPLES: dict[str, dict[str, Any]] = {
         "description": "Producer submits a completion claim after all applicable items are terminal.",
         "payload": {
             "goal_assessment": "Every applicable plan item has a terminal disposition or derived satisfaction.",
-            "goal_met": True,
             "summary": "Production batches complete; ready for whole-output review.",
         },
     },
@@ -2431,12 +2337,12 @@ Discover contracts without reading source:
   tdp agent example [<name>]  # omit name to list published examples
 
 Plan:
-  tdp agent plan snapshot --run <run-id> [--view active|audit|ready|issues]
+  tdp agent plan snapshot --run <run-id> [--view active|audit|ready|issues|budget]
   tdp agent plan apply --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/plan-apply-r<rev>-a01.json
   tdp agent plan check --run <run-id> [--mode draft|approval]
 
 Production:
-  tdp agent production snapshot --run <run-id> [--view tree|ready]
+  tdp agent production snapshot --run <run-id> [--view tree|ready|dispositions]
   tdp agent production apply --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-apply-batch-01-a01.json
   tdp agent production check --run <run-id>
   tdp agent production request-amendment --run <run-id> --request $TDP_AGENT_REQUESTS_DIR/production-amendment-a01.json
@@ -2688,13 +2594,11 @@ On `initial_review` and `scope_review` with `review_completed: true`, contract v
 payloads require `audit_attestation`:
 
 - **`passes[].pass_id`** — must include every id from the delivered review package
-  `required_audit_passes` (also listed in `analysis_context.audit_passes`).
+  `required_audit_passes` at the package root.
 - **`passes[].rubric_item_ids`** — union across all passes must equal the set of
   every `id` from the delivered `rubric_items` (no missing or extra ids). Do not
   copy rubric ids from static `tdp agent example` payloads; they reflect default
   config only.
-- **`artifact_revision`** and **`artifact_digest`** — must match `target_digest`
-  on the respond payload.
 
 Workflow: read the delivered review package → `tdp agent example
 review-respond-family-discovery` (or `-output`) for **structure** → substitute
@@ -2784,11 +2688,12 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    correctness and internal consistency. Approval requires a clear
    fresh `scope_review` against the current artifact digest — finding closure alone is not
    enough.
-3. Producer records batches with `production apply`, then `submit-completion` with
-   `goal_met: true` and a `goal_assessment` rationale. Batch turns close when apply
-   persists; the completion turn closes when the claim persists. Production `ready` snapshots
-   expose `ready_items` (canonical contracts per ready leaf, including
-   `effective_scope` / `effective_boundaries`) alongside `ready_item_ids`.
+3. Producer records batches with `production apply` (service assigns `batch_id`), then
+   `submit-completion` with a non-empty `goal_assessment`. The command implies the goal
+   is met; do not send `goal_met` in the request. Batch turns close when apply
+   persists; the completion turn closes when the claim persists. Production `ready`
+   snapshots expose `ready_items` and compact `disposition_summary` counts; use
+   `--view dispositions` for the full map.
 4. Mandatory whole-output review must complete the gate before `outcome: accepted`.
    Same mandatory contract-v2 gate as whole-plan review (`initial_review`, then
    repeatable verification and fresh `scope_review` rounds). Review packages include
@@ -2803,7 +2708,7 @@ _AGENT_README_WORKFLOW_AND_BEYOND = """## Workflow
    `production apply` with `evidence_revision: true` and **new** output evidence IDs
    on terminal items targeted by unresolved required findings (dispositions unchanged),
    record owner `family_fix` sweeps via `tdp agent review record-actions`, then
-   re-submit completion with `goal_met: true` (the owner revision turn closes
+   re-submit completion with `goal_assessment` only (the owner revision turn closes
    when that completion claim persists). During production, focused-output
    evidence revision also requires `focused_review_loop_id` bound to the loop's
    `target_revision`. Plan amendment is not available during whole-output review.
@@ -2946,16 +2851,19 @@ Plan apply requires `base_revision` from `plan snapshot`. Production apply requi
 `production_revision` from `production snapshot`. Stale revisions return a conflict
 error with instructions to refresh the snapshot.
 
-Completion claims require `goal_met: true` plus non-empty `goal_assessment`. During
-`whole_output_review`, set `evidence_revision: true` on `production apply` with new
-output evidence IDs when revising terminal items after reviewer `changes_requested`.
+Completion claims require non-empty `goal_assessment` (the submit-completion command
+implies `goal_met`). During `whole_output_review`, set `evidence_revision: true` on
+`production apply` with new output evidence IDs when revising terminal items after
+reviewer `changes_requested`.
 During `production`, focused-output evidence revision requires `focused_review_loop_id`
 and matches the loop `target_revision` to the current `output_revision`.
 
 Plan `snapshot` and `check` responses separate validation `issues` (errors with
 `code`, `message`, optional `path`) from `warnings` (human-readable strings).
 `apply` returns the same split plus mutation budget warnings and sets
-`applied: true` only when the batch was persisted. Mutations that would introduce
+`applied: true` only when the batch was persisted. Compact apply responses omit
+`changed_subtree` and per-item `planning_budget`; refresh with `plan snapshot`
+(`--view active` or `--view budget` for planning limits). Mutations that would introduce
 new hard validation errors are rejected before persistence with `operation_error`
 and leave the plan revision unchanged. `ok` is true only when validation has no
 error-severity issues after a persisted apply (inspect `issues` after apply even

@@ -623,11 +623,13 @@ def test_whole_plan_package_includes_default_rubric(tmp_path: Path) -> None:
     assert [
         item["text"] for item in package["rubric_items"]
     ] == DEFAULT_CONFIG["review"]["whole_plan"]["rubric"]
-    assert package["plan_revision"] == 0
+    assert package["target_revision"] == 0
+    assert "target_digest" in package
+    assert "plan_revision" not in package
     assert "plan" in package
     assert package["plan"]["view"] == "active"
     assert "analysis_context" in package
-    assert "validation_issues" in package["analysis_context"]
+    assert "preflight_candidates" in package["analysis_context"]
     assert package["review_budgets"] == {
         "revision_cycles": 0,
         "scope_review_rounds": 0,
@@ -664,8 +666,8 @@ def test_whole_plan_package_declares_contract_v2_and_analysis_context(
     assert package["review_record_schema_version"] == 2
     assert package["review_contract_version"] == 2
     assert "analysis_context" in package
-    assert "validation_issues" in package["analysis_context"]
-    assert package["analysis_context"]["preflight_is_advisory"] is True
+    assert "preflight_candidates" in package["analysis_context"]
+    assert package["analysis_context"]["preflight_candidates"] is not None
 
 
 def test_whole_plan_scope_review_package_includes_rubric_omits_active_families(
@@ -737,7 +739,7 @@ def test_whole_plan_scope_review_package_includes_rubric_omits_active_families(
     assert package["rubric_items"]
     assert "active_families" not in package
     assert "Prior family title" not in str(package)
-    assert package["analysis_context"]["preflight_is_advisory"] is True
+    assert package["analysis_context"]["preflight_candidates"] is not None
 
 
 def test_whole_plan_package_includes_overlap_warnings(tmp_path: Path) -> None:
@@ -795,7 +797,7 @@ def test_whole_plan_package_includes_overlap_warnings(tmp_path: Path) -> None:
     )
     assert any(
         issue.get("code") == "executable_parent_overlap"
-        for issue in package["analysis_context"]["validation_issues"]
+        for issue in package["analysis_context"]["preflight_candidates"]
     )
 
 
@@ -839,7 +841,7 @@ def test_whole_plan_package_includes_empty_aggregate_warnings(tmp_path: Path) ->
     )
     assert any(
         issue.get("code") == "aggregate_without_descendants"
-        for issue in package["analysis_context"]["validation_issues"]
+        for issue in package["analysis_context"]["preflight_candidates"]
     )
 
 
@@ -899,7 +901,7 @@ def test_whole_plan_package_includes_dependency_cycle_issues(tmp_path: Path) -> 
     )
     assert any(
         issue.get("code") == "dependency_cycle"
-        for issue in package["analysis_context"]["validation_issues"]
+        for issue in package["analysis_context"]["preflight_candidates"]
     )
 
 

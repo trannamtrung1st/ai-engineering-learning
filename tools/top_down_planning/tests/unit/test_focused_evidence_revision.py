@@ -98,7 +98,6 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551")
         }
     ]
     production["completion_claim"] = {
-        "goal_met": True,
         "goal_assessment": "done",
         "summary": "",
         "plan_revision": 0,
@@ -324,7 +323,6 @@ def test_submit_completion_blocked_while_focused_findings_unresolved(
     with pytest.raises(RequestError, match="focused output findings"):
         service.submit_completion(
             {
-                "goal_met": True,
                 "goal_assessment": "Everything is done.",
             },
             capability_token=token,

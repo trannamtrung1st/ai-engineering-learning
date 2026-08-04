@@ -21,7 +21,6 @@ from top_down_planning.domain.reviews import (
     required_open_findings,
     review_gate_budgets_for_package,
 )
-from top_down_planning.orchestrator.agent_context import plan_execution_contract_fields
 from top_down_planning.persistence.interface import RunStore
 
 REPLACEMENT_SESSION_NOTICE = (
@@ -84,8 +83,10 @@ def _base_recovery_fields(
     phase_action_id: str,
     expected_next_action: str,
     store: RunStore,
+    target_digest: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    digests = dict(run.get("digests") or {})
+    payload: dict[str, Any] = {
         "run_id": run_id,
         "phase": phase,
         "role": role,
@@ -98,9 +99,14 @@ def _base_recovery_fields(
             "plan_revision": int(run.get("plan_revision") or 0),
             "production_revision": int(run.get("production_revision") or 0),
         },
-        "digests": dict(run.get("digests") or {}),
-        "recent_durable_events": recent_durable_event_summary(store, run_id),
     }
+    if target_digest is not None:
+        payload["target_digest"] = target_digest
+    else:
+        plan_digest = digests.get("plan")
+        if plan_digest:
+            payload["target_digest"] = plan_digest
+    return payload
 
 
 def _open_findings_payload(loop: ReviewLoop) -> dict[str, Any]:
@@ -162,7 +168,6 @@ def build_planner_recovery_manifest(
         run_id,
         review_types={"focused_plan", "whole_plan"},
     )
-    manifest.update(plan_execution_contract_fields(plan))
     return manifest
 
 
@@ -210,7 +215,6 @@ def build_producer_recovery_manifest(
         run_id,
         review_types={"focused_output", "whole_output"},
     )
-    manifest.update(plan_execution_contract_fields(plan))
     return manifest
 
 

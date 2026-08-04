@@ -25,6 +25,7 @@ from tests.helpers import (
     done_events,
     grant_capability,
     mandatory_initial_respond_request,
+    mandatory_output_digest,
     plan_root_item,
     record_finding_actions,
     respond_review,
@@ -128,8 +129,7 @@ def test_find_pending_focused_review_loop_id(tmp_path: Path) -> None:
     ReviewAgentService(store, run_id).request(
         {
             "type": "focused_plan",
-            "revise_at": "blocker",
-            "scope": {"kind": "focused_plan", "item_ids": ["item-root"]},
+            "scope": {"item_ids": ["item-root"]},
         },
         capability_token=token,
     )
@@ -248,7 +248,7 @@ def test_build_producer_turn_boundary_observer_detects_completion_claim(
     apply_production(
         store,
         run_id,
-        {"goal_assessment": "Revised output goal is met.", "goal_met": True},
+        {"goal_assessment": "Revised output goal is met."},
         handler="submit_completion",
         phase=WHOLE_OUTPUT_REVIEW,
     )()
@@ -298,14 +298,14 @@ def test_build_owner_finding_action_boundary_observer_detects_record_actions(
         run_id,
         {
             "loop_id": loop_id,
-            "artifact_revision": 1,
+            "target_revision": 1,
+            "target_digest": mandatory_output_digest(store, run_id),
+            "finding_set_id": "review-whole-output-01-fs-01",
             "finding_actions": [
                 {
                     "finding_id": "finding-01",
                     "action": "defer",
                     "actor_role": "producer",
-                    "artifact_revision": 1,
-                    "finding_set_id": "review-whole-output-01-fs-01",
                     "rationale": "Defer polish",
                 }
             ],
@@ -338,7 +338,7 @@ def test_build_producer_completion_boundary_observer_detects_new_claim(
     apply_production(
         store,
         run_id,
-        {"goal_assessment": "Revised output goal is met.", "goal_met": True},
+        {"goal_assessment": "Revised output goal is met."},
         handler="submit_completion",
         phase=WHOLE_OUTPUT_REVIEW,
     )()
@@ -359,7 +359,7 @@ def test_producer_completion_boundary_observer_ignores_prior_claim(
     apply_production(
         store,
         run_id,
-        {"goal_assessment": "Initial completion claim.", "goal_met": True},
+        {"goal_assessment": "Initial completion claim."},
         handler="submit_completion",
         phase=WHOLE_OUTPUT_REVIEW,
     )()
@@ -391,8 +391,7 @@ def test_review_decision_from_store_after_shell_respond(tmp_path: Path) -> None:
     ReviewAgentService(store, run_id).request(
         {
             "type": "focused_plan",
-            "revise_at": "blocker",
-            "scope": {"kind": "focused_plan", "item_ids": ["item-root"]},
+            "scope": {"item_ids": ["item-root"]},
         },
         capability_token=planner_token,
     )
@@ -490,8 +489,7 @@ def test_planning_runs_store_created_focused_review_before_advancing(
     ReviewAgentService(store, run_id).request(
         {
             "type": "focused_plan",
-            "revise_at": "blocker",
-            "scope": {"kind": "focused_plan", "item_ids": ["item-api"]},
+            "scope": {"item_ids": ["item-api"]},
         },
         capability_token=planner_token,
     )

@@ -33,8 +33,6 @@ def _audit_attestation(*, target_revision: int, digest: str) -> dict:
     )
     rubric_ids = [item["id"] for item in rubric_items]
     return {
-        "artifact_revision": target_revision,
-        "artifact_digest": digest,
         "passes": [
             {
                 "pass_id": pass_id,
@@ -156,19 +154,15 @@ def test_family_fix_records_owner_sweep(tmp_path: Path) -> None:
         "finding_families": [
             {
                 "id": "family-reset",
-                "finding_set_id": finding_set_id,
                 "rule_id": "dependency.acceptance_capability_available",
                 "subject_key": "reset-control",
                 "scope_kind": "active-plan",
-                "family_fingerprint": fingerprint,
                 "title": "Reset dependency closure",
                 "seed_finding_id": "sf-001",
                 "confirmed_finding_ids": ["sf-001", "sf-002", "sf-003"],
                 "candidate_refs": [],
                 "recommended_change": "Normalize Reset references",
                 "discovery_sweep": {
-                    "artifact_revision": target_revision,
-                    "artifact_digest": digest,
                     "searched_refs": ["active-items:*"],
                     "search_dimensions": ["acceptance"],
                     "completed": True,
@@ -203,8 +197,9 @@ def test_family_fix_records_owner_sweep(tmp_path: Path) -> None:
     ReviewAgentService(store, run_id).record_finding_actions(
         {
             "loop_id": loop_id,
-            "artifact_revision": new_revision,
-            "artifact_digest": new_digest,
+            "target_revision": new_revision,
+            "target_digest": new_digest,
+            "finding_set_id": finding_set_id,
             "family_fixes": [
                 {
                     "family_id": "family-reset",
@@ -212,8 +207,6 @@ def test_family_fix_records_owner_sweep(tmp_path: Path) -> None:
                     "rationale": "Normalized all Reset references",
                     "changed_refs": ["item-a", "item-b", "item-c"],
                     "owner_sweep": {
-                        "artifact_revision": new_revision,
-                        "artifact_digest": new_digest,
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance"],
                         "additional_fixed_refs": [],
@@ -265,8 +258,6 @@ def test_family_fix_records_owner_sweep(tmp_path: Path) -> None:
                 "family_id": "family-reset",
                 "disposition": "closed",
                 "verification_sweep": {
-                    "artifact_revision": new_revision,
-                    "artifact_digest": new_digest,
                     "searched_refs": ["active-items:*"],
                     "search_dimensions": ["acceptance"],
                     "remaining_instance_refs": [],
@@ -422,19 +413,15 @@ def test_partial_family_fix_surfaces_remaining_instance(tmp_path: Path) -> None:
             "finding_families": [
                 {
                     "id": "family-reset",
-                    "finding_set_id": finding_set_id,
                     "rule_id": "dependency.acceptance_capability_available",
                     "subject_key": "reset-control",
                     "scope_kind": "active-plan",
-                    "family_fingerprint": fingerprint,
                     "title": "Reset dependency closure",
                     "seed_finding_id": "sf-001",
                     "confirmed_finding_ids": ["sf-001", "sf-002", "sf-003"],
                     "candidate_refs": [],
                     "recommended_change": "Normalize Reset references",
                     "discovery_sweep": {
-                        "artifact_revision": target_revision,
-                        "artifact_digest": digest,
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance"],
                         "completed": True,
@@ -468,8 +455,9 @@ def test_partial_family_fix_surfaces_remaining_instance(tmp_path: Path) -> None:
     ReviewAgentService(store, run_id).record_finding_actions(
         {
             "loop_id": loop_id,
-            "artifact_revision": new_revision,
-            "artifact_digest": new_digest,
+            "target_revision": new_revision,
+            "target_digest": new_digest,
+            "finding_set_id": finding_set_id,
             "family_fixes": [
                 {
                     "family_id": "family-reset",
@@ -477,8 +465,6 @@ def test_partial_family_fix_surfaces_remaining_instance(tmp_path: Path) -> None:
                     "rationale": "Claimed full family fix",
                     "changed_refs": ["item-a", "item-b"],
                     "owner_sweep": {
-                        "artifact_revision": new_revision,
-                        "artifact_digest": new_digest,
                         "searched_refs": ["active-items:*"],
                         "search_dimensions": ["acceptance"],
                         "additional_fixed_refs": [],
@@ -525,8 +511,6 @@ def test_partial_family_fix_surfaces_remaining_instance(tmp_path: Path) -> None:
                         "family_id": "family-reset",
                         "disposition": "open",
                         "verification_sweep": {
-                            "artifact_revision": new_revision,
-                            "artifact_digest": new_digest,
                             "searched_refs": ["active-items:*"],
                             "search_dimensions": ["acceptance"],
                             "remaining_instance_refs": [

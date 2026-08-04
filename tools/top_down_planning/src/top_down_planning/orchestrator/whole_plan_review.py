@@ -24,6 +24,7 @@ from top_down_planning.domain.finding_families import (
 from top_down_planning.orchestrator.review_analysis_context import (
     build_plan_analysis_context,
     contract_fields,
+    required_audit_passes,
     rubric_items_with_ids,
 )
 from top_down_planning.orchestrator.mandatory_review_stages import (
@@ -45,7 +46,6 @@ from top_down_planning.domain.validators import (
 )
 from top_down_planning.orchestrator.agent_context import (
     attach_role_context_to_manifest,
-    plan_execution_contract_fields,
 )
 from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_loop,
@@ -317,6 +317,8 @@ def build_whole_plan_review_package(
         stage=loop.active_stage,
         review_type="whole_plan",
     )
+    plan_revision = int(plan.revision)
+    plan_digest = compute_plan_digest(plan)
     package: dict[str, Any] = {
         "run_id": run_id,
         "phase": WHOLE_PLAN_REVIEW,
@@ -329,11 +331,9 @@ def build_whole_plan_review_package(
         ),
         "scope": dict(loop.scope),
         "target_revision": loop.target_revision,
-        "plan_revision": plan.revision,
+        "target_digest": plan_digest,
         "plan": build_plan_review_snapshot(plan, limits=limits),
         "analysis_context": analysis_context,
-        **plan_execution_contract_fields(plan),
-        "digests": digests,
         **stage_package_fields(loop),
         **contract_fields(loop),
         "review_budgets": review_gate_budgets_for_package(loop, config),
@@ -351,10 +351,10 @@ def build_whole_plan_review_package(
             ),
         },
     }
+    if plan_revision != loop.target_revision:
+        package["plan_revision"] = plan_revision
     package["rubric_items"] = rubric_items
-    package["required_audit_passes"] = analysis_context["audit_passes"]
-    plan_revision = int(plan.revision)
-    plan_digest = compute_plan_digest(plan)
+    package["required_audit_passes"] = list(required_audit_passes("whole_plan"))
     if loop.active_stage == "finding_verification":
         package["family_verification_view"] = build_family_verification_view(
             loop,

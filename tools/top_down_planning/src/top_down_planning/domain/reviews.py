@@ -1488,7 +1488,7 @@ def validate_focused_scope(scope: Any, review_type: str) -> dict[str, Any]:
     if not isinstance(scope, dict):
         raise ValueError("scope must be an object")
 
-    kind = str(scope.get("kind") or "").strip()
+    kind = str(scope.get("kind") or review_type).strip()
     if kind in _WHOLE_SCOPE_KINDS:
         raise ValueError(
             f"focused review scope cannot use whole scope kind {kind!r}; "

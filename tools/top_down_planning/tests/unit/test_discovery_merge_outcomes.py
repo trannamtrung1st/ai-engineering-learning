@@ -380,7 +380,7 @@ def test_review_service_derives_changes_requested_from_discovery(
 def test_review_service_rejects_legacy_decision_path(tmp_path: Path) -> None:
     store, run_id, loop, token = _seed_focused_run(tmp_path)
     service = ReviewAgentService(store, run_id)
-    with pytest.raises(RequestError, match="discovery contract"):
+    with pytest.raises(RequestError, match="discovery contract|oneOf"):
         service.respond(
             {
                 "loop_id": loop.id,

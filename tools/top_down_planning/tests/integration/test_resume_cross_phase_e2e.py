@@ -10,10 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from top_down_planning.orchestrator import (
-    RunEngine,
-    WholePlanReviewOrchestrator,
-)
+from top_down_planning.orchestrator import RunEngine
 from top_down_planning.orchestrator.apply_resume import apply_resume_plan_atomically
 from top_down_planning.orchestrator.phases import (
     PLAN_VALIDATED,
@@ -30,7 +27,7 @@ from tests.helpers import (
     done_events,
     enter_mandatory_verification_pending,
     mandatory_initial_respond_request,
-    mandatory_scope_review_respond_request,
+    mandatory_scope_review_found_respond_request,
     mandatory_verification_respond_request,
     prepare_loop_for_scope_review_respond,
     respond_review,
@@ -39,6 +36,9 @@ from tests.helpers import (
     with_root_contract,
     work_item_payload,
 )
+from tests.unit.test_mandatory_whole_review_driver import _FakeAdapter, _create_driver_run
+from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.orchestrator.mandatory_whole_review import ReviewLoopDriver
 from top_down_planning.domain.approval_digests import OUTPUT_APPROVAL_DIGEST_KEYS
 from tests.helpers import approved_digests_from_run
 from tests.integration.e2e_helpers import (
@@ -49,10 +49,6 @@ from tests.integration.e2e_helpers import (
 )
 from tests.unit.test_whole_output_review import (
     _create_run_at_whole_output_review as create_run_at_whole_output_review,
-)
-from tests.unit.test_whole_plan_review import (
-    _create_run_at_whole_plan_review as create_run_at_whole_plan_review,
-    _review_respond_request as whole_plan_review_respond_request,
 )
 
 
@@ -225,66 +221,94 @@ def _pause_whole_plan_revision_limit(
     store: FileRunStore,
 ) -> str:
     run_id = "run-20260101T000301-000301"
+    loop_id = "review-whole-plan-01"
     provider = StubProvider()
-    create_run_at_whole_plan_review(
+    planner_session_id, _ = _create_driver_run(
         store,
         run_id,
-        limits={"max_revision_cycles": 1},
         provider=provider,
+        limits={"max_revision_cycles": 1},
     )
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+    blocker_findings = [
+        {
+            "id": "finding-01",
+            "severity": "blocker",
+            "category": "correctness",
+            "target_refs": ["item-root"],
+            "issue": "Needs work.",
+            "recommended_change": "Improve acceptance.",
+            "status": "unresolved",
+        }
+    ]
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(
             store,
             run_id,
-            whole_plan_review_respond_request(
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
                 decision="changes_requested",
-                findings=[
-                    {
-                        "id": "finding-01",
-                        "severity": "blocker",
-                        "category": "correctness",
-                        "target_refs": ["item-api"],
-                        "issue": "Needs work.",
-                        "recommended_change": "Improve acceptance.",
-                        "status": "unresolved",
-                    }
-                ],
-                store=store,
-                run_id=run_id,
+                findings=blocker_findings,
             ),
             phase=WHOLE_PLAN_REVIEW,
-            loop_id="review-whole-plan-01",
+            loop_id=loop_id,
         ),
     )
-    provider.script_turn(done_events(text="turn complete"))
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-root",
+                    "patch": {
+                        "acceptance": [
+                            "API behavior is verifiable.",
+                            "Health check exists.",
+                        ]
+                    },
+                }
+            ],
+            phase=WHOLE_PLAN_REVIEW,
+        ),
+    )
     provider.script_turn(
         done_events(text="turn complete"),
         mutate_store=respond_review(
             store,
             run_id,
-            whole_plan_review_respond_request(
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=1,
+                review_type="whole_plan",
                 decision="changes_requested",
-                target_revision=0,
                 findings=[
                     {
-                        "id": "finding-01",
+                        "id": "finding-02",
                         "severity": "blocker",
                         "category": "correctness",
-                        "target_refs": ["item-api"],
+                        "target_refs": ["item-root"],
                         "issue": "Still needs work.",
                         "recommended_change": "Improve acceptance.",
                         "status": "unresolved",
                     }
                 ],
-                store=store,
-                run_id=run_id,
             ),
             phase=WHOLE_PLAN_REVIEW,
-            loop_id="review-whole-plan-01",
+            loop_id=loop_id,
         ),
     )
-    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
+    result = ReviewLoopDriver(store, run_id, provider, adapter).run()
     assert result.ok is False
     assert result.status == "paused"
     return run_id
@@ -348,99 +372,122 @@ def _pause_whole_plan_scope_review_limit(
 ) -> str:
     run_id = "run-20260101T000301-000301"
     provider = StubProvider()
-    create_run_at_whole_plan_review(
+    planner_session_id, loop_id = _create_driver_run(
         store,
         run_id,
         limits={"max_revision_cycles": 5, "max_scope_review_rounds": 1},
         provider=provider,
     )
-    respond_review(
-        store,
-        run_id,
-        mandatory_initial_respond_request(
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+    blocker = {
+        "id": "finding-blocker-01",
+        "severity": "blocker",
+        "category": "correctness",
+        "target_refs": ["item-root"],
+        "issue": "Still blocked.",
+        "recommended_change": "Fix coverage.",
+        "status": "unresolved",
+    }
+
+    def _scope_found_respond() -> None:
+        loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+        if loop.active_stage != "scope_review":
+            prepare_loop_for_scope_review_respond(
+                store,
+                run_id,
+                loop_id,
+                target_revision=0,
+            )
+        respond_review(
             store,
             run_id,
-            loop_id="review-whole-plan-01",
-            target_revision=0,
-            review_type="whole_plan",
+            mandatory_scope_review_found_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
+                findings=[blocker],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
+            store,
+            run_id,
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
         ),
-        phase=WHOLE_PLAN_REVIEW,
-        loop_id="review-whole-plan-01",
-    )()
-    prepare_loop_for_scope_review_respond(
-        store,
-        run_id,
-        "review-whole-plan-01",
-        target_revision=0,
     )
-    respond_review(
-        store,
-        run_id,
-        mandatory_scope_review_respond_request(
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=_scope_found_respond,
+    )
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=apply_plan(
             store,
             run_id,
-            loop_id="review-whole-plan-01",
-            target_revision=0,
-            review_type="whole_plan",
-            findings=[
+            base_revision=0,
+            operations=[
                 {
-                    "id": "finding-blocker-01",
-                    "severity": "blocker",
-                    "category": "correctness",
-                    "target_refs": ["item-api"],
-                    "issue": "Still blocked.",
-                    "recommended_change": "Fix coverage.",
-                    "status": "unresolved",
+                    "op": "update_item",
+                    "item_id": "item-root",
+                    "patch": {"acceptance": ["API behavior is verifiable.", "Extra."]},
                 }
             ],
+            phase=WHOLE_PLAN_REVIEW,
         ),
-        phase=WHOLE_PLAN_REVIEW,
-        loop_id="review-whole-plan-01",
-    )()
-    apply_plan(
-        store,
-        run_id,
-        base_revision=0,
-        operations=[
-            {
-                "op": "update_item",
-                "item_id": "item-api",
-                "patch": {"acceptance": ["API behavior is verifiable.", "Extra."]},
-            }
-        ],
-        phase=WHOLE_PLAN_REVIEW,
-    )()
-    loop = store.load_review(run_id, "review-whole-plan-01")
-    enter_mandatory_verification_pending(
-        store,
-        run_id,
-        "review-whole-plan-01",
-        target_revision=1,
-        finding_set_id=str(loop.get("finding_set_id") or "fs-1"),
     )
-    respond_review(
-        store,
-        run_id,
-        mandatory_verification_respond_request(
+
+    def _verification_respond() -> None:
+        loop = store.load_review(run_id, loop_id)
+        finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
+        enter_mandatory_verification_pending(
             store,
             run_id,
-            loop_id="review-whole-plan-01",
+            loop_id,
             target_revision=1,
-            review_type="whole_plan",
-            finding_set_id=str(loop.get("finding_set_id") or "fs-1"),
-            finding_results=[
-                {
-                    "finding_id": "finding-blocker-01",
-                    "disposition": "resolved",
-                    "evidence": ["fixed"],
-                    "direct_side_effects": [],
-                }
-            ],
-        ),
-        phase=WHOLE_PLAN_REVIEW,
-        loop_id="review-whole-plan-01",
-    )()
-    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
+            finding_set_id=finding_set_id,
+        )
+        respond_review(
+            store,
+            run_id,
+            mandatory_verification_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=1,
+                review_type="whole_plan",
+                finding_set_id=finding_set_id,
+                finding_results=[
+                    {
+                        "finding_id": "finding-blocker-01",
+                        "disposition": "resolved",
+                        "evidence": ["fixed"],
+                        "direct_side_effects": [],
+                    }
+                ],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=_verification_respond,
+    )
+    result = ReviewLoopDriver(store, run_id, provider, adapter).run()
     assert result.ok is False
     assert result.status == "paused"
     return run_id

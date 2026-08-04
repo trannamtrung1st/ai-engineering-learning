@@ -498,7 +498,6 @@ def test_whole_output_scope_review_round_limit_rejects_without_approval(
         run_id,
         {
             "goal_assessment": "Output goal is fully met after revision.",
-            "goal_met": True,
         },
         handler="submit_completion",
         phase=WHOLE_OUTPUT_REVIEW,
@@ -598,7 +597,7 @@ def test_review_respond_rejects_stale_target_digest(tmp_path: Path) -> None:
     )
     from tests.helpers import enrich_whole_plan_review_respond_payload
 
-    with pytest.raises(RequestError, match="audit_attestation artifact_digest mismatch"):
+    with pytest.raises(RequestError, match="target_digest does not match current plan digest"):
         ReviewAgentService(store, run_id).respond(
             enrich_whole_plan_review_respond_payload(
                 store,

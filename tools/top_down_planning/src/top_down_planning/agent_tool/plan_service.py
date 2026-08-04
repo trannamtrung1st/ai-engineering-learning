@@ -11,12 +11,13 @@ from top_down_planning.agent_tool.errors import (
     RequestError,
     RevisionConflictError,
 )
+from top_down_planning.agent_tool.request_schema import validate_agent_request
 from top_down_planning.agent_tool.validation_context import plan_approval_validation_context
 from top_down_planning.agent_tool.views import (
     PlanView,
     build_active_view,
     build_audit_view,
-    build_changed_subtree_view,
+    build_budget_view,
     build_hierarchy_snapshot,
     build_ready_view,
     ready_item_changes,
@@ -92,6 +93,13 @@ class PlanAgentService:
             )
         elif view == "ready":
             payload = build_ready_view(plan, dispositions, reviews=reviews)
+        elif view == "budget":
+            payload = build_budget_view(
+                plan,
+                limits=limits,
+                root_id=root_id,
+                depth=depth,
+            )
         else:
             payload = {
                 "view": "issues",
@@ -117,6 +125,7 @@ class PlanAgentService:
             operation="plan_apply",
             capability_token=capability_token,
         )
+        validate_agent_request("plan_apply", request)
 
         if "base_revision" not in request:
             raise RequestError("apply requires base_revision")
@@ -221,14 +230,8 @@ class PlanAgentService:
             "revision": result.revision,
             "id_map": dict(result.id_map),
             "changed_item_ids": list(result.changed_item_ids),
-            "changed_subtree": build_changed_subtree_view(
-                result.plan,
-                result.changed_item_ids,
-                limits=limits,
-            ),
             "warnings": list(result.warnings) + validation_warnings(validation),
             "issues": validation_issues(validation),
-            "planning_budget": [budget.to_dict() for budget in result.budgets],
             "ready_changes": ready_item_changes(
                 before_plan,
                 result.plan,
