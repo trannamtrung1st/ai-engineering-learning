@@ -135,13 +135,15 @@ def test_prepare_resume_rejects_context_change(tmp_path: Path) -> None:
     config = minimal_resolved_config(
         agent_context={
             "default": {"resources": [], "skills": [], "guidance": []},
-            "planner": {"resources": [], "skills": [], "guidance": []},
-            "producer": {
-                "resources": ["context-resource.txt"],
-                "skills": [],
-                "guidance": [],
+            "roles": {
+                "planner": {"resources": [], "skills": [], "guidance": []},
+                "producer": {
+                    "resources": ["context-resource.txt"],
+                    "skills": [],
+                    "guidance": [],
+                },
+                "reviewer": {"resources": [], "skills": [], "guidance": []},
             },
-            "reviewer": {"resources": [], "skills": [], "guidance": []},
         },
     )
     run_id = "run-20260101T001401-001401"

@@ -271,32 +271,30 @@ def test_amendment_mid_production_finishes_accepted(
         mutate_store=production_batch_and_amendment,
     )
     patch_provider.script_turn(done_events(text="producer turn ack"))
-    if planner_session_id:
-        patch_provider.script_session_turn(
-            planner_session_id,
-            done_events(signal="amendment_revision_ready", text="amendment turn"),
-            mutate_store=lambda: apply_plan(
-                store,
-                run_id,
-                base_revision=current_plan_revision(store, run_id),
-                operations=with_root_contract(
-                    [
-                        {
-                            "op": "add_item",
-                            "temp_id": "item-third",
-                            "parent_id": "item-root",
-                            "placement": {"last_child": True},
-                            "item": work_item_payload(
-                                title="Third",
-                                outcome="Third outcome.",
-                                acceptance=["Third is verifiable."],
-                            ),
-                        }
-                    ]
-                ),
-                phase=PLAN_AMENDMENT,
-            )(),
-        )
+    patch_provider.script_turn(
+        done_events(signal="amendment_revision_ready", text="amendment turn"),
+        mutate_store=lambda: apply_plan(
+            store,
+            run_id,
+            base_revision=current_plan_revision(store, run_id),
+            operations=with_root_contract(
+                [
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-third",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": work_item_payload(
+                            title="Third",
+                            outcome="Third outcome.",
+                            acceptance=["Third is verifiable."],
+                        ),
+                    }
+                ]
+            ),
+            phase=PLAN_AMENDMENT,
+        )(),
+    )
     patch_provider.script_turn(
         done_events(text="review turn"),
         mutate_store=lambda: respond_review(

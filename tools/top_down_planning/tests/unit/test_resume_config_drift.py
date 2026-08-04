@@ -141,7 +141,7 @@ def test_drift_policy_pre_approval_applies_contract_change() -> None:
 
 def test_drift_policy_pre_approval_applies_model_change() -> None:
     stored = minimal_resolved_config()
-    candidate = _candidate_with_overrides(stored, ["agent_context.producer.model=gpt-4"])
+    candidate = _candidate_with_overrides(stored, ["agent_context.roles.producer.model=gpt-4"])
     result = apply_resume_config_drift_policy(
         stored,
         candidate,
@@ -149,8 +149,8 @@ def test_drift_policy_pre_approval_applies_model_change() -> None:
         has_whole_plan_approval=False,
     )
     assert result.ok
-    assert result.effective_config["agent_context"]["producer"]["model"] == "gpt-4"
-    assert "agent_context.producer.model" in result.applied_changes
+    assert result.effective_config["agent_context"]["roles"]["producer"]["model"] == "gpt-4"
+    assert "agent_context.roles.producer.model" in result.applied_changes
 
 
 def test_drift_policy_post_approval_ignores_contract_and_model_changes() -> None:
@@ -159,7 +159,7 @@ def test_drift_policy_post_approval_ignores_contract_and_model_changes() -> None
         stored,
         [
             "planning.max_depth=2",
-            "agent_context.producer.model=gpt-4",
+            "agent_context.roles.producer.model=gpt-4",
             "run.output_goal=Tweaked goal.",
         ],
     )
@@ -171,14 +171,14 @@ def test_drift_policy_post_approval_ignores_contract_and_model_changes() -> None
     )
     assert result.ok
     assert result.effective_config["planning"]["max_depth"] == stored["planning"]["max_depth"]
-    stored_model = (stored.get("agent_context") or {}).get("producer", {}).get("model")
+    stored_model = (stored.get("agent_context") or {}).get("roles", {}).get("producer", {}).get("model")
     effective_model = (result.effective_config.get("agent_context") or {}).get(
-        "producer", {}
-    ).get("model")
+        "roles", {}
+    ).get("producer", {}).get("model")
     assert effective_model == stored_model
     assert result.effective_config["run"]["output_goal"] == stored["run"]["output_goal"]
     assert "planning.max_depth" in result.ignored_changes
-    assert "agent_context.producer.model" in result.ignored_changes
+    assert "agent_context.roles.producer.model" in result.ignored_changes
     assert "run.output_goal" in result.ignored_changes
     assert any("will not take effect" in warning for warning in result.warnings)
 

@@ -202,9 +202,10 @@ def test_post_snapshot_cache_fixtures_do_not_drift(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - pkg/
+  roles:
+    producer:
+      resources:
+        - pkg/
 """,
     )
     old = build_context_snapshot_payload(config, workspace=workspace)
@@ -242,9 +243,10 @@ def test_disabling_defaults_includes_bytecode(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - pkg/
+  roles:
+    producer:
+      resources:
+        - pkg/
 context_snapshot:
   excludes:
     defaults: false
@@ -291,9 +293,10 @@ def test_missing_direct_file_create_and_delete_drift(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - missing.py
+  roles:
+    producer:
+      resources:
+        - missing.py
 """,
     )
     old = build_context_snapshot_payload(config, workspace=workspace)
@@ -325,13 +328,14 @@ def test_duplicate_explicit_resources_single_key(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - shared.py
-      - shared.py
-  reviewer:
-    resources:
-      - ./shared.py
+  roles:
+    producer:
+      resources:
+        - shared.py
+        - shared.py
+    reviewer:
+      resources:
+        - ./shared.py
 """,
     )
     binding = build_context_snapshot_payload(config, workspace=workspace)
@@ -356,10 +360,11 @@ def test_canonical_collision_symlink_aliases_deduped_in_snapshot_build(tmp_path:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - alias.py
-      - real/file.py
+  roles:
+    producer:
+      resources:
+        - alias.py
+        - real/file.py
 """,
         ),
         cwd=workspace,
@@ -450,9 +455,10 @@ def test_binding_order_independent_of_creation_order(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - pkg/
+  roles:
+    producer:
+      resources:
+        - pkg/
 """,
     )
     first = build_context_snapshot_payload(config, workspace=workspace)
@@ -489,9 +495,10 @@ def test_windows_style_resource_paths_use_posix_binding_keys(tmp_path: Path) -> 
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/a.py
+  roles:
+    producer:
+      resources:
+        - src/a.py
 """,
     )
     binding = build_context_snapshot_payload(config, workspace=workspace)
@@ -516,9 +523,10 @@ def test_meaningful_edit_add_delete_create_drift(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
     )
     base = build_context_snapshot_payload(config, workspace=workspace)
@@ -554,9 +562,10 @@ def test_excluded_add_edit_delete_do_not_drift(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
     )
     # Seed binding while an excluded file already exists — then mutate only excludes.
@@ -635,9 +644,10 @@ def test_unauthorized_paths_remain_relative_tuple(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
     )
     old = build_context_snapshot_payload(config, workspace=workspace)

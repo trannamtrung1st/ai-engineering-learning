@@ -205,9 +205,10 @@ def test_directory_walk_rejects_escape_symlink(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - pkg/
+  roles:
+    producer:
+      resources:
+        - pkg/
 """,
         ),
         cwd=workspace,

@@ -25,7 +25,7 @@ from top_down_planning.orchestrator.provider_turns import (
 )
 from top_down_planning.orchestrator.session_events import commit_primary_provider_session_binding
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.persistence.session_bindings import update_primary_binding
+from tests.helpers import bind_primary_session_for_tests
 from core_tools.provider import StubProvider
 from tests.helpers import create_run_kwargs, done_events, grant_capability, minimal_resolved_config
 
@@ -60,10 +60,13 @@ def _bind_planner(store: FileRunStore, run_id: str, session_id: str) -> None:
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = update_primary_binding(
+    config = store.load_resolved_config(run_id)
+    run["sessions"] = bind_primary_session_for_tests(
         dict(run.get("sessions") or {}),
         role="planner",
         provider_session_id=session_id,
+        config=config,
+        workspace=store.root,
         provider="cursor",
     )
     store.save_run(run_id, run, expected_revision)

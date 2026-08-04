@@ -10,13 +10,19 @@ from core_tools.config import (
     SkillEntry,
     load_skills,
     resolve_expanded_path_list,
-    resolve_provider_model as _resolve_provider_model,
     resolve_workspace_path,
 )
 from core_tools.config.errors import ConfigError
 from core_tools.config.paths import assert_path_within_workspace
 from core_tools.persistence.digests import digest_file, digest_text
 
+from top_down_planning.config.activities import (
+    ALLOWED_AGENT_ACTIVITIES,
+    ALLOWED_AGENT_ROLES,
+    AgentActivity,
+    assert_valid_activity_role_pair,
+    role_for_activity,
+)
 from top_down_planning.config.bundled_skills import (
     bundled_skill_binding_key,
     bundled_skills_enabled,
@@ -32,8 +38,9 @@ MISSING_GUIDANCE_FILE_DIGEST = digest_text("<missing-guidance-file>")
 _GUIDANCE_ENTRY_KEYS = frozenset({"text", "file"})
 
 __all__ = [
+    "AgentActivity",
     "AgentRole",
-    "EffectiveRoleContext",
+    "EffectiveActivityContext",
     "GuidanceEntry",
     "build_agent_context_manifest_payload",
     "build_context_spec_payload",
@@ -42,8 +49,10 @@ __all__ = [
     "compute_context_snapshot_digest_from_config",
     "compute_context_snapshot_digest_from_payload",
     "compute_context_spec_digest_from_config",
-    "resolve_effective_role_context",
+    "compute_effective_context_digest",
+    "resolve_effective_activity_context",
     "resolve_provider_model",
+    "resolve_provider_model_for_activity",
     "validate_guidance_for_binding",
 ]
 
@@ -57,23 +66,99 @@ class GuidanceEntry:
 
 
 @dataclass(frozen=True)
-class EffectiveRoleContext:
+class EffectiveActivityContext:
     role: str
+    activity: str
     model: str | None
     input_refs: tuple[Path, ...]
     output_goal: str
     guidance: tuple[str, ...]
     resources: tuple[Path, ...]
     skills: tuple[SkillEntry, ...]
+    context_digest: str
+
+
+def _agent_context_root(config: dict[str, Any]) -> dict[str, Any]:
+    agent_context = config.get("agent_context")
+    if not isinstance(agent_context, dict):
+        return {}
+    return agent_context
+
+
+def _default_overlay_section(config: dict[str, Any]) -> dict[str, Any]:
+    section = _agent_context_root(config).get("default")
+    return section if isinstance(section, dict) else {}
+
+
+def _role_overlay_section(config: dict[str, Any], role: AgentRole) -> dict[str, Any]:
+    roles = _agent_context_root(config).get("roles")
+    if not isinstance(roles, dict):
+        return {}
+    section = roles.get(role)
+    return section if isinstance(section, dict) else {}
+
+
+def _activity_overlay_section(
+    config: dict[str, Any],
+    activity: AgentActivity,
+) -> dict[str, Any]:
+    activities = _agent_context_root(config).get("activities")
+    if not isinstance(activities, dict):
+        return {}
+    section = activities.get(activity)
+    return section if isinstance(section, dict) else {}
+
+
+def _overlay_sections(
+    config: dict[str, Any],
+    role: AgentRole,
+    activity: AgentActivity,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    return (
+        _default_overlay_section(config),
+        _role_overlay_section(config, role),
+        _activity_overlay_section(config, activity),
+    )
+
+
+def _resolve_model_from_sections(*sections: dict[str, Any]) -> str | None:
+    for section in reversed(sections):
+        source = section.get("model")
+        if source is None:
+            continue
+        model = str(source).strip()
+        if not model or model.lower() == "auto":
+            continue
+        return model
+    return None
+
+
+def resolve_provider_model_for_activity(
+    config: dict[str, Any],
+    role: AgentRole,
+    activity: AgentActivity,
+) -> str | None:
+    """Resolve effective model for a role/activity pair (default → role → activity)."""
+
+    assert_valid_activity_role_pair(role, activity)
+    default_section, role_section, activity_section = _overlay_sections(
+        config,
+        role,
+        activity,
+    )
+    return _resolve_model_from_sections(
+        default_section,
+        role_section,
+        activity_section,
+    )
 
 
 def resolve_provider_model(config: dict[str, Any], role: str) -> str | None:
-    """Resolve the effective provider model for a role."""
+    """Resolve model from default and role overlays only (no activity layer)."""
 
-    agent_context = config.get("agent_context")
-    if not isinstance(agent_context, dict):
-        agent_context = {}
-    return _resolve_provider_model(agent_context, role)
+    default_section = _default_overlay_section(config)
+    role_section = _role_overlay_section(config, role)  # type: ignore[arg-type]
+    return _resolve_model_from_sections(default_section, role_section)
 
 
 def _resolve_input_ref_paths(
@@ -212,23 +297,66 @@ def _merge_resolved_resource_paths(
     return tuple(merged)
 
 
-def _agent_context_sections(
+def _merge_resolved_resource_paths_multi(
+    *layers: tuple[Path, ...],
+) -> tuple[Path, ...]:
+    seen: set[Path] = set()
+    merged: list[Path] = []
+    for layer in layers:
+        for path in layer:
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            merged.append(path)
+    return tuple(merged)
+
+
+def _merge_supporting_resource_selection_multi(
+    *layers: tuple[str, ...],
+) -> tuple[str, ...]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for layer in layers:
+        for item in layer:
+            if item in seen:
+                continue
+            seen.add(item)
+            merged.append(item)
+    return tuple(merged)
+
+
+def _resource_selection_for_overlay(
     config: dict[str, Any],
-    role: AgentRole,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    agent_context = config.get("agent_context")
-    if not isinstance(agent_context, dict):
-        agent_context = {}
-
-    role_section = agent_context.get(role)
-    if not isinstance(role_section, dict):
-        role_section = {}
-
-    default_section = agent_context.get("default")
-    if not isinstance(default_section, dict):
-        default_section = {}
-
-    return default_section, role_section
+    *,
+    workspace: Path,
+    default_section: dict[str, Any],
+    middle_section: dict[str, Any],
+    middle_field: str,
+    leaf_section: dict[str, Any] | None = None,
+    leaf_field: str | None = None,
+) -> tuple[str, ...]:
+    layers = [
+        _normalize_resource_selection(
+            list(default_section.get("resources") or []),
+            workspace=workspace,
+            field="agent_context.default.resources",
+        ),
+        _normalize_resource_selection(
+            list(middle_section.get("resources") or []),
+            workspace=workspace,
+            field=middle_field,
+        ),
+    ]
+    if leaf_section is not None and leaf_field is not None:
+        layers.append(
+            _normalize_resource_selection(
+                list(leaf_section.get("resources") or []),
+                workspace=workspace,
+                field=leaf_field,
+            )
+        )
+    return _merge_supporting_resource_selection_multi(*layers)
 
 
 def _resource_selection_for_role(
@@ -237,20 +365,39 @@ def _resource_selection_for_role(
     *,
     workspace: Path,
 ) -> tuple[str, ...]:
-    default_section, role_section = _agent_context_sections(config, role)
-    default_entries = list(default_section.get("resources") or [])
-    role_entries = list(role_section.get("resources") or [])
-    return _merge_supporting_resource_selection(
-        _normalize_resource_selection(
-            default_entries,
-            workspace=workspace,
-            field="agent_context.default.resources",
-        ),
-        _normalize_resource_selection(
-            role_entries,
-            workspace=workspace,
-            field=f"agent_context.{role}.resources",
-        ),
+    default_section, role_section = (
+        _default_overlay_section(config),
+        _role_overlay_section(config, role),
+    )
+    return _resource_selection_for_overlay(
+        config,
+        workspace=workspace,
+        default_section=default_section,
+        middle_section=role_section,
+        middle_field=f"agent_context.roles.{role}.resources",
+    )
+
+
+def _resource_selection_for_activity(
+    config: dict[str, Any],
+    role: AgentRole,
+    activity: AgentActivity,
+    *,
+    workspace: Path,
+) -> tuple[str, ...]:
+    default_section, role_section, activity_section = _overlay_sections(
+        config,
+        role,
+        activity,
+    )
+    return _resource_selection_for_overlay(
+        config,
+        workspace=workspace,
+        default_section=default_section,
+        middle_section=role_section,
+        middle_field=f"agent_context.roles.{role}.resources",
+        leaf_section=activity_section,
+        leaf_field=f"agent_context.activities.{activity}.resources",
     )
 
 
@@ -275,20 +422,24 @@ def _skill_digest_key(entry: SkillEntry, *, workspace: Path) -> str:
     return canonicalize_workspace_path(entry.path, workspace=workspace)
 
 
-def _skills_for_role(
+def _skills_for_overlay(
     config: dict[str, Any],
     role: AgentRole,
     *,
     workspace: Path,
+    default_section: dict[str, Any],
+    middle_section: dict[str, Any],
+    leaf_section: dict[str, Any] | None = None,
 ) -> tuple[SkillEntry, ...]:
-    default_section, role_section = _agent_context_sections(config, role)
     loaded: list[SkillEntry] = []
     if bundled_skills_enabled(config):
         loaded.extend(load_bundled_skills_for_role(role))
 
     configured_entries: list[Any] = []
     configured_entries.extend(default_section.get("skills") or [])
-    configured_entries.extend(role_section.get("skills") or [])
+    configured_entries.extend(middle_section.get("skills") or [])
+    if leaf_section is not None:
+        configured_entries.extend(leaf_section.get("skills") or [])
     if configured_entries:
         loaded.extend(
             load_skills(
@@ -298,6 +449,45 @@ def _skills_for_role(
             )
         )
     return tuple(_dedupe_skill_entries(loaded))
+
+
+def _skills_for_role(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    workspace: Path,
+) -> tuple[SkillEntry, ...]:
+    default_section = _default_overlay_section(config)
+    role_section = _role_overlay_section(config, role)
+    return _skills_for_overlay(
+        config,
+        role,
+        workspace=workspace,
+        default_section=default_section,
+        middle_section=role_section,
+    )
+
+
+def _skills_for_activity(
+    config: dict[str, Any],
+    role: AgentRole,
+    activity: AgentActivity,
+    *,
+    workspace: Path,
+) -> tuple[SkillEntry, ...]:
+    default_section, role_section, activity_section = _overlay_sections(
+        config,
+        role,
+        activity,
+    )
+    return _skills_for_overlay(
+        config,
+        role,
+        workspace=workspace,
+        default_section=default_section,
+        middle_section=role_section,
+        leaf_section=activity_section,
+    )
 
 
 def _validate_guidance_entry(
@@ -434,6 +624,37 @@ def _resolve_guidance_entries(
     return tuple(resolved)
 
 
+def _guidance_entries_for_overlay(
+    *,
+    workspace: Path,
+    default_section: dict[str, Any],
+    middle_section: dict[str, Any],
+    middle_field: str,
+    leaf_section: dict[str, Any] | None = None,
+    leaf_field: str | None = None,
+    allow_missing_files: bool = False,
+) -> tuple[GuidanceEntry, ...]:
+    entries = _resolve_guidance_entries(
+        list(default_section.get("guidance") or []),
+        workspace=workspace,
+        field="agent_context.default.guidance",
+        allow_missing_files=allow_missing_files,
+    ) + _resolve_guidance_entries(
+        list(middle_section.get("guidance") or []),
+        workspace=workspace,
+        field=middle_field,
+        allow_missing_files=allow_missing_files,
+    )
+    if leaf_section is not None and leaf_field is not None:
+        entries += _resolve_guidance_entries(
+            list(leaf_section.get("guidance") or []),
+            workspace=workspace,
+            field=leaf_field,
+            allow_missing_files=allow_missing_files,
+        )
+    return entries
+
+
 def _guidance_entries_for_role(
     config: dict[str, Any],
     role: AgentRole,
@@ -441,18 +662,37 @@ def _guidance_entries_for_role(
     workspace: Path,
     allow_missing_files: bool = False,
 ) -> tuple[GuidanceEntry, ...]:
-    """Combine default then role guidance, preserving order (§7)."""
-
-    default_section, role_section = _agent_context_sections(config, role)
-    return _resolve_guidance_entries(
-        list(default_section.get("guidance") or []),
+    default_section = _default_overlay_section(config)
+    role_section = _role_overlay_section(config, role)
+    return _guidance_entries_for_overlay(
         workspace=workspace,
-        field="agent_context.default.guidance",
+        default_section=default_section,
+        middle_section=role_section,
+        middle_field=f"agent_context.roles.{role}.guidance",
         allow_missing_files=allow_missing_files,
-    ) + _resolve_guidance_entries(
-        list(role_section.get("guidance") or []),
+    )
+
+
+def _guidance_entries_for_activity(
+    config: dict[str, Any],
+    role: AgentRole,
+    activity: AgentActivity,
+    *,
+    workspace: Path,
+    allow_missing_files: bool = False,
+) -> tuple[GuidanceEntry, ...]:
+    default_section, role_section, activity_section = _overlay_sections(
+        config,
+        role,
+        activity,
+    )
+    return _guidance_entries_for_overlay(
         workspace=workspace,
-        field=f"agent_context.{role}.guidance",
+        default_section=default_section,
+        middle_section=role_section,
+        middle_field=f"agent_context.roles.{role}.guidance",
+        leaf_section=activity_section,
+        leaf_field=f"agent_context.activities.{activity}.guidance",
         allow_missing_files=allow_missing_files,
     )
 
@@ -464,28 +704,28 @@ def validate_guidance_for_binding(
 ) -> None:
     """Strictly validate all configured guidance before persisting a new run binding."""
 
-    for role in ("planner", "producer", "reviewer"):
+    for role in ALLOWED_AGENT_ROLES:
         _guidance_entries_for_role(
             config,
-            role,
+            role,  # type: ignore[arg-type]
+            workspace=workspace,
+            allow_missing_files=False,
+        )
+    for activity in ALLOWED_AGENT_ACTIVITIES:
+        _guidance_entries_for_activity(
+            config,
+            role_for_activity(activity),  # type: ignore[arg-type]
+            activity,  # type: ignore[arg-type]
             workspace=workspace,
             allow_missing_files=False,
         )
 
 
-def _guidance_declarations_for_role(
-    config: dict[str, Any],
-    role: AgentRole,
+def _guidance_declarations_for_section(
     *,
     workspace: Path,
+    sections: list[tuple[str, list[Any]]],
 ) -> list[dict[str, str]]:
-    """Declaration shape for context_spec: inline text or resolved file path."""
-
-    default_section, role_section = _agent_context_sections(config, role)
-    sections = (
-        ("agent_context.default.guidance", list(default_section.get("guidance") or [])),
-        (f"agent_context.{role}.guidance", list(role_section.get("guidance") or [])),
-    )
     entries: list[dict[str, str]] = []
     for field, configured in sections:
         for index, entry in enumerate(configured):
@@ -501,6 +741,48 @@ def _guidance_declarations_for_role(
             )
             entries.append({"file": str(path)})
     return entries
+
+
+def _guidance_declarations_for_role(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    workspace: Path,
+) -> list[dict[str, str]]:
+    default_section = _default_overlay_section(config)
+    role_section = _role_overlay_section(config, role)
+    return _guidance_declarations_for_section(
+        workspace=workspace,
+        sections=[
+            ("agent_context.default.guidance", list(default_section.get("guidance") or [])),
+            (f"agent_context.roles.{role}.guidance", list(role_section.get("guidance") or [])),
+        ],
+    )
+
+
+def _guidance_declarations_for_activity(
+    config: dict[str, Any],
+    role: AgentRole,
+    activity: AgentActivity,
+    *,
+    workspace: Path,
+) -> list[dict[str, str]]:
+    default_section, role_section, activity_section = _overlay_sections(
+        config,
+        role,
+        activity,
+    )
+    return _guidance_declarations_for_section(
+        workspace=workspace,
+        sections=[
+            ("agent_context.default.guidance", list(default_section.get("guidance") or [])),
+            (f"agent_context.roles.{role}.guidance", list(role_section.get("guidance") or [])),
+            (
+                f"agent_context.activities.{activity}.guidance",
+                list(activity_section.get("guidance") or []),
+            ),
+        ],
+    )
 
 
 def _guidance_snapshot_entry(
@@ -529,30 +811,82 @@ def _guidance_snapshot_entry(
     }
 
 
+def _skill_declarations_for_section(
+    config: dict[str, Any],
+    role: AgentRole,
+    *,
+    sections: list[dict[str, Any]],
+    include_bundled: bool,
+) -> list[str]:
+    declarations: list[str] = []
+    if include_bundled and bundled_skills_enabled(config):
+        for entry in load_bundled_skills_for_role(role):
+            binding_key = bundled_skill_binding_key(entry.path)
+            if binding_key is not None:
+                declarations.append(binding_key)
+    for section in sections:
+        for configured in list(section.get("skills") or []):
+            value = str(configured).strip()
+            if value and value not in declarations:
+                declarations.append(value)
+    return declarations
+
+
 def _skill_declarations_for_role(
     config: dict[str, Any],
     role: AgentRole,
     *,
     workspace: Path,
 ) -> list[str]:
-    """Stable skill declarations for context_spec (configured paths or builtin keys)."""
-
     del workspace
-    declarations: list[str] = []
-    if bundled_skills_enabled(config):
-        for entry in load_bundled_skills_for_role(role):
-            binding_key = bundled_skill_binding_key(entry.path)
-            if binding_key is not None:
-                declarations.append(binding_key)
+    return _skill_declarations_for_section(
+        config,
+        role,
+        sections=[
+            _default_overlay_section(config),
+            _role_overlay_section(config, role),
+        ],
+        include_bundled=True,
+    )
 
-    default_section, role_section = _agent_context_sections(config, role)
-    for configured in list(default_section.get("skills") or []) + list(
-        role_section.get("skills") or []
-    ):
-        value = str(configured).strip()
-        if value and value not in declarations:
-            declarations.append(value)
-    return declarations
+
+def _skill_declarations_for_activity(
+    config: dict[str, Any],
+    role: AgentRole,
+    activity: AgentActivity,
+    *,
+    workspace: Path,
+) -> list[str]:
+    del workspace
+    default_section, role_section, activity_section = _overlay_sections(
+        config,
+        role,
+        activity,
+    )
+    return _skill_declarations_for_section(
+        config,
+        role,
+        sections=[default_section, role_section, activity_section],
+        include_bundled=False,
+    )
+
+
+def _overlay_context_spec_from_section(
+    section: dict[str, Any],
+) -> dict[str, Any]:
+    model_raw = section.get("model")
+    model: str | None
+    if model_raw is None:
+        model = None
+    else:
+        text = str(model_raw).strip()
+        model = None if not text or text.lower() == "auto" else text
+    return {
+        "model": model,
+        "guidance": list(section.get("guidance") or []),
+        "resources": list(section.get("resources") or []),
+        "skills": list(section.get("skills") or []),
+    }
 
 
 def _role_context_spec_from_config(
@@ -561,8 +895,6 @@ def _role_context_spec_from_config(
     *,
     workspace: Path,
 ) -> dict[str, Any]:
-    """Stable agent-context declaration: models, guidance, resource selection, skill paths."""
-
     return {
         "model": resolve_provider_model(config, role),
         "guidance": _guidance_declarations_for_role(config, role, workspace=workspace),
@@ -571,25 +903,72 @@ def _role_context_spec_from_config(
     }
 
 
+def _activity_context_spec_from_config(
+    config: dict[str, Any],
+    activity: AgentActivity,
+    *,
+    workspace: Path,
+) -> dict[str, Any]:
+    role = role_for_activity(activity)  # type: ignore[arg-type]
+    return {
+        "model": resolve_provider_model_for_activity(config, role, activity),
+        "guidance": _guidance_declarations_for_activity(
+            config,
+            role,
+            activity,
+            workspace=workspace,
+        ),
+        "resources": list(
+            _resource_selection_for_activity(config, role, activity, workspace=workspace)
+        ),
+        "skills": _skill_declarations_for_activity(
+            config,
+            role,
+            activity,
+            workspace=workspace,
+        ),
+    }
+
+
 def _configured_resource_entries(
     config: dict[str, Any],
 ) -> list[tuple[str, str]]:
-    """Return ordered (field, configured_value) resource declarations across roles."""
+    """Return ordered (field, configured_value) resource declarations."""
 
     entries: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for role in ("planner", "producer", "reviewer"):
-        default_section, role_section = _agent_context_sections(config, role)
-        for source_field, raw_entries in (
-            ("agent_context.default.resources", list(default_section.get("resources") or [])),
-            (f"agent_context.{role}.resources", list(role_section.get("resources") or [])),
-        ):
-            for entry in raw_entries:
-                configured_value = str(entry).strip()
-                if not configured_value or configured_value in seen:
-                    continue
-                seen.add(configured_value)
-                entries.append((source_field, configured_value))
+
+    def _append(field: str, raw_entries: list[Any]) -> None:
+        for entry in raw_entries:
+            configured_value = str(entry).strip()
+            if not configured_value or configured_value in seen:
+                continue
+            seen.add(configured_value)
+            entries.append((field, configured_value))
+
+    default_section = _default_overlay_section(config)
+    _append(
+        "agent_context.default.resources",
+        list(default_section.get("resources") or []),
+    )
+    roles = _agent_context_root(config).get("roles")
+    if isinstance(roles, dict):
+        for role in ALLOWED_AGENT_ROLES:
+            role_section = roles.get(role)
+            if isinstance(role_section, dict):
+                _append(
+                    f"agent_context.roles.{role}.resources",
+                    list(role_section.get("resources") or []),
+                )
+    activities = _agent_context_root(config).get("activities")
+    if isinstance(activities, dict):
+        for activity in ALLOWED_AGENT_ACTIVITIES:
+            activity_section = activities.get(activity)
+            if isinstance(activity_section, dict):
+                _append(
+                    f"agent_context.activities.{activity}.resources",
+                    list(activity_section.get("resources") or []),
+                )
     return entries
 
 
@@ -663,8 +1042,23 @@ def _all_skill_digest_entries(
 
     digests: dict[str, str] = {}
     paths_by_key: dict[str, Path] = {}
-    for role in ("planner", "producer", "reviewer"):
-        for entry in _skills_for_role(config, role, workspace=workspace):
+    for role in ALLOWED_AGENT_ROLES:
+        for entry in _skills_for_role(config, role, workspace=workspace):  # type: ignore[arg-type]
+            key = _skill_digest_key(entry, workspace=workspace)
+            prior = paths_by_key.get(key)
+            if prior is not None and prior.resolve() != entry.path.resolve():
+                raise CanonicalPathCollisionError(key, prior, entry.path)
+            if key not in digests:
+                paths_by_key[key] = entry.path
+                digests[key] = digest_text(entry.content)
+    for activity in ALLOWED_AGENT_ACTIVITIES:
+        act_role = role_for_activity(activity)  # type: ignore[arg-type]
+        for entry in _skills_for_activity(
+            config,
+            act_role,
+            activity,  # type: ignore[arg-type]
+            workspace=workspace,
+        ):
             key = _skill_digest_key(entry, workspace=workspace)
             prior = paths_by_key.get(key)
             if prior is not None and prior.resolve() != entry.path.resolve():
@@ -685,10 +1079,27 @@ def _all_guidance_digest_entries(
 
     entries: list[dict[str, str]] = []
     seen: set[str] = set()
-    for role in ("planner", "producer", "reviewer"):
+    for role in ALLOWED_AGENT_ROLES:
         for entry in _guidance_entries_for_role(
             config,
-            role,
+            role,  # type: ignore[arg-type]
+            workspace=workspace,
+            allow_missing_files=allow_missing_files,
+        ):
+            if entry.path is not None:
+                key = f"file:{entry.path.resolve()}"
+            else:
+                key = f"text:{entry.text}"
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(_guidance_snapshot_entry(entry, workspace=workspace))
+    for activity in ALLOWED_AGENT_ACTIVITIES:
+        act_role = role_for_activity(activity)  # type: ignore[arg-type]
+        for entry in _guidance_entries_for_activity(
+            config,
+            act_role,
+            activity,  # type: ignore[arg-type]
             workspace=workspace,
             allow_missing_files=allow_missing_files,
         ):
@@ -714,16 +1125,26 @@ def build_context_spec_payload(
     """Build deterministic context **spec** payload (declarations, not resource bytes)."""
 
     roles_payload: dict[str, Any] = {}
-    for role in ("planner", "producer", "reviewer"):
+    for role in sorted(ALLOWED_AGENT_ROLES):
         roles_payload[role] = _role_context_spec_from_config(
             config,
-            role,
+            role,  # type: ignore[arg-type]
+            workspace=workspace,
+        )
+
+    activities_payload: dict[str, Any] = {}
+    for activity in sorted(ALLOWED_AGENT_ACTIVITIES):
+        activities_payload[activity] = _activity_context_spec_from_config(
+            config,
+            activity,  # type: ignore[arg-type]
             workspace=workspace,
         )
 
     return {
         "workspace": str(workspace.resolve()),
+        "default": _overlay_context_spec_from_section(_default_overlay_section(config)),
         "roles": roles_payload,
+        "activities": activities_payload,
         "context_snapshot": _exclusion_policy_for_context_spec(
             config,
             workspace=workspace,
@@ -819,16 +1240,63 @@ def compute_context_snapshot_digest_from_config(
     return compute_context_snapshot_digest_from_payload(payload)
 
 
-def resolve_effective_role_context(
+def compute_effective_context_digest(
+    *,
+    role: str,
+    activity: str,
+    model: str | None,
+    guidance: tuple[str, ...],
+    resources: tuple[Path, ...],
+    skills: tuple[SkillEntry, ...],
+    workspace: Path,
+) -> str:
+    from top_down_planning.config.snapshot_policy import canonicalize_workspace_path
+    from top_down_planning.persistence.digests import digest_binding_payload
+
+    resource_entries: list[dict[str, str]] = []
+    for path in resources:
+        relative = canonicalize_workspace_path(path, workspace=workspace)
+        if path.is_file():
+            resource_entries.append(
+                {"path": relative, "digest": digest_file(path)}
+            )
+        else:
+            resource_entries.append(
+                {"path": relative, "digest": MISSING_RESOURCE_FILE_DIGEST}
+            )
+    skill_entries = sorted(
+        {
+            _skill_digest_key(entry, workspace=workspace): digest_text(entry.content)
+            for entry in skills
+        }.items()
+    )
+    payload = {
+        "role": role,
+        "activity": activity,
+        "model": model,
+        "guidance": list(guidance),
+        "resources": resource_entries,
+        "skills": [{"key": key, "digest": digest} for key, digest in skill_entries],
+    }
+    return digest_binding_payload(payload)
+
+
+def resolve_effective_activity_context(
     config: dict[str, Any],
     role: AgentRole,
+    activity: AgentActivity,
     *,
     workspace: Path,
     output_goal: str | None = None,
-) -> EffectiveRoleContext:
-    """Resolve authoritative run contracts and supporting role context."""
+) -> EffectiveActivityContext:
+    """Resolve authoritative run contracts and activity-aware agent context."""
 
-    default_section, role_section = _agent_context_sections(config, role)
+    assert_valid_activity_role_pair(role, activity)
+    default_section, role_section, activity_section = _overlay_sections(
+        config,
+        role,
+        activity,
+    )
 
     input_refs = _resolve_input_ref_paths(config, workspace=workspace)
     goal_text = output_goal if output_goal is not None else resolve_output_goal_text(
@@ -838,44 +1306,71 @@ def resolve_effective_role_context(
 
     forbidden = set(input_refs) | _excluded_supporting_paths(config, workspace=workspace)
 
-    default_entries = list(default_section.get("resources") or [])
-    role_entries = list(role_section.get("resources") or [])
-
     default_resources = _resolve_supporting_resources(
-        default_entries,
+        list(default_section.get("resources") or []),
         workspace=workspace,
         forbidden=forbidden,
         field="agent_context.default.resources",
     )
     role_resources = _resolve_supporting_resources(
-        role_entries,
+        list(role_section.get("resources") or []),
         workspace=workspace,
         forbidden=forbidden,
-        field=f"agent_context.{role}.resources",
+        field=f"agent_context.roles.{role}.resources",
     )
-    resources = _merge_resolved_resource_paths(default_resources, role_resources)
-    skills = _skills_for_role(config, role, workspace=workspace)
-    guidance_entries = _guidance_entries_for_role(config, role, workspace=workspace)
-
-    return EffectiveRoleContext(
+    activity_resources = _resolve_supporting_resources(
+        list(activity_section.get("resources") or []),
+        workspace=workspace,
+        forbidden=forbidden,
+        field=f"agent_context.activities.{activity}.resources",
+    )
+    resources = _merge_resolved_resource_paths_multi(
+        default_resources,
+        role_resources,
+        activity_resources,
+    )
+    skills = _skills_for_activity(config, role, activity, workspace=workspace)
+    guidance_entries = _guidance_entries_for_activity(
+        config,
+        role,
+        activity,
+        workspace=workspace,
+    )
+    model = resolve_provider_model_for_activity(config, role, activity)
+    guidance = tuple(entry.text for entry in guidance_entries)
+    context_digest = compute_effective_context_digest(
         role=role,
-        model=resolve_provider_model(config, role),
-        input_refs=input_refs,
-        output_goal=goal_text,
-        guidance=tuple(entry.text for entry in guidance_entries),
+        activity=activity,
+        model=model,
+        guidance=guidance,
         resources=resources,
         skills=skills,
+        workspace=workspace,
+    )
+
+    return EffectiveActivityContext(
+        role=role,
+        activity=activity,
+        model=model,
+        input_refs=input_refs,
+        output_goal=goal_text,
+        guidance=guidance,
+        resources=resources,
+        skills=skills,
+        context_digest=context_digest,
     )
 
 
 def build_agent_context_manifest_payload(
-    context: EffectiveRoleContext,
+    context: EffectiveActivityContext,
 ) -> dict[str, Any]:
     """Build the manifest fragment attached to fresh agent sessions."""
 
     return {
         "agent_context": {
             "role": context.role,
+            "activity": context.activity,
+            "context_digest": context.context_digest,
             "guidance": list(context.guidance),
             "resources": [str(path) for path in context.resources],
             "skills": [

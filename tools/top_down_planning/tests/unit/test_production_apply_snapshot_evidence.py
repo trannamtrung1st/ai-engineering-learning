@@ -91,9 +91,10 @@ run:
   input_refs:
     - README.md
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 limits:
   production:
     max_batches: 50
@@ -447,10 +448,12 @@ def test_guidance_drift_raises_context_mutation_error(tmp_path: Path) -> None:
 
     store, run_id = _production_run_with_src_binding(tmp_path)
     config = dict(store.load_resolved_config(run_id))
-    producer = dict(config.get("agent_context", {}).get("producer") or {})
-    producer["guidance"] = [{"text": "Revised inline guidance for apply drift."}]
     agent_context = dict(config.get("agent_context") or {})
-    agent_context["producer"] = producer
+    roles = dict(agent_context.get("roles") or {})
+    producer = dict(roles.get("producer") or {})
+    producer["guidance"] = [{"text": "Revised inline guidance for apply drift."}]
+    roles["producer"] = producer
+    agent_context["roles"] = roles
     config["agent_context"] = agent_context
     config_path = store.run_dir(run_id) / "resolved-config.yaml"
     config_path.write_text(dump_yaml(config) + "\n", encoding="utf-8")
@@ -579,11 +582,12 @@ run:
   input_refs:
     - README.md
 agent_context:
-  producer:
-    resources:
-      - src/
-    skills:
-      - skills/demo
+  roles:
+    producer:
+      resources:
+        - src/
+      skills:
+        - skills/demo
 limits:
   production:
     max_batches: 50

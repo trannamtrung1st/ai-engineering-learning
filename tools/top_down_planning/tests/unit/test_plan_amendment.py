@@ -158,7 +158,13 @@ def _create_run_in_production_with_sessions(
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = sessions_with_primary_session(planner=planner_session_id, producer=producer_session_id)
+    config = store.load_resolved_config(run_id)
+    run["sessions"] = sessions_with_primary_session(
+        planner=planner_session_id,
+        producer=producer_session_id,
+        config=config,
+        workspace=store.root,
+    )
     store.save_run(run_id, run, expected_revision)
     return planner_session_id, producer_session_id
 
@@ -250,7 +256,10 @@ def test_mid_production_amendment_adds_item_and_preserves_evidence(
     amendment_result = PlanAmendmentOrchestrator(store, run_id, provider).run()
 
     assert amendment_result.ok is True
-    assert amendment_result.planner_session_id == planner_session_id
+    run_after = store.load_run(run_id)
+    from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
+
+    assert amendment_result.planner_session_id == primary_planner_provider_session_id(run_after)
     assert amendment_result.producer_session_id == producer_session_id
 
     token_path = capability_token_file_path(store, run_id)

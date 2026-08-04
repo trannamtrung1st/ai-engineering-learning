@@ -106,25 +106,87 @@ def with_root_contract(
     return [update_plan_root_operation(title=title, outcome=outcome), *operations]
 
 
+def bind_primary_session_for_tests(
+    sessions: dict[str, Any],
+    *,
+    role: str,
+    provider_session_id: str,
+    config: dict[str, Any],
+    workspace: Path | str,
+    activity: str | None = None,
+    provider: str | None = "cursor",
+) -> dict[str, Any]:
+    """Persist a resumable primary binding with activity metadata for tests."""
+
+    from top_down_planning.config import resolve_effective_activity_context, resolve_workspace
+    from top_down_planning.persistence.session_bindings import update_primary_binding
+
+    default_activity = {
+        "planner": "initial_plan",
+        "producer": "production",
+    }
+    resolved_activity = activity or default_activity[str(role)]
+    resolved_workspace = resolve_workspace(config, cwd=Path(workspace).resolve())
+    context = resolve_effective_activity_context(
+        config,
+        role,  # type: ignore[arg-type]
+        resolved_activity,  # type: ignore[arg-type]
+        workspace=resolved_workspace,
+    )
+    return update_primary_binding(
+        sessions,
+        role=role,
+        provider_session_id=provider_session_id,
+        provider=provider,
+        model=context.model,
+        activity=context.activity,
+        context_digest=context.context_digest,
+    )
+
+
 def sessions_with_primary_session(
     *,
     planner: str | None = None,
     producer: str | None = None,
+    config: dict[str, Any] | None = None,
+    workspace: Path | str | None = None,
+    planner_activity: str = "initial_plan",
+    producer_activity: str = "production",
 ) -> dict[str, Any]:
+    from top_down_planning.config import resolve_effective_activity_context, resolve_workspace
     from top_down_planning.persistence.session_bindings import update_primary_binding
+
+    resolved_workspace = resolve_workspace(config, cwd=Path(workspace or ".").resolve()) if config else Path(workspace or ".").resolve()
+
+    def _binding_fields(role: str, activity: str) -> tuple[str | None, str | None]:
+        if config is None:
+            return activity, None
+        context = resolve_effective_activity_context(
+            config,
+            role,  # type: ignore[arg-type]
+            activity,  # type: ignore[arg-type]
+            workspace=resolved_workspace,
+        )
+        return context.activity, context.context_digest
 
     sessions: dict[str, Any] = {}
     if planner is not None:
+        activity, digest = _binding_fields("planner", planner_activity)
         sessions = update_primary_binding(
             sessions,
             role="planner",
             provider_session_id=planner,
+            activity=activity,
+            context_digest=digest,
         )
     if producer is not None:
+        activity, digest = _binding_fields("producer", producer_activity)
         sessions = update_primary_binding(
             sessions,
             role="producer",
             provider_session_id=producer,
+            activity=activity,
+            context_digest=digest,
         )
     return sessions
 
@@ -1080,16 +1142,15 @@ def grant_capability(
     """Issue a session capability token and return its serialized value."""
 
     from top_down_planning.orchestrator.capability import issue_session_capability
-    from top_down_planning.persistence.session_bindings import (
-        primary_provider_session_id,
-        update_primary_binding,
-    )
+    from top_down_planning.persistence.session_bindings import primary_provider_session_id
 
     if phase is None:
         phase = PLANNING if role == "planner" else PRODUCTION
 
     run = store.load_run(run_id)
     sessions = dict(run.get("sessions") or {})
+    config = store.load_resolved_config(run_id)
+    workspace = store.root
 
     if role == "planner":
         if session_id is not None:
@@ -1102,10 +1163,12 @@ def grant_capability(
             expected = int(run["revision"])
             run = dict(run)
             run["revision"] = expected + 1
-            run["sessions"] = update_primary_binding(
+            run["sessions"] = bind_primary_session_for_tests(
                 sessions,
                 role="planner",
                 provider_session_id=resolved_session_id,
+                config=config,
+                workspace=workspace,
             )
             store.save_run(run_id, run, expected)
     elif role == "producer":
@@ -1119,10 +1182,12 @@ def grant_capability(
             expected = int(run["revision"])
             run = dict(run)
             run["revision"] = expected + 1
-            run["sessions"] = update_primary_binding(
+            run["sessions"] = bind_primary_session_for_tests(
                 sessions,
                 role="producer",
                 provider_session_id=resolved_session_id,
+                config=config,
+                workspace=workspace,
             )
             store.save_run(run_id, run, expected)
     else:

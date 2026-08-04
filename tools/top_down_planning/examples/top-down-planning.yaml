@@ -49,17 +49,34 @@ agent_context:
     model: auto
     resources: []
 
-  planner:
-    model: auto
-    resources: []
+  roles:
+    planner:
+      model: auto
+      resources: []
+    producer:
+      model: auto
+      resources: []
+    reviewer:
+      model: auto
+      resources: []
 
-  producer:
-    model: auto
-    resources: []
-
-  reviewer:
-    model: auto
-    resources: []
+  activities:
+    initial_plan:
+      model: auto
+    plan_revision:
+      model: auto
+    plan_amendment:
+      model: auto
+    production:
+      model: auto
+    output_revision:
+      model: auto
+    initial_review:
+      model: auto
+    finding_verification:
+      model: auto
+    scope_review:
+      model: auto
 
 planning:
   stop_hint: "Stop when each item has one coherent outcome, clear boundaries, material dependencies, and acceptance expectations."

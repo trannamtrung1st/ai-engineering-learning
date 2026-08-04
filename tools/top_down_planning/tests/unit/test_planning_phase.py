@@ -166,7 +166,11 @@ def test_resume_planning_keeps_same_session_id(tmp_path: Path) -> None:
 
     expected_revision = int(run["revision"])
     run["revision"] = expected_revision + 1
-    run["sessions"] = sessions_with_primary_session(planner=session_id)
+    run["sessions"] = sessions_with_primary_session(
+        planner=session_id,
+        config=config,
+        workspace=tmp_path,
+    )
     run["planning"] = {"agent_turns": 1, "items_added": 0}
     store.save_run("run-20260101T000101-000101", run, expected_revision)
 
@@ -198,7 +202,11 @@ def test_planning_resumes_persisted_session_on_fresh_provider(tmp_path: Path) ->
 
     expected_revision = int(run["revision"])
     run["revision"] = expected_revision + 1
-    run["sessions"] = sessions_with_primary_session(planner=session_id)
+    run["sessions"] = sessions_with_primary_session(
+        planner=session_id,
+        config=config,
+        workspace=tmp_path,
+    )
     run["planning"] = {"agent_turns": 1, "items_added": 0}
     store.save_run("run-20260101T000101-000101", run, expected_revision)
 

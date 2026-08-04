@@ -54,7 +54,12 @@ from top_down_planning.orchestrator.review_loop_profile import (
     MANDATORY_WHOLE_PROFILE,
     ReviewLoopProfile,
 )
-from top_down_planning.orchestrator.agent_context import resolve_role_session_context
+from top_down_planning.orchestrator.agent_context import resolve_activity_session_context
+from top_down_planning.orchestrator.activity_context import (
+    owner_revision_activity,
+    resolve_activity_for_reviewer_stage,
+    session_continuation_decision,
+)
 from top_down_planning.orchestrator.capability import (
     adopt_replacement_capability,
     bind_provider_capability,
@@ -93,12 +98,18 @@ from top_down_planning.orchestrator.provider_turns import (
     consume_provider_turn_with_session_recovery,
     consume_reviewer_provider_turn_with_session_recovery,
 )
+from top_down_planning.orchestrator.session_context import (
+    ensure_primary_session,
+    rotate_primary_session,
+)
 from top_down_planning.orchestrator.session_events import (
     emit_reviewer_session_resumed,
     emit_reviewer_session_started,
     release_reviewer_session_after_decision,
     resume_primary_session_with_audit,
 )
+from top_down_planning.domain.session_bindings import new_session_binding
+from top_down_planning.persistence.session_bindings import get_primary_binding
 from top_down_planning.orchestrator.review_loop_types import (
     MandatoryWholeReviewResult,
     MandatoryWholeReviewSpec,
@@ -305,9 +316,7 @@ class ReviewLoopDriver:
                         deliver_on_existing_session = False
                     elif deliver_on_existing_session:
                         config = self._store.load_resolved_config(self._run_id)
-                        role_context = resolve_role_session_context(
-                            config, run, "reviewer"
-                        )
+                        role_context = self._reviewer_activity_context(config, run, loop)
                         package = self._adapter.build_review_package(run, config, loop)
                         self._capability_token = resume_reviewer_session_with_package(
                             self._provider,
@@ -325,6 +334,8 @@ class ReviewLoopDriver:
                             phase=phase,
                             session_id=session_id,
                             loop=self._reload_loop(loop.id),
+                            activity=role_context.activity,
+                            context_digest=role_context.context_digest,
                         )
                         deliver_on_existing_session = False
                     reviewer_decision = self._consume_reviewer_turn(session_id, loop.id)
@@ -757,6 +768,118 @@ class ReviewLoopDriver:
         index = len(existing) + 1
         return f"{spec.loop_id_prefix}-{index:02d}"
 
+    def _reviewer_activity_context(
+        self,
+        config: dict[str, Any],
+        run: dict[str, Any],
+        loop: ReviewLoop,
+    ) -> Any:
+        activity = resolve_activity_for_reviewer_stage(loop.active_stage)
+        return resolve_activity_session_context(
+            config,
+            run,
+            "reviewer",
+            activity,  # type: ignore[arg-type]
+        )
+
+    def _owner_revision_manifest(self, loop: ReviewLoop, activity: str) -> dict[str, Any]:
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        if self.spec.owner_role == "planner":
+            from top_down_planning.orchestrator.planning import build_planner_context_manifest
+
+            return build_planner_context_manifest(
+                self._run_id,
+                run,
+                config,
+                self._store.load_plan_model(self._run_id),
+                activity=activity,
+            )
+        from top_down_planning.orchestrator.production import build_producer_context_manifest
+
+        return build_producer_context_manifest(
+            self._run_id,
+            run,
+            config,
+            self._store.load_plan_model(self._run_id),
+            production=self._store.load_production(self._run_id),
+            activity=activity,
+        )
+
+    def _ensure_owner_primary_session(
+        self,
+        loop: ReviewLoop,
+        *,
+        handoff: OwnerHandoff,
+    ) -> str:
+        spec = self.spec
+        run = self._store.load_run(self._run_id)
+        config = self._store.load_resolved_config(self._run_id)
+        activity = owner_revision_activity(spec.owner_role)
+        activity_context = resolve_activity_session_context(
+            config,
+            run,
+            spec.owner_role,  # type: ignore[arg-type]
+            activity,  # type: ignore[arg-type]
+        )
+        phase = self._adapter.phase_for_session(loop, run)
+        manifest = self._owner_revision_manifest(loop, activity)
+        owner_request = self._adapter.build_owner_request(loop, config, handoff)
+        binding = get_primary_binding(run, spec.owner_role)
+        decision_source = binding or new_session_binding(
+            role=spec.owner_role,
+            kind="primary",
+            state="unbound",
+        )
+        decision = session_continuation_decision(decision_source, activity_context)
+
+        if (
+            binding is not None
+            and decision == "resume"
+            and binding.provider_session_id is not None
+        ):
+            return ensure_primary_session(
+                self._store,
+                self._run_id,
+                self._provider,
+                role=spec.owner_role,  # type: ignore[arg-type]
+                phase=phase,
+                requested=activity_context,
+                manifest=manifest,
+                append_event=self._append_event,
+                resume_request=owner_request,
+            )
+
+        if (
+            binding is not None
+            and binding.state == "bound"
+            and binding.provider_session_id is not None
+        ):
+            return rotate_primary_session(
+                self._store,
+                self._run_id,
+                self._provider,
+                role=spec.owner_role,  # type: ignore[arg-type]
+                phase=phase,
+                old_provider_session_id=binding.provider_session_id,
+                requested=activity_context,
+                manifest=manifest,
+                append_event=self._append_event,
+                handoff_request=owner_request,
+            )
+
+        return ensure_primary_session(
+            self._store,
+            self._run_id,
+            self._provider,
+            role=spec.owner_role,  # type: ignore[arg-type]
+            phase=phase,
+            requested=activity_context,
+            manifest=manifest,
+            append_event=self._append_event,
+            resume_request=owner_request,
+        )
+
     def _start_reviewer_session(self, loop: ReviewLoop) -> tuple[str, str]:
         spec = self.spec
         run = self._store.load_run(self._run_id)
@@ -771,7 +894,7 @@ class ReviewLoopDriver:
             loop, _finding_set_id = allocate_discovery_finding_set_id(loop)
             loop = self._persist_loop(loop)
         package = self._adapter.build_review_package(run, config, loop)
-        role_context = resolve_role_session_context(config, run, "reviewer")
+        role_context = self._reviewer_activity_context(config, run, loop)
         run = self._store.load_run(self._run_id)
         phase = self._adapter.phase_for_session(loop, run)
         session_id, self._capability_token = begin_reviewer_review(
@@ -790,6 +913,8 @@ class ReviewLoopDriver:
             phase=phase,
             session_id=session_id,
             loop=loop,
+            activity=role_context.activity,
+            context_digest=role_context.context_digest,
             **extra,
         )
         return session_id, self._capability_token
@@ -850,7 +975,7 @@ class ReviewLoopDriver:
             run = self._store.load_run(self._run_id)
             return self.result_from_run(run, ok=False, loop=loop, reason=message)
 
-        role_context = resolve_role_session_context(config, run, "reviewer")
+        role_context = self._reviewer_activity_context(config, run, loop)
         request = build_reviewer_gate_continue_request(
             stage=stage,
             turn=consumed,
@@ -873,6 +998,8 @@ class ReviewLoopDriver:
             phase=phase,
             session_id=session_id,
             loop=loop,
+            activity=role_context.activity,
+            context_digest=role_context.context_digest,
         )
         self._append_event(
             "reviewer_gate_turn_retried",
@@ -888,7 +1015,7 @@ class ReviewLoopDriver:
         config = self._store.load_resolved_config(self._run_id)
         loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
         package = self._adapter.build_review_package(run, config, loop)
-        role_context = resolve_role_session_context(config, run, "reviewer")
+        role_context = self._reviewer_activity_context(config, run, loop)
         phase = self._adapter.phase_for_session(loop, run)
         try:
             turn_outcome = consume_reviewer_provider_turn_with_session_recovery(
@@ -933,14 +1060,8 @@ class ReviewLoopDriver:
     def _resume_owner_with_findings(self, loop: ReviewLoop) -> None:
         spec = self.spec
         run = self._store.load_run(self._run_id)
-        session_id = self._adapter.primary_owner_session_id(run)
-        if session_id is None:
-            raise ProviderRunError(
-                f"primary {spec.owner_role} session is missing for revision"
-            )
-
-        run = self._store.load_run(self._run_id)
         phase = self._adapter.phase_for_session(loop, run)
+        session_id = self._ensure_owner_primary_session(loop, handoff="revision")
         self._capability_token = issue_session_capability(
             self._store,
             self._run_id,
@@ -954,19 +1075,6 @@ class ReviewLoopDriver:
             self._capability_token,
             store=self._store,
             run_id=self._run_id,
-        )
-
-        config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, spec.owner_role)
-        resume_primary_session_with_audit(
-            self._append_event,
-            self._provider,
-            role=spec.owner_role,
-            phase=phase,
-            session_id=session_id,
-            request=self._adapter.build_owner_request(loop, config, "revision"),
-            model=role_context.model,
-            loop_id=loop.id,
         )
         self._consume_owner_turn(session_id, phase, loop_id=loop.id, handoff="revision")
         self._adapter.after_owner_turn(session_id)
@@ -1004,12 +1112,8 @@ class ReviewLoopDriver:
     def _resume_owner_advisory_handoff(self, loop: ReviewLoop) -> None:
         spec = self.spec
         run = self._store.load_run(self._run_id)
-        session_id = self._adapter.primary_owner_session_id(run)
-        if session_id is None:
-            raise ProviderRunError(
-                f"primary {spec.owner_role} session is missing for advisory handoff"
-            )
         phase = self._adapter.phase_for_session(loop, run)
+        session_id = self._ensure_owner_primary_session(loop, handoff="advisory")
         self._capability_token = issue_session_capability(
             self._store,
             self._run_id,
@@ -1024,18 +1128,6 @@ class ReviewLoopDriver:
             store=self._store,
             run_id=self._run_id,
         )
-        config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, spec.owner_role)
-        resume_primary_session_with_audit(
-            self._append_event,
-            self._provider,
-            role=spec.owner_role,
-            phase=phase,
-            session_id=session_id,
-            request=self._adapter.build_owner_request(loop, config, "advisory"),
-            model=role_context.model,
-            loop_id=loop.id,
-        )
         self._consume_owner_turn(session_id, phase, loop_id=loop.id, handoff="advisory")
 
     def _consume_owner_turn(
@@ -1049,7 +1141,13 @@ class ReviewLoopDriver:
         spec = self.spec
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, spec.owner_role)
+        activity = owner_revision_activity(spec.owner_role)
+        role_context = resolve_activity_session_context(
+            config,
+            run,
+            spec.owner_role,  # type: ignore[arg-type]
+            activity,  # type: ignore[arg-type]
+        )
         recovery = self._adapter.build_owner_turn_recovery(
             phase,
             self._append_event,
@@ -1100,7 +1198,7 @@ class ReviewLoopDriver:
         run = self._store.load_run(self._run_id)
         phase = self._adapter.phase_for_session(loop, run)
         config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, "reviewer")
+        role_context = self._reviewer_activity_context(config, run, loop)
         updated = self._persist_loop(
             self._adapter.prepare_recheck_transition(loop, artifact_revision)
         )
@@ -1145,6 +1243,8 @@ class ReviewLoopDriver:
                 session_id=session_id,
                 loop=updated,
                 replacement=True,
+                activity=role_context.activity,
+                context_digest=role_context.context_digest,
                 **extra,
             )
             return updated
@@ -1169,6 +1269,8 @@ class ReviewLoopDriver:
             phase=phase,
             session_id=session_id,
             loop=updated,
+            activity=role_context.activity,
+            context_digest=role_context.context_digest,
         )
         return updated
 

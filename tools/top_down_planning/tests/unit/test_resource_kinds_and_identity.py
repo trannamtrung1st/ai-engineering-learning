@@ -34,9 +34,10 @@ def test_direct_file_overrides_exclusion(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - generated/schema.json
+  roles:
+    producer:
+      resources:
+        - generated/schema.json
 context_snapshot:
   excludes:
     defaults: false
@@ -64,9 +65,10 @@ def test_directory_expansion_applies_excludes(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - pkg/
+  roles:
+    producer:
+      resources:
+        - pkg/
 """,
         ),
         cwd=workspace,
@@ -90,9 +92,10 @@ def test_glob_expansion_filters_matches_without_recursive_dirs(tmp_path: Path) -
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - "tools/*.py"
+  roles:
+    producer:
+      resources:
+        - "tools/*.py"
 context_snapshot:
   excludes:
     defaults: true
@@ -112,9 +115,10 @@ context_snapshot:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - "tools/*"
+  roles:
+    producer:
+      resources:
+        - "tools/*"
 """,
         ),
         cwd=workspace,
@@ -133,9 +137,10 @@ def test_missing_direct_file_keeps_sentinel(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - missing.py
+  roles:
+    producer:
+      resources:
+        - missing.py
 """,
         ),
         cwd=workspace,
@@ -157,9 +162,10 @@ run:
   output_goal: Goal.
 agent_context:
   bundled_skills: false
-  producer:
-    skills:
-      - skills/demo
+  roles:
+    producer:
+      skills:
+        - skills/demo
 context_snapshot:
   excludes:
     defaults: false

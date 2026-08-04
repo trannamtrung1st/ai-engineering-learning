@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from top_down_planning.domain.session_bindings import (
@@ -121,6 +122,8 @@ def update_primary_binding(
     provider_session_id: str,
     provider: str | None = None,
     model: str | None = None,
+    activity: str | None = None,
+    context_digest: str | None = None,
 ) -> StructuredSessions:
     slot = PRIMARY_PLANNER_SLOT if role == "planner" else PRIMARY_PRODUCER_SLOT
     structured = coerce_structured_sessions(sessions)
@@ -135,6 +138,12 @@ def update_primary_binding(
         provider=provider,
         model=model,
     )
+    if activity is not None:
+        activity_text = str(activity).strip() or None
+        updated = replace(updated, activity=activity_text)
+    if context_digest is not None:
+        digest_text = str(context_digest).strip() or None
+        updated = replace(updated, context_digest=digest_text)
     structured[slot] = updated.to_dict()
     return structured
 

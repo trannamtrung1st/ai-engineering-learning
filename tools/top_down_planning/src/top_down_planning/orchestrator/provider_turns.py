@@ -603,6 +603,7 @@ def build_planner_turn_recovery(
     expected_next_action: str,
     append_event: Any,
     model: str | None,
+    activity: str = "initial_plan",
 ) -> PrimarySessionRecoverySpec:
     config = store.load_resolved_config(run_id)
     plan = store.load_plan_model(run_id)
@@ -615,6 +616,7 @@ def build_planner_turn_recovery(
             plan,
             phase_action_id=phase_action_id,
             expected_next_action=expected_next_action,
+            activity=activity,
         )
 
     return PrimarySessionRecoverySpec(
@@ -635,6 +637,7 @@ def build_producer_turn_recovery(
     expected_next_action: str,
     append_event: Any,
     model: str | None,
+    activity: str = "production",
 ) -> PrimarySessionRecoverySpec:
     config = store.load_resolved_config(run_id)
     plan = store.load_plan_model(run_id)
@@ -648,6 +651,7 @@ def build_producer_turn_recovery(
             plan,
             phase_action_id=phase_action_id,
             expected_next_action=expected_next_action,
+            activity=activity,
         )
 
     return PrimarySessionRecoverySpec(

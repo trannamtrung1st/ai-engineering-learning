@@ -174,14 +174,17 @@ def test_focused_orchestrator_advisory_handoff_defer_completes(
     )
     run = store.load_run(run_id)
     expected = int(run["revision"])
-    from top_down_planning.persistence.session_bindings import update_primary_binding
+    from tests.helpers import bind_primary_session_for_tests
 
+    config = store.load_resolved_config(run_id)
     run = dict(run)
     run["revision"] = expected + 1
-    run["sessions"] = update_primary_binding(
+    run["sessions"] = bind_primary_session_for_tests(
         dict(run.get("sessions") or {}),
         role="planner",
         provider_session_id="planner-sess",
+        config=config,
+        workspace=store.root,
     )
     store.save_run(run_id, run, expected)
 
@@ -225,13 +228,15 @@ def test_focused_orchestrator_advisory_handoff_defer_completes(
         )
 
     def _planner_defers() -> None:
+        from top_down_planning.persistence.session_bindings import primary_provider_session_id
+
         persisted = store.load_review(run_id, loop.id)
         token = grant_capability(
             store,
             run_id,
             role="planner",
             phase=PLANNING,
-            session_id="planner-sess",
+            session_id=str(primary_provider_session_id(store.load_run(run_id), "planner")),
         )
         from top_down_planning.agent_tool import ReviewAgentService
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from core_tools.schema import validate_against_schema
 
+from top_down_planning.config.activities import ALLOWED_AGENT_ACTIVITIES, ALLOWED_AGENT_ROLES
 from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS
 from top_down_planning.domain.mandatory_audit_passes import (
@@ -810,6 +811,59 @@ _REVIEW_RESPOND_ONE_OF: list[dict[str, Any]] = [
     },
 ]
 
+_AGENT_CONTEXT_OVERLAY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "model": {"type": "string"},
+        "guidance": {
+            "type": "array",
+            "description": (
+                "Advisory working preferences. Each entry is exactly one of "
+                "{text: ...} or {file: ...}. Text and file values must be "
+                "non-empty after trimming whitespace."
+            ),
+            "items": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["text"],
+                        "properties": {
+                            "text": {
+                                "type": "string",
+                                "pattern": "\\S",
+                                "description": (
+                                    "Inline guidance; must contain at least one "
+                                    "non-whitespace character."
+                                ),
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                    {
+                        "type": "object",
+                        "required": ["file"],
+                        "properties": {
+                            "file": {
+                                "type": "string",
+                                "pattern": "\\S",
+                                "description": (
+                                    "Workspace-relative guidance file path; must "
+                                    "contain at least one non-whitespace character."
+                                ),
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                ],
+            },
+        },
+        "resources": {"type": "array", "items": {"type": "string"}},
+        "skills": {"type": "array", "items": {"type": "string"}},
+    },
+    "additionalProperties": False,
+}
+
+
 SCHEMAS: dict[str, dict[str, Any]] = {
     "config": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -839,14 +893,16 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "agent_context": {
                 "type": "object",
                 "description": (
-                    "Per-role model, advisory guidance, supporting resources, and "
-                    "skills. Packaged TDP agent skills are auto-injected for every "
+                    "Activity-aware agent overlays. Effective context merges "
+                    "agent_context.default, agent_context.roles.<role>, and "
+                    "agent_context.activities.<activity> for each orchestrator "
+                    "turn. Packaged TDP agent skills are auto-injected for every "
                     "role unless agent_context.bundled_skills is false. Guidance, "
-                    "resources, and configured skills are additive "
-                    "with agent_context.default; duplicate resource paths between default "
-                    "and a role are deduped at resolve time. Guidance is advisory only and does not "
-                    "change acceptance, enforcement, or lifecycle transitions. "
-                    "Run contracts (run.input_refs, run.output_goal / "
+                    "resources, and configured skills are additive with "
+                    "agent_context.default; duplicate resource paths between "
+                    "layers are deduped at resolve time. Guidance is advisory only "
+                    "and does not change acceptance, enforcement, or lifecycle "
+                    "transitions. Run contracts (run.input_refs, run.output_goal / "
                     "run.output_goal_file) are supplied automatically and must not "
                     "be repeated under resources."
                 ),
@@ -860,67 +916,29 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         ),
                         "default": True,
                     },
-                    **{
-                    role: {
+                    "default": deepcopy(_AGENT_CONTEXT_OVERLAY_SCHEMA),
+                    "roles": {
                         "type": "object",
+                        "description": (
+                            "Role-level overlays merged before the activity layer."
+                        ),
                         "properties": {
-                            "model": {"type": "string"},
-                            "guidance": {
-                                "type": "array",
-                                "description": (
-                                    "Advisory working preferences. Each entry is "
-                                    "exactly one of {text: ...} or {file: ...}. "
-                                    "Text and file values must be non-empty after "
-                                    "trimming whitespace."
-                                ),
-                                "items": {
-                                    "oneOf": [
-                                        {
-                                            "type": "object",
-                                            "required": ["text"],
-                                            "properties": {
-                                                "text": {
-                                                    "type": "string",
-                                                    "pattern": "\\S",
-                                                    "description": (
-                                                        "Inline guidance; must contain "
-                                                        "at least one non-whitespace character."
-                                                    ),
-                                                },
-                                            },
-                                            "additionalProperties": False,
-                                        },
-                                        {
-                                            "type": "object",
-                                            "required": ["file"],
-                                            "properties": {
-                                                "file": {
-                                                    "type": "string",
-                                                    "pattern": "\\S",
-                                                    "description": (
-                                                        "Workspace-relative guidance file path; "
-                                                        "must contain at least one non-whitespace "
-                                                        "character."
-                                                    ),
-                                                },
-                                            },
-                                            "additionalProperties": False,
-                                        },
-                                    ],
-                                },
-                            },
-                            "resources": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                            "skills": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
+                            role: deepcopy(_AGENT_CONTEXT_OVERLAY_SCHEMA)
+                            for role in sorted(ALLOWED_AGENT_ROLES)
                         },
                         "additionalProperties": False,
-                    }
-                    for role in ("default", "planner", "producer", "reviewer")
+                    },
+                    "activities": {
+                        "type": "object",
+                        "description": (
+                            "Per-activity overlays for orchestrator turns. Activity "
+                            "names are fixed; role bindings are code-owned."
+                        ),
+                        "properties": {
+                            activity: deepcopy(_AGENT_CONTEXT_OVERLAY_SCHEMA)
+                            for activity in sorted(ALLOWED_AGENT_ACTIVITIES)
+                        },
+                        "additionalProperties": False,
                     },
                 },
                 "additionalProperties": False,
@@ -2733,8 +2751,8 @@ commands typically need only `--run <run-id>`. Run ids use
 `plan.json` items include `depth` (0-based from the tree root, derived from
 `parent_id`). Depth is required on load and recomputed on save.
 
-`digests.context_spec` binds agent-context **declarations** at run creation: role models,
-configured guidance entries, resource path selection, skill declarations (workspace-relative
+`digests.context_spec` binds agent-context **declarations** at run creation: default, role,
+and activity models, configured guidance entries, resource path selection, skill declarations (workspace-relative
 paths or `tdp:builtin:` keys for packaged skills), and the resolved
 `context_snapshot` exclusion policy (defaults, ordered patterns, built-in policy version).
 `digests.context_snapshot` binds materialized resource bytes, skill contents, and guidance

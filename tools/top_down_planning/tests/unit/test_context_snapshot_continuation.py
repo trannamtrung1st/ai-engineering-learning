@@ -102,9 +102,11 @@ def test_continuation_into_whole_output_succeeds_after_working_resource_mutation
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
         agent_context={
             "default": {"resources": [], "skills": []},
-            "planner": {"resources": [], "skills": []},
-            "producer": {"resources": ["src/"], "skills": []},
-            "reviewer": {"resources": ["src/"], "skills": []},
+            "roles": {
+                "planner": {"resources": [], "skills": []},
+                "producer": {"resources": ["src/"], "skills": []},
+                "reviewer": {"resources": ["src/"], "skills": []},
+            },
         },
     )
     run_id = "run-20260101T009901-009901"
@@ -220,9 +222,11 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
         agent_context={
             "default": {"resources": [], "skills": []},
-            "planner": {"resources": [], "skills": []},
-            "producer": {"resources": ["src/", "tests/"], "skills": []},
-            "reviewer": {"resources": ["src/", "tests/"], "skills": []},
+            "roles": {
+                "planner": {"resources": [], "skills": []},
+                "producer": {"resources": ["src/", "tests/"], "skills": []},
+                "reviewer": {"resources": ["src/", "tests/"], "skills": []},
+            },
         },
     )
     run_id = "run-20260101T009904-009904"
@@ -365,9 +369,11 @@ def test_engine_enters_whole_output_review_after_production_resource_mutation(
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
         agent_context={
             "default": {"resources": [], "skills": []},
-            "planner": {"resources": [], "skills": []},
-            "producer": {"resources": ["src/"], "skills": []},
-            "reviewer": {"resources": ["src/"], "skills": []},
+            "roles": {
+                "planner": {"resources": [], "skills": []},
+                "producer": {"resources": ["src/"], "skills": []},
+                "reviewer": {"resources": ["src/"], "skills": []},
+            },
         },
     )
     run_id = "run-20260101T009905-009905"

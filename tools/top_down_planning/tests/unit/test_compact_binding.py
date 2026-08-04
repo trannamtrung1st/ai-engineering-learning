@@ -34,9 +34,10 @@ def test_compact_map_binding_shape(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,

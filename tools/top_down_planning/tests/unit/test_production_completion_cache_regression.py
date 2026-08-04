@@ -99,9 +99,11 @@ def _create_dir_resource_run(
         limits={"production": {"max_batches": 50, "max_agent_turns_per_batch": 10}},
         agent_context={
             "default": {"resources": [], "skills": []},
-            "planner": {"resources": [], "skills": []},
-            "producer": {"resources": ["src/", "tests/"], "skills": []},
-            "reviewer": {"resources": ["src/", "tests/"], "skills": []},
+            "roles": {
+                "planner": {"resources": [], "skills": []},
+                "producer": {"resources": ["src/", "tests/"], "skills": []},
+                "reviewer": {"resources": ["src/", "tests/"], "skills": []},
+            },
         },
         # Defaults enabled via DEFAULT_CONFIG.context_snapshot.excludes.defaults
     )

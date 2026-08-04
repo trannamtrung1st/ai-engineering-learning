@@ -1,4 +1,4 @@
-"""Unit tests for agent_context.<role>.guidance (advisory role guidance)."""
+"""Unit tests for agent_context guidance overlays (advisory role guidance)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from top_down_planning.config import (
     compute_context_spec_digest_from_config,
     diff_snapshot_binding_paths,
     resolve_config,
-    resolve_effective_role_context,
+    resolve_effective_activity_context,
     validate_production_snapshot_rebase,
 )
 from top_down_planning.persistence import FileRunStore
@@ -34,9 +34,11 @@ def _workspace(tmp_path: Path) -> Path:
 
 
 def test_defaults_include_empty_guidance_and_override_paths() -> None:
-    for role in ("default", "planner", "producer", "reviewer"):
-        assert DEFAULT_CONFIG["agent_context"][role]["guidance"] == []
-        assert f"agent_context.{role}.guidance" in ALLOWED_OVERRIDE_PATHS
+    assert DEFAULT_CONFIG["agent_context"]["default"]["guidance"] == []
+    assert "agent_context.default.guidance" in ALLOWED_OVERRIDE_PATHS
+    for role in ("planner", "producer", "reviewer"):
+        assert DEFAULT_CONFIG["agent_context"]["roles"][role]["guidance"] == []
+        assert f"agent_context.roles.{role}.guidance" in ALLOWED_OVERRIDE_PATHS
 
 
 def test_guidance_rejects_both_text_and_file(tmp_path: Path) -> None:
@@ -48,16 +50,17 @@ def test_guidance_rejects_both_text_and_file(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - text: hello
-        file: guidance.md
+  roles:
+    producer:
+      guidance:
+        - text: hello
+          file: guidance.md
 """,
         ),
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match="exactly one of text or file"):
-        resolve_effective_role_context(config, "producer", workspace=workspace)
+        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
 
 
 def test_guidance_rejects_neither_text_nor_file(tmp_path: Path) -> None:
@@ -69,15 +72,16 @@ def test_guidance_rejects_neither_text_nor_file(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - {}
+  roles:
+    producer:
+      guidance:
+        - {}
 """,
         ),
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match="exactly one of text or file"):
-        resolve_effective_role_context(config, "producer", workspace=workspace)
+        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
 
 
 def test_guidance_rejects_extra_keys(tmp_path: Path) -> None:
@@ -89,16 +93,17 @@ def test_guidance_rejects_extra_keys(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - text: hello
-        id: extra
+  roles:
+    producer:
+      guidance:
+        - text: hello
+          id: extra
 """,
         ),
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match="unsupported properties: id"):
-        resolve_effective_role_context(config, "producer", workspace=workspace)
+        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
 
 
 def test_guidance_rejects_empty_text(tmp_path: Path) -> None:
@@ -110,15 +115,16 @@ def test_guidance_rejects_empty_text(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - text: "   "
+  roles:
+    producer:
+      guidance:
+        - text: "   "
 """,
         ),
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match=r"\.text must not be empty"):
-        resolve_effective_role_context(config, "producer", workspace=workspace)
+        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
 
 
 def test_guidance_rejects_missing_file(tmp_path: Path) -> None:
@@ -130,15 +136,16 @@ def test_guidance_rejects_missing_file(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - file: missing-guidance.md
+  roles:
+    producer:
+      guidance:
+        - file: missing-guidance.md
 """,
         ),
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match=r"\.file does not exist"):
-        resolve_effective_role_context(config, "producer", workspace=workspace)
+        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
 
 
 def test_guidance_rejects_whitespace_only_file(tmp_path: Path) -> None:
@@ -152,15 +159,16 @@ def test_guidance_rejects_whitespace_only_file(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - file: blank.md
+  roles:
+    producer:
+      guidance:
+        - file: blank.md
 """,
         ),
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match=r"\.file must not be empty after trimming"):
-        resolve_effective_role_context(config, "producer", workspace=workspace)
+        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
 
 
 def test_guidance_rejects_non_utf8_file(tmp_path: Path) -> None:
@@ -174,15 +182,16 @@ def test_guidance_rejects_non_utf8_file(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - file: binary.md
+  roles:
+    producer:
+      guidance:
+        - file: binary.md
 """,
         ),
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match=r"must be UTF-8 text"):
-        resolve_effective_role_context(config, "producer", workspace=workspace)
+        resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
 
 
 def test_guidance_additive_default_then_role_order(tmp_path: Path) -> None:
@@ -199,21 +208,22 @@ agent_context:
   default:
     guidance:
       - text: Default first.
-  producer:
-    guidance:
-      - file: role-guidance.md
-      - text: Role inline last.
+  roles:
+    producer:
+      guidance:
+        - file: role-guidance.md
+        - text: Role inline last.
 """,
         ),
         cwd=workspace,
     )
-    context = resolve_effective_role_context(config, "producer", workspace=workspace)
+    context = resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
     assert context.guidance == (
         "Default first.",
         "Role file guidance.",
         "Role inline last.",
     )
-    planner = resolve_effective_role_context(config, "planner", workspace=workspace)
+    planner = resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
     assert planner.guidance == ("Default first.",)
 
 
@@ -226,19 +236,20 @@ def test_manifest_includes_resolved_guidance_strings(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - text: Be coherent.
+  roles:
+    producer:
+      guidance:
+        - text: Be coherent.
 """,
         ),
         cwd=workspace,
     )
-    context = resolve_effective_role_context(config, "producer", workspace=workspace)
+    context = resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
     payload = build_agent_context_manifest_payload(context)
     assert payload["agent_context"]["guidance"] == ["Be coherent."]
     assert payload["agent_context"]["role"] == "producer"
 
-    empty = resolve_effective_role_context(config, "planner", workspace=workspace)
+    empty = resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
     empty_payload = build_agent_context_manifest_payload(empty)
     assert empty_payload["agent_context"]["guidance"] == []
 
@@ -254,10 +265,11 @@ def test_guidance_in_context_spec_and_snapshot_digests(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - text: inline v1
-      - file: wf.md
+  roles:
+    producer:
+      guidance:
+        - text: inline v1
+        - file: wf.md
 """,
         ),
         cwd=workspace,
@@ -288,10 +300,11 @@ agent_context:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - text: inline v2
-      - file: wf.md
+  roles:
+    producer:
+      guidance:
+        - text: inline v2
+        - file: wf.md
 """,
         ),
         cwd=workspace,
@@ -315,12 +328,12 @@ run:
 """,
         ),
         overrides=[
-            "agent_context.producer.guidance="
+            "agent_context.roles.producer.guidance="
             '[{"file": "producer-guidance.md"}, {"text": "Inline preference."}]',
         ],
         cwd=workspace,
     )
-    context = resolve_effective_role_context(config, "producer", workspace=workspace)
+    context = resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
     assert context.guidance == ("From file.", "Inline preference.")
 
 
@@ -382,9 +395,10 @@ def test_initial_binding_rejects_invalid_guidance_files(
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - file: {file_ref}
+  roles:
+    producer:
+      guidance:
+        - file: {file_ref}
 """,
         ),
         cwd=workspace,
@@ -404,9 +418,10 @@ def test_context_spec_digest_stable_when_guidance_file_deleted(tmp_path: Path) -
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - file: wf.md
+  roles:
+    producer:
+      guidance:
+        - file: wf.md
 """,
         ),
         cwd=workspace,
@@ -430,9 +445,10 @@ def test_recompute_binding_tolerates_corrupt_guidance_files(tmp_path: Path) -> N
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - file: wf.md
+  roles:
+    producer:
+      guidance:
+        - file: wf.md
 """,
         ),
         cwd=workspace,
@@ -458,15 +474,16 @@ def test_folded_scalar_guidance_loads_from_config(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    guidance:
-      - text: >
-          Work in coherent batches. Skip a commit when that is better judgment.
+  roles:
+    producer:
+      guidance:
+        - text: >
+            Work in coherent batches. Skip a commit when that is better judgment.
 """,
         ),
         cwd=workspace,
     )
-    context = resolve_effective_role_context(config, "producer", workspace=workspace)
+    context = resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
     assert context.guidance == (
         "Work in coherent batches. Skip a commit when that is better judgment.",
     )

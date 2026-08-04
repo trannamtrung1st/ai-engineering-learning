@@ -6,7 +6,7 @@ from pathlib import Path
 
 from core_tools.config.resources import load_skills
 
-from top_down_planning.config import resolve_config, resolve_effective_role_context
+from top_down_planning.config import resolve_config, resolve_effective_activity_context
 from top_down_planning.config.bundled_skills import (
     BUNDLED_SKILL_BINDING_PREFIX,
     bundled_skill_binding_key,
@@ -29,7 +29,7 @@ def test_bundled_skills_auto_injected_for_planner(tmp_path: Path) -> None:
     workspace.mkdir()
     config = minimal_resolved_config()
 
-    context = resolve_effective_role_context(config, "planner", workspace=workspace)
+    context = resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
     contents = [entry.content.lower() for entry in context.skills]
     assert len(context.skills) == 2
     assert any("tdp agent" in content for content in contents)
@@ -42,7 +42,7 @@ def test_bundled_skills_opt_out(tmp_path: Path) -> None:
     config = minimal_resolved_config()
     config["agent_context"]["bundled_skills"] = False
 
-    context = resolve_effective_role_context(config, "planner", workspace=workspace)
+    context = resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
     assert context.skills == ()
 
 
@@ -87,15 +87,16 @@ def test_configured_skills_merge_with_bundled_skills(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  planner:
-    skills:
-      - skills/custom
+  roles:
+    planner:
+      skills:
+        - skills/custom
 """,
         ),
         cwd=workspace,
     )
 
-    context = resolve_effective_role_context(config, "planner", workspace=workspace)
+    context = resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
     assert len(context.skills) == 3
     assert "custom skill" in context.skills[-1].content
 
@@ -115,21 +116,22 @@ run:
   output_goal: Goal.
 agent_context:
   bundled_skills: false
-  producer:
-    skills:
-      - skills/demo
+  roles:
+    producer:
+      skills:
+        - skills/demo
 """,
         ),
         cwd=workspace,
     )
 
     loaded = load_skills(
-        config["agent_context"]["producer"]["skills"],
+        config["agent_context"]["roles"]["producer"]["skills"],
         workspace=workspace,
         field="skills",
     )
     assert loaded[0].path.name == "SKILL.md"
     assert "demo" in loaded[0].content.lower()
 
-    context = resolve_effective_role_context(config, "producer", workspace=workspace)
+    context = resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
     assert len(context.skills) == 1

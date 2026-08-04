@@ -35,10 +35,16 @@ from top_down_planning.orchestrator.provider_turns import (
     build_planner_turn_recovery,
     consume_provider_turn_with_session_recovery,
 )
-from top_down_planning.orchestrator.agent_context import resolve_role_session_context
-from top_down_planning.orchestrator.session_events import (
-    resume_primary_session_with_audit,
+from top_down_planning.orchestrator.agent_context import resolve_activity_session_context
+from top_down_planning.orchestrator.activity_context import (
+    session_continuation_decision,
 )
+from top_down_planning.orchestrator.session_context import (
+    ensure_primary_session,
+    rotate_primary_session,
+)
+from top_down_planning.domain.session_bindings import new_session_binding
+from top_down_planning.persistence.session_bindings import get_primary_binding
 from top_down_planning.orchestrator.planner_session import primary_planner_provider_session_id
 from top_down_planning.orchestrator.producer_session import primary_producer_provider_session_id
 from top_down_planning.orchestrator.whole_plan_review import WholePlanReviewOrchestrator
@@ -115,22 +121,28 @@ class PlanAmendmentOrchestrator:
         if str(run.get("phase") or "") == PLAN_AMENDMENT:
             run = self._activate_amendment_execution()
             phase = str(run.get("phase") or PLAN_AMENDMENT)
-            self._capability_token = issue_session_capability(
-                self._store,
-                self._run_id,
-                role="planner",
-                phase=phase,
-                session_id=planner_session_id,
-                session_kind="primary",
-            )
-            bind_provider_capability(self._provider, self._capability_token, store=self._store, run_id=self._run_id)
             revision_cycles = int(amendment.get("revision_cycles") or 0)
             config = self._store.load_resolved_config(self._run_id)
             max_revision_cycles = _amendment_revision_limit(config)
-            self._resume_planner_for_amendment(
-                planner_session_id,
-                amendment,
+            planner_session_id = self._resume_planner_for_amendment(amendment)
+            for record in self._store.list_capabilities(self._run_id):
+                if record.get("revoked") is True:
+                    continue
+                capability_id = str(record.get("id") or "")
+                if capability_id:
+                    self._store.revoke_capability(self._run_id, capability_id)
+            from top_down_planning.persistence.capabilities import clear_capability_token_file
+
+            clear_capability_token_file(self._store, self._run_id)
+            rebound = rebind_primary_session_capability(
+                self._store,
+                self._run_id,
+                self._provider,
+                role="planner",
             )
+            if rebound is None:
+                raise ProviderRunError("failed to rebind planner capability for amendment")
+            self._capability_token = rebound
             while True:
                 signal = self._consume_planner_turn(planner_session_id)
                 revision_cycles += 1
@@ -153,10 +165,7 @@ class PlanAmendmentOrchestrator:
                         planner_session_id=planner_session_id,
                         producer_session_id=producer_session_id,
                     )
-                self._resume_planner_for_amendment(
-                    planner_session_id,
-                    amendment,
-                )
+                planner_session_id = self._resume_planner_for_amendment(amendment)
                 run = self._store.load_run(self._run_id)
                 phase = str(run.get("phase") or PLAN_AMENDMENT)
                 self._capability_token = rotate_session_capability(
@@ -291,6 +300,15 @@ class PlanAmendmentOrchestrator:
         prior_status = str(run.get("status") or "running")
         prior_stop = run.get("stop")
         prior_phase = str(run.get("phase") or "")
+        for record in self._store.list_capabilities(self._run_id):
+            if record.get("revoked") is True:
+                continue
+            capability_id = str(record.get("id") or "")
+            if capability_id:
+                self._store.revoke_capability(self._run_id, capability_id)
+        from top_down_planning.persistence.capabilities import clear_capability_token_file
+
+        clear_capability_token_file(self._store, self._run_id)
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["status"] = "running"
@@ -354,35 +372,109 @@ class PlanAmendmentOrchestrator:
 
     def _resume_planner_for_amendment(
         self,
-        session_id: str,
         amendment: dict[str, Any],
-    ) -> None:
+    ) -> str:
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, "planner")
-        resume_primary_session_with_audit(
-            self._append_event,
-            self._provider,
-            role="planner",
-            phase=PLAN_AMENDMENT,
-            session_id=session_id,
-            request={
-                "action": "revise_for_amendment",
-                "phase": PLAN_AMENDMENT,
+        activity_context = resolve_activity_session_context(
+            config,
+            run,
+            "planner",
+            "plan_amendment",
+        )
+        from top_down_planning.orchestrator.planning import build_planner_context_manifest
+
+        manifest = build_planner_context_manifest(
+            self._run_id,
+            run,
+            config,
+            self._store.load_plan_model(self._run_id),
+            activity="plan_amendment",
+        )
+        manifest.update(
+            {
                 "amendment_id": amendment.get("id"),
                 "evidence": amendment.get("evidence"),
                 "affected_refs": list(amendment.get("affected_refs") or []),
                 "summary": amendment.get("summary"),
                 "completion_signal": _AMENDMENT_REVISION_READY_SIGNAL,
-            },
-            model=role_context.model,
+            }
+        )
+        amendment_request = {
+            "action": "revise_for_amendment",
+            "phase": PLAN_AMENDMENT,
+            "amendment_id": amendment.get("id"),
+            "evidence": amendment.get("evidence"),
+            "affected_refs": list(amendment.get("affected_refs") or []),
+            "summary": amendment.get("summary"),
+            "completion_signal": _AMENDMENT_REVISION_READY_SIGNAL,
+        }
+        binding = get_primary_binding(run, "planner")
+        decision_source = binding or new_session_binding(
+            role="planner",
+            kind="primary",
+            state="unbound",
+        )
+        decision = session_continuation_decision(decision_source, activity_context)
+
+        if (
+            binding is not None
+            and decision == "resume"
+            and binding.provider_session_id is not None
+        ):
+            return ensure_primary_session(
+                self._store,
+                self._run_id,
+                self._provider,
+                role="planner",
+                phase=PLAN_AMENDMENT,
+                requested=activity_context,
+                manifest=manifest,
+                append_event=self._append_event,
+                resume_request=amendment_request,
+                amendment_id=amendment.get("id"),
+            )
+
+        if (
+            binding is not None
+            and binding.state == "bound"
+            and binding.provider_session_id is not None
+        ):
+            return rotate_primary_session(
+                self._store,
+                self._run_id,
+                self._provider,
+                role="planner",
+                phase=PLAN_AMENDMENT,
+                old_provider_session_id=binding.provider_session_id,
+                requested=activity_context,
+                manifest=manifest,
+                append_event=self._append_event,
+                handoff_request=amendment_request,
+            )
+
+        return ensure_primary_session(
+            self._store,
+            self._run_id,
+            self._provider,
+            role="planner",
+            phase=PLAN_AMENDMENT,
+            requested=activity_context,
+            manifest=manifest,
+            append_event=self._append_event,
+            resume_request=amendment_request,
             amendment_id=amendment.get("id"),
         )
 
     def _consume_planner_turn(self, session_id: str) -> str | None:
         run = self._store.load_run(self._run_id)
         config = self._store.load_resolved_config(self._run_id)
-        role_context = resolve_role_session_context(config, run, "planner")
+        role_context = resolve_activity_session_context(
+            config,
+            run,
+            "planner",
+            "plan_amendment",
+        )
         phase = str(run.get("phase") or PLAN_AMENDMENT)
         try:
             turn_outcome = consume_provider_turn_with_session_recovery(
@@ -398,6 +490,7 @@ class PlanAmendmentOrchestrator:
                     expected_next_action="revise plan for pending amendment",
                     append_event=self._append_event,
                     model=role_context.model,
+                    activity="plan_amendment",
                 ),
             )
         except SessionRecoveryPaused as exc:

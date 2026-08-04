@@ -52,7 +52,7 @@ provider:
   skip_probe: false     # skip CLI version probe when true
 ```
 
-Per-role model selection uses `agent_context.<role>.model`, falling back to `agent_context.default.model`. `model: auto` means no explicit Cursor `--model` argument.
+Per-role and per-activity model selection uses `agent_context.roles.<role>.model` and `agent_context.activities.<activity>.model`, each falling back through `agent_context.default.model` (resolution order: default → role → activity). `model: auto` means no explicit Cursor `--model` argument.
 
 - `cursor` — thin Cursor CLI adapter (`--print --output-format stream-json --trust --approve-mcps --force`). `--force` is required so non-interactive turns can run shell/`tdp agent …` tools; without it those calls are rejected. Provider session ids are stored on structured session bindings under `run.sessions` (`primary_planner`, `primary_producer`) and on each review loop's `reviewer_binding`: each binding carries `session_instance_id`, `generation`, `provider_session_id`, `state`, `role`, and `kind`. The Cursor adapter registers in-memory sessions under transient `cursor-pending-*` handles until stream-json emits a durable `session_id`; orchestration persists durable ids during the provider turn (`state: bound`) as soon as the stream reports them. Transient pending handles are never passed to Cursor `--resume` (including reviewer `send()` before the first streamed turn). Cursor turns fail when the stream completes without a durable `session_id`. `limits.provider.turn_idle_timeout_seconds` (default `0`, disabled) ends a turn when Cursor emits no stream-json stdout for that interval (`ProviderTurnStalledError`). Missing remote sessions and idle stalls each allow **one** replacement per `phase_action_id` with a recovery manifest; lineage audit reasons are `provider_session_not_found` or `provider_turn_stalled`. Exhausted replacement marks the run `failed` with `session_recovery_exhausted`. `session_provider_id_bound` lineage events emit when a durable id is first persisted. `get_session_reference` is available on the provider for durable ref export. Agent turns run on background collector threads; every subprocess pid is tracked and killed by `terminate_all_sessions()`. Bounded reviewer sessions are released from the in-memory registry when a terminal review decision is recorded; after each phase step (including user cancel via Ctrl+C/SIGTERM), `RunEngine` tears down active sessions, emits durable cancel audit events when interrupted, and terminates tracked agent subprocesses. Later turns re-bind persisted ids through Cursor `--resume` when the in-memory adapter was torn down between phase steps.
 - `stub` — deterministic scripted turns for **tests only**; call `script_turn()` before each provider turn.
@@ -104,7 +104,7 @@ Tool invocations print as `[tool:start]` and `[tool:end]` with a concise summary
 
 Console output prints `[category]` once per discrete event block (optional `[timestamp]` when `show_timestamps` is enabled). `thinking` and `response` stream incrementally with one prefix per block; explicit `\n` in agent text breaks lines within the block.
 
-Agent session lifecycle: `[session:start]` on `planner_session_started` / `producer_session_started` / `reviewer_session_started` audit events (`phase`, `role`, `run_id`, `session_id`, `model` required); `[session:resume]` on `*_session_resumed` with the same fields; `[session:end]` on `planner_session_ended` / `producer_session_ended` / `reviewer_session_ended` audit events and from engine teardown console output for any provider session still in the in-memory registry after each blocking phase step. User cancel (Ctrl+C / SIGTERM) also records `agent_terminated` (pid, role, reason) and persists `stop.details.terminated_pids` on the pause record. Reviewer session audit events also carry `loop_id` and `review_type`; mandatory `whole_plan` / `whole_output` gates add `stage` (`initial_review`, `finding_verification`, `scope_review`). `model` is the provider-resolved CLI model label (`auto` when no explicit `--model` is passed). Console output surfaces `model` only on `[session:start]`, `[session:resume]`, and `[session:end]` (with `role` and other session fields). Provider session references (`get_session_reference`, `list_active_sessions`) and session lifecycle audit events carry the same label; normalized stream events do not. Run-level CLI messages use `[run:start]` and `[run:resume]`; persisted `run_created` audit events map to `[run:start]`.
+Agent session lifecycle: `[session:start]` on `planner_session_started` / `producer_session_started` / `reviewer_session_started` audit events (`phase`, `role`, `activity`, `context_digest`, `run_id`, `session_id`, `model` required); `[session:resume]` on `*_session_resumed` with the same fields; `[session:end]` on `planner_session_ended` / `producer_session_ended` / `reviewer_session_ended` audit events and from engine teardown console output for any provider session still in the in-memory registry after each blocking phase step. User cancel (Ctrl+C / SIGTERM) also records `agent_terminated` (pid, role, reason) and persists `stop.details.terminated_pids` on the pause record. Reviewer session audit events also carry `loop_id` and `review_type`; mandatory `whole_plan` / `whole_output` gates add `stage` (`initial_review`, `finding_verification`, `scope_review`). `model` is the provider-resolved CLI model label (`auto` when no explicit `--model` is passed). Console output surfaces `model` only on `[session:start]`, `[session:resume]`, and `[session:end]` (with `role`, `activity`, and other session fields). Provider session references (`get_session_reference`, `list_active_sessions`) and session lifecycle audit events carry the same label; normalized stream events do not. Run-level CLI messages use `[run:start]` and `[run:resume]`; persisted `run_created` audit events map to `[run:start]`.
 
 **`phase` vs `stage`:** `phase` is the run lifecycle (`planning`, `whole_plan_review`, `production`, …). `stage` is a mandatory review loop step (`initial_review`, `finding_verification`, `scope_review`) and appears on reviewer session audit events for `whole_plan` / `whole_output` gates only. Mandatory review orchestration maps to `[review:start]` (loop bootstrap) and `[review:stage]` (scope-review transition); run lifecycle transitions remain `[phase:start]` / `[phase:end]`.
 
@@ -172,7 +172,7 @@ Configuration precedence: built-in defaults → YAML file → repeated `--set pa
 Config files may live anywhere. `project.workspace` is the canonical workspace root for a run.
 
 - `project.workspace` resolves against the **process working directory** (defaults to process cwd when omitted).
-- `run.input_refs`, `run.output_goal_file`, and all `agent_context.*.resources` / `agent_context.*.skills` / `agent_context.*.guidance` file entries resolve against the resolved `project.workspace`.
+- `run.input_refs`, `run.output_goal_file`, and all `agent_context.default`, `agent_context.roles.*`, and `agent_context.activities.*` resource / skill / guidance file entries resolve against the resolved `project.workspace`.
 - `runtime.runs_dir` resolves against the process working directory.
 
 Absolute paths are used directly. Launch `tdp` from the intended working directory (for example the repository root).
@@ -191,27 +191,35 @@ run.output_goal / run.output_goal_file
     Authoritative deliverable contract.
 
 agent_context.default
-    Shared supporting context inherited by every role (model, guidance, resources, skills).
+    Shared supporting context inherited by every role and activity (model, guidance,
+    resources, skills).
 
-agent_context.<role>
-    Role-specific supporting context. Each role section may override the shared model and
-    add guidance, resources, and skills on top of agent_context.default.
+agent_context.roles.<role>
+    Role-wide overlays (planner, producer, reviewer). Each role section may override
+    the shared model and add guidance, resources, and skills on top of default.
+
+agent_context.activities.<activity>
+  Activity-specific overlays. Orchestrator activities: initial_plan, plan_revision,
+  plan_amendment, production, output_revision, initial_review, finding_verification,
+  scope_review. Effective context merges default → role → activity. Session resume
+  requires the same role, activity, and context_digest; activity changes always start
+  a fresh provider session.
 
 project.workspace
     Canonical workspace root.
 ```
 
-`run.input_refs` and the resolved output goal are supplied automatically to planner, producer, and reviewer sessions. Do not repeat them under `agent_context.*.resources`.
+`run.input_refs` and the resolved output goal are supplied automatically to planner, producer, and reviewer sessions. Do not repeat them under `agent_context.roles.*` or `agent_context.activities.*`.
 
-Use guidance for role behavior preferences. Use `run.input_refs`, boundaries, acceptance, and output_goal for authoritative work contracts. Use resources for supporting reference material and skills for reusable methods.
+Use guidance for role or activity behavior preferences. Use `run.input_refs`, boundaries, acceptance, and output_goal for authoritative work contracts. Use resources for supporting reference material and skills for reusable methods.
 
-Guidance is additive with `agent_context.default`, attached to fresh role sessions, and included in the supporting-context digest. It does not change run acceptance, create runtime enforcement, or introduce new lifecycle transitions. Each guidance entry is exactly one of `{text: ...}` or `{file: ...}`.
+Guidance is additive with `agent_context.default`, attached to fresh agent sessions, and included in the supporting-context digest. It does not change run acceptance, create runtime enforcement, or introduce new lifecycle transitions. Each guidance entry is exactly one of `{text: ...}` or `{file: ...}`.
 
-`--set agent_context.<role>.guidance=…` must be a JSON array of objects (the `--set` parser does not accept YAML mapping syntax inside list items). Use double quotes and escaped JSON, for example:
+`--set agent_context.roles.<role>.guidance=…` and `--set agent_context.activities.<activity>.guidance=…` must be JSON arrays of objects (the `--set` parser does not accept YAML mapping syntax inside list items). Use double quotes and escaped JSON, for example:
 
 ```bash
 tdp run --config config.yaml \
-  --set 'agent_context.producer.guidance=[{"text":"Work in coherent batches."},{"file":"docs/producer-guidance.md"}]'
+  --set 'agent_context.roles.producer.guidance=[{"text":"Work in coherent batches."},{"file":"docs/producer-guidance.md"}]'
 ```
 
 In YAML config files, use normal list-of-mappings syntax (`- text: >` or `- file: path`).
@@ -234,29 +242,40 @@ agent_context:
     skills:
       - .agents/skills/common/
 
-  planner:
-    model: reasoning-model
-    resources:
-      - docs/planning-guidelines.md
+  roles:
+    planner:
+      model: reasoning-model
+      resources:
+        - docs/planning-guidelines.md
 
-  producer:
-    model: coding-model
-    guidance:
-      - text: >
-          Work in coherent batches. Consider focused review and useful
-          Git checkpoints; skip a commit when that is better judgment.
+    producer:
+      model: coding-model
+      guidance:
+        - text: >
+            Work in coherent batches. Consider focused review and useful
+            Git checkpoints; skip a commit when that is better judgment.
 
-  reviewer:
-    model: review-model
+    reviewer:
+      model: review-model
+
+  activities:
+    initial_plan:
+      model: reasoning-model
+    production:
+      model: coding-model
+    initial_review:
+      model: review-model
 ```
 
-Packaged TDP agent skills (`bundled_skills/tdp-agent/`) are auto-injected for every role when `agent_context.bundled_skills` is true (the default). Add extra project skills under `agent_context.*.skills` as needed.
+Flat `agent_context.planner` / `producer` / `reviewer` keys are rejected; recreate runs after migrating to the nested shape above.
 
-Role `guidance`, `resources`, and configured `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. Effective context is attached to fresh planner, producer, and reviewer sessions.
+Packaged TDP agent skills (`bundled_skills/tdp-agent/`) are auto-injected for every role when `agent_context.bundled_skills` is true (the default). Add extra project skills under `agent_context.roles.*.skills` or `agent_context.activities.*.skills` as needed.
+
+Role and activity `guidance`, `resources`, and configured `skills` are additive with `agent_context.default`. Skills are path-only bundles: a file path or a directory containing `SKILL.md`. Effective context is attached to fresh planner, producer, and reviewer sessions per orchestrator activity.
 
 Run contracts bind via `digests.input` and `digests.output_goal` at run creation. Supporting agent context uses a **spec vs snapshot** split:
 
-- `digests.context_spec` — stable declarations (role models, guidance entries, resource path selection, skill declarations including packaged `tdp:builtin:` keys) plus the resolved snapshot exclusion policy (`context_snapshot.excludes` and built-in policy version).
+- `digests.context_spec` — stable declarations (default, role, and activity models; guidance entries; resource path selection; skill declarations including packaged `tdp:builtin:` keys) plus the resolved snapshot exclusion policy (`context_snapshot.excludes` and built-in policy version).
 - `digests.context_snapshot` — materialized resource file bytes, skill contents, and guidance text/file digests, persisted in `context_snapshot_binding` on the run record.
 
 Resume always validates `context_spec`. `context_snapshot` is skipped only during the `production` phase so in-flight authorized mutations are allowed. Each `production apply` validates cumulative snapshot drift against the candidate batch (including proposed outputs) and rejects incomplete evidence before persistence. Production completion re-validates the same invariant, rebases `context_snapshot` when authorized, emits `context_snapshot_rebased` after the run record is persisted, then enters `whole_output_review`. Unauthorized workspace changes block apply retry or completion and later phase entry.

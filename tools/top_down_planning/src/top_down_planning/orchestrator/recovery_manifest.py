@@ -128,6 +128,7 @@ def build_planner_recovery_manifest(
     *,
     phase_action_id: str,
     expected_next_action: str,
+    activity: str = "initial_plan",
 ) -> dict[str, Any]:
     """Build planner replacement context from durable run state."""
 
@@ -136,7 +137,13 @@ def build_planner_recovery_manifest(
     run = store.load_run(run_id)
     planning = run.get("planning") or {}
     limits = (config.get("limits") or {}).get("planning") or {}
-    manifest = build_planner_context_manifest(run_id, run, config, plan)
+    manifest = build_planner_context_manifest(
+        run_id,
+        run,
+        config,
+        plan,
+        activity=activity,
+    )
     manifest.update(
         _base_recovery_fields(
             run_id=run_id,
@@ -179,6 +186,7 @@ def build_producer_recovery_manifest(
     *,
     phase_action_id: str,
     expected_next_action: str,
+    activity: str = "production",
 ) -> dict[str, Any]:
     """Build producer replacement context from durable run state."""
 
@@ -192,6 +200,7 @@ def build_producer_recovery_manifest(
         config,
         plan,
         production=production,
+        activity=activity,
     )
     manifest.update(
         _base_recovery_fields(

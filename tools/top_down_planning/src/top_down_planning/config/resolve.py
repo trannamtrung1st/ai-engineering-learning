@@ -17,8 +17,12 @@ from core_tools.config import (
 )
 from core_tools.config.errors import ConfigError
 
+from top_down_planning.config.activities import (
+    ALLOWED_AGENT_ACTIVITIES,
+    ALLOWED_AGENT_CONTEXT_TOP_LEVEL_KEYS,
+    ALLOWED_AGENT_ROLES,
+)
 from top_down_planning.config.defaults import (
-    ALLOWED_AGENT_CONTEXT_KEYS,
     ALLOWED_OVERRIDE_PATHS,
     DEFAULT_CONFIG,
 )
@@ -31,6 +35,21 @@ __all__ = [
     "resolve_output_goal_text",
 ]
 
+_AGENT_CONTEXT_OVERLAY_FIELDS = frozenset({"model", "guidance", "resources", "skills"})
+
+
+def _validate_context_overlay_section(
+    section: dict[str, Any],
+    *,
+    path_prefix: str,
+) -> None:
+    unknown = sorted(set(section) - _AGENT_CONTEXT_OVERLAY_FIELDS)
+    if unknown:
+        raise ConfigError(
+            f"unsupported {path_prefix} field: {unknown[0]!r}",
+            path=f"{path_prefix}.{unknown[0]}",
+        )
+
 
 def _validate_agent_context_roles(config: dict[str, Any]) -> None:
     agent_context = config.get("agent_context")
@@ -41,11 +60,11 @@ def _validate_agent_context_roles(config: dict[str, Any]) -> None:
             "agent_context must be a mapping",
             path="agent_context",
         )
-    for role_name in agent_context:
-        if role_name not in ALLOWED_AGENT_CONTEXT_KEYS:
+    for key_name in agent_context:
+        if key_name not in ALLOWED_AGENT_CONTEXT_TOP_LEVEL_KEYS:
             raise ConfigError(
-                f"unknown agent_context role: {role_name!r}",
-                path=f"agent_context.{role_name}",
+                f"unknown agent_context key: {key_name!r}",
+                path=f"agent_context.{key_name}",
             )
     bundled_skills = agent_context.get("bundled_skills")
     if bundled_skills is not None and not isinstance(bundled_skills, bool):
@@ -53,6 +72,69 @@ def _validate_agent_context_roles(config: dict[str, Any]) -> None:
             "agent_context.bundled_skills must be a boolean",
             path="agent_context.bundled_skills",
         )
+
+    default_section = agent_context.get("default")
+    if default_section is not None:
+        if not isinstance(default_section, dict):
+            raise ConfigError(
+                "agent_context.default must be a mapping",
+                path="agent_context.default",
+            )
+        _validate_context_overlay_section(
+            default_section,
+            path_prefix="agent_context.default",
+        )
+
+    roles_section = agent_context.get("roles")
+    if roles_section is not None:
+        if not isinstance(roles_section, dict):
+            raise ConfigError(
+                "agent_context.roles must be a mapping",
+                path="agent_context.roles",
+            )
+        for role_name, role_section in roles_section.items():
+            if role_name not in ALLOWED_AGENT_ROLES:
+                raise ConfigError(
+                    f"unknown agent_context role: {role_name!r}",
+                    path=f"agent_context.roles.{role_name}",
+                )
+            if not isinstance(role_section, dict):
+                raise ConfigError(
+                    f"agent_context.roles.{role_name} must be a mapping",
+                    path=f"agent_context.roles.{role_name}",
+                )
+            _validate_context_overlay_section(
+                role_section,
+                path_prefix=f"agent_context.roles.{role_name}",
+            )
+
+    activities_section = agent_context.get("activities")
+    if activities_section is not None:
+        if not isinstance(activities_section, dict):
+            raise ConfigError(
+                "agent_context.activities must be a mapping",
+                path="agent_context.activities",
+            )
+        for activity_name, activity_section in activities_section.items():
+            if activity_name not in ALLOWED_AGENT_ACTIVITIES:
+                raise ConfigError(
+                    f"unknown agent_context activity: {activity_name!r}",
+                    path=f"agent_context.activities.{activity_name}",
+                )
+            if not isinstance(activity_section, dict):
+                raise ConfigError(
+                    f"agent_context.activities.{activity_name} must be a mapping",
+                    path=f"agent_context.activities.{activity_name}",
+                )
+            if "role" in activity_section:
+                raise ConfigError(
+                    "agent_context activities must not configure role",
+                    path=f"agent_context.activities.{activity_name}.role",
+                )
+            _validate_context_overlay_section(
+                activity_section,
+                path_prefix=f"agent_context.activities.{activity_name}",
+            )
 
 
 def _validate_context_snapshot(config: dict[str, Any]) -> None:

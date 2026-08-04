@@ -1,38 +1,65 @@
-"""Shared helpers for attaching effective role context to provider packages."""
+"""Shared helpers for attaching effective activity context to provider packages."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from top_down_planning.config import (
+    AgentActivity,
     AgentRole,
-    EffectiveRoleContext,
+    EffectiveActivityContext,
     build_agent_context_manifest_payload,
-    resolve_effective_role_context,
+    resolve_effective_activity_context,
 )
 from top_down_planning.domain.models import Plan
 from top_down_planning.workspace import run_workspace
 
 __all__ = [
-    "attach_role_context_to_manifest",
+    "attach_activity_context_to_manifest",
+    "manifest_agent_context_fields",
     "plan_execution_contract_fields",
-    "resolve_role_session_context",
+    "resolve_activity_session_context",
 ]
 
 
-def resolve_role_session_context(
+def manifest_agent_context_fields(
+    manifest: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    """Return activity and context_digest from a provider manifest, when present."""
+
+    agent_context = manifest.get("agent_context")
+    if not isinstance(agent_context, dict):
+        return None, None
+    activity_raw = agent_context.get("activity")
+    digest_raw = agent_context.get("context_digest")
+    activity = (
+        str(activity_raw).strip()
+        if activity_raw is not None and str(activity_raw).strip()
+        else None
+    )
+    context_digest = (
+        str(digest_raw).strip()
+        if digest_raw is not None and str(digest_raw).strip()
+        else None
+    )
+    return activity, context_digest
+
+
+def resolve_activity_session_context(
     config: dict[str, Any],
     run: dict[str, Any],
     role: AgentRole,
+    activity: AgentActivity,
     *,
     output_goal: str | None = None,
-) -> EffectiveRoleContext:
-    """Resolve effective role context using the persisted run workspace."""
+) -> EffectiveActivityContext:
+    """Resolve effective activity context using the persisted run workspace."""
 
     workspace = run_workspace(run)
-    return resolve_effective_role_context(
+    return resolve_effective_activity_context(
         config,
         role,
+        activity,
         workspace=workspace,
         output_goal=output_goal,
     )
@@ -49,20 +76,22 @@ def plan_execution_contract_fields(plan: Plan) -> dict[str, Any]:
     }
 
 
-def attach_role_context_to_manifest(
+def attach_activity_context_to_manifest(
     manifest: dict[str, Any],
     *,
     config: dict[str, Any],
     run: dict[str, Any],
     role: AgentRole,
+    activity: AgentActivity,
     output_goal: str | None = None,
 ) -> dict[str, Any]:
     """Return a copy of ``manifest`` with run contracts and ``agent_context`` attached."""
 
-    context = resolve_role_session_context(
+    context = resolve_activity_session_context(
         config,
         run,
         role,
+        activity,
         output_goal=output_goal,
     )
     merged = dict(manifest)

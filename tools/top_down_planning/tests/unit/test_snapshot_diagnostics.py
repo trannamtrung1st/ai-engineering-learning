@@ -38,9 +38,10 @@ def test_diagnostics_counts_excluded_caches_without_second_pass(tmp_path: Path) 
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,
@@ -90,9 +91,10 @@ def test_unauthorized_error_message_uses_relative_path_format(tmp_path: Path) ->
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,

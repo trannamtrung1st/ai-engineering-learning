@@ -50,6 +50,8 @@ class SessionBinding:
     provider: str | None = None
     provider_session_id: str | None = None
     model: str | None = None
+    activity: str | None = None
+    context_digest: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -65,6 +67,10 @@ class SessionBinding:
             payload["provider_session_id"] = self.provider_session_id
         if self.model is not None:
             payload["model"] = self.model
+        if self.activity is not None:
+            payload["activity"] = self.activity
+        if self.context_digest is not None:
+            payload["context_digest"] = self.context_digest
         return payload
 
     @classmethod
@@ -95,6 +101,18 @@ class SessionBinding:
             if model_raw is not None and str(model_raw).strip()
             else None
         )
+        activity_raw = payload.get("activity")
+        activity = (
+            str(activity_raw).strip()
+            if activity_raw is not None and str(activity_raw).strip()
+            else None
+        )
+        digest_raw = payload.get("context_digest")
+        context_digest = (
+            str(digest_raw).strip()
+            if digest_raw is not None and str(digest_raw).strip()
+            else None
+        )
         binding = cls(
             session_instance_id=instance_id,
             generation=int(payload.get("generation") or 1),
@@ -104,6 +122,8 @@ class SessionBinding:
             provider=provider or None,
             provider_session_id=provider_session_id,
             model=model,
+            activity=activity,
+            context_digest=context_digest,
         )
         validate_session_binding(binding)
         return binding
@@ -117,6 +137,8 @@ class SessionBinding:
             generation=int(self.generation) + 1,
             state="starting",
             provider_session_id=None,
+            activity=None,
+            context_digest=None,
         )
 
     def released_for_reallocation(self) -> SessionBinding:
@@ -128,6 +150,8 @@ class SessionBinding:
             generation=int(self.generation) + 1,
             state="unbound",
             provider_session_id=None,
+            activity=None,
+            context_digest=None,
         )
 
     def with_provider_session_id(
@@ -169,6 +193,8 @@ def new_session_binding(
     provider: str | None = "cursor",
     generation: int = 1,
     model: str | None = None,
+    activity: str | None = None,
+    context_digest: str | None = None,
     state: SessionBindingState = "unbound",
 ) -> SessionBinding:
     binding = SessionBinding(
@@ -179,6 +205,12 @@ def new_session_binding(
         state=state,
         provider=str(provider).strip() if provider is not None else None,
         model=str(model).strip() if model is not None else None,
+        activity=str(activity).strip() if activity is not None and str(activity).strip() else None,
+        context_digest=(
+            str(context_digest).strip()
+            if context_digest is not None and str(context_digest).strip()
+            else None
+        ),
     )
     validate_session_binding(binding)
     return binding

@@ -4,11 +4,29 @@ from __future__ import annotations
 
 from typing import Any
 
-_AGENT_CONTEXT_ROLE_DEFAULT: dict[str, Any] = {
+from top_down_planning.config.activities import (
+    ALLOWED_AGENT_ACTIVITIES,
+    ALLOWED_AGENT_ROLES,
+    agent_context_override_paths,
+)
+
+_AGENT_CONTEXT_OVERLAY_DEFAULT: dict[str, Any] = {
     "guidance": [],
     "resources": [],
     "skills": [],
 }
+
+
+def _default_agent_context_activities() -> dict[str, dict[str, Any]]:
+    return {
+        name: dict(_AGENT_CONTEXT_OVERLAY_DEFAULT) for name in sorted(ALLOWED_AGENT_ACTIVITIES)
+    }
+
+
+def _default_agent_context_roles() -> dict[str, dict[str, Any]]:
+    return {
+        name: dict(_AGENT_CONTEXT_OVERLAY_DEFAULT) for name in sorted(ALLOWED_AGENT_ROLES)
+    }
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "version": 1,
@@ -26,10 +44,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "agent_context": {
         "bundled_skills": True,
-        "default": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
-        "planner": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
-        "producer": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
-        "reviewer": dict(_AGENT_CONTEXT_ROLE_DEFAULT),
+        "default": dict(_AGENT_CONTEXT_OVERLAY_DEFAULT),
+        "roles": _default_agent_context_roles(),
+        "activities": _default_agent_context_activities(),
     },
     "planning": {
         "stop_hint": (
@@ -213,13 +230,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
 }
 
-ALLOWED_AGENT_CONTEXT_ROLES: frozenset[str] = frozenset(
-    {"default", "planner", "producer", "reviewer"}
-)
-
-ALLOWED_AGENT_CONTEXT_KEYS: frozenset[str] = ALLOWED_AGENT_CONTEXT_ROLES | frozenset(
-    {"bundled_skills"}
-)
+# Re-exported for resume policy and config validation.
+ALLOWED_AGENT_CONTEXT_ROLES: frozenset[str] = ALLOWED_AGENT_ROLES
 
 ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
     {
@@ -233,23 +245,7 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
         "run.acceptance",
         "context_snapshot.excludes.defaults",
         "context_snapshot.excludes.patterns",
-        "agent_context.bundled_skills",
-        "agent_context.default.model",
-        "agent_context.default.guidance",
-        "agent_context.default.resources",
-        "agent_context.default.skills",
-        "agent_context.planner.model",
-        "agent_context.planner.guidance",
-        "agent_context.planner.resources",
-        "agent_context.planner.skills",
-        "agent_context.producer.model",
-        "agent_context.producer.guidance",
-        "agent_context.producer.resources",
-        "agent_context.producer.skills",
-        "agent_context.reviewer.model",
-        "agent_context.reviewer.guidance",
-        "agent_context.reviewer.resources",
-        "agent_context.reviewer.skills",
+        *agent_context_override_paths(),
         "planning.stop_hint",
         "planning.max_depth",
         "planning.max_expansion_per_item",

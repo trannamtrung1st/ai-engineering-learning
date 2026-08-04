@@ -18,8 +18,8 @@ from top_down_planning.orchestrator.capability import (
 )
 from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryExhausted, SessionRecoveryPaused
 from top_down_planning.orchestrator.agent_context import (
-    attach_role_context_to_manifest,
-    resolve_role_session_context,
+    attach_activity_context_to_manifest,
+    resolve_activity_session_context,
 )
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.run_transitions import pause_for_limit_exhausted
@@ -35,9 +35,8 @@ from top_down_planning.orchestrator.provider_turns import (
     restore_primary_capability_after_focused_review,
     sync_planning_items_added,
 )
+from top_down_planning.orchestrator.session_context import ensure_primary_session
 from top_down_planning.orchestrator.session_events import (
-    commit_primary_provider_session_binding,
-    emit_primary_session_started,
     resume_primary_session_with_audit,
 )
 from top_down_planning.persistence.digests import compute_plan_digest
@@ -85,40 +84,33 @@ class PlanningPhaseOrchestrator:
 
         config = self._store.load_resolved_config(self._run_id)
         loop_limits = _planning_loop_limits(config)
-        role_context = resolve_role_session_context(config, run, "planner")
+        run = self._store.load_run(self._run_id)
+        activity_context = resolve_activity_session_context(
+            config,
+            run,
+            "planner",
+            "initial_plan",
+        )
 
-        session_id = primary_planner_provider_session_id(run)
-        if session_id is None:
-            manifest = build_planner_context_manifest(
-                self._run_id,
-                run,
-                config,
-                self._store.load_plan_model(self._run_id),
-            )
-            role_context = resolve_role_session_context(config, run, "planner")
-            session_id = self._provider.start_primary_session(
-                "planner",
-                manifest,
-                model=role_context.model,
-            )
-            emit_primary_session_started(
-                self._append_event,
-                self._provider,
-                role="planner",
-                phase=PLANNING,
-                session_id=session_id,
-            )
-            run = _persist_session_id(self._store, self._run_id, session_id)
-        else:
-            resume_primary_session_with_audit(
-                self._append_event,
-                self._provider,
-                role="planner",
-                phase=PLANNING,
-                session_id=session_id,
-                request={"action": "continue", "phase": PLANNING},
-                model=role_context.model,
-            )
+        manifest = build_planner_context_manifest(
+            self._run_id,
+            run,
+            config,
+            self._store.load_plan_model(self._run_id),
+            activity="initial_plan",
+        )
+        session_id = ensure_primary_session(
+            self._store,
+            self._run_id,
+            self._provider,
+            role="planner",
+            phase=PLANNING,
+            requested=activity_context,
+            manifest=manifest,
+            append_event=self._append_event,
+            resume_request={"action": "continue", "phase": PLANNING},
+        )
+        role_context = activity_context
 
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or PLANNING)
@@ -427,6 +419,8 @@ def build_planner_context_manifest(
     run: dict[str, Any],
     config: dict[str, Any],
     plan: Any,
+    *,
+    activity: str = "initial_plan",
 ) -> dict[str, Any]:
     """Package planner prompt context and tool usage instructions."""
 
@@ -435,7 +429,7 @@ def build_planner_context_manifest(
     loop_limits = _planning_loop_limits(config)
     digests = dict(run.get("digests") or {})
 
-    return attach_role_context_to_manifest(
+    return attach_activity_context_to_manifest(
         {
         "run_id": run_id,
         "phase": PLANNING,
@@ -452,6 +446,7 @@ def build_planner_context_manifest(
         config=config,
         run=run,
         role="planner",
+        activity=activity,  # type: ignore[arg-type]
         output_goal=plan.output_goal,
     )
 
@@ -480,21 +475,6 @@ def _planning_metrics(run: dict[str, Any]) -> dict[str, int]:
         "agent_turns": int(planning.get("agent_turns") or 0),
         "items_added": int(planning.get("items_added") or 0),
     }
-
-def _persist_session_id(
-    store: RunStore,
-    run_id: str,
-    session_id: str,
-) -> dict[str, Any]:
-    return commit_primary_provider_session_binding(
-        store,
-        run_id,
-        role="planner",
-        provider_session_id=session_id,
-        provider="cursor",
-    )
-
-
 def _persist_planning_metrics(
     store: RunStore,
     run_id: str,

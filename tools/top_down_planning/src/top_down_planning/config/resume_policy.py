@@ -9,8 +9,11 @@ from typing import Any, Literal
 
 from core_tools.config import apply_cli_overrides, collect_leaf_paths
 
+from top_down_planning.config.activities import (
+    ALLOWED_AGENT_ACTIVITIES,
+    ALLOWED_AGENT_ROLES,
+)
 from top_down_planning.config.defaults import (
-    ALLOWED_AGENT_CONTEXT_ROLES,
     ALLOWED_OVERRIDE_PATHS,
 )
 from top_down_planning.config.resolve import resolve_config
@@ -76,9 +79,14 @@ RESUME_PROVIDER_BLOCKED_PATHS: frozenset[str] = frozenset(
 RESUME_SESSION_STRATEGY_BLOCKED_PATHS: frozenset[str] = frozenset(
     {
         *RESUME_PROVIDER_BLOCKED_PATHS,
+        "agent_context.default.model",
         *(
-            f"agent_context.{role}.model"
-            for role in ALLOWED_AGENT_CONTEXT_ROLES
+            f"agent_context.roles.{role}.model"
+            for role in ALLOWED_AGENT_ROLES
+        ),
+        *(
+            f"agent_context.activities.{activity}.model"
+            for activity in ALLOWED_AGENT_ACTIVITIES
         ),
     }
 )

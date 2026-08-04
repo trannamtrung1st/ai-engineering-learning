@@ -151,6 +151,53 @@ def _reviewer_session_is_active(provider: Provider, session_id: str) -> bool:
     return canonical_session_id in active_ids or session_id in active_ids
 
 
+def _primary_session_is_active(provider: Provider, session_id: str) -> bool:
+    canonical_session_id = provider.canonical_session_id(session_id)
+    active_ids = {
+        str(session["session_id"])
+        for session in provider.list_active_sessions()
+    }
+    return canonical_session_id in active_ids or session_id in active_ids
+
+
+def end_primary_session_with_audit(
+    append_event: Callable[..., None],
+    provider: Provider,
+    *,
+    role: str,
+    phase: str,
+    session_id: str,
+    **fields: Any,
+) -> str:
+    """Terminate a primary session and record ``{role}_session_ended``.
+
+    Idempotent when the session is already absent from the provider registry.
+    """
+
+    if role not in _PRIMARY_ROLES:
+        raise ValueError(f"unsupported primary session role: {role}")
+    canonical_session_id = provider.canonical_session_id(session_id)
+    if not _primary_session_is_active(provider, session_id):
+        return canonical_session_id
+
+    model_fields = _session_model_fields(provider, canonical_session_id)
+
+    try:
+        provider.terminate_session(canonical_session_id)
+    except Exception:
+        pass
+
+    append_event(
+        f"{role}_session_ended",
+        session_id=canonical_session_id,
+        role=role,
+        phase=phase,
+        **model_fields,
+        **fields,
+    )
+    return canonical_session_id
+
+
 def end_reviewer_session_with_audit(
     append_event: Callable[..., None],
     provider: Provider,
@@ -239,6 +286,8 @@ def commit_primary_provider_session_binding(
     provider_session_id: str,
     provider: str | None = "cursor",
     phase_action_id: str | None = None,
+    activity: str | None = None,
+    context_digest: str | None = None,
 ) -> dict[str, Any]:
     """Persist a provider session id on the primary binding.
 
@@ -265,6 +314,8 @@ def commit_primary_provider_session_binding(
         role=role,
         provider_session_id=provider_session_id,
         provider=provider,
+        activity=activity,
+        context_digest=context_digest,
     )
     store.save_run(run_id, run, expected_revision)
     saved = store.load_run(run_id)

@@ -18,7 +18,7 @@ from top_down_planning.config import (
     compute_input_digest,
     compute_output_goal_digest,
     resolve_config,
-    resolve_effective_role_context,
+    resolve_effective_activity_context,
     resolve_provider_model,
     resolve_workspace,
 )
@@ -69,18 +69,19 @@ agent_context:
     model: auto
     resources: []
     skills: []
-  planner:
-    model: auto
-    resources: []
-    skills: []
-  producer:
-    model: auto
-    resources: []
-    skills: []
-  reviewer:
-    model: auto
-    resources: []
-    skills: []
+  roles:
+    planner:
+      model: auto
+      resources: []
+      skills: []
+    producer:
+      model: auto
+      resources: []
+      skills: []
+    reviewer:
+      model: auto
+      resources: []
+      skills: []
 {agent_context}
 """
 
@@ -131,8 +132,9 @@ def test_unknown_agent_context_role_rejected(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  auditor:
-    model: review-model
+  roles:
+    auditor:
+      model: review-model
 """,
     )
     with pytest.raises(ConfigError, match="unknown agent_context role"):
@@ -205,7 +207,7 @@ agent_context:
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match="outside project workspace"):
-        resolve_effective_role_context(config, "planner", workspace=workspace)
+        resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
 
 
 def test_effective_context_inheritance_and_ordering(tmp_path: Path) -> None:
@@ -241,25 +243,26 @@ agent_context:
       - docs/planning.md
     skills:
       - .agents/skills/common/
-  planner:
-    model: reasoning-model
-    resources:
-      - docs/extra.md
-    skills:
-      - .agents/skills/top-down-planning/
+  roles:
+    planner:
+      model: reasoning-model
+      resources:
+        - docs/extra.md
+      skills:
+        - .agents/skills/top-down-planning/
 """,
         ),
         cwd=workspace,
     )
 
-    context = resolve_effective_role_context(config, "planner", workspace=workspace)
+    context = resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
     assert context.model == "reasoning-model"
     assert [path.name for path in context.input_refs] == ["README.md"]
     assert [path.name for path in context.resources] == ["planning.md", "extra.md"]
     assert context.output_goal == "Goal."
     assert [entry.path.name for entry in context.skills] == ["SKILL.md", "SKILL.md"]
 
-    producer = resolve_effective_role_context(config, "producer", workspace=workspace)
+    producer = resolve_effective_activity_context(config, "producer", "production", workspace=workspace)
     assert producer.model == "default-model"
     assert [path.name for path in producer.input_refs] == ["README.md"]
     assert [path.name for path in producer.resources] == ["planning.md"]
@@ -286,17 +289,18 @@ agent_context:
   default:
     resources:
       - .cursor/rules/shared.mdc
-  reviewer:
-    resources:
-      - .cursor/rules/shared.mdc
-      - .cursor/rules/reviewer.mdc
+  roles:
+    reviewer:
+      resources:
+        - .cursor/rules/shared.mdc
+        - .cursor/rules/reviewer.mdc
 """,
         ),
         cwd=workspace,
     )
     (workspace / "README.md").write_text("readme", encoding="utf-8")
 
-    context = resolve_effective_role_context(config, "reviewer", workspace=workspace)
+    context = resolve_effective_activity_context(config, "reviewer", "initial_review", workspace=workspace)
     assert [path.name for path in context.resources] == [
         "shared.mdc",
         "reviewer.mdc",
@@ -330,7 +334,7 @@ agent_context:
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match="must not repeat run contracts"):
-        resolve_effective_role_context(config, "planner", workspace=workspace)
+        resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
 
 
 def test_output_goal_file_not_duplicated_as_resource(tmp_path: Path) -> None:
@@ -354,7 +358,7 @@ agent_context:
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match="must not repeat run contracts"):
-        resolve_effective_role_context(config, "planner", workspace=workspace)
+        resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
 
 
 def test_all_roles_receive_input_refs_and_output_goal(tmp_path: Path) -> None:
@@ -366,8 +370,14 @@ def test_all_roles_receive_input_refs_and_output_goal(tmp_path: Path) -> None:
         cwd=workspace,
     )
 
-    for role in ("planner", "producer", "reviewer"):
-        context = resolve_effective_role_context(config, role, workspace=workspace)
+    for role, activity in (
+        ("planner", "initial_plan"),
+        ("producer", "production"),
+        ("reviewer", "initial_review"),
+    ):
+        context = resolve_effective_activity_context(
+            config, role, activity, workspace=workspace
+        )
         assert [path.name for path in context.input_refs] == ["task.md"]
         assert context.output_goal == "Goal."
 
@@ -381,8 +391,9 @@ def test_model_auto_omits_provider_model(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  planner:
-    model: auto
+  roles:
+    planner:
+      model: auto
 """,
         ),
         cwd=workspace,
@@ -399,15 +410,16 @@ def test_missing_skill_file_raises(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  planner:
-    skills:
-      - missing-skill/
+  roles:
+    planner:
+      skills:
+        - missing-skill/
 """,
         ),
         cwd=workspace,
     )
     with pytest.raises(ConfigError, match="not found"):
-        resolve_effective_role_context(config, "planner", workspace=workspace)
+        resolve_effective_activity_context(config, "planner", "initial_plan", workspace=workspace)
 
 
 def test_planner_manifest_includes_resolved_contracts(tmp_path: Path) -> None:
@@ -422,9 +434,10 @@ def test_planner_manifest_includes_resolved_contracts(tmp_path: Path) -> None:
             _base_config_yaml(
                 input_refs=["task.md"],
                 agent_context="""
-  planner:
-    resources:
-      - planning.md
+  roles:
+    planner:
+      resources:
+        - planning.md
 """,
             ),
         ),
@@ -726,8 +739,9 @@ def test_context_spec_digest_changes_when_role_model_changes(tmp_path: Path) -> 
 run:
   output_goal: Goal.
 agent_context:
-  planner:
-    model: model-a
+  roles:
+    planner:
+      model: model-a
 """,
         ),
         cwd=workspace,
@@ -739,8 +753,9 @@ agent_context:
 run:
   output_goal: Goal.
 agent_context:
-  planner:
-    model: model-b
+  roles:
+    planner:
+      model: model-b
 """,
         ),
         cwd=workspace,
@@ -879,9 +894,10 @@ def test_context_spec_digest_stable_when_files_change_under_resource_directory(
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,
@@ -908,9 +924,10 @@ def test_context_snapshot_digest_changes_when_files_change_under_resource_direct
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,
@@ -953,17 +970,20 @@ def test_stub_provider_records_selected_model() -> None:
             {"type": "done", "subtype": "success", "text": "ok", "is_error": False},
         ]
     )
-    context = resolve_effective_role_context(
+    context = resolve_effective_activity_context(
         {
             "run": {"output_goal": "Goal."},
             "agent_context": {
                 "default": {"resources": [], "skills": []},
-                "planner": {"model": "reasoning-model", "resources": [], "skills": []},
-                "producer": {"resources": [], "skills": []},
-                "reviewer": {"resources": [], "skills": []},
+                "roles": {
+                    "planner": {"model": "reasoning-model", "resources": [], "skills": []},
+                    "producer": {"resources": [], "skills": []},
+                    "reviewer": {"resources": [], "skills": []},
+                },
             },
         },
         "planner",
+        "initial_plan",
         workspace=Path.cwd(),
     )
     session_id = provider.start_primary_session(

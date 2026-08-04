@@ -45,12 +45,19 @@ from top_down_planning.orchestrator.session_recovery import (
 )
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import (
+    get_primary_binding,
     primary_provider_session_id,
-    update_primary_binding,
 )
 from top_down_planning.workspace import WorkspaceIntegrityError, validate_run_workspace_integrity
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, whole_plan_approval_record, make_review_loop
+from tests.helpers import (
+    bind_primary_session_for_tests,
+    create_run_kwargs,
+    done_events,
+    minimal_resolved_config,
+    whole_plan_approval_record,
+    make_review_loop,
+)
 
 
 def _sample_plan() -> Plan:
@@ -89,10 +96,13 @@ def _bind_primary_session(
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = update_primary_binding(
+    config = store.load_resolved_config(run_id)
+    run["sessions"] = bind_primary_session_for_tests(
         dict(run.get("sessions") or {}),
         role=role,
         provider_session_id=session_id,
+        config=config,
+        workspace=store.root,
         provider="cursor",
     )
     store.save_run(run_id, run, expected_revision)
@@ -301,6 +311,12 @@ def test_replace_primary_session_releases_old_provider_session(tmp_path: Path) -
     active_ids = {entry["session_id"] for entry in provider.list_active_sessions()}
     assert old_session_id not in active_ids
     assert new_session_id in active_ids
+
+    binding = get_primary_binding(store.load_run(run_id), "planner")
+    assert binding is not None
+    agent_context = manifest.get("agent_context") or {}
+    assert binding.activity == agent_context.get("activity")
+    assert binding.context_digest == agent_context.get("context_digest")
 
 
 def test_reviewer_session_missing_and_replaced(tmp_path: Path) -> None:
@@ -532,3 +548,21 @@ def test_planner_recovery_manifest_includes_required_fields(tmp_path: Path) -> N
         "output_goal",
     ):
         assert key in manifest
+
+
+def test_planner_recovery_manifest_honors_activity(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T006001-006001"
+    _create_planning_run(store, run_id)
+    config = store.load_resolved_config(run_id)
+    manifest = build_planner_recovery_manifest(
+        store,
+        run_id,
+        config,
+        store.load_plan_model(run_id),
+        phase_action_id="action-abc",
+        expected_next_action="revise plan after review",
+        activity="plan_revision",
+    )
+
+    assert manifest["agent_context"]["activity"] == "plan_revision"

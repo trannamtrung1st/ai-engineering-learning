@@ -28,8 +28,8 @@ from top_down_planning.orchestrator.producer_session import (
     primary_producer_provider_session_id,
 )
 from top_down_planning.orchestrator.agent_context import (
-    attach_role_context_to_manifest,
-    resolve_role_session_context,
+    attach_activity_context_to_manifest,
+    resolve_activity_session_context,
 )
 from top_down_planning.orchestrator.capability import (
     adopt_replacement_capability,
@@ -59,9 +59,8 @@ from top_down_planning.persistence.capabilities import (
     read_capability_token_file,
 )
 from top_down_planning.workspace import run_workspace
+from top_down_planning.orchestrator.session_context import ensure_primary_session
 from top_down_planning.orchestrator.session_events import (
-    commit_primary_provider_session_binding,
-    emit_primary_session_started,
     resume_primary_session_with_audit,
 )
 from top_down_planning.persistence.digests import compute_output_digest
@@ -114,42 +113,33 @@ class ProductionPhaseOrchestrator:
 
         config = self._store.load_resolved_config(self._run_id)
         loop_limits = _production_loop_limits(config)
-        role_context = resolve_role_session_context(config, run, "producer")
-
-        session_id = primary_producer_provider_session_id(run)
-        if session_id is None:
-            run_record = self._store.load_run(self._run_id)
-            manifest = build_producer_context_manifest(
-                self._run_id,
-                run_record,
-                config,
-                self._store.load_plan_model(self._run_id),
-                production=self._store.load_production(self._run_id),
-            )
-            role_context = resolve_role_session_context(config, run_record, "producer")
-            session_id = self._provider.start_primary_session(
-                "producer",
-                manifest,
-                model=role_context.model,
-            )
-            emit_primary_session_started(
-                self._append_event,
-                self._provider,
-                role="producer",
-                phase=PRODUCTION,
-                session_id=session_id,
-            )
-            run = _persist_session_id(self._store, self._run_id, session_id)
-        else:
-            resume_primary_session_with_audit(
-                self._append_event,
-                self._provider,
-                role="producer",
-                phase=PRODUCTION,
-                session_id=session_id,
-                request={"action": "continue", "phase": PRODUCTION},
-                model=role_context.model,
-            )
+        run = self._store.load_run(self._run_id)
+        activity_context = resolve_activity_session_context(
+            config,
+            run,
+            "producer",
+            "production",
+        )
+        manifest = build_producer_context_manifest(
+            self._run_id,
+            run,
+            config,
+            self._store.load_plan_model(self._run_id),
+            production=self._store.load_production(self._run_id),
+            activity="production",
+        )
+        session_id = ensure_primary_session(
+            self._store,
+            self._run_id,
+            self._provider,
+            role="producer",
+            phase=PRODUCTION,
+            requested=activity_context,
+            manifest=manifest,
+            append_event=self._append_event,
+            resume_request={"action": "continue", "phase": PRODUCTION},
+        )
+        role_context = activity_context
 
         run = self._store.load_run(self._run_id)
         phase = str(run.get("phase") or PRODUCTION)
@@ -565,6 +555,7 @@ def build_producer_context_manifest(
     plan: Plan,
     *,
     production: dict[str, Any] | None = None,
+    activity: str = "production",
 ) -> dict[str, Any]:
     """Package producer prompt context and tool usage instructions."""
 
@@ -572,7 +563,7 @@ def build_producer_context_manifest(
     digests = dict(run.get("digests") or {})
     approved_plan = build_compact_approved_plan(plan)
 
-    manifest: dict[str, Any] = attach_role_context_to_manifest(
+    manifest: dict[str, Any] = attach_activity_context_to_manifest(
         {
         "run_id": run_id,
         "phase": PRODUCTION,
@@ -585,6 +576,7 @@ def build_producer_context_manifest(
         config=config,
         run=run,
         role="producer",
+        activity=activity,  # type: ignore[arg-type]
         output_goal=plan.output_goal,
     )
     if production is not None:

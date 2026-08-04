@@ -44,8 +44,11 @@ from top_down_planning.domain.validators import (
     build_plan_approval_validation_context,
     validate_plan,
 )
+from top_down_planning.orchestrator.activity_context import (
+    resolve_activity_for_reviewer_stage,
+)
 from top_down_planning.orchestrator.agent_context import (
-    attach_role_context_to_manifest,
+    attach_activity_context_to_manifest,
 )
 from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_loop,
@@ -184,6 +187,7 @@ class PlanWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
             expected_next_action="revise plan after whole-plan review",
             append_event=append_event,
             model=model,
+            activity="plan_revision",
         )
 
     def build_reviewer_turn_recovery(
@@ -371,10 +375,11 @@ def build_whole_plan_review_package(
             artifact_revision=plan_revision,
             artifact_digest=plan_digest,
         )
-    return attach_role_context_to_manifest(
+    return attach_activity_context_to_manifest(
         package,
         config=config,
         run=run,
         role="reviewer",
+        activity=resolve_activity_for_reviewer_stage(loop.active_stage),  # type: ignore[arg-type]
         output_goal=plan.output_goal,
     )

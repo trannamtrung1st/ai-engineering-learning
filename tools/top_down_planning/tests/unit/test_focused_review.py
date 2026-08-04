@@ -398,7 +398,12 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = sessions_with_primary_session(planner=planner_session_id)
+    config = store.load_resolved_config("run-20260101T000401-000401")
+    run["sessions"] = sessions_with_primary_session(
+        planner=planner_session_id,
+        config=config,
+        workspace=store.root,
+    )
     store.save_run("run-20260101T000401-000401", run, expected_revision)
 
     provider.script_turn(
@@ -553,7 +558,11 @@ def _create_production_run(
         list(provider.stream_events(session_id))
     else:
         session_id = "stub-session-producer"
-    run["sessions"] = sessions_with_primary_session(producer=session_id)
+    run["sessions"] = sessions_with_primary_session(
+        producer=session_id,
+        config=config,
+        workspace=store.root,
+    )
     store.save_run(run_id, run, expected_revision)
     return session_id
 

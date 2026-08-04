@@ -48,8 +48,11 @@ from top_down_planning.orchestrator.mandatory_whole_review import (
 from top_down_planning.orchestrator.review_loop_adapter_mandatory import (
     MandatoryReviewLoopAdapterMixin,
 )
+from top_down_planning.orchestrator.activity_context import (
+    resolve_activity_for_reviewer_stage,
+)
 from top_down_planning.orchestrator.agent_context import (
-    attach_role_context_to_manifest,
+    attach_activity_context_to_manifest,
 )
 from top_down_planning.orchestrator.capability import (
     revoke_capabilities_for_loop,
@@ -215,6 +218,7 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
             expected_next_action="revise output after whole-output review",
             append_event=append_event,
             model=model,
+            activity="output_revision",
         )
 
     def build_reviewer_turn_recovery(
@@ -468,10 +472,11 @@ def build_whole_output_review_package(
             artifact_revision=output_revision,
             artifact_digest=output_digest,
         )
-    return attach_role_context_to_manifest(
+    return attach_activity_context_to_manifest(
         package,
         config=config,
         run=run,
         role="reviewer",
+        activity=resolve_activity_for_reviewer_stage(loop.active_stage),  # type: ignore[arg-type]
         output_goal=plan.output_goal,
     )

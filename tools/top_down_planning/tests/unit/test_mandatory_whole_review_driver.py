@@ -24,7 +24,18 @@ from top_down_planning.orchestrator.review_loop_adapter_mandatory import (
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.provider_turns import ProviderTurnOutcome
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.persistence.session_bindings import update_primary_binding
+from tests.helpers import bind_primary_session_for_tests
+
+
+def _current_planner_session_id(store: FileRunStore, run_id: str) -> str:
+    from top_down_planning.persistence.session_bindings import primary_provider_session_id
+
+    session_id = primary_provider_session_id(store.load_run(run_id), "planner")
+    if session_id is None:
+        raise AssertionError("planner session is missing")
+    return session_id
+
+
 from core_tools.provider import StubProvider
 from tests.helpers import (
     apply_plan,
@@ -239,10 +250,13 @@ def _create_driver_run(
         expected_revision = int(run["revision"])
         run = dict(run)
         run["revision"] = expected_revision + 1
-        run["sessions"] = update_primary_binding(
+        config = store.load_resolved_config(run_id)
+        run["sessions"] = bind_primary_session_for_tests(
             dict(run.get("sessions") or {}),
             role="planner",
             provider_session_id=planner_session_id,
+            config=config,
+            workspace=store.root,
         )
         store.save_run(run_id, run, expected_revision)
     return planner_session_id, loop_id
@@ -1277,7 +1291,7 @@ def test_driver_orchestrates_advisory_defer_through_scope(tmp_path: Path) -> Non
             run_id,
             role="planner",
             phase=WHOLE_PLAN_REVIEW,
-            session_id=planner_session_id,
+            session_id=_current_planner_session_id(store, run_id),
         )
         ReviewAgentService(store, run_id).record_finding_actions(
             {
@@ -1367,7 +1381,7 @@ def test_driver_advisory_handoff_closes_on_record_actions_while_stream_stalls(
             run_id,
             role="planner",
             phase=WHOLE_PLAN_REVIEW,
-            session_id=planner_session_id,
+            session_id=_current_planner_session_id(store, run_id),
         )
         ReviewAgentService(store, run_id).record_finding_actions(
             {
@@ -1440,7 +1454,7 @@ def test_owner_revision_turn_uses_record_actions_boundary(tmp_path: Path) -> Non
         calls.append(str(kwargs.get("loop_id")))
         return ProviderTurnOutcome(
             signal=None,
-            session_id=planner_session_id,
+            session_id=_current_planner_session_id(store, run_id),
             replaced=False,
             domain_budget_committed=False,
         )
@@ -1516,7 +1530,7 @@ def test_driver_scope_review_advisory_handoff_requires_reviewer_clear(
             run_id,
             role="planner",
             phase=WHOLE_PLAN_REVIEW,
-            session_id=planner_session_id,
+            session_id=_current_planner_session_id(store, run_id),
         )
         ReviewAgentService(store, run_id).record_finding_actions(
             {
@@ -1806,7 +1820,7 @@ def test_driver_challenge_only_enters_verification_not_revision(tmp_path: Path) 
             run_id,
             role="planner",
             phase=WHOLE_PLAN_REVIEW,
-            session_id=planner_session_id,
+            session_id=_current_planner_session_id(store, run_id),
         )
         ReviewAgentService(store, run_id).record_finding_actions(
             {

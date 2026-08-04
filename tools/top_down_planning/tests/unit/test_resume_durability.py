@@ -117,7 +117,11 @@ def _create_planning_run(
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = sessions_with_primary_session(planner=session_id)
+    run["sessions"] = sessions_with_primary_session(
+        planner=session_id,
+        config=bound,
+        workspace=store.root,
+    )
     run["planning"] = {"agent_turns": 1, "items_added": 0}
     store.save_run(run_id, run, expected_revision)
     save_review_payload(store, run_id, {
@@ -209,7 +213,11 @@ def _create_production_run(
     expected_revision = int(run["revision"])
     run = dict(run)
     run["revision"] = expected_revision + 1
-    run["sessions"] = sessions_with_primary_session(producer=session_id)
+    run["sessions"] = sessions_with_primary_session(
+        producer=session_id,
+        config=bound,
+        workspace=store.root,
+    )
     store.save_run(run_id, run, expected_revision)
     return session_id
 

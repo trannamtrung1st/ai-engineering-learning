@@ -121,9 +121,10 @@ def test_validate_run_production_snapshot_drift_returns_none_without_drift(
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,
@@ -159,9 +160,10 @@ def test_validate_run_production_snapshot_drift_authorizes_evidence(tmp_path: Pa
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,
@@ -203,12 +205,13 @@ def test_cache_noise_does_not_block_authorized_rebase(tmp_path: Path) -> None:
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
-  reviewer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
+    reviewer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,
@@ -254,9 +257,10 @@ def test_unauthorized_source_edit_blocked_with_relative_path(tmp_path: Path) -> 
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,
@@ -306,9 +310,10 @@ def test_invalid_production_evidence_refs_fail_rebase_validation(tmp_path: Path)
 run:
   output_goal: Goal.
 agent_context:
-  producer:
-    resources:
-      - src/
+  roles:
+    producer:
+      resources:
+        - src/
 """,
         ),
         cwd=workspace,

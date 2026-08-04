@@ -22,8 +22,11 @@ from top_down_planning.domain.reviews import (
     loop_uses_finding_families,
     review_gate_budgets_for_package,
 )
+from top_down_planning.orchestrator.activity_context import (
+    resolve_activity_for_reviewer_stage,
+)
 from top_down_planning.orchestrator.agent_context import (
-    attach_role_context_to_manifest,
+    attach_activity_context_to_manifest,
 )
 from top_down_planning.orchestrator.capability import revoke_capabilities_for_loop
 from top_down_planning.orchestrator.errors import ProviderRunError
@@ -233,6 +236,7 @@ class FocusedReviewAdapter:
                 expected_next_action="address focused plan findings",
                 append_event=append_event,
                 model=model,
+                activity="plan_revision",
             )
         return build_producer_turn_recovery(
             self._store,
@@ -241,6 +245,7 @@ class FocusedReviewAdapter:
             expected_next_action="address focused output findings",
             append_event=append_event,
             model=model,
+            activity="output_revision",
         )
 
     def build_reviewer_turn_recovery(
@@ -461,7 +466,7 @@ def build_focused_review_package(
         **extra_instructions,
     )
 
-    package: dict[str, Any] = attach_role_context_to_manifest(
+    package: dict[str, Any] = attach_activity_context_to_manifest(
         {
             "run_id": run_id,
             "phase": phase,
@@ -491,6 +496,7 @@ def build_focused_review_package(
         config=config,
         run=run,
         role="reviewer",
+        activity=resolve_activity_for_reviewer_stage(loop.active_stage),  # type: ignore[arg-type]
         output_goal=plan.output_goal,
     )
     if loop.type == "focused_plan":

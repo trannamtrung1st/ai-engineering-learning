@@ -30,6 +30,7 @@ from top_down_planning.domain.run_ownership import (
     resolve_run_dir,
     run_ownership,
 )
+from top_down_planning.orchestrator.agent_context import manifest_agent_context_fields
 from top_down_planning.orchestrator.capability import (
     revoke_all_capabilities_for_session_instance,
 )
@@ -237,6 +238,7 @@ def replace_primary_session(
         )
 
         try:
+            activity, context_digest = manifest_agent_context_fields(manifest)
             new_session_id = provider.start_primary_session(role, manifest, model=model)
             emit_primary_session_started(
                 append_event,
@@ -245,6 +247,8 @@ def replace_primary_session(
                 phase=phase,
                 session_id=new_session_id,
                 replacement=True,
+                activity=activity,
+                context_digest=context_digest,
             )
         except (ProviderTurnError, ProviderError) as exc:
             emit_session_replacement_failed(
@@ -274,6 +278,8 @@ def replace_primary_session(
                 role=role,
                 provider_session_id=new_session_id,
                 phase_action_id=phase_action_id,
+                activity=activity,
+                context_digest=context_digest,
             ),
             role,
         )
@@ -378,6 +384,7 @@ def replace_reviewer_session(
         )
 
         try:
+            activity, context_digest = manifest_agent_context_fields(manifest)
             new_session_id = provider.start_reviewer_session(manifest, model=model)
             emit_reviewer_session_started(
                 append_event,
@@ -386,6 +393,8 @@ def replace_reviewer_session(
                 session_id=new_session_id,
                 loop=current_loop,
                 replacement=True,
+                activity=activity,
+                context_digest=context_digest,
             )
         except (ProviderTurnError, ProviderError) as exc:
             emit_session_replacement_failed(
