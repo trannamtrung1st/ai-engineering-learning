@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.config.resume_policy import (
+    RESUME_PRESENTATION_ALLOWLIST,
     compare_resume_configs,
     get_config_value,
     validate_resume_config_comparison,
@@ -126,17 +127,20 @@ def build_resume_plan_summary(
     invocation: dict[str, Any] | None = None,
     config_path: str | None = None,
     config_overrides: list[str] | None = None,
+    allow_config_drift: bool = False,
 ) -> dict[str, Any]:
     consumed_limits = consumed_limits_from_run(run)
+    effective_config = resume_plan.effective_config or candidate_config
     comparison = validate_resume_config_comparison(
-        compare_resume_configs(stored_config, candidate_config),
+        compare_resume_configs(stored_config, effective_config),
         consumed_limits=consumed_limits,
-        candidate_config=candidate_config,
+        candidate_config=effective_config,
+        allow_contract_and_model_changes=resume_plan.contract_digest_may_change,
     )
     limit_diagnostics = build_limit_diagnostics(
         run,
         stored_config,
-        candidate_config,
+        effective_config,
         config_changes=resume_plan.config_changes,
     )
     stop_summary = _format_stop_summary(
@@ -162,7 +166,10 @@ def build_resume_plan_summary(
         "stop_summary": stop_summary,
         "config_path": config_path,
         "config_overrides": list(config_overrides or []),
+        "allow_config_drift": resume_plan.allow_config_drift,
         "config_changes": dict(resume_plan.config_changes),
+        "ignored_config_changes": dict(resume_plan.ignored_config_changes),
+        "warnings": list(resume_plan.warnings),
         "comparison_ok": comparison.ok,
         "comparison_errors": list(comparison.errors),
         "limit_diagnostics": [item.to_dict() for item in limit_diagnostics],
@@ -193,12 +200,11 @@ def format_resume_plan_summary_text(summary: dict[str, Any]) -> str:
         lines.append(f"  {stop_summary}")
 
     limit_rows = summary.get("limit_diagnostics") or []
-    execution_changes = [
-        change
-        for path, change in (summary.get("config_changes") or {}).items()
-        if path.startswith("limits.")
-    ]
-    if limit_rows or execution_changes:
+    config_changes = summary.get("config_changes") or {}
+    limit_changes = {
+        path: change for path, change in config_changes.items() if path.startswith("limits.")
+    }
+    if limit_rows or limit_changes:
         lines.append("")
         lines.append("Execution-policy changes:")
         for row in limit_rows:
@@ -208,21 +214,47 @@ def format_resume_plan_summary_text(summary: dict[str, Any]) -> str:
                 f"consumed={row['consumed']!r} "
                 f"remaining={row['remaining_budget']!r}"
             )
-        for path, change in (summary.get("config_changes") or {}).items():
-            if path.startswith("limits."):
+        for path, change in sorted(limit_changes.items()):
+            if any(row["path"] == path for row in limit_rows):
                 continue
             lines.append(f"  {path}: {change.get('from')!r} -> {change.get('to')!r}")
 
     presentation_changes = {
         path: change
-        for path, change in (summary.get("config_changes") or {}).items()
-        if not str(path).startswith("limits.")
+        for path, change in config_changes.items()
+        if path in RESUME_PRESENTATION_ALLOWLIST
     }
+    applied_contract_changes = {
+        path: change
+        for path, change in config_changes.items()
+        if not path.startswith("limits.") and path not in RESUME_PRESENTATION_ALLOWLIST
+    }
+    if applied_contract_changes:
+        lines.append("")
+        lines.append("Applied config changes:")
+        for path, change in sorted(applied_contract_changes.items()):
+            lines.append(f"  {path}: {change.get('from')!r} -> {change.get('to')!r}")
     if presentation_changes:
         lines.append("")
         lines.append("Presentation changes:")
         for path, change in sorted(presentation_changes.items()):
             lines.append(f"  {path}: {change.get('from')!r} -> {change.get('to')!r}")
+
+    ignored_changes = summary.get("ignored_config_changes") or {}
+    if ignored_changes:
+        lines.append("")
+        lines.append("Ignored changes (will not take effect):")
+        for path, change in sorted(ignored_changes.items()):
+            lines.append(
+                f"  {path}: requested {change.get('to')!r}, keeping {change.get('from')!r}"
+            )
+
+    warnings = summary.get("warnings") or []
+    if warnings:
+        lines.append("")
+        lines.append("Warnings:")
+        for warning in warnings:
+            lines.append(f"  {warning}")
 
     transition = summary.get("state_transition")
     if transition:

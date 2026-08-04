@@ -329,3 +329,31 @@ def test_format_resume_plan_summary_text_includes_config_overrides() -> None:
     assert "Run is resumable." in text
     assert "limits.production.max_batches" in text
     assert "updated.yaml" in text
+
+
+def test_resume_check_with_allow_config_drift_shows_ignored_changes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_paused_production_run(store)
+
+    with pytest.raises(SystemExit) as exc_info:
+        handle_resume_command(
+            Namespace(
+                run=run_id,
+                runs_dir=str(store.root),
+                stream_json=False,
+                check=True,
+                set=["run.output_goal=Tweaked goal."],
+                config=None,
+                command="resume",
+                allow_config_drift=True,
+            )
+        )
+    assert exc_info.value.code == 0
+
+    output = capsys.readouterr().out
+    assert "Ignored changes" in output
+    assert "run.output_goal" in output
+    assert "will not take effect" in output

@@ -167,6 +167,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Build and print the resume plan without mutating the run (proposal §16.3).",
     )
+    resume_parser.add_argument(
+        "--allow-config-drift",
+        action="store_true",
+        help=(
+            "Accept contract/model config changes on resume. Before whole-plan approval "
+            "changes apply; after approval, approval-bound changes are ignored with warnings."
+        ),
+    )
     _add_operational_flags(resume_parser)
     _add_notification_flags(resume_parser)
     resume_parser.add_argument(

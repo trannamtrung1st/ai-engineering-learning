@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from core_tools.config import resolve_workspace
@@ -13,8 +14,8 @@ from top_down_planning.config import (
 )
 from top_down_planning.config.context_digests import validate_resume_context_bindings
 from top_down_planning.config.resume_policy import (
-    compare_resume_configs,
-    validate_resume_config_comparison,
+    apply_resume_config_drift_policy,
+    has_mandatory_whole_plan_approval,
 )
 from top_down_planning.domain.approval_digests import (
     OUTPUT_APPROVAL_DIGEST_KEYS,
@@ -160,6 +161,8 @@ def prepare_resume(
     run_id: str,
     candidate_config: dict[str, Any],
     consumed_limits: dict[str, int] | None = None,
+    *,
+    allow_config_drift: bool = False,
 ) -> ResumePlan:
     """Build a read-only resume plan or raise when canonical invariants block resume."""
 
@@ -210,6 +213,18 @@ def prepare_resume(
     plan = store.load_plan(run_id)
     production = store.load_production(run_id)
     reviews = store.list_reviews(run_id)
+    plan_revision = int(plan.get("revision") or 0)
+    has_whole_plan_approval = has_mandatory_whole_plan_approval(reviews, plan_revision)
+    resolved_consumed_limits = consumed_limits or consumed_limits_from_run(run)
+
+    drift = apply_resume_config_drift_policy(
+        stored_config,
+        candidate_config,
+        allow_config_drift=allow_config_drift,
+        has_whole_plan_approval=has_whole_plan_approval,
+        consumed_limits=resolved_consumed_limits,
+    )
+    effective_config = drift.effective_config
 
     blockers: list[str] = []
 
@@ -218,18 +233,33 @@ def prepare_resume(
     if stored_ws.resolve() != candidate_ws.resolve():
         blockers.append("workspace change blocked during resume")
 
-    input_digest = compute_input_digest(candidate_config, base_dir=workspace)
-    if input_digest != run_digests.get("input"):
-        blockers.append("input digest mismatch blocks resume")
+    digest_config = effective_config if allow_config_drift else candidate_config
+    drift_hint = (
+        " (pass --allow-config-drift to opt in)"
+        if not allow_config_drift
+        else ""
+    )
+    if not allow_config_drift or has_whole_plan_approval:
+        input_digest = compute_input_digest(digest_config, base_dir=workspace)
+        if input_digest != run_digests.get("input"):
+            blockers.append(f"input digest mismatch blocks resume{drift_hint}")
 
-    output_goal_digest = compute_output_goal_digest(candidate_config, base_dir=workspace)
-    if output_goal_digest != run_digests.get("output_goal"):
-        blockers.append("output-goal digest mismatch blocks resume")
+        output_goal_digest = compute_output_goal_digest(digest_config, base_dir=workspace)
+        if output_goal_digest != run_digests.get("output_goal"):
+            blockers.append(f"output-goal digest mismatch blocks resume{drift_hint}")
 
-    contract_digest = compute_config_contract_digest(candidate_config)
-    contract_digest_valid = contract_digest == run_digests.get("config_contract")
-    if not contract_digest_valid:
-        blockers.append("config_contract digest mismatch blocks resume")
+        contract_digest = compute_config_contract_digest(digest_config)
+        contract_digest_valid = contract_digest == run_digests.get("config_contract")
+        if not contract_digest_valid:
+            blockers.append(f"config_contract digest mismatch blocks resume{drift_hint}")
+    else:
+        contract_digest = compute_config_contract_digest(effective_config)
+        contract_digest_valid = (
+            contract_digest == run_digests.get("config_contract")
+            or (allow_config_drift and drift.contract_digest_changed)
+        )
+
+    blockers.extend(drift.errors)
 
     plan_digest = compute_plan_digest(plan)
     plan_binding_valid = plan_digest == run_digests.get("plan")
@@ -247,7 +277,7 @@ def prepare_resume(
     context_error = validate_resume_context_bindings(
         run,
         production,
-        candidate_config,
+        effective_config,
         workspace=workspace,
     )
     context_binding_valid = context_error is None
@@ -272,14 +302,6 @@ def prepare_resume(
     if evidence_error is not None:
         blockers.append(evidence_error)
 
-    comparison = validate_resume_config_comparison(
-        compare_resume_configs(stored_config, candidate_config),
-        consumed_limits=consumed_limits or consumed_limits_from_run(run),
-        candidate_config=candidate_config,
-    )
-    if not comparison.ok:
-        blockers.extend(comparison.errors)
-
     if status == "paused":
         stop = run.get("stop")
         if isinstance(stop, dict):
@@ -303,10 +325,7 @@ def prepare_resume(
             blockers=tuple(blockers),
         )
 
-    config_changes = {
-        change.path: {"from": change.stored_value, "to": change.candidate_value}
-        for change in comparison.changes
-    }
+    config_changes = dict(drift.applied_changes)
 
     if status == "running":
         transition = ResumeStateTransition(from_status="running", to_status="running")
@@ -331,4 +350,9 @@ def prepare_resume(
             evidence_binding_valid=evidence_binding_valid,
             context_binding_valid=context_binding_valid,
         ),
+        effective_config=copy.deepcopy(effective_config),
+        ignored_config_changes=dict(drift.ignored_changes),
+        warnings=drift.warnings,
+        allow_config_drift=allow_config_drift,
+        contract_digest_may_change=allow_config_drift and drift.contract_digest_changed,
     )

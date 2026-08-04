@@ -48,6 +48,11 @@ class ResumePlan:
     config_changes: dict[str, dict[str, Any]]
     session_policy: dict[str, Any]
     validation: ResumePlanValidation
+    effective_config: dict[str, Any] | None = None
+    ignored_config_changes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    warnings: tuple[str, ...] = ()
+    allow_config_drift: bool = False
+    contract_digest_may_change: bool = False
     already_completed: bool = False
     message: str | None = None
 
@@ -56,8 +61,12 @@ class ResumePlan:
             "run_id": self.run_id,
             "expected_run_revision": self.expected_run_revision,
             "config_changes": dict(self.config_changes),
+            "ignored_config_changes": dict(self.ignored_config_changes),
             "session_policy": dict(self.session_policy),
             "validation": self.validation.to_dict(),
+            "warnings": list(self.warnings),
+            "allow_config_drift": self.allow_config_drift,
+            "contract_digest_may_change": self.contract_digest_may_change,
             "already_completed": self.already_completed,
         }
         if self.state_transition is not None:

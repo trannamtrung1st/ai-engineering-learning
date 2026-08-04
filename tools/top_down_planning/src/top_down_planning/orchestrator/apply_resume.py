@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from core_tools.persistence import StoreRevisionConflictError
 
+from top_down_planning.config import compute_input_digest, compute_output_goal_digest
+from top_down_planning.config.context import compute_context_spec_digest_from_config
 from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.domain.resume_plan import ResumePlan
 from top_down_planning.domain.reviews import (
@@ -31,6 +34,7 @@ from top_down_planning.persistence.config_commit import (
 )
 from top_down_planning.persistence.digests import compute_config_execution_digest
 from top_down_planning.persistence.file_store import FileRunStore
+from top_down_planning.workspace import run_workspace
 
 
 class ApplyResumeError(OrchestratorError):
@@ -105,13 +109,16 @@ def apply_resume_plan_atomically(
 
     stored_config = store.load_resolved_config(run_id)
     stored_invocation = store.load_invocation(run_id)
+    effective_config = resume_plan.effective_config or resolved_config
+    plan_config_changes = dict(resume_plan.config_changes)
     try:
         config_update = validate_and_prepare_resume_config_update(
             stored_config=stored_config,
-            candidate_config=resolved_config,
+            candidate_config=effective_config,
             stored_invocation=stored_invocation,
             candidate_invocation=invocation or {},
             consumed_limits=consumed_limits or consumed_limits_from_run(run),
+            contract_digest_may_change=resume_plan.contract_digest_may_change,
         )
     except ResumeConfigCommitError as exc:
         raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc
@@ -121,6 +128,21 @@ def apply_resume_plan_atomically(
     run_payload["stop"] = None
     next_digests = dict(digests)
     next_digests["config_execution"] = config_update.config_execution_digest
+    if resume_plan.contract_digest_may_change:
+        workspace = Path(run_workspace(run))
+        next_digests["config_contract"] = config_update.config_contract_digest
+        next_digests["input"] = compute_input_digest(
+            effective_config,
+            base_dir=workspace,
+        )
+        next_digests["output_goal"] = compute_output_goal_digest(
+            effective_config,
+            base_dir=workspace,
+        )
+        next_digests["context_spec"] = compute_context_spec_digest_from_config(
+            effective_config,
+            workspace=workspace,
+        )
     run_payload["digests"] = next_digests
     next_revision = expected_revision + 1
     run_payload["revision"] = next_revision
@@ -134,14 +156,18 @@ def apply_resume_plan_atomically(
             "phase": prior_phase,
             "prior_status": prior_status,
             "prior_stop": prior_stop,
-            "config_changes": dict(config_update.config_changes),
+            "config_changes": plan_config_changes,
+            "ignored_config_changes": dict(resume_plan.ignored_config_changes),
+            "warnings": list(resume_plan.warnings),
+            "allow_config_drift": resume_plan.allow_config_drift,
+            "contract_digest_may_change": resume_plan.contract_digest_may_change,
             "old_config_execution_digest": old_execution_digest,
             "new_config_execution_digest": config_update.config_execution_digest,
             "session_policy": dict(resume_plan.session_policy),
             "invocation": dict(config_update.invocation),
         }
     ]
-    extended_paths = _limit_extended_paths(config_update.config_changes)
+    extended_paths = _limit_extended_paths(plan_config_changes)
     if extended_paths:
         events.append(
             {
@@ -149,8 +175,21 @@ def apply_resume_plan_atomically(
                 "run_id": run_id,
                 "paths": extended_paths,
                 "config_changes": {
-                    path: config_update.config_changes[path] for path in extended_paths
+                    path: plan_config_changes[path] for path in extended_paths
                 },
+            }
+        )
+    if resume_plan.allow_config_drift and (
+        plan_config_changes or resume_plan.ignored_config_changes
+    ):
+        events.append(
+            {
+                "type": "resume_config_drift",
+                "run_id": run_id,
+                "applied_changes": plan_config_changes,
+                "ignored_changes": dict(resume_plan.ignored_config_changes),
+                "warnings": list(resume_plan.warnings),
+                "contract_digest_may_change": resume_plan.contract_digest_may_change,
             }
         )
 
@@ -177,10 +216,11 @@ def apply_resume_plan_atomically(
         "run_revision": int(result["run_revision"]),
         "prior_status": prior_status,
         "prior_stop": prior_stop,
-        "config_changes": dict(config_update.config_changes),
+        "config_changes": plan_config_changes,
         "old_config_execution_digest": old_execution_digest,
         "new_config_execution_digest": config_update.config_execution_digest,
         "limit_extended": bool(extended_paths),
+        "contract_digest_may_change": resume_plan.contract_digest_may_change,
     }
 
 

@@ -476,3 +476,46 @@ def test_running_continuation_apply_emits_resume_applied(tmp_path: Path) -> None
     events = store.load_events(run_id)
     assert any(event.get("type") == "resume_applied" for event in events)
     assert store.load_run(run_id)["status"] == "running"
+
+
+def test_apply_pre_approval_drift_updates_contract_digests(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _paused_planning_run(store)
+    stored = store.load_resolved_config(run_id)
+    before = dict(store.load_run(run_id)["digests"])
+    candidate = copy.deepcopy(stored)
+    candidate["run"] = dict(candidate.get("run") or {})
+    candidate["run"]["output_goal"] = "Tweaked goal."
+
+    plan = prepare_resume(store, run_id, candidate, allow_config_drift=True)
+    assert plan.contract_digest_may_change
+    apply_resume_plan_atomically(
+        store,
+        plan,
+        resolved_config=plan.effective_config or candidate,
+        invocation=store.load_invocation(run_id),
+    )
+
+    run = store.load_run(run_id)
+    assert store.load_resolved_config(run_id)["run"]["output_goal"] == "Tweaked goal."
+    assert run["digests"]["config_contract"] != before["config_contract"]
+    assert run["digests"]["output_goal"] != before["output_goal"]
+    events = store.load_events(run_id)
+    drift_events = [event for event in events if event.get("type") == "resume_config_drift"]
+    assert len(drift_events) == 1
+    assert "run.output_goal" in drift_events[0]["applied_changes"]
+
+
+def test_apply_with_drift_flag_and_no_changes_skips_drift_event(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _paused_planning_run(store)
+    stored = store.load_resolved_config(run_id)
+    plan = prepare_resume(store, run_id, stored, allow_config_drift=True)
+    apply_resume_plan_atomically(
+        store,
+        plan,
+        resolved_config=stored,
+        invocation=store.load_invocation(run_id),
+    )
+    events = store.load_events(run_id)
+    assert not any(event.get("type") == "resume_config_drift" for event in events)

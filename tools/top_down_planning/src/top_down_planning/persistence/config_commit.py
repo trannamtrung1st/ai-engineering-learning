@@ -60,6 +60,7 @@ def validate_and_prepare_resume_config_update(
     stored_invocation: dict[str, Any],
     candidate_invocation: dict[str, Any],
     consumed_limits: dict[str, int] | None = None,
+    contract_digest_may_change: bool = False,
 ) -> ResumeConfigUpdate:
     """Validate resume config changes and build the persistence payload."""
 
@@ -67,11 +68,12 @@ def validate_and_prepare_resume_config_update(
         compare_resume_configs(stored_config, candidate_config),
         consumed_limits=consumed_limits,
         candidate_config=candidate_config,
+        allow_contract_and_model_changes=contract_digest_may_change,
     )
     if not comparison.ok:
         detail = comparison.errors[0] if comparison.errors else "resume config change blocked"
         raise ResumeConfigCommitError(detail)
-    if comparison.contract_digest_changed:
+    if comparison.contract_digest_changed and not contract_digest_may_change:
         raise ResumeConfigCommitError("config_contract must remain unchanged during resume")
 
     invocation = sync_invocation_notifications_from_config(
@@ -86,7 +88,7 @@ def validate_and_prepare_resume_config_update(
             "from": change.stored_value,
             "to": change.candidate_value,
         }
-        for change in comparison.changes
+        for change in comparison.allowed_changes
     }
     return ResumeConfigUpdate(
         resolved_config=candidate_config,
@@ -104,12 +106,13 @@ def build_resume_config_commit_spec(
     resolved_config: dict[str, Any],
     invocation: dict[str, Any],
     run_expected_revision: int,
+    contract_digest_may_change: bool = False,
 ) -> CommitSpec:
     """Build a journaled commit for accepted resume config updates."""
 
     stored_contract = str((run.get("digests") or {}).get("config_contract") or "")
     new_contract = compute_config_contract_digest(resolved_config)
-    if stored_contract and stored_contract != new_contract:
+    if stored_contract and stored_contract != new_contract and not contract_digest_may_change:
         raise ResumeConfigCommitError("config_contract must remain unchanged during resume")
 
     run_payload = dict(run)

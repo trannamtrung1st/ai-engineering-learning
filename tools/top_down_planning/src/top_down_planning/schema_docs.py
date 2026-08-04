@@ -2888,6 +2888,17 @@ Paused runs resume through `prepare_resume()` (read-only) and
 - `tdp resume --run <id> --check ...` — print the resume plan; no writes or provider calls
 - `tdp resume --run <id> --until plan|validated|completed` — loop `RunEngine` after apply
   (default: one orchestrator step)
+- `tdp resume --run <id> --allow-config-drift --config <yaml>` — opt in to contract/model
+  config changes on resume (see below)
+
+By default, resume rejects contract drift (`run.output_goal`, prompts, review/planning
+settings, model, and other approval-meaning fields) and provider/workspace changes.
+`--allow-config-drift` is a per-invocation escape hatch. Before mandatory whole-plan
+approval, accepted contract changes apply and update `digests.config_contract`,
+`digests.input`, `digests.output_goal`, and `digests.context_spec` atomically with the
+new resolved config. After whole-plan approval, approval-bound contract and model changes
+are ignored (warned in `--check` / apply summary) while limit increases and presentation
+changes still apply; approval records are not invalidated or rewritten.
 
 Limit-only increases update `digests.config_execution` only; approvals remain bound to
 `digests.config_contract`. Failed runs cannot be resumed. Replacement exhausted for the

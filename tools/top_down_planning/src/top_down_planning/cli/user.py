@@ -498,6 +498,7 @@ def handle_resume_command(args: Namespace) -> None:
 
     until = getattr(args, "until", None)
     check_only = bool(getattr(args, "check", False))
+    allow_config_drift = bool(getattr(args, "allow_config_drift", False))
     config_overrides = list(getattr(args, "set", None) or [])
     config_path = Path(args.config).resolve() if getattr(args, "config", None) else None
 
@@ -540,6 +541,7 @@ def handle_resume_command(args: Namespace) -> None:
             args.run,
             candidate,
             consumed_limits=consumed_limits_from_run(run),
+            allow_config_drift=allow_config_drift,
         )
     except PrepareResumeBlockedError as exc:
         emit_error_message(
@@ -567,6 +569,7 @@ def handle_resume_command(args: Namespace) -> None:
         invocation=invocation_payload,
         config_path=str(config_path) if config_path is not None else None,
         config_overrides=config_overrides,
+        allow_config_drift=allow_config_drift,
     )
 
     if resume_plan.already_completed:
@@ -608,7 +611,7 @@ def handle_resume_command(args: Namespace) -> None:
         apply_resume_plan_atomically(
             store,
             resume_plan,
-            resolved_config=candidate,
+            resolved_config=resume_plan.effective_config or candidate,
             invocation=invocation_payload,
         )
     except ApplyResumeError as exc:
