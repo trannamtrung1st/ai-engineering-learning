@@ -72,6 +72,7 @@ _EMPTY_PRODUCTION: dict[str, Any] = {
     "reconciliation_reports": [],
     "completion_claim": None,
     "blocker_report": None,
+    "sub_tdps": None,
 }
 
 

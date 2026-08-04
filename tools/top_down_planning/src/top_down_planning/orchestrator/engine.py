@@ -39,7 +39,9 @@ from top_down_planning.orchestrator.session_policy_execution import (
 import top_down_planning.orchestrator.session_policy_execution  # noqa: F401 — registers executor
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
+from top_down_planning.config.execution import is_sub_tdps_mode
 from top_down_planning.orchestrator.production import ProductionPhaseOrchestrator
+from top_down_planning.orchestrator.sub_tdps import SubTdpsPhaseOrchestrator
 from top_down_planning.orchestrator.whole_output_review import WholeOutputReviewOrchestrator
 from top_down_planning.orchestrator.whole_plan_review import WholePlanReviewOrchestrator
 from top_down_planning.orchestrator.phases import (
@@ -47,6 +49,7 @@ from top_down_planning.orchestrator.phases import (
     PLANNING,
     PLAN_VALIDATED,
     PRODUCTION,
+    SUB_TDPS,
     WHOLE_OUTPUT_REVIEW,
     WHOLE_PLAN_REVIEW,
 )
@@ -88,6 +91,7 @@ def _target_reached(run: dict[str, Any], until: str) -> bool:
         return phase in {
             PLAN_VALIDATED,
             PRODUCTION,
+            SUB_TDPS,
             WHOLE_OUTPUT_REVIEW,
             OUTPUT_VALIDATED,
         }
@@ -257,6 +261,29 @@ class RunEngine:
                             "reviewer_session_id": result.reviewer_session_id,
                             "revision_cycles": result.revision_cycles,
                         },
+                        reason=result.reason,
+                    )
+                elif phase == SUB_TDPS or (
+                    phase == PLAN_VALIDATED and is_sub_tdps_mode(config)
+                ):
+                    def _child_provider_factory(
+                        child_config: dict[str, Any],
+                        child_workspace: Any,
+                    ) -> Provider:
+                        return self._create_provider(child_config, child_workspace)
+
+                    result = SubTdpsPhaseOrchestrator(
+                        self._store,
+                        run_id,
+                        provider,
+                        create_provider=_child_provider_factory,
+                    ).run()
+                    step = RunStepResult(
+                        phase=str(result.phase),
+                        ok=result.ok,
+                        status=str(self._store.load_run(run_id).get("status") or ""),
+                        outcome=self._store.load_run(run_id).get("outcome"),
+                        details={"units_completed": result.units_completed},
                         reason=result.reason,
                     )
                 elif phase in {PLAN_VALIDATED, PRODUCTION}:

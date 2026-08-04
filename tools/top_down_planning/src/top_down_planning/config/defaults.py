@@ -30,6 +30,9 @@ def _default_agent_context_roles() -> dict[str, dict[str, Any]]:
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "version": 1,
+    "execution": {
+        "mode": "single",
+    },
     "project": {},
     "run": {
         "input_refs": [],
@@ -236,6 +239,8 @@ ALLOWED_AGENT_CONTEXT_ROLES: frozenset[str] = ALLOWED_AGENT_ROLES
 ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
     {
         "version",
+        "execution.mode",
+        "execution.state_file",
         "runtime.runs_dir",
         "project.workspace",
         "run.input_refs",

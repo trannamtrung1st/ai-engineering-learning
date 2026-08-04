@@ -15,6 +15,7 @@ from top_down_planning.cli.user import (
     handle_validate_command,
 )
 from top_down_planning.cli.doctor import handle_doctor_command
+from top_down_planning.cli.sub_tdp import handle_sub_tdp_attach_command
 
 
 def _add_operational_flags(parser: argparse.ArgumentParser) -> None:
@@ -252,6 +253,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_operational_flags(doctor_parser)
 
+    sub_tdp_parser = subparsers.add_parser("sub-tdp", help="Sub-TDP orchestration commands.")
+    sub_tdp_subparsers = sub_tdp_parser.add_subparsers(dest="sub_tdp_command")
+    attach_parser = sub_tdp_subparsers.add_parser(
+        "attach",
+        help="Attach an independently completed child run to parent orchestration.",
+    )
+    attach_parser.add_argument("--parent", required=True, help="Parent run id.")
+    attach_parser.add_argument("--unit", required=True, help="Parent plan item id for the unit.")
+    attach_parser.add_argument("--child", required=True, help="Child run id under the unit runs store.")
+    attach_parser.add_argument(
+        "--config",
+        help="YAML configuration file for resolving the parent runs store.",
+    )
+    _add_operational_flags(attach_parser)
+
     add_agent_subparsers(subparsers)
 
     return parser
@@ -292,6 +308,12 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "doctor":
         handle_doctor_command(args)
         return
+
+    if args.command == "sub-tdp":
+        if args.sub_tdp_command == "attach":
+            handle_sub_tdp_attach_command(args)
+            return
+        parser.error(f"unknown sub-tdp command: {args.sub_tdp_command!r}")
 
     parser.error(f"unknown command: {args.command!r}")
 

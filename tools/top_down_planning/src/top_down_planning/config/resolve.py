@@ -26,6 +26,7 @@ from top_down_planning.config.defaults import (
     ALLOWED_OVERRIDE_PATHS,
     DEFAULT_CONFIG,
 )
+from top_down_planning.config.execution import validate_execution_config
 
 __all__ = [
     "compute_input_digest",
@@ -256,6 +257,7 @@ def finalize_resolved_config(
     _validate_agent_context_roles(finalized)
     _validate_context_snapshot(finalized)
     _validate_revise_at_config(finalized)
+    validate_execution_config(finalized)
 
     workspace = resolve_workspace(finalized, cwd=cwd)
 

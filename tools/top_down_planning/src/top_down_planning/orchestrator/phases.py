@@ -7,6 +7,7 @@ WHOLE_PLAN_REVIEW = "whole_plan_review"
 PLAN_VALIDATED = "plan_validated"
 PRODUCTION = "production"
 PLAN_AMENDMENT = "plan_amendment"
+SUB_TDPS = "sub_tdps"
 WHOLE_OUTPUT_REVIEW = "whole_output_review"
 OUTPUT_VALIDATED = "output_validated"
 

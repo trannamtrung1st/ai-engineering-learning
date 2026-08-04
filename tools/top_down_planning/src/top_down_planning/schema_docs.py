@@ -1311,6 +1311,28 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 },
                 "additionalProperties": False,
             },
+            "execution": {
+                "type": "object",
+                "description": (
+                    "Parent production strategy. sub_tdps orchestrates sequential "
+                    "child runs after whole-plan approval; single is the default."
+                ),
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["single", "sub_tdps"],
+                    },
+                    "state_file": {
+                        "type": "string",
+                        "description": (
+                            "Optional workspace-relative path for exported "
+                            "orchestration state mirror (authoritative state "
+                            "lives in parent production.json)."
+                        ),
+                    },
+                },
+                "additionalProperties": False,
+            },
             "runtime": {
                 "type": "object",
                 "description": (

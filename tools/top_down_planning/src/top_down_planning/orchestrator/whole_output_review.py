@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
@@ -45,6 +46,8 @@ from top_down_planning.orchestrator.mandatory_whole_review import (
     MandatoryWholeReviewSpec,
     OwnerHandoff,
 )
+from top_down_planning.config.execution import execution_state_file_from_config
+from top_down_planning.domain.sub_tdp_artifacts import orchestration_root_relative
 from top_down_planning.orchestrator.review_loop_adapter_mandatory import (
     MandatoryReviewLoopAdapterMixin,
 )
@@ -78,6 +81,7 @@ from top_down_planning.persistence.digests import (
     compute_plan_digest,
 )
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.sub_tdp_state import load_sub_tdp_state
 from core_tools.provider import Provider
 
 WholeOutputReviewResult = MandatoryWholeReviewResult
@@ -378,6 +382,69 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
             )
 
 
+class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
+    """Whole-output review package enriched with Sub-TDP child evidence."""
+
+    def build_review_package(
+        self,
+        run: dict[str, Any],
+        config: dict[str, Any],
+        loop: ReviewLoop,
+    ) -> dict[str, Any]:
+        package = build_whole_output_review_package(
+            self._run_id,
+            run,
+            config,
+            self._store.load_plan_model(self._run_id),
+            self._store.load_production(self._run_id),
+            loop,
+        )
+        production = self._store.load_production(self._run_id)
+        state = load_sub_tdp_state(production)
+        if state is None:
+            return package
+
+        workspace = Path(str(run.get("workspace") or ".")).resolve()
+        root_rel = orchestration_root_relative(
+            execution_state_file_from_config(config)
+        )
+        sub_tdp_evidence: list[dict[str, Any]] = []
+        integrated_deliverables: list[dict[str, Any]] = []
+
+        for unit_record in state.get("units") or []:
+            if not isinstance(unit_record, dict):
+                continue
+            child_run_id = str(unit_record.get("child_run_id") or "").strip()
+            directory = str(unit_record.get("directory") or "").strip()
+            plan_item_id = str(unit_record.get("plan_item_id") or "").strip()
+            if not child_run_id or not directory:
+                continue
+            unit_rel = f"{root_rel}/{directory}"
+            production_ref = f"{unit_rel}/runs/{child_run_id}/production.json"
+            sub_tdp_evidence.append(
+                {
+                    "child_run_id": child_run_id,
+                    "directory": directory,
+                    "plan_item_id": plan_item_id,
+                    "title": unit_record.get("title"),
+                    "status": unit_record.get("status"),
+                    "production_ref": production_ref,
+                    "summary": str(unit_record.get("summary") or ""),
+                }
+            )
+            integrated_deliverables.append(
+                {
+                    "plan_item_id": plan_item_id,
+                    "workspace_path": str(workspace / unit_rel),
+                    "child_run_id": child_run_id,
+                }
+            )
+
+        package["sub_tdp_evidence"] = sub_tdp_evidence
+        package["integrated_deliverables"] = integrated_deliverables
+        return package
+
+
 class WholeOutputReviewOrchestrator:
     """Drive mandatory whole-output review and orchestrator-owned final outcomes."""
 
@@ -387,7 +454,13 @@ class WholeOutputReviewOrchestrator:
         run_id: str,
         provider: Provider,
     ) -> None:
-        adapter = OutputWholeReviewAdapter(store, run_id)
+        production = store.load_production(run_id)
+        if load_sub_tdp_state(production) is not None:
+            adapter: OutputWholeReviewAdapter | SubTdpWholeOutputReviewAdapter = (
+                SubTdpWholeOutputReviewAdapter(store, run_id)
+            )
+        else:
+            adapter = OutputWholeReviewAdapter(store, run_id)
         driver = ReviewLoopDriver(store, run_id, provider, adapter)
         adapter.bind_driver(driver)
         self._driver = driver
