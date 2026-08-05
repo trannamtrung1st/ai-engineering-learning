@@ -421,64 +421,11 @@ class SubTdpsPhaseOrchestrator:
         return self._synthesize_and_transition(plan, production, state, units, child_store)
 
     def _ensure_state_matches_package(self, state: dict[str, Any], package) -> None:
-        expected_package_id = str(package.manifest.get("package_id") or "")
-        expected_digest = str(package.manifest.get("package_digest") or "")
-        actual_package_id = str(state.get("package_id") or "").strip()
-        actual_digest = str(state.get("package_digest") or "").strip()
-        if not expected_package_id:
-            raise ValueError("execution package missing package_id")
-        if not expected_digest:
-            raise ValueError("execution package missing package_digest")
-        if not actual_package_id:
-            raise ValueError("sub_tdps state missing required package_id")
-        if actual_package_id != expected_package_id:
-            raise ValueError(
-                f"sub_tdps state package_id mismatch: {actual_package_id} != {expected_package_id}"
-            )
-        if not actual_digest:
-            raise ValueError("sub_tdps state missing required package_digest")
-        if actual_digest != expected_digest:
-            raise ValueError(
-                "sub_tdps state package_digest mismatch with loaded execution package"
-            )
-        for loaded in package.units.values():
-            record = find_unit(state, loaded.unit_id)
-            if record is None:
-                raise ValueError(f"sub_tdps state missing unit {loaded.unit_id!r}")
-            record_ordinal = record.get("ordinal")
-            if record_ordinal is not None and int(record_ordinal) != int(loaded.ordinal):
-                raise ValueError(
-                    f"sub_tdps state ordinal mismatch for unit {loaded.unit_id!r}"
-                )
-            unit_plan_digest = str(record.get("unit_plan_digest") or "").strip()
-            if not unit_plan_digest:
-                raise ValueError(
-                    f"sub_tdps state missing unit_plan_digest for unit {loaded.unit_id!r}"
-                )
-            if unit_plan_digest != loaded.plan_digest:
-                raise ValueError(
-                    f"sub_tdps state unit_plan_digest mismatch for unit {loaded.unit_id!r}"
-                )
-            subtree_digest = str(record.get("assigned_subtree_digest") or "").strip()
-            if not subtree_digest:
-                raise ValueError(
-                    f"sub_tdps state missing assigned_subtree_digest for unit "
-                    f"{loaded.unit_id!r}"
-                )
-            if subtree_digest != loaded.assigned_subtree_digest:
-                raise ValueError(
-                    f"sub_tdps state assigned_subtree_digest mismatch for unit "
-                    f"{loaded.unit_id!r}"
-                )
-            deps = record.get("depends_on")
-            if not isinstance(deps, list):
-                raise ValueError(
-                    f"sub_tdps state missing depends_on for unit {loaded.unit_id!r}"
-                )
-            if list(deps) != list(loaded.depends_on):
-                raise ValueError(
-                    f"sub_tdps state depends_on mismatch for unit {loaded.unit_id!r}"
-                )
+        from top_down_planning.persistence.sub_tdp_state import (
+            validate_sub_tdp_state_matches_package,
+        )
+
+        validate_sub_tdp_state_matches_package(state, package)
 
     def _resolve_create_provider(
         self,
@@ -532,8 +479,7 @@ class SubTdpsPhaseOrchestrator:
             manifest_path = str(state.get("manifest_path") or "").strip()
         if not manifest_path:
             return None
-        package_dir = Path(manifest_path).resolve().parent
-        return ExecutionPackageLoader().load(package_dir)
+        return ExecutionPackageLoader().load_from_manifest(Path(manifest_path))
 
     def _drive_prepared_unit(
         self,
@@ -596,20 +542,24 @@ class SubTdpsPhaseOrchestrator:
                 workspace=workspace,
             ).create_provider
 
-        child_result = PreparedUnitExecutor().execute_unit(
-            child_store,
-            package,
-            unit.plan_item_id,
-            resolved_config=config,
-            invocation=invocation,
-            create_provider=create_provider,
-            workspace=workspace,
-            existing_child_run_id=child_run_id,
-            parent_run_id=self._run_id,
-            orchestration_state=orchestration_state,
-            observability=child_obs,
-            provider_factory_for_run=run_provider_factory,
-        )
+        try:
+            child_result = PreparedUnitExecutor().execute_unit(
+                child_store,
+                package,
+                unit.plan_item_id,
+                resolved_config=config,
+                invocation=invocation,
+                create_provider=create_provider,
+                workspace=workspace,
+                existing_child_run_id=child_run_id,
+                parent_run_id=self._run_id,
+                orchestration_state=orchestration_state,
+                observability=child_obs,
+                provider_factory_for_run=run_provider_factory,
+            )
+        finally:
+            if child_obs is not self._observability and child_obs is not None:
+                child_obs.close()
         unit_record["child_run_id"] = child_result.run.get("id")
         self._append_child_completion_event(
             unit=unit,

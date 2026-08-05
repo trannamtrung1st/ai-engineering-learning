@@ -83,6 +83,27 @@ def _load_json(path: Path) -> Any:
 class ExecutionPackageLoader:
     """Load manifest.json and verify digests before provider sessions."""
 
+    def load_from_manifest(
+        self,
+        manifest_path: Path,
+        *,
+        verify_workspace: bool = True,
+    ) -> LoadedExecutionPackage:
+        """Load a package from an explicit ``manifest.json`` path."""
+
+        resolved = manifest_path.resolve()
+        if resolved.name != "manifest.json":
+            raise ExecutionPackageError(
+                f"manifest path must be manifest.json (got {resolved.name!r})",
+                code="package_invalid",
+            )
+        if not resolved.is_file():
+            raise ExecutionPackageError(
+                f"manifest.json missing: {resolved}",
+                code="package_invalid",
+            )
+        return self.load(resolved.parent, verify_workspace=verify_workspace)
+
     def load(
         self,
         package_dir: Path,
@@ -351,6 +372,31 @@ class ExecutionPackageLoader:
                 "{aggregate_digest, refs:[...]}",
                 code="package_input_refs_invalid",
             )
+
+        approved_digests = attestation.get("approved_digests")
+        if isinstance(approved_digests, dict):
+            manifest_digest_map = {
+                "plan": str(planning_run.get("approved_plan_digest") or "").strip(),
+                "input": str(input_refs.get("aggregate_digest") or "").strip(),
+                "output_goal": str(context.get("output_goal_digest") or "").strip(),
+                "config_contract": str(
+                    context.get("config_contract_digest") or ""
+                ).strip(),
+                "context_spec": str(context.get("context_spec_digest") or "").strip(),
+                "context_snapshot": str(
+                    context.get("context_snapshot_digest") or ""
+                ).strip(),
+            }
+            for key, expected in manifest_digest_map.items():
+                if not expected:
+                    continue
+                actual = str(approved_digests.get(key) or "").strip()
+                if actual and actual != expected:
+                    raise ExecutionPackageError(
+                        f"inherited_plan_approval approved_digests.{key} does not "
+                        f"match manifest context ({actual} != {expected})",
+                        code="package_approval_digest_mismatch",
+                    )
 
         approved_plan_digest = str(planning_run.get("approved_plan_digest") or "").strip()
         if not approved_plan_digest:

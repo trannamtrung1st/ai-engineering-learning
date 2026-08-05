@@ -15,7 +15,10 @@ from top_down_planning.config.context import (
     compute_context_spec_digest_from_config,
 )
 from top_down_planning.config.context_digests import (
+    authorized_production_workspace_paths,
     build_initial_context_snapshot_binding_with_diagnostics,
+    diff_snapshot_binding_paths,
+    split_unauthorized_snapshot_paths,
 )
 from top_down_planning.package.loader import ExecutionPackageError, LoadedExecutionPackage
 from top_down_planning.persistence.digests import (
@@ -80,14 +83,54 @@ def validate_resolved_config_against_package(
             )
 
 
-def verify_package_authoritative_inputs(
-    package: LoadedExecutionPackage,
-) -> None:
-    """
-    Recompute authoritative input and context digests before run creation.
+def _load_package_snapshot_binding(package: LoadedExecutionPackage) -> dict[str, Any]:
+    context = package.manifest.get("context")
+    if not isinstance(context, dict):
+        raise ExecutionPackageError(
+            "package context block missing",
+            code="package_context_missing",
+        )
+    binding_rel = str(context.get("context_snapshot_binding_file") or "").strip()
+    if not binding_rel:
+        raise ExecutionPackageError(
+            "prepared package missing context_snapshot_binding_file",
+            code="package_context_incomplete",
+        )
+    binding_path = (package.manifest_path.parent / binding_rel).resolve()
+    package_root = package.manifest_path.parent.resolve()
+    try:
+        binding_path.relative_to(package_root)
+    except ValueError as exc:
+        raise ExecutionPackageError(
+            f"context_snapshot_binding_file escapes package: {binding_rel}",
+            code="package_path_escape",
+        ) from exc
+    if not binding_path.is_file():
+        raise ExecutionPackageError(
+            f"context_snapshot_binding file missing: {binding_rel}",
+            code="package_context_incomplete",
+        )
+    try:
+        stored_binding = json.loads(binding_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ExecutionPackageError(
+            f"context_snapshot_binding file unreadable: {binding_rel}",
+            code="package_context_incomplete",
+        ) from exc
+    validate_context_snapshot_binding(stored_binding)
+    expected_snapshot = str(context.get("context_snapshot_digest") or "")
+    stored_digest = compute_context_snapshot_digest_from_payload(stored_binding)
+    if expected_snapshot and stored_digest != expected_snapshot:
+        raise ExecutionPackageError(
+            f"context_snapshot_binding digest mismatch: expected {expected_snapshot}, "
+            f"got {stored_digest}",
+            code="package_context_drift",
+        )
+    return stored_binding
 
-    Fails with the exact changed path and expected/actual digest when possible.
-    """
+
+def verify_package_immutable_contract(package: LoadedExecutionPackage) -> None:
+    """Verify authoritative inputs and config contract — not live context snapshot."""
 
     workspace = package.workspace_path
     context = package.manifest.get("context")
@@ -149,6 +192,16 @@ def verify_package_authoritative_inputs(
         workspace=workspace,
     )
 
+
+def verify_package_context_snapshot_exact(package: LoadedExecutionPackage) -> dict[str, Any]:
+    """Require the live workspace context snapshot to match the package exactly."""
+
+    context = package.manifest.get("context")
+    if not isinstance(context, dict):
+        raise ExecutionPackageError(
+            "package context block missing",
+            code="package_context_missing",
+        )
     expected_snapshot = str(context.get("context_snapshot_digest") or "")
     if not expected_snapshot:
         raise ExecutionPackageError(
@@ -156,38 +209,14 @@ def verify_package_authoritative_inputs(
             code="package_context_incomplete",
         )
 
-    binding_rel = str(context.get("context_snapshot_binding_file") or "").strip()
-    if binding_rel:
-        binding_path = (package.manifest_path.parent / binding_rel).resolve()
-        package_root = package.manifest_path.parent.resolve()
-        try:
-            binding_path.relative_to(package_root)
-        except ValueError as exc:
-            raise ExecutionPackageError(
-                f"context_snapshot_binding_file escapes package: {binding_rel}",
-                code="package_path_escape",
-            ) from exc
-        if not binding_path.is_file():
-            raise ExecutionPackageError(
-                f"context_snapshot_binding file missing: {binding_rel}",
-                code="package_context_incomplete",
-            )
-        try:
-            stored_binding = json.loads(binding_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ExecutionPackageError(
-                f"context_snapshot_binding file unreadable: {binding_rel}",
-                code="package_context_incomplete",
-            ) from exc
-        validate_context_snapshot_binding(stored_binding)
-        stored_digest = compute_context_snapshot_digest_from_payload(stored_binding)
-        if stored_digest != expected_snapshot:
-            raise ExecutionPackageError(
-                f"context_snapshot_binding digest mismatch: expected {expected_snapshot}, "
-                f"got {stored_digest}",
-                code="package_context_drift",
-            )
-
+    package_binding = _load_package_snapshot_binding(package)
+    resolved = package.resolved_config
+    if resolved is None:
+        raise ExecutionPackageError(
+            "prepared package is missing embedded execution config",
+            code="package_config_missing",
+        )
+    workspace = package.workspace_path
     _, _, actual_snapshot, _ = build_initial_context_snapshot_binding_with_diagnostics(
         resolved,
         workspace=workspace,
@@ -198,6 +227,105 @@ def verify_package_authoritative_inputs(
             f"got {actual_snapshot}",
             code="package_context_drift",
         )
+    return package_binding
+
+
+def _authorized_paths_from_upstream(
+    store: Any,
+    upstream_wrappers: list[dict[str, Any]],
+    *,
+    workspace: Path,
+) -> set[str]:
+    from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
+
+    authorized: set[str] = set()
+    for wrapper in upstream_wrappers:
+        verify_upstream_accepted_result_binding(wrapper)
+        accepted = wrapper["accepted_result"]
+        child_run_id = str(accepted.get("child_run_id") or "").strip()
+        if not child_run_id:
+            raise ExecutionPackageError(
+                "upstream accepted_result missing child_run_id",
+                code="sub_tdp_upstream_invalid",
+            )
+        production = store.load_production(child_run_id)
+        authorized |= authorized_production_workspace_paths(
+            production,
+            workspace=workspace,
+        )
+    return authorized
+
+
+def verify_package_context_snapshot_with_upstream(
+    package: LoadedExecutionPackage,
+    *,
+    store: Any,
+    upstream_wrappers: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Allow resource drift when covered by accepted upstream production evidence."""
+
+    resolved = package.resolved_config
+    if resolved is None:
+        raise ExecutionPackageError(
+            "prepared package is missing embedded execution config",
+            code="package_config_missing",
+        )
+    workspace = package.workspace_path
+    package_binding = _load_package_snapshot_binding(package)
+    new_binding, _, new_snapshot_digest, _ = (
+        build_initial_context_snapshot_binding_with_diagnostics(
+            resolved,
+            workspace=workspace,
+        )
+    )
+    expected_snapshot = str(
+        (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
+    )
+    if new_snapshot_digest == expected_snapshot:
+        return new_binding
+
+    changed_paths = diff_snapshot_binding_paths(package_binding, new_binding)
+    if not changed_paths:
+        raise ExecutionPackageError(
+            f"context_snapshot digest mismatch without binding path changes: "
+            f"expected {expected_snapshot}, got {new_snapshot_digest}",
+            code="package_context_drift",
+        )
+
+    evidence_gaps, context_mutations = split_unauthorized_snapshot_paths(
+        changed_paths,
+        binding=package_binding,
+        other_binding=new_binding,
+    )
+    if context_mutations:
+        joined = ", ".join(context_mutations)
+        raise ExecutionPackageError(
+            f"context snapshot drift on non-resource bindings is not allowed: {joined}",
+            code="package_context_drift",
+        )
+
+    authorized = _authorized_paths_from_upstream(
+        store,
+        upstream_wrappers,
+        workspace=workspace,
+    )
+    unauthorized = [path for path in evidence_gaps if path not in authorized]
+    if unauthorized:
+        joined = ", ".join(unauthorized)
+        raise ExecutionPackageError(
+            f"context snapshot resource drift not authorized by upstream results: {joined}",
+            code="package_context_drift",
+        )
+    return new_binding
+
+
+def verify_package_authoritative_inputs(
+    package: LoadedExecutionPackage,
+) -> dict[str, Any]:
+    """Verify immutable contract and exact context snapshot; return binding baseline."""
+
+    verify_package_immutable_contract(package)
+    return verify_package_context_snapshot_exact(package)
 
 
 def _aggregate_input_digest(context: dict[str, Any]) -> str:
@@ -210,4 +338,7 @@ def _aggregate_input_digest(context: dict[str, Any]) -> str:
 __all__ = [
     "validate_resolved_config_against_package",
     "verify_package_authoritative_inputs",
+    "verify_package_context_snapshot_exact",
+    "verify_package_context_snapshot_with_upstream",
+    "verify_package_immutable_contract",
 ]

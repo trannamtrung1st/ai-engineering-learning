@@ -34,7 +34,10 @@ from top_down_planning.orchestrator.prepared_unit_executor import (
     validate_explicit_upstream_bindings,
 )
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import cleanup_staging_dirs
-from top_down_planning.package.execution_validation import verify_package_authoritative_inputs
+from top_down_planning.package.execution_validation import (
+    verify_package_authoritative_inputs,
+    verify_package_immutable_contract,
+)
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.sub_tdp_state import (
@@ -133,10 +136,14 @@ def _resolved_config_for_execute(args: Namespace, package) -> dict[str, Any]:
 
 def handle_execute_command(args: Namespace) -> None:
     manifest_path = Path(args.manifest).resolve()
-    package_dir = manifest_path.parent
+    unit_id = str(getattr(args, "unit", "") or "").strip() or None
     try:
-        package = ExecutionPackageLoader().load(package_dir)
-        verify_package_authoritative_inputs(package)
+        loader = ExecutionPackageLoader()
+        package = loader.load_from_manifest(manifest_path)
+        if unit_id:
+            verify_package_immutable_contract(package)
+        else:
+            verify_package_authoritative_inputs(package)
         resolved = _resolved_config_for_execute(args, package)
     except ExecutionPackageError as exc:
         emit_error_message(

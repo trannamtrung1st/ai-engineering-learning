@@ -193,7 +193,7 @@ tdp sub-tdp attach --parent <parent-run-id> --child <child-run-id> --runs-dir <r
 tdp resume --run <parent-run-id> --runs-dir <runs-root>
 ```
 
-The package entry point is `manifest.json` (parent and unit plan snapshots, digests, dependency graph, embedded execution config, and inherited plan approval). `tdp execute` loads semantic config from the package — it does not require `cwd/config.yaml`. Optional `--config` / presentation `--set` overrides are limited to observability, notifications, and run-store location. Prepared children load the full assigned subtree and inherited context; they do not enter planning. Direct `tdp execute --unit` and parent-driven execution share `PreparedUnitExecutor` and the same run-specific provider runtime wiring.
+The package entry point is `manifest.json` (parent and unit plan snapshots, digests, dependency graph, embedded execution config, and inherited plan approval). `tdp execute --manifest` must reference that exact filename. Persisted package IDs are immutable: the run store rejects a second package with the same `package_id` and a different digest. `tdp execute` loads semantic config from the package — it does not require `cwd/config.yaml`. Optional `--config` / presentation `--set` overrides are limited to observability, notifications, and run-store location. Prepared children load the full assigned subtree and inherited context; they do not enter planning. Direct `tdp execute --unit` and parent-driven execution share `PreparedUnitExecutor` and the same run-specific provider runtime wiring.
 
 Parent lifecycle for prepared execution:
 
@@ -207,7 +207,9 @@ sub_tdps (drive or attach children)
 → acceptance
 ```
 
-`--parent-only` creates the parent, enters `sub_tdps`, and **pauses** (`stop.code=sub_tdps_awaiting_children`) so independently executed units can be attached. After every unit is attached, resume the parent with `tdp resume --run <parent-run-id>` to continue synthesis, integration production, and whole-output review. Attach requires parent `phase=sub_tdps` **and** `status=paused`, and a completed/accepted child with whole-output approval bound on the child run. The child's embedded `unit_id` is authoritative.
+`--parent-only` creates the parent, enters `sub_tdps`, and **pauses** (`stop.code=sub_tdps_awaiting_children`) so independently executed units can be attached. After every unit is attached, resume the parent with `tdp resume --run <parent-run-id>` to continue synthesis, integration production, and whole-output review. Attach requires parent `phase=sub_tdps` **and** `status=paused`, holds parent run ownership for the full validate-and-commit path, and accepts only a completed/accepted child with whole-output approval bound on the child run. Dependencies must already be attached with matching `accepted_result_digest` values before a dependent unit can attach. The child's embedded `unit_id` is authoritative.
+
+Direct unit execution (`tdp execute --unit`) with dependencies requires an explicit complete `--upstream dep=<child-run-id>` map; each upstream run must belong to the mapped dependency unit and pass accepted-delivery validation. Dependent child creation allows configured **resource** snapshot drift only when authorized by upstream production evidence; guidance and skill drift are always rejected. Terminal children are revalidated before reuse.
 
 Child runs bind upstream dependencies as digest-verified wrappers (`accepted_result`, `accepted_result_digest`, `upstream_contract_digest`). Accepted-result attestations extract delivery from live production batches (`output_evidence`, `batches[].result.outputs`, `batches[].result.contributions`), not ad-hoc top-level production fields.
 

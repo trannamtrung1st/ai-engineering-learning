@@ -17,14 +17,15 @@ from top_down_planning.domain.run_kind import (
 )
 from top_down_planning.domain.run_ownership import (
     RunOwnershipError,
-    assert_no_live_process_owns_run,
     resolve_run_dir,
+    run_ownership,
 )
 from top_down_planning.domain.sub_tdp_synthesis import child_run_summary
-from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, SUB_TDPS
+from top_down_planning.orchestrator.phases import SUB_TDPS
 from top_down_planning.package.lineage import (
     ExecutionLineageValidator,
     accepted_result_record,
+    validate_attach_dependency_consistency,
 )
 from top_down_planning.package.loader import ExecutionPackageLoader
 from top_down_planning.persistence.commit import CommitSpec
@@ -46,17 +47,40 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
     store, resolved_runs = open_run_store(args, resolved_config=None)
 
     parent_run_dir = resolve_run_dir(store, parent_run_id)
-    if parent_run_dir is not None:
-        try:
-            assert_no_live_process_owns_run(parent_run_id, run_dir=parent_run_dir)
-        except RunOwnershipError as exc:
-            emit_error_message(
-                str(exc),
-                exit_code=1,
-                stream_json=args.stream_json,
-                code="sub_tdp_attach_rejected",
-            )
+    if parent_run_dir is None:
+        emit_error_message(
+            f"parent run directory not found for {parent_run_id!r}",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
 
+    try:
+        with run_ownership(parent_run_id, run_dir=parent_run_dir):
+            _attach_child_under_ownership(
+                args,
+                store=store,
+                resolved_runs=resolved_runs,
+                parent_run_id=parent_run_id,
+                child_run_id=child_run_id,
+            )
+    except RunOwnershipError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+
+
+def _attach_child_under_ownership(
+    args: Namespace,
+    *,
+    store,
+    resolved_runs,
+    parent_run_id: str,
+    child_run_id: str,
+) -> None:
     parent_run = store.load_run(parent_run_id)
     if resolve_run_kind(parent_run) != RUN_KIND_PARENT_EXECUTION:
         emit_error_message(
@@ -106,7 +130,7 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             code="sub_tdp_attach_rejected",
         )
 
-    package = ExecutionPackageLoader().load(Path(manifest_path).parent)
+    package = ExecutionPackageLoader().load_from_manifest(Path(manifest_path))
     child_run = store.load_run(child_run_id)
     if resolve_run_kind(child_run) != RUN_KIND_SUB_TDP_EXECUTION:
         emit_error_message(
@@ -166,6 +190,20 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
     if state is None:
         emit_error_message(
             "parent production missing sub_tdps orchestration state",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+
+    attach_error = validate_attach_dependency_consistency(
+        child_run=child_run,
+        package=package,
+        orchestration_state=state,
+        plan_item_id=plan_item_id,
+    )
+    if attach_error:
+        emit_error_message(
+            attach_error,
             exit_code=1,
             stream_json=args.stream_json,
             code="sub_tdp_attach_rejected",

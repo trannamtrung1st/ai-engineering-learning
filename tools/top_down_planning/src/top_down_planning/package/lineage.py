@@ -417,6 +417,118 @@ def verify_accepted_result_attestation(unit_record: dict[str, Any]) -> None:
         raise ValueError("accepted_result missing completion_assessment")
 
 
+def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
+    """Require production-ready binding keys on prepared child runs."""
+
+    if not isinstance(binding, dict):
+        return "child package_binding is missing"
+    if "upstream_accepted_results" not in binding:
+        return "child missing upstream_accepted_results binding"
+    upstream = binding.get("upstream_accepted_results")
+    if not isinstance(upstream, list):
+        return "child upstream_accepted_results is invalid"
+    if "external_prerequisites" not in binding:
+        return "child missing external_prerequisites binding"
+    external = binding.get("external_prerequisites")
+    if not isinstance(external, list):
+        return "child external_prerequisites is invalid"
+    return None
+
+
+def validate_attach_dependency_consistency(
+    *,
+    child_run: dict[str, Any],
+    package: LoadedExecutionPackage,
+    orchestration_state: dict[str, Any],
+    plan_item_id: str,
+) -> str | None:
+    """Verify child upstream bindings match already-attached dependency results."""
+
+    from top_down_planning.persistence.sub_tdp_state import (
+        UNIT_STATUS_COMPLETED,
+        find_unit,
+    )
+
+    unit = package.units.get(plan_item_id)
+    if unit is None:
+        return f"unknown unit: {plan_item_id!r}"
+
+    for dep_id in unit.depends_on:
+        dep_record = find_unit(orchestration_state, dep_id)
+        if dep_record is None:
+            return (
+                f"dependency {dep_id!r} must be attached before attaching {plan_item_id!r}"
+            )
+        if str(dep_record.get("status") or "") != UNIT_STATUS_COMPLETED:
+            return (
+                f"dependency {dep_id!r} must be completed before attaching {plan_item_id!r}"
+            )
+        dep_digest = str(dep_record.get("accepted_result_digest") or "").strip()
+        if not dep_digest:
+            return f"dependency {dep_id!r} missing accepted_result_digest"
+
+    binding = child_run.get("package_binding") or {}
+    binding_error = validate_child_package_bindings(binding)
+    if binding_error:
+        return binding_error
+    upstream_wrappers = binding["upstream_accepted_results"]
+
+    wrapper_by_unit: dict[str, dict[str, Any]] = {}
+    for wrapper in upstream_wrappers:
+        if not isinstance(wrapper, dict):
+            return "child upstream_accepted_results entry is invalid"
+        try:
+            verify_upstream_accepted_result_binding(wrapper)
+        except ValueError as exc:
+            return f"child upstream wrapper invalid: {exc}"
+        accepted = wrapper.get("accepted_result") or {}
+        dep_unit_id = str(accepted.get("unit_id") or "").strip()
+        if not dep_unit_id:
+            return "child upstream accepted_result missing unit_id"
+        if dep_unit_id in wrapper_by_unit:
+            return f"duplicate upstream wrapper for dependency {dep_unit_id!r}"
+        wrapper_by_unit[dep_unit_id] = wrapper
+
+    expected_deps = set(unit.depends_on)
+    if set(wrapper_by_unit) != expected_deps:
+        missing = sorted(expected_deps - set(wrapper_by_unit))
+        extra = sorted(set(wrapper_by_unit) - expected_deps)
+        parts: list[str] = []
+        if missing:
+            parts.append(f"missing upstream wrappers: {', '.join(missing)}")
+        if extra:
+            parts.append(f"unexpected upstream wrappers: {', '.join(extra)}")
+        return "; ".join(parts)
+
+    for dep_id in unit.depends_on:
+        dep_record = find_unit(orchestration_state, dep_id) or {}
+        dep_digest = str(dep_record.get("accepted_result_digest") or "").strip()
+        wrapper = wrapper_by_unit[dep_id]
+        wrapper_digest = str(wrapper.get("accepted_result_digest") or "").strip()
+        if wrapper_digest != dep_digest:
+            return (
+                f"upstream result for {dep_id!r} does not match attached dependency "
+                f"(expected {dep_digest}, got {wrapper_digest})"
+            )
+        dep_unit = package.units[dep_id]
+        contract = str(wrapper.get("upstream_contract_digest") or "").strip()
+        if contract != dep_unit.assigned_subtree_digest:
+            return (
+                f"upstream contract for {dep_id!r} does not match package dependency contract"
+            )
+        accepted = wrapper.get("accepted_result") or {}
+        if str(accepted.get("child_run_id") or "") != str(
+            dep_record.get("child_run_id") or ""
+        ):
+            return f"upstream child_run_id for {dep_id!r} does not match attached child"
+        dep_accepted = dep_record.get("accepted_result") or {}
+        if str(accepted.get("output_digest") or "") != str(
+            dep_accepted.get("output_digest") or ""
+        ):
+            return f"upstream output_digest for {dep_id!r} does not match attached result"
+    return None
+
+
 def validate_accepted_child_delivery(
     *,
     store: Any,
@@ -481,6 +593,23 @@ def validate_accepted_child_delivery(
         verify_evidence_snapshot(store, child_run_id, entry)
 
 
+def revalidate_terminal_child_delivery(
+    *,
+    store: Any,
+    child_run_id: str,
+    child_run: dict[str, Any],
+    verify_evidence: bool = True,
+) -> None:
+    """Re-check terminal child delivery before reuse."""
+
+    validate_accepted_child_delivery(
+        store=store,
+        child_run_id=child_run_id,
+        child_run=child_run,
+        verify_evidence=verify_evidence,
+    )
+
+
 __all__ = [
     "ExecutionLineageValidator",
     "LineageMismatch",
@@ -488,7 +617,10 @@ __all__ = [
     "accepted_result_record",
     "unwrap_upstream_accepted_result",
     "upstream_accepted_result_binding",
+    "validate_attach_dependency_consistency",
+    "validate_child_package_bindings",
     "validate_accepted_child_delivery",
+    "revalidate_terminal_child_delivery",
     "verify_accepted_result_attestation",
     "verify_upstream_accepted_result_binding",
 ]

@@ -7,7 +7,11 @@ import shutil
 import uuid
 from pathlib import Path
 
-from top_down_planning.package.loader import ExecutionPackageLoader, LoadedExecutionPackage
+from top_down_planning.package.loader import (
+    ExecutionPackageError,
+    ExecutionPackageLoader,
+    LoadedExecutionPackage,
+)
 
 
 def package_store_dir(store_root: Path, package_id: str) -> Path:
@@ -22,7 +26,9 @@ def persist_package_in_store(
     Copy the loaded package under ``<runs-root>/.execution_packages/<package_id>/``.
 
     Returns the persisted ``manifest.json`` path. Idempotent when the target
-    already contains the same package_id and package_digest.
+    already contains the same package_id and package_digest. Rejects collision
+    when the same package_id exists with a different digest. Rejects replacement
+    when the same package_id exists with a different digest.
     """
 
     package_id = str(package.manifest.get("package_id") or "").strip()
@@ -41,11 +47,16 @@ def persist_package_in_store(
         try:
             if target_manifest.is_file():
                 loaded = ExecutionPackageLoader().load(target_dir, verify_workspace=False)
-                if (
-                    str(loaded.manifest.get("package_id") or "") == package_id
-                    and str(loaded.manifest.get("package_digest") or "") == package_digest
-                ):
+                existing_id = str(loaded.manifest.get("package_id") or "")
+                existing_digest = str(loaded.manifest.get("package_digest") or "")
+                if existing_id == package_id and existing_digest == package_digest:
                     return target_manifest
+                if existing_id == package_id and existing_digest != package_digest:
+                    raise ExecutionPackageError(
+                        f"package_id {package_id!r} already persisted with digest "
+                        f"{existing_digest}; refusing to replace with {package_digest}",
+                        code="package_id_collision",
+                    )
 
             if source_dir == target_dir:
                 return target_manifest
@@ -56,6 +67,7 @@ def persist_package_in_store(
                 if staging.exists():
                     shutil.rmtree(staging)
                 shutil.copytree(source_dir, staging)
+                ExecutionPackageLoader().load(staging, verify_workspace=False)
                 if target_dir.exists():
                     backup = target_dir.parent / f".backup-{package_id}-{uuid.uuid4().hex[:8]}"
                     target_dir.rename(backup)

@@ -16,6 +16,7 @@ from top_down_planning.persistence.sub_tdp_state import (
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run, create_run_kwargs
 from tests.unit.test_prepared_runs import _built_package
+from tests.unit.test_sub_tdp_defect_pass import _build_package as _dependent_build_package
 
 
 def _parent_with_orchestration(tmp_path: Path):
@@ -73,13 +74,16 @@ def _parent_with_orchestration(tmp_path: Path):
 
 
 def test_sub_tdp_attach_updates_orchestration(tmp_path: Path) -> None:
-    store, parent_id, package, _config = _parent_with_orchestration(tmp_path)
-    child_id = PreparedRunFactory().create_child_run(
+    store, parent_id, package, config = _parent_with_orchestration(tmp_path)
+    from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitExecutor
+
+    child_id = PreparedUnitExecutor().create_or_load_child_run(
         store,
         package,
-        package.units["item-foundation"],
-        resolved_config=create_run_kwargs(tmp_path)["resolved_config"],
+        "item-foundation",
+        resolved_config=config,
         invocation={"command": "execute", "observability": {}},
+        parent_run_id=parent_id,
     )
     accept_child_run(store, child_id)
 
@@ -263,3 +267,137 @@ def test_sub_tdp_attach_rejects_running_parent(tmp_path: Path) -> None:
     err = payload.get("error") or {}
     assert err.get("code") == "sub_tdp_attach_rejected"
     assert "paused" in str(err.get("message") or "").lower()
+
+
+def test_sub_tdp_attach_rejects_dependent_child_without_upstream_wrappers(
+    tmp_path: Path,
+) -> None:
+    """Dependent attach must reject child runs missing upstream_accepted_results."""
+
+    from top_down_planning.domain.sub_tdp_units import SubTdpUnit
+    from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitExecutor
+    from top_down_planning.package.loader import ExecutionPackageLoader
+
+    store, output_dir, _plan = _dependent_build_package(tmp_path)
+    package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
+    config = create_run_kwargs(tmp_path)["resolved_config"]
+    parent_id = PreparedRunFactory().create_parent_run(
+        store,
+        package,
+        resolved_config=config,
+        invocation={"command": "execute", "observability": {}},
+    )
+    run = store.load_run(parent_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["phase"] = SUB_TDPS
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "sub_tdps_awaiting_children",
+        "category": "operational",
+        "phase": SUB_TDPS,
+        "message": "waiting for children",
+        "role": None,
+        "details": {},
+    }
+    store.save_run(parent_id, run, expected)
+
+    units = [
+        SubTdpUnit(
+            plan_item_id=unit.unit_id,
+            title=unit.title,
+            outcome="",
+            directory=unit.plan_file.parent.name,
+            ordinal=unit.ordinal,
+        )
+        for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
+    ]
+    production = store.load_production(parent_id)
+    parent_binding = store.load_run(parent_id).get("package_binding") or {}
+    state = initial_sub_tdp_state_from_package(
+        package.manifest,
+        manifest_path=str(
+            parent_binding.get("manifest_path") or package.manifest_path
+        ),
+        units=units,
+        package_units=package.units,
+    )
+    merged = merge_sub_tdp_state_into_production(production, state)
+    expected_revision = int(production["revision"])
+    merged["revision"] = expected_revision + 1
+    store.save_production(parent_id, merged, expected_revision)
+
+    executor = PreparedUnitExecutor()
+    child_a_id = executor.create_or_load_child_run(
+        store,
+        package,
+        "item-a",
+        resolved_config=config,
+        invocation={"command": "execute"},
+        parent_run_id=parent_id,
+    )
+    accept_child_run(store, child_a_id)
+
+    config_path = tmp_path / "project.yaml"
+    config_path.write_text(
+        "runtime:\n  runs_dir: runs\nprovider:\n  name: stub\n"
+        "run:\n  output_goal: Ship.\n",
+        encoding="utf-8",
+    )
+    attach_a = run_cli(
+        [
+            "sub-tdp",
+            "attach",
+            "--parent",
+            parent_id,
+            "--child",
+            child_a_id,
+            "--config",
+            str(config_path),
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--stream-json",
+        ]
+    )
+    assert attach_a.exit_code == 0, attach_a.stderr
+
+    child_b_id = PreparedRunFactory().create_child_run(
+        store,
+        package,
+        package.units["item-b"],
+        resolved_config=config,
+        invocation={
+            "command": "execute",
+            "sub_tdp": {"parent_run_id": parent_id, "unit_id": "item-b"},
+        },
+    )
+    accept_child_run(store, child_b_id)
+
+    config_path = tmp_path / "project.yaml"
+    config_path.write_text(
+        "runtime:\n  runs_dir: runs\nprovider:\n  name: stub\n"
+        "run:\n  output_goal: Ship.\n",
+        encoding="utf-8",
+    )
+    result = run_cli(
+        [
+            "sub-tdp",
+            "attach",
+            "--parent",
+            parent_id,
+            "--child",
+            child_b_id,
+            "--config",
+            str(config_path),
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--stream-json",
+        ]
+    )
+    assert result.exit_code != 0
+    payload = result.json()
+    assert payload.get("ok") is False
+    err = payload.get("error") or {}
+    assert err.get("code") == "sub_tdp_attach_rejected"
+    assert "item-a" in str(err.get("message") or "").lower()

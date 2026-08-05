@@ -122,6 +122,15 @@ class PreparedUnitExecutor:
                 explicit_upstream_only=explicit_upstream_only,
             )
 
+        upstream = self._collect_upstream_accepted_results(
+            child_store,
+            package=package,
+            unit_id=unit_id,
+            orchestration_state=orchestration_state,
+            explicit_upstream=explicit_upstream,
+            explicit_upstream_only=explicit_upstream_only,
+        )
+
         if existing_child_run_id:
             child_run = child_store.load_run(existing_child_run_id)
             mismatches = ExecutionLineageValidator().validate_resume(
@@ -136,50 +145,47 @@ class PreparedUnitExecutor:
                     f"expected {detail.expected}, got {detail.actual}",
                     code="sub_tdp_lineage_mismatch",
                 )
-            return existing_child_run_id
-
-        creation_key = self._child_creation_key(
-            package=package,
-            unit_id=unit_id,
-            parent_run_id=parent_run_id,
-        )
-        if creation_key:
-            existing = self._find_child_by_creation_key(child_store, creation_key)
-            if existing is not None:
-                mismatches = ExecutionLineageValidator().validate_resume(
-                    parent_package=package,
-                    child_run=existing,
-                    expected_unit_id=unit_id,
-                )
-                if mismatches:
-                    detail = mismatches[0]
-                    raise ExecutionPackageError(
-                        f"existing child lineage mismatch on {detail.field}: "
-                        f"expected {detail.expected}, got {detail.actual}",
-                        code="sub_tdp_lineage_mismatch",
+            child_run_id = existing_child_run_id
+        else:
+            creation_key = self._child_creation_key(
+                package=package,
+                unit_id=unit_id,
+                parent_run_id=parent_run_id,
+            )
+            child_run_id = None
+            if creation_key:
+                existing = self._find_child_by_creation_key(child_store, creation_key)
+                if existing is not None:
+                    mismatches = ExecutionLineageValidator().validate_resume(
+                        parent_package=package,
+                        child_run=existing,
+                        expected_unit_id=unit_id,
                     )
-                return str(existing.get("id") or "")
+                    if mismatches:
+                        detail = mismatches[0]
+                        raise ExecutionPackageError(
+                            f"existing child lineage mismatch on {detail.field}: "
+                            f"expected {detail.expected}, got {detail.actual}",
+                            code="sub_tdp_lineage_mismatch",
+                        )
+                    child_run_id = str(existing.get("id") or "")
 
-        child_run_id = self._run_factory.create_child_run(
-            child_store,
-            package,
-            unit,
-            resolved_config=resolved_config,
-            invocation=self._child_invocation(invocation, parent_run_id, unit_id),
-        )
-        upstream = self._collect_upstream_accepted_results(
-            child_store,
-            package=package,
-            unit_id=unit_id,
-            orchestration_state=orchestration_state,
-            explicit_upstream=explicit_upstream,
-        )
-        self._bind_upstream_accepted_results(child_store, child_run_id, upstream)
-        self._bind_external_prerequisites(
+            if child_run_id is None:
+                child_run_id = self._run_factory.create_child_run(
+                    child_store,
+                    package,
+                    unit,
+                    resolved_config=resolved_config,
+                    invocation=self._child_invocation(invocation, parent_run_id, unit_id),
+                    upstream_accepted_results=upstream if upstream else None,
+                )
+
+        self._ensure_child_package_bindings(
             child_store,
             child_run_id,
             package=package,
             unit_id=unit_id,
+            upstream=upstream,
         )
         return child_run_id
 
@@ -194,6 +200,7 @@ class PreparedUnitExecutor:
     ) -> PreparedChildResult:
         child_run = child_store.load_run(child_run_id)
         if self._is_terminal(child_run):
+            self._revalidate_terminal_child_delivery(child_store, child_run_id, child_run)
             return PreparedChildResult.from_run(child_run, ok=True)
         return continue_child_sub_tdp(
             child_store,
@@ -233,6 +240,7 @@ class PreparedUnitExecutor:
         )
         child_run = child_store.load_run(child_run_id)
         if self._is_terminal(child_run):
+            self._revalidate_terminal_child_delivery(child_store, child_run_id, child_run)
             return PreparedChildResult.from_run(child_run, ok=True)
 
         if provider_factory_for_run is not None:
@@ -317,7 +325,8 @@ class PreparedUnitExecutor:
         for dep_id in unit.depends_on:
             if dep_id not in package.units:
                 raise ExecutionPackageError(
-                    f"unit {unit_id} depends on unknown unit {dep_id!r}"
+                    f"unit {unit_id} depends on unknown unit {dep_id!r}",
+                    code="sub_tdp_dependency_unmet",
                 )
             dep_unit = package.units[dep_id]
             dep_accepted = self._find_accepted_dependency_run(
@@ -341,7 +350,11 @@ class PreparedUnitExecutor:
         explicit_upstream: dict[str, str] | None = None,
         explicit_upstream_only: bool = False,
     ) -> list[dict[str, Any]]:
-        from top_down_planning.package.lineage import verify_accepted_result_attestation
+        from top_down_planning.package.lineage import (
+            accepted_result_record,
+            upstream_accepted_result_binding,
+            verify_accepted_result_attestation,
+        )
 
         package_id = str(package.manifest.get("package_id") or "")
         package_digest = str(package.manifest.get("package_digest") or "")
@@ -356,9 +369,41 @@ class PreparedUnitExecutor:
                 accepted = dep_record.get("accepted_result")
                 if isinstance(accepted, dict):
                     verify_accepted_result_attestation(dep_record)
+                    child_run_id = str(accepted.get("child_run_id") or "").strip()
+                    if child_run_id:
+                        from top_down_planning.package.lineage import (
+                            validate_accepted_child_delivery,
+                        )
+
+                        child_run = child_store.load_run(child_run_id)
+                        child_production = child_store.load_production(child_run_id)
+                        try:
+                            validate_accepted_child_delivery(
+                                store=child_store,
+                                child_run_id=child_run_id,
+                                child_run=child_run,
+                                child_production=child_production,
+                                verify_evidence=False,
+                            )
+                        except ValueError as exc:
+                            raise ExecutionPackageError(
+                                f"orchestration upstream {dep_id!r} delivery invalid: {exc}",
+                                code="sub_tdp_upstream_invalid",
+                            ) from exc
+                        entry = accepted_result_record(
+                            child_run=child_run,
+                            child_production=child_production,
+                            unit_id=dep_id,
+                            unit_plan_digest=dep_unit.plan_digest,
+                            package_id=package_id,
+                            package_digest=package_digest,
+                            assigned_subtree_digest=dep_unit.assigned_subtree_digest,
+                        )
+                    else:
+                        entry = dict(accepted)
                     results.append(
                         upstream_accepted_result_binding(
-                            dict(accepted),
+                            entry,
                             upstream_contract_digest=dep_unit.assigned_subtree_digest,
                         )
                     )
@@ -367,6 +412,23 @@ class PreparedUnitExecutor:
                 if child_run_id:
                     child_run = child_store.load_run(child_run_id)
                     child_production = child_store.load_production(child_run_id)
+                    from top_down_planning.package.lineage import (
+                        validate_accepted_child_delivery,
+                    )
+
+                    try:
+                        validate_accepted_child_delivery(
+                            store=child_store,
+                            child_run_id=child_run_id,
+                            child_run=child_run,
+                            child_production=child_production,
+                            verify_evidence=False,
+                        )
+                    except ValueError as exc:
+                        raise ExecutionPackageError(
+                            f"orchestration upstream {dep_id!r} delivery invalid: {exc}",
+                            code="sub_tdp_upstream_invalid",
+                        ) from exc
                     entry = accepted_result_record(
                         child_run=child_run,
                         child_production=child_production,
@@ -413,41 +475,27 @@ class PreparedUnitExecutor:
         return results
 
     @staticmethod
-    def _bind_upstream_accepted_results(
-        child_store: FileRunStore,
-        child_run_id: str,
-        upstream: list[dict[str, Any]],
-    ) -> None:
-        run = child_store.load_run(child_run_id)
-        expected = int(run["revision"])
-        binding = dict(run.get("package_binding") or {})
-        binding["upstream_accepted_results"] = list(upstream)
-        run["package_binding"] = binding
-        run["revision"] = expected + 1
-        child_store.save_run(child_run_id, run, expected)
-
-    @staticmethod
-    def _bind_external_prerequisites(
+    def _ensure_child_package_bindings(
         child_store: FileRunStore,
         child_run_id: str,
         *,
         package: LoadedExecutionPackage,
         unit_id: str,
+        upstream: list[dict[str, Any]],
     ) -> None:
+        """Idempotently persist upstream wrappers and external prerequisites."""
+
+        from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
+        from top_down_planning.config.context import (
+            compute_context_snapshot_digest_from_payload,
+        )
+        from top_down_planning.package.execution_validation import (
+            verify_package_context_snapshot_with_upstream,
+        )
+
         unit = package.units[unit_id]
         external = list(unit.external_prerequisites)
-        run = child_store.load_run(child_run_id)
-        expected = int(run["revision"])
-        binding = dict(run.get("package_binding") or {})
-        binding["external_prerequisites"] = external
-        from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
-
-        for wrapper in binding.get("upstream_accepted_results") or []:
-            if not isinstance(wrapper, dict):
-                raise ExecutionPackageError(
-                    "upstream_accepted_results entries must be objects",
-                    code="sub_tdp_upstream_invalid",
-                )
+        for wrapper in upstream:
             try:
                 verify_upstream_accepted_result_binding(wrapper)
             except ValueError as exc:
@@ -455,7 +503,45 @@ class PreparedUnitExecutor:
                     str(exc),
                     code="sub_tdp_upstream_invalid",
                 ) from exc
+
+        run = child_store.load_run(child_run_id)
+        desired_upstream = list(upstream)
+        snapshot_binding = None
+        context_snapshot_digest = None
+        if desired_upstream:
+            snapshot_binding = verify_package_context_snapshot_with_upstream(
+                package,
+                store=child_store,
+                upstream_wrappers=desired_upstream,
+            )
+            context_snapshot_digest = compute_context_snapshot_digest_from_payload(
+                snapshot_binding
+            )
+
+        binding = dict(run.get("package_binding") or {})
+        binding_unchanged = (
+            binding.get("upstream_accepted_results") == desired_upstream
+            and binding.get("external_prerequisites") == external
+            and "upstream_accepted_results" in binding
+            and "external_prerequisites" in binding
+        )
+        snapshot_unchanged = snapshot_binding is None or (
+            run.get("context_snapshot_binding") == snapshot_binding
+            and str((run.get("digests") or {}).get("context_snapshot") or "")
+            == context_snapshot_digest
+        )
+        if binding_unchanged and snapshot_unchanged:
+            return
+
+        binding["upstream_accepted_results"] = desired_upstream
+        binding["external_prerequisites"] = external
         run["package_binding"] = binding
+        if snapshot_binding is not None:
+            run["context_snapshot_binding"] = snapshot_binding
+            digests = dict(run.get("digests") or {})
+            digests["context_snapshot"] = context_snapshot_digest
+            run["digests"] = digests
+        expected = int(run["revision"])
         run["revision"] = expected + 1
         child_store.save_run(child_run_id, run, expected)
 
@@ -473,8 +559,28 @@ class PreparedUnitExecutor:
             run_id = str(explicit_upstream[dep_unit_id] or "").strip()
             if not run_id:
                 return None
-            run = child_store.load_run(run_id)
-            production = child_store.load_production(run_id)
+            from core_tools.persistence.revision import RunNotFoundError
+
+            try:
+                run = child_store.load_run(run_id)
+                production = child_store.load_production(run_id)
+            except (OSError, ValueError, KeyError, RunNotFoundError) as exc:
+                raise ExecutionPackageError(
+                    f"explicit upstream run {run_id!r} is missing or unreadable",
+                    code="sub_tdp_upstream_invalid",
+                ) from exc
+            resume_mismatches = ExecutionLineageValidator().validate_resume(
+                parent_package=package,
+                child_run=run,
+                expected_unit_id=dep_unit_id,
+            )
+            if resume_mismatches:
+                detail = resume_mismatches[0]
+                raise ExecutionPackageError(
+                    f"explicit upstream {dep_unit_id!r} unit mismatch on "
+                    f"{detail.field}: expected {detail.expected}, got {detail.actual}",
+                    code="sub_tdp_upstream_invalid",
+                )
             mismatches = ExecutionLineageValidator().validate_attach(
                 parent_package=package,
                 parent_manifest_digest=str(package.manifest.get("package_digest") or ""),
@@ -594,22 +700,25 @@ class PreparedUnitExecutor:
         return matches[0] if matches else None
 
     @staticmethod
-    def _dependency_accepted(
+    def _revalidate_terminal_child_delivery(
         child_store: FileRunStore,
-        *,
-        package: LoadedExecutionPackage,
-        dep_unit_id: str,
-        dep_unit,
-    ) -> bool:
-        return (
-            PreparedUnitExecutor._find_accepted_dependency_run(
-                child_store,
-                package=package,
-                dep_unit_id=dep_unit_id,
-                dep_unit=dep_unit,
+        child_run_id: str,
+        child_run: dict[str, Any],
+    ) -> None:
+        from top_down_planning.package.lineage import revalidate_terminal_child_delivery
+
+        try:
+            revalidate_terminal_child_delivery(
+                store=child_store,
+                child_run_id=child_run_id,
+                child_run=child_run,
+                verify_evidence=True,
             )
-            is not None
-        )
+        except ValueError as exc:
+            raise ExecutionPackageError(
+                f"terminal child delivery invalid: {exc}",
+                code="sub_tdp_lineage_mismatch",
+            ) from exc
 
     @staticmethod
     def _is_terminal(child_run: dict[str, Any]) -> bool:

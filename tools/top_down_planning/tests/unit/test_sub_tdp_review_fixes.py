@@ -166,12 +166,12 @@ def test_producer_manifest_includes_prepared_execution_for_child(
     # Bind prepared-execution fields the same way PreparedUnitExecutor does.
     from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitExecutor
 
-    PreparedUnitExecutor._bind_upstream_accepted_results(store, child_id, [])
-    PreparedUnitExecutor._bind_external_prerequisites(
+    PreparedUnitExecutor._ensure_child_package_bindings(
         store,
         child_id,
         package=package,
         unit_id=unit.unit_id,
+        upstream=[],
     )
     # Inject one upstream attestation for manifest coverage.
     run = store.load_run(child_id)

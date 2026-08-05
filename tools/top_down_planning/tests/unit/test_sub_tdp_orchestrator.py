@@ -208,14 +208,9 @@ def test_continue_child_sub_tdp_skips_already_terminal_child(tmp_path: Path) -> 
         resolved_config=config,
         invocation={"command": "execute", "observability": {}},
     )
-    run = store.load_run(child_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected + 1
-    run["status"] = "completed"
-    run["phase"] = "output_validated"
-    run["outcome"] = "accepted"
-    store.save_run(child_id, run, expected)
+    from tests.helpers import accept_child_run
+
+    accept_child_run(store, child_id)
 
     with patch("top_down_planning.orchestrator.engine.RunEngine") as engine_cls:
         child_run = continue_child_sub_tdp(

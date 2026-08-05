@@ -136,8 +136,8 @@ def _verify_prepared_package_binding(
         resolve_run_kind,
     )
     from top_down_planning.package.lineage import (
+        validate_accepted_child_delivery,
         verify_accepted_result_attestation,
-        verify_upstream_accepted_result_binding,
     )
     from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 
@@ -154,8 +154,8 @@ def _verify_prepared_package_binding(
     if not manifest_path:
         return "prepared run missing package_binding.manifest_path"
     try:
-        package = ExecutionPackageLoader().load(
-            Path(manifest_path).parent,
+        package = ExecutionPackageLoader().load_from_manifest(
+            Path(manifest_path),
             verify_workspace=False,
         )
     except ExecutionPackageError as exc:
@@ -186,13 +186,14 @@ def _verify_prepared_package_binding(
             return "prepared unit_plan_digest mismatch blocks resume"
         if str(binding.get("assigned_subtree_digest") or "") != unit.assigned_subtree_digest:
             return "prepared assigned_subtree_digest mismatch blocks resume"
-        for wrapper in binding.get("upstream_accepted_results") or []:
-            if not isinstance(wrapper, dict):
-                return "prepared upstream_accepted_results entry is invalid"
-            try:
-                verify_upstream_accepted_result_binding(wrapper)
-            except ValueError as exc:
-                return f"prepared upstream attestation invalid: {exc}"
+        upstream_error = _verify_child_upstream_bindings(
+            store,
+            binding=binding,
+            unit=unit,
+            package=package,
+        )
+        if upstream_error:
+            return upstream_error
     elif kind == RUN_KIND_PARENT_EXECUTION:
         expected_plan_digest = compute_plan_digest(package.parent_plan)
         if compute_plan_digest(actual_plan) != expected_plan_digest:
@@ -209,9 +210,27 @@ def _verify_prepared_package_binding(
                     verify_accepted_result_attestation(unit_record)
                 except ValueError as exc:
                     return f"parent sub_tdps attestation invalid: {exc}"
+                child_run_id = str(unit_record.get("child_run_id") or "").strip()
+                if child_run_id:
+                    try:
+                        child_run = store.load_run(child_run_id)
+                        child_production = store.load_production(child_run_id)
+                        validate_accepted_child_delivery(
+                            store=store,
+                            child_run_id=child_run_id,
+                            child_run=child_run,
+                            child_production=child_production,
+                            verify_evidence=True,
+                        )
+                    except (OSError, ValueError, KeyError) as exc:
+                        return (
+                            f"parent sub_tdps child delivery invalid for "
+                            f"{unit_record.get('plan_item_id')!r}: {exc}"
+                        )
             try:
                 from top_down_planning.persistence.sub_tdp_state import (
                     ensure_sub_tdp_state_matches_units,
+                    validate_sub_tdp_state_matches_package,
                 )
                 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 
@@ -229,8 +248,76 @@ def _verify_prepared_package_binding(
                     state,
                     units,
                 )
+                validate_sub_tdp_state_matches_package(state, package)
             except (ValueError, TypeError, KeyError) as exc:
                 return f"parent sub_tdps orchestration mismatch: {exc}"
+    return None
+
+
+def _verify_child_upstream_bindings(
+    store: RunStore,
+    *,
+    binding: dict[str, Any],
+    unit,
+    package,
+) -> str | None:
+    from top_down_planning.package.lineage import (
+        validate_accepted_child_delivery,
+        validate_child_package_bindings,
+        verify_upstream_accepted_result_binding,
+    )
+
+    binding_error = validate_child_package_bindings(binding)
+    if binding_error:
+        return binding_error
+
+    expected_deps = list(unit.depends_on)
+    wrappers = binding["upstream_accepted_results"]
+    if len(wrappers) != len(expected_deps):
+        return (
+            "prepared upstream_accepted_results count does not match unit dependencies"
+        )
+
+    seen: set[str] = set()
+    for wrapper in wrappers:
+        if not isinstance(wrapper, dict):
+            return "prepared upstream_accepted_results entry is invalid"
+        try:
+            verify_upstream_accepted_result_binding(wrapper)
+        except ValueError as exc:
+            return f"prepared upstream attestation invalid: {exc}"
+        accepted = wrapper.get("accepted_result") or {}
+        dep_id = str(accepted.get("unit_id") or "").strip()
+        if dep_id not in expected_deps:
+            return f"prepared upstream wrapper references unexpected unit {dep_id!r}"
+        if dep_id in seen:
+            return f"duplicate prepared upstream wrapper for {dep_id!r}"
+        seen.add(dep_id)
+        dep_unit = package.units.get(dep_id)
+        if dep_unit is None:
+            return f"prepared upstream dependency unit {dep_id!r} missing from package"
+        contract = str(wrapper.get("upstream_contract_digest") or "").strip()
+        if contract != dep_unit.assigned_subtree_digest:
+            return (
+                f"prepared upstream_contract_digest mismatch for dependency {dep_id!r}"
+            )
+        child_run_id = str(accepted.get("child_run_id") or "").strip()
+        if child_run_id:
+            try:
+                child_run = store.load_run(child_run_id)
+                child_production = store.load_production(child_run_id)
+                validate_accepted_child_delivery(
+                    store=store,
+                    child_run_id=child_run_id,
+                    child_run=child_run,
+                    child_production=child_production,
+                    verify_evidence=False,
+                )
+            except (OSError, ValueError, KeyError) as exc:
+                return f"prepared upstream child delivery invalid for {dep_id!r}: {exc}"
+    if seen != set(expected_deps):
+        missing = sorted(set(expected_deps) - seen)
+        return f"prepared upstream_accepted_results missing dependencies: {', '.join(missing)}"
     return None
 
 
@@ -371,7 +458,10 @@ def prepare_resume(
 
             kind = resolve_run_kind(run)
             if kind == RUN_KIND_SUB_TDP_EXECUTION:
-                output_goal_digest = compute_unit_output_goal_digest(plan.output_goal)
+                unit_plan = store.load_plan_model(run_id)
+                output_goal_digest = compute_unit_output_goal_digest(
+                    unit_plan.output_goal
+                )
         except ValueError as exc:
             blockers.append(f"run_kind invalid blocks resume: {exc}")
         if output_goal_digest != run_digests.get("output_goal"):

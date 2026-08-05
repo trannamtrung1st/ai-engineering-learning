@@ -30,7 +30,7 @@ def test_sub_tdp_attach_rejects_live_parent_owner(tmp_path: Path) -> None:
     )
 
     with patch(
-        "top_down_planning.cli.sub_tdp.assert_no_live_process_owns_run",
+        "top_down_planning.cli.sub_tdp.run_ownership",
         side_effect=RunOwnershipError("live owner", code="run_ownership_conflict"),
     ):
         result = run_cli(

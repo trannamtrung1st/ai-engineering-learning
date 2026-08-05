@@ -11,9 +11,7 @@ from top_down_planning.config import (
     compute_output_goal_digest,
     compute_unit_output_goal_digest,
 )
-from top_down_planning.config.context_digests import (
-    build_initial_context_snapshot_binding_with_diagnostics,
-)
+from top_down_planning.config.context import compute_context_spec_digest_from_config
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.run_kind import (
     RUN_KIND_PARENT_EXECUTION,
@@ -23,6 +21,8 @@ from top_down_planning.orchestrator.phases import PLAN_VALIDATED
 from top_down_planning.package.execution_validation import (
     validate_resolved_config_against_package,
     verify_package_authoritative_inputs,
+    verify_package_context_snapshot_with_upstream,
+    verify_package_immutable_contract,
 )
 from top_down_planning.package.loader import LoadedExecutionPackage, LoadedUnit
 from top_down_planning.package.store_persist import persist_package_in_store
@@ -121,6 +121,7 @@ class PreparedRunFactory:
         *,
         resolved_config: dict[str, Any],
         invocation: dict[str, Any],
+        upstream_accepted_results: list[dict[str, Any]] | None = None,
     ) -> str:
         return self._create_prepared_run(
             store,
@@ -131,6 +132,7 @@ class PreparedRunFactory:
             invocation=invocation,
             selected_unit_id=unit.unit_id,
             unit_record=unit,
+            upstream_accepted_results=upstream_accepted_results,
         )
 
     def _create_prepared_run(
@@ -144,19 +146,31 @@ class PreparedRunFactory:
         invocation: dict[str, Any],
         selected_unit_id: str | None,
         unit_record: LoadedUnit | None,
+        upstream_accepted_results: list[dict[str, Any]] | None = None,
     ) -> str:
         workspace = package.workspace_path
-        verify_package_authoritative_inputs(package)
+        if upstream_accepted_results:
+            verify_package_immutable_contract(package)
+            binding = verify_package_context_snapshot_with_upstream(
+                package,
+                store=store,
+                upstream_wrappers=upstream_accepted_results,
+            )
+        else:
+            binding = verify_package_authoritative_inputs(package)
         validate_resolved_config_against_package(
             resolved_config,
             package,
             workspace=workspace,
         )
-        binding, context_spec_digest, context_snapshot_digest, _ = (
-            build_initial_context_snapshot_binding_with_diagnostics(
-                resolved_config,
-                workspace=workspace,
-            )
+        from top_down_planning.config.context import (
+            compute_context_snapshot_digest_from_payload,
+        )
+
+        context_snapshot_digest = compute_context_snapshot_digest_from_payload(binding)
+        context_spec_digest = compute_context_spec_digest_from_config(
+            resolved_config,
+            workspace=workspace,
         )
         run_id = new_run_id()
         persisted_manifest = persist_package_in_store(store.root, package)
@@ -187,6 +201,12 @@ class PreparedRunFactory:
                 package_binding["creation_key"] = (
                     f"{package_binding['package_digest']}:{parent_run_id}:{unit_id}"
                 )
+            package_binding["upstream_accepted_results"] = list(
+                upstream_accepted_results or []
+            )
+            package_binding["external_prerequisites"] = list(
+                unit_record.external_prerequisites if unit_record else []
+            )
         else:
             output_goal_digest = parent_output_goal_digest
         run_record_extras = {

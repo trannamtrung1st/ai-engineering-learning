@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from top_down_planning.package.loader import ExecutionPackageLoader
+from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 from top_down_planning.package.store_persist import persist_package_in_store
 from tests.unit.test_prepared_runs import _built_package
 
@@ -22,7 +22,7 @@ def test_persist_package_is_idempotent(tmp_path: Path) -> None:
     assert reloaded.manifest["package_digest"] == package.manifest["package_digest"]
 
 
-def test_failed_persist_replace_leaves_prior_package(tmp_path: Path) -> None:
+def test_persist_rejects_digest_collision_leaves_prior_package(tmp_path: Path) -> None:
     store, _, package = _built_package(tmp_path)
     manifest_path = persist_package_in_store(store.root, package)
     marker = manifest_path.parent / "marker.txt"
@@ -30,12 +30,8 @@ def test_failed_persist_replace_leaves_prior_package(tmp_path: Path) -> None:
     original_digest = package.manifest["package_digest"]
     package.manifest["package_digest"] = "f" * 64
 
-    with patch(
-        "top_down_planning.package.store_persist.shutil.copytree",
-        side_effect=RuntimeError("simulated persist failure"),
-    ):
-        with pytest.raises(RuntimeError, match="simulated persist failure"):
-            persist_package_in_store(store.root, package)
+    with pytest.raises(ExecutionPackageError, match="refusing to replace"):
+        persist_package_in_store(store.root, package)
 
     assert manifest_path.is_file()
     assert marker.is_file()
