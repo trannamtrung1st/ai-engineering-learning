@@ -14,12 +14,45 @@ from top_down_planning.orchestrator.sub_tdp_child_driver import (
 from top_down_planning.package.lineage import (
     ExecutionLineageValidator,
     accepted_result_record,
+    upstream_accepted_result_binding,
 )
 from top_down_planning.package.loader import ExecutionPackageError, LoadedExecutionPackage
 from top_down_planning.persistence import FileRunStore
 
 ProviderFactory = Callable[[dict[str, Any], Path], Any]
 RuntimeFactory = Callable[[str], Any]
+
+
+def validate_explicit_upstream_bindings(
+    package: LoadedExecutionPackage,
+    unit_id: str,
+    bindings: dict[str, str],
+) -> None:
+    """Require a complete explicit map for all unit dependencies."""
+
+    unit = package.units.get(unit_id)
+    if unit is None:
+        known = ", ".join(sorted(package.units))
+        raise ExecutionPackageError(
+            f"unknown unit: {unit_id!r}; valid units: {known}",
+            code="unknown_unit",
+        )
+    required = set(unit.depends_on)
+    provided = set(bindings)
+    unknown = sorted(provided - required)
+    if unknown:
+        raise ExecutionPackageError(
+            f"--upstream unit(s) are not dependencies of {unit_id!r}: "
+            + ", ".join(unknown),
+            code="sub_tdp_upstream_invalid",
+        )
+    missing = sorted(required - provided)
+    if missing:
+        raise ExecutionPackageError(
+            f"--upstream missing required dependencies for {unit_id!r}: "
+            + ", ".join(missing),
+            code="sub_tdp_upstream_invalid",
+        )
 
 
 class PreparedUnitExecutor:
@@ -50,6 +83,7 @@ class PreparedUnitExecutor:
         parent_run_id: str | None = None,
         orchestration_state: dict[str, Any] | None = None,
         explicit_upstream: dict[str, str] | None = None,
+        explicit_upstream_only: bool = False,
     ) -> str:
         unit = package.units.get(unit_id)
         if unit is None:
@@ -74,11 +108,18 @@ class PreparedUnitExecutor:
                 ):
                     raise self.DependencyUnmetError(unit_id, dep_id)
         else:
+            if explicit_upstream_only:
+                validate_explicit_upstream_bindings(
+                    package,
+                    unit_id,
+                    explicit_upstream or {},
+                )
             self._check_external_dependencies(
                 package,
                 unit_id,
                 child_store,
                 explicit_upstream=explicit_upstream,
+                explicit_upstream_only=explicit_upstream_only,
             )
 
         if existing_child_run_id:
@@ -228,7 +269,9 @@ class PreparedUnitExecutor:
         unit_id: str,
         parent_run_id: str | None,
     ) -> str | None:
-        parent = str(parent_run_id or "").strip() or "direct"
+        parent = str(parent_run_id or "").strip()
+        if not parent:
+            return None
         unit = str(unit_id or "").strip()
         package_digest = str(package.manifest.get("package_digest") or "").strip()
         if not unit or not package_digest:
@@ -253,21 +296,6 @@ class PreparedUnitExecutor:
                 continue
             if str(binding.get("creation_key") or "") == creation_key:
                 matches.append(run)
-                continue
-            # Adopt children created before creation_key was persisted.
-            sub_tdp = (run.get("invocation") or {}).get("sub_tdp") or {}
-            if not isinstance(sub_tdp, dict):
-                continue
-            package_digest = str(binding.get("package_digest") or "").strip()
-            parent = str(sub_tdp.get("parent_run_id") or "").strip()
-            unit = str(sub_tdp.get("unit_id") or "").strip()
-            if (
-                package_digest
-                and parent
-                and unit
-                and f"{package_digest}:{parent}:{unit}" == creation_key
-            ):
-                matches.append(run)
         if len(matches) > 1:
             ids = ", ".join(str(m.get("id") or "") for m in matches)
             raise ExecutionPackageError(
@@ -283,6 +311,7 @@ class PreparedUnitExecutor:
         child_store: FileRunStore,
         *,
         explicit_upstream: dict[str, str] | None = None,
+        explicit_upstream_only: bool = False,
     ) -> None:
         unit = package.units[unit_id]
         for dep_id in unit.depends_on:
@@ -297,6 +326,7 @@ class PreparedUnitExecutor:
                 dep_unit_id=dep_id,
                 dep_unit=dep_unit,
                 explicit_upstream=explicit_upstream,
+                explicit_upstream_only=explicit_upstream_only,
             )
             if dep_accepted is None:
                 raise self.DependencyUnmetError(unit_id, dep_id)
@@ -309,6 +339,7 @@ class PreparedUnitExecutor:
         unit_id: str,
         orchestration_state: dict[str, Any] | None,
         explicit_upstream: dict[str, str] | None = None,
+        explicit_upstream_only: bool = False,
     ) -> list[dict[str, Any]]:
         from top_down_planning.package.lineage import verify_accepted_result_attestation
 
@@ -325,9 +356,12 @@ class PreparedUnitExecutor:
                 accepted = dep_record.get("accepted_result")
                 if isinstance(accepted, dict):
                     verify_accepted_result_attestation(dep_record)
-                    entry = dict(accepted)
-                    entry["upstream_contract_digest"] = dep_unit.assigned_subtree_digest
-                    results.append(entry)
+                    results.append(
+                        upstream_accepted_result_binding(
+                            dict(accepted),
+                            upstream_contract_digest=dep_unit.assigned_subtree_digest,
+                        )
+                    )
                     continue
                 child_run_id = str(dep_record.get("child_run_id") or "").strip()
                 if child_run_id:
@@ -342,8 +376,12 @@ class PreparedUnitExecutor:
                         package_digest=package_digest,
                         assigned_subtree_digest=dep_unit.assigned_subtree_digest,
                     )
-                    entry["upstream_contract_digest"] = dep_unit.assigned_subtree_digest
-                    results.append(entry)
+                    results.append(
+                        upstream_accepted_result_binding(
+                            entry,
+                            upstream_contract_digest=dep_unit.assigned_subtree_digest,
+                        )
+                    )
                     continue
                 raise self.DependencyUnmetError(unit_id, dep_id)
             matched = self._find_accepted_dependency_run(
@@ -352,6 +390,7 @@ class PreparedUnitExecutor:
                 dep_unit_id=dep_id,
                 dep_unit=dep_unit,
                 explicit_upstream=explicit_upstream,
+                explicit_upstream_only=explicit_upstream_only,
             )
             if matched is None:
                 raise self.DependencyUnmetError(unit_id, dep_id)
@@ -365,8 +404,12 @@ class PreparedUnitExecutor:
                 package_digest=package_digest,
                 assigned_subtree_digest=dep_unit.assigned_subtree_digest,
             )
-            entry["upstream_contract_digest"] = dep_unit.assigned_subtree_digest
-            results.append(entry)
+            results.append(
+                upstream_accepted_result_binding(
+                    entry,
+                    upstream_contract_digest=dep_unit.assigned_subtree_digest,
+                )
+            )
         return results
 
     @staticmethod
@@ -397,26 +440,21 @@ class PreparedUnitExecutor:
         expected = int(run["revision"])
         binding = dict(run.get("package_binding") or {})
         binding["external_prerequisites"] = external
-        for item in binding.get("upstream_accepted_results") or []:
-            if not isinstance(item, dict):
+        from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
+
+        for wrapper in binding.get("upstream_accepted_results") or []:
+            if not isinstance(wrapper, dict):
                 raise ExecutionPackageError(
                     "upstream_accepted_results entries must be objects",
                     code="sub_tdp_upstream_invalid",
                 )
-            if not str(item.get("upstream_contract_digest") or "").strip():
-                dep_id = str(item.get("unit_id") or "")
-                dep_unit = package.units.get(dep_id)
-                if dep_unit is None:
-                    raise ExecutionPackageError(
-                        f"upstream accepted result missing contract for {dep_id!r}",
-                        code="sub_tdp_upstream_invalid",
-                    )
-                item["upstream_contract_digest"] = dep_unit.assigned_subtree_digest
-            if not str(item.get("output_digest") or "").strip():
+            try:
+                verify_upstream_accepted_result_binding(wrapper)
+            except ValueError as exc:
                 raise ExecutionPackageError(
-                    "upstream accepted result missing output_digest",
+                    str(exc),
                     code="sub_tdp_upstream_invalid",
-                )
+                ) from exc
         run["package_binding"] = binding
         run["revision"] = expected + 1
         child_store.save_run(child_run_id, run, expected)
@@ -429,6 +467,7 @@ class PreparedUnitExecutor:
         dep_unit_id: str,
         dep_unit,
         explicit_upstream: dict[str, str] | None = None,
+        explicit_upstream_only: bool = False,
     ) -> tuple[dict[str, Any], dict[str, Any]] | None:
         if explicit_upstream is not None and dep_unit_id in explicit_upstream:
             run_id = str(explicit_upstream[dep_unit_id] or "").strip()
@@ -465,6 +504,9 @@ class PreparedUnitExecutor:
                     code="sub_tdp_upstream_invalid",
                 ) from exc
             return run, production
+
+        if explicit_upstream_only:
+            return None
 
         package_id = str(package.manifest.get("package_id") or "")
         package_digest = str(package.manifest.get("package_digest") or "")

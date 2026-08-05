@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.domain.run_kind import RUN_KIND_SUB_TDP_EXECUTION, resolve_run_kind
+from top_down_planning.domain.production import extract_accepted_delivery
 from top_down_planning.package.loader import LoadedExecutionPackage
 from top_down_planning.persistence.digests import (
     compute_output_digest,
@@ -287,30 +288,20 @@ def accepted_result_record(
         raise ValueError("accepted_result_record requires whole_output_review_id")
     if not review_digest:
         raise ValueError("accepted_result_record requires whole_output_review_digest")
+    delivery = extract_accepted_delivery(child_production)
     if not evidence_digest:
         evidence_ids = [
             str(item.get("id") or "")
-            for item in (child_production.get("output_evidence") or [])
-            if isinstance(item, dict) and item.get("id")
+            for item in delivery.output_evidence
+            if item.get("id")
         ]
         evidence_digest = digest_canonical_payload({"evidence_ids": evidence_ids})
-    # Delivery shape for downstream producers (proposal prepared_execution).
-    output_refs = [
-        dict(item)
-        for item in (child_production.get("outputs") or [])
-        if isinstance(item, dict)
-    ]
-    contributions = [
-        dict(item)
-        for item in (child_production.get("contributions") or [])
-        if isinstance(item, dict)
-    ]
+    output_refs = list(delivery.outputs)
+    contributions = list(delivery.contributions)
     claim = child_production.get("completion_claim")
     completion_assessment = ""
     if isinstance(claim, dict):
-        completion_assessment = str(
-            claim.get("goal_assessment") or claim.get("assessment") or ""
-        ).strip()
+        completion_assessment = str(claim.get("goal_assessment") or "").strip()
     return {
         "schema_version": 1,
         "package_id": package_id,
@@ -335,6 +326,55 @@ def accepted_result_digest(record: dict[str, Any]) -> str:
     """Digest the canonical accepted-result attestation (not just output digest)."""
 
     return digest_canonical_payload(record)
+
+
+def upstream_accepted_result_binding(
+    accepted_result: dict[str, Any],
+    *,
+    upstream_contract_digest: str,
+) -> dict[str, Any]:
+    """Wrap an accepted-result attestation with its digest and upstream contract."""
+
+    digest = accepted_result_digest(accepted_result)
+    return {
+        "accepted_result": accepted_result,
+        "accepted_result_digest": digest,
+        "upstream_contract_digest": upstream_contract_digest,
+    }
+
+
+def unwrap_upstream_accepted_result(binding: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a stored upstream wrapper for producer context."""
+
+    verify_upstream_accepted_result_binding(binding)
+    accepted = binding["accepted_result"]
+    entry = dict(accepted)
+    entry["upstream_contract_digest"] = str(binding["upstream_contract_digest"])
+    return entry
+
+
+def verify_upstream_accepted_result_binding(binding: dict[str, Any]) -> None:
+    """Fail closed when an upstream wrapper digest does not match its attestation."""
+
+    accepted = binding.get("accepted_result")
+    stored_digest = str(binding.get("accepted_result_digest") or "").strip()
+    if not isinstance(accepted, dict):
+        raise ValueError("upstream accepted_result attestation is missing")
+    if not stored_digest:
+        raise ValueError("upstream accepted_result_digest is missing")
+    recomputed = accepted_result_digest(accepted)
+    if recomputed != stored_digest:
+        raise ValueError(
+            "upstream accepted_result_digest does not match accepted_result attestation"
+        )
+    verify_accepted_result_attestation(
+        {
+            "accepted_result": accepted,
+            "accepted_result_digest": stored_digest,
+        }
+    )
+    if not str(binding.get("upstream_contract_digest") or "").strip():
+        raise ValueError("upstream accepted_result missing upstream_contract_digest")
 
 
 def verify_accepted_result_attestation(unit_record: dict[str, Any]) -> None:
@@ -446,6 +486,9 @@ __all__ = [
     "LineageMismatch",
     "accepted_result_digest",
     "accepted_result_record",
+    "unwrap_upstream_accepted_result",
+    "upstream_accepted_result_binding",
     "validate_accepted_child_delivery",
     "verify_accepted_result_attestation",
+    "verify_upstream_accepted_result_binding",
 ]

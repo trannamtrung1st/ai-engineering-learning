@@ -15,6 +15,11 @@ from top_down_planning.domain.run_kind import (
     RUN_KIND_SUB_TDP_EXECUTION,
     resolve_run_kind,
 )
+from top_down_planning.domain.run_ownership import (
+    RunOwnershipError,
+    assert_no_live_process_owns_run,
+    resolve_run_dir,
+)
 from top_down_planning.domain.sub_tdp_synthesis import child_run_summary
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, SUB_TDPS
 from top_down_planning.package.lineage import (
@@ -39,6 +44,18 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
 
     # Attach needs only the run store locator — not a product YAML config.
     store, resolved_runs = open_run_store(args, resolved_config=None)
+
+    parent_run_dir = resolve_run_dir(store, parent_run_id)
+    if parent_run_dir is not None:
+        try:
+            assert_no_live_process_owns_run(parent_run_id, run_dir=parent_run_dir)
+        except RunOwnershipError as exc:
+            emit_error_message(
+                str(exc),
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="sub_tdp_attach_rejected",
+            )
 
     parent_run = store.load_run(parent_run_id)
     if resolve_run_kind(parent_run) != RUN_KIND_PARENT_EXECUTION:

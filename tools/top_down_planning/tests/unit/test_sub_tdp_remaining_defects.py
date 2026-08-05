@@ -217,7 +217,7 @@ def test_loader_rejects_approved_plan_digest_mismatch(tmp_path: Path) -> None:
 
 
 def test_accepted_result_includes_delivery_shape(tmp_path: Path) -> None:
-    """#2: accepted results carry output_refs/contributions/completion_assessment."""
+    """#2: accepted results carry output_refs/contributions from live production batches."""
 
     store, _, package = _built_package(tmp_path)
     config = create_run_kwargs(tmp_path)["resolved_config"]
@@ -229,36 +229,23 @@ def test_accepted_result_includes_delivery_shape(tmp_path: Path) -> None:
         resolved_config=config,
         invocation={"command": "execute", "observability": {}},
     )
-    production = store.load_production(child_id)
-    expected_prod = int(production["revision"])
-    production = dict(production)
-    production["revision"] = expected_prod + 1
-    production["output_revision"] = 1
-    production["outputs"] = [{"path": "out.md", "kind": "file"}]
-    production["contributions"] = [{"item_id": "item-foundation", "summary": "done"}]
-    production["completion_claim"] = {
-        "goal_met": True,
-        "status": "complete",
-        "goal_assessment": "Unit goal met.",
-    }
-    store.save_production(child_id, production, expected_prod)
-    run = store.load_run(child_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    binding = dict(run.get("package_binding") or {})
-    binding["whole_output_review_id"] = "review-1"
-    binding["whole_output_review_digest"] = "r" * 64
-    run["package_binding"] = binding
-    digests = dict(run.get("digests") or {})
-    from top_down_planning.persistence.digests import compute_output_digest
+    from tests.helpers import accept_child_run
 
-    digests["output"] = compute_output_digest(store.load_production(child_id))
-    run["digests"] = digests
-    run["revision"] = expected + 1
-    run["status"] = "completed"
-    run["phase"] = "output_validated"
-    run["outcome"] = "accepted"
-    store.save_run(child_id, run, expected)
+    artifact = tmp_path / "out.md"
+    artifact.write_text("unit output\n", encoding="utf-8")
+    accept_child_run(
+        store,
+        child_id,
+        outputs=[{"id": "output-foundation", "type": "artifact", "ref": "out.md"}],
+        contributions=[
+            {
+                "item_id": "item-foundation",
+                "output_refs": ["output-foundation"],
+                "summary": "done",
+            }
+        ],
+        claim_assessment="Unit goal met.",
+    )
 
     record = accepted_result_record(
         child_run=store.load_run(child_id),
@@ -269,9 +256,14 @@ def test_accepted_result_includes_delivery_shape(tmp_path: Path) -> None:
         package_digest=str(package.manifest.get("package_digest") or ""),
         assigned_subtree_digest=unit.assigned_subtree_digest,
     )
-    assert record["output_refs"] == [{"path": "out.md", "kind": "file"}]
+    assert record["output_refs"][0]["id"] == "output-foundation"
+    assert record["output_refs"][0]["ref"] == "out.md"
     assert record["contributions"] == [
-        {"item_id": "item-foundation", "summary": "done"}
+        {
+            "item_id": "item-foundation",
+            "output_refs": ["output-foundation"],
+            "summary": "done",
+        }
     ]
     assert record["completion_assessment"] == "Unit goal met."
 
@@ -300,6 +292,20 @@ def test_parse_upstream_bindings() -> None:
     }
     with pytest.raises(ValueError, match="upstream"):
         parse_upstream_bindings(["bad"])
+
+
+def test_unwrap_upstream_rejects_flat_binding() -> None:
+    from top_down_planning.package.lineage import unwrap_upstream_accepted_result
+
+    with pytest.raises(ValueError, match="accepted_result attestation is missing"):
+        unwrap_upstream_accepted_result(
+            {
+                "schema_version": 1,
+                "unit_id": "item-a",
+                "output_digest": "a" * 64,
+                "upstream_contract_digest": "b" * 64,
+            }
+        )
 
 
 def test_package_lineage_imports_without_circular_orchestrator_dependency() -> None:

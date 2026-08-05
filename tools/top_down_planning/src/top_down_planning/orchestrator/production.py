@@ -27,6 +27,7 @@ from top_down_planning.domain.run_kind import (
     RUN_KIND_SUB_TDP_EXECUTION,
     resolve_run_kind,
 )
+from top_down_planning.package.lineage import unwrap_upstream_accepted_result
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.orchestrator.producer_session import (
     PRODUCER_BATCH_COMPLETE_SIGNAL,
@@ -619,7 +620,7 @@ def build_producer_context_manifest(
         reconciliation = latest_reconciliation_report(production)
         if reconciliation is not None:
             manifest["reconciliation"] = reconciliation
-    prepared = _prepared_execution_section(run, production=production)
+    prepared = _prepared_execution_section(run, production=production, plan=plan)
     if prepared is not None:
         manifest["prepared_execution"] = prepared
     return manifest
@@ -629,6 +630,7 @@ def _prepared_execution_section(
     run: dict[str, Any],
     *,
     production: dict[str, Any] | None = None,
+    plan: Plan | None = None,
 ) -> dict[str, Any] | None:
     """Expose package/unit binding and upstream accepted results to producers."""
 
@@ -656,38 +658,15 @@ def _prepared_execution_section(
                 "prepared child package_binding missing external_prerequisites"
             )
         normalized_upstream = []
-        for item in upstream:
-            if not isinstance(item, dict):
+        for wrapper in upstream:
+            if not isinstance(wrapper, dict):
                 raise ProviderRunError(
                     "upstream_accepted_results entries must be objects"
                 )
-            entry = dict(item)
-            if not str(entry.get("output_digest") or "").strip():
-                raise ProviderRunError(
-                    "upstream accepted result missing output_digest"
-                )
-            if not str(entry.get("upstream_contract_digest") or "").strip():
-                raise ProviderRunError(
-                    "upstream accepted result missing upstream_contract_digest"
-                )
-            if not str(entry.get("package_id") or "").strip():
-                raise ProviderRunError(
-                    "upstream accepted result missing package_id"
-                )
-            if "output_refs" not in entry or not isinstance(entry.get("output_refs"), list):
-                raise ProviderRunError(
-                    "upstream accepted result missing output_refs"
-                )
-            if "contributions" not in entry or not isinstance(
-                entry.get("contributions"), list
-            ):
-                raise ProviderRunError(
-                    "upstream accepted result missing contributions"
-                )
-            if "completion_assessment" not in entry:
-                raise ProviderRunError(
-                    "upstream accepted result missing completion_assessment"
-                )
+            try:
+                entry = unwrap_upstream_accepted_result(wrapper)
+            except ValueError as exc:
+                raise ProviderRunError(str(exc)) from exc
             normalized_upstream.append(entry)
         return {
             "package_id": binding.get("package_id"),
@@ -738,7 +717,11 @@ def _prepared_execution_section(
                 "integration": True,
                 "external_prerequisites": [],
                 "upstream_accepted_results": child_results,
-                "parent_acceptance_criteria": claim.get("goal_assessment"),
+                "parent_output_goal": plan.output_goal if plan is not None else "",
+                "parent_acceptance_criteria": (
+                    list(plan.acceptance) if plan is not None else []
+                ),
+                "synthesis_assessment": claim.get("goal_assessment"),
             }
     return None
 

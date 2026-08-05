@@ -9,7 +9,7 @@ from typing import Any, Callable
 from core_tools.provider import Provider, create_provider as build_provider
 
 from top_down_planning.cli.common import ResolvedRunsDir, provider_extra_env
-from top_down_planning.observability import ObservabilityContext
+from top_down_planning.observability import ObservabilityContext, wrap_store_with_observability
 from top_down_planning.persistence import FileRunStore
 
 ProviderFactory = Callable[[dict[str, Any], Path], Provider]
@@ -73,9 +73,15 @@ def build_execution_runtime(
     def teardown() -> None:
         return None
 
+    observing_store = (
+        wrap_store_with_observability(store, observability)
+        if observability is not None
+        else store
+    )
+
     return ExecutionRuntime(
         create_provider=create_provider,
-        observing_store=store,
+        observing_store=observing_store,
         teardown=teardown,
     )
 

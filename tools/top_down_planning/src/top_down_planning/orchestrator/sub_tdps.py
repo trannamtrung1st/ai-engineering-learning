@@ -575,15 +575,24 @@ class SubTdpsPhaseOrchestrator:
             )
 
         from top_down_planning.cli.common import ResolvedRunsDir
+        from top_down_planning.observability import build_observability_context
 
         resolved_runs = ResolvedRunsDir(path=child_store.root, source="cli")
+        child_run_id = child_run_id or ""
+        child_obs = self._observability
+        if self._observability is not None and child_run_id:
+            child_obs = build_observability_context(
+                options=self._observability.options,
+                run_id=child_run_id,
+                run_dir=child_store.root / child_run_id,
+            )
 
         def run_provider_factory(run_id: str):
             return build_execution_runtime(
                 store=child_store,
                 run_id=run_id,
                 resolved_runs=resolved_runs,
-                observability=self._observability,
+                observability=child_obs,
                 workspace=workspace,
             ).create_provider
 
@@ -598,7 +607,7 @@ class SubTdpsPhaseOrchestrator:
             existing_child_run_id=child_run_id,
             parent_run_id=self._run_id,
             orchestration_state=orchestration_state,
-            observability=self._observability,
+            observability=child_obs,
             provider_factory_for_run=run_provider_factory,
         )
         unit_record["child_run_id"] = child_result.run.get("id")

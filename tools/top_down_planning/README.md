@@ -207,7 +207,9 @@ sub_tdps (drive or attach children)
 → acceptance
 ```
 
-`--parent-only` creates the parent, enters `sub_tdps`, and **pauses** so independently executed units can be attached. Rejoin with `tdp sub-tdp attach --parent … --child …`. Attach requires parent `phase=sub_tdps` **and** `status=paused`, and a completed/accepted child. The child's embedded `unit_id` is authoritative.
+`--parent-only` creates the parent, enters `sub_tdps`, and **pauses** (`stop.code=sub_tdps_awaiting_children`) so independently executed units can be attached. After every unit is attached, resume the parent with `tdp resume --run <parent-run-id>` to continue synthesis, integration production, and whole-output review. Attach requires parent `phase=sub_tdps` **and** `status=paused`, and a completed/accepted child with whole-output approval bound on the child run. The child's embedded `unit_id` is authoritative.
+
+Child runs bind upstream dependencies as digest-verified wrappers (`accepted_result`, `accepted_result_digest`, `upstream_contract_digest`). Accepted-result attestations extract delivery from live production batches (`output_evidence`, `batches[].result.outputs`, `batches[].result.contributions`), not ad-hoc top-level production fields.
 
 Authoritative Sub-TDP orchestration lives in parent `production.json` → `sub_tdps` (journaled via `RunStore.commit`). Do not hand-edit orchestration state.
 

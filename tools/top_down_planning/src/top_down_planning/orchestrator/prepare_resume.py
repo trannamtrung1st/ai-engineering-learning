@@ -136,8 +136,8 @@ def _verify_prepared_package_binding(
         resolve_run_kind,
     )
     from top_down_planning.package.lineage import (
-        accepted_result_digest,
         verify_accepted_result_attestation,
+        verify_upstream_accepted_result_binding,
     )
     from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 
@@ -167,6 +167,11 @@ def _verify_prepared_package_binding(
             "prepared package_digest mismatch blocks resume: "
             f"expected {expected_digest}, got {actual_digest}"
         )
+    run_id = str(run.get("id") or "").strip()
+    try:
+        actual_plan = store.load_plan_model(run_id)
+    except Exception as exc:
+        return f"prepared plan reload failed: {exc}"
     if kind == RUN_KIND_SUB_TDP_EXECUTION:
         unit_id = str(
             binding.get("selected_unit_id") or binding.get("unit_id") or ""
@@ -174,24 +179,25 @@ def _verify_prepared_package_binding(
         unit = package.units.get(unit_id)
         if unit is None:
             return f"prepared unit {unit_id!r} missing from package"
+        expected_plan_digest = compute_plan_digest(unit.plan)
+        if compute_plan_digest(actual_plan) != expected_plan_digest:
+            return "prepared persisted plan does not match package unit plan"
         if str(binding.get("unit_plan_digest") or "") != unit.plan_digest:
             return "prepared unit_plan_digest mismatch blocks resume"
         if str(binding.get("assigned_subtree_digest") or "") != unit.assigned_subtree_digest:
             return "prepared assigned_subtree_digest mismatch blocks resume"
-        for item in binding.get("upstream_accepted_results") or []:
-            if not isinstance(item, dict):
+        for wrapper in binding.get("upstream_accepted_results") or []:
+            if not isinstance(wrapper, dict):
                 return "prepared upstream_accepted_results entry is invalid"
             try:
-                verify_accepted_result_attestation(
-                    {
-                        "accepted_result": item,
-                        "accepted_result_digest": accepted_result_digest(item),
-                    }
-                )
+                verify_upstream_accepted_result_binding(wrapper)
             except ValueError as exc:
                 return f"prepared upstream attestation invalid: {exc}"
     elif kind == RUN_KIND_PARENT_EXECUTION:
-        production = store.load_production(str(run.get("id") or ""))
+        expected_plan_digest = compute_plan_digest(package.parent_plan)
+        if compute_plan_digest(actual_plan) != expected_plan_digest:
+            return "prepared persisted plan does not match package parent plan"
+        production = store.load_production(run_id)
         state = production.get("sub_tdps")
         if isinstance(state, dict):
             for unit_record in state.get("units") or []:

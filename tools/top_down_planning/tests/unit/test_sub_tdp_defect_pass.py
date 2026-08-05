@@ -290,10 +290,12 @@ def test_child_run_binds_upstream_accepted_results(tmp_path: Path) -> None:
     upstream = (child.get("package_binding") or {}).get("upstream_accepted_results")
     assert isinstance(upstream, list)
     assert len(upstream) == 1
-    assert upstream[0]["unit_id"] == "item-a"
-    assert upstream[0]["child_run_id"] == dep_id
-    assert upstream[0]["output_digest"] == output_digest
+    accepted = upstream[0]["accepted_result"]
+    assert accepted["unit_id"] == "item-a"
+    assert accepted["child_run_id"] == dep_id
+    assert accepted["output_digest"] == output_digest
     assert upstream[0].get("upstream_contract_digest") == unit_a.assigned_subtree_digest
+    assert upstream[0]["accepted_result_digest"]
 
 
 def test_parent_provider_factory_does_not_swallow_child_factory_errors(

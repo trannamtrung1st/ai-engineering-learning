@@ -13,49 +13,9 @@ from top_down_planning.persistence.sub_tdp_state import (
     load_sub_tdp_state,
     merge_sub_tdp_state_into_production,
 )
-from top_down_planning.persistence.digests import compute_output_digest
 from tests.conftest import run_cli
-from tests.helpers import create_run_kwargs
+from tests.helpers import accept_child_run, create_run_kwargs
 from tests.unit.test_prepared_runs import _built_package
-
-
-def _finalize_accepted_child(store: FileRunStore, child_id: str, *, claim_assessment: str = "Unit delivered.") -> None:
-    from top_down_planning.package.builder import digest_review_record
-    from tests.helpers import whole_output_approval_record
-
-    child_production = store.load_production(child_id)
-    expected_prod = int(child_production["revision"])
-    child_production = dict(child_production)
-    child_production["revision"] = expected_prod + 1
-    child_production["output_revision"] = max(
-        1, int(child_production.get("output_revision") or 0)
-    )
-    child_production["completion_claim"] = {
-        "goal_met": True,
-        "goal_assessment": claim_assessment,
-    }
-    child_production["dispositions"] = {
-        "item-foundation": {"disposition": "completed", "evidence": "done"},
-    }
-    store.save_production(child_id, child_production, expected_prod)
-    approval = whole_output_approval_record(store, child_id)
-    store.save_review(child_id, approval)
-    output_digest = compute_output_digest(store.load_production(child_id))
-    run = store.load_run(child_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    digests = dict(run.get("digests") or {})
-    digests["output"] = output_digest
-    run["digests"] = digests
-    binding = dict(run.get("package_binding") or {})
-    binding["whole_output_review_id"] = str(approval.get("id") or "")
-    binding["whole_output_review_digest"] = digest_review_record(approval)
-    run["package_binding"] = binding
-    run["revision"] = expected + 1
-    run["status"] = "completed"
-    run["phase"] = "output_validated"
-    run["outcome"] = "accepted"
-    store.save_run(child_id, run, expected)
 
 
 def _parent_with_orchestration(tmp_path: Path):
@@ -121,7 +81,7 @@ def test_sub_tdp_attach_updates_orchestration(tmp_path: Path) -> None:
         resolved_config=create_run_kwargs(tmp_path)["resolved_config"],
         invocation={"command": "execute", "observability": {}},
     )
-    _finalize_accepted_child(store, child_id)
+    accept_child_run(store, child_id)
 
     config_path = tmp_path / "project.yaml"
     config_path.write_text(
@@ -230,7 +190,7 @@ def test_sub_tdp_attach_rejects_conflicting_completed_child(tmp_path: Path) -> N
         invocation={"command": "execute", "observability": {}},
     )
     for child_id in (first_child_id, second_child_id):
-        _finalize_accepted_child(store, child_id)
+        accept_child_run(store, child_id)
 
     production = store.load_production(parent_id)
     state = load_sub_tdp_state(production)
@@ -282,7 +242,7 @@ def test_sub_tdp_attach_rejects_running_parent(tmp_path: Path) -> None:
         resolved_config=create_run_kwargs(tmp_path)["resolved_config"],
         invocation={"command": "execute", "observability": {}},
     )
-    _finalize_accepted_child(store, child_id)
+    accept_child_run(store, child_id)
 
     result = run_cli(
         [

@@ -29,7 +29,10 @@ from top_down_planning.notifications import NotificationContext
 from top_down_planning.observability import build_observability_context
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
-from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitExecutor
+from top_down_planning.orchestrator.prepared_unit_executor import (
+    PreparedUnitExecutor,
+    validate_explicit_upstream_bindings,
+)
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import cleanup_staging_dirs
 from top_down_planning.package.execution_validation import verify_package_authoritative_inputs
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
@@ -63,22 +66,40 @@ def parse_upstream_bindings(raw: list[str] | None) -> dict[str, str]:
     return bindings
 
 
-def _presentation_sets(set_overrides: list[str] | None) -> list[str]:
-    """Keep only presentation/runtime overrides for execute-time --set."""
+def _is_execute_presentation_path(path: str) -> bool:
+    if path in RESUME_PRESENTATION_ALLOWLIST:
+        return True
+    return any(
+        path.startswith(prefix.rstrip("."))
+        for prefix in RESUME_PRESENTATION_ALLOWLIST
+    )
 
-    allowed_prefixes = tuple(RESUME_PRESENTATION_ALLOWLIST)
+
+def _validate_execute_presentation_sets(set_overrides: list[str] | None) -> list[str]:
+    """Reject semantic overrides on execute; package config is authoritative."""
+
     kept: list[str] = []
     for item in set_overrides or []:
         path = item.split("=", 1)[0].strip()
-        if path in RESUME_PRESENTATION_ALLOWLIST or any(
-            path.startswith(prefix.rstrip(".")) for prefix in allowed_prefixes
+        if (
+            _is_execute_presentation_path(path)
+            or path.startswith("observability.")
+            or path.startswith("notifications.")
+            or path == "runtime.runs_dir"
         ):
             kept.append(item)
-        elif path.startswith("observability.") or path.startswith("notifications."):
-            kept.append(item)
-        elif path == "runtime.runs_dir":
-            kept.append(item)
+            continue
+        raise ConfigError(
+            f"execute --set path {path!r} is not allowed; "
+            "semantic config is fixed by the execution package"
+        )
     return kept
+
+
+def _presentation_sets(set_overrides: list[str] | None) -> list[str]:
+    """Keep only presentation/runtime overrides for execute-time --set."""
+
+    return _validate_execute_presentation_sets(set_overrides)
 
 
 def _resolved_config_for_execute(args: Namespace, package) -> dict[str, Any]:
@@ -157,6 +178,14 @@ def handle_execute_command(args: Namespace) -> None:
 
     unit_id = str(getattr(args, "unit", "") or "").strip() or None
     parent_only = bool(getattr(args, "parent_only", False))
+    upstream_raw = list(getattr(args, "upstream", None) or [])
+    if upstream_raw and not unit_id:
+        emit_error_message(
+            "--upstream requires --unit",
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="sub_tdp_upstream_invalid",
+        )
     if unit_id and parent_only:
         emit_error_message(
             "--parent-only cannot be combined with --unit",
@@ -304,14 +333,25 @@ def _execute_unit(
     )
     notifications = NotificationContext(options=invocation_opts.notifications)
 
+    upstream_raw = list(getattr(args, "upstream", None) or [])
+    upstream_bindings: dict[str, str] = {}
     try:
-        upstream_bindings = parse_upstream_bindings(getattr(args, "upstream", None))
+        upstream_bindings = parse_upstream_bindings(upstream_raw)
+        if upstream_bindings:
+            validate_explicit_upstream_bindings(package, unit_id, upstream_bindings)
     except ValueError as exc:
         emit_error_message(
             str(exc),
             exit_code=1,
             stream_json=args.stream_json,
             code="sub_tdp_upstream_invalid",
+        )
+    except ExecutionPackageError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=getattr(exc, "code", "sub_tdp_upstream_invalid"),
         )
     try:
         child_run_id = executor.create_or_load_child_run(
@@ -320,7 +360,8 @@ def _execute_unit(
             unit_id,
             resolved_config=resolved,
             invocation=invocation_dict,
-            explicit_upstream=upstream_bindings or None,
+            explicit_upstream=upstream_bindings if upstream_bindings else None,
+            explicit_upstream_only=bool(upstream_bindings),
         )
     except PreparedUnitExecutor.DependencyUnmetError as exc:
         emit_error_message(

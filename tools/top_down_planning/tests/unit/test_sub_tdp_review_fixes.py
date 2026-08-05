@@ -25,70 +25,18 @@ from top_down_planning.orchestrator.sub_tdps import SubTdpsPhaseOrchestrator
 from top_down_planning.package.lineage import (
     accepted_result_digest,
     accepted_result_record,
+    upstream_accepted_result_binding,
 )
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_config_execution_digest
 from top_down_planning.persistence.sub_tdp_state import load_sub_tdp_state
-from tests.helpers import apply_production
+from tests.helpers import accept_child_run, apply_production
 from tests.unit.test_prepared_runs import _built_package
 from tests.unit.test_sub_tdp_orchestrator import _setup_parent_execution
 
 
 def _accept_child(child_store: FileRunStore, child_run_id: str) -> dict:
-    plan = child_store.load_plan_model(child_run_id)
-    work_item_ids = [
-        item_id for item_id, item in plan.items.items() if item.kind == "work"
-    ]
-    run = child_store.load_run(child_run_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected + 1
-    run["phase"] = "production"
-    child_store.save_run(child_run_id, run, expected)
-    apply_production(
-        child_store,
-        child_run_id,
-        {
-            "production_revision": int(
-                child_store.load_production(child_run_id)["revision"]
-            ),
-            "plan_items": work_item_ids,
-            "dispositions": {
-                item_id: {"disposition": "completed", "evidence": "done"}
-                for item_id in work_item_ids
-            },
-            "outputs": [],
-            "contributions": [],
-            "summary": "batch complete",
-            "empty_output": False,
-        },
-        handler="apply",
-    )()
-    apply_production(
-        child_store,
-        child_run_id,
-        {"goal_assessment": "Child goal met."},
-        handler="submit_completion",
-    )()
-    from top_down_planning.persistence.digests import compute_output_digest
-
-    production = child_store.load_production(child_run_id)
-    run = child_store.load_run(child_run_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    digests = dict(run.get("digests") or {})
-    digests["output"] = compute_output_digest(production)
-    run["digests"] = digests
-    binding = dict(run.get("package_binding") or {})
-    binding["whole_output_review_id"] = "review-whole-output-1"
-    binding["whole_output_review_digest"] = "r" * 64
-    run["package_binding"] = binding
-    run["revision"] = expected + 1
-    run["status"] = "completed"
-    run["phase"] = "output_validated"
-    run["outcome"] = "accepted"
-    child_store.save_run(child_run_id, run, expected)
-    return child_store.load_run(child_run_id)
+    return accept_child_run(child_store, child_run_id, claim_assessment="Child goal met.")
 
 
 def test_sub_tdps_synthesis_enters_production_not_whole_output_review(
@@ -230,25 +178,27 @@ def test_producer_manifest_includes_prepared_execution_for_child(
     expected = int(run["revision"])
     binding = dict(run.get("package_binding") or {})
     binding["upstream_accepted_results"] = [
-        {
-            "schema_version": 1,
-            "package_id": package.manifest.get("package_id"),
-            "package_digest": package.manifest.get("package_digest"),
-            "unit_id": "item-upstream",
-            "unit_plan_digest": "c" * 64,
-            "assigned_subtree_digest": "b" * 64,
-            "child_run_id": "run-up",
-            "output_revision": 1,
-            "output_digest": "a" * 64,
-            "upstream_contract_digest": "b" * 64,
-            "whole_output_review_id": "review-up-1",
-            "whole_output_review_digest": "r" * 64,
-            "outcome": "accepted",
-            "evidence_digest": "d" * 64,
-            "output_refs": [],
-            "contributions": [],
-            "completion_assessment": "upstream done",
-        }
+        upstream_accepted_result_binding(
+            {
+                "schema_version": 1,
+                "package_id": package.manifest.get("package_id"),
+                "package_digest": package.manifest.get("package_digest"),
+                "unit_id": "item-upstream",
+                "unit_plan_digest": "c" * 64,
+                "assigned_subtree_digest": "b" * 64,
+                "child_run_id": "run-up",
+                "output_revision": 1,
+                "output_digest": "a" * 64,
+                "whole_output_review_id": "review-up-1",
+                "whole_output_review_digest": "r" * 64,
+                "outcome": "accepted",
+                "evidence_digest": "d" * 64,
+                "output_refs": [],
+                "contributions": [],
+                "completion_assessment": "upstream done",
+            },
+            upstream_contract_digest="b" * 64,
+        )
     ]
     run = dict(run)
     run["package_binding"] = binding

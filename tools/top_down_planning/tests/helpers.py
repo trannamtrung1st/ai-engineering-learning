@@ -1118,6 +1118,101 @@ def whole_output_approval_record(store: Any, run_id: str, **fields: Any) -> dict
     return payload
 
 
+def accept_child_run(
+    store: Any,
+    child_run_id: str,
+    *,
+    outputs: list[dict[str, Any]] | None = None,
+    contributions: list[dict[str, Any]] | None = None,
+    claim_assessment: str = "Unit goal met.",
+) -> dict[str, Any]:
+    """Finalize a prepared child through production apply and whole-output approval."""
+
+    from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, PRODUCTION
+    from top_down_planning.package.builder import digest_review_record
+    from top_down_planning.persistence.digests import compute_output_digest
+    from top_down_planning.workspace import run_workspace
+
+    plan = store.load_plan_model(child_run_id)
+    workspace = run_workspace(store.load_run(child_run_id))
+    work_item_ids = [
+        item_id for item_id, item in plan.items.items() if item.kind == "work"
+    ]
+    run = store.load_run(child_run_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["phase"] = PRODUCTION
+    store.save_run(child_run_id, run, expected)
+
+    output_id = f"output-{child_run_id[-6:]}"
+    batch_outputs = outputs or [
+        {"id": output_id, "type": "artifact", "ref": "out.md"},
+    ]
+    for item in batch_outputs:
+        ref = str(item.get("ref") or "")
+        if ref:
+            artifact_path = workspace / ref
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            if not artifact_path.is_file():
+                artifact_path.write_text("accepted child output\n", encoding="utf-8")
+    batch_contributions = contributions
+    if batch_contributions is None:
+        root_item = work_item_ids[0] if work_item_ids else next(iter(plan.items))
+        batch_contributions = [
+            {
+                "item_id": root_item,
+                "output_refs": [str(item.get("id") or output_id) for item in batch_outputs],
+                "summary": claim_assessment,
+            }
+        ]
+
+    apply_production(
+        store,
+        child_run_id,
+        {
+            "production_revision": int(store.load_production(child_run_id)["revision"]),
+            "plan_items": work_item_ids,
+            "dispositions": {
+                item_id: {"disposition": "completed", "evidence": "done"}
+                for item_id in work_item_ids
+            },
+            "outputs": batch_outputs,
+            "contributions": batch_contributions,
+            "summary": "batch complete",
+            "empty_output": False,
+        },
+        handler="apply",
+    )()
+    apply_production(
+        store,
+        child_run_id,
+        {"goal_assessment": claim_assessment},
+        handler="submit_completion",
+    )()
+
+    approval = whole_output_approval_record(store, child_run_id)
+    store.save_review(child_run_id, approval)
+    production = store.load_production(child_run_id)
+    output_digest = compute_output_digest(production)
+    run = store.load_run(child_run_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    digests = dict(run.get("digests") or {})
+    digests["output"] = output_digest
+    run["digests"] = digests
+    binding = dict(run.get("package_binding") or {})
+    binding["whole_output_review_id"] = str(approval.get("id") or "")
+    binding["whole_output_review_digest"] = digest_review_record(approval)
+    run["package_binding"] = binding
+    run["revision"] = expected + 1
+    run["status"] = "completed"
+    run["phase"] = OUTPUT_VALIDATED
+    run["outcome"] = "accepted"
+    store.save_run(child_run_id, run, expected)
+    return store.load_run(child_run_id)
+
+
 def save_review_payload(store: Any, run_id: str, payload: dict[str, Any]) -> None:
     data = dict(payload)
     loop_type = str(data.get("type") or "")

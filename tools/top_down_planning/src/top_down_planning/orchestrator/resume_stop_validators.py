@@ -7,6 +7,7 @@ from typing import Any
 from top_down_planning.domain.reviews import ReviewLoop, is_limit_reached_review_loop
 from top_down_planning.orchestrator.phases import (
     PLAN_AMENDMENT,
+    SUB_TDPS,
     WHOLE_OUTPUT_REVIEW,
     WHOLE_PLAN_REVIEW,
 )
@@ -255,6 +256,36 @@ def validate_amendment_pending_stop(
     raise ResumeStopValidationError("amendment request record missing")
 
 
+def validate_sub_tdps_awaiting_children_stop(
+    store: RunStore,
+    run_id: str,
+    run: dict[str, Any],
+) -> None:
+    from top_down_planning.domain.run_kind import (
+        RUN_KIND_PARENT_EXECUTION,
+        resolve_run_kind,
+    )
+
+    if str(run.get("phase") or "") != SUB_TDPS:
+        raise ResumeStopValidationError(
+            "sub_tdps_awaiting_children resume requires phase sub_tdps"
+        )
+    try:
+        kind = resolve_run_kind(run)
+    except ValueError as exc:
+        raise ResumeStopValidationError(str(exc)) from exc
+    if kind != RUN_KIND_PARENT_EXECUTION:
+        raise ResumeStopValidationError(
+            "sub_tdps_awaiting_children resume requires parent_execution run_kind"
+        )
+    production = store.load_production(run_id)
+    state = production.get("sub_tdps")
+    if not isinstance(state, dict):
+        raise ResumeStopValidationError(
+            "sub_tdps_awaiting_children resume requires production.sub_tdps state"
+        )
+
+
 def validate_stop_for_resume_apply(
     store: RunStore,
     run_id: str,
@@ -286,6 +317,9 @@ def validate_stop_for_resume_apply(
         return None
     if code == "orchestrator_interrupted":
         return None
+    if code == "sub_tdps_awaiting_children":
+        validate_sub_tdps_awaiting_children_stop(store, run_id, run)
+        return None
     raise ResumeStopValidationError(f"unsupported paused stop code for resume apply: {code!r}")
 
 
@@ -295,4 +329,5 @@ __all__ = [
     "validate_limit_exhausted_stop",
     "validate_review_incomplete_stop",
     "validate_stop_for_resume_apply",
+    "validate_sub_tdps_awaiting_children_stop",
 ]

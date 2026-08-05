@@ -659,3 +659,70 @@ def latest_reconciliation_report(production: dict[str, Any]) -> dict[str, Any] |
     if not isinstance(latest, dict):
         return None
     return dict(latest)
+
+
+@dataclass(frozen=True)
+class AcceptedDelivery:
+    """Canonical live delivery extracted from a production snapshot."""
+
+    output_evidence: list[dict[str, Any]]
+    outputs: list[dict[str, Any]]
+    contributions: list[dict[str, Any]]
+
+
+def extract_accepted_delivery(
+    production: dict[str, Any],
+    *,
+    validate_refs: bool = True,
+) -> AcceptedDelivery:
+    """Extract live evidence, batch outputs, and contributions from production."""
+
+    live_batches = [
+        batch
+        for batch in (production.get("batches") or [])
+        if isinstance(batch, dict)
+        and batch.get("evidence_status") != "invalidated_by_reconciliation"
+    ]
+    live_batch_ids = {
+        str(batch.get("id") or "")
+        for batch in live_batches
+        if batch.get("id")
+    }
+    output_evidence = [
+        dict(entry)
+        for entry in (production.get("output_evidence") or [])
+        if isinstance(entry, dict)
+        and str(entry.get("batch_id") or "") in live_batch_ids
+    ]
+    evidence_ids = {
+        str(entry.get("id") or "")
+        for entry in output_evidence
+        if entry.get("id")
+    }
+    outputs: list[dict[str, Any]] = []
+    contributions: list[dict[str, Any]] = []
+    for batch in live_batches:
+        result = batch.get("result")
+        if not isinstance(result, dict):
+            continue
+        for item in result.get("outputs") or []:
+            if isinstance(item, dict):
+                outputs.append(dict(item))
+        for item in result.get("contributions") or []:
+            if not isinstance(item, dict):
+                continue
+            contrib = dict(item)
+            if validate_refs:
+                for ref in contrib.get("output_refs") or []:
+                    ref_s = str(ref)
+                    if ref_s and ref_s not in evidence_ids:
+                        raise ValueError(
+                            "contribution output_ref "
+                            f"{ref_s!r} not in live output_evidence"
+                        )
+            contributions.append(contrib)
+    return AcceptedDelivery(
+        output_evidence=output_evidence,
+        outputs=outputs,
+        contributions=contributions,
+    )

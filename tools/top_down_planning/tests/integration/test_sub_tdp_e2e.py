@@ -11,9 +11,10 @@ from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, PLAN_VALIDAT
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
 from top_down_planning.orchestrator.sub_tdp_child_driver import PreparedChildResult
 from top_down_planning.package.builder import ExecutionPackageBuilder
+from top_down_planning.package.loader import ExecutionPackageLoader
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
-from tests.helpers import apply_production, done_events
+from tests.helpers import accept_child_run, apply_production, done_events
 from tests.integration.e2e_helpers import (
     E2EStubProvider,
     assert_acceptance_invariant_for_run,
@@ -110,50 +111,7 @@ def test_prepared_sub_tdp_e2e_reaches_accepted(
         observability=None,
     ) -> PreparedChildResult:
         nonlocal children_completed
-        plan = child_store.load_plan_model(child_run_id)
-        work_item_ids = [
-            item_id
-            for item_id, item in plan.items.items()
-            if item.kind == "work"
-        ]
-        run = child_store.load_run(child_run_id)
-        expected = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected + 1
-        run["phase"] = "production"
-        child_store.save_run(child_run_id, run, expected)
-        apply_production(
-            child_store,
-            child_run_id,
-            {
-                "production_revision": int(
-                    child_store.load_production(child_run_id)["revision"]
-                ),
-                "plan_items": work_item_ids,
-                "dispositions": {
-                    item_id: {"disposition": "completed"} for item_id in work_item_ids
-                },
-                "outputs": [],
-                "contributions": [],
-                "summary": "batch complete",
-            },
-            handler="apply",
-        )()
-        apply_production(
-            child_store,
-            child_run_id,
-            {"goal_assessment": "Child goal met."},
-            handler="submit_completion",
-        )()
-        run = child_store.load_run(child_run_id)
-        expected = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected + 1
-        run["status"] = "completed"
-        run["phase"] = "output_validated"
-        run["outcome"] = "accepted"
-        run["stop"] = None
-        child_store.save_run(child_run_id, run, expected)
+        accept_child_run(child_store, child_run_id, claim_assessment="Child goal met.")
         children_completed += 1
         if children_completed >= unit_count_box["n"]:
             parent_id = captured_parent["id"]
@@ -256,3 +214,101 @@ def test_parent_only_execute_stops_for_attach(tmp_path: Path, patch_provider) ->
     assert payload["status"] == "paused"
     assert store.load_run(payload["run_id"])["phase"] == "sub_tdps"
     assert store.load_run(payload["run_id"])["status"] == "paused"
+
+
+@pytest.mark.integration
+def test_parent_only_execute_attach_and_resume_reaches_accepted(
+    tmp_path: Path,
+    patch_provider: E2EStubProvider,
+) -> None:
+    config_path = write_e2e_config(tmp_path / "run.yaml")
+    runs_dir = tmp_path / "runs"
+    store = FileRunStore(runs_dir)
+    output_dir = tmp_path / "execution"
+
+    queue_turn(patch_provider, planning_two_item_script(store))
+    run_result = run_cli(
+        [
+            "run",
+            "--config",
+            str(config_path),
+            "--runs-dir",
+            str(runs_dir),
+            "--stream-json",
+        ]
+    )
+    planning_run_id = run_result.json()["run_id"]
+    script_whole_plan_review(patch_provider, store, planning_run_id, decision="approved")
+    _resume(planning_run_id, runs_dir)
+
+    built = ExecutionPackageBuilder().build_from_planning_run(
+        store,
+        planning_run_id,
+        output_dir=output_dir,
+    )
+    parent_result = run_cli(
+        [
+            "execute",
+            "--manifest",
+            str(built.manifest_path),
+            "--parent-only",
+            "--config",
+            str(config_path),
+            "--runs-dir",
+            str(runs_dir),
+            "--stream-json",
+        ]
+    )
+    assert parent_result.exit_code == 0, parent_result.stderr
+    parent_id = parent_result.json()["run_id"]
+    package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
+    parent_config = store.load_resolved_config(parent_id)
+
+    for unit in sorted(package.units.values(), key=lambda item: item.ordinal):
+        child_id = PreparedRunFactory().create_child_run(
+            store,
+            package,
+            unit,
+            resolved_config=parent_config,
+            invocation={"command": "execute", "observability": {}},
+        )
+        accept_child_run(
+            store,
+            child_id,
+            claim_assessment=f"{unit.unit_id} delivered.",
+        )
+        attach_result = run_cli(
+            [
+                "sub-tdp",
+                "attach",
+                "--parent",
+                parent_id,
+                "--child",
+                child_id,
+                "--config",
+                str(config_path),
+                "--runs-dir",
+                str(runs_dir),
+                "--stream-json",
+            ]
+        )
+        assert attach_result.exit_code == 0, attach_result.stderr
+
+    def _integration_mutate() -> None:
+        apply_production(
+            store,
+            parent_id,
+            {"goal_assessment": "Parent integration validated; goal met."},
+            handler="submit_completion",
+        )()
+
+    queue_turn(
+        patch_provider,
+        (done_events(signal="batch_complete", text="integration turn"), _integration_mutate),
+    )
+    script_whole_output_review(patch_provider, store, parent_id, decision="approved")
+
+    resume_payload = _resume(parent_id, runs_dir)
+    assert resume_payload["phase"] == OUTPUT_VALIDATED
+    assert store.load_run(parent_id)["outcome"] == "accepted"
+    assert_acceptance_invariant_for_run(store, parent_id)

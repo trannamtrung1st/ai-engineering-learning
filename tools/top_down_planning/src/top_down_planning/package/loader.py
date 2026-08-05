@@ -284,17 +284,60 @@ class ExecutionPackageLoader:
         approval_file = str(
             planning_run.get("inherited_plan_approval_file") or ""
         ).strip()
-        if approval_file:
-            approval_path = _contained_package_path(
-                package_dir, approval_file, label="inherited plan approval"
+        if not approval_file:
+            raise ExecutionPackageError(
+                "planning_run.inherited_plan_approval_file is required",
+                code="package_approval_missing",
             )
-            if approval_path.is_file():
-                file_attestation = _load_json(approval_path)
-                if file_attestation != attestation:
-                    raise ExecutionPackageError(
-                        "inherited_plan_approval file does not match embedded attestation",
-                        code="package_approval_file_mismatch",
-                    )
+        approval_path = _contained_package_path(
+            package_dir, approval_file, label="inherited plan approval"
+        )
+        if not approval_path.is_file():
+            raise ExecutionPackageError(
+                f"inherited plan approval file missing: {approval_path}",
+                code="package_approval_missing",
+            )
+        file_attestation = _load_json(approval_path)
+        if file_attestation != attestation:
+            raise ExecutionPackageError(
+                "inherited_plan_approval file does not match embedded attestation",
+                code="package_approval_file_mismatch",
+            )
+        from top_down_planning.package.builder import digest_review_record
+
+        whole_plan_review_digest = str(
+            planning_run.get("whole_plan_review_digest") or ""
+        ).strip()
+        if not whole_plan_review_digest:
+            raise ExecutionPackageError(
+                "planning_run.whole_plan_review_digest is required",
+                code="package_approval_digest_missing",
+            )
+        if digest_review_record(attestation) != whole_plan_review_digest:
+            raise ExecutionPackageError(
+                "inherited_plan_approval digest does not match whole_plan_review_digest",
+                code="package_approval_digest_mismatch",
+            )
+        whole_plan_review_id = str(
+            planning_run.get("whole_plan_review_id") or ""
+        ).strip()
+        source_review_id = str(attestation.get("source_review_id") or "").strip()
+        if whole_plan_review_id and source_review_id != whole_plan_review_id:
+            raise ExecutionPackageError(
+                "inherited_plan_approval source_review_id mismatch",
+                code="package_approval_id_mismatch",
+            )
+        approved_plan_revision = planning_run.get("approved_plan_revision")
+        target_revision = attestation.get("target_revision")
+        if (
+            approved_plan_revision is not None
+            and target_revision is not None
+            and int(target_revision) != int(approved_plan_revision)
+        ):
+            raise ExecutionPackageError(
+                "inherited_plan_approval target_revision mismatch",
+                code="package_approval_revision_mismatch",
+            )
 
         context = manifest.get("context")
         if not isinstance(context, dict):

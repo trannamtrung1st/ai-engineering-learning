@@ -10,6 +10,7 @@ from top_down_planning.domain.plan_tree import is_active_item, walk_active_tree
 from top_down_planning.domain.unit_plan import collect_assigned_item_ids
 from top_down_planning.domain.production import (
     disposition_map_from_records,
+    extract_accepted_delivery,
     parse_disposition_records,
 )
 
@@ -115,8 +116,9 @@ def synthesize_parent_production(
             output_evidence.append(merged_evidence)
 
         # Merge child contributions item-by-item for descendant work items.
-        child_contributions = child_production.get("contributions") or []
-        if isinstance(child_contributions, list) and child_contributions:
+        delivery = extract_accepted_delivery(child_production)
+        child_contributions = delivery.contributions
+        if child_contributions:
             for contribution in child_contributions:
                 if not isinstance(contribution, dict):
                     continue

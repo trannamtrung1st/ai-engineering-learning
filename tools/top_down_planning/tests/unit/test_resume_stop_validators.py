@@ -12,11 +12,21 @@ from tests.helpers import (
     save_review_payload,
 )
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
+from top_down_planning.orchestrator.phases import PLANNING, SUB_TDPS, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.resume_stop_validators import (
     ResumeStopValidationError,
     validate_limit_exhausted_stop,
+    validate_stop_for_resume_apply,
+    validate_sub_tdps_awaiting_children_stop,
 )
+from top_down_planning.domain.run_kind import RUN_KIND_PARENT_EXECUTION
+from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
+from top_down_planning.persistence.sub_tdp_state import (
+    initial_sub_tdp_state_from_package,
+    merge_sub_tdp_state_into_production,
+)
+from top_down_planning.domain.sub_tdp_units import SubTdpUnit
+from tests.unit.test_prepared_runs import _built_package
 from top_down_planning.persistence import FileRunStore
 
 
@@ -175,3 +185,65 @@ def test_validate_limit_exhausted_accepts_focused_gate_turn_pause_in_planning(
     validated = validate_limit_exhausted_stop(store, run_id, run, stop)
     assert validated.id == loop.id
     assert validated.type == "focused_plan"
+
+
+def test_validate_sub_tdps_awaiting_children_stop_accepts_parent_pause(
+    tmp_path: Path,
+) -> None:
+    store, _, package = _built_package(tmp_path)
+    config = create_run_kwargs(tmp_path)["resolved_config"]
+    parent_id = PreparedRunFactory().create_parent_run(
+        store,
+        package,
+        resolved_config=config,
+        invocation={"command": "execute", "observability": {}},
+    )
+    run = store.load_run(parent_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["phase"] = SUB_TDPS
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "sub_tdps_awaiting_children",
+        "category": "operational",
+        "phase": SUB_TDPS,
+        "message": "waiting",
+        "role": None,
+        "details": {},
+    }
+    store.save_run(parent_id, run, expected)
+    units = [
+        SubTdpUnit(
+            plan_item_id=unit.unit_id,
+            title=unit.title,
+            outcome="",
+            directory=unit.plan_file.parent.name,
+            ordinal=unit.ordinal,
+        )
+        for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
+    ]
+    production = store.load_production(parent_id)
+    parent_binding = store.load_run(parent_id).get("package_binding") or {}
+    state = initial_sub_tdp_state_from_package(
+        package.manifest,
+        manifest_path=str(parent_binding.get("manifest_path") or package.manifest_path),
+        units=units,
+        package_units=package.units,
+    )
+    merged = merge_sub_tdp_state_into_production(production, state)
+    expected_revision = int(production["revision"])
+    merged["revision"] = expected_revision + 1
+    store.save_production(parent_id, merged, expected_revision)
+
+    validate_sub_tdps_awaiting_children_stop(store, parent_id, store.load_run(parent_id))
+    assert (
+        validate_stop_for_resume_apply(
+            store,
+            parent_id,
+            store.load_run(parent_id),
+            store.load_run(parent_id)["stop"],
+        )
+        is None
+    )
+    assert store.load_run(parent_id).get("run_kind") == RUN_KIND_PARENT_EXECUTION

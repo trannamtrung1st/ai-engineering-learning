@@ -17,7 +17,7 @@ from top_down_planning.persistence.sub_tdp_state import (
     load_sub_tdp_state,
     merge_sub_tdp_state_into_production,
 )
-from tests.helpers import apply_production, create_run_kwargs
+from tests.helpers import accept_child_run, create_run_kwargs
 from tests.unit.test_prepared_runs import _built_package
 
 
@@ -74,64 +74,10 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
     ):
         from top_down_planning.orchestrator.sub_tdp_child_driver import PreparedChildResult
 
-        plan = child_store.load_plan_model(child_run_id)
-        work_item_ids = [
-            item_id
-            for item_id, item in plan.items.items()
-            if item.kind == "work"
-        ]
-        run = child_store.load_run(child_run_id)
-        expected = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected + 1
-        run["phase"] = "production"
-        child_store.save_run(child_run_id, run, expected)
-        apply_production(
-            child_store,
-            child_run_id,
-            {
-                "production_revision": int(
-                    child_store.load_production(child_run_id)["revision"]
-                ),
-                "plan_items": work_item_ids,
-                "dispositions": {
-                    item_id: {"disposition": "completed", "evidence": "done"}
-                    for item_id in work_item_ids
-                },
-                "outputs": [],
-                "contributions": [],
-                "summary": "batch complete",
-                "empty_output": False,
-            },
-            handler="apply",
-        )()
-        apply_production(
-            child_store,
-            child_run_id,
-            {"goal_assessment": "Child goal met."},
-            handler="submit_completion",
-        )()
-        from top_down_planning.persistence.digests import compute_output_digest
-
-        production = child_store.load_production(child_run_id)
-        run = child_store.load_run(child_run_id)
-        expected = int(run["revision"])
-        run = dict(run)
-        digests = dict(run.get("digests") or {})
-        digests["output"] = compute_output_digest(production)
-        run["digests"] = digests
-        binding = dict(run.get("package_binding") or {})
-        binding["whole_output_review_id"] = "review-whole-output-1"
-        binding["whole_output_review_digest"] = "r" * 64
-        run["package_binding"] = binding
-        run["revision"] = expected + 1
-        run["status"] = "completed"
-        run["phase"] = "output_validated"
-        run["outcome"] = "accepted"
-        child_store.save_run(child_run_id, run, expected)
-        return PreparedChildResult.from_run(
-            child_store.load_run(child_run_id), ok=True
+        child_run = accept_child_run(
+            child_store, child_run_id, claim_assessment="Child goal met."
         )
+        return PreparedChildResult.from_run(child_run, ok=True)
 
     with patch(
         "top_down_planning.orchestrator.prepared_unit_executor.continue_child_sub_tdp",

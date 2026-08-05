@@ -451,7 +451,6 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
             except Exception as exc:
                 accepted = unit_record.get("accepted_result")
                 if isinstance(accepted, dict) and accepted.get("output_digest"):
-                    # Prefer durable accepted_result when child artifacts are unavailable.
                     child_run = {
                         "id": child_run_id,
                         "outcome": accepted.get("outcome"),
@@ -460,16 +459,22 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
                             "unit_plan_digest": accepted.get("unit_plan_digest"),
                         },
                     }
+                    assessment = str(accepted.get("completion_assessment") or "")
                     child_production = {
-                        "completion_claim": None,
+                        "completion_claim": (
+                            {"goal_assessment": assessment} if assessment else None
+                        ),
                         "dispositions": {},
                         "output_evidence": [],
                     }
+                    accepted_output_refs = accepted.get("output_refs") or []
                 else:
                     raise ProviderRunError(
                         f"unable to load Sub-TDP child {child_run_id} for unit "
                         f"{plan_item_id}: {exc}"
                     ) from exc
+            else:
+                accepted_output_refs = []
             child_binding = child_run.get("package_binding") or {}
             child_digests = child_run.get("digests") or {}
             claim = child_production.get("completion_claim")
@@ -498,7 +503,11 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
                     "dispositions": child_production.get("dispositions") or {},
                     "evidence_ids": [
                         str(item.get("id") or "")
-                        for item in (child_production.get("output_evidence") or [])
+                        for item in (
+                            (child_production.get("output_evidence") or [])
+                            if not accepted_output_refs
+                            else accepted_output_refs
+                        )
                         if isinstance(item, dict) and item.get("id")
                     ],
                     "summary": str(unit_record.get("summary") or ""),
