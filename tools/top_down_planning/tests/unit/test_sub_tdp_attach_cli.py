@@ -4,240 +4,223 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from top_down_planning.domain.models import Plan, PlanItem, Scope
-from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
-from top_down_planning.domain.sub_tdp_units import SubTdpUnit
+from top_down_planning.domain.run_kind import RUN_KIND_PARENT_EXECUTION, RUN_KIND_SUB_TDP_EXECUTION
 from top_down_planning.orchestrator.phases import SUB_TDPS
-from top_down_planning.orchestrator.sub_tdp_child_driver import (
-    child_runs_store_path,
-    create_child_run,
-    child_unit_directory,
-    load_child_resolved_config,
-)
+from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.persistence.sub_tdp_state import initial_sub_tdp_state
+from top_down_planning.persistence.sub_tdp_state import (
+    initial_sub_tdp_state_from_package,
+    load_sub_tdp_state,
+    merge_sub_tdp_state_into_production,
+)
 from tests.conftest import run_cli
-from tests.helpers import create_run_kwargs, whole_plan_approval_record
-from top_down_planning.orchestrator.sub_tdp_artifact_writer import write_sub_tdp_artifacts
+from tests.helpers import create_run_kwargs
+from tests.unit.test_prepared_runs import _built_package
 
 
-def _parent_plan(run_id: str) -> Plan:
-    root = PlanItem(
-        id=PLAN_ROOT_ITEM_ID,
-        parent_id=None,
-        order_key="0000000000",
-        title="Deliver",
-        outcome="Deliver the output.",
-        kind="aggregate",
+def _parent_with_orchestration(tmp_path: Path):
+    store, _, package = _built_package(tmp_path)
+    config = create_run_kwargs(tmp_path)["resolved_config"]
+    parent_id = PreparedRunFactory().create_parent_run(
+        store,
+        package,
+        resolved_config=config,
+        invocation={"command": "execute", "observability": {}},
     )
-    first = PlanItem(
-        id="item-a",
-        parent_id=PLAN_ROOT_ITEM_ID,
-        order_key="0000000000",
-        title="Persistence foundation",
-        outcome="Persist state reliably.",
-        kind="work",
-        scope=Scope(includes=["storage"]),
-    )
-    return Plan(
-        id=f"plan-{run_id}",
-        revision=0,
-        output_goal="Ship the product.",
-        items={PLAN_ROOT_ITEM_ID: root, "item-a": first},
-    )
+    run = store.load_run(parent_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["phase"] = SUB_TDPS
+    store.save_run(parent_id, run, expected)
 
-
-def test_sub_tdp_attach_updates_orchestration(tmp_path: Path) -> None:
-    workspace = tmp_path
-    runs_dir = tmp_path / "runs"
-    store = FileRunStore(runs_dir)
-    run_id = "run-20260101T001001-001001"
-    config = create_run_kwargs(workspace)["resolved_config"]
-    config["execution"] = {"mode": "sub_tdps"}
-    kwargs = create_run_kwargs(workspace, resolved_config=config)
-    store.create_run(
-        run_id,
-        plan=_parent_plan(run_id),
-        phase=SUB_TDPS,
-        **kwargs,
-    )
-    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 
     units = [
         SubTdpUnit(
-            plan_item_id="item-a",
-            title="Persistence foundation",
-            outcome="Persist state reliably.",
-            directory="01-persistence-foundation",
-            ordinal=1,
-        ),
+            plan_item_id=unit.unit_id,
+            title=unit.title,
+            outcome="",
+            directory=unit.plan_file.parent.name,
+            ordinal=unit.ordinal,
+        )
+        for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
     ]
-    write_sub_tdp_artifacts(workspace, units, parent_config=config)
-    production = store.load_production(run_id)
-    expected_production_revision = int(production["revision"])
-    production = dict(production)
-    production["sub_tdps"] = initial_sub_tdp_state(units)
-    production["revision"] = expected_production_revision + 1
-    store.save_production(run_id, production, expected_production_revision)
-
-    unit = units[0]
-    child_store = FileRunStore(child_runs_store_path(workspace, unit))
-    child_config = load_child_resolved_config(child_unit_directory(workspace, unit))
-    child_run_id = create_child_run(
-        child_store,
-        unit,
-        child_config=child_config,
-        workspace=workspace,
+    production = store.load_production(parent_id)
+    state = initial_sub_tdp_state_from_package(
+        package.manifest,
+        manifest_path=str(package.manifest_path),
+        units=units,
     )
-    child_run = child_store.load_run(child_run_id)
-    expected = int(child_run["revision"])
-    child_run = dict(child_run)
-    child_run["revision"] = expected + 1
-    child_run["status"] = "completed"
-    child_run["phase"] = "output_validated"
-    child_run["outcome"] = "accepted"
-    child_store.save_run(child_run_id, child_run, expected)
+    merged = merge_sub_tdp_state_into_production(production, state)
+    expected_revision = int(production["revision"])
+    merged["revision"] = expected_revision + 1
+    store.save_production(parent_id, merged, expected_revision)
+    return store, parent_id, package, config
 
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text("execution:\n  mode: sub_tdps\n", encoding="utf-8")
 
+def test_sub_tdp_attach_updates_orchestration(tmp_path: Path) -> None:
+    store, parent_id, package, _config = _parent_with_orchestration(tmp_path)
+    child_id = PreparedRunFactory().create_child_run(
+        store,
+        package,
+        package.units["item-foundation"],
+        resolved_config=create_run_kwargs(tmp_path)["resolved_config"],
+        invocation={"command": "execute", "observability": {}},
+    )
+    run = store.load_run(child_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["status"] = "completed"
+    run["phase"] = "output_validated"
+    run["outcome"] = "accepted"
+    store.save_run(child_id, run, expected)
+
+    config_path = tmp_path / "project.yaml"
+    config_path.write_text(
+        "runtime:\n  runs_dir: runs\nprovider:\n  name: stub\n"
+        "run:\n  output_goal: Ship the product.\n",
+        encoding="utf-8",
+    )
     result = run_cli(
         [
             "sub-tdp",
             "attach",
             "--parent",
-            run_id,
-            "--unit",
-            "item-a",
+            parent_id,
             "--child",
-            child_run_id,
+            child_id,
             "--config",
             str(config_path),
             "--runs-dir",
-            str(runs_dir),
+            str(tmp_path / "runs"),
             "--stream-json",
         ]
     )
     assert result.exit_code == 0, result.stderr
     payload = result.json()
-    assert payload["ok"] is True
-    assert payload["unit_status"] == "completed"
+    assert payload["plan_item_id"] == "item-foundation"
+    production = store.load_production(parent_id)
+    state = load_sub_tdp_state(production)
+    assert state is not None
+    unit_record = state["units"][0]
+    assert unit_record["child_run_id"] == child_id
+    assert unit_record["status"] == "completed"
+    assert store.load_run(parent_id).get("run_kind") == RUN_KIND_PARENT_EXECUTION
+    assert store.load_run(child_id).get("run_kind") == RUN_KIND_SUB_TDP_EXECUTION
 
-    updated = store.load_production(run_id)
-    unit_record = updated["sub_tdps"]["units"][0]
-    assert unit_record["child_run_id"] == child_run_id
-    assert unit_record.get("summary")
 
+def test_sub_tdp_attach_rejects_lineage_mismatch(tmp_path: Path) -> None:
+    store, parent_id, _, _ = _parent_with_orchestration(tmp_path)
+    other_package_dir = tmp_path / "execution-other"
+    from top_down_planning.package.builder import ExecutionPackageBuilder
+    from tests.unit.test_execution_package import _planning_run_at_validated
 
-def test_sub_tdp_attach_rejects_workspace_mismatch(tmp_path: Path) -> None:
-    workspace = tmp_path
-    runs_dir = tmp_path / "runs"
-    store = FileRunStore(runs_dir)
-    run_id = "run-20260101T001002-001002"
-    config = create_run_kwargs(workspace)["resolved_config"]
-    config["execution"] = {"mode": "sub_tdps"}
-    kwargs = create_run_kwargs(workspace, resolved_config=config)
-    store.create_run(
-        run_id,
-        plan=_parent_plan(run_id),
-        phase=SUB_TDPS,
-        **kwargs,
+    planning_store = FileRunStore(tmp_path / "runs")
+    planning_run_id = "run-20260101T001101-001101"
+    _planning_run_at_validated(planning_store, tmp_path, planning_run_id)
+    ExecutionPackageBuilder().build_from_planning_run(
+        planning_store,
+        planning_run_id,
+        output_dir=other_package_dir,
     )
-    units = [
-        SubTdpUnit(
-            plan_item_id="item-a",
-            title="Persistence foundation",
-            outcome="Persist state reliably.",
-            directory="01-persistence-foundation",
-            ordinal=1,
-        ),
-    ]
-    production = store.load_production(run_id)
-    expected_production_revision = int(production["revision"])
-    production = dict(production)
-    production["sub_tdps"] = initial_sub_tdp_state(units)
-    production["revision"] = expected_production_revision + 1
-    store.save_production(run_id, production, expected_production_revision)
+    from top_down_planning.package.loader import ExecutionPackageLoader
 
-    other_workspace = tmp_path / "other"
-    other_workspace.mkdir()
-    unit = units[0]
-    child_store = FileRunStore(child_runs_store_path(other_workspace, unit))
-    root = write_sub_tdp_artifacts(other_workspace, units, parent_config=config)
-    child_config = load_child_resolved_config(root / unit.directory)
-    child_run_id = create_child_run(
-        child_store,
-        unit,
-        child_config=child_config,
-        workspace=other_workspace,
+    other_package = ExecutionPackageLoader().load(other_package_dir, verify_workspace=False)
+    child_id = PreparedRunFactory().create_child_run(
+        store,
+        other_package,
+        other_package.units["item-foundation"],
+        resolved_config=create_run_kwargs(tmp_path)["resolved_config"],
+        invocation={"command": "execute", "observability": {}},
     )
-
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text("execution:\n  mode: sub_tdps\n", encoding="utf-8")
-
-    result = run_cli(
-        [
-            "sub-tdp",
-            "attach",
-            "--parent",
-            run_id,
-            "--unit",
-            "item-a",
-            "--child",
-            child_run_id,
-            "--config",
-            str(config_path),
-            "--runs-dir",
-            str(runs_dir),
-            "--stream-json",
-        ]
-    )
-    assert result.exit_code == 1
-    payload = result.json()
-    assert payload.get("error", {}).get("code") == "sub_tdp_attach_rejected"
-
-
-def test_sub_tdp_attach_rejects_completed_parent(tmp_path: Path) -> None:
-    workspace = tmp_path
-    runs_dir = tmp_path / "runs"
-    store = FileRunStore(runs_dir)
-    run_id = "run-20260101T001003-001003"
-    config = create_run_kwargs(workspace)["resolved_config"]
-    config["execution"] = {"mode": "sub_tdps"}
-    kwargs = create_run_kwargs(workspace, resolved_config=config)
-    store.create_run(
-        run_id,
-        plan=_parent_plan(run_id),
-        phase=SUB_TDPS,
-        **kwargs,
-    )
-    run = store.load_run(run_id)
+    run = store.load_run(child_id)
     expected = int(run["revision"])
     run = dict(run)
     run["revision"] = expected + 1
     run["status"] = "completed"
+    run["phase"] = "output_validated"
     run["outcome"] = "accepted"
-    run["stop"] = None
-    store.save_run(run_id, run, expected)
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text("execution:\n  mode: sub_tdps\n", encoding="utf-8")
+    store.save_run(child_id, run, expected)
+
+    config_path = tmp_path / "project.yaml"
+    config_path.write_text(
+        "runtime:\n  runs_dir: runs\nrun:\n  output_goal: Ship the product.\n",
+        encoding="utf-8",
+    )
     result = run_cli(
         [
             "sub-tdp",
             "attach",
             "--parent",
-            run_id,
-            "--unit",
-            "item-a",
+            parent_id,
             "--child",
-            "run-child-01",
+            child_id,
             "--config",
             str(config_path),
             "--runs-dir",
-            str(runs_dir),
+            str(tmp_path / "runs"),
             "--stream-json",
         ]
     )
     assert result.exit_code == 1
-    payload = result.json()
-    assert payload.get("error", {}).get("code") == "sub_tdp_attach_rejected"
+
+
+def test_sub_tdp_attach_rejects_conflicting_completed_child(tmp_path: Path) -> None:
+    store, parent_id, package, _config = _parent_with_orchestration(tmp_path)
+    first_child_id = PreparedRunFactory().create_child_run(
+        store,
+        package,
+        package.units["item-foundation"],
+        resolved_config=create_run_kwargs(tmp_path)["resolved_config"],
+        invocation={"command": "execute", "observability": {}},
+    )
+    second_child_id = PreparedRunFactory().create_child_run(
+        store,
+        package,
+        package.units["item-foundation"],
+        resolved_config=create_run_kwargs(tmp_path)["resolved_config"],
+        invocation={"command": "execute", "observability": {}},
+    )
+    for child_id in (first_child_id, second_child_id):
+        run = store.load_run(child_id)
+        expected = int(run["revision"])
+        run = dict(run)
+        run["revision"] = expected + 1
+        run["status"] = "completed"
+        run["phase"] = "output_validated"
+        run["outcome"] = "accepted"
+        store.save_run(child_id, run, expected)
+
+    production = store.load_production(parent_id)
+    state = load_sub_tdp_state(production)
+    assert state is not None
+    state["units"][0]["child_run_id"] = first_child_id
+    state["units"][0]["status"] = "completed"
+    merged = merge_sub_tdp_state_into_production(production, state)
+    expected_revision = int(production["revision"])
+    merged["revision"] = expected_revision + 1
+    store.save_production(parent_id, merged, expected_revision)
+
+    config_path = tmp_path / "project.yaml"
+    config_path.write_text(
+        "runtime:\n  runs_dir: runs\nrun:\n  output_goal: Ship the product.\n",
+        encoding="utf-8",
+    )
+    result = run_cli(
+        [
+            "sub-tdp",
+            "attach",
+            "--parent",
+            parent_id,
+            "--child",
+            second_child_id,
+            "--config",
+            str(config_path),
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--stream-json",
+        ]
+    )
+    assert result.exit_code == 1

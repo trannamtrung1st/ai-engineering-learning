@@ -168,6 +168,7 @@ class FileRunStore:
         production: dict[str, Any] | None = None,
         workspace: str,
         invocation: dict[str, Any],
+        run_extras: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         validated_run_id = validate_run_id(run_id)
         if not input_digest or not output_goal_digest or not context_spec_digest:
@@ -209,6 +210,9 @@ class FileRunStore:
             phase=phase,
             workspace=workspace,
         )
+        if run_extras:
+            for key, value in run_extras.items():
+                run_record[key] = value
 
         try:
             staging_dir.mkdir(parents=True)

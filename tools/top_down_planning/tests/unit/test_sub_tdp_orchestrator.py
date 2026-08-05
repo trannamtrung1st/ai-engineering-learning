@@ -1,93 +1,67 @@
-"""Tests for Sub-TDP phase orchestrator and child driver."""
+"""Tests for prepared parent Sub-TDP orchestrator."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from core_tools.provider import StubProvider
-from top_down_planning.domain.models import Plan, PlanItem, Scope
-from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
-from top_down_planning.orchestrator.phases import PLAN_VALIDATED, SUB_TDPS, WHOLE_OUTPUT_REVIEW
+from top_down_planning.domain.run_kind import RUN_KIND_PARENT_EXECUTION
+from top_down_planning.orchestrator.phases import SUB_TDPS, WHOLE_OUTPUT_REVIEW
+from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
 from top_down_planning.orchestrator.sub_tdps import SubTdpsPhaseOrchestrator
-from top_down_planning.orchestrator.sub_tdp_child_driver import (
-    child_runs_store_path,
-    continue_child_sub_tdp,
-    create_child_run,
-)
-from top_down_planning.domain.sub_tdp_units import SubTdpUnit
+from top_down_planning.orchestrator.sub_tdp_child_driver import continue_child_sub_tdp
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.persistence.sub_tdp_state import load_sub_tdp_state
-from tests.helpers import (
-    apply_production,
-    create_run_kwargs,
-    done_events,
-    whole_plan_approval_record,
+from top_down_planning.persistence.sub_tdp_state import (
+    initial_sub_tdp_state_from_package,
+    load_sub_tdp_state,
+    merge_sub_tdp_state_into_production,
 )
+from tests.helpers import apply_production, create_run_kwargs
+from tests.unit.test_prepared_runs import _built_package
 
 
-def _parent_plan(run_id: str) -> Plan:
-    root = PlanItem(
-        id=PLAN_ROOT_ITEM_ID,
-        parent_id=None,
-        order_key="0000000000",
-        title="Deliver",
-        outcome="Deliver the output.",
-        kind="aggregate",
-    )
-    first = PlanItem(
-        id="item-a",
-        parent_id=PLAN_ROOT_ITEM_ID,
-        order_key="0000000000",
-        title="Persistence foundation",
-        outcome="Persist state reliably.",
-        kind="work",
-        scope=Scope(includes=["storage"]),
-    )
-    return Plan(
-        id=f"plan-{run_id}",
-        revision=0,
-        output_goal="Ship the product.",
-        items={PLAN_ROOT_ITEM_ID: root, "item-a": first},
-    )
-
-
-def _create_parent_at_plan_validated(
-    store: FileRunStore,
-    workspace: Path,
+def _setup_parent_execution(
+    tmp_path: Path,
+    *,
     run_id: str = "run-20260101T000801-000801",
-) -> None:
-    config = create_run_kwargs(workspace)["resolved_config"]
-    config["execution"] = {"mode": "sub_tdps"}
-    kwargs = create_run_kwargs(workspace, resolved_config=config)
-    store.create_run(
-        run_id,
-        plan=_parent_plan(run_id),
-        phase=PLAN_VALIDATED,
-        **kwargs,
+):
+    store, _, package = _built_package(tmp_path)
+    config = create_run_kwargs(tmp_path)["resolved_config"]
+    parent_id = PreparedRunFactory().create_parent_run(
+        store,
+        package,
+        resolved_config=config,
+        invocation={"command": "execute", "observability": {}},
     )
-    store.save_review(run_id, whole_plan_approval_record(store, run_id))
-
-
-def _batch_apply_request(plan_item_id: str, production_revision: int = 0) -> dict:
-    return {
-        "production_revision": production_revision,
-        "plan_items": [plan_item_id],
-        "dispositions": {plan_item_id: {"disposition": "completed"}},
-        "outputs": [],
-        "contributions": [],
-        "summary": "batch complete",
-        "empty_output": False,
-    }
+    production = store.load_production(parent_id)
+    units = [
+        __import__(
+            "top_down_planning.domain.sub_tdp_units",
+            fromlist=["SubTdpUnit"],
+        ).SubTdpUnit(
+            plan_item_id=unit.unit_id,
+            title=unit.title,
+            outcome="",
+            directory=unit.plan_file.parent.name,
+            ordinal=unit.ordinal,
+        )
+        for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
+    ]
+    state = initial_sub_tdp_state_from_package(
+        package.manifest,
+        manifest_path=str(package.manifest_path),
+        units=units,
+    )
+    merged = merge_sub_tdp_state_into_production(production, state)
+    expected_revision = int(production["revision"])
+    merged["revision"] = expected_revision + 1
+    store.save_production(parent_id, merged, expected_revision)
+    return store, package, parent_id, config
 
 
 def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -> None:
-    from unittest.mock import patch
-
-    store = FileRunStore(tmp_path / "runs")
-    workspace = tmp_path
-    run_id = "run-20260101T000801-000801"
-    _create_parent_at_plan_validated(store, workspace, run_id)
-    plan_item_id = "item-a"
+    store, package, parent_id, _config = _setup_parent_execution(tmp_path)
 
     def _stub_continue_child(
         child_store: FileRunStore,
@@ -96,6 +70,12 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
         create_provider,
         workspace: Path,
     ) -> dict:
+        plan = child_store.load_plan_model(child_run_id)
+        work_item_ids = [
+            item_id
+            for item_id, item in plan.items.items()
+            if item.kind == "work"
+        ]
         run = child_store.load_run(child_run_id)
         expected = int(run["revision"])
         run = dict(run)
@@ -105,7 +85,19 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
         apply_production(
             child_store,
             child_run_id,
-            _batch_apply_request(plan_item_id),
+            {
+                "production_revision": int(
+                    child_store.load_production(child_run_id)["revision"]
+                ),
+                "plan_items": work_item_ids,
+                "dispositions": {
+                    item_id: {"disposition": "completed"} for item_id in work_item_ids
+                },
+                "outputs": [],
+                "contributions": [],
+                "summary": "batch complete",
+                "empty_output": False,
+            },
             handler="apply",
         )()
         apply_production(
@@ -125,18 +117,20 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
         return child_store.load_run(child_run_id)
 
     with patch(
-        "top_down_planning.orchestrator.sub_tdps.continue_child_sub_tdp",
+        "top_down_planning.orchestrator.prepared_unit_executor.continue_child_sub_tdp",
         side_effect=_stub_continue_child,
     ):
         result = SubTdpsPhaseOrchestrator(
             store,
-            run_id,
+            parent_id,
             StubProvider(),
         ).run()
 
     assert result.ok is True
     assert result.phase == WHOLE_OUTPUT_REVIEW
-    production = store.load_production(run_id)
+    parent_run = store.load_run(parent_id)
+    assert parent_run.get("run_kind") == RUN_KIND_PARENT_EXECUTION
+    production = store.load_production(parent_id)
     assert production.get("completion_claim") is not None
     state = load_sub_tdp_state(production)
     assert state is not None
@@ -144,11 +138,8 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
 
 
 def test_sub_tdps_orchestrator_rejects_stale_orchestration_state(tmp_path: Path) -> None:
-    store = FileRunStore(tmp_path / "runs")
-    workspace = tmp_path
-    run_id = "run-20260101T000803-000803"
-    _create_parent_at_plan_validated(store, workspace, run_id)
-    production = store.load_production(run_id)
+    store, _package, parent_id, _config = _setup_parent_execution(tmp_path)
+    production = store.load_production(parent_id)
     production["sub_tdps"] = {
         "version": 1,
         "status": "running",
@@ -167,47 +158,29 @@ def test_sub_tdps_orchestrator_rejects_stale_orchestration_state(tmp_path: Path)
     }
     expected = int(production["revision"])
     production["revision"] = expected + 1
-    store.save_production(run_id, production, expected)
+    store.save_production(parent_id, production, expected)
 
-    orchestrator = SubTdpsPhaseOrchestrator(store, run_id, StubProvider())
     from top_down_planning.orchestrator.errors import ProviderRunError
 
     import pytest
 
     with pytest.raises(ProviderRunError, match="does not match"):
-        orchestrator.run()
+        SubTdpsPhaseOrchestrator(store, parent_id, StubProvider()).run()
 
 
 def test_continue_child_sub_tdp_applies_resume_when_paused(tmp_path: Path) -> None:
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock
 
-    workspace = tmp_path
-    unit = SubTdpUnit(
-        plan_item_id="item-a",
-        title="Persistence foundation",
-        outcome="Persist state reliably.",
-        directory="01-persistence-foundation",
-        ordinal=1,
-    )
-    parent_config = create_run_kwargs(workspace)["resolved_config"]
-    parent_config["execution"] = {"mode": "sub_tdps"}
-    from top_down_planning.orchestrator.sub_tdp_artifact_writer import write_sub_tdp_artifacts
-
-    write_sub_tdp_artifacts(workspace, [unit], parent_config=parent_config)
-    child_store = FileRunStore(child_runs_store_path(workspace, unit))
-    from top_down_planning.orchestrator.sub_tdp_child_driver import (
-        child_unit_directory,
-        load_child_resolved_config,
-    )
-
-    child_config = load_child_resolved_config(child_unit_directory(workspace, unit))
-    child_run_id = create_child_run(
-        child_store,
+    store, package, _parent_id, config = _setup_parent_execution(tmp_path)
+    unit = package.units["item-foundation"]
+    child_id = PreparedRunFactory().create_child_run(
+        store,
+        package,
         unit,
-        child_config=child_config,
-        workspace=workspace,
+        resolved_config=config,
+        invocation={"command": "execute", "observability": {}},
     )
-    run = child_store.load_run(child_run_id)
+    run = store.load_run(child_id)
     expected = int(run["revision"])
     run = dict(run)
     run["revision"] = expected + 1
@@ -218,13 +191,13 @@ def test_continue_child_sub_tdp_applies_resume_when_paused(tmp_path: Path) -> No
         "phase": "production",
         "message": "paused for test",
     }
-    child_store.save_run(child_run_id, run, expected)
+    store.save_run(child_id, run, expected)
 
     resume_plan = MagicMock()
     engine_result = MagicMock(ok=True)
 
     def _engine_continue(_run_id: str, **kwargs: object) -> MagicMock:
-        run = child_store.load_run(child_run_id)
+        run = store.load_run(child_id)
         expected_revision = int(run["revision"])
         run = dict(run)
         run["revision"] = expected_revision + 1
@@ -232,7 +205,7 @@ def test_continue_child_sub_tdp_applies_resume_when_paused(tmp_path: Path) -> No
         run["phase"] = "output_validated"
         run["outcome"] = "accepted"
         run["stop"] = None
-        child_store.save_run(child_run_id, run, expected_revision)
+        store.save_run(child_id, run, expected_revision)
         return engine_result
 
     with patch(
@@ -245,10 +218,10 @@ def test_continue_child_sub_tdp_applies_resume_when_paused(tmp_path: Path) -> No
             with patch("top_down_planning.orchestrator.engine.RunEngine") as engine_cls:
                 engine_cls.return_value.continue_run.side_effect = _engine_continue
                 child_run = continue_child_sub_tdp(
-                    child_store,
-                    child_run_id,
+                    store,
+                    child_id,
                     create_provider=lambda _cfg, _ws: StubProvider(),
-                    workspace=workspace,
+                    workspace=tmp_path,
                 )
 
     prepare_mock.assert_called_once()
@@ -257,49 +230,30 @@ def test_continue_child_sub_tdp_applies_resume_when_paused(tmp_path: Path) -> No
 
 
 def test_continue_child_sub_tdp_skips_already_terminal_child(tmp_path: Path) -> None:
-    workspace = tmp_path
-    unit = SubTdpUnit(
-        plan_item_id="item-a",
-        title="Persistence foundation",
-        outcome="Persist state reliably.",
-        directory="01-persistence-foundation",
-        ordinal=1,
-    )
-    parent_config = create_run_kwargs(workspace)["resolved_config"]
-    parent_config["execution"] = {"mode": "sub_tdps"}
-    from top_down_planning.orchestrator.sub_tdp_artifact_writer import write_sub_tdp_artifacts
-
-    write_sub_tdp_artifacts(workspace, [unit], parent_config=parent_config)
-    child_store = FileRunStore(child_runs_store_path(workspace, unit))
-    from top_down_planning.orchestrator.sub_tdp_child_driver import (
-        child_unit_directory,
-        load_child_resolved_config,
-    )
-
-    child_config = load_child_resolved_config(child_unit_directory(workspace, unit))
-    child_run_id = create_child_run(
-        child_store,
+    store, package, _parent_id, config = _setup_parent_execution(tmp_path)
+    unit = package.units["item-foundation"]
+    child_id = PreparedRunFactory().create_child_run(
+        store,
+        package,
         unit,
-        child_config=child_config,
-        workspace=workspace,
+        resolved_config=config,
+        invocation={"command": "execute", "observability": {}},
     )
-    run = child_store.load_run(child_run_id)
+    run = store.load_run(child_id)
     expected = int(run["revision"])
     run = dict(run)
     run["revision"] = expected + 1
     run["status"] = "completed"
     run["phase"] = "output_validated"
     run["outcome"] = "accepted"
-    child_store.save_run(child_run_id, run, expected)
-
-    from unittest.mock import patch
+    store.save_run(child_id, run, expected)
 
     with patch("top_down_planning.orchestrator.engine.RunEngine") as engine_cls:
         child_run = continue_child_sub_tdp(
-            child_store,
-            child_run_id,
+            store,
+            child_id,
             create_provider=lambda _cfg, _ws: StubProvider(),
-            workspace=workspace,
+            workspace=tmp_path,
         )
         engine_cls.assert_not_called()
 

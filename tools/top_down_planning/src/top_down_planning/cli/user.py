@@ -88,9 +88,15 @@ from top_down_planning.observability import (
     cancel_console_event,
     emit_resume_plan_diagnostics,
 )
-from top_down_planning.persistence import FileRunStore, RunNotFoundError
+from top_down_planning.domain.run_kind import (
+    RUN_KIND_PARENT_EXECUTION,
+    RUN_KIND_PLANNING,
+    resolve_run_kind,
+)
 from top_down_planning.domain.plan_schema import UnsupportedPlanSchemaVersionError
+from top_down_planning.persistence import FileRunStore, RunNotFoundError
 from top_down_planning.persistence.digests import compute_output_digest
+from top_down_planning.persistence.sub_tdp_state import load_sub_tdp_state, sub_tdp_progress
 from core_tools.observability import ConsoleEvent
 from core_tools.provider import create_provider
 
@@ -311,6 +317,7 @@ def handle_run_command(args: Namespace) -> None:
         context_snapshot_binding=binding,
         workspace=str(workspace),
         invocation=invocation_to_dict(invocation),
+        run_extras={"run_kind": RUN_KIND_PLANNING},
     )
     store.append_event(
         run_id,
@@ -763,6 +770,7 @@ def handle_status_command(args: Namespace) -> None:
             "id": run["id"],
             "revision": run["revision"],
             "schema_version": run.get("schema_version"),
+            "kind": resolve_run_kind(run),
             "status": run.get("status"),
             "phase": run.get("phase"),
             "outcome": run.get("outcome"),
@@ -773,6 +781,23 @@ def handle_status_command(args: Namespace) -> None:
         },
         **diagnostics,
     }
+    package_binding = run.get("package_binding")
+    if isinstance(package_binding, dict):
+        payload["run"]["package_id"] = package_binding.get("package_id")
+        payload["run"]["unit_id"] = package_binding.get("selected_unit_id") or package_binding.get(
+            "unit_id"
+        )
+    if resolve_run_kind(run) == RUN_KIND_PARENT_EXECUTION:
+        try:
+            production = store.load_production(args.run)
+            completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
+            if total:
+                payload["run"]["units_completed"] = completed
+                payload["run"]["units_total"] = total
+                if active_unit:
+                    payload["run"]["active_unit"] = active_unit
+        except RunNotFoundError:
+            pass
     stop = run.get("stop")
     if isinstance(stop, dict):
         payload["run"]["stop"] = dict(stop)
@@ -798,6 +823,7 @@ def handle_status_command(args: Namespace) -> None:
 
     lines = [
         f"Run {run['id']}",
+        f"  kind: {resolve_run_kind(run)}",
         f"  status: {run.get('status')}",
         f"  phase: {run.get('phase')}",
         f"  outcome: {run.get('outcome')}",
@@ -808,8 +834,18 @@ def handle_status_command(args: Namespace) -> None:
         f"  runs_root: {resolved_runs.path}",
         f"  runs_root_source: {resolved_runs.source}",
         f"  run_path: {resolved_runs.path / args.run}",
-        *digest_lines,
     ]
+    if resolve_run_kind(run) == RUN_KIND_PARENT_EXECUTION:
+        try:
+            production = store.load_production(args.run)
+            completed, total, active_unit = sub_tdp_progress(load_sub_tdp_state(production))
+            if total:
+                lines.append(f"  units: {completed}/{total} completed")
+                if active_unit:
+                    lines.append(f"  active_unit: {active_unit}")
+        except RunNotFoundError:
+            pass
+    lines.extend(digest_lines)
     if isinstance(stop, dict):
         lines.append(f"  stop: {stop.get('code')} ({stop.get('category')})")
         if stop.get("message"):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
@@ -14,7 +16,10 @@ from top_down_planning.persistence.sub_tdp_state import (
     initial_sub_tdp_state,
     load_sub_tdp_state,
     merge_sub_tdp_state_into_production,
+    next_ready_unit_id,
+    unit_dependencies_satisfied,
     unit_status_from_child_run,
+    UNIT_STATUS_COMPLETED,
 )
 from tests.helpers import create_run_kwargs, minimal_resolved_config
 from top_down_planning.persistence import FileRunStore
@@ -129,3 +134,65 @@ def test_all_units_completed_requires_every_unit() -> None:
     assert not all_units_completed(state, units)
     state["units"][1]["status"] = "completed"
     assert all_units_completed(state, units)
+
+
+def test_unit_dependencies_satisfied_requires_completed_prerequisites() -> None:
+    from top_down_planning.package.loader import LoadedUnit
+    from top_down_planning.domain.models import Plan
+    from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID, seed_plan_root_item
+
+    units = [
+        SubTdpUnit(
+            plan_item_id="item-a",
+            title="A",
+            outcome="Outcome A",
+            directory="01-a",
+            ordinal=1,
+        ),
+        SubTdpUnit(
+            plan_item_id="item-b",
+            title="B",
+            outcome="Outcome B",
+            directory="02-b",
+            ordinal=2,
+        ),
+    ]
+    state = initial_sub_tdp_state(units)
+    plan = Plan(
+        id="plan-test",
+        revision=0,
+        output_goal="Goal.",
+        items={PLAN_ROOT_ITEM_ID: seed_plan_root_item()},
+    )
+    package_units = {
+        "item-a": LoadedUnit(
+            unit_id="item-a",
+            ordinal=1,
+            title="A",
+            plan_file=Path("units/01-a/plan.json"),
+            plan_digest="d1",
+            assigned_root_item_id="item-a",
+            assigned_item_ids=["item-a"],
+            assigned_subtree_digest="s1",
+            depends_on=[],
+            plan=plan,
+        ),
+        "item-b": LoadedUnit(
+            unit_id="item-b",
+            ordinal=2,
+            title="B",
+            plan_file=Path("units/02-b/plan.json"),
+            plan_digest="d2",
+            assigned_root_item_id="item-b",
+            assigned_item_ids=["item-b"],
+            assigned_subtree_digest="s2",
+            depends_on=["item-a"],
+            plan=plan,
+        ),
+    }
+    assert unit_dependencies_satisfied(state, package_units, "item-a")
+    assert not unit_dependencies_satisfied(state, package_units, "item-b")
+    assert next_ready_unit_id(state, package_units) == "item-a"
+    state["units"][0]["status"] = UNIT_STATUS_COMPLETED
+    assert unit_dependencies_satisfied(state, package_units, "item-b")
+    assert next_ready_unit_id(state, package_units) == "item-b"

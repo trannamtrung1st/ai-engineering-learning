@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
-
-from core_tools.persistence import dump_yaml
 
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 
@@ -45,6 +42,19 @@ def initial_sub_tdp_state(units: list[SubTdpUnit]) -> dict[str, Any]:
     }
 
 
+def initial_sub_tdp_state_from_package(
+    package_manifest: dict[str, Any],
+    *,
+    manifest_path: str,
+    units: list[SubTdpUnit],
+) -> dict[str, Any]:
+    state = initial_sub_tdp_state(units)
+    state["package_id"] = package_manifest.get("package_id")
+    state["package_digest"] = package_manifest.get("package_digest")
+    state["manifest_path"] = manifest_path
+    return state
+
+
 def load_sub_tdp_state(production: dict[str, Any]) -> dict[str, Any] | None:
     raw = production.get("sub_tdps")
     if not isinstance(raw, dict):
@@ -68,6 +78,64 @@ def find_unit(state: dict[str, Any], plan_item_id: str) -> dict[str, Any] | None
     return None
 
 
+def unit_dependencies_satisfied(
+    state: dict[str, Any],
+    package_units: dict[str, Any],
+    unit_id: str,
+) -> bool:
+    """Return whether orchestration state shows all package dependencies completed."""
+
+    loaded = package_units.get(unit_id)
+    if loaded is None:
+        return True
+    depends_on = list(getattr(loaded, "depends_on", None) or [])
+    for dep_id in depends_on:
+        dep_record = find_unit(state, dep_id)
+        if dep_record is None:
+            return False
+        if str(dep_record.get("status") or "") != UNIT_STATUS_COMPLETED:
+            return False
+    return True
+
+
+def next_ready_unit_id(
+    state: dict[str, Any],
+    package_units: dict[str, Any],
+) -> str | None:
+    """Select the next unit to run by ordinal among dependency-ready, non-completed units."""
+
+    candidates = sorted(
+        package_units.values(),
+        key=lambda unit: int(getattr(unit, "ordinal", 0)),
+    )
+    for loaded in candidates:
+        unit_id = str(getattr(loaded, "unit_id", "") or "")
+        if not unit_id:
+            continue
+        record = find_unit(state, unit_id)
+        if record is None:
+            continue
+        status = str(record.get("status") or UNIT_STATUS_PENDING)
+        if status in {UNIT_STATUS_COMPLETED, UNIT_STATUS_FAILED}:
+            continue
+        if unit_dependencies_satisfied(state, package_units, unit_id):
+            return unit_id
+    return None
+
+
+def sub_tdp_progress(state: dict[str, Any] | None) -> tuple[int, int, str | None]:
+    """Return (completed_count, total_count, active_unit_id) for status display."""
+
+    if not isinstance(state, dict):
+        return 0, 0, None
+    units = [unit for unit in state.get("units") or [] if isinstance(unit, dict)]
+    completed = sum(
+        1 for unit in units if str(unit.get("status") or "") == UNIT_STATUS_COMPLETED
+    )
+    active = str(state.get("active_unit_id") or "").strip() or None
+    return completed, len(units), active
+
+
 def unit_status_from_child_run(run: dict[str, Any]) -> str:
     status = str(run.get("status") or "")
     phase = str(run.get("phase") or "")
@@ -84,21 +152,6 @@ def unit_status_from_child_run(run: dict[str, Any]) -> str:
 
 def export_state_yaml_payload(state: dict[str, Any]) -> dict[str, Any]:
     return deepcopy(state)
-
-
-def write_sub_tdp_state_yaml(
-    workspace: Path,
-    state_file: str | None,
-    state: dict[str, Any],
-) -> None:
-    if not state_file:
-        return
-    path = workspace / state_file
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        dump_yaml(export_state_yaml_payload(state)) + "\n",
-        encoding="utf-8",
-    )
 
 
 def ensure_sub_tdp_state_matches_units(
@@ -153,10 +206,13 @@ __all__ = [
     "export_state_yaml_payload",
     "find_unit",
     "initial_sub_tdp_state",
+    "initial_sub_tdp_state_from_package",
     "load_sub_tdp_state",
     "merge_sub_tdp_state_into_production",
     "all_units_completed",
     "ensure_sub_tdp_state_matches_units",
-    "write_sub_tdp_state_yaml",
+    "next_ready_unit_id",
+    "sub_tdp_progress",
+    "unit_dependencies_satisfied",
     "unit_status_from_child_run",
 ]

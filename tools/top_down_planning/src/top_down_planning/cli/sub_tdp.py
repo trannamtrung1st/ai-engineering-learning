@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from argparse import Namespace
 from pathlib import Path
-from typing import Any
 
 from top_down_planning.cli.common import (
     emit_error_message,
@@ -12,35 +11,24 @@ from top_down_planning.cli.common import (
     open_run_store,
     resolve_runs_dir_from_args,
 )
-from top_down_planning.config import resolve_config, resolve_workspace
-from top_down_planning.config.execution import (
-    execution_state_file_from_config,
-    is_sub_tdps_mode,
-)
+from top_down_planning.config import resolve_config
+from top_down_planning.domain.run_kind import RUN_KIND_PARENT_EXECUTION, RUN_KIND_SUB_TDP_EXECUTION, resolve_run_kind
 from top_down_planning.domain.sub_tdp_synthesis import child_run_summary
-from top_down_planning.domain.sub_tdp_units import SubTdpUnit
-from top_down_planning.orchestrator.phases import SUB_TDPS, WHOLE_OUTPUT_REVIEW
-from top_down_planning.orchestrator.sub_tdp_child_driver import (
-    child_runs_store_path,
-    unit_relative_directory,
-)
-from top_down_planning.persistence import FileRunStore
+from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, SUB_TDPS, WHOLE_OUTPUT_REVIEW
+from top_down_planning.package.lineage import ExecutionLineageValidator
+from top_down_planning.package.loader import ExecutionPackageLoader
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.sub_tdp_state import (
     load_sub_tdp_state,
     merge_sub_tdp_state_into_production,
     unit_status_from_child_run,
-    write_sub_tdp_state_yaml,
 )
-from top_down_planning.workspace import run_workspace
-
 
 _ALLOWED_ATTACH_PHASES = frozenset({SUB_TDPS, WHOLE_OUTPUT_REVIEW})
 
 
 def handle_sub_tdp_attach_command(args: Namespace) -> None:
     parent_run_id = str(args.parent).strip()
-    plan_item_id = str(args.unit).strip()
     child_run_id = str(args.child).strip()
 
     cwd = Path.cwd()
@@ -50,10 +38,9 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
     resolved_runs = resolve_runs_dir_from_args(args, resolved_config=resolved)
 
     parent_run = store.load_run(parent_run_id)
-    parent_config = store.load_resolved_config(parent_run_id)
-    if not is_sub_tdps_mode(parent_config):
+    if resolve_run_kind(parent_run) != RUN_KIND_PARENT_EXECUTION:
         emit_error_message(
-            "parent run execution.mode must be sub_tdps",
+            "parent run must be parent_execution",
             exit_code=1,
             stream_json=args.stream_json,
             code="sub_tdp_attach_rejected",
@@ -76,8 +63,58 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             code="sub_tdp_attach_rejected",
         )
 
+    binding = parent_run.get("package_binding") or {}
+    manifest_path = str(binding.get("manifest_path") or "").strip()
     production = store.load_production(parent_run_id)
     state = load_sub_tdp_state(production)
+    if not manifest_path and isinstance(state, dict):
+        manifest_path = str(state.get("manifest_path") or "").strip()
+    if not manifest_path:
+        emit_error_message(
+            "parent run has no prepared execution package binding",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+
+    package = ExecutionPackageLoader().load(
+        Path(manifest_path).parent,
+    )
+    child_run = store.load_run(child_run_id)
+    if resolve_run_kind(child_run) != RUN_KIND_SUB_TDP_EXECUTION:
+        emit_error_message(
+            "child run must be sub_tdp_execution",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+
+    child_binding = child_run.get("package_binding") or {}
+    plan_item_id = str(
+        child_binding.get("selected_unit_id") or child_binding.get("unit_id") or ""
+    )
+    if not plan_item_id:
+        emit_error_message(
+            "child run is missing embedded unit lineage",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+
+    mismatches = ExecutionLineageValidator().validate_attach(
+        parent_package=package,
+        parent_manifest_digest=str(package.manifest.get("package_digest") or ""),
+        child_run=child_run,
+    )
+    if mismatches:
+        detail = mismatches[0]
+        emit_error_message(
+            f"lineage mismatch on {detail.field}: expected {detail.expected}, got {detail.actual}",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+
     if state is None:
         emit_error_message(
             "parent production missing sub_tdps orchestration state",
@@ -99,41 +136,11 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             code="sub_tdp_attach_rejected",
         )
 
-    workspace = run_workspace(parent_run)
-    state_file = execution_state_file_from_config(parent_config)
-    unit = SubTdpUnit(
-        plan_item_id=str(unit_record.get("plan_item_id") or unit_record.get("id") or ""),
-        title=str(unit_record.get("title") or ""),
-        outcome="",
-        directory=str(unit_record.get("directory") or ""),
-        ordinal=0,
-    )
-    child_store = FileRunStore(
-        child_runs_store_path(workspace, unit, state_file=state_file)
-    )
-    if not child_store.run_dir(child_run_id).is_dir():
+    existing_child_id = str(unit_record.get("child_run_id") or "").strip()
+    existing_status = str(unit_record.get("status") or "")
+    if existing_child_id and existing_child_id != child_run_id:
         emit_error_message(
-            f"child run not found under unit runs store: {child_run_id}",
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="sub_tdp_attach_rejected",
-        )
-
-    child_run = child_store.load_run(child_run_id)
-    child_config = child_store.load_resolved_config(child_run_id)
-    if is_sub_tdps_mode(child_config):
-        emit_error_message(
-            "child run cannot use execution.mode=sub_tdps",
-            exit_code=1,
-            stream_json=args.stream_json,
-            code="sub_tdp_attach_rejected",
-        )
-
-    parent_workspace = resolve_workspace(parent_config, cwd=workspace)
-    child_workspace = resolve_workspace(child_config, cwd=workspace)
-    if parent_workspace.resolve() != child_workspace.resolve():
-        emit_error_message(
-            "child workspace must match parent workspace",
+            "unit already bound to a different child run",
             exit_code=1,
             stream_json=args.stream_json,
             code="sub_tdp_attach_rejected",
@@ -147,10 +154,17 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="sub_tdp_attach_rejected",
         )
+    if child_status == "completed" and str(child_run.get("phase") or "") != OUTPUT_VALIDATED:
+        emit_error_message(
+            "completed child must reach output_validated before attach",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
 
     unit_record["child_run_id"] = child_run_id
     unit_record["status"] = unit_status_from_child_run(child_run)
-    child_production = child_store.load_production(child_run_id)
+    child_production = store.load_production(child_run_id)
     unit_record["summary"] = child_run_summary(child_production, child_run)
     state["active_unit_id"] = plan_item_id if child_status == "paused" else None
     merged = merge_sub_tdp_state_into_production(production, state)
@@ -163,20 +177,14 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             production_expected_revision=expected_revision,
             events=[
                 {
-                    "type": "sub_tdp_child_attached",
+                    "type": "sub_tdp:attach",
                     "run_id": parent_run_id,
                     "plan_item_id": plan_item_id,
                     "child_run_id": child_run_id,
-                    "unit_directory": unit_record.get("directory"),
                     "child_status": child_status,
                 }
             ],
         ),
-    )
-    write_sub_tdp_state_yaml(
-        workspace,
-        state_file,
-        load_sub_tdp_state(merged) or state,
     )
 
     emit_payload(
@@ -186,7 +194,6 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             "plan_item_id": plan_item_id,
             "child_run_id": child_run_id,
             "unit_status": unit_record["status"],
-            "unit_directory": unit_relative_directory(unit, state_file=state_file),
             "runs_dir": str(resolved_runs.path),
         },
     )

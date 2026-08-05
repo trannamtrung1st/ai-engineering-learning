@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from top_down_planning.domain.models import Plan
-from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID, is_active_item, walk_active_tree
+from top_down_planning.domain.plan_tree import is_active_item, walk_active_tree
+from top_down_planning.domain.unit_plan import collect_assigned_item_ids
 from top_down_planning.domain.production import (
     completion_claim_asserts_goal_met,
     disposition_map_from_records,
@@ -100,6 +101,24 @@ def synthesize_parent_production(
             "disposition": "completed",
             "evidence": f"Sub-TDP child {child_run.get('id')} reached output_validated.",
         }
+        child_dispositions = child_production.get("dispositions") or {}
+        for assigned_id in collect_assigned_item_ids(plan, plan_item_id):
+            if assigned_id == plan_item_id:
+                continue
+            assigned_item = plan.items.get(assigned_id)
+            if assigned_item is None or assigned_item.kind != "work":
+                continue
+            child_disp = child_dispositions.get(assigned_id)
+            if isinstance(child_disp, dict) and child_disp.get("disposition"):
+                disposition_records[assigned_id] = dict(child_disp)
+            elif assigned_id not in disposition_records:
+                disposition_records[assigned_id] = {
+                    "disposition": "completed",
+                    "evidence": (
+                        f"Completed via Sub-TDP child {child_run.get('id')} "
+                        f"for unit {plan_item_id}."
+                    ),
+                }
         summaries.append(f"{unit.get('title')}: {summary}")
 
     for item_id, _, _ in walk_active_tree(plan).rows:

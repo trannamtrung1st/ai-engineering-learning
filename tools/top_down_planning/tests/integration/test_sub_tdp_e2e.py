@@ -1,4 +1,4 @@
-"""End-to-end Sub-TDP execution mode integration test."""
+"""End-to-end prepared Sub-TDP execution (prepare → execute)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
-from top_down_planning.orchestrator.phases import (
-    OUTPUT_VALIDATED,
-    PLAN_VALIDATED,
-    WHOLE_OUTPUT_REVIEW,
-    WHOLE_PLAN_REVIEW,
-)
+from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, PLAN_VALIDATED
+from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
+from top_down_planning.package.builder import ExecutionPackageBuilder
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import apply_production
@@ -54,18 +51,14 @@ def _resume(run_id: str, runs_dir: Path) -> dict:
 
 
 @pytest.mark.integration
-def test_sub_tdps_e2e_reaches_accepted(
+def test_prepared_sub_tdp_e2e_reaches_accepted(
     tmp_path: Path,
     patch_provider: E2EStubProvider,
 ) -> None:
     config_path = write_e2e_config(tmp_path / "run.yaml")
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        + "\nexecution:\n  mode: sub_tdps\n",
-        encoding="utf-8",
-    )
     runs_dir = tmp_path / "runs"
     store = FileRunStore(runs_dir)
+    output_dir = tmp_path / "execution"
 
     queue_turn(patch_provider, planning_two_item_script(store))
     run_result = run_cli(
@@ -79,12 +72,27 @@ def test_sub_tdps_e2e_reaches_accepted(
         ]
     )
     assert run_result.exit_code == 0, run_result.stderr
-    run_id = run_result.json()["run_id"]
-    assert run_result.json()["phase"] == WHOLE_PLAN_REVIEW
+    planning_run_id = run_result.json()["run_id"]
 
-    script_whole_plan_review(patch_provider, store, run_id, decision="approved")
-    plan_review_payload = _resume(run_id, runs_dir)
+    script_whole_plan_review(patch_provider, store, planning_run_id, decision="approved")
+    plan_review_payload = _resume(planning_run_id, runs_dir)
     assert plan_review_payload["phase"] == PLAN_VALIDATED
+
+    built = ExecutionPackageBuilder().build_from_planning_run(
+        store,
+        planning_run_id,
+        output_dir=output_dir,
+    )
+
+    captured_parent: dict[str, str] = {}
+    original_create_parent = PreparedRunFactory.create_parent_run
+    unit_count = len(built.manifest.get("units") or [])
+    children_completed = 0
+
+    def _capture_parent(self, store_arg, package, **kwargs):
+        parent_id = original_create_parent(self, store_arg, package, **kwargs)
+        captured_parent["id"] = parent_id
+        return parent_id
 
     def _stub_continue_child(
         child_store: FileRunStore,
@@ -93,12 +101,13 @@ def test_sub_tdps_e2e_reaches_accepted(
         create_provider,
         workspace: Path,
     ) -> dict:
+        nonlocal children_completed
         plan = child_store.load_plan_model(child_run_id)
-        plan_item_id = next(
+        work_item_ids = [
             item_id
             for item_id, item in plan.items.items()
-            if item_id != "item-root" and item.kind == "work"
-        )
+            if item.kind == "work"
+        ]
         run = child_store.load_run(child_run_id)
         expected = int(run["revision"])
         run = dict(run)
@@ -112,8 +121,10 @@ def test_sub_tdps_e2e_reaches_accepted(
                 "production_revision": int(
                     child_store.load_production(child_run_id)["revision"]
                 ),
-                "plan_items": [plan_item_id],
-                "dispositions": {plan_item_id: {"disposition": "completed"}},
+                "plan_items": work_item_ids,
+                "dispositions": {
+                    item_id: {"disposition": "completed"} for item_id in work_item_ids
+                },
                 "outputs": [],
                 "contributions": [],
                 "summary": "batch complete",
@@ -123,7 +134,7 @@ def test_sub_tdps_e2e_reaches_accepted(
         apply_production(
             child_store,
             child_run_id,
-            {"goal_assessment": f"{plan_item_id} delivered."},
+            {"goal_assessment": "Child goal met."},
             handler="submit_completion",
         )()
         run = child_store.load_run(child_run_id)
@@ -135,25 +146,36 @@ def test_sub_tdps_e2e_reaches_accepted(
         run["outcome"] = "accepted"
         run["stop"] = None
         child_store.save_run(child_run_id, run, expected)
+        children_completed += 1
+        if children_completed >= unit_count:
+            parent_id = captured_parent["id"]
+            script_whole_output_review(patch_provider, store, parent_id, decision="approved")
         return child_store.load_run(child_run_id)
 
-    with patch(
-        "top_down_planning.orchestrator.sub_tdps.continue_child_sub_tdp",
-        side_effect=_stub_continue_child,
+    with (
+        patch.object(PreparedRunFactory, "create_parent_run", _capture_parent),
+        patch(
+            "top_down_planning.orchestrator.prepared_unit_executor.continue_child_sub_tdp",
+            side_effect=_stub_continue_child,
+        ),
     ):
-        sub_tdps_payload = _resume(run_id, runs_dir)
-    assert sub_tdps_payload["phase"] == WHOLE_OUTPUT_REVIEW
-
-    from top_down_planning.orchestrator import WholeOutputReviewOrchestrator
-
-    script_whole_output_review(patch_provider, store, run_id, decision="approved")
-    review_result = WholeOutputReviewOrchestrator(
-        store,
-        run_id,
-        patch_provider,
-    ).run()
-    assert review_result.ok is True
-    output_payload = store.load_run(run_id)
-    assert output_payload["phase"] == OUTPUT_VALIDATED
-    assert output_payload["outcome"] == "accepted"
-    assert_acceptance_invariant_for_run(store, run_id)
+        execute_result = run_cli(
+            [
+                "execute",
+                "--manifest",
+                str(built.manifest_path),
+                "--config",
+                str(config_path),
+                "--runs-dir",
+                str(runs_dir),
+                "--stream-json",
+            ]
+        )
+    assert execute_result.exit_code == 0, execute_result.stderr
+    payload = execute_result.json()
+    assert payload["phase"] == OUTPUT_VALIDATED
+    assert payload["ok"] is True
+    parent_id = payload["run_id"]
+    assert store.load_run(parent_id)["phase"] == OUTPUT_VALIDATED
+    assert store.load_run(parent_id)["outcome"] == "accepted"
+    assert_acceptance_invariant_for_run(store, parent_id)

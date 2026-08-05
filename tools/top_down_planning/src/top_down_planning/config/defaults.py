@@ -240,7 +240,6 @@ ALLOWED_OVERRIDE_PATHS: frozenset[str] = frozenset(
     {
         "version",
         "execution.mode",
-        "execution.state_file",
         "runtime.runs_dir",
         "project.workspace",
         "run.input_refs",

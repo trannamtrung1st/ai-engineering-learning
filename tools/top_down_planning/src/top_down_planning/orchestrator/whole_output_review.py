@@ -46,8 +46,6 @@ from top_down_planning.orchestrator.mandatory_whole_review import (
     MandatoryWholeReviewSpec,
     OwnerHandoff,
 )
-from top_down_planning.config.execution import execution_state_file_from_config
-from top_down_planning.domain.sub_tdp_artifacts import orchestration_root_relative
 from top_down_planning.orchestrator.review_loop_adapter_mandatory import (
     MandatoryReviewLoopAdapterMixin,
 )
@@ -405,9 +403,6 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
             return package
 
         workspace = Path(str(run.get("workspace") or ".")).resolve()
-        root_rel = orchestration_root_relative(
-            execution_state_file_from_config(config)
-        )
         sub_tdp_evidence: list[dict[str, Any]] = []
         integrated_deliverables: list[dict[str, Any]] = []
 
@@ -415,16 +410,13 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
             if not isinstance(unit_record, dict):
                 continue
             child_run_id = str(unit_record.get("child_run_id") or "").strip()
-            directory = str(unit_record.get("directory") or "").strip()
             plan_item_id = str(unit_record.get("plan_item_id") or "").strip()
-            if not child_run_id or not directory:
+            if not child_run_id:
                 continue
-            unit_rel = f"{root_rel}/{directory}"
-            production_ref = f"{unit_rel}/runs/{child_run_id}/production.json"
+            production_ref = f"runs/{child_run_id}/production.json"
             sub_tdp_evidence.append(
                 {
                     "child_run_id": child_run_id,
-                    "directory": directory,
                     "plan_item_id": plan_item_id,
                     "title": unit_record.get("title"),
                     "status": unit_record.get("status"),
@@ -435,7 +427,7 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
             integrated_deliverables.append(
                 {
                     "plan_item_id": plan_item_id,
-                    "workspace_path": str(workspace / unit_rel),
+                    "workspace_path": str(workspace),
                     "child_run_id": child_run_id,
                 }
             )

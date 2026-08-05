@@ -101,6 +101,93 @@ def test_synthesize_parent_production_builds_completion_claim_and_batch() -> Non
     assert synthesized["sub_tdps"]["status"] == "completed"
 
 
+def test_synthesize_propagates_descendant_dispositions() -> None:
+    from top_down_planning.domain.models import PlanItem, Scope
+
+    root = PlanItem(
+        id=PLAN_ROOT_ITEM_ID,
+        parent_id=None,
+        order_key="0000000000",
+        title="Deliver",
+        outcome="Deliver the output.",
+        kind="aggregate",
+    )
+    foundation = PlanItem(
+        id="item-foundation",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000000",
+        title="Foundation",
+        outcome="Persist state reliably.",
+        kind="work",
+        scope=Scope(includes=["storage"]),
+    )
+    storage = PlanItem(
+        id="item-storage",
+        parent_id="item-foundation",
+        order_key="0000000001",
+        title="Storage layer",
+        outcome="Implement storage.",
+        kind="work",
+        scope=Scope(includes=["db"]),
+    )
+    plan = Plan(
+        id="plan-parent",
+        revision=1,
+        output_goal="Ship the product.",
+        items={
+            PLAN_ROOT_ITEM_ID: root,
+            "item-foundation": foundation,
+            "item-storage": storage,
+        },
+    )
+    units = [
+        SubTdpUnit(
+            plan_item_id="item-foundation",
+            title="Foundation",
+            outcome="Persist state reliably.",
+            directory="01-foundation",
+            ordinal=1,
+        ),
+    ]
+    production = {
+        "revision": 0,
+        "output_revision": 0,
+        "batches": [],
+        "dispositions": {},
+        "output_evidence": [],
+        "amendment_requests": [],
+        "pending_amendment_id": None,
+        "reconciliation_reports": [],
+        "completion_claim": None,
+        "blocker_report": None,
+        "sub_tdps": initial_sub_tdp_state(units),
+    }
+    unit_record = production["sub_tdps"]["units"][0]
+    child_run = {
+        "id": "run-child-01",
+        "status": "completed",
+        "phase": "output_validated",
+        "outcome": "accepted",
+    }
+    child_production = {
+        "completion_claim": {"goal_met": True, "goal_assessment": "Child goal met."},
+        "dispositions": {
+            "item-foundation": {"disposition": "completed"},
+            "item-storage": {"disposition": "completed"},
+        },
+        "output_evidence": [],
+        "batches": [],
+    }
+    synthesized = synthesize_parent_production(
+        plan,
+        production,
+        child_runs=[(unit_record, child_run, child_production)],
+        parent_output_goal="Ship the product.",
+    )
+    assert synthesized["dispositions"]["item-storage"] == "completed"
+    assert synthesized["dispositions"]["item-foundation"] == "completed"
+
+
 def test_synthesize_rejects_non_terminal_child() -> None:
     units = [
         SubTdpUnit(

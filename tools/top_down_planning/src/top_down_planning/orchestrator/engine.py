@@ -39,7 +39,7 @@ from top_down_planning.orchestrator.session_policy_execution import (
 import top_down_planning.orchestrator.session_policy_execution  # noqa: F401 — registers executor
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
-from top_down_planning.config.execution import is_sub_tdps_mode
+from top_down_planning.domain.run_kind import RUN_KIND_PARENT_EXECUTION, resolve_run_kind
 from top_down_planning.orchestrator.production import ProductionPhaseOrchestrator
 from top_down_planning.orchestrator.sub_tdps import SubTdpsPhaseOrchestrator
 from top_down_planning.orchestrator.whole_output_review import WholeOutputReviewOrchestrator
@@ -264,7 +264,8 @@ class RunEngine:
                         reason=result.reason,
                     )
                 elif phase == SUB_TDPS or (
-                    phase == PLAN_VALIDATED and is_sub_tdps_mode(config)
+                    phase == PLAN_VALIDATED
+                    and resolve_run_kind(run) == RUN_KIND_PARENT_EXECUTION
                 ):
                     def _child_provider_factory(
                         child_config: dict[str, Any],

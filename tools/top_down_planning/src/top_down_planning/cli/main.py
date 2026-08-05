@@ -15,6 +15,8 @@ from top_down_planning.cli.user import (
     handle_validate_command,
 )
 from top_down_planning.cli.doctor import handle_doctor_command
+from top_down_planning.cli.prepare import handle_prepare_command
+from top_down_planning.cli.execute import handle_execute_command
 from top_down_planning.cli.sub_tdp import handle_sub_tdp_attach_command
 
 
@@ -147,6 +149,55 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    prepare_parser = subparsers.add_parser(
+        "prepare",
+        help="Plan, review, approve, and materialize an execution package.",
+    )
+    prepare_parser.add_argument("--config", required=True, help="YAML configuration file.")
+    prepare_parser.add_argument(
+        "--output",
+        default=".tdp/execution",
+        help="Output directory for the immutable execution package.",
+    )
+    prepare_parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace an existing package at --output.",
+    )
+    prepare_parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="PATH=VALUE",
+        help="Resolved-config override (repeatable).",
+    )
+    _add_operational_flags(prepare_parser)
+    _add_notification_flags(prepare_parser)
+
+    execute_parser = subparsers.add_parser(
+        "execute",
+        help="Execute a prepared parent graph or single unit from manifest.json.",
+    )
+    execute_parser.add_argument(
+        "--manifest",
+        required=True,
+        help="Path to manifest.json in the prepared execution package.",
+    )
+    execute_parser.add_argument(
+        "--unit",
+        help="Execute one prepared unit directly instead of the parent graph.",
+    )
+    execute_parser.add_argument("--config", help="YAML configuration file.")
+    execute_parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="PATH=VALUE",
+        help="Resolved-config override (repeatable).",
+    )
+    _add_operational_flags(execute_parser)
+    _add_notification_flags(execute_parser)
+
     resume_parser = subparsers.add_parser("resume", help="Resume an interrupted run.")
     resume_parser.add_argument("--run", help="Run id.")
     resume_parser.add_argument(
@@ -262,9 +313,8 @@ def build_parser() -> argparse.ArgumentParser:
         "attach",
         help="Attach an independently completed child run to parent orchestration.",
     )
-    attach_parser.add_argument("--parent", required=True, help="Parent run id.")
-    attach_parser.add_argument("--unit", required=True, help="Parent plan item id for the unit.")
-    attach_parser.add_argument("--child", required=True, help="Child run id under the unit runs store.")
+    attach_parser.add_argument("--parent", required=True, help="Parent execution run id.")
+    attach_parser.add_argument("--child", required=True, help="Child execution run id.")
     attach_parser.add_argument(
         "--config",
         help="YAML configuration file for resolving the parent runs store.",
@@ -290,6 +340,14 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "run":
         handle_run_command(args)
+        return
+
+    if args.command == "prepare":
+        handle_prepare_command(args)
+        return
+
+    if args.command == "execute":
+        handle_execute_command(args)
         return
 
     if args.command == "resume":

@@ -50,13 +50,15 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
     run_id = "run-20260101T000901-000901"
     workspace = tmp_path
     config = create_run_kwargs(workspace)["resolved_config"]
-    config["execution"] = {"mode": "sub_tdps"}
     kwargs = create_run_kwargs(workspace, resolved_config=config)
     store.create_run(
         run_id,
         plan=_parent_plan(run_id),
         phase=PLAN_VALIDATED,
-        **kwargs,
+        workspace=str(workspace),
+        invocation={"command": "execute", "observability": {}},
+        run_extras={"run_kind": "parent_execution"},
+        **{k: v for k, v in kwargs.items() if k not in {"workspace", "invocation"}},
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
 
@@ -119,13 +121,15 @@ def test_whole_output_review_orchestrator_uses_sub_tdp_adapter(tmp_path: Path) -
     run_id = "run-20260101T000902-000902"
     workspace = tmp_path
     config = create_run_kwargs(workspace)["resolved_config"]
-    config["execution"] = {"mode": "sub_tdps"}
     kwargs = create_run_kwargs(workspace, resolved_config=config)
     store.create_run(
         run_id,
         plan=_parent_plan(run_id),
         phase=WHOLE_OUTPUT_REVIEW,
-        **kwargs,
+        workspace=str(workspace),
+        invocation={"command": "execute", "observability": {}},
+        run_extras={"run_kind": "parent_execution"},
+        **{k: v for k, v in kwargs.items() if k not in {"workspace", "invocation"}},
     )
     production = store.load_production(run_id)
     units = [
