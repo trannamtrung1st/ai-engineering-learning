@@ -276,6 +276,12 @@ def compare_resume_configs(
     )
 
 
+def _is_numeric_limit_value(value: Any) -> bool:
+    """Return True for int/float limit values (bool is excluded)."""
+
+    return type(value) is int or type(value) is float
+
+
 def _validate_execution_change(
     change: ResumeConfigChange,
     *,
@@ -283,15 +289,10 @@ def _validate_execution_change(
 ) -> str | None:
     stored = change.stored_value
     candidate = change.candidate_value
-    if not isinstance(stored, (int, float)) or not isinstance(candidate, (int, float)):
+    if not _is_numeric_limit_value(stored) or not _is_numeric_limit_value(candidate):
         return (
             f"resume config change for {change.path!r} requires numeric limits; "
             f"got stored={stored!r}, candidate={candidate!r}"
-        )
-    if candidate <= stored:
-        return (
-            f"resume config change for {change.path!r} must increase the stored limit "
-            f"(stored={stored}, candidate={candidate})"
         )
     if consumed_limits is not None and change.path in consumed_limits:
         consumed = consumed_limits[change.path]
@@ -309,12 +310,14 @@ def validate_resume_config_comparison(
     consumed_limits: dict[str, int] | None = None,
     candidate_config: dict[str, Any] | None = None,
     allow_contract_and_model_changes: bool = False,
+    consumed_limit_skip_paths: frozenset[str] | None = None,
 ) -> ResumeConfigComparison:
-    """Apply resume allowlist and limit-increase rules to a comparison result."""
+    """Apply resume allowlist and limit-consumption rules to a comparison result."""
 
     errors: list[str] = []
     blocked: list[ResumeConfigChange] = []
     allowed: list[ResumeConfigChange] = []
+    changed_paths = {change.path for change in comparison.changes}
 
     for change in comparison.changes:
         if _is_provider_path(change.path):
@@ -364,9 +367,12 @@ def validate_resume_config_comparison(
             allowed.append(change)
 
     if consumed_limits and candidate_config is not None:
+        skip_paths = consumed_limit_skip_paths or frozenset()
         for path, consumed in sorted(consumed_limits.items()):
+            if path in changed_paths or path in skip_paths:
+                continue
             candidate_value = get_config_value(candidate_config, path)
-            if not isinstance(candidate_value, (int, float)) or candidate_value <= consumed:
+            if not _is_numeric_limit_value(candidate_value) or candidate_value <= consumed:
                 errors.append(
                     f"resume from limit_exhausted requires {path!r} strictly greater "
                     f"than consumed usage (consumed={consumed}, candidate={candidate_value!r})"
@@ -422,6 +428,7 @@ def apply_resume_config_drift_policy(
     applied: dict[str, dict[str, Any]] = {}
     ignored: dict[str, dict[str, Any]] = {}
     warnings: list[str] = []
+    limit_validation_failed_paths: set[str] = set()
 
     for change in requested.changes:
         if _is_provider_path(change.path):
@@ -464,6 +471,7 @@ def apply_resume_config_drift_policy(
         if limit_error is not None:
             errors.append(limit_error)
             set_config_value(effective, change.path, change.stored_value)
+            limit_validation_failed_paths.add(change.path)
             continue
         applied[change.path] = {
             "from": change.stored_value,
@@ -476,6 +484,7 @@ def apply_resume_config_drift_policy(
         consumed_limits=consumed_limits,
         candidate_config=effective,
         allow_contract_and_model_changes=allow_contract,
+        consumed_limit_skip_paths=frozenset(limit_validation_failed_paths),
     )
     if comparison.errors:
         errors.extend(comparison.errors)

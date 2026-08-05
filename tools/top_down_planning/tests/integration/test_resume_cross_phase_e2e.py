@@ -1,4 +1,4 @@
-"""Cross-phase increase+resume E2E tests (proposal §20–§21 tests 1–5)."""
+"""Cross-phase limit-change+resume E2E tests (proposal §20–§21 tests 1–5)."""
 
 from __future__ import annotations
 
@@ -128,7 +128,7 @@ def _set_nested_limit(config: dict[str, Any], limit_path: str, value: int) -> No
     node[parts[-1]] = value
 
 
-def _apply_limit_increase(
+def _apply_limit_change(
     store: FileRunStore,
     run_id: str,
     limit_path: str,
@@ -166,7 +166,7 @@ def _continue_after_apply(
     )
 
 
-def _increase_limit_apply_and_continue(
+def _apply_limit_and_continue(
     store: FileRunStore,
     run_id: str,
     provider: E2EStubProvider | StubProvider,
@@ -175,7 +175,7 @@ def _increase_limit_apply_and_continue(
     *,
     until: str,
 ):
-    resume_plan = _apply_limit_increase(store, run_id, limit_path, new_value)
+    resume_plan = _apply_limit_change(store, run_id, limit_path, new_value)
     return _continue_after_apply(
         store,
         run_id,
@@ -525,7 +525,7 @@ def test_resume_planning_turn_limit_exhausted_increased_and_resumed(
 
     counters_before = dict(store.load_run(run_id).get("planning") or {})
     queue_turn(patch_provider, planning_single_leaf_script(store))
-    resume_plan = _apply_limit_increase(
+    resume_plan = _apply_limit_change(
         store,
         run_id,
         "limits.planning.max_agent_turns",
@@ -584,7 +584,7 @@ def test_resume_planning_item_limit_exhausted_increased_and_resumed(
     counters_before = dict(store.load_run(run_id).get("planning") or {})
 
     queue_turn(patch_provider, _planning_complete_script(store))
-    resume_plan = _apply_limit_increase(
+    resume_plan = _apply_limit_change(
         store,
         run_id,
         "limits.planning.max_items_added",
@@ -622,7 +622,7 @@ def test_resume_whole_plan_revision_limit_exhausted_increased_and_resumed(
     review_before = store.load_review(run_id, "review-whole-plan-01")
     revision_cycles_before = int(review_before.get("revision_cycles") or 0)
 
-    _apply_limit_increase(
+    _apply_limit_change(
         store,
         run_id,
         "limits.whole_plan_review.max_revision_cycles",
@@ -662,7 +662,7 @@ def test_resume_whole_output_revision_limit_exhausted_increased_and_resumed(
     review_before = store.load_review(run_id, "review-whole-output-01")
     revision_cycles_before = int(review_before.get("revision_cycles") or 0)
 
-    _apply_limit_increase(
+    _apply_limit_change(
         store,
         run_id,
         "limits.whole_output_review.max_revision_cycles",
@@ -693,7 +693,7 @@ def test_resume_scope_review_limit_exhausted_increased_and_resumed(
     review_before = store.load_review(run_id, "review-whole-plan-01")
     scope_rounds_before = int(review_before.get("scope_review_rounds") or 0)
 
-    _apply_limit_increase(
+    _apply_limit_change(
         store,
         run_id,
         "limits.whole_plan_review.max_scope_review_rounds",
@@ -753,7 +753,7 @@ def test_success_signal_limit_increase_check_apply_and_continue(
     assert int(store.load_run(run_id)["revision"]) == revision_before
 
     queue_turn(patch_provider, planning_single_leaf_script(store))
-    continuation = _increase_limit_apply_and_continue(
+    continuation = _apply_limit_and_continue(
         store,
         run_id,
         patch_provider,

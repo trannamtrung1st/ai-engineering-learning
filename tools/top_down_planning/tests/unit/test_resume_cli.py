@@ -177,6 +177,43 @@ def test_resume_check_rejects_unsupported_plan_schema(
     assert "Recreate the run" in payload["error"]["message"]
 
 
+def test_resume_check_allows_limit_decrease_without_consumed_tracking(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_paused_production_run(store)
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["stop"] = {
+        "code": "user_cancelled",
+        "category": "operational",
+        "phase": PRODUCTION,
+        "message": "cancelled",
+        "details": {},
+    }
+    store.save_run(run_id, run, expected_revision)
+
+    with pytest.raises(SystemExit) as exit_info:
+        handle_resume_command(
+            Namespace(
+                run=run_id,
+                runs_dir=str(store.root),
+                stream_json=False,
+                check=True,
+                set=["limits.production.max_batches=1"],
+                config=None,
+                command="resume",
+            )
+        )
+    assert exit_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "Run is resumable." in output
+    assert "limits.production.max_batches" in output
+    assert "candidate=1" in output
+
+
 def test_resume_apply_prints_same_summary_as_check(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = _create_paused_production_run(store)

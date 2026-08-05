@@ -183,7 +183,7 @@ def test_drift_policy_post_approval_ignores_contract_and_model_changes() -> None
     assert any("will not take effect" in warning for warning in result.warnings)
 
 
-def test_drift_policy_post_approval_still_applies_limit_increase() -> None:
+def test_drift_policy_post_approval_still_applies_limit_change() -> None:
     stored = minimal_resolved_config()
     candidate = _candidate_with_overrides(
         stored,
@@ -216,7 +216,7 @@ def test_drift_policy_always_blocks_provider_change() -> None:
     assert result.effective_config["provider"]["name"] == stored["provider"]["name"]
 
 
-def test_drift_policy_limit_decrease_single_error_and_reverts_effective() -> None:
+def test_drift_policy_allows_limit_decrease_when_no_consumed_usage() -> None:
     stored = minimal_resolved_config()
     candidate = _candidate_with_overrides(stored, ["limits.planning.max_agent_turns=10"])
     result = apply_resume_config_drift_policy(
@@ -225,9 +225,39 @@ def test_drift_policy_limit_decrease_single_error_and_reverts_effective() -> Non
         allow_config_drift=True,
         has_whole_plan_approval=False,
     )
+    assert result.ok
+    assert result.effective_config["limits"]["planning"]["max_agent_turns"] == 10
+
+
+def test_drift_policy_limit_decrease_at_exhausted_single_error() -> None:
+    stored = minimal_resolved_config()
+    candidate = _candidate_with_overrides(stored, ["limits.planning.max_agent_turns=30"])
+    result = apply_resume_config_drift_policy(
+        stored,
+        candidate,
+        allow_config_drift=True,
+        has_whole_plan_approval=False,
+        consumed_limits={"limits.planning.max_agent_turns": 40},
+    )
     assert not result.ok
     assert len(result.errors) == 1
-    assert "must increase" in result.errors[0]
+    assert "strictly greater than consumed" in result.errors[0]
+    assert result.effective_config["limits"]["planning"]["max_agent_turns"] == 40
+
+
+def test_drift_policy_limit_decrease_below_consumed_reverts_effective() -> None:
+    stored = minimal_resolved_config()
+    candidate = _candidate_with_overrides(stored, ["limits.planning.max_agent_turns=10"])
+    result = apply_resume_config_drift_policy(
+        stored,
+        candidate,
+        allow_config_drift=True,
+        has_whole_plan_approval=False,
+        consumed_limits={"limits.planning.max_agent_turns": 15},
+    )
+    assert not result.ok
+    assert len(result.errors) == 1
+    assert "strictly greater than consumed" in result.errors[0]
     assert result.effective_config["limits"]["planning"]["max_agent_turns"] == (
         stored["limits"]["planning"]["max_agent_turns"]
     )
@@ -260,7 +290,7 @@ def test_drift_policy_pre_approval_warns_on_contract_change() -> None:
     assert any("contract and model changes will apply" in warning for warning in result.warnings)
 
 
-def test_drift_policy_limit_exhausted_without_increase_single_error() -> None:
+def test_drift_policy_limit_exhausted_without_limit_change_single_error() -> None:
     stored = minimal_resolved_config()
     result = apply_resume_config_drift_policy(
         stored,

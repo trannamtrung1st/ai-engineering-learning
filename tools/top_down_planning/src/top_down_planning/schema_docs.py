@@ -2868,25 +2868,30 @@ settings, model, and other approval-meaning fields) and provider/workspace chang
 approval, accepted contract changes apply and update `digests.config_contract`,
 `digests.input`, `digests.output_goal`, and `digests.context_spec` atomically with the
 new resolved config. After whole-plan approval, approval-bound contract and model changes
-are ignored (warned in `--check` / apply summary) while limit increases and presentation
+are ignored (warned in `--check` / apply summary) while limit changes and presentation
 changes still apply; approval records are not invalidated or rewritten.
 
-Limit-only increases update `digests.config_execution` only; approvals remain bound to
+Limit-only changes update `digests.config_execution` only; approvals remain bound to
 `digests.config_contract`. Failed runs cannot be resumed. Replacement exhausted for the
 current `phase_action_id` blocks resume until the action completes or the run fails.
+
+Execution limits on resume may increase or decrease. When consumption is tracked
+(`limit_exhausted` stop details), the candidate value must be strictly greater than
+`consumed`; otherwise any numeric change is accepted. Untracked limits accept any
+numeric change.
 
 For mandatory whole-plan / whole-output `limit_exhausted` pauses, `stop.details` must
 include the full limit path (`limits.whole_*_review.max_*`), integer `consumed` /
 `configured`, `loop_id`, and `exhausted_budget`. Resume requires the exhausted limit's
-candidate value to be strictly greater than consumed usage. Raising that limit revives
-the same review loop and preserves `revision_cycles` / `scope_review_rounds` — it does
-not open a new loop or reset the phase budget counter.
+candidate value to be strictly greater than consumed usage. Setting that limit above
+consumed usage revives the same review loop and preserves `revision_cycles` /
+`scope_review_rounds` — it does not open a new loop or reset the phase budget counter.
 
 When a reviewer gate turn ends without `review respond`, the run pauses with
 `limits.review.max_agent_turns_per_gate` once the per-gate turn budget is exhausted.
 `stop.details` carries `loop_id` and consumed `gate_agent_turns` (no `exhausted_budget`).
-Resume requires raising `limits.review.max_agent_turns_per_gate` strictly above the
-consumed gate-turn count; the in-progress review loop is preserved.
+Resume requires `limits.review.max_agent_turns_per_gate` strictly above the consumed
+gate-turn count; the in-progress review loop is preserved.
 
 Production `outputs` in apply requests need only `id`, `type`, and workspace `ref`.
 The service captures content hashes and stores immutable snapshots under

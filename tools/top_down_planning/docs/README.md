@@ -103,6 +103,6 @@ To change dependencies on an **existing** item, use `add_dependency`, `remove_de
 | `production_context_mutation_unauthorized` | Revert unauthorized skill/guidance drift |
 | `audit attestation rubric_item_ids union mismatch` | Set `rubric_item_ids` from review package `rubric_items` (union across passes must equal every id); see `tdp agent readme` (Audit attestation) |
 | `rule_id ... must be a built-in rule or match custom.<slug>` | Pick a built-in from `tdp agent readme` or use `custom.<slug>` + `rule_definition`; see `review-respond-family-discovery-output` for custom pattern |
-| `limit_exhausted` + `limits.review.max_agent_turns_per_gate` | Reviewer turns ended without `review respond`; resume with `--set limits.review.max_agent_turns_per_gate=<n>` strictly above consumed `gate_agent_turns` |
+| `limit_exhausted` + `limits.review.max_agent_turns_per_gate` | Reviewer turns ended without `review respond`; resume with `--set limits.review.max_agent_turns_per_gate=<n>` strictly above consumed `gate_agent_turns` (decrease is allowed when still above consumed) |
 
 Run status and `agent_requests_dir`: `tdp agent run status --run <id>`

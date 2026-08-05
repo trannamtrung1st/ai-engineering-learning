@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
@@ -85,12 +86,48 @@ def test_resume_allows_limit_increase() -> None:
     assert comparison.execution_digest_changed is True
 
 
-def test_resume_rejects_limit_decrease() -> None:
+def test_resume_allows_limit_decrease_when_no_consumed_usage() -> None:
     stored = resolve_config(None, ["limits.planning.max_agent_turns=40"])
     candidate = resolve_config(None, ["limits.planning.max_agent_turns=20"])
     comparison = validate_resume_config_comparison(compare_resume_configs(stored, candidate))
-    assert not comparison.ok
-    assert any("must increase the stored limit" in error for error in comparison.errors)
+    assert comparison.ok
+    assert comparison.execution_digest_changed is True
+
+
+def test_resume_allows_limit_decrease_above_consumed_usage() -> None:
+    stored = resolve_config(None, ["limits.planning.max_agent_turns=40"])
+    candidate = resolve_config(None, ["limits.planning.max_agent_turns=25"])
+    comparison = compare_resume_configs(stored, candidate)
+    validated = validate_resume_config_comparison(
+        comparison,
+        consumed_limits={"limits.planning.max_agent_turns": 20},
+        candidate_config=candidate,
+    )
+    assert validated.ok
+
+
+def test_resume_rejects_limit_decrease_at_or_below_consumed_usage() -> None:
+    stored = resolve_config(None, ["limits.planning.max_agent_turns=40"])
+    candidate = resolve_config(None, ["limits.planning.max_agent_turns=25"])
+    comparison = compare_resume_configs(stored, candidate)
+    validated = validate_resume_config_comparison(
+        comparison,
+        consumed_limits={"limits.planning.max_agent_turns": 25},
+        candidate_config=candidate,
+    )
+    assert not validated.ok
+    assert len(validated.errors) == 1
+    assert "strictly greater than consumed" in validated.errors[0]
+
+
+def test_resume_rejects_bool_limit_values() -> None:
+    stored = resolve_config(None, ["limits.planning.max_agent_turns=40"])
+    candidate = copy.deepcopy(stored)
+    candidate["limits"]["planning"]["max_agent_turns"] = True
+    comparison = compare_resume_configs(stored, candidate)
+    validated = validate_resume_config_comparison(comparison)
+    assert not validated.ok
+    assert any("requires numeric limits" in error for error in validated.errors)
 
 
 def test_resume_rejects_limit_equal_to_consumed_usage() -> None:

@@ -299,7 +299,7 @@ def test_prepare_resume_failed_preparation_leaves_files_unchanged(tmp_path: Path
     assert _run_dir_digest(run_dir) == before
 
 
-def test_prepare_resume_paused_limit_increase_success(tmp_path: Path) -> None:
+def test_prepare_resume_paused_limit_change_success(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = _create_production_run(store, status="paused")
     stored = store.load_resolved_config(run_id)
@@ -374,7 +374,36 @@ def test_prepare_resume_planning_paused_without_approval(tmp_path: Path) -> None
     assert plan.state_transition.to_status == "running"
 
 
-def test_prepare_resume_blocks_gate_turn_limit_without_increase(tmp_path: Path) -> None:
+def test_prepare_resume_allows_limit_decrease_on_user_cancelled_pause(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_production_run(store, status="paused")
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["stop"] = {
+        "code": "user_cancelled",
+        "category": "operational",
+        "phase": PRODUCTION,
+        "message": "cancelled",
+        "details": {},
+    }
+    store.save_run(run_id, run, expected_revision)
+    stored = store.load_resolved_config(run_id)
+    candidate = copy.deepcopy(stored)
+    candidate["limits"] = copy.deepcopy(stored["limits"])
+    candidate["limits"]["production"] = copy.deepcopy(stored["limits"]["production"])
+    candidate["limits"]["production"]["max_batches"] = 1
+
+    plan = prepare_resume(store, run_id, candidate)
+
+    assert plan.config_changes["limits.production.max_batches"] == {
+        "from": stored["limits"]["production"]["max_batches"],
+        "to": 1,
+    }
+
+
+def test_prepare_resume_blocks_gate_turn_limit_without_change_above_consumed(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T002101-002101"
     store.create_run(

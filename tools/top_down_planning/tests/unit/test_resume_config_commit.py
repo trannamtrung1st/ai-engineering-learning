@@ -62,7 +62,7 @@ def _with_limit_override(config: dict, path: str, value: int) -> dict:
     return updated
 
 
-def test_validate_and_prepare_resume_config_update_accepts_limit_increase() -> None:
+def test_validate_and_prepare_resume_config_update_accepts_limit_change() -> None:
     stored = minimal_resolved_config()
     candidate = _with_limit_override(stored, "limits.planning.max_agent_turns", 80)
     stored_invocation = minimal_invocation(Path("/tmp/workspace"))
@@ -78,6 +78,22 @@ def test_validate_and_prepare_resume_config_update_accepts_limit_increase() -> N
     }
     assert update.config_contract_digest == compute_config_contract_digest(stored)
     assert update.config_execution_digest != compute_config_execution_digest(stored)
+
+
+def test_validate_and_prepare_resume_config_update_accepts_limit_decrease() -> None:
+    stored = minimal_resolved_config()
+    candidate = _with_limit_override(stored, "limits.planning.max_agent_turns", 20)
+    stored_invocation = minimal_invocation(Path("/tmp/workspace"))
+    update = validate_and_prepare_resume_config_update(
+        stored_config=stored,
+        candidate_config=candidate,
+        stored_invocation=stored_invocation,
+        candidate_invocation={"command": "resume"},
+    )
+    assert update.config_changes["limits.planning.max_agent_turns"] == {
+        "from": 40,
+        "to": 20,
+    }
 
 
 def test_validate_and_prepare_resume_config_update_rejects_contract_change() -> None:
