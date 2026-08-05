@@ -97,6 +97,30 @@ def test_unit_snapshot_retains_descendant_contract_fields(tmp_path: Path) -> Non
     assert snapshot.items["item-storage"].scope.includes == ["db"]
 
 
+def test_unit_snapshot_root_passes_final_plan_validation() -> None:
+    """Prepared unit plans must not keep the seeded Root placeholder.
+
+    After whole-output approval, acceptance re-runs deterministic plan
+    validation on the child plan. A seeded item-root (title=Root, empty
+    outcome) blocks Sub-TDP completion even when the unit work item is sound.
+    """
+
+    from top_down_planning.domain.validators import validate_plan
+
+    plan = _approved_parent_plan("run-test")
+    unit = derive_sub_tdp_units(plan)[0]
+    snapshot = build_unit_plan_snapshot(plan, unit)
+
+    root = snapshot.items[PLAN_ROOT_ITEM_ID]
+    assert root.title != "Root"
+    assert root.outcome.strip()
+    assert root.title == unit.title
+    assert root.outcome == unit.outcome
+
+    result = validate_plan(snapshot, mode="final")
+    assert result.ok, [issue.message for issue in result.issues]
+
+
 def test_package_validation_rejects_tampered_plan_digest(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path / "runs")
     run_id = "run-20260101T000802-000802"

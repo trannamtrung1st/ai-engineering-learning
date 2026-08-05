@@ -41,9 +41,17 @@ def build_unit_plan_snapshot(parent_plan: Plan, unit: SubTdpUnit) -> Plan:
     if unit_root_id not in assigned_ids:
         raise ValueError(f"unit root {unit_root_id!r} is not active in parent plan")
 
-    root_item = seed_plan_root_item()
-    items: dict[str, PlanItem] = {PLAN_ROOT_ITEM_ID: root_item}
     unit_root = parent_plan.items[unit_root_id]
+    root_item = replace(
+        seed_plan_root_item(),
+        title=unit.title.strip() or unit_root.title,
+        outcome=(
+            unit.outcome.strip()
+            or unit_root.outcome.strip()
+            or parent_plan.items[PLAN_ROOT_ITEM_ID].outcome.strip()
+        ),
+    )
+    items: dict[str, PlanItem] = {PLAN_ROOT_ITEM_ID: root_item}
 
     for item_id in assigned_ids:
         source = parent_plan.items[item_id]
