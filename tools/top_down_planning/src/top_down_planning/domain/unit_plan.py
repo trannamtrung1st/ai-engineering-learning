@@ -33,11 +33,25 @@ def collect_assigned_item_ids(plan: Plan, unit_root_id: str) -> list[str]:
     return collected
 
 
-def build_unit_plan_snapshot(parent_plan: Plan, unit: SubTdpUnit) -> Plan:
-    """Materialize the executable contract for one prepared unit."""
+def build_unit_plan_snapshot(
+    parent_plan: Plan,
+    unit: SubTdpUnit,
+    *,
+    package_id: str,
+    all_units: list[SubTdpUnit] | None = None,
+) -> Plan:
+    """Materialize the executable contract for one prepared unit.
+
+    External cross-unit ``depends_on`` edges are stripped from the child plan
+    and recorded separately as ``external_prerequisites`` on the package unit.
+    """
+
+    if not str(package_id or "").strip():
+        raise ValueError("package_id is required for unit plan snapshots")
 
     unit_root_id = unit.plan_item_id
     assigned_ids = collect_assigned_item_ids(parent_plan, unit_root_id)
+    assigned_set = set(assigned_ids)
     if unit_root_id not in assigned_ids:
         raise ValueError(f"unit root {unit_root_id!r} is not active in parent plan")
 
@@ -60,11 +74,13 @@ def build_unit_plan_snapshot(parent_plan: Plan, unit: SubTdpUnit) -> Plan:
             raise ValueError(
                 f"assigned item {item_id!r} parent {parent_id!r} is outside unit subtree"
             )
-        items[item_id] = replace(source, parent_id=parent_id)
+        internal_deps = [dep for dep in source.depends_on if dep in assigned_set]
+        items[item_id] = replace(source, parent_id=parent_id, depends_on=internal_deps)
 
     local_goal = unit_root.outcome.strip() or parent_plan.output_goal
+    _ = all_units
     return Plan(
-        id=f"plan-unit-{unit_root_id}",
+        id=f"plan-{package_id}-{unit_root_id}",
         revision=parent_plan.revision,
         output_goal=local_goal,
         items=items,

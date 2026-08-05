@@ -60,6 +60,30 @@ def test_synthesize_parent_production_builds_completion_claim_and_batch() -> Non
             ordinal=1,
         ),
     ]
+    plan = Plan(
+        id="plan-parent",
+        revision=1,
+        output_goal="Ship the product.",
+        items={
+            PLAN_ROOT_ITEM_ID: PlanItem(
+                id=PLAN_ROOT_ITEM_ID,
+                parent_id=None,
+                order_key="0000000000",
+                title="Deliver",
+                outcome="Deliver the output.",
+                kind="aggregate",
+            ),
+            "item-a": PlanItem(
+                id="item-a",
+                parent_id=PLAN_ROOT_ITEM_ID,
+                order_key="0000000000",
+                title="Persistence foundation",
+                outcome="Persist state reliably.",
+                kind="work",
+                scope=Scope(includes=["storage"]),
+            ),
+        },
+    )
     production = {
         "revision": 0,
         "output_revision": 0,
@@ -86,15 +110,19 @@ def test_synthesize_parent_production_builds_completion_claim_and_batch() -> Non
             "goal_assessment": "Child goal met.",
         },
         "output_evidence": [],
+        "dispositions": {
+            "item-a": {"disposition": "completed", "evidence": "done"},
+        },
         "batches": [],
     }
     synthesized = synthesize_parent_production(
-        _parent_plan(),
+        plan,
         production,
         child_runs=[(unit_record, child_run, child_production)],
         parent_output_goal="Ship the product.",
     )
-    assert synthesized["completion_claim"]["goal_met"] is True
+    assert synthesized["completion_claim"]["goal_met"] is False
+    assert synthesized["completion_claim"]["status"] == "integration_pending"
     assert synthesized["dispositions"]["item-a"] == "completed"
     assert len(synthesized["batches"]) == 1
     assert synthesized["batches"][0]["intent"] == "sub_tdp_integration"
@@ -172,8 +200,8 @@ def test_synthesize_propagates_descendant_dispositions() -> None:
     child_production = {
         "completion_claim": {"goal_met": True, "goal_assessment": "Child goal met."},
         "dispositions": {
-            "item-foundation": {"disposition": "completed"},
-            "item-storage": {"disposition": "completed"},
+            "item-foundation": {"disposition": "completed", "evidence": "foundation done"},
+            "item-storage": {"disposition": "completed", "evidence": "storage done"},
         },
         "output_evidence": [],
         "batches": [],

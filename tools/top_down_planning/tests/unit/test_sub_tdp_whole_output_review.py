@@ -74,10 +74,18 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
     production = store.load_production(run_id)
     production["sub_tdps"] = initial_sub_tdp_state(units)
     unit_record = production["sub_tdps"]["units"][0]
-    unit_record["child_run_id"] = "run-child-01"
+    unit_record["child_run_id"] = "run-20260101T000911-000911"
     unit_record["status"] = "completed"
+    unit_record["accepted_result"] = {
+        "child_run_id": "run-20260101T000911-000911",
+        "unit_id": "item-a",
+        "unit_plan_digest": "plan-digest-a",
+        "output_digest": "a" * 64,
+        "outcome": "accepted",
+    }
+    unit_record["accepted_result_digest"] = "a" * 64
     child_run = {
-        "id": "run-child-01",
+        "id": "run-20260101T000911-000911",
         "status": "completed",
         "phase": "output_validated",
         "outcome": "accepted",
@@ -87,6 +95,10 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
             "goal_met": True,
             "goal_assessment": "Child goal met.",
         },
+        "dispositions": {
+            "item-a": {"disposition": "completed", "evidence": "done"},
+        },
+        "output_evidence": [{"id": "ev-child", "batch_id": "child-batch", "path": "out.md"}],
     }
     synthesized = synthesize_parent_production(
         _parent_plan(run_id),
@@ -113,7 +125,8 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
     )
     assert package["sub_tdp_evidence"]
     assert package["integrated_deliverables"]
-    assert package["sub_tdp_evidence"][0]["child_run_id"] == "run-child-01"
+    assert package["sub_tdp_evidence"][0]["child_run_id"] == "run-20260101T000911-000911"
+    assert package["sub_tdp_evidence"][0]["output_digest"] == "a" * 64
 
 
 def test_whole_output_review_orchestrator_uses_sub_tdp_adapter(tmp_path: Path) -> None:

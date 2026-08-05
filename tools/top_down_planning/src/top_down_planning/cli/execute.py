@@ -6,11 +6,15 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
+from core_tools.observability import ConsoleEvent
+from core_tools.provider import create_provider as build_provider
+
 from top_down_planning.cli.common import (
+    ResolvedRunsDir,
     emit_error_message,
     emit_payload,
     format_run_startup_diagnostics,
-    open_run_store,
+    provider_extra_env,
     resolve_runs_dir_from_args,
     run_startup_diagnostics_payload,
 )
@@ -19,23 +23,70 @@ from top_down_planning.cli.user import (
     _exit_for_cancel,
     _handle_blocking_run_interrupt,
 )
-from top_down_planning.config import ConfigError, resolve_config, resolve_workspace
+from top_down_planning.config import ConfigError, resolve_config
+from top_down_planning.config.resume_policy import RESUME_PRESENTATION_ALLOWLIST
+from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.invocation import invocation_options_from_args, invocation_to_dict
 from top_down_planning.notifications import NotificationContext
 from top_down_planning.observability import build_observability_context
-from top_down_planning.orchestrator.run_lifecycle_reconciliation import cleanup_staging_dirs
+from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
 from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitExecutor
+from top_down_planning.orchestrator.run_lifecycle_reconciliation import cleanup_staging_dirs
+from top_down_planning.package.execution_validation import verify_package_authoritative_inputs
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
-from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.sub_tdp_state import (
     initial_sub_tdp_state_from_package,
     merge_sub_tdp_state_into_production,
 )
-from core_tools.observability import ConsoleEvent
-from core_tools.provider import create_provider as build_provider
-from top_down_planning.cli.common import provider_extra_env
+
+
+def _presentation_sets(set_overrides: list[str] | None) -> list[str]:
+    """Keep only presentation/runtime overrides for execute-time --set."""
+
+    allowed_prefixes = tuple(RESUME_PRESENTATION_ALLOWLIST)
+    kept: list[str] = []
+    for item in set_overrides or []:
+        path = item.split("=", 1)[0].strip()
+        if path in RESUME_PRESENTATION_ALLOWLIST or any(
+            path.startswith(prefix.rstrip(".")) for prefix in allowed_prefixes
+        ):
+            kept.append(item)
+        elif path.startswith("observability.") or path.startswith("notifications."):
+            kept.append(item)
+        elif path == "runtime.runs_dir":
+            kept.append(item)
+    return kept
+
+
+def _resolved_config_for_execute(args: Namespace, package) -> dict[str, Any]:
+    """Load semantic config from the package; optional YAML only for presentation."""
+
+    base = dict(package.resolved_config)
+    presentation_sets = _presentation_sets(getattr(args, "set", None))
+    config_path = getattr(args, "config", None)
+    if config_path or presentation_sets:
+        # Optional presentation overlay — never required.
+        if config_path:
+            overlay = resolve_config(
+                Path(config_path).resolve(),
+                presentation_sets,
+            )
+        else:
+            # Apply presentation --set onto package config without reading cwd YAML.
+            from core_tools.config import apply_cli_overrides
+            from top_down_planning.config.defaults import ALLOWED_OVERRIDE_PATHS
+
+            overlay = apply_cli_overrides(
+                base,
+                presentation_sets,
+                allowed_paths=ALLOWED_OVERRIDE_PATHS,
+            )
+        for section in ("observability", "notifications", "runtime"):
+            if section in overlay:
+                base[section] = overlay[section]
+    return base
 
 
 def handle_execute_command(args: Namespace) -> None:
@@ -43,18 +94,15 @@ def handle_execute_command(args: Namespace) -> None:
     package_dir = manifest_path.parent
     try:
         package = ExecutionPackageLoader().load(package_dir)
+        verify_package_authoritative_inputs(package)
+        resolved = _resolved_config_for_execute(args, package)
     except ExecutionPackageError as exc:
         emit_error_message(
             str(exc),
             exit_code=1,
             stream_json=args.stream_json,
-            code="package_invalid",
+            code=getattr(exc, "code", "package_invalid"),
         )
-
-    cwd = Path.cwd().resolve()
-    config_path = Path(args.config).resolve() if getattr(args, "config", None) else cwd / "config.yaml"
-    try:
-        resolved = resolve_config(config_path, getattr(args, "set", []) or [])
     except ConfigError as exc:
         emit_error_message(
             str(exc),
@@ -110,10 +158,13 @@ def handle_execute_command(args: Namespace) -> None:
         resolved_config=resolved,
         invocation=invocation_dict,
     )
+    parent_run = store.load_run(run_id)
+    binding = parent_run.get("package_binding") or {}
+    persisted_manifest = str(binding.get("manifest_path") or package.manifest_path)
     production = store.load_production(run_id)
     state = initial_sub_tdp_state_from_package(
         package.manifest,
-        manifest_path=str(package.manifest_path),
+        manifest_path=persisted_manifest,
         units=[
             SubTdpUnit(
                 plan_item_id=unit.unit_id,
@@ -141,46 +192,48 @@ def handle_execute_command(args: Namespace) -> None:
     )
 
 
+def _child_success(child_run: dict[str, Any]) -> bool:
+    return (
+        str(child_run.get("status") or "") == "completed"
+        and str(child_run.get("phase") or "") == OUTPUT_VALIDATED
+        and str(child_run.get("outcome") or "") == "accepted"
+    )
+
+
 def _execute_unit(
-    *,
     args: Namespace,
+    *,
     store: FileRunStore,
     package,
     unit_id: str,
     resolved: dict[str, Any],
-    resolved_runs,
+    resolved_runs: ResolvedRunsDir,
     invocation_dict: dict[str, Any],
     run_factory: PreparedRunFactory,
     workspace: Path,
 ) -> None:
-    unit = package.units[unit_id]
-    child_store = store
-    executor = PreparedUnitExecutor(run_factory=run_factory)
-    observability = build_observability_context(
-        options=invocation_options_from_args(
-            args, resolved_config=resolved, resolved_runs=resolved_runs
-        ).observability,
-        run_id="pending",
-        run_dir=resolved_runs.path,
-    )
-
-    def _provider_factory(config: dict[str, Any], ws: Path) -> Any:
-        return build_provider(
-            config,
-            workspace=ws,
-            extra_env=provider_extra_env(resolved_runs, run_id="", store=store),
-            on_provider_event=observability.provider_callback(),
+    if unit_id not in package.units:
+        known = ", ".join(sorted(package.units))
+        emit_error_message(
+            f"unknown unit: {unit_id!r}; valid units: {known}",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="unknown_unit",
         )
 
+    executor = PreparedUnitExecutor(run_factory=run_factory)
+    invocation_opts = invocation_options_from_args(
+        args, resolved_config=resolved, resolved_runs=resolved_runs
+    )
+    notifications = NotificationContext(options=invocation_opts.notifications)
+
     try:
-        child_run = executor.execute_unit(
-            child_store,
+        child_run_id = executor.create_or_load_child_run(
+            store,
             package,
             unit_id,
             resolved_config=resolved,
             invocation=invocation_dict,
-            create_provider=_provider_factory,
-            workspace=workspace,
         )
     except PreparedUnitExecutor.DependencyUnmetError as exc:
         emit_error_message(
@@ -189,19 +242,83 @@ def _execute_unit(
             stream_json=args.stream_json,
             code=exc.stop_code,
         )
+    except ExecutionPackageError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code=getattr(exc, "code", "package_invalid"),
+        )
+
+    observability = build_observability_context(
+        options=invocation_opts.observability,
+        run_id=child_run_id,
+        run_dir=resolved_runs.path / child_run_id,
+    )
+    observability.emit(
+        ConsoleEvent(
+            category="run:start",
+            message=f"Starting unit execution for {unit_id}.",
+            fields={"unit_id": unit_id, "package_id": package.manifest.get("package_id")},
+            run_id=child_run_id,
+        )
+    )
+
+    def _provider_factory(config: dict[str, Any], ws: Path) -> Any:
+        return build_provider(
+            config,
+            workspace=ws,
+            extra_env=provider_extra_env(
+                resolved_runs, run_id=child_run_id, store=store
+            ),
+            on_provider_event=observability.provider_callback(),
+        )
+
+    continuation_ok = False
+    cancelled = False
+    try:
+        child_run = executor.drive_child_run(
+            store,
+            child_run_id,
+            create_provider=_provider_factory,
+            workspace=workspace,
+            observability=observability,
+        )
+        continuation_ok = _child_success(child_run)
+    except KeyboardInterrupt:
+        cancelled = True
+        _handle_blocking_run_interrupt(
+            run_id=child_run_id,
+            store=store,
+            observability=observability,
+            notifications=notifications,
+            stream_json=args.stream_json,
+        )
     finally:
         observability.close()
 
-    emit_payload(
-        {
-            "ok": True,
-            "run_id": child_run.get("id"),
-            "unit_id": unit_id,
-            "phase": child_run.get("phase"),
-            "status": child_run.get("status"),
-            "package_id": package.manifest.get("package_id"),
-        }
-    )
+    if cancelled:
+        return
+
+    child_run = store.load_run(child_run_id)
+    ok = _child_success(child_run)
+    payload: dict[str, Any] = {
+        "ok": ok,
+        "run_id": child_run_id,
+        "unit_id": unit_id,
+        "phase": child_run.get("phase"),
+        "status": child_run.get("status"),
+        "outcome": child_run.get("outcome"),
+        "package_id": package.manifest.get("package_id"),
+    }
+    if not ok:
+        stop = child_run.get("stop")
+        if isinstance(stop, dict):
+            payload["stop"] = stop
+            payload["reason"] = stop.get("message") or stop.get("code")
+        else:
+            payload["reason"] = "unit execution did not complete successfully"
+    emit_payload(payload, exit_code=0 if ok else 1)
 
 
 def _drive_execution_run(
@@ -216,7 +333,9 @@ def _drive_execution_run(
 ) -> None:
     diagnostics = run_startup_diagnostics_payload(
         cwd=Path.cwd().resolve(),
-        config_path=Path(args.config).resolve() if getattr(args, "config", None) else None,
+        config_path=Path(args.config).resolve()
+        if getattr(args, "config", None)
+        else package.manifest_path,
         workspace=package.workspace_path,
         resolved_runs=resolved_runs,
         run_id=run_id,

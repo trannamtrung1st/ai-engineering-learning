@@ -21,7 +21,7 @@ from top_down_planning.domain.sub_tdp_synthesis import (
     child_run_summary,
     synthesize_parent_production,
 )
-from top_down_planning.domain.sub_tdp_units import SubTdpUnit, derive_sub_tdp_units
+from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.prepared_unit_executor import (
     PreparedUnitExecutor,
@@ -34,6 +34,7 @@ from top_down_planning.orchestrator.phases import (
 )
 from top_down_planning.orchestrator.run_transitions import pause_run
 from top_down_planning.orchestrator.sub_tdp_child_driver import ProviderFactory
+from top_down_planning.package.lineage import accepted_result_record
 from top_down_planning.package.loader import ExecutionPackageLoader
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
@@ -80,11 +81,13 @@ class SubTdpsPhaseOrchestrator:
         provider: Provider,
         *,
         create_provider: ProviderFactory | None = None,
+        observability: Any | None = None,
     ) -> None:
         self._store = store
         self._run_id = run_id
         self._provider = provider
         self._create_provider = create_provider
+        self._observability = observability
 
     def run(self) -> SubTdpsPhaseResult:
         run = self._store.load_run(self._run_id)
@@ -113,7 +116,18 @@ class SubTdpsPhaseOrchestrator:
         self._require_plan_approval()
         plan = self._store.load_plan_model(self._run_id)
         workspace = run_workspace(run)
-        units = derive_sub_tdp_units(plan)
+        # Manifest units are authoritative for execution; plan re-derivation is only
+        # used to build SubTdpUnit display records for state helpers.
+        units = [
+            SubTdpUnit(
+                plan_item_id=loaded.unit_id,
+                title=loaded.title,
+                outcome="",
+                directory=loaded.plan_file.parent.name,
+                ordinal=loaded.ordinal,
+            )
+            for loaded in sorted(package.units.values(), key=lambda item: item.ordinal)
+        ]
         production = self._store.load_production(self._run_id)
         state = load_sub_tdp_state(production)
         if state is None:
@@ -122,6 +136,7 @@ class SubTdpsPhaseOrchestrator:
         else:
             try:
                 ensure_sub_tdp_state_matches_units(state, units)
+                self._ensure_state_matches_package(state, package)
             except ValueError as exc:
                 raise ProviderRunError(str(exc)) from exc
 
@@ -176,19 +191,19 @@ class SubTdpsPhaseOrchestrator:
                 raise ProviderRunError(f"unknown sub-tdp unit: {plan_item_id!r}")
 
             state["active_unit_id"] = plan_item_id
-            unit_record["status"] = UNIT_STATUS_RUNNING
-            production = self._store.load_production(self._run_id)
-            self._commit_production_state(production, state)
-
+            # Create or resume the child before marking the unit running so a
+            # crash cannot leave status=running with a null child_run_id.
             try:
-                child_run = self._drive_prepared_unit(
-                    unit,
-                    unit_record,
-                    create_provider,
-                    workspace,
-                    config,
-                    package,
+                child_run_id = PreparedUnitExecutor().create_or_load_child_run(
                     child_store,
+                    package,
+                    plan_item_id,
+                    resolved_config=config,
+                    invocation=dict(self._store.load_run(self._run_id).get("invocation") or {})
+                    or {"command": "execute", "observability": {}},
+                    existing_child_run_id=str(unit_record.get("child_run_id") or "").strip()
+                    or None,
+                    parent_run_id=self._run_id,
                     orchestration_state=state,
                 )
             except PreparedUnitExecutor.DependencyUnmetError as exc:
@@ -207,8 +222,54 @@ class SubTdpsPhaseOrchestrator:
                     self._run_id,
                     stop=stop,
                     revoke_phase=SUB_TDPS,
-                    event_type="sub_tdp_blocked",
+                    event_type="sub_tdp_child_blocked",
                     plan_item_id=plan_item_id,
+                    unit_id=plan_item_id,
+                    dependency_id=exc.dependency_id,
+                )
+                return self._result_from_run(
+                    self._store.load_run(self._run_id),
+                    ok=False,
+                    units_completed=units_completed,
+                    reason=str(exc),
+                )
+
+            unit_record["status"] = UNIT_STATUS_RUNNING
+            unit_record["child_run_id"] = child_run_id
+            production = self._store.load_production(self._run_id)
+            self._commit_production_state(production, state)
+
+            try:
+                child_run = self._drive_prepared_unit(
+                    unit,
+                    unit_record,
+                    create_provider,
+                    workspace,
+                    config,
+                    package,
+                    child_store,
+                    orchestration_state=state,
+                    child_run_id=child_run_id,
+                )
+            except PreparedUnitExecutor.DependencyUnmetError as exc:
+                unit_record["status"] = UNIT_STATUS_PENDING
+                state["active_unit_id"] = None
+                production = self._store.load_production(self._run_id)
+                self._commit_production_state(production, state)
+                stop = StopRecord(
+                    code=exc.stop_code,
+                    category="operational",
+                    phase=SUB_TDPS,
+                    message=str(exc),
+                )
+                pause_run(
+                    self._store,
+                    self._run_id,
+                    stop=stop,
+                    revoke_phase=SUB_TDPS,
+                    event_type="sub_tdp_child_blocked",
+                    plan_item_id=plan_item_id,
+                    unit_id=plan_item_id,
                     dependency_id=exc.dependency_id,
                 )
                 return self._result_from_run(
@@ -223,6 +284,16 @@ class SubTdpsPhaseOrchestrator:
             unit_record["child_run_id"] = child_run.get("id")
             child_production = child_store.load_production(str(child_run.get("id")))
             unit_record["summary"] = child_run_summary(child_production, child_run)
+            if mapped_status == UNIT_STATUS_COMPLETED:
+                loaded_unit = package.units[plan_item_id]
+                accepted = accepted_result_record(
+                    child_run=child_run,
+                    child_production=child_production,
+                    unit_id=plan_item_id,
+                    unit_plan_digest=loaded_unit.plan_digest,
+                )
+                unit_record["accepted_result"] = accepted
+                unit_record["accepted_result_digest"] = accepted.get("output_digest")
 
             if mapped_status == UNIT_STATUS_PAUSED:
                 state["active_unit_id"] = plan_item_id
@@ -277,6 +348,24 @@ class SubTdpsPhaseOrchestrator:
         state = load_sub_tdp_state(production) or state
         return self._synthesize_and_transition(plan, production, state, units, child_store)
 
+    def _ensure_state_matches_package(self, state: dict[str, Any], package) -> None:
+        expected_package_id = str(package.manifest.get("package_id") or "")
+        expected_digest = str(package.manifest.get("package_digest") or "")
+        actual_package_id = str(state.get("package_id") or "")
+        actual_digest = str(state.get("package_digest") or "")
+        if expected_package_id and actual_package_id and actual_package_id != expected_package_id:
+            raise ValueError(
+                f"sub_tdps state package_id mismatch: {actual_package_id} != {expected_package_id}"
+            )
+        if expected_digest and actual_digest and actual_digest != expected_digest:
+            raise ValueError(
+                "sub_tdps state package_digest mismatch with loaded execution package"
+            )
+        for loaded in package.units.values():
+            record = find_unit(state, loaded.unit_id)
+            if record is None:
+                raise ValueError(f"sub_tdps state missing unit {loaded.unit_id!r}")
+
     def _resolve_create_provider(
         self,
         config: dict[str, Any],
@@ -299,7 +388,12 @@ class SubTdpsPhaseOrchestrator:
     ) -> dict[str, Any]:
         state = initial_sub_tdp_state_from_package(
             package.manifest,
-            manifest_path=str(package.manifest_path),
+            manifest_path=str(
+                (self._store.load_run(self._run_id).get("package_binding") or {}).get(
+                    "manifest_path"
+                )
+                or package.manifest_path
+            ),
             units=units,
         )
         state["status"] = ORCHESTRATION_STATUS_PREPARING
@@ -337,48 +431,72 @@ class SubTdpsPhaseOrchestrator:
         child_store: FileRunStore,
         *,
         orchestration_state: dict[str, Any] | None = None,
+        child_run_id: str | None = None,
     ) -> dict[str, Any]:
-        child_run_id = str(unit_record.get("child_run_id") or "").strip() or None
+        child_run_id = child_run_id or str(unit_record.get("child_run_id") or "").strip() or None
         parent_run = self._store.load_run(self._run_id)
         invocation = dict(parent_run.get("invocation") or {})
         if not invocation:
             invocation = {"command": "execute", "observability": {}}
 
-        if child_run_id:
+        resuming = bool(child_run_id) and bool(unit_record.get("child_run_id"))
+        if resuming:
             self._append_event(
-                "sub_tdp:resume",
-                unit=unit.plan_item_id,
-                child_run=child_run_id,
+                "sub_tdp_child_resumed",
+                unit_id=unit.plan_item_id,
+                plan_item_id=unit.plan_item_id,
+                child_run_id=child_run_id,
+                package_id=package.manifest.get("package_id"),
+                parent_run_id=self._run_id,
             )
         else:
             self._append_event(
-                "sub_tdp:start",
-                unit=unit.plan_item_id,
-                child_run="",
+                "sub_tdp_child_started",
+                unit_id=unit.plan_item_id,
+                plan_item_id=unit.plan_item_id,
+                child_run_id=child_run_id,
+                package_id=package.manifest.get("package_id"),
+                parent_run_id=self._run_id,
             )
+
+        def _child_provider_factory(child_config: dict[str, Any], child_workspace: Path) -> Provider:
+            # Re-bind provider identity to the child run, not the parent.
+            from top_down_planning.cli.common import ResolvedRunsDir, provider_extra_env
+            from core_tools.provider import create_provider as build_provider
+
+            resolved_runs = ResolvedRunsDir(path=child_store.root, source="cli")
+            return build_provider(
+                child_config,
+                workspace=child_workspace,
+                extra_env=provider_extra_env(
+                    resolved_runs,
+                    run_id=str(child_run_id),
+                    store=child_store,
+                ),
+            )
+
         child_run = PreparedUnitExecutor().execute_unit(
             child_store,
             package,
             unit.plan_item_id,
             resolved_config=config,
             invocation=invocation,
-            create_provider=create_provider,
+            create_provider=_child_provider_factory if child_run_id else create_provider,
             workspace=workspace,
             existing_child_run_id=child_run_id,
             parent_run_id=self._run_id,
             orchestration_state=orchestration_state,
+            observability=self._observability,
         )
-        if not child_run_id:
-            unit_record["child_run_id"] = child_run.get("id")
-            self._append_event(
-                "sub_tdp_child_started",
-                plan_item_id=unit.plan_item_id,
-                child_run_id=child_run.get("id"),
-            )
+        unit_record["child_run_id"] = child_run.get("id")
         self._append_event(
-            "sub_tdp:end",
-            unit=unit.plan_item_id,
+            "sub_tdp_child_completed",
+            unit_id=unit.plan_item_id,
+            plan_item_id=unit.plan_item_id,
+            child_run_id=child_run.get("id"),
             status=str(child_run.get("status") or ""),
+            package_id=package.manifest.get("package_id"),
+            parent_run_id=self._run_id,
         )
         return child_run
 

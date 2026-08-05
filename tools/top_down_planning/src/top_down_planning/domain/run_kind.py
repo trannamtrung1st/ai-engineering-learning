@@ -19,16 +19,24 @@ ALL_RUN_KINDS = frozenset(
 )
 
 
-def resolve_run_kind(run: dict[str, Any]) -> str:
-    """Return persisted run kind."""
+def default_run_kind_for_phase(phase: str) -> str:
+    """Canonical run_kind assigned at run creation when callers omit one."""
 
-    explicit = str(run.get("run_kind") or "").strip()
-    if explicit in ALL_RUN_KINDS:
-        return explicit
-    phase = str(run.get("phase") or "")
-    if phase == "planning":
+    if str(phase or "") == "planning":
         return RUN_KIND_PLANNING
     return RUN_KIND_SINGLE_EXECUTION
+
+
+def resolve_run_kind(run: dict[str, Any]) -> str:
+    """Return persisted run kind. Missing or unknown values are errors."""
+
+    raw = run.get("run_kind")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raise ValueError("run_kind is required")
+    explicit = str(raw).strip()
+    if explicit not in ALL_RUN_KINDS:
+        raise ValueError(f"invalid run_kind: {explicit!r}")
+    return explicit
 
 
 __all__ = [
@@ -37,5 +45,6 @@ __all__ = [
     "RUN_KIND_PLANNING",
     "RUN_KIND_SINGLE_EXECUTION",
     "RUN_KIND_SUB_TDP_EXECUTION",
+    "default_run_kind_for_phase",
     "resolve_run_kind",
 ]

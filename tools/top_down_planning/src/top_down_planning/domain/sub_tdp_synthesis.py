@@ -9,10 +9,10 @@ from top_down_planning.domain.models import Plan
 from top_down_planning.domain.plan_tree import is_active_item, walk_active_tree
 from top_down_planning.domain.unit_plan import collect_assigned_item_ids
 from top_down_planning.domain.production import (
-    completion_claim_asserts_goal_met,
     disposition_map_from_records,
     parse_disposition_records,
 )
+
 _CHILD_OUTPUT_VALIDATED_PHASE = "output_validated"
 _ORCHESTRATION_STATUS_COMPLETED = "completed"
 _UNIT_STATUS_COMPLETED = "completed"
@@ -22,6 +22,7 @@ def _is_child_terminal_accepted(child_run: dict[str, Any]) -> bool:
     return (
         str(child_run.get("status") or "") == "completed"
         and str(child_run.get("phase") or "") == _CHILD_OUTPUT_VALIDATED_PHASE
+        and str(child_run.get("outcome") or "") == "accepted"
     )
 
 
@@ -48,6 +49,10 @@ def synthesize_parent_production(
     Build parent production snapshot for whole_output_review.
 
     ``child_runs`` is a list of (unit_record, child_run, child_production).
+
+    Synthesis is fail-closed on missing child dispositions and does **not**
+    assert that the parent goal is met — that requires a subsequent
+    integration validation step.
     """
 
     state = production.get("sub_tdps")
@@ -59,6 +64,7 @@ def synthesize_parent_production(
     contributions: list[dict[str, Any]] = []
     disposition_records: dict[str, Any] = {}
     summaries: list[str] = []
+    covered_work_items: set[str] = set()
 
     batch_id = "batch-integration-01"
     seen_evidence_ids: set[str] = set()
@@ -69,7 +75,7 @@ def synthesize_parent_production(
         if not _is_child_terminal_accepted(child_run):
             raise ValueError(
                 f"child run {child_run.get('id')} for unit {plan_item_id} "
-                "must reach output_validated before synthesis"
+                "must reach output_validated with outcome=accepted before synthesis"
             )
         summary = child_run_summary(child_production, child_run)
         child_output_refs: list[str] = []
@@ -86,7 +92,12 @@ def synthesize_parent_production(
             merged_evidence = dict(evidence)
             merged_evidence["id"] = unique_id
             merged_evidence["batch_id"] = batch_id
+            merged_evidence["source_child_batch_id"] = str(
+                evidence.get("batch_id") or ""
+            )
+            merged_evidence["source_child_evidence_id"] = evidence_id
             merged_evidence["sub_tdp_child_run_id"] = child_run.get("id")
+            merged_evidence["sub_tdp_unit_id"] = plan_item_id
             merged_evidence["sub_tdp_plan_item_id"] = plan_item_id
             output_evidence.append(merged_evidence)
             child_output_refs.append(unique_id)
@@ -97,59 +108,59 @@ def synthesize_parent_production(
                 "summary": summary,
             }
         )
-        disposition_records[plan_item_id] = {
-            "disposition": "completed",
-            "evidence": f"Sub-TDP child {child_run.get('id')} reached output_validated.",
-        }
         child_dispositions = child_production.get("dispositions") or {}
         for assigned_id in collect_assigned_item_ids(plan, plan_item_id):
-            if assigned_id == plan_item_id:
-                continue
             assigned_item = plan.items.get(assigned_id)
             if assigned_item is None or assigned_item.kind != "work":
                 continue
+            covered_work_items.add(assigned_id)
             child_disp = child_dispositions.get(assigned_id)
-            if isinstance(child_disp, dict) and child_disp.get("disposition"):
-                disposition_records[assigned_id] = dict(child_disp)
-            elif assigned_id not in disposition_records:
+            if isinstance(child_disp, str) and child_disp.strip():
                 disposition_records[assigned_id] = {
-                    "disposition": "completed",
+                    "disposition": child_disp.strip(),
                     "evidence": (
-                        f"Completed via Sub-TDP child {child_run.get('id')} "
-                        f"for unit {plan_item_id}."
+                        f"Sub-TDP child {child_run.get('id')} disposition for "
+                        f"{assigned_id}."
                     ),
                 }
+            elif isinstance(child_disp, dict) and child_disp.get("disposition"):
+                disposition_records[assigned_id] = dict(child_disp)
+            else:
+                raise ValueError(
+                    f"missing terminal child disposition for assigned work item "
+                    f"{assigned_id!r} in unit {plan_item_id}"
+                )
         summaries.append(f"{unit.get('title')}: {summary}")
 
     for item_id, _, _ in walk_active_tree(plan).rows:
         item = plan.items[item_id]
         if not is_active_item(item) or item.kind != "work":
             continue
-        if item_id not in disposition_records:
-            disposition_records[item_id] = {
-                "disposition": "not_applicable",
-                "reason": "Not assigned to a Sub-TDP unit in v1 decomposition.",
-            }
+        if item_id not in covered_work_items:
+            raise ValueError(
+                f"active work item {item_id!r} has no child-derived disposition; "
+                "package unit coverage or synthesis inputs are incomplete"
+            )
 
     parsed_records = parse_disposition_records(disposition_records)
     flat_dispositions = disposition_map_from_records(parsed_records)
 
     completion_claim = {
-        "goal_met": True,
+        "goal_met": False,
+        "status": "integration_pending",
         "goal_assessment": (
-            f"Integrated Sub-TDP deliveries satisfy the parent output goal: {parent_output_goal.strip()}. "
+            "Child Sub-TDP deliveries collected; parent integration validation "
+            f"is still required for output goal: {parent_output_goal.strip()}. "
             + " ".join(summaries)
         ).strip(),
         "submitted_at": _utc_now(),
     }
-    if not completion_claim_asserts_goal_met(completion_claim):
-        raise ValueError("synthesized completion claim does not assert goal met")
 
     batch_result = {
         "outputs": output_evidence,
         "contributions": contributions,
         "dispositions": disposition_records,
-        "summary": "Sub-TDP integration synthesis",
+        "summary": "Sub-TDP integration synthesis (integration pending)",
         "empty_output": False,
         "goal_assessment": completion_claim["goal_assessment"],
     }

@@ -92,7 +92,7 @@ def test_package_builder_materializes_manifest_and_unit_subtrees(tmp_path: Path)
 def test_unit_snapshot_retains_descendant_contract_fields(tmp_path: Path) -> None:
     plan = _approved_parent_plan("run-test")
     unit = derive_sub_tdp_units(plan)[0]
-    snapshot = build_unit_plan_snapshot(plan, unit)
+    snapshot = build_unit_plan_snapshot(plan, unit, package_id="pkg-test")
     assert snapshot.input_refs == ["docs/spec.md"]
     assert snapshot.items["item-storage"].scope.includes == ["db"]
 
@@ -109,7 +109,7 @@ def test_unit_snapshot_root_passes_final_plan_validation() -> None:
 
     plan = _approved_parent_plan("run-test")
     unit = derive_sub_tdp_units(plan)[0]
-    snapshot = build_unit_plan_snapshot(plan, unit)
+    snapshot = build_unit_plan_snapshot(plan, unit, package_id="pkg-test")
 
     root = snapshot.items[PLAN_ROOT_ITEM_ID]
     assert root.title != "Root"

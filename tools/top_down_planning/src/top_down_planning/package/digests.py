@@ -50,11 +50,25 @@ def plan_digest_from_payload(plan_payload: dict[str, Any]) -> str:
 
 
 def assigned_subtree_digest(plan: Plan, unit_root_id: str) -> str:
-    assigned_ids = sorted(collect_assigned_item_ids(plan, unit_root_id))
+    """Digest the full assigned subtree contract, not only item id inventory."""
+
+    assigned_ids = collect_assigned_item_ids(plan, unit_root_id)
+    items_payload = []
+    for item_id in assigned_ids:
+        item = plan.items[item_id]
+        items_payload.append(item.to_dict())
     return digest_canonical_payload(
         {
             "assigned_root_item_id": unit_root_id,
             "assigned_item_ids": assigned_ids,
+            "items": items_payload,
+            "parent_output_goal": plan.output_goal,
+            "parent_boundaries": list(plan.boundaries),
+            "parent_acceptance": list(plan.acceptance),
+            "parent_risks": list(plan.risks),
+            "parent_constraints": list(plan.constraints),
+            "parent_assumptions": list(plan.assumptions),
+            "parent_scope": plan.scope.to_dict() if plan.scope is not None else None,
         }
     )
 

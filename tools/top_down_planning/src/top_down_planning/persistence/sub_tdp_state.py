@@ -35,7 +35,7 @@ def _unit_record(unit: SubTdpUnit) -> dict[str, Any]:
 
 def initial_sub_tdp_state(units: list[SubTdpUnit]) -> dict[str, Any]:
     return {
-        "version": 1,
+        "version": 2,
         "status": ORCHESTRATION_STATUS_PREPARING,
         "active_unit_id": None,
         "units": [_unit_record(unit) for unit in units],
@@ -59,7 +59,7 @@ def load_sub_tdp_state(production: dict[str, Any]) -> dict[str, Any] | None:
     raw = production.get("sub_tdps")
     if not isinstance(raw, dict):
         return None
-    return dict(raw)
+    return deepcopy(raw)
 
 
 def merge_sub_tdp_state_into_production(
@@ -87,13 +87,15 @@ def unit_dependencies_satisfied(
 
     loaded = package_units.get(unit_id)
     if loaded is None:
-        return True
+        raise ValueError(f"unknown unit in dependency check: {unit_id!r}")
     depends_on = list(getattr(loaded, "depends_on", None) or [])
     for dep_id in depends_on:
         dep_record = find_unit(state, dep_id)
         if dep_record is None:
             return False
         if str(dep_record.get("status") or "") != UNIT_STATUS_COMPLETED:
+            return False
+        if not str(dep_record.get("accepted_result_digest") or "").strip():
             return False
     return True
 
@@ -139,8 +141,16 @@ def sub_tdp_progress(state: dict[str, Any] | None) -> tuple[int, int, str | None
 def unit_status_from_child_run(run: dict[str, Any]) -> str:
     status = str(run.get("status") or "")
     phase = str(run.get("phase") or "")
-    if status == "completed" and phase == _CHILD_OUTPUT_VALIDATED_PHASE:
+    outcome = str(run.get("outcome") or "")
+    if (
+        status == "completed"
+        and phase == _CHILD_OUTPUT_VALIDATED_PHASE
+        and outcome == "accepted"
+    ):
         return UNIT_STATUS_COMPLETED
+    if status == "completed" and phase == _CHILD_OUTPUT_VALIDATED_PHASE:
+        # Completed output review without acceptance is a failed unit delivery.
+        return UNIT_STATUS_FAILED
     if status == "paused":
         return UNIT_STATUS_PAUSED
     if status == "failed":
@@ -189,6 +199,8 @@ def all_units_completed(state: dict[str, Any], units: list[SubTdpUnit]) -> bool:
         if record is None:
             return False
         if str(record.get("status") or "") != UNIT_STATUS_COMPLETED:
+            return False
+        if not str(record.get("accepted_result_digest") or "").strip():
             return False
     return True
 

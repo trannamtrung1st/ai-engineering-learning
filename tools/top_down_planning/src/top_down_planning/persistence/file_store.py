@@ -213,6 +213,10 @@ class FileRunStore:
         if run_extras:
             for key, value in run_extras.items():
                 run_record[key] = value
+        if not str(run_record.get("run_kind") or "").strip():
+            from top_down_planning.domain.run_kind import default_run_kind_for_phase
+
+            run_record["run_kind"] = default_run_kind_for_phase(phase)
 
         try:
             staging_dir.mkdir(parents=True)

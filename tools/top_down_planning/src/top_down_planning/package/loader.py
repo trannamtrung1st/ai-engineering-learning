@@ -3,20 +3,28 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from top_down_planning.domain.models import Plan
+from top_down_planning.domain.unit_dependencies import (
+    UnitDependencyCycleError,
+    detect_unit_dependency_cycles,
+)
 from top_down_planning.package.digests import (
+    assigned_subtree_digest,
     compute_package_digest,
-    digest_manifest_content,
     digest_plan_file,
 )
 
 
 class ExecutionPackageError(ValueError):
     """Package validation failure before execution may start."""
+
+    def __init__(self, message: str, *, code: str = "package_invalid") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -31,6 +39,8 @@ class LoadedUnit:
     assigned_subtree_digest: str
     depends_on: list[str]
     plan: Plan
+    external_prerequisites: list[dict[str, Any]] = field(default_factory=list)
+    required_upstream_outputs: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -40,6 +50,34 @@ class LoadedExecutionPackage:
     parent_plan: Plan
     units: dict[str, LoadedUnit]
     workspace_path: Path
+    resolved_config: dict[str, Any]
+
+
+def _contained_package_path(package_dir: Path, relative: str, *, label: str) -> Path:
+    if not relative or relative.startswith("/") or Path(relative).is_absolute():
+        raise ExecutionPackageError(
+            f"{label} path must be package-relative, got {relative!r}",
+            code="package_path_invalid",
+        )
+    candidate = (package_dir / relative).resolve()
+    try:
+        candidate.relative_to(package_dir)
+    except ValueError as exc:
+        raise ExecutionPackageError(
+            f"{label} path escapes package directory: {relative!r}",
+            code="package_path_escape",
+        ) from exc
+    return candidate
+
+
+def _load_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ExecutionPackageError(
+            f"invalid JSON in {path.name}: {exc}",
+            code="package_json_invalid",
+        ) from exc
 
 
 class ExecutionPackageLoader:
@@ -56,9 +94,14 @@ class ExecutionPackageLoader:
         if not manifest_path.is_file():
             raise ExecutionPackageError(f"manifest.json missing: {manifest_path}")
 
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = _load_json(manifest_path)
+        if not isinstance(manifest, dict):
+            raise ExecutionPackageError("manifest.json must be an object")
         if int(manifest.get("schema_version") or 0) != 1:
-            raise ExecutionPackageError("unsupported package schema_version")
+            raise ExecutionPackageError(
+                "unsupported package schema_version",
+                code="package_schema_unsupported",
+            )
 
         workspace_info = manifest.get("workspace") or {}
         workspace_path = Path(str(workspace_info.get("path") or "")).resolve()
@@ -67,7 +110,9 @@ class ExecutionPackageLoader:
 
         parent_info = manifest.get("parent") or {}
         parent_plan_rel = str(parent_info.get("plan_file") or "")
-        parent_plan_path = (package_dir / parent_plan_rel).resolve()
+        parent_plan_path = _contained_package_path(
+            package_dir, parent_plan_rel, label="parent plan"
+        )
         if not parent_plan_path.is_file():
             raise ExecutionPackageError(f"parent plan snapshot missing: {parent_plan_path}")
         parent_digest = digest_plan_file(parent_plan_path)
@@ -76,52 +121,158 @@ class ExecutionPackageLoader:
             raise ExecutionPackageError(
                 f"parent plan digest mismatch: expected {expected_parent_digest}, got {parent_digest}"
             )
-        parent_plan = Plan.from_dict(json.loads(parent_plan_path.read_text(encoding="utf-8")))
+        try:
+            parent_plan = Plan.from_dict(_load_json(parent_plan_path))
+        except (TypeError, ValueError, KeyError) as exc:
+            raise ExecutionPackageError(
+                f"parent plan deserialization failed: {exc}",
+                code="package_plan_invalid",
+            ) from exc
 
         units: dict[str, LoadedUnit] = {}
         unit_plan_digests: list[str] = []
+        seen_ordinals: set[int] = set()
+        seen_plan_files: set[str] = set()
+        unit_deps: dict[str, list[str]] = {}
+
         for raw_unit in manifest.get("units") or []:
             if not isinstance(raw_unit, dict):
                 raise ExecutionPackageError("each manifest unit must be an object")
-            unit_id = str(raw_unit.get("unit_id") or "")
+            unit_id = str(raw_unit.get("unit_id") or "").strip()
+            if not unit_id:
+                raise ExecutionPackageError("unit_id must be non-empty")
+            if unit_id in units:
+                raise ExecutionPackageError(f"duplicate unit_id: {unit_id!r}")
+            ordinal = int(raw_unit.get("ordinal") or 0)
+            if ordinal in seen_ordinals:
+                raise ExecutionPackageError(f"duplicate unit ordinal: {ordinal}")
+            seen_ordinals.add(ordinal)
+
             plan_rel = str(raw_unit.get("plan_file") or "")
-            unit_plan_path = (package_dir / plan_rel).resolve()
+            if plan_rel in seen_plan_files:
+                raise ExecutionPackageError(f"duplicate unit plan_file: {plan_rel!r}")
+            seen_plan_files.add(plan_rel)
+            unit_plan_path = _contained_package_path(
+                package_dir, plan_rel, label=f"unit {unit_id} plan"
+            )
             if not unit_plan_path.is_file():
                 raise ExecutionPackageError(f"unit plan snapshot missing: {unit_plan_path}")
             unit_digest = digest_plan_file(unit_plan_path)
             expected_unit_digest = str(raw_unit.get("plan_digest") or "")
             if unit_digest != expected_unit_digest:
-                raise ExecutionPackageError(
-                    f"unit {unit_id} plan digest mismatch"
-                )
+                raise ExecutionPackageError(f"unit {unit_id} plan digest mismatch")
             unit_plan_digests.append(unit_digest)
-            assigned_ids = list(raw_unit.get("assigned_item_ids") or [])
-            unit_plan = Plan.from_dict(json.loads(unit_plan_path.read_text(encoding="utf-8")))
-            active_unit_ids = {
-                item_id
-                for item_id in unit_plan.items
-                if item_id != "item-root"
-            }
-            if set(assigned_ids) - active_unit_ids:
+            assigned_ids = [str(item) for item in (raw_unit.get("assigned_item_ids") or [])]
+            try:
+                unit_plan = Plan.from_dict(_load_json(unit_plan_path))
+            except (TypeError, ValueError, KeyError) as exc:
                 raise ExecutionPackageError(
-                    f"unit {unit_id} assigned_item_ids do not match snapshot inventory"
+                    f"unit {unit_id} plan deserialization failed: {exc}",
+                    code="package_plan_invalid",
+                ) from exc
+            active_unit_ids = {
+                item_id for item_id in unit_plan.items if item_id != "item-root"
+            }
+            assigned_set = set(assigned_ids)
+            if assigned_set != active_unit_ids:
+                raise ExecutionPackageError(
+                    f"unit {unit_id} assigned_item_ids do not equal snapshot inventory"
                 )
+            assigned_root = str(raw_unit.get("assigned_root_item_id") or unit_id)
+            if assigned_root != unit_id:
+                raise ExecutionPackageError(
+                    f"unit {unit_id} assigned_root_item_id mismatch"
+                )
+            expected_subtree = str(raw_unit.get("assigned_subtree_digest") or "")
+            actual_subtree = assigned_subtree_digest(parent_plan, unit_id)
+            if expected_subtree and expected_subtree != actual_subtree:
+                raise ExecutionPackageError(
+                    f"unit {unit_id} assigned_subtree_digest mismatch"
+                )
+
+            depends_on = [str(dep) for dep in (raw_unit.get("depends_on") or [])]
+            if unit_id in depends_on:
+                raise ExecutionPackageError(f"unit {unit_id} has self-dependency")
+            unit_deps[unit_id] = depends_on
             units[unit_id] = LoadedUnit(
                 unit_id=unit_id,
-                ordinal=int(raw_unit.get("ordinal") or 0),
+                ordinal=ordinal,
                 title=str(raw_unit.get("title") or ""),
                 plan_file=unit_plan_path,
                 plan_digest=unit_digest,
-                assigned_root_item_id=str(raw_unit.get("assigned_root_item_id") or unit_id),
+                assigned_root_item_id=assigned_root,
                 assigned_item_ids=assigned_ids,
-                assigned_subtree_digest=str(raw_unit.get("assigned_subtree_digest") or ""),
-                depends_on=list(raw_unit.get("depends_on") or []),
+                assigned_subtree_digest=expected_subtree or actual_subtree,
+                depends_on=depends_on,
                 plan=unit_plan,
+                external_prerequisites=list(
+                    raw_unit.get("external_prerequisites") or []
+                ),
+                required_upstream_outputs=list(
+                    raw_unit.get("required_upstream_outputs") or []
+                ),
             )
 
-        planning_run = manifest.get("planning_run") or {}
+        for unit_id, deps in unit_deps.items():
+            for dep_id in deps:
+                if dep_id not in units:
+                    raise ExecutionPackageError(
+                        f"unit {unit_id} depends on unknown unit {dep_id!r}"
+                    )
+        try:
+            detect_unit_dependency_cycles(unit_deps)
+        except UnitDependencyCycleError as exc:
+            raise ExecutionPackageError(str(exc), code="package_unit_cycle") from exc
+
+        resolved_config: dict[str, Any] | None = None
+        execution_config = manifest.get("execution_config")
+        if not isinstance(execution_config, dict):
+            raise ExecutionPackageError(
+                "manifest.execution_config is required",
+                code="package_config_missing",
+            )
+        config_rel = str(execution_config.get("resolved_config_file") or "").strip()
+        if not config_rel:
+            raise ExecutionPackageError(
+                "manifest.execution_config.resolved_config_file is required",
+                code="package_config_missing",
+            )
+        config_path = _contained_package_path(
+            package_dir, config_rel, label="execution config"
+        )
+        if not config_path.is_file():
+            raise ExecutionPackageError(
+                f"execution resolved_config missing: {config_path}",
+                code="package_config_missing",
+            )
+        loaded_config = _load_json(config_path)
+        if not isinstance(loaded_config, dict):
+            raise ExecutionPackageError("execution resolved_config must be an object")
+        resolved_config = loaded_config
+
+        planning_run = manifest.get("planning_run")
+        if not isinstance(planning_run, dict):
+            raise ExecutionPackageError("manifest.planning_run is required")
+        if not isinstance(planning_run.get("inherited_plan_approval"), dict):
+            raise ExecutionPackageError(
+                "manifest.planning_run.inherited_plan_approval is required",
+                code="package_approval_missing",
+            )
+
+        context = manifest.get("context")
+        if not isinstance(context, dict):
+            raise ExecutionPackageError("manifest.context is required")
+        input_refs = context.get("input_refs")
+        if not isinstance(input_refs, dict) or not isinstance(
+            input_refs.get("refs"), list
+        ):
+            raise ExecutionPackageError(
+                "manifest.context.input_refs must be "
+                "{aggregate_digest, refs:[...]}",
+                code="package_input_refs_invalid",
+            )
+
         approved_plan_digest = str(planning_run.get("approved_plan_digest") or "")
-        context = manifest.get("context") or {}
         context_digests = {
             key: str(value)
             for key, value in context.items()
@@ -144,6 +295,7 @@ class ExecutionPackageLoader:
             parent_plan=parent_plan,
             units=units,
             workspace_path=workspace_path,
+            resolved_config=resolved_config,
         )
 
 

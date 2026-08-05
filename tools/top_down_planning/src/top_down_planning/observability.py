@@ -466,6 +466,11 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         "session_replacement_started": ("session:lineage", "session replacement started"),
         "session_replacement_failed": ("session:lineage", "session replacement failed"),
         "session_resume_failed": ("session:lineage", "session resume failed"),
+        "sub_tdp_child_started": ("sub-tdp:start", "sub-tdp child started"),
+        "sub_tdp_child_resumed": ("sub-tdp:resume", "sub-tdp child resumed"),
+        "sub_tdp_child_completed": ("sub-tdp:end", "sub-tdp child completed"),
+        "sub_tdp_child_attached": ("sub-tdp:attach", "sub-tdp child attached"),
+        "sub_tdp_child_blocked": ("sub-tdp:blocked", "sub-tdp child blocked"),
     }
     mapped = mapping.get(event_type)
     if mapped is None:

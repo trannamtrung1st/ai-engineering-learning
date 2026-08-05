@@ -164,8 +164,8 @@ tdp validate --run <run-id> --config tools/top_down_planning/examples/top-down-p
 tdp doctor --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
 tdp resume --run <run-id> --config tools/top_down_planning/examples/top-down-planning.yaml
 tdp prepare --config tools/top_down_planning/examples/top-down-planning.yaml --output .tdp/execution
-tdp execute --manifest .tdp/execution/manifest.json --config tools/top_down_planning/examples/top-down-planning.yaml
-tdp sub-tdp attach --parent <parent-run-id> --child <child-run-id> --config <parent-config.yaml>
+tdp execute --manifest .tdp/execution/manifest.json
+tdp sub-tdp attach --parent <parent-run-id> --child <child-run-id> --runs-dir <runs-root>
 ```
 
 Configuration precedence: built-in defaults → YAML file → repeated `--set path=value` overrides → dedicated CLI flags when explicitly supplied. Unknown paths in YAML or `--set` are rejected. Resolved configuration is materialized to `<runs-root>/<run-id>/resolved-config.yaml`. Resume binds approvals to `digests.config_contract` and limit changes to `digests.config_execution`; both exclude `observability`, `notifications`, and `runtime.runs_dir`. Contract changes on resume require `--allow-config-drift` (before whole-plan approval they apply; after approval they are ignored with warnings). CLI invocation metadata is persisted separately in `invocation.json`.
@@ -188,13 +188,13 @@ Plan once, materialize an immutable execution package, then run parent or unit e
 tdp prepare --config <project.yaml> --output .tdp/execution
 tdp execute --manifest .tdp/execution/manifest.json
 tdp execute --manifest .tdp/execution/manifest.json --unit <unit-id>
-tdp sub-tdp attach --parent <parent-run-id> --child <child-run-id>
+tdp sub-tdp attach --parent <parent-run-id> --child <child-run-id> --runs-dir <runs-root>
 tdp resume --run <execution-run-id>
 ```
 
-The package entry point is `manifest.json` (parent and unit plan snapshots, digests, dependency graph). Prepared children load the full assigned subtree and inherited context; they do not enter planning. Direct `tdp execute --unit` and parent-driven execution share `PreparedUnitExecutor`.
+The package entry point is `manifest.json` (parent and unit plan snapshots, digests, dependency graph, embedded execution config, and inherited plan approval). `tdp execute` loads semantic config from the package — it does not require `cwd/config.yaml`. Optional `--config` / presentation `--set` overrides are limited to observability, notifications, and run-store location. Prepared children load the full assigned subtree and inherited context; they do not enter planning. Direct `tdp execute --unit` and parent-driven execution share `PreparedUnitExecutor`.
 
-Rejoin independently executed prepared children with `tdp sub-tdp attach --parent <parent-run-id> --child <child-run-id>`. The child's embedded `unit_id` is authoritative.
+Rejoin independently executed prepared children with `tdp sub-tdp attach --parent <parent-run-id> --child <child-run-id> --runs-dir <runs-root>`. Attach is allowed only while the parent is in `sub_tdps` and the child is completed/accepted. The child's embedded `unit_id` is authoritative.
 
 Authoritative Sub-TDP orchestration lives in parent `production.json` → `sub_tdps` (journaled via `RunStore.commit`). Do not hand-edit orchestration state.
 

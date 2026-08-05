@@ -413,14 +413,62 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
             plan_item_id = str(unit_record.get("plan_item_id") or "").strip()
             if not child_run_id:
                 continue
-            production_ref = f"runs/{child_run_id}/production.json"
+            try:
+                child_run = self._store.load_run(child_run_id)
+                child_production = self._store.load_production(child_run_id)
+            except Exception as exc:
+                accepted = unit_record.get("accepted_result")
+                if isinstance(accepted, dict) and accepted.get("output_digest"):
+                    # Prefer durable accepted_result when child artifacts are unavailable.
+                    child_run = {
+                        "id": child_run_id,
+                        "outcome": accepted.get("outcome"),
+                        "digests": {"output": accepted.get("output_digest")},
+                        "package_binding": {
+                            "unit_plan_digest": accepted.get("unit_plan_digest"),
+                        },
+                    }
+                    child_production = {
+                        "completion_claim": None,
+                        "dispositions": {},
+                        "output_evidence": [],
+                    }
+                else:
+                    raise ProviderRunError(
+                        f"unable to load Sub-TDP child {child_run_id} for unit "
+                        f"{plan_item_id}: {exc}"
+                    ) from exc
+            child_binding = child_run.get("package_binding") or {}
+            child_digests = child_run.get("digests") or {}
+            claim = child_production.get("completion_claim")
+            accepted = unit_record.get("accepted_result")
+            if not isinstance(accepted, dict):
+                accepted = {}
             sub_tdp_evidence.append(
                 {
                     "child_run_id": child_run_id,
                     "plan_item_id": plan_item_id,
+                    "unit_id": plan_item_id,
                     "title": unit_record.get("title"),
                     "status": unit_record.get("status"),
-                    "production_ref": production_ref,
+                    "outcome": child_run.get("outcome"),
+                    "output_digest": str(
+                        accepted.get("output_digest")
+                        or child_digests.get("output")
+                        or ""
+                    ),
+                    "unit_plan_digest": str(
+                        child_binding.get("unit_plan_digest") or ""
+                    ),
+                    "package_id": str(child_binding.get("package_id") or ""),
+                    "package_digest": str(child_binding.get("package_digest") or ""),
+                    "completion_claim": claim if isinstance(claim, dict) else None,
+                    "dispositions": child_production.get("dispositions") or {},
+                    "evidence_ids": [
+                        str(item.get("id") or "")
+                        for item in (child_production.get("output_evidence") or [])
+                        if isinstance(item, dict) and item.get("id")
+                    ],
                     "summary": str(unit_record.get("summary") or ""),
                 }
             )
@@ -429,6 +477,11 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
                     "plan_item_id": plan_item_id,
                     "workspace_path": str(workspace),
                     "child_run_id": child_run_id,
+                    "output_digest": str(
+                        accepted.get("output_digest")
+                        or child_digests.get("output")
+                        or ""
+                    ),
                 }
             )
 

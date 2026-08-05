@@ -21,6 +21,12 @@ from top_down_planning.domain.production import (
 )
 from top_down_planning.domain.readiness import detect_deadlock
 from top_down_planning.domain.reviews import find_whole_plan_approval
+from top_down_planning.domain.run_kind import (
+    RUN_KIND_PARENT_EXECUTION,
+    RUN_KIND_SUB_TDP_EXECUTION,
+    resolve_run_kind,
+)
+from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.orchestrator.producer_session import (
     PRODUCER_BATCH_COMPLETE_SIGNAL,
     build_producer_protocol_instructions,
@@ -159,6 +165,33 @@ class ProductionPhaseOrchestrator:
                 from top_down_planning.orchestrator.plan_amendment import (
                     PlanAmendmentOrchestrator,
                 )
+                from top_down_planning.orchestrator.run_transitions import pause_run
+
+                run = self._store.load_run(self._run_id)
+                kind = resolve_run_kind(run)
+                if kind in {RUN_KIND_PARENT_EXECUTION, RUN_KIND_SUB_TDP_EXECUTION}:
+                    stop = StopRecord(
+                        code="prepared_plan_amendment_required",
+                        category="operational",
+                        phase=str(run.get("phase") or ""),
+                        message=(
+                            "prepared execution cannot amend the approved plan in place; "
+                            "re-run tdp prepare to materialize a new package"
+                        ),
+                    )
+                    pause_run(
+                        self._store,
+                        self._run_id,
+                        stop=stop,
+                        revoke_phase=str(run.get("phase") or ""),
+                        event_type="prepared_plan_amendment_required",
+                    )
+                    return self._result_from_run(
+                        self._store.load_run(self._run_id),
+                        ok=False,
+                        session_id=session_id,
+                        reason=stop.message,
+                    )
 
                 amendment_result = PlanAmendmentOrchestrator(
                     self._store,

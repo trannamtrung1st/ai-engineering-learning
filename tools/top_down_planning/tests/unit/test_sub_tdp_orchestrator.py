@@ -69,6 +69,7 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
         *,
         create_provider,
         workspace: Path,
+        observability=None,
     ) -> dict:
         plan = child_store.load_plan_model(child_run_id)
         work_item_ids = [
@@ -91,7 +92,8 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
                 ),
                 "plan_items": work_item_ids,
                 "dispositions": {
-                    item_id: {"disposition": "completed"} for item_id in work_item_ids
+                    item_id: {"disposition": "completed", "evidence": "done"}
+                    for item_id in work_item_ids
                 },
                 "outputs": [],
                 "contributions": [],

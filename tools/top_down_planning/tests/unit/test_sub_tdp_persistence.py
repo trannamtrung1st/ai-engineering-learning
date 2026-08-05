@@ -80,7 +80,18 @@ def test_merge_sub_tdp_state_into_production(tmp_path) -> None:
 
 def test_unit_status_from_child_run_maps_paused() -> None:
     assert unit_status_from_child_run({"status": "paused", "phase": "production"}) == "paused"
-    assert unit_status_from_child_run({"status": "completed", "phase": "output_validated"}) == "completed"
+    assert (
+        unit_status_from_child_run(
+            {"status": "completed", "phase": "output_validated", "outcome": "accepted"}
+        )
+        == "completed"
+    )
+    assert (
+        unit_status_from_child_run(
+            {"status": "completed", "phase": "output_validated", "outcome": "rejected"}
+        )
+        == "failed"
+    )
     assert unit_status_from_child_run({"status": "failed", "phase": "production"}) == "failed"
 
 
@@ -131,8 +142,11 @@ def test_all_units_completed_requires_every_unit() -> None:
     state = initial_sub_tdp_state(units)
     assert not all_units_completed(state, units)
     state["units"][0]["status"] = "completed"
+    state["units"][0]["accepted_result_digest"] = "a" * 64
     assert not all_units_completed(state, units)
     state["units"][1]["status"] = "completed"
+    assert not all_units_completed(state, units)
+    state["units"][1]["accepted_result_digest"] = "b" * 64
     assert all_units_completed(state, units)
 
 
@@ -194,5 +208,7 @@ def test_unit_dependencies_satisfied_requires_completed_prerequisites() -> None:
     assert not unit_dependencies_satisfied(state, package_units, "item-b")
     assert next_ready_unit_id(state, package_units) == "item-a"
     state["units"][0]["status"] = UNIT_STATUS_COMPLETED
+    assert not unit_dependencies_satisfied(state, package_units, "item-b")
+    state["units"][0]["accepted_result_digest"] = "a" * 64
     assert unit_dependencies_satisfied(state, package_units, "item-b")
     assert next_ready_unit_id(state, package_units) == "item-b"

@@ -39,7 +39,11 @@ from top_down_planning.orchestrator.session_policy_execution import (
 import top_down_planning.orchestrator.session_policy_execution  # noqa: F401 — registers executor
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
-from top_down_planning.domain.run_kind import RUN_KIND_PARENT_EXECUTION, resolve_run_kind
+from top_down_planning.domain.run_kind import (
+    RUN_KIND_PARENT_EXECUTION,
+    RUN_KIND_SUB_TDP_EXECUTION,
+    resolve_run_kind,
+)
 from top_down_planning.orchestrator.production import ProductionPhaseOrchestrator
 from top_down_planning.orchestrator.sub_tdps import SubTdpsPhaseOrchestrator
 from top_down_planning.orchestrator.whole_output_review import WholeOutputReviewOrchestrator
@@ -236,7 +240,40 @@ class RunEngine:
 
             try:
                 if has_pending_amendment(production) and phase != PRODUCTION:
-                    result = PlanAmendmentOrchestrator(self._store, run_id, provider).run()
+                    kind = resolve_run_kind(run)
+                    if kind in {RUN_KIND_PARENT_EXECUTION, RUN_KIND_SUB_TDP_EXECUTION}:
+                        stop = StopRecord(
+                            code="prepared_plan_amendment_required",
+                            category="operational",
+                            phase=phase,
+                            message=(
+                                "prepared execution cannot amend the approved plan in place; "
+                                "re-run tdp prepare to materialize a new package"
+                            ),
+                        )
+                        pause_run(
+                            self._store,
+                            run_id,
+                            stop=stop,
+                            revoke_phase=phase,
+                            event_type="prepared_plan_amendment_required",
+                        )
+                        result = PlanAmendmentResult(
+                            ok=False,
+                            phase=phase,
+                            status="paused",
+                            outcome=None,
+                            amendment_id=str(
+                                production.get("pending_amendment_id") or ""
+                            ),
+                            planner_session_id=None,
+                            producer_session_id=None,
+                            reason=stop.message,
+                        )
+                    else:
+                        result = PlanAmendmentOrchestrator(
+                            self._store, run_id, provider
+                        ).run()
                     step = RunStepResult(
                         phase=str(result.phase),
                         ok=result.ok,
@@ -278,6 +315,7 @@ class RunEngine:
                         run_id,
                         provider,
                         create_provider=_child_provider_factory,
+                        observability=self._observability,
                     ).run()
                     step = RunStepResult(
                         phase=str(result.phase),

@@ -2,27 +2,30 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any
 
 from top_down_planning.config import (
-    build_initial_context_snapshot_binding_with_diagnostics,
     compute_input_digest,
     compute_output_goal_digest,
-    resolve_workspace,
 )
-from top_down_planning.domain.approval_digests import PLAN_APPROVAL_DIGEST_KEYS
+from top_down_planning.config.context_digests import (
+    build_initial_context_snapshot_binding_with_diagnostics,
+)
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.run_kind import (
     RUN_KIND_PARENT_EXECUTION,
     RUN_KIND_SUB_TDP_EXECUTION,
 )
-from top_down_planning.domain.session_bindings import reviewer_binding_for_provider_session
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED
+from top_down_planning.package.execution_validation import (
+    validate_resolved_config_against_package,
+    verify_package_authoritative_inputs,
+)
 from top_down_planning.package.loader import LoadedExecutionPackage, LoadedUnit
+from top_down_planning.package.store_persist import persist_package_in_store
 from top_down_planning.persistence import FileRunStore
-from top_down_planning.package.execution_validation import validate_resolved_config_against_package
-from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.path_ids import new_run_id
 
 
@@ -33,52 +36,32 @@ def inherited_whole_plan_approval(
     package_manifest: dict[str, Any],
     run_digests: dict[str, str],
 ) -> dict[str, Any]:
-    """Package-derived inherited approval — not a new reviewer session."""
+    """Persist the packaged inherited approval attestation — not a reviewer session."""
 
-    plan_revision = int(plan.revision)
-    digests = {
-        str(key): str(value)
-        for key, value in run_digests.items()
-        if key in PLAN_APPROVAL_DIGEST_KEYS and value
-    }
-    plan_digest = compute_plan_digest(plan)
-    digests["plan"] = plan_digest
     planning_run = package_manifest.get("planning_run") or {}
-    loop_id = str(planning_run.get("whole_plan_review_id") or f"review-whole-plan-{run_id}")
-    binding = reviewer_binding_for_provider_session(
-        "prepared-package-reviewer",
-        instance_seed=loop_id,
+    attestation = planning_run.get("inherited_plan_approval")
+    if not isinstance(attestation, dict) or not attestation:
+        raise ValueError(
+            "prepared package missing planning_run.inherited_plan_approval attestation"
+        )
+    record = copy.deepcopy(attestation)
+    record["plan_source"] = "prepared_package"
+    record["plan_review_inherited"] = True
+    record["inherited_plan_approval"] = True
+    # Distinct schema marker — never invent a child reviewer binding.
+    record.pop("reviewer_binding", None)
+    if not record.get("id"):
+        record["id"] = str(
+            planning_run.get("whole_plan_review_id")
+            or f"inherited-plan-approval-{run_id}"
+        )
+    approved = dict(record.get("approved_digests") or {})
+    approved.update(
+        {str(key): str(value) for key, value in run_digests.items() if value}
     )
-    return {
-        "id": loop_id,
-        "type": "whole_plan",
-        "revise_at": "blocker",
-        "review_record_schema_version": 2,
-        "review_contract_version": 2,
-        "reviewer_binding": binding.to_dict() if binding is not None else None,
-        "target_revision": plan_revision,
-        "scope": {"kind": "whole_plan"},
-        "status": "approved",
-        "findings": [],
-        "revision_cycles": 0,
-        "approved_digests": digests,
-        "lifecycle_status": "approved",
-        "active_stage": "scope_review",
-        "scope_review_rounds": 1,
-        "scope_review_result": {
-            "stage": "scope_review",
-            "target_digest": plan_digest,
-            "scope_id": "whole_plan",
-            "decision": "approved",
-            "reported_findings": [],
-            "acceptance_criteria_checked": [
-                "Plan approved in planning run and verified via execution package lineage",
-            ],
-            "summary": "Inherited prepared-package plan approval.",
-        },
-        "plan_source": "prepared_package",
-        "plan_review_inherited": True,
-    }
+    record["approved_digests"] = approved
+    record["target_revision"] = int(plan.revision)
+    return record
 
 
 def package_binding_from_manifest(
@@ -88,12 +71,16 @@ def package_binding_from_manifest(
     selected_unit_id: str | None = None,
     unit_record: LoadedUnit | None = None,
 ) -> dict[str, Any]:
+    planning_run = manifest.get("planning_run") or {}
     binding: dict[str, Any] = {
         "manifest_path": str(manifest_path.resolve()),
         "package_id": str(manifest.get("package_id") or ""),
         "package_digest": str(manifest.get("package_digest") or ""),
-        "planning_run_id": str((manifest.get("planning_run") or {}).get("run_id") or ""),
+        "planning_run_id": str(planning_run.get("run_id") or ""),
         "parent_plan_digest": str((manifest.get("parent") or {}).get("plan_digest") or ""),
+        "approved_parent_plan_digest": str(
+            planning_run.get("approved_plan_digest") or ""
+        ),
         "selected_unit_id": selected_unit_id,
     }
     if unit_record is not None:
@@ -158,6 +145,7 @@ class PreparedRunFactory:
         unit_record: LoadedUnit | None,
     ) -> str:
         workspace = package.workspace_path
+        verify_package_authoritative_inputs(package)
         validate_resolved_config_against_package(
             resolved_config,
             package,
@@ -170,9 +158,10 @@ class PreparedRunFactory:
             )
         )
         run_id = new_run_id()
+        persisted_manifest = persist_package_in_store(store.root, package)
         package_binding = package_binding_from_manifest(
             package.manifest,
-            manifest_path=package.manifest_path,
+            manifest_path=persisted_manifest,
             selected_unit_id=selected_unit_id,
             unit_record=unit_record,
         )
@@ -187,7 +176,9 @@ class PreparedRunFactory:
             plan=plan,
             resolved_config=resolved_config,
             input_digest=compute_input_digest(resolved_config, base_dir=workspace),
-            output_goal_digest=compute_output_goal_digest(resolved_config, base_dir=workspace),
+            output_goal_digest=compute_output_goal_digest(
+                resolved_config, base_dir=workspace
+            ),
             context_spec_digest=context_spec_digest,
             context_snapshot_digest=context_snapshot_digest,
             context_snapshot_binding=binding,
