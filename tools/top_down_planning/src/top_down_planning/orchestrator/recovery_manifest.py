@@ -201,6 +201,7 @@ def build_producer_recovery_manifest(
         plan,
         production=production,
         activity=activity,
+        store=store,
     )
     manifest.update(
         _base_recovery_fields(

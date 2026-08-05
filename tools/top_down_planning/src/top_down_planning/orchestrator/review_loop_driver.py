@@ -804,6 +804,7 @@ class ReviewLoopDriver:
             self._store.load_plan_model(self._run_id),
             production=self._store.load_production(self._run_id),
             activity=activity,
+            store=self._store,
         )
 
     def _ensure_owner_primary_session(

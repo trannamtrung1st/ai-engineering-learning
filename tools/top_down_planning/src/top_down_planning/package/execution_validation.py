@@ -15,7 +15,6 @@ from top_down_planning.config.context import (
     compute_context_spec_digest_from_config,
 )
 from top_down_planning.config.context_digests import (
-    authorized_production_workspace_paths,
     build_initial_context_snapshot_binding_with_diagnostics,
     diff_snapshot_binding_paths,
     split_unauthorized_snapshot_paths,
@@ -230,40 +229,69 @@ def verify_package_context_snapshot_exact(package: LoadedExecutionPackage) -> di
     return package_binding
 
 
-def _authorized_paths_from_upstream(
-    store: Any,
-    upstream_wrappers: list[dict[str, Any]],
+def authorized_paths_from_accepted_result(
+    accepted: dict[str, Any],
+    *,
+    workspace: Path,
+) -> set[str]:
+    """Derive authorized workspace paths from an immutable accepted-result record."""
+
+    from top_down_planning.config.snapshot_policy import (
+        CanonicalPathError,
+        canonicalize_evidence_ref,
+    )
+
+    authorized: set[str] = set()
+    for output in accepted.get("output_refs") or []:
+        if not isinstance(output, dict):
+            continue
+        ref_text = str(output.get("ref") or "").strip()
+        if not ref_text:
+            continue
+        try:
+            authorized.add(canonicalize_evidence_ref(ref_text, workspace=workspace))
+        except CanonicalPathError:
+            continue
+    return authorized
+
+
+def _authorized_paths_from_baseline(
+    baseline_wrappers: list[dict[str, Any]],
     *,
     workspace: Path,
 ) -> set[str]:
     from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
 
     authorized: set[str] = set()
-    for wrapper in upstream_wrappers:
+    for wrapper in baseline_wrappers:
         verify_upstream_accepted_result_binding(wrapper)
         accepted = wrapper["accepted_result"]
-        child_run_id = str(accepted.get("child_run_id") or "").strip()
-        if not child_run_id:
+        if not str(accepted.get("child_run_id") or "").strip():
             raise ExecutionPackageError(
-                "upstream accepted_result missing child_run_id",
+                "baseline accepted_result missing child_run_id",
                 code="sub_tdp_upstream_invalid",
             )
-        production = store.load_production(child_run_id)
-        authorized |= authorized_production_workspace_paths(
-            production,
+        authorized |= authorized_paths_from_accepted_result(
+            accepted,
             workspace=workspace,
         )
     return authorized
 
 
-def verify_package_context_snapshot_with_upstream(
+def verify_package_context_snapshot_with_baseline(
     package: LoadedExecutionPackage,
     *,
     store: Any,
-    upstream_wrappers: list[dict[str, Any]],
+    baseline_wrappers: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Allow resource drift when covered by accepted upstream production evidence."""
+    """Allow resource drift when covered by cumulative baseline accepted results.
 
+    ``baseline_wrappers`` is the cumulative workspace baseline lineage used for
+    context authorization (direct deps plus previously accepted sibling/closure
+    results). Empty wrappers require an exact package snapshot match.
+    """
+
+    del store  # call-site keeps store for symmetry; auth uses immutable records only
     resolved = package.resolved_config
     if resolved is None:
         raise ExecutionPackageError(
@@ -304,16 +332,16 @@ def verify_package_context_snapshot_with_upstream(
             code="package_context_drift",
         )
 
-    authorized = _authorized_paths_from_upstream(
-        store,
-        upstream_wrappers,
+    authorized = _authorized_paths_from_baseline(
+        baseline_wrappers,
         workspace=workspace,
     )
     unauthorized = [path for path in evidence_gaps if path not in authorized]
     if unauthorized:
         joined = ", ".join(unauthorized)
         raise ExecutionPackageError(
-            f"context snapshot resource drift not authorized by upstream results: {joined}",
+            f"context snapshot resource drift not authorized by workspace baseline "
+            f"accepted results: {joined}",
             code="package_context_drift",
         )
     return new_binding
@@ -336,9 +364,10 @@ def _aggregate_input_digest(context: dict[str, Any]) -> str:
 
 
 __all__ = [
+    "authorized_paths_from_accepted_result",
     "validate_resolved_config_against_package",
     "verify_package_authoritative_inputs",
     "verify_package_context_snapshot_exact",
-    "verify_package_context_snapshot_with_upstream",
+    "verify_package_context_snapshot_with_baseline",
     "verify_package_immutable_contract",
 ]

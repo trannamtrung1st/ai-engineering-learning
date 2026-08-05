@@ -130,6 +130,15 @@ class PreparedUnitExecutor:
             explicit_upstream=explicit_upstream,
             explicit_upstream_only=explicit_upstream_only,
         )
+        baseline = self._collect_workspace_baseline_results(
+            child_store,
+            package=package,
+            unit_id=unit_id,
+            direct_upstream=upstream,
+            orchestration_state=orchestration_state,
+            explicit_upstream=explicit_upstream,
+            explicit_upstream_only=explicit_upstream_only,
+        )
 
         if existing_child_run_id:
             child_run = child_store.load_run(existing_child_run_id)
@@ -177,7 +186,8 @@ class PreparedUnitExecutor:
                     unit,
                     resolved_config=resolved_config,
                     invocation=self._child_invocation(invocation, parent_run_id, unit_id),
-                    upstream_accepted_results=upstream if upstream else None,
+                    upstream_accepted_results=upstream,
+                    workspace_baseline_results=baseline,
                 )
 
         self._ensure_child_package_bindings(
@@ -186,6 +196,7 @@ class PreparedUnitExecutor:
             package=package,
             unit_id=unit_id,
             upstream=upstream,
+            baseline=baseline,
         )
         return child_run_id
 
@@ -370,37 +381,21 @@ class PreparedUnitExecutor:
                 if isinstance(accepted, dict):
                     verify_accepted_result_attestation(dep_record)
                     child_run_id = str(accepted.get("child_run_id") or "").strip()
-                    if child_run_id:
-                        from top_down_planning.package.lineage import (
-                            validate_accepted_child_delivery,
+                    if not child_run_id:
+                        raise ExecutionPackageError(
+                            f"orchestration upstream {dep_id!r} missing child_run_id",
+                            code="sub_tdp_upstream_invalid",
                         )
-
-                        child_run = child_store.load_run(child_run_id)
-                        child_production = child_store.load_production(child_run_id)
-                        try:
-                            validate_accepted_child_delivery(
-                                store=child_store,
-                                child_run_id=child_run_id,
-                                child_run=child_run,
-                                child_production=child_production,
-                                verify_evidence=False,
-                            )
-                        except ValueError as exc:
-                            raise ExecutionPackageError(
-                                f"orchestration upstream {dep_id!r} delivery invalid: {exc}",
-                                code="sub_tdp_upstream_invalid",
-                            ) from exc
-                        entry = accepted_result_record(
-                            child_run=child_run,
-                            child_production=child_production,
-                            unit_id=dep_id,
-                            unit_plan_digest=dep_unit.plan_digest,
-                            package_id=package_id,
-                            package_digest=package_digest,
-                            assigned_subtree_digest=dep_unit.assigned_subtree_digest,
-                        )
-                    else:
-                        entry = dict(accepted)
+                    entry = self._validated_accepted_result_entry(
+                        child_store,
+                        child_run_id=child_run_id,
+                        unit_id=dep_id,
+                        unit_plan_digest=dep_unit.plan_digest,
+                        package_id=package_id,
+                        package_digest=package_digest,
+                        assigned_subtree_digest=dep_unit.assigned_subtree_digest,
+                        error_label=f"orchestration upstream {dep_id!r}",
+                    )
                     results.append(
                         upstream_accepted_result_binding(
                             entry,
@@ -409,43 +404,25 @@ class PreparedUnitExecutor:
                     )
                     continue
                 child_run_id = str(dep_record.get("child_run_id") or "").strip()
-                if child_run_id:
-                    child_run = child_store.load_run(child_run_id)
-                    child_production = child_store.load_production(child_run_id)
-                    from top_down_planning.package.lineage import (
-                        validate_accepted_child_delivery,
+                if not child_run_id:
+                    raise self.DependencyUnmetError(unit_id, dep_id)
+                entry = self._validated_accepted_result_entry(
+                    child_store,
+                    child_run_id=child_run_id,
+                    unit_id=dep_id,
+                    unit_plan_digest=dep_unit.plan_digest,
+                    package_id=package_id,
+                    package_digest=package_digest,
+                    assigned_subtree_digest=dep_unit.assigned_subtree_digest,
+                    error_label=f"orchestration upstream {dep_id!r}",
+                )
+                results.append(
+                    upstream_accepted_result_binding(
+                        entry,
+                        upstream_contract_digest=dep_unit.assigned_subtree_digest,
                     )
-
-                    try:
-                        validate_accepted_child_delivery(
-                            store=child_store,
-                            child_run_id=child_run_id,
-                            child_run=child_run,
-                            child_production=child_production,
-                            verify_evidence=False,
-                        )
-                    except ValueError as exc:
-                        raise ExecutionPackageError(
-                            f"orchestration upstream {dep_id!r} delivery invalid: {exc}",
-                            code="sub_tdp_upstream_invalid",
-                        ) from exc
-                    entry = accepted_result_record(
-                        child_run=child_run,
-                        child_production=child_production,
-                        unit_id=dep_id,
-                        unit_plan_digest=dep_unit.plan_digest,
-                        package_id=package_id,
-                        package_digest=package_digest,
-                        assigned_subtree_digest=dep_unit.assigned_subtree_digest,
-                    )
-                    results.append(
-                        upstream_accepted_result_binding(
-                            entry,
-                            upstream_contract_digest=dep_unit.assigned_subtree_digest,
-                        )
-                    )
-                    continue
-                raise self.DependencyUnmetError(unit_id, dep_id)
+                )
+                continue
             matched = self._find_accepted_dependency_run(
                 child_store,
                 package=package,
@@ -474,6 +451,240 @@ class PreparedUnitExecutor:
             )
         return results
 
+    def _collect_workspace_baseline_results(
+        self,
+        child_store: FileRunStore,
+        *,
+        package: LoadedExecutionPackage,
+        unit_id: str,
+        direct_upstream: list[dict[str, Any]],
+        orchestration_state: dict[str, Any] | None,
+        explicit_upstream: dict[str, str] | None = None,
+        explicit_upstream_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Cumulative accepted results authorizing shared-workspace resource drift."""
+
+        from top_down_planning.package.lineage import (
+            accepted_result_record,
+            upstream_accepted_result_binding,
+            verify_accepted_result_attestation,
+            verify_upstream_accepted_result_binding,
+        )
+        from top_down_planning.persistence.sub_tdp_state import UNIT_STATUS_COMPLETED
+
+        package_id = str(package.manifest.get("package_id") or "")
+        package_digest = str(package.manifest.get("package_digest") or "")
+        seen: set[str] = set()
+        results: list[dict[str, Any]] = []
+
+        def add_wrapper(wrapper: dict[str, Any]) -> None:
+            try:
+                verify_upstream_accepted_result_binding(wrapper)
+            except ValueError as exc:
+                raise ExecutionPackageError(
+                    str(exc),
+                    code="sub_tdp_upstream_invalid",
+                ) from exc
+            digest = str(wrapper.get("accepted_result_digest") or "")
+            if not digest or digest in seen:
+                return
+            seen.add(digest)
+            results.append(wrapper)
+
+        for wrapper in direct_upstream:
+            add_wrapper(wrapper)
+
+        def add_closure_from_child(child_run_id: str) -> None:
+            if not child_run_id:
+                return
+            try:
+                child_run = child_store.load_run(child_run_id)
+            except (OSError, ValueError, KeyError) as exc:
+                raise ExecutionPackageError(
+                    f"baseline closure child {child_run_id!r} is missing or unreadable",
+                    code="sub_tdp_upstream_invalid",
+                ) from exc
+            binding = child_run.get("package_binding")
+            if not isinstance(binding, dict):
+                raise ExecutionPackageError(
+                    f"baseline closure child {child_run_id!r} missing package_binding",
+                    code="sub_tdp_upstream_invalid",
+                )
+            for key in (
+                "upstream_accepted_results",
+                "workspace_baseline_accepted_results",
+            ):
+                for nested in binding.get(key) or []:
+                    if isinstance(nested, dict):
+                        add_wrapper(nested)
+
+        for wrapper in list(results):
+            accepted = wrapper.get("accepted_result") or {}
+            add_closure_from_child(str(accepted.get("child_run_id") or "").strip())
+
+        if orchestration_state is not None:
+            for unit_record in orchestration_state.get("units") or []:
+                if not isinstance(unit_record, dict):
+                    continue
+                peer_id = str(unit_record.get("plan_item_id") or "").strip()
+                if not peer_id or peer_id == unit_id:
+                    continue
+                if str(unit_record.get("status") or "") != UNIT_STATUS_COMPLETED:
+                    continue
+                peer_unit = package.units.get(peer_id)
+                if peer_unit is None:
+                    continue
+                accepted = unit_record.get("accepted_result")
+                if isinstance(accepted, dict):
+                    try:
+                        verify_accepted_result_attestation(unit_record)
+                    except ValueError as exc:
+                        raise ExecutionPackageError(
+                            f"orchestration baseline {peer_id!r} attestation invalid: {exc}",
+                            code="sub_tdp_upstream_invalid",
+                        ) from exc
+                    child_run_id = str(accepted.get("child_run_id") or "").strip()
+                    if not child_run_id:
+                        raise ExecutionPackageError(
+                            f"orchestration baseline {peer_id!r} missing child_run_id",
+                            code="sub_tdp_upstream_invalid",
+                        )
+                    entry = self._validated_accepted_result_entry(
+                        child_store,
+                        child_run_id=child_run_id,
+                        unit_id=peer_id,
+                        unit_plan_digest=peer_unit.plan_digest,
+                        package_id=package_id,
+                        package_digest=package_digest,
+                        assigned_subtree_digest=peer_unit.assigned_subtree_digest,
+                        error_label=f"orchestration baseline {peer_id!r}",
+                    )
+                    add_wrapper(
+                        upstream_accepted_result_binding(
+                            entry,
+                            upstream_contract_digest=peer_unit.assigned_subtree_digest,
+                        )
+                    )
+                    add_closure_from_child(child_run_id)
+                    continue
+                child_run_id = str(unit_record.get("child_run_id") or "").strip()
+                if not child_run_id:
+                    continue
+                entry = self._validated_accepted_result_entry(
+                    child_store,
+                    child_run_id=child_run_id,
+                    unit_id=peer_id,
+                    unit_plan_digest=peer_unit.plan_digest,
+                    package_id=package_id,
+                    package_digest=package_digest,
+                    assigned_subtree_digest=peer_unit.assigned_subtree_digest,
+                    error_label=f"orchestration baseline {peer_id!r}",
+                )
+                add_wrapper(
+                    upstream_accepted_result_binding(
+                        entry,
+                        upstream_contract_digest=peer_unit.assigned_subtree_digest,
+                    )
+                )
+                add_closure_from_child(child_run_id)
+            return results
+
+        # Non-orchestration independent units: discover accepted siblings as baseline.
+        unit = package.units[unit_id]
+        if unit.depends_on or explicit_upstream_only:
+            return results
+        for peer_id, peer_unit in package.units.items():
+            if peer_id == unit_id:
+                continue
+            matched = self._find_accepted_dependency_run(
+                child_store,
+                package=package,
+                dep_unit_id=peer_id,
+                dep_unit=peer_unit,
+                explicit_upstream=explicit_upstream,
+                explicit_upstream_only=False,
+            )
+            if matched is None:
+                continue
+            child_run, child_production = matched
+            entry = accepted_result_record(
+                child_run=child_run,
+                child_production=child_production,
+                unit_id=peer_id,
+                unit_plan_digest=peer_unit.plan_digest,
+                package_id=package_id,
+                package_digest=package_digest,
+                assigned_subtree_digest=peer_unit.assigned_subtree_digest,
+            )
+            add_wrapper(
+                upstream_accepted_result_binding(
+                    entry,
+                    upstream_contract_digest=peer_unit.assigned_subtree_digest,
+                )
+            )
+            add_closure_from_child(str(child_run.get("id") or ""))
+        return results
+
+    @staticmethod
+    def _validated_accepted_result_entry(
+        child_store: FileRunStore,
+        *,
+        child_run_id: str,
+        unit_id: str,
+        unit_plan_digest: str,
+        package_id: str,
+        package_digest: str,
+        assigned_subtree_digest: str,
+        error_label: str,
+    ) -> dict[str, Any]:
+        from top_down_planning.package.lineage import (
+            accepted_result_record,
+            validate_accepted_child_delivery,
+        )
+
+        try:
+            child_run = child_store.load_run(child_run_id)
+            child_production = child_store.load_production(child_run_id)
+            validate_accepted_child_delivery(
+                store=child_store,
+                child_run_id=child_run_id,
+                child_run=child_run,
+                child_production=child_production,
+                verify_evidence=True,
+            )
+        except (OSError, ValueError, KeyError) as exc:
+            raise ExecutionPackageError(
+                f"{error_label} delivery invalid: {exc}",
+                code="sub_tdp_upstream_invalid",
+            ) from exc
+        return accepted_result_record(
+            child_run=child_run,
+            child_production=child_production,
+            unit_id=unit_id,
+            unit_plan_digest=unit_plan_digest,
+            package_id=package_id,
+            package_digest=package_digest,
+            assigned_subtree_digest=assigned_subtree_digest,
+        )
+
+    @staticmethod
+    def _child_execution_started(
+        run: dict[str, Any],
+        production: dict[str, Any],
+    ) -> bool:
+        from top_down_planning.orchestrator.phases import PLAN_VALIDATED
+
+        if str(run.get("phase") or "") != PLAN_VALIDATED:
+            return True
+        if production.get("batches"):
+            return True
+        sessions = run.get("provider_sessions") or {}
+        if isinstance(sessions, dict) and sessions:
+            return True
+        if isinstance(sessions, list) and sessions:
+            return True
+        return False
+
     @staticmethod
     def _ensure_child_package_bindings(
         child_store: FileRunStore,
@@ -482,20 +693,25 @@ class PreparedUnitExecutor:
         package: LoadedExecutionPackage,
         unit_id: str,
         upstream: list[dict[str, Any]],
+        baseline: list[dict[str, Any]],
     ) -> None:
-        """Idempotently persist upstream wrappers and external prerequisites."""
+        """Idempotently persist upstream wrappers, baseline, and external prerequisites."""
 
         from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
         from top_down_planning.config.context import (
             compute_context_snapshot_digest_from_payload,
         )
+        from top_down_planning.domain.reviews import find_whole_plan_approval
+        from top_down_planning.orchestrator.phases import PLAN_VALIDATED
         from top_down_planning.package.execution_validation import (
-            verify_package_context_snapshot_with_upstream,
+            verify_package_context_snapshot_with_baseline,
         )
 
         unit = package.units[unit_id]
         external = list(unit.external_prerequisites)
-        for wrapper in upstream:
+        desired_upstream = list(upstream)
+        desired_baseline = list(baseline)
+        for wrapper in desired_upstream + desired_baseline:
             try:
                 verify_upstream_accepted_result_binding(wrapper)
             except ValueError as exc:
@@ -505,27 +721,44 @@ class PreparedUnitExecutor:
                 ) from exc
 
         run = child_store.load_run(child_run_id)
-        desired_upstream = list(upstream)
-        snapshot_binding = None
-        context_snapshot_digest = None
-        if desired_upstream:
-            snapshot_binding = verify_package_context_snapshot_with_upstream(
-                package,
-                store=child_store,
-                upstream_wrappers=desired_upstream,
-            )
-            context_snapshot_digest = compute_context_snapshot_digest_from_payload(
-                snapshot_binding
-            )
-
+        production = child_store.load_production(child_run_id)
         binding = dict(run.get("package_binding") or {})
+
+        if PreparedUnitExecutor._child_execution_started(run, production):
+            stored_upstream = binding.get("upstream_accepted_results")
+            stored_baseline = binding.get("workspace_baseline_accepted_results")
+            stored_external = binding.get("external_prerequisites")
+            if (
+                stored_upstream != desired_upstream
+                or stored_baseline != desired_baseline
+                or stored_external != external
+            ):
+                raise ExecutionPackageError(
+                    "child package bindings are immutable after execution starts",
+                    code="sub_tdp_binding_immutable",
+                )
+            # Do not rebase context from package+baseline; prepare_resume owns
+            # validation of the child's own production evidence.
+            return
+
+        snapshot_binding = verify_package_context_snapshot_with_baseline(
+            package,
+            store=child_store,
+            baseline_wrappers=desired_baseline,
+        )
+        context_snapshot_digest = compute_context_snapshot_digest_from_payload(
+            snapshot_binding
+        )
+
         binding_unchanged = (
             binding.get("upstream_accepted_results") == desired_upstream
+            and binding.get("workspace_baseline_accepted_results") == desired_baseline
             and binding.get("external_prerequisites") == external
             and "upstream_accepted_results" in binding
+            and "workspace_baseline_accepted_results" in binding
             and "external_prerequisites" in binding
         )
-        snapshot_unchanged = snapshot_binding is None or (
+        snapshot_unchanged = (
             run.get("context_snapshot_binding") == snapshot_binding
             and str((run.get("digests") or {}).get("context_snapshot") or "")
             == context_snapshot_digest
@@ -533,17 +766,47 @@ class PreparedUnitExecutor:
         if binding_unchanged and snapshot_unchanged:
             return
 
+        # Retrofit only while the child is still at the initial inherited approval.
+        bindings_present = (
+            "upstream_accepted_results" in binding
+            or "workspace_baseline_accepted_results" in binding
+        )
+        bindings_changing = (
+            binding.get("upstream_accepted_results") != desired_upstream
+            or binding.get("workspace_baseline_accepted_results") != desired_baseline
+        )
+        if (
+            bindings_present
+            and bindings_changing
+            and str(run.get("phase") or "") != PLAN_VALIDATED
+        ):
+            raise ExecutionPackageError(
+                "child package bindings can only be retrofitted before execution starts",
+                code="sub_tdp_binding_immutable",
+            )
+
         binding["upstream_accepted_results"] = desired_upstream
+        binding["workspace_baseline_accepted_results"] = desired_baseline
         binding["external_prerequisites"] = external
         run["package_binding"] = binding
-        if snapshot_binding is not None:
-            run["context_snapshot_binding"] = snapshot_binding
-            digests = dict(run.get("digests") or {})
-            digests["context_snapshot"] = context_snapshot_digest
-            run["digests"] = digests
+        run["context_snapshot_binding"] = snapshot_binding
+        digests = dict(run.get("digests") or {})
+        digests["context_snapshot"] = context_snapshot_digest
+        run["digests"] = digests
         expected = int(run["revision"])
         run["revision"] = expected + 1
         child_store.save_run(child_run_id, run, expected)
+
+        # Keep the derived execution approval binding aligned with the rebased snapshot.
+        plan = child_store.load_plan(child_run_id)
+        reviews = child_store.list_reviews(child_run_id)
+        approval = find_whole_plan_approval(reviews, int(plan.get("revision") or 0))
+        if approval is not None and approval.get("inherited_plan_approval"):
+            updated = dict(approval)
+            approved = dict(updated.get("approved_digests") or {})
+            approved["context_snapshot"] = context_snapshot_digest
+            updated["approved_digests"] = approved
+            child_store.save_review(child_run_id, updated)
 
     @staticmethod
     def _find_accepted_dependency_run(

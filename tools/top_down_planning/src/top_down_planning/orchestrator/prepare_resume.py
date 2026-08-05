@@ -154,6 +154,16 @@ def _verify_prepared_package_binding(
     if not manifest_path:
         return "prepared run missing package_binding.manifest_path"
     try:
+        from top_down_planning.package.store_persist import assert_manifest_path_in_store
+
+        assert_manifest_path_in_store(
+            store.root,
+            Path(manifest_path),
+            package_id=str(binding.get("package_id") or "").strip() or None,
+        )
+    except Exception as exc:
+        return f"prepared package manifest_path invalid: {exc}"
+    try:
         package = ExecutionPackageLoader().load_from_manifest(
             Path(manifest_path),
             verify_workspace=False,
@@ -204,29 +214,45 @@ def _verify_prepared_package_binding(
             for unit_record in state.get("units") or []:
                 if not isinstance(unit_record, dict):
                     continue
+                status = str(unit_record.get("status") or "")
+                if status == "completed" and not unit_record.get("accepted_result"):
+                    return (
+                        f"parent sub_tdps unit {unit_record.get('plan_item_id')!r} "
+                        "completed without accepted_result"
+                    )
                 if not unit_record.get("accepted_result"):
                     continue
                 try:
                     verify_accepted_result_attestation(unit_record)
                 except ValueError as exc:
                     return f"parent sub_tdps attestation invalid: {exc}"
-                child_run_id = str(unit_record.get("child_run_id") or "").strip()
-                if child_run_id:
-                    try:
-                        child_run = store.load_run(child_run_id)
-                        child_production = store.load_production(child_run_id)
-                        validate_accepted_child_delivery(
-                            store=store,
-                            child_run_id=child_run_id,
-                            child_run=child_run,
-                            child_production=child_production,
-                            verify_evidence=True,
-                        )
-                    except (OSError, ValueError, KeyError) as exc:
-                        return (
-                            f"parent sub_tdps child delivery invalid for "
-                            f"{unit_record.get('plan_item_id')!r}: {exc}"
-                        )
+                accepted = unit_record.get("accepted_result")
+                if not isinstance(accepted, dict):
+                    return (
+                        f"parent sub_tdps unit {unit_record.get('plan_item_id')!r} "
+                        "accepted_result missing"
+                    )
+                child_run_id = str(accepted.get("child_run_id") or "").strip()
+                if not child_run_id:
+                    return (
+                        f"parent sub_tdps unit {unit_record.get('plan_item_id')!r} "
+                        "accepted_result missing child_run_id"
+                    )
+                try:
+                    child_run = store.load_run(child_run_id)
+                    child_production = store.load_production(child_run_id)
+                    validate_accepted_child_delivery(
+                        store=store,
+                        child_run_id=child_run_id,
+                        child_run=child_run,
+                        child_production=child_production,
+                        verify_evidence=True,
+                    )
+                except (OSError, ValueError, KeyError) as exc:
+                    return (
+                        f"parent sub_tdps child delivery invalid for "
+                        f"{unit_record.get('plan_item_id')!r}: {exc}"
+                    )
             try:
                 from top_down_planning.persistence.sub_tdp_state import (
                     ensure_sub_tdp_state_matches_units,
@@ -279,6 +305,7 @@ def _verify_child_upstream_bindings(
         )
 
     seen: set[str] = set()
+    upstream_digests: set[str] = set()
     for wrapper in wrappers:
         if not isinstance(wrapper, dict):
             return "prepared upstream_accepted_results entry is invalid"
@@ -293,6 +320,7 @@ def _verify_child_upstream_bindings(
         if dep_id in seen:
             return f"duplicate prepared upstream wrapper for {dep_id!r}"
         seen.add(dep_id)
+        upstream_digests.add(str(wrapper.get("accepted_result_digest") or "").strip())
         dep_unit = package.units.get(dep_id)
         if dep_unit is None:
             return f"prepared upstream dependency unit {dep_id!r} missing from package"
@@ -302,23 +330,125 @@ def _verify_child_upstream_bindings(
                 f"prepared upstream_contract_digest mismatch for dependency {dep_id!r}"
             )
         child_run_id = str(accepted.get("child_run_id") or "").strip()
-        if child_run_id:
-            try:
-                child_run = store.load_run(child_run_id)
-                child_production = store.load_production(child_run_id)
-                validate_accepted_child_delivery(
-                    store=store,
-                    child_run_id=child_run_id,
-                    child_run=child_run,
-                    child_production=child_production,
-                    verify_evidence=False,
-                )
-            except (OSError, ValueError, KeyError) as exc:
-                return f"prepared upstream child delivery invalid for {dep_id!r}: {exc}"
+        if not child_run_id:
+            return (
+                f"prepared upstream wrapper for {dep_id!r} missing child_run_id"
+            )
+        try:
+            child_run = store.load_run(child_run_id)
+            child_production = store.load_production(child_run_id)
+            validate_accepted_child_delivery(
+                store=store,
+                child_run_id=child_run_id,
+                child_run=child_run,
+                child_production=child_production,
+                verify_evidence=True,
+            )
+        except (OSError, ValueError, KeyError) as exc:
+            return f"prepared upstream child delivery invalid for {dep_id!r}: {exc}"
     if seen != set(expected_deps):
         missing = sorted(set(expected_deps) - seen)
         return f"prepared upstream_accepted_results missing dependencies: {', '.join(missing)}"
+
+    expected_external = list(unit.external_prerequisites)
+    actual_external = binding.get("external_prerequisites")
+    if actual_external != expected_external:
+        return (
+            "prepared external_prerequisites do not match package unit contract"
+        )
+
+    baseline_wrappers = binding["workspace_baseline_accepted_results"]
+    baseline_digests: set[str] = set()
+    for wrapper in baseline_wrappers:
+        if not isinstance(wrapper, dict):
+            return "prepared workspace_baseline_accepted_results entry is invalid"
+        try:
+            verify_upstream_accepted_result_binding(wrapper)
+        except ValueError as exc:
+            return f"prepared workspace baseline attestation invalid: {exc}"
+        digest = str(wrapper.get("accepted_result_digest") or "").strip()
+        if not digest:
+            return "prepared workspace baseline wrapper missing accepted_result_digest"
+        baseline_digests.add(digest)
+    missing_in_baseline = sorted(
+        d for d in upstream_digests if d and d not in baseline_digests
+    )
+    if missing_in_baseline:
+        return (
+            "prepared workspace_baseline_accepted_results missing upstream digests: "
+            + ", ".join(missing_in_baseline)
+        )
     return None
+
+
+def _extra_authorized_paths_for_resume(
+    store: RunStore,
+    *,
+    run: dict[str, Any],
+    production: dict[str, Any],
+    workspace: Any,
+) -> set[str] | None:
+    """Authorize parent resume drift from attached accepted-result output_refs only."""
+
+    from top_down_planning.domain.run_kind import (
+        RUN_KIND_PARENT_EXECUTION,
+        resolve_run_kind,
+    )
+    from top_down_planning.package.execution_validation import (
+        authorized_paths_from_accepted_result,
+    )
+    from top_down_planning.package.lineage import (
+        validate_accepted_child_delivery,
+        verify_accepted_result_attestation,
+    )
+
+    try:
+        kind = resolve_run_kind(run)
+    except ValueError:
+        return None
+    if kind != RUN_KIND_PARENT_EXECUTION:
+        return None
+    state = production.get("sub_tdps")
+    if not isinstance(state, dict):
+        return None
+    authorized: set[str] = set()
+    for unit_record in state.get("units") or []:
+        if not isinstance(unit_record, dict):
+            continue
+        accepted = unit_record.get("accepted_result")
+        if not isinstance(accepted, dict):
+            continue
+        plan_item_id = str(unit_record.get("plan_item_id") or "").strip() or "<unknown>"
+        try:
+            verify_accepted_result_attestation(unit_record)
+        except ValueError as exc:
+            raise ValueError(
+                f"parent sub_tdps attestation invalid for {plan_item_id!r}: {exc}"
+            ) from exc
+        child_run_id = str(accepted.get("child_run_id") or "").strip()
+        if not child_run_id:
+            raise ValueError(
+                f"parent sub_tdps unit {plan_item_id!r} accepted_result missing child_run_id"
+            )
+        try:
+            child_run = store.load_run(child_run_id)
+            child_production = store.load_production(child_run_id)
+            validate_accepted_child_delivery(
+                store=store,
+                child_run_id=child_run_id,
+                child_run=child_run,
+                child_production=child_production,
+                verify_evidence=True,
+            )
+        except (OSError, ValueError, KeyError) as exc:
+            raise ValueError(
+                f"parent sub_tdps child delivery invalid for {plan_item_id!r}: {exc}"
+            ) from exc
+        authorized |= authorized_paths_from_accepted_result(
+            accepted,
+            workspace=workspace,
+        )
+    return authorized or None
 
 
 _APPROVAL_REQUIRED_PHASES = frozenset(
@@ -502,12 +632,24 @@ def prepare_resume(
         has_whole_plan_approval=has_whole_plan_approval,
     )
 
+    try:
+        extra_authorized_paths = _extra_authorized_paths_for_resume(
+            store,
+            run=run,
+            production=production,
+            workspace=workspace,
+        )
+    except ValueError as exc:
+        blockers.append(str(exc))
+        extra_authorized_paths = None
+
     context_error = validate_resume_context_bindings(
         run,
         production,
         effective_config,
         workspace=workspace,
         context_spec_may_change=context_spec_may_change,
+        extra_authorized_paths=extra_authorized_paths,
     )
     context_binding_valid = context_error is None
     if context_error is not None:

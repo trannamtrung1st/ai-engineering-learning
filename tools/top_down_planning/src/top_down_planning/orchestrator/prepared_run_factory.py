@@ -21,7 +21,7 @@ from top_down_planning.orchestrator.phases import PLAN_VALIDATED
 from top_down_planning.package.execution_validation import (
     validate_resolved_config_against_package,
     verify_package_authoritative_inputs,
-    verify_package_context_snapshot_with_upstream,
+    verify_package_context_snapshot_with_baseline,
     verify_package_immutable_contract,
 )
 from top_down_planning.package.loader import LoadedExecutionPackage, LoadedUnit
@@ -122,6 +122,7 @@ class PreparedRunFactory:
         resolved_config: dict[str, Any],
         invocation: dict[str, Any],
         upstream_accepted_results: list[dict[str, Any]] | None = None,
+        workspace_baseline_results: list[dict[str, Any]] | None = None,
     ) -> str:
         return self._create_prepared_run(
             store,
@@ -133,6 +134,7 @@ class PreparedRunFactory:
             selected_unit_id=unit.unit_id,
             unit_record=unit,
             upstream_accepted_results=upstream_accepted_results,
+            workspace_baseline_results=workspace_baseline_results,
         )
 
     def _create_prepared_run(
@@ -147,14 +149,21 @@ class PreparedRunFactory:
         selected_unit_id: str | None,
         unit_record: LoadedUnit | None,
         upstream_accepted_results: list[dict[str, Any]] | None = None,
+        workspace_baseline_results: list[dict[str, Any]] | None = None,
     ) -> str:
         workspace = package.workspace_path
-        if upstream_accepted_results:
+        upstream = list(upstream_accepted_results or [])
+        baseline_for_auth = list(
+            workspace_baseline_results
+            if workspace_baseline_results is not None
+            else []
+        )
+        if baseline_for_auth:
             verify_package_immutable_contract(package)
-            binding = verify_package_context_snapshot_with_upstream(
+            binding = verify_package_context_snapshot_with_baseline(
                 package,
                 store=store,
-                upstream_wrappers=upstream_accepted_results,
+                baseline_wrappers=baseline_for_auth,
             )
         else:
             binding = verify_package_authoritative_inputs(package)
@@ -201,8 +210,9 @@ class PreparedRunFactory:
                 package_binding["creation_key"] = (
                     f"{package_binding['package_digest']}:{parent_run_id}:{unit_id}"
                 )
-            package_binding["upstream_accepted_results"] = list(
-                upstream_accepted_results or []
+            package_binding["upstream_accepted_results"] = list(upstream)
+            package_binding["workspace_baseline_accepted_results"] = list(
+                baseline_for_auth
             )
             package_binding["external_prerequisites"] = list(
                 unit_record.external_prerequisites if unit_record else []

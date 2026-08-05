@@ -269,9 +269,14 @@ def accepted_result_record(
     binding = child_run.get("package_binding") or {}
     if not isinstance(binding, dict):
         binding = {}
-    output_digest = str(
-        digests.get("output") or compute_output_digest(child_production)
-    ).strip()
+    live_output_digest = compute_output_digest(child_production)
+    run_output_digest = str(digests.get("output") or "").strip()
+    if run_output_digest and run_output_digest != live_output_digest:
+        raise ValueError(
+            "accepted_result_record requires child production output digest "
+            "to match run digests.output"
+        )
+    output_digest = run_output_digest or live_output_digest
     if not output_digest:
         raise ValueError("accepted_result_record requires a child output digest")
     review_id = str(
@@ -407,6 +412,30 @@ def verify_accepted_result_attestation(unit_record: dict[str, Any]) -> None:
         raise ValueError("accepted_result missing whole_output_review_id")
     if not str(accepted.get("whole_output_review_digest") or "").strip():
         raise ValueError("accepted_result missing whole_output_review_digest")
+    if not str(accepted.get("child_run_id") or "").strip():
+        raise ValueError("accepted_result missing child_run_id")
+    unit_child = str(unit_record.get("child_run_id") or "").strip()
+    accepted_child = str(accepted.get("child_run_id") or "").strip()
+    if unit_child and unit_child != accepted_child:
+        raise ValueError(
+            "unit child_run_id does not match accepted_result.child_run_id"
+        )
+    plan_item_id = str(unit_record.get("plan_item_id") or "").strip()
+    accepted_unit_id = str(accepted.get("unit_id") or "").strip()
+    if not accepted_unit_id:
+        raise ValueError("accepted_result missing unit_id")
+    if plan_item_id and plan_item_id != accepted_unit_id:
+        raise ValueError(
+            "accepted_result.unit_id does not match unit plan_item_id"
+        )
+    unit_plan_digest = str(unit_record.get("unit_plan_digest") or "").strip()
+    accepted_plan_digest = str(accepted.get("unit_plan_digest") or "").strip()
+    if not accepted_plan_digest:
+        raise ValueError("accepted_result missing unit_plan_digest")
+    if unit_plan_digest and unit_plan_digest != accepted_plan_digest:
+        raise ValueError(
+            "accepted_result.unit_plan_digest does not match unit unit_plan_digest"
+        )
     if "output_refs" not in accepted or not isinstance(accepted.get("output_refs"), list):
         raise ValueError("accepted_result missing output_refs")
     if "contributions" not in accepted or not isinstance(
@@ -427,6 +456,11 @@ def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
     upstream = binding.get("upstream_accepted_results")
     if not isinstance(upstream, list):
         return "child upstream_accepted_results is invalid"
+    if "workspace_baseline_accepted_results" not in binding:
+        return "child missing workspace_baseline_accepted_results binding"
+    baseline = binding.get("workspace_baseline_accepted_results")
+    if not isinstance(baseline, list):
+        return "child workspace_baseline_accepted_results is invalid"
     if "external_prerequisites" not in binding:
         return "child missing external_prerequisites binding"
     external = binding.get("external_prerequisites")
@@ -471,6 +505,13 @@ def validate_attach_dependency_consistency(
     binding_error = validate_child_package_bindings(binding)
     if binding_error:
         return binding_error
+    if list(binding.get("external_prerequisites") or []) != list(
+        unit.external_prerequisites
+    ):
+        return (
+            f"child external_prerequisites do not match package unit contract "
+            f"for {plan_item_id!r}"
+        )
     upstream_wrappers = binding["upstream_accepted_results"]
 
     wrapper_by_unit: dict[str, dict[str, Any]] = {}
@@ -526,6 +567,30 @@ def validate_attach_dependency_consistency(
             dep_accepted.get("output_digest") or ""
         ):
             return f"upstream output_digest for {dep_id!r} does not match attached result"
+
+    baseline_wrappers = binding["workspace_baseline_accepted_results"]
+    baseline_digests: set[str] = set()
+    for wrapper in baseline_wrappers:
+        if not isinstance(wrapper, dict):
+            return "child workspace_baseline_accepted_results entry is invalid"
+        try:
+            verify_upstream_accepted_result_binding(wrapper)
+        except ValueError as exc:
+            return f"child workspace baseline wrapper invalid: {exc}"
+        digest = str(wrapper.get("accepted_result_digest") or "").strip()
+        if not digest:
+            return "child workspace baseline wrapper missing accepted_result_digest"
+        baseline_digests.add(digest)
+    upstream_digests = {
+        str(wrapper.get("accepted_result_digest") or "").strip()
+        for wrapper in upstream_wrappers
+    }
+    missing_in_baseline = sorted(d for d in upstream_digests if d and d not in baseline_digests)
+    if missing_in_baseline:
+        return (
+            "child workspace_baseline_accepted_results missing upstream digests: "
+            + ", ".join(missing_in_baseline)
+        )
     return None
 
 
@@ -549,6 +614,16 @@ def validate_accepted_child_delivery(
         if child_production is not None
         else store.load_production(child_run_id)
     )
+    status = str(run.get("status") or "")
+    phase = str(run.get("phase") or "")
+    outcome = str(run.get("outcome") or "")
+    if status != "completed":
+        raise ValueError(f"child status must be completed, got {status!r}")
+    if phase != _OUTPUT_VALIDATED:
+        raise ValueError(f"child phase must be {_OUTPUT_VALIDATED}, got {phase!r}")
+    if outcome != "accepted":
+        raise ValueError(f"child outcome must be accepted, got {outcome!r}")
+
     binding = run.get("package_binding") or {}
     if not isinstance(binding, dict):
         raise ValueError("child package_binding is missing")
@@ -572,17 +647,34 @@ def validate_accepted_child_delivery(
         raise ValueError(
             "child whole_output_review_digest does not match approved review record"
         )
+    if int(approval.get("target_revision") or -1) != int(
+        production.get("output_revision") or 0
+    ):
+        raise ValueError(
+            "child whole-output approval target_revision does not match output_revision"
+        )
     claim = production.get("completion_claim")
     if not isinstance(claim, dict) or claim.get("goal_met") is not True:
         raise ValueError("child completion claim must assert goal_met=true")
-    approved_digests = approval.get("approved_digests") or {}
-    if isinstance(approved_digests, dict):
-        expected_output = str((run.get("digests") or {}).get("output") or "").strip()
-        approved_output = str(approved_digests.get("output") or "").strip()
-        if expected_output and approved_output and expected_output != approved_output:
-            raise ValueError(
-                "child whole-output approval output digest does not match run digests"
-            )
+
+    live_output_digest = compute_output_digest(production)
+    run_output_digest = str((run.get("digests") or {}).get("output") or "").strip()
+    if not run_output_digest:
+        raise ValueError("child run digests.output is missing")
+    if live_output_digest != run_output_digest:
+        raise ValueError(
+            "child live output digest does not match run digests.output"
+        )
+    approved_digests = approval.get("approved_digests")
+    if not isinstance(approved_digests, dict):
+        raise ValueError("child whole-output approval approved_digests is missing")
+    approved_output = str(approved_digests.get("output") or "").strip()
+    if not approved_output:
+        raise ValueError("child whole-output approval output digest is missing")
+    if approved_output != run_output_digest:
+        raise ValueError(
+            "child whole-output approval output digest does not match run digests"
+        )
     if not verify_evidence:
         return
     for entry in production.get("output_evidence") or []:

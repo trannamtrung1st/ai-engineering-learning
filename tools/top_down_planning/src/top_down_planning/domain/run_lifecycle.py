@@ -17,6 +17,9 @@ PausedStopCode = Literal[
     "orchestrator_interrupted",
     "amendment_pending",
     "sub_tdps_awaiting_children",
+    "sub_tdp_dependency_unmet",
+    "sub_tdp_child_failed",
+    "sub_tdp_child_paused",
 ]
 
 FailedStopCode = Literal[
@@ -39,6 +42,9 @@ PAUSED_STOP_CODES: frozenset[str] = frozenset(
         "orchestrator_interrupted",
         "amendment_pending",
         "sub_tdps_awaiting_children",
+        "sub_tdp_dependency_unmet",
+        "sub_tdp_child_failed",
+        "sub_tdp_child_paused",
     }
 )
 

@@ -123,6 +123,19 @@ class ExecutionPackageLoader:
                 "unsupported package schema_version",
                 code="package_schema_unsupported",
             )
+        from core_tools.persistence import PersistenceError
+        from top_down_planning.persistence.path_ids import validate_store_id
+
+        try:
+            validate_store_id(
+                str(manifest.get("package_id") or ""),
+                label="package_id",
+            )
+        except PersistenceError as exc:
+            raise ExecutionPackageError(
+                str(exc),
+                code="package_id_invalid",
+            ) from exc
 
         workspace_info = manifest.get("workspace") or {}
         workspace_path = Path(str(workspace_info.get("path") or "")).resolve()
@@ -374,29 +387,38 @@ class ExecutionPackageLoader:
             )
 
         approved_digests = attestation.get("approved_digests")
-        if isinstance(approved_digests, dict):
-            manifest_digest_map = {
-                "plan": str(planning_run.get("approved_plan_digest") or "").strip(),
-                "input": str(input_refs.get("aggregate_digest") or "").strip(),
-                "output_goal": str(context.get("output_goal_digest") or "").strip(),
-                "config_contract": str(
-                    context.get("config_contract_digest") or ""
-                ).strip(),
-                "context_spec": str(context.get("context_spec_digest") or "").strip(),
-                "context_snapshot": str(
-                    context.get("context_snapshot_digest") or ""
-                ).strip(),
-            }
-            for key, expected in manifest_digest_map.items():
-                if not expected:
-                    continue
-                actual = str(approved_digests.get(key) or "").strip()
-                if actual and actual != expected:
-                    raise ExecutionPackageError(
-                        f"inherited_plan_approval approved_digests.{key} does not "
-                        f"match manifest context ({actual} != {expected})",
-                        code="package_approval_digest_mismatch",
-                    )
+        if not isinstance(approved_digests, dict):
+            raise ExecutionPackageError(
+                "inherited_plan_approval.approved_digests is required",
+                code="package_approval_digest_missing",
+            )
+        from top_down_planning.domain.approval_digests import PLAN_APPROVAL_DIGEST_KEYS
+
+        manifest_digest_map = {
+            "plan": str(planning_run.get("approved_plan_digest") or "").strip(),
+            "input": str(input_refs.get("aggregate_digest") or "").strip(),
+            "output_goal": str(context.get("output_goal_digest") or "").strip(),
+            "config_contract": str(
+                context.get("config_contract_digest") or ""
+            ).strip(),
+            "context_spec": str(context.get("context_spec_digest") or "").strip(),
+        }
+        for key in PLAN_APPROVAL_DIGEST_KEYS:
+            expected = manifest_digest_map.get(key) or ""
+            if not expected:
+                continue
+            actual = str(approved_digests.get(key) or "").strip()
+            if not actual:
+                raise ExecutionPackageError(
+                    f"inherited_plan_approval approved_digests.{key} is required",
+                    code="package_approval_digest_missing",
+                )
+            if actual != expected:
+                raise ExecutionPackageError(
+                    f"inherited_plan_approval approved_digests.{key} does not "
+                    f"match manifest context ({actual} != {expected})",
+                    code="package_approval_digest_mismatch",
+                )
 
         approved_plan_digest = str(planning_run.get("approved_plan_digest") or "").strip()
         if not approved_plan_digest:

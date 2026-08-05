@@ -440,47 +440,63 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
 
         for unit_record in state.get("units") or []:
             if not isinstance(unit_record, dict):
-                continue
-            child_run_id = str(unit_record.get("child_run_id") or "").strip()
+                raise ProviderRunError("Sub-TDP unit record must be an object")
+            child_run_id = str(
+                (unit_record.get("accepted_result") or {}).get("child_run_id")
+                or unit_record.get("child_run_id")
+                or ""
+            ).strip()
             plan_item_id = str(unit_record.get("plan_item_id") or "").strip()
+            if not plan_item_id:
+                raise ProviderRunError("Sub-TDP unit missing plan_item_id")
+            if str(unit_record.get("status") or "") != "completed":
+                raise ProviderRunError(
+                    f"Sub-TDP unit {plan_item_id} is not completed "
+                    f"(status={unit_record.get('status')!r}); incomplete units "
+                    "cannot be omitted from whole-output review"
+                )
             if not child_run_id:
-                continue
+                raise ProviderRunError(
+                    f"Sub-TDP unit {plan_item_id} missing child_run_id"
+                )
             try:
                 child_run = self._store.load_run(child_run_id)
                 child_production = self._store.load_production(child_run_id)
             except Exception as exc:
-                accepted = unit_record.get("accepted_result")
-                if isinstance(accepted, dict) and accepted.get("output_digest"):
-                    child_run = {
-                        "id": child_run_id,
-                        "outcome": accepted.get("outcome"),
-                        "digests": {"output": accepted.get("output_digest")},
-                        "package_binding": {
-                            "unit_plan_digest": accepted.get("unit_plan_digest"),
-                        },
-                    }
-                    assessment = str(accepted.get("completion_assessment") or "")
-                    child_production = {
-                        "completion_claim": (
-                            {"goal_assessment": assessment} if assessment else None
-                        ),
-                        "dispositions": {},
-                        "output_evidence": [],
-                    }
-                    accepted_output_refs = accepted.get("output_refs") or []
-                else:
-                    raise ProviderRunError(
-                        f"unable to load Sub-TDP child {child_run_id} for unit "
-                        f"{plan_item_id}: {exc}"
-                    ) from exc
-            else:
-                accepted_output_refs = []
-            child_binding = child_run.get("package_binding") or {}
-            child_digests = child_run.get("digests") or {}
-            claim = child_production.get("completion_claim")
+                raise ProviderRunError(
+                    f"unable to load Sub-TDP child {child_run_id} for unit "
+                    f"{plan_item_id}: {exc}"
+                ) from exc
             accepted = unit_record.get("accepted_result")
             if not isinstance(accepted, dict):
-                accepted = {}
+                raise ProviderRunError(
+                    f"Sub-TDP unit {plan_item_id} missing accepted_result "
+                    f"for child {child_run_id}"
+                )
+            from top_down_planning.package.lineage import (
+                validate_accepted_child_delivery,
+                verify_accepted_result_attestation,
+            )
+
+            try:
+                verify_accepted_result_attestation(unit_record)
+                validate_accepted_child_delivery(
+                    store=self._store,
+                    child_run_id=child_run_id,
+                    child_run=child_run,
+                    child_production=child_production,
+                    verify_evidence=True,
+                )
+            except ValueError as exc:
+                raise ProviderRunError(
+                    f"Sub-TDP child delivery invalid for unit {plan_item_id}: {exc}"
+                ) from exc
+            accepted_output_refs = list(accepted.get("output_refs") or [])
+            output_digest = str(accepted.get("output_digest") or "").strip()
+            if not output_digest:
+                raise ProviderRunError(
+                    f"Sub-TDP unit {plan_item_id} accepted_result missing output_digest"
+                )
             sub_tdp_evidence.append(
                 {
                     "child_run_id": child_run_id,
@@ -488,26 +504,15 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
                     "unit_id": plan_item_id,
                     "title": unit_record.get("title"),
                     "status": unit_record.get("status"),
-                    "outcome": child_run.get("outcome"),
-                    "output_digest": str(
-                        accepted.get("output_digest")
-                        or child_digests.get("output")
-                        or ""
-                    ),
-                    "unit_plan_digest": str(
-                        child_binding.get("unit_plan_digest") or ""
-                    ),
-                    "package_id": str(child_binding.get("package_id") or ""),
-                    "package_digest": str(child_binding.get("package_digest") or ""),
-                    "completion_claim": claim if isinstance(claim, dict) else None,
-                    "dispositions": child_production.get("dispositions") or {},
+                    "outcome": str(accepted.get("outcome") or ""),
+                    "output_digest": output_digest,
+                    "unit_plan_digest": str(accepted.get("unit_plan_digest") or ""),
+                    "package_id": str(accepted.get("package_id") or ""),
+                    "package_digest": str(accepted.get("package_digest") or ""),
+                    "completion_assessment": accepted.get("completion_assessment"),
                     "evidence_ids": [
                         str(item.get("id") or "")
-                        for item in (
-                            (child_production.get("output_evidence") or [])
-                            if not accepted_output_refs
-                            else accepted_output_refs
-                        )
+                        for item in accepted_output_refs
                         if isinstance(item, dict) and item.get("id")
                     ],
                     "summary": str(unit_record.get("summary") or ""),
@@ -518,11 +523,7 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
                     "plan_item_id": plan_item_id,
                     "workspace_path": str(workspace),
                     "child_run_id": child_run_id,
-                    "output_digest": str(
-                        accepted.get("output_digest")
-                        or child_digests.get("output")
-                        or ""
-                    ),
+                    "output_digest": output_digest,
                 }
             )
 
@@ -540,8 +541,23 @@ class WholeOutputReviewOrchestrator:
         run_id: str,
         provider: Provider,
     ) -> None:
+        from top_down_planning.domain.run_kind import (
+            RUN_KIND_PARENT_EXECUTION,
+            resolve_run_kind,
+        )
+
+        run = store.load_run(run_id)
         production = store.load_production(run_id)
-        if load_sub_tdp_state(production) is not None:
+        try:
+            kind = resolve_run_kind(run)
+        except ValueError:
+            kind = ""
+        has_sub_tdps = load_sub_tdp_state(production) is not None
+        if kind == RUN_KIND_PARENT_EXECUTION and not has_sub_tdps:
+            raise ProviderRunError(
+                "parent_execution whole-output review requires production.sub_tdps state"
+            )
+        if has_sub_tdps:
             adapter: OutputWholeReviewAdapter | SubTdpWholeOutputReviewAdapter = (
                 SubTdpWholeOutputReviewAdapter(store, run_id)
             )

@@ -135,6 +135,7 @@ class ProductionPhaseOrchestrator:
             self._store.load_plan_model(self._run_id),
             production=self._store.load_production(self._run_id),
             activity="production",
+            store=self._store,
         )
         session_id = ensure_primary_session(
             self._store,
@@ -593,6 +594,7 @@ def build_producer_context_manifest(
     *,
     production: dict[str, Any] | None = None,
     activity: str = "production",
+    store: RunStore | None = None,
 ) -> dict[str, Any]:
     """Package producer prompt context and tool usage instructions."""
 
@@ -620,7 +622,9 @@ def build_producer_context_manifest(
         reconciliation = latest_reconciliation_report(production)
         if reconciliation is not None:
             manifest["reconciliation"] = reconciliation
-    prepared = _prepared_execution_section(run, production=production, plan=plan)
+    prepared = _prepared_execution_section(
+        run, production=production, plan=plan, store=store
+    )
     if prepared is not None:
         manifest["prepared_execution"] = prepared
     return manifest
@@ -631,6 +635,7 @@ def _prepared_execution_section(
     *,
     production: dict[str, Any] | None = None,
     plan: Plan | None = None,
+    store: RunStore | None = None,
 ) -> dict[str, Any] | None:
     """Expose package/unit binding and upstream accepted results to producers."""
 
@@ -651,6 +656,15 @@ def _prepared_execution_section(
         if not isinstance(upstream, list):
             raise ProviderRunError(
                 "prepared child upstream_accepted_results must be a list"
+            )
+        baseline = binding.get("workspace_baseline_accepted_results")
+        if baseline is None:
+            raise ProviderRunError(
+                "prepared child package_binding missing workspace_baseline_accepted_results"
+            )
+        if not isinstance(baseline, list):
+            raise ProviderRunError(
+                "prepared child workspace_baseline_accepted_results must be a list"
             )
         external = binding.get("external_prerequisites")
         if not isinstance(external, list):
@@ -685,32 +699,73 @@ def _prepared_execution_section(
                 if not isinstance(unit, dict):
                     continue
                 accepted = unit.get("accepted_result")
-                if isinstance(accepted, dict):
-                    if "output_refs" not in accepted or not isinstance(
-                        accepted.get("output_refs"), list
-                    ):
+                if not isinstance(accepted, dict):
+                    if str(unit.get("status") or "") == "completed":
                         raise ProviderRunError(
-                            "child accepted_result missing output_refs"
+                            "completed Sub-TDP unit missing accepted_result"
                         )
-                    if "contributions" not in accepted or not isinstance(
-                        accepted.get("contributions"), list
-                    ):
-                        raise ProviderRunError(
-                            "child accepted_result missing contributions"
-                        )
-                    if "completion_assessment" not in accepted:
-                        raise ProviderRunError(
-                            "child accepted_result missing completion_assessment"
-                        )
-                    if not str(accepted.get("output_digest") or "").strip():
-                        raise ProviderRunError(
-                            "child accepted_result missing output_digest"
-                        )
-                    if not str(accepted.get("package_id") or "").strip():
-                        raise ProviderRunError(
-                            "child accepted_result missing package_id"
-                        )
-                    child_results.append(dict(accepted))
+                    continue
+                from top_down_planning.package.lineage import (
+                    validate_accepted_child_delivery,
+                    verify_accepted_result_attestation,
+                )
+
+                try:
+                    verify_accepted_result_attestation(unit)
+                except ValueError as exc:
+                    raise ProviderRunError(
+                        f"child accepted_result attestation invalid: {exc}"
+                    ) from exc
+                if "output_refs" not in accepted or not isinstance(
+                    accepted.get("output_refs"), list
+                ):
+                    raise ProviderRunError(
+                        "child accepted_result missing output_refs"
+                    )
+                if "contributions" not in accepted or not isinstance(
+                    accepted.get("contributions"), list
+                ):
+                    raise ProviderRunError(
+                        "child accepted_result missing contributions"
+                    )
+                if "completion_assessment" not in accepted:
+                    raise ProviderRunError(
+                        "child accepted_result missing completion_assessment"
+                    )
+                if not str(accepted.get("output_digest") or "").strip():
+                    raise ProviderRunError(
+                        "child accepted_result missing output_digest"
+                    )
+                if not str(accepted.get("package_id") or "").strip():
+                    raise ProviderRunError(
+                        "child accepted_result missing package_id"
+                    )
+                child_run_id = str(
+                    accepted.get("child_run_id") or unit.get("child_run_id") or ""
+                ).strip()
+                if not child_run_id:
+                    raise ProviderRunError(
+                        "child accepted_result missing child_run_id"
+                    )
+                if store is None:
+                    raise ProviderRunError(
+                        "integration producer requires store to validate child delivery"
+                    )
+                try:
+                    child_run = store.load_run(child_run_id)
+                    child_production = store.load_production(child_run_id)
+                    validate_accepted_child_delivery(
+                        store=store,
+                        child_run_id=child_run_id,
+                        child_run=child_run,
+                        child_production=child_production,
+                        verify_evidence=True,
+                    )
+                except (OSError, ValueError, KeyError) as exc:
+                    raise ProviderRunError(
+                        f"child delivery invalid for integration: {exc}"
+                    ) from exc
+                child_results.append(dict(accepted))
             return {
                 "package_id": binding.get("package_id"),
                 "unit_id": None,

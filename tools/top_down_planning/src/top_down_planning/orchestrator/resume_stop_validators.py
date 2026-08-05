@@ -320,6 +320,13 @@ def validate_stop_for_resume_apply(
     if code == "sub_tdps_awaiting_children":
         validate_sub_tdps_awaiting_children_stop(store, run_id, run)
         return None
+    if code in {
+        "sub_tdp_dependency_unmet",
+        "sub_tdp_child_failed",
+        "sub_tdp_child_paused",
+    }:
+        validate_sub_tdps_awaiting_children_stop(store, run_id, run)
+        return None
     raise ResumeStopValidationError(f"unsupported paused stop code for resume apply: {code!r}")
 
 

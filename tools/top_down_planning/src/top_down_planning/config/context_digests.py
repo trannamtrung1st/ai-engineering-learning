@@ -258,6 +258,7 @@ def validate_production_snapshot_rebase(
     production: dict[str, Any],
     *,
     workspace: Path,
+    extra_authorized_paths: set[str] | None = None,
 ) -> list[str]:
     """Authorize snapshot drift from production evidence; return changed paths."""
 
@@ -270,6 +271,8 @@ def validate_production_snapshot_rebase(
         raise InvalidProductionEvidenceError(invalid_refs)
 
     authorized = authorized_production_workspace_paths(production, workspace=workspace)
+    if extra_authorized_paths:
+        authorized |= set(extra_authorized_paths)
     authorized_changed = [path for path in changed_paths if path in authorized]
     unauthorized = [path for path in changed_paths if path not in authorized]
     if unauthorized:
@@ -480,6 +483,7 @@ def validate_resume_context_bindings(
     *,
     workspace: Path,
     context_spec_may_change: bool = False,
+    extra_authorized_paths: set[str] | None = None,
 ) -> str | None:
     """Read-only resume guard for context_spec and context_snapshot drift."""
 
@@ -512,6 +516,7 @@ def validate_resume_context_bindings(
             new_binding,
             production,
             workspace=workspace,
+            extra_authorized_paths=extra_authorized_paths,
         )
     except (UnauthorizedContextMutationError, InvalidProductionEvidenceError) as exc:
         return str(exc)

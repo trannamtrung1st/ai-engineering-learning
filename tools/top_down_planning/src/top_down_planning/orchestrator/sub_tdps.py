@@ -347,6 +347,18 @@ class SubTdpsPhaseOrchestrator:
             unit_record["summary"] = child_run_summary(child_production, child_run)
             if mapped_status == UNIT_STATUS_COMPLETED:
                 loaded_unit = package.units[plan_item_id]
+                from top_down_planning.package.lineage import (
+                    validate_accepted_child_delivery,
+                    verify_accepted_result_attestation,
+                )
+
+                validate_accepted_child_delivery(
+                    store=child_store,
+                    child_run_id=str(child_run.get("id") or ""),
+                    child_run=child_run,
+                    child_production=child_production,
+                    verify_evidence=True,
+                )
                 accepted = accepted_result_record(
                     child_run=child_run,
                     child_production=child_production,
@@ -358,21 +370,37 @@ class SubTdpsPhaseOrchestrator:
                 )
                 unit_record["accepted_result"] = accepted
                 unit_record["accepted_result_digest"] = accepted_result_digest(accepted)
-                from top_down_planning.package.lineage import (
-                    verify_accepted_result_attestation,
-                )
-
                 verify_accepted_result_attestation(unit_record)
 
             if mapped_status == UNIT_STATUS_PAUSED:
                 state["active_unit_id"] = plan_item_id
                 production = self._store.load_production(self._run_id)
                 self._commit_production_state(production, state)
+                stop = StopRecord(
+                    code="sub_tdp_child_paused",
+                    category="operational",
+                    phase=SUB_TDPS,
+                    message=(
+                        child_result.reason
+                        or f"child Sub-TDP paused for unit {plan_item_id}"
+                    ),
+                    details={"child_run_id": child_run.get("id"), "unit_id": plan_item_id},
+                )
+                pause_run(
+                    self._store,
+                    self._run_id,
+                    stop=stop,
+                    revoke_phase=SUB_TDPS,
+                    event_type="run_paused",
+                    plan_item_id=plan_item_id,
+                    child_run_id=child_run.get("id"),
+                    unit_id=plan_item_id,
+                )
                 return self._result_from_run(
                     self._store.load_run(self._run_id),
                     ok=False,
                     units_completed=units_completed,
-                    reason=f"child Sub-TDP paused for unit {plan_item_id}",
+                    reason=stop.message,
                 )
 
             if mapped_status == UNIT_STATUS_FAILED:
@@ -471,14 +499,25 @@ class SubTdpsPhaseOrchestrator:
         run = self._store.load_run(self._run_id)
         binding = run.get("package_binding") or {}
         manifest_path = ""
+        package_id = ""
         if isinstance(binding, dict):
             manifest_path = str(binding.get("manifest_path") or "").strip()
+            package_id = str(binding.get("package_id") or "").strip()
         if not manifest_path:
             production = self._store.load_production(self._run_id)
             state = load_sub_tdp_state(production) or {}
             manifest_path = str(state.get("manifest_path") or "").strip()
+            if not package_id:
+                package_id = str(state.get("package_id") or "").strip()
         if not manifest_path:
             return None
+        from top_down_planning.package.store_persist import assert_manifest_path_in_store
+
+        assert_manifest_path_in_store(
+            self._store.root,
+            Path(manifest_path),
+            package_id=package_id or None,
+        )
         return ExecutionPackageLoader().load_from_manifest(Path(manifest_path))
 
     def _drive_prepared_unit(
@@ -615,11 +654,56 @@ class SubTdpsPhaseOrchestrator:
                 continue
             plan_item_id = str(unit_record.get("plan_item_id") or "")
             unit = units_by_id.get(plan_item_id)
-            child_run_id = str(unit_record.get("child_run_id") or "").strip()
-            if unit is None or not child_run_id:
-                continue
+            from top_down_planning.package.lineage import (
+                validate_accepted_child_delivery,
+                verify_accepted_result_attestation,
+            )
+
+            try:
+                verify_accepted_result_attestation(unit_record)
+            except ValueError as exc:
+                raise ProviderRunError(
+                    f"sub_tdps synthesis attestation invalid for {plan_item_id!r}: {exc}"
+                ) from exc
+            accepted = unit_record.get("accepted_result") or {}
+            unit_child = str(unit_record.get("child_run_id") or "").strip()
+            accepted_child = str(accepted.get("child_run_id") or "").strip()
+            if not unit_child or not accepted_child or unit_child != accepted_child:
+                raise ProviderRunError(
+                    f"sub_tdps synthesis requires matching child_run_id for unit "
+                    f"{plan_item_id!r}"
+                )
+            child_run_id = accepted_child
+            if unit is None:
+                raise ProviderRunError(
+                    f"sub_tdps synthesis missing package unit for {plan_item_id!r}"
+                )
             child_run = child_store.load_run(child_run_id)
             child_production = child_store.load_production(child_run_id)
+            child_binding = child_run.get("package_binding") or {}
+            bound_unit = str(
+                child_binding.get("selected_unit_id")
+                or child_binding.get("unit_id")
+                or ""
+            ).strip()
+            if bound_unit and bound_unit != plan_item_id:
+                raise ProviderRunError(
+                    f"sub_tdps synthesis child {child_run_id} is bound to unit "
+                    f"{bound_unit!r}, not {plan_item_id!r}"
+                )
+            try:
+                validate_accepted_child_delivery(
+                    store=child_store,
+                    child_run_id=child_run_id,
+                    child_run=child_run,
+                    child_production=child_production,
+                    verify_evidence=True,
+                )
+            except ValueError as exc:
+                raise ProviderRunError(
+                    f"sub_tdps synthesis child delivery invalid for "
+                    f"{plan_item_id!r}: {exc}"
+                ) from exc
             child_runs_data.append((unit_record, child_run, child_production))
 
         production = self._store.load_production(self._run_id)

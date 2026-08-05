@@ -172,6 +172,7 @@ def test_producer_manifest_includes_prepared_execution_for_child(
         package=package,
         unit_id=unit.unit_id,
         upstream=[],
+        baseline=[],
     )
     # Inject one upstream attestation for manifest coverage.
     run = store.load_run(child_id)
@@ -211,6 +212,7 @@ def test_producer_manifest_includes_prepared_execution_for_child(
         config,
         store.load_plan_model(child_id),
         production=store.load_production(child_id),
+        store=store,
     )
     prepared = manifest.get("prepared_execution")
     assert isinstance(prepared, dict)

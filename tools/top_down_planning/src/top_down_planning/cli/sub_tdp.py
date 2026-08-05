@@ -55,15 +55,25 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             code="sub_tdp_attach_rejected",
         )
 
+    child_run_dir = resolve_run_dir(store, child_run_id)
+    if child_run_dir is None:
+        emit_error_message(
+            f"child run directory not found for {child_run_id!r}",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+
     try:
         with run_ownership(parent_run_id, run_dir=parent_run_dir):
-            _attach_child_under_ownership(
-                args,
-                store=store,
-                resolved_runs=resolved_runs,
-                parent_run_id=parent_run_id,
-                child_run_id=child_run_id,
-            )
+            with run_ownership(child_run_id, run_dir=child_run_dir):
+                _attach_child_under_ownership(
+                    args,
+                    store=store,
+                    resolved_runs=resolved_runs,
+                    parent_run_id=parent_run_id,
+                    child_run_id=child_run_id,
+                )
     except RunOwnershipError as exc:
         emit_error_message(
             str(exc),
@@ -117,6 +127,13 @@ def _attach_child_under_ownership(
         )
 
     binding = parent_run.get("package_binding") or {}
+    if not isinstance(binding, dict):
+        emit_error_message(
+            "parent run has no prepared execution package binding",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
     manifest_path = str(binding.get("manifest_path") or "").strip()
     production = store.load_production(parent_run_id)
     state = load_sub_tdp_state(production)
@@ -130,7 +147,70 @@ def _attach_child_under_ownership(
             code="sub_tdp_attach_rejected",
         )
 
+    from top_down_planning.package.store_persist import assert_manifest_path_in_store
+
+    try:
+        assert_manifest_path_in_store(
+            store.root,
+            Path(manifest_path),
+            package_id=str(binding.get("package_id") or "").strip() or None,
+        )
+    except Exception as exc:
+        emit_error_message(
+            f"parent package manifest_path invalid: {exc}",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+
     package = ExecutionPackageLoader().load_from_manifest(Path(manifest_path))
+    expected_digest = str(package.manifest.get("package_digest") or "")
+    binding_digest = str(binding.get("package_digest") or "").strip()
+    if not binding_digest:
+        emit_error_message(
+            "parent package_binding.package_digest is required",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+    if binding_digest != expected_digest:
+        emit_error_message(
+            "parent package_binding.package_digest does not match loaded package",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+    binding_package_id = str(binding.get("package_id") or "").strip()
+    loaded_package_id = str(package.manifest.get("package_id") or "").strip()
+    if not binding_package_id:
+        emit_error_message(
+            "parent package_binding.package_id is required",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+    if binding_package_id != loaded_package_id:
+        emit_error_message(
+            "parent package_binding.package_id does not match loaded package",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+    if state is not None:
+        from top_down_planning.persistence.sub_tdp_state import (
+            validate_sub_tdp_state_matches_package,
+        )
+
+        try:
+            validate_sub_tdp_state_matches_package(state, package)
+        except ValueError as exc:
+            emit_error_message(
+                f"parent sub_tdps state does not match package: {exc}",
+                exit_code=1,
+                stream_json=args.stream_json,
+                code="sub_tdp_attach_rejected",
+            )
+
     child_run = store.load_run(child_run_id)
     if resolve_run_kind(child_run) != RUN_KIND_SUB_TDP_EXECUTION:
         emit_error_message(
@@ -178,6 +258,7 @@ def _attach_child_under_ownership(
             child_run_id=child_run_id,
             child_run=child_run,
             child_production=child_production,
+            verify_evidence=True,
         )
     except ValueError as exc:
         emit_error_message(

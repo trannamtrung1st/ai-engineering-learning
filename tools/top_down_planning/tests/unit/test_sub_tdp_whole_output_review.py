@@ -10,13 +10,22 @@ from top_down_planning.domain.sub_tdp_synthesis import synthesize_parent_product
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_OUTPUT_REVIEW
 from core_tools.provider import StubProvider
+from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
+from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitExecutor
 from top_down_planning.orchestrator.whole_output_review import (
     SubTdpWholeOutputReviewAdapter,
     WholeOutputReviewOrchestrator,
 )
+from top_down_planning.package.lineage import (
+    accepted_result_digest,
+    accepted_result_record,
+)
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.sub_tdp_state import initial_sub_tdp_state
-from tests.helpers import create_run_kwargs, whole_plan_approval_record
+from tests.helpers import accept_child_run, create_run_kwargs, whole_plan_approval_record
+from tests.unit.test_prepared_runs import _built_package
+import pytest
 
 
 def _parent_plan(run_id: str) -> Plan:
@@ -46,6 +55,91 @@ def _parent_plan(run_id: str) -> Plan:
 
 
 def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: Path) -> None:
+    store, _, package = _built_package(tmp_path)
+    config = create_run_kwargs(tmp_path)["resolved_config"]
+    parent_id = PreparedRunFactory().create_parent_run(
+        store,
+        package,
+        resolved_config=config,
+        invocation={"command": "execute"},
+    )
+    child_id = PreparedUnitExecutor().create_or_load_child_run(
+        store,
+        package,
+        "item-foundation",
+        resolved_config=config,
+        invocation={"command": "execute"},
+        parent_run_id=parent_id,
+    )
+    accept_child_run(store, child_id)
+
+    units = [
+        SubTdpUnit(
+            plan_item_id=u.unit_id,
+            title=u.title,
+            outcome="",
+            directory=u.plan_file.parent.name,
+            ordinal=u.ordinal,
+        )
+        for u in sorted(package.units.values(), key=lambda item: item.ordinal)
+    ]
+    production = store.load_production(parent_id)
+    production["sub_tdps"] = initial_sub_tdp_state(units)
+    unit_record = production["sub_tdps"]["units"][0]
+    accepted = accepted_result_record(
+        child_run=store.load_run(child_id),
+        child_production=store.load_production(child_id),
+        unit_id="item-foundation",
+        unit_plan_digest=package.units["item-foundation"].plan_digest,
+        package_id=str(package.manifest.get("package_id") or ""),
+        package_digest=str(package.manifest.get("package_digest") or ""),
+        assigned_subtree_digest=package.units["item-foundation"].assigned_subtree_digest,
+    )
+    unit_record["child_run_id"] = child_id
+    unit_record["status"] = "completed"
+    unit_record["accepted_result"] = accepted
+    unit_record["accepted_result_digest"] = accepted_result_digest(accepted)
+
+    child_run = store.load_run(child_id)
+    child_production = store.load_production(child_id)
+    synthesized = synthesize_parent_production(
+        store.load_plan_model(parent_id),
+        production,
+        child_runs=[(unit_record, child_run, child_production)],
+        parent_output_goal="Ship the product.",
+    )
+    synthesized["completion_claim"] = {
+        "goal_met": True,
+        "goal_assessment": "Parent integration validated; goal met.",
+    }
+    store.save_production(parent_id, synthesized, int(production["revision"]))
+
+    run = store.load_run(parent_id)
+    expected_run_revision = int(run["revision"])
+    run = dict(run)
+    run["phase"] = WHOLE_OUTPUT_REVIEW
+    run["revision"] = expected_run_revision + 1
+    store.save_run(parent_id, run, expected_run_revision)
+
+    adapter = SubTdpWholeOutputReviewAdapter(store, parent_id)
+    adapter.preflight(None)
+    loop = adapter.new_loop("review-whole-output-01")
+    package_payload = adapter.build_review_package(
+        store.load_run(parent_id),
+        store.load_resolved_config(parent_id),
+        loop,
+    )
+    assert package_payload["sub_tdp_evidence"]
+    assert package_payload["integrated_deliverables"]
+    assert package_payload["sub_tdp_evidence"][0]["child_run_id"] == child_id
+    assert package_payload["sub_tdp_evidence"][0]["output_digest"] == accepted[
+        "output_digest"
+    ]
+
+
+def test_sub_tdp_whole_output_review_fails_when_child_run_missing(
+    tmp_path: Path,
+) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T000901-000901"
     workspace = tmp_path
@@ -61,7 +155,6 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
         **{k: v for k, v in kwargs.items() if k not in {"workspace", "invocation"}},
     )
     store.save_review(run_id, whole_plan_approval_record(store, run_id))
-
     units = [
         SubTdpUnit(
             plan_item_id="item-a",
@@ -72,6 +165,9 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
         ),
     ]
     production = store.load_production(run_id)
+    expected_prod = int(production["revision"])
+    production = dict(production)
+    production["revision"] = expected_prod + 1
     production["sub_tdps"] = initial_sub_tdp_state(units)
     unit_record = production["sub_tdps"]["units"][0]
     unit_record["child_run_id"] = "run-20260101T000911-000911"
@@ -94,59 +190,30 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
         "contributions": [],
         "completion_assessment": "Child goal met.",
     }
-    from top_down_planning.package.lineage import accepted_result_digest
-
     unit_record["accepted_result_digest"] = accepted_result_digest(
         unit_record["accepted_result"]
     )
-    child_run = {
-        "id": "run-20260101T000911-000911",
-        "status": "completed",
-        "phase": "output_validated",
-        "outcome": "accepted",
-    }
-    child_production = {
-        "completion_claim": {
-            "goal_met": True,
-            "goal_assessment": "Child goal met.",
-        },
-        "dispositions": {
-            "item-a": {"disposition": "completed", "evidence": "done"},
-        },
-        "output_evidence": [{"id": "ev-child", "batch_id": "child-batch", "path": "out.md"}],
-    }
-    synthesized = synthesize_parent_production(
-        _parent_plan(run_id),
-        production,
-        child_runs=[(unit_record, child_run, child_production)],
-        parent_output_goal="Ship the product.",
-    )
-    # Integration producer replaces the pending claim before whole-output review.
-    synthesized["completion_claim"] = {
+    production["completion_claim"] = {
         "goal_met": True,
-        "goal_assessment": "Parent integration validated; goal met.",
+        "goal_assessment": "done",
     }
-    store.save_production(run_id, synthesized, int(production["revision"]))
-
+    store.save_production(run_id, production, expected_prod)
     run = store.load_run(run_id)
-    expected_run_revision = int(run["revision"])
+    expected = int(run["revision"])
     run = dict(run)
     run["phase"] = WHOLE_OUTPUT_REVIEW
-    run["revision"] = expected_run_revision + 1
-    store.save_run(run_id, run, expected_run_revision)
+    run["revision"] = expected + 1
+    store.save_run(run_id, run, expected)
 
     adapter = SubTdpWholeOutputReviewAdapter(store, run_id)
     adapter.preflight(None)
     loop = adapter.new_loop("review-whole-output-01")
-    package = adapter.build_review_package(
-        store.load_run(run_id),
-        store.load_resolved_config(run_id),
-        loop,
-    )
-    assert package["sub_tdp_evidence"]
-    assert package["integrated_deliverables"]
-    assert package["sub_tdp_evidence"][0]["child_run_id"] == "run-20260101T000911-000911"
-    assert package["sub_tdp_evidence"][0]["output_digest"] == "a" * 64
+    with pytest.raises(ProviderRunError, match="unable to load Sub-TDP child"):
+        adapter.build_review_package(
+            store.load_run(run_id),
+            store.load_resolved_config(run_id),
+            loop,
+        )
 
 
 def test_whole_output_review_orchestrator_uses_sub_tdp_adapter(tmp_path: Path) -> None:
@@ -158,13 +225,13 @@ def test_whole_output_review_orchestrator_uses_sub_tdp_adapter(tmp_path: Path) -
     store.create_run(
         run_id,
         plan=_parent_plan(run_id),
-        phase=WHOLE_OUTPUT_REVIEW,
+        phase=PLAN_VALIDATED,
         workspace=str(workspace),
         invocation={"command": "execute", "observability": {}},
         run_extras={"run_kind": "parent_execution"},
         **{k: v for k, v in kwargs.items() if k not in {"workspace", "invocation"}},
     )
-    production = store.load_production(run_id)
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
     units = [
         SubTdpUnit(
             plan_item_id="item-a",
@@ -174,33 +241,19 @@ def test_whole_output_review_orchestrator_uses_sub_tdp_adapter(tmp_path: Path) -
             ordinal=1,
         ),
     ]
+    production = store.load_production(run_id)
+    expected_prod = int(production["revision"])
+    production = dict(production)
+    production["revision"] = expected_prod + 1
     production["sub_tdps"] = initial_sub_tdp_state(units)
-    production["completion_claim"] = {
-        "goal_met": True,
-        "goal_assessment": "Integrated delivery meets parent goal.",
-    }
-    production["batches"] = [
-        {
-            "id": "batch-integration-01",
-            "plan_items": ["item-a"],
-            "status": "completed",
-            "agent_turns": 0,
-            "intent": "sub_tdp_integration",
-            "result": {
-                "outputs": [],
-                "contributions": [],
-                "dispositions": {"item-a": {"disposition": "completed"}},
-                "summary": "integration",
-                "empty_output": False,
-                "goal_assessment": "Integrated delivery meets parent goal.",
-            },
-        }
-    ]
-    production["dispositions"] = {"item-a": {"disposition": "completed"}}
-    expected_production_revision = int(production["revision"])
-    production["revision"] = expected_production_revision + 1
-    store.save_production(run_id, production, expected_production_revision)
-    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    store.save_production(run_id, production, expected_prod)
+    run = store.load_run(run_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["phase"] = WHOLE_OUTPUT_REVIEW
+    run["revision"] = expected + 1
+    store.save_run(run_id, run, expected)
 
-    orchestrator = WholeOutputReviewOrchestrator(store, run_id, StubProvider())
+    provider = StubProvider()
+    orchestrator = WholeOutputReviewOrchestrator(store, run_id, provider)
     assert isinstance(orchestrator._driver._adapter, SubTdpWholeOutputReviewAdapter)

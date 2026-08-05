@@ -85,6 +85,8 @@ def test_child_creation_is_idempotent_for_same_parent_unit(tmp_path: Path) -> No
 def test_accepted_result_requires_whole_output_review_id(tmp_path: Path) -> None:
     """#10: accepted-result attestation must include WOR id/digest."""
 
+    from top_down_planning.persistence.digests import compute_output_digest
+
     store, _, package = _built_package(tmp_path)
     config = create_run_kwargs(tmp_path)["resolved_config"]
     unit = package.units["item-foundation"]
@@ -95,17 +97,6 @@ def test_accepted_result_requires_whole_output_review_id(tmp_path: Path) -> None
         resolved_config=config,
         invocation={"command": "execute", "observability": {}},
     )
-    run = store.load_run(child_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected + 1
-    run["status"] = "completed"
-    run["phase"] = "output_validated"
-    run["outcome"] = "accepted"
-    digests = dict(run.get("digests") or {})
-    digests["output"] = "a" * 64
-    run["digests"] = digests
-    store.save_run(child_id, run, expected)
     production = store.load_production(child_id)
     expected_prod = int(production["revision"])
     production = dict(production)
@@ -117,6 +108,19 @@ def test_accepted_result_requires_whole_output_review_id(tmp_path: Path) -> None
         "goal_assessment": "done",
     }
     store.save_production(child_id, production, expected_prod)
+    production = store.load_production(child_id)
+
+    run = store.load_run(child_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["status"] = "completed"
+    run["phase"] = "output_validated"
+    run["outcome"] = "accepted"
+    digests = dict(run.get("digests") or {})
+    digests["output"] = compute_output_digest(production)
+    run["digests"] = digests
+    store.save_run(child_id, run, expected)
 
     with pytest.raises(ValueError, match="whole_output_review"):
         accepted_result_record(
