@@ -9,7 +9,10 @@ import pytest
 
 from core_tools.config import apply_cli_overrides
 
-from top_down_planning.config import resolve_config
+from top_down_planning.config.context_digests import (
+    context_spec_diff_is_model_only,
+    resolve_context_spec_may_change,
+)
 from top_down_planning.config.defaults import ALLOWED_OVERRIDE_PATHS
 from top_down_planning.config.resume_policy import (
     apply_resume_config_drift_policy,
@@ -410,3 +413,167 @@ def test_validate_resume_config_update_rejects_contract_without_flag() -> None:
             stored_invocation={"command": "run"},
             candidate_invocation={},
         )
+
+
+def test_context_spec_diff_is_model_only_when_only_models_change() -> None:
+    stored = minimal_resolved_config()
+    candidate = _candidate_with_overrides(
+        stored,
+        [
+            "agent_context.activities.scope_review.model=claude-opus-5-thinking-high",
+            "agent_context.roles.producer.model=gpt-4",
+        ],
+    )
+    assert context_spec_diff_is_model_only(stored, candidate, workspace=Path("."))
+
+
+def test_context_spec_diff_is_not_model_only_when_guidance_changes(tmp_path: Path) -> None:
+    workspace = tmp_path
+    guidance = workspace / "guidance.md"
+    guidance.write_text("guidance", encoding="utf-8")
+    stored = minimal_resolved_config()
+    stored["agent_context"] = {
+        **(stored.get("agent_context") or {}),
+        "roles": {
+            **((stored.get("agent_context") or {}).get("roles") or {}),
+            "planner": {
+                "model": "auto",
+                "guidance": [{"file": str(guidance.relative_to(workspace))}],
+                "resources": [],
+                "skills": [],
+            },
+        },
+    }
+    candidate = copy.deepcopy(stored)
+    candidate["agent_context"]["roles"]["planner"]["guidance"] = []
+    assert not context_spec_diff_is_model_only(stored, candidate, workspace=workspace)
+
+
+def test_prepare_resume_allows_model_only_context_spec_drift_with_flag(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_planning_run(store)
+    stored = store.load_resolved_config(run_id)
+    candidate = _candidate_with_overrides(
+        stored,
+        ["agent_context.activities.scope_review.model=claude-opus-5-thinking-high"],
+    )
+
+    plan = prepare_resume(store, run_id, candidate, allow_config_drift=True)
+
+    assert plan.context_spec_may_change
+    assert plan.validation.context_binding_valid
+    assert (
+        plan.effective_config["agent_context"]["activities"]["scope_review"]["model"]
+        == "claude-opus-5-thinking-high"
+    )
+
+
+def test_prepare_resume_still_blocks_non_model_context_spec_drift_with_flag(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_planning_run(store)
+    stored = store.load_resolved_config(run_id)
+    guidance = tmp_path / "extra-guidance.md"
+    guidance.write_text("extra", encoding="utf-8")
+    candidate = copy.deepcopy(stored)
+    candidate["agent_context"] = {
+        **(candidate.get("agent_context") or {}),
+        "roles": {
+            **((candidate.get("agent_context") or {}).get("roles") or {}),
+            "planner": {
+                "model": "auto",
+                "guidance": [{"file": str(guidance)}],
+                "resources": [],
+                "skills": [],
+            },
+        },
+    }
+
+    with pytest.raises(
+        PrepareResumeBlockedError,
+        match="non-model context_spec fields cannot drift",
+    ):
+        prepare_resume(store, run_id, candidate, allow_config_drift=True)
+
+
+def test_prepare_resume_blocks_exclusion_policy_drift_even_with_model_change(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_planning_run(store)
+    stored = store.load_resolved_config(run_id)
+    candidate = _candidate_with_overrides(
+        stored,
+        ["agent_context.activities.scope_review.model=claude-opus-5-thinking-high"],
+    )
+    excludes = dict((candidate.get("context_snapshot") or {}).get("excludes") or {})
+    excludes["patterns"] = ["temp/"]
+    candidate["context_snapshot"] = {
+        **(candidate.get("context_snapshot") or {}),
+        "excludes": excludes,
+    }
+
+    with pytest.raises(
+        PrepareResumeBlockedError,
+        match="non-model context_spec fields cannot drift",
+    ):
+        prepare_resume(store, run_id, candidate, allow_config_drift=True)
+
+
+def test_resolve_context_spec_may_change_requires_pre_approval_drift() -> None:
+    stored = minimal_resolved_config()
+    candidate = _candidate_with_overrides(
+        stored,
+        ["agent_context.activities.scope_review.model=claude-opus-5-thinking-high"],
+    )
+    run_digests = {"context_spec": "0" * 64}
+
+    assert resolve_context_spec_may_change(
+        run_digests=run_digests,
+        stored_config=stored,
+        candidate_config=candidate,
+        workspace=Path("."),
+        allow_config_drift=True,
+        has_whole_plan_approval=False,
+    )
+    assert not resolve_context_spec_may_change(
+        run_digests=run_digests,
+        stored_config=stored,
+        candidate_config=candidate,
+        workspace=Path("."),
+        allow_config_drift=False,
+        has_whole_plan_approval=False,
+    )
+    assert not resolve_context_spec_may_change(
+        run_digests=run_digests,
+        stored_config=stored,
+        candidate_config=candidate,
+        workspace=Path("."),
+        allow_config_drift=True,
+        has_whole_plan_approval=True,
+    )
+
+
+def test_validate_resume_config_update_accepts_model_change_with_context_spec_flag() -> None:
+    stored = minimal_resolved_config()
+    candidate = _candidate_with_overrides(
+        stored,
+        ["agent_context.roles.producer.model=gpt-4"],
+    )
+    drift = apply_resume_config_drift_policy(
+        stored,
+        candidate,
+        allow_config_drift=True,
+        has_whole_plan_approval=False,
+    )
+    update = validate_and_prepare_resume_config_update(
+        stored_config=stored,
+        candidate_config=drift.effective_config,
+        stored_invocation={"command": "run"},
+        candidate_invocation={"command": "resume"},
+        context_spec_may_change=True,
+    )
+    assert (
+        update.resolved_config["agent_context"]["roles"]["producer"]["model"] == "gpt-4"
+    )

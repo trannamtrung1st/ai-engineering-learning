@@ -368,6 +368,19 @@ def test_format_resume_plan_summary_text_includes_config_overrides() -> None:
     assert "updated.yaml" in text
 
 
+def test_format_resume_plan_summary_text_includes_context_spec_drift_note() -> None:
+    text = format_resume_plan_summary_text(
+        {
+            "already_completed": False,
+            "comparison_ok": True,
+            "context_spec_may_change": True,
+            "session_policy_text": "resume planner session cursor-abc123",
+        }
+    )
+    assert "model-only drift accepted" in text
+    assert "digests.context_spec will rebind on apply" in text
+
+
 def test_resume_check_with_allow_config_drift_shows_ignored_changes(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

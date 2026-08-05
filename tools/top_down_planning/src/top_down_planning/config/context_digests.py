@@ -11,6 +11,7 @@ from top_down_planning.config.binding_validation import (
 )
 from top_down_planning.config.context import (
     build_context_snapshot_payload_with_diagnostics,
+    build_context_spec_payload,
     compute_context_snapshot_digest_from_payload,
     compute_context_spec_digest_from_config,
     validate_guidance_for_binding,
@@ -385,12 +386,100 @@ def recompute_context_snapshot_binding_with_diagnostics(
     return binding, compute_context_snapshot_digest_from_payload(binding), diagnostics
 
 
+def _overlay_context_spec_without_model(section: Any) -> dict[str, Any]:
+    if not isinstance(section, dict):
+        return {"model": None, "guidance": [], "resources": [], "skills": []}
+    return {
+        "model": None,
+        "guidance": list(section.get("guidance") or []),
+        "resources": list(section.get("resources") or []),
+        "skills": list(section.get("skills") or []),
+    }
+
+
+def _context_spec_payload_without_models(payload: dict[str, Any]) -> dict[str, Any]:
+    roles = payload.get("roles")
+    activities = payload.get("activities")
+    return {
+        "workspace": payload.get("workspace"),
+        "default": _overlay_context_spec_without_model(payload.get("default")),
+        "roles": {
+            str(role): _overlay_context_spec_without_model(section)
+            for role, section in sorted((roles or {}).items())
+        },
+        "activities": {
+            str(activity): _overlay_context_spec_without_model(section)
+            for activity, section in sorted((activities or {}).items())
+        },
+        "context_snapshot": payload.get("context_snapshot"),
+    }
+
+
+def compute_context_spec_structural_digest_from_config(
+    config: dict[str, Any],
+    *,
+    workspace: Path,
+) -> str:
+    """Digest context spec declarations with model fields normalized away."""
+
+    from top_down_planning.persistence.digests import digest_binding_payload
+
+    payload = build_context_spec_payload(config, workspace=workspace)
+    return digest_binding_payload(_context_spec_payload_without_models(payload))
+
+
+def context_spec_diff_is_model_only(
+    stored_config: dict[str, Any],
+    candidate_config: dict[str, Any],
+    *,
+    workspace: Path,
+) -> bool:
+    """Return True when context-spec drift is limited to model selections."""
+
+    stored_digest = compute_context_spec_structural_digest_from_config(
+        stored_config,
+        workspace=workspace,
+    )
+    candidate_digest = compute_context_spec_structural_digest_from_config(
+        candidate_config,
+        workspace=workspace,
+    )
+    return stored_digest == candidate_digest
+
+
+def resolve_context_spec_may_change(
+    *,
+    run_digests: dict[str, str],
+    stored_config: dict[str, Any],
+    candidate_config: dict[str, Any],
+    workspace: Path,
+    allow_config_drift: bool,
+    has_whole_plan_approval: bool,
+) -> bool:
+    """Return True when pre-approval resume may accept model-only context_spec drift."""
+
+    if not allow_config_drift or has_whole_plan_approval:
+        return False
+    candidate_digest = compute_context_spec_digest_from_config(
+        candidate_config,
+        workspace=workspace,
+    )
+    if str(run_digests.get("context_spec") or "") == candidate_digest:
+        return False
+    return context_spec_diff_is_model_only(
+        stored_config,
+        candidate_config,
+        workspace=workspace,
+    )
+
+
 def validate_resume_context_bindings(
     run: dict[str, Any],
     production: dict[str, Any],
     candidate_config: dict[str, Any],
     *,
     workspace: Path,
+    context_spec_may_change: bool = False,
 ) -> str | None:
     """Read-only resume guard for context_spec and context_snapshot drift."""
 
@@ -398,13 +487,11 @@ def validate_resume_context_bindings(
     if not isinstance(digests, dict):
         return "run digests missing"
 
-    from top_down_planning.config.context import compute_context_spec_digest_from_config
-
     spec_digest = compute_context_spec_digest_from_config(
         candidate_config,
         workspace=workspace,
     )
-    if str(digests.get("context_spec") or "") != spec_digest:
+    if str(digests.get("context_spec") or "") != spec_digest and not context_spec_may_change:
         return "context_spec digest mismatch blocks resume"
 
     old_binding = run.get("context_snapshot_binding")
@@ -437,6 +524,8 @@ __all__ = [
     "authorized_production_workspace_paths",
     "build_initial_context_snapshot_binding",
     "build_initial_context_snapshot_binding_with_diagnostics",
+    "context_spec_diff_is_model_only",
+    "resolve_context_spec_may_change",
     "diff_snapshot_binding_paths",
     "invalid_production_evidence_refs",
     "is_evidence_authorizable_binding_key",

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from top_down_planning.config.context import compute_context_spec_digest_from_config
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.apply_resume import (
@@ -519,3 +520,41 @@ def test_apply_with_drift_flag_and_no_changes_skips_drift_event(tmp_path: Path) 
     )
     events = store.load_events(run_id)
     assert not any(event.get("type") == "resume_config_drift" for event in events)
+
+
+def test_apply_model_only_drift_updates_context_spec_digest(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _paused_planning_run(store)
+    stored = store.load_resolved_config(run_id)
+    before = dict(store.load_run(run_id)["digests"])
+    candidate = copy.deepcopy(stored)
+    candidate["agent_context"] = {
+        **(candidate.get("agent_context") or {}),
+        "activities": {
+            **((candidate.get("agent_context") or {}).get("activities") or {}),
+            "scope_review": {
+                "model": "claude-opus-5-thinking-high",
+                "guidance": [],
+                "resources": [],
+                "skills": [],
+            },
+        },
+    }
+
+    plan = prepare_resume(store, run_id, candidate, allow_config_drift=True)
+    assert plan.context_spec_may_change
+    apply_resume_plan_atomically(
+        store,
+        plan,
+        resolved_config=plan.effective_config or candidate,
+        invocation=store.load_invocation(run_id),
+    )
+
+    run = store.load_run(run_id)
+    expected = compute_context_spec_digest_from_config(
+        store.load_resolved_config(run_id),
+        workspace=tmp_path,
+    )
+    assert run["digests"]["context_spec"] == expected
+    assert run["digests"]["context_spec"] != before["context_spec"]
+    assert run["digests"]["config_contract"] != before["config_contract"]

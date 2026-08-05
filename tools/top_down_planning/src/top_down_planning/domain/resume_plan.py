@@ -53,6 +53,7 @@ class ResumePlan:
     warnings: tuple[str, ...] = ()
     allow_config_drift: bool = False
     contract_digest_may_change: bool = False
+    context_spec_may_change: bool = False
     already_completed: bool = False
     message: str | None = None
 
@@ -67,6 +68,7 @@ class ResumePlan:
             "warnings": list(self.warnings),
             "allow_config_drift": self.allow_config_drift,
             "contract_digest_may_change": self.contract_digest_may_change,
+            "context_spec_may_change": self.context_spec_may_change,
             "already_completed": self.already_completed,
         }
         if self.state_transition is not None:

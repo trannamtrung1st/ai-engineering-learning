@@ -172,8 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-config-drift",
         action="store_true",
         help=(
-            "Accept contract/model config changes on resume. Before whole-plan approval "
-            "changes apply; after approval, approval-bound changes are ignored with warnings."
+            "Accept contract and model config changes on resume. Before whole-plan "
+            "approval, changes apply and rebind digests; model-only context_spec drift "
+            "is accepted. Non-model context_spec fields (guidance, resources, skills, "
+            "exclusion policy) still block resume. After approval, approval-bound "
+            "contract and model changes are ignored with warnings."
         ),
     )
     _add_operational_flags(resume_parser)

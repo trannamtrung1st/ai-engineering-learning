@@ -119,6 +119,7 @@ def apply_resume_plan_atomically(
             candidate_invocation=invocation or {},
             consumed_limits=consumed_limits or consumed_limits_from_run(run),
             contract_digest_may_change=resume_plan.contract_digest_may_change,
+            context_spec_may_change=resume_plan.context_spec_may_change,
         )
     except ResumeConfigCommitError as exc:
         raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc
@@ -128,17 +129,18 @@ def apply_resume_plan_atomically(
     run_payload["stop"] = None
     next_digests = dict(digests)
     next_digests["config_execution"] = config_update.config_execution_digest
-    if resume_plan.contract_digest_may_change:
+    if resume_plan.contract_digest_may_change or resume_plan.context_spec_may_change:
         workspace = Path(run_workspace(run))
         next_digests["config_contract"] = config_update.config_contract_digest
-        next_digests["input"] = compute_input_digest(
-            effective_config,
-            base_dir=workspace,
-        )
-        next_digests["output_goal"] = compute_output_goal_digest(
-            effective_config,
-            base_dir=workspace,
-        )
+        if resume_plan.contract_digest_may_change:
+            next_digests["input"] = compute_input_digest(
+                effective_config,
+                base_dir=workspace,
+            )
+            next_digests["output_goal"] = compute_output_goal_digest(
+                effective_config,
+                base_dir=workspace,
+            )
         next_digests["context_spec"] = compute_context_spec_digest_from_config(
             effective_config,
             workspace=workspace,
@@ -161,6 +163,7 @@ def apply_resume_plan_atomically(
             "warnings": list(resume_plan.warnings),
             "allow_config_drift": resume_plan.allow_config_drift,
             "contract_digest_may_change": resume_plan.contract_digest_may_change,
+            "context_spec_may_change": resume_plan.context_spec_may_change,
             "old_config_execution_digest": old_execution_digest,
             "new_config_execution_digest": config_update.config_execution_digest,
             "session_policy": dict(resume_plan.session_policy),
@@ -190,6 +193,7 @@ def apply_resume_plan_atomically(
                 "ignored_changes": dict(resume_plan.ignored_config_changes),
                 "warnings": list(resume_plan.warnings),
                 "contract_digest_may_change": resume_plan.contract_digest_may_change,
+                "context_spec_may_change": resume_plan.context_spec_may_change,
             }
         )
 
@@ -221,6 +225,7 @@ def apply_resume_plan_atomically(
         "new_config_execution_digest": config_update.config_execution_digest,
         "limit_extended": bool(extended_paths),
         "contract_digest_may_change": resume_plan.contract_digest_may_change,
+        "context_spec_may_change": resume_plan.context_spec_may_change,
     }
 
 

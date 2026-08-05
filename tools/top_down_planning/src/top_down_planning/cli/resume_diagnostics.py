@@ -135,7 +135,9 @@ def build_resume_plan_summary(
         compare_resume_configs(stored_config, effective_config),
         consumed_limits=consumed_limits,
         candidate_config=effective_config,
-        allow_contract_and_model_changes=resume_plan.contract_digest_may_change,
+        allow_contract_and_model_changes=(
+            resume_plan.contract_digest_may_change or resume_plan.context_spec_may_change
+        ),
     )
     limit_diagnostics = build_limit_diagnostics(
         run,
@@ -167,6 +169,8 @@ def build_resume_plan_summary(
         "config_path": config_path,
         "config_overrides": list(config_overrides or []),
         "allow_config_drift": resume_plan.allow_config_drift,
+        "contract_digest_may_change": resume_plan.contract_digest_may_change,
+        "context_spec_may_change": resume_plan.context_spec_may_change,
         "config_changes": dict(resume_plan.config_changes),
         "ignored_config_changes": dict(resume_plan.ignored_config_changes),
         "warnings": list(resume_plan.warnings),
@@ -255,6 +259,11 @@ def format_resume_plan_summary_text(summary: dict[str, Any]) -> str:
         lines.append("Warnings:")
         for warning in warnings:
             lines.append(f"  {warning}")
+
+    if summary.get("context_spec_may_change"):
+        lines.append("")
+        lines.append("Context spec:")
+        lines.append("  model-only drift accepted; digests.context_spec will rebind on apply")
 
     transition = summary.get("state_transition")
     if transition:

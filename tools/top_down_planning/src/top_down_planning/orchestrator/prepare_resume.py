@@ -12,7 +12,10 @@ from top_down_planning.config import (
     compute_input_digest,
     compute_output_goal_digest,
 )
-from top_down_planning.config.context_digests import validate_resume_context_bindings
+from top_down_planning.config.context_digests import (
+    resolve_context_spec_may_change,
+    validate_resume_context_bindings,
+)
 from top_down_planning.config.resume_policy import (
     apply_resume_config_drift_policy,
     has_mandatory_whole_plan_approval,
@@ -274,14 +277,31 @@ def prepare_resume(
     if not evidence_binding_valid:
         blockers.append("output/production digest mismatch blocks resume")
 
+    context_spec_may_change = resolve_context_spec_may_change(
+        run_digests=run_digests,
+        stored_config=stored_config,
+        candidate_config=effective_config,
+        workspace=workspace,
+        allow_config_drift=allow_config_drift,
+        has_whole_plan_approval=has_whole_plan_approval,
+    )
+
     context_error = validate_resume_context_bindings(
         run,
         production,
         effective_config,
         workspace=workspace,
+        context_spec_may_change=context_spec_may_change,
     )
     context_binding_valid = context_error is None
     if context_error is not None:
+        if context_error == "context_spec digest mismatch blocks resume":
+            if not allow_config_drift:
+                context_error += " (pass --allow-config-drift to opt in for model-only changes)"
+            elif not context_spec_may_change:
+                context_error += (
+                    " (non-model context_spec fields cannot drift on resume)"
+                )
         blockers.append(context_error)
 
     approval_binding_valid = _approval_binding_valid(
@@ -355,4 +375,5 @@ def prepare_resume(
         warnings=drift.warnings,
         allow_config_drift=allow_config_drift,
         contract_digest_may_change=allow_config_drift and drift.contract_digest_changed,
+        context_spec_may_change=context_spec_may_change,
     )

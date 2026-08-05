@@ -2863,13 +2863,16 @@ Paused runs resume through `prepare_resume()` (read-only) and
   config changes on resume (see below)
 
 By default, resume rejects contract drift (`run.output_goal`, prompts, review/planning
-settings, model, and other approval-meaning fields) and provider/workspace changes.
-`--allow-config-drift` is a per-invocation escape hatch. Before mandatory whole-plan
-approval, accepted contract changes apply and update `digests.config_contract`,
-`digests.input`, `digests.output_goal`, and `digests.context_spec` atomically with the
-new resolved config. After whole-plan approval, approval-bound contract and model changes
-are ignored (warned in `--check` / apply summary) while limit changes and presentation
-changes still apply; approval records are not invalidated or rewritten.
+settings, model, and other approval-meaning fields), non-model `context_spec` drift
+(guidance/resource/skill declarations and snapshot exclusion policy), and
+provider/workspace changes. `--allow-config-drift` is a per-invocation escape hatch.
+Before mandatory whole-plan approval, accepted contract and model changes apply and
+update `digests.config_contract`, `digests.input`, `digests.output_goal`, and
+`digests.context_spec` atomically with the new resolved config. Model-only
+`context_spec` drift is accepted under the same flag; other `context_spec` fields remain
+strict. After whole-plan approval, approval-bound contract and model changes are ignored
+(warned in `--check` / apply summary) while limit changes and presentation changes still
+apply; approval records are not invalidated or rewritten.
 
 Limit-only changes update `digests.config_execution` only; approvals remain bound to
 `digests.config_contract`. Failed runs cannot be resumed. Replacement exhausted for the

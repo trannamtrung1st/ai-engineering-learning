@@ -61,6 +61,7 @@ def validate_and_prepare_resume_config_update(
     candidate_invocation: dict[str, Any],
     consumed_limits: dict[str, int] | None = None,
     contract_digest_may_change: bool = False,
+    context_spec_may_change: bool = False,
 ) -> ResumeConfigUpdate:
     """Validate resume config changes and build the persistence payload."""
 
@@ -68,12 +69,16 @@ def validate_and_prepare_resume_config_update(
         compare_resume_configs(stored_config, candidate_config),
         consumed_limits=consumed_limits,
         candidate_config=candidate_config,
-        allow_contract_and_model_changes=contract_digest_may_change,
+        allow_contract_and_model_changes=(
+            contract_digest_may_change or context_spec_may_change
+        ),
     )
     if not comparison.ok:
         detail = comparison.errors[0] if comparison.errors else "resume config change blocked"
         raise ResumeConfigCommitError(detail)
-    if comparison.contract_digest_changed and not contract_digest_may_change:
+    if comparison.contract_digest_changed and not (
+        contract_digest_may_change or context_spec_may_change
+    ):
         raise ResumeConfigCommitError("config_contract must remain unchanged during resume")
 
     invocation = sync_invocation_notifications_from_config(
