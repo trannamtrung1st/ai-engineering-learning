@@ -16,6 +16,7 @@ PausedStopCode = Literal[
     "user_cancelled",
     "orchestrator_interrupted",
     "amendment_pending",
+    "sub_tdps_awaiting_children",
 ]
 
 FailedStopCode = Literal[
@@ -37,6 +38,7 @@ PAUSED_STOP_CODES: frozenset[str] = frozenset(
         "user_cancelled",
         "orchestrator_interrupted",
         "amendment_pending",
+        "sub_tdps_awaiting_children",
     }
 )
 

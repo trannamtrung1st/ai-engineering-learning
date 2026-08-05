@@ -10,6 +10,7 @@ from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID, seed_plan_root_item
 from top_down_planning.persistence.path_ids import new_run_id
+from top_down_planning.package.lineage import accepted_result_digest
 from top_down_planning.persistence.sub_tdp_state import (
     all_units_completed,
     ensure_sub_tdp_state_matches_units,
@@ -22,6 +23,33 @@ from top_down_planning.persistence.sub_tdp_state import (
     UNIT_STATUS_COMPLETED,
 )
 from tests.helpers import create_run_kwargs, minimal_resolved_config
+
+
+def _accepted_attestation(unit_id: str = "item-a") -> dict:
+    return {
+        "schema_version": 1,
+        "package_id": "pkg-test",
+        "package_digest": "p" * 64,
+        "unit_id": unit_id,
+        "unit_plan_digest": "u" * 64,
+        "assigned_subtree_digest": "s" * 64,
+        "child_run_id": f"run-{unit_id}",
+        "output_revision": 1,
+        "output_digest": "o" * 64,
+        "whole_output_review_id": "review-whole-output-1",
+        "whole_output_review_digest": "r" * 64,
+        "outcome": "accepted",
+        "evidence_digest": "e" * 64,
+        "output_refs": [],
+        "contributions": [],
+        "completion_assessment": "done",
+    }
+
+
+def _bind_accepted(unit_record: dict, unit_id: str = "item-a") -> None:
+    accepted = _accepted_attestation(unit_id)
+    unit_record["accepted_result"] = accepted
+    unit_record["accepted_result_digest"] = accepted_result_digest(accepted)
 from top_down_planning.persistence import FileRunStore
 
 
@@ -142,11 +170,11 @@ def test_all_units_completed_requires_every_unit() -> None:
     state = initial_sub_tdp_state(units)
     assert not all_units_completed(state, units)
     state["units"][0]["status"] = "completed"
-    state["units"][0]["accepted_result_digest"] = "a" * 64
+    _bind_accepted(state["units"][0], "item-a")
     assert not all_units_completed(state, units)
     state["units"][1]["status"] = "completed"
     assert not all_units_completed(state, units)
-    state["units"][1]["accepted_result_digest"] = "b" * 64
+    _bind_accepted(state["units"][1], "item-b")
     assert all_units_completed(state, units)
 
 
@@ -209,6 +237,6 @@ def test_unit_dependencies_satisfied_requires_completed_prerequisites() -> None:
     assert next_ready_unit_id(state, package_units) == "item-a"
     state["units"][0]["status"] = UNIT_STATUS_COMPLETED
     assert not unit_dependencies_satisfied(state, package_units, "item-b")
-    state["units"][0]["accepted_result_digest"] = "a" * 64
+    _bind_accepted(state["units"][0], "item-a")
     assert unit_dependencies_satisfied(state, package_units, "item-b")
     assert next_ready_unit_id(state, package_units) == "item-b"

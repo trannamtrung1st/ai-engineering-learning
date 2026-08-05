@@ -11,6 +11,7 @@ from top_down_planning.agent_tool.artifacts import verify_evidence_snapshot
 from top_down_planning.config import (
     compute_input_digest,
     compute_output_goal_digest,
+    compute_unit_output_goal_digest,
 )
 from top_down_planning.config.context_digests import (
     resolve_context_spec_may_change,
@@ -51,6 +52,7 @@ from top_down_planning.orchestrator.phases import (
     PLAN_AMENDMENT,
     PLAN_VALIDATED,
     PRODUCTION,
+    SUB_TDPS,
     WHOLE_OUTPUT_REVIEW,
 )
 from top_down_planning.orchestrator.resume_stop_validators import (
@@ -120,10 +122,117 @@ def _verify_production_evidence(
     return None
 
 
+def _verify_prepared_package_binding(
+    store: RunStore,
+    run: dict[str, Any],
+) -> str | None:
+    """Reload prepared package and verify binding digests for resume."""
+
+    from pathlib import Path
+
+    from top_down_planning.domain.run_kind import (
+        RUN_KIND_PARENT_EXECUTION,
+        RUN_KIND_SUB_TDP_EXECUTION,
+        resolve_run_kind,
+    )
+    from top_down_planning.package.lineage import (
+        accepted_result_digest,
+        verify_accepted_result_attestation,
+    )
+    from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
+
+    try:
+        kind = resolve_run_kind(run)
+    except ValueError:
+        return None
+    if kind not in {RUN_KIND_PARENT_EXECUTION, RUN_KIND_SUB_TDP_EXECUTION}:
+        return None
+    binding = run.get("package_binding") or {}
+    if not isinstance(binding, dict):
+        return "prepared run package_binding is missing"
+    manifest_path = str(binding.get("manifest_path") or "").strip()
+    if not manifest_path:
+        return "prepared run missing package_binding.manifest_path"
+    try:
+        package = ExecutionPackageLoader().load(
+            Path(manifest_path).parent,
+            verify_workspace=False,
+        )
+    except ExecutionPackageError as exc:
+        return f"prepared package reload failed: {exc}"
+    expected_digest = str(package.manifest.get("package_digest") or "")
+    actual_digest = str(binding.get("package_digest") or "")
+    if expected_digest != actual_digest:
+        return (
+            "prepared package_digest mismatch blocks resume: "
+            f"expected {expected_digest}, got {actual_digest}"
+        )
+    if kind == RUN_KIND_SUB_TDP_EXECUTION:
+        unit_id = str(
+            binding.get("selected_unit_id") or binding.get("unit_id") or ""
+        ).strip()
+        unit = package.units.get(unit_id)
+        if unit is None:
+            return f"prepared unit {unit_id!r} missing from package"
+        if str(binding.get("unit_plan_digest") or "") != unit.plan_digest:
+            return "prepared unit_plan_digest mismatch blocks resume"
+        if str(binding.get("assigned_subtree_digest") or "") != unit.assigned_subtree_digest:
+            return "prepared assigned_subtree_digest mismatch blocks resume"
+        for item in binding.get("upstream_accepted_results") or []:
+            if not isinstance(item, dict):
+                return "prepared upstream_accepted_results entry is invalid"
+            try:
+                verify_accepted_result_attestation(
+                    {
+                        "accepted_result": item,
+                        "accepted_result_digest": accepted_result_digest(item),
+                    }
+                )
+            except ValueError as exc:
+                return f"prepared upstream attestation invalid: {exc}"
+    elif kind == RUN_KIND_PARENT_EXECUTION:
+        production = store.load_production(str(run.get("id") or ""))
+        state = production.get("sub_tdps")
+        if isinstance(state, dict):
+            for unit_record in state.get("units") or []:
+                if not isinstance(unit_record, dict):
+                    continue
+                if not unit_record.get("accepted_result"):
+                    continue
+                try:
+                    verify_accepted_result_attestation(unit_record)
+                except ValueError as exc:
+                    return f"parent sub_tdps attestation invalid: {exc}"
+            try:
+                from top_down_planning.persistence.sub_tdp_state import (
+                    ensure_sub_tdp_state_matches_units,
+                )
+                from top_down_planning.domain.sub_tdp_units import SubTdpUnit
+
+                units = [
+                    SubTdpUnit(
+                        plan_item_id=u.unit_id,
+                        title=u.title,
+                        outcome="",
+                        directory=u.plan_file.parent.name,
+                        ordinal=u.ordinal,
+                    )
+                    for u in sorted(package.units.values(), key=lambda item: item.ordinal)
+                ]
+                ensure_sub_tdp_state_matches_units(
+                    state,
+                    units,
+                )
+            except (ValueError, TypeError, KeyError) as exc:
+                return f"parent sub_tdps orchestration mismatch: {exc}"
+    return None
+
+
 _APPROVAL_REQUIRED_PHASES = frozenset(
     {
         PLAN_VALIDATED,
         PRODUCTION,
+        SUB_TDPS,
         WHOLE_OUTPUT_REVIEW,
         PLAN_AMENDMENT,
     }
@@ -248,6 +357,17 @@ def prepare_resume(
             blockers.append(f"input digest mismatch blocks resume{drift_hint}")
 
         output_goal_digest = compute_output_goal_digest(digest_config, base_dir=workspace)
+        try:
+            from top_down_planning.domain.run_kind import (
+                RUN_KIND_SUB_TDP_EXECUTION,
+                resolve_run_kind,
+            )
+
+            kind = resolve_run_kind(run)
+            if kind == RUN_KIND_SUB_TDP_EXECUTION:
+                output_goal_digest = compute_unit_output_goal_digest(plan.output_goal)
+        except ValueError as exc:
+            blockers.append(f"run_kind invalid blocks resume: {exc}")
         if output_goal_digest != run_digests.get("output_goal"):
             blockers.append(f"output-goal digest mismatch blocks resume{drift_hint}")
 
@@ -321,6 +441,10 @@ def prepare_resume(
     evidence_error = _verify_production_evidence(store, run_id, production)
     if evidence_error is not None:
         blockers.append(evidence_error)
+
+    package_error = _verify_prepared_package_binding(store, run)
+    if package_error is not None:
+        blockers.append(package_error)
 
     if status == "paused":
         stop = run.get("stop")

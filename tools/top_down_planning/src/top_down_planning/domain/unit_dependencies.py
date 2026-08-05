@@ -135,9 +135,9 @@ def external_prerequisites_for_unit(
 ) -> list[dict[str, Any]]:
     """Deduplicated external prerequisite contracts for a unit snapshot.
 
-    ``required_result_digest`` is the owning unit's assigned-subtree contract
+    ``upstream_contract_digest`` is the owning unit's assigned-subtree contract
     digest (known at prepare time). Accepted child output digests are bound
-    later at execution time.
+    later at execution time as ``accepted_result`` attestations.
     """
 
     contracts = owning_unit_contract_digests or {}
@@ -160,7 +160,7 @@ def external_prerequisites_for_unit(
                 {
                     "dependency_item_id": ext["dependency_item_id"],
                     "owning_unit_id": owner,
-                    "required_result_digest": contract,
+                    "upstream_contract_digest": contract,
                     "required_output_refs": [],
                 }
             )

@@ -16,6 +16,7 @@ from top_down_planning.domain.models import Plan
 from top_down_planning.domain.production import (
     all_applicable_items_processed,
     build_compact_approved_plan,
+    completion_claim_asserts_goal_met,
     has_pending_amendment,
     latest_reconciliation_report,
 )
@@ -364,7 +365,9 @@ class ProductionPhaseOrchestrator:
     def _has_completion_claim(self) -> bool:
         production = self._store.load_production(self._run_id)
         claim = production.get("completion_claim")
-        return isinstance(claim, dict)
+        return completion_claim_asserts_goal_met(
+            claim if isinstance(claim, dict) else None
+        )
 
     def _has_pending_amendment(self) -> bool:
         production = self._store.load_production(self._run_id)
@@ -616,7 +619,128 @@ def build_producer_context_manifest(
         reconciliation = latest_reconciliation_report(production)
         if reconciliation is not None:
             manifest["reconciliation"] = reconciliation
+    prepared = _prepared_execution_section(run, production=production)
+    if prepared is not None:
+        manifest["prepared_execution"] = prepared
     return manifest
+
+
+def _prepared_execution_section(
+    run: dict[str, Any],
+    *,
+    production: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Expose package/unit binding and upstream accepted results to producers."""
+
+    try:
+        kind = resolve_run_kind(run)
+    except ValueError:
+        return None
+    binding = run.get("package_binding")
+    if not isinstance(binding, dict):
+        return None
+
+    if kind == RUN_KIND_SUB_TDP_EXECUTION:
+        upstream = binding.get("upstream_accepted_results")
+        if upstream is None:
+            raise ProviderRunError(
+                "prepared child package_binding missing upstream_accepted_results"
+            )
+        if not isinstance(upstream, list):
+            raise ProviderRunError(
+                "prepared child upstream_accepted_results must be a list"
+            )
+        external = binding.get("external_prerequisites")
+        if not isinstance(external, list):
+            raise ProviderRunError(
+                "prepared child package_binding missing external_prerequisites"
+            )
+        normalized_upstream = []
+        for item in upstream:
+            if not isinstance(item, dict):
+                raise ProviderRunError(
+                    "upstream_accepted_results entries must be objects"
+                )
+            entry = dict(item)
+            if not str(entry.get("output_digest") or "").strip():
+                raise ProviderRunError(
+                    "upstream accepted result missing output_digest"
+                )
+            if not str(entry.get("upstream_contract_digest") or "").strip():
+                raise ProviderRunError(
+                    "upstream accepted result missing upstream_contract_digest"
+                )
+            if not str(entry.get("package_id") or "").strip():
+                raise ProviderRunError(
+                    "upstream accepted result missing package_id"
+                )
+            if "output_refs" not in entry or not isinstance(entry.get("output_refs"), list):
+                raise ProviderRunError(
+                    "upstream accepted result missing output_refs"
+                )
+            if "contributions" not in entry or not isinstance(
+                entry.get("contributions"), list
+            ):
+                raise ProviderRunError(
+                    "upstream accepted result missing contributions"
+                )
+            if "completion_assessment" not in entry:
+                raise ProviderRunError(
+                    "upstream accepted result missing completion_assessment"
+                )
+            normalized_upstream.append(entry)
+        return {
+            "package_id": binding.get("package_id"),
+            "unit_id": binding.get("selected_unit_id") or binding.get("unit_id"),
+            "external_prerequisites": list(external),
+            "upstream_accepted_results": normalized_upstream,
+        }
+
+    if kind == RUN_KIND_PARENT_EXECUTION and production is not None:
+        claim = production.get("completion_claim")
+        if isinstance(claim, dict) and claim.get("status") == "integration_pending":
+            state = production.get("sub_tdps") or {}
+            units = state.get("units") if isinstance(state, dict) else []
+            child_results = []
+            for unit in units or []:
+                if not isinstance(unit, dict):
+                    continue
+                accepted = unit.get("accepted_result")
+                if isinstance(accepted, dict):
+                    if "output_refs" not in accepted or not isinstance(
+                        accepted.get("output_refs"), list
+                    ):
+                        raise ProviderRunError(
+                            "child accepted_result missing output_refs"
+                        )
+                    if "contributions" not in accepted or not isinstance(
+                        accepted.get("contributions"), list
+                    ):
+                        raise ProviderRunError(
+                            "child accepted_result missing contributions"
+                        )
+                    if "completion_assessment" not in accepted:
+                        raise ProviderRunError(
+                            "child accepted_result missing completion_assessment"
+                        )
+                    if not str(accepted.get("output_digest") or "").strip():
+                        raise ProviderRunError(
+                            "child accepted_result missing output_digest"
+                        )
+                    if not str(accepted.get("package_id") or "").strip():
+                        raise ProviderRunError(
+                            "child accepted_result missing package_id"
+                        )
+                    child_results.append(dict(accepted))
+            return {
+                "package_id": binding.get("package_id"),
+                "unit_id": None,
+                "integration": True,
+                "external_prerequisites": [],
+                "upstream_accepted_results": child_results,
+                "parent_acceptance_criteria": claim.get("goal_assessment"),
+            }
+    return None
 
 
 def _production_loop_limits(config: dict[str, Any]) -> dict[str, int]:

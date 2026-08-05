@@ -20,10 +20,16 @@ from tests.unit.test_prepared_runs import _built_package
 
 
 def _finalize_accepted_child(store: FileRunStore, child_id: str, *, claim_assessment: str = "Unit delivered.") -> None:
+    from top_down_planning.package.builder import digest_review_record
+    from tests.helpers import whole_output_approval_record
+
     child_production = store.load_production(child_id)
     expected_prod = int(child_production["revision"])
     child_production = dict(child_production)
     child_production["revision"] = expected_prod + 1
+    child_production["output_revision"] = max(
+        1, int(child_production.get("output_revision") or 0)
+    )
     child_production["completion_claim"] = {
         "goal_met": True,
         "goal_assessment": claim_assessment,
@@ -32,6 +38,8 @@ def _finalize_accepted_child(store: FileRunStore, child_id: str, *, claim_assess
         "item-foundation": {"disposition": "completed", "evidence": "done"},
     }
     store.save_production(child_id, child_production, expected_prod)
+    approval = whole_output_approval_record(store, child_id)
+    store.save_review(child_id, approval)
     output_digest = compute_output_digest(store.load_production(child_id))
     run = store.load_run(child_id)
     expected = int(run["revision"])
@@ -39,6 +47,10 @@ def _finalize_accepted_child(store: FileRunStore, child_id: str, *, claim_assess
     digests = dict(run.get("digests") or {})
     digests["output"] = output_digest
     run["digests"] = digests
+    binding = dict(run.get("package_binding") or {})
+    binding["whole_output_review_id"] = str(approval.get("id") or "")
+    binding["whole_output_review_digest"] = digest_review_record(approval)
+    run["package_binding"] = binding
     run["revision"] = expected + 1
     run["status"] = "completed"
     run["phase"] = "output_validated"
@@ -60,6 +72,15 @@ def _parent_with_orchestration(tmp_path: Path):
     run = dict(run)
     run["revision"] = expected + 1
     run["phase"] = SUB_TDPS
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "sub_tdps_awaiting_children",
+        "category": "operational",
+        "phase": SUB_TDPS,
+        "message": "waiting for children",
+        "role": None,
+        "details": {},
+    }
     store.save_run(parent_id, run, expected)
 
     from top_down_planning.domain.sub_tdp_units import SubTdpUnit
@@ -82,6 +103,7 @@ def _parent_with_orchestration(tmp_path: Path):
             parent_binding.get("manifest_path") or package.manifest_path
         ),
         units=units,
+        package_units=package.units,
     )
     merged = merge_sub_tdp_state_into_production(production, state)
     expected_revision = int(production["revision"])
@@ -241,3 +263,43 @@ def test_sub_tdp_attach_rejects_conflicting_completed_child(tmp_path: Path) -> N
         ]
     )
     assert result.exit_code == 1
+
+
+def test_sub_tdp_attach_rejects_running_parent(tmp_path: Path) -> None:
+    store, parent_id, package, _config = _parent_with_orchestration(tmp_path)
+    run = store.load_run(parent_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["status"] = "running"
+    run["stop"] = None
+    store.save_run(parent_id, run, expected)
+
+    child_id = PreparedRunFactory().create_child_run(
+        store,
+        package,
+        package.units["item-foundation"],
+        resolved_config=create_run_kwargs(tmp_path)["resolved_config"],
+        invocation={"command": "execute", "observability": {}},
+    )
+    _finalize_accepted_child(store, child_id)
+
+    result = run_cli(
+        [
+            "sub-tdp",
+            "attach",
+            "--parent",
+            parent_id,
+            "--child",
+            child_id,
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--stream-json",
+        ]
+    )
+    assert result.exit_code == 1
+    payload = result.json()
+    assert payload.get("ok") is False
+    err = payload.get("error") or {}
+    assert err.get("code") == "sub_tdp_attach_rejected"
+    assert "paused" in str(err.get("message") or "").lower()

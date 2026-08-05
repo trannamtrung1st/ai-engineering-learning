@@ -183,9 +183,14 @@ class ExecutionPackageLoader:
                 raise ExecutionPackageError(
                     f"unit {unit_id} assigned_root_item_id mismatch"
                 )
-            expected_subtree = str(raw_unit.get("assigned_subtree_digest") or "")
+            expected_subtree = str(raw_unit.get("assigned_subtree_digest") or "").strip()
             actual_subtree = assigned_subtree_digest(parent_plan, unit_id)
-            if expected_subtree and expected_subtree != actual_subtree:
+            if not expected_subtree:
+                raise ExecutionPackageError(
+                    f"unit {unit_id} assigned_subtree_digest is required",
+                    code="package_subtree_digest_missing",
+                )
+            if expected_subtree != actual_subtree:
                 raise ExecutionPackageError(
                     f"unit {unit_id} assigned_subtree_digest mismatch"
                 )
@@ -202,7 +207,7 @@ class ExecutionPackageLoader:
                 plan_digest=unit_digest,
                 assigned_root_item_id=assigned_root,
                 assigned_item_ids=assigned_ids,
-                assigned_subtree_digest=expected_subtree or actual_subtree,
+                assigned_subtree_digest=expected_subtree,
                 depends_on=depends_on,
                 plan=unit_plan,
                 external_prerequisites=list(
@@ -258,6 +263,38 @@ class ExecutionPackageLoader:
                 "manifest.planning_run.inherited_plan_approval is required",
                 code="package_approval_missing",
             )
+        attestation = planning_run["inherited_plan_approval"]
+        if not attestation.get("inherited_plan_approval"):
+            raise ExecutionPackageError(
+                "inherited_plan_approval attestation missing inherited marker",
+                code="package_approval_invalid",
+            )
+        attestation_plan_digest = str(
+            attestation.get("approved_plan_digest") or ""
+        ).strip()
+        if (
+            attestation_plan_digest
+            and attestation_plan_digest
+            != str(planning_run.get("approved_plan_digest") or "").strip()
+        ):
+            raise ExecutionPackageError(
+                "inherited_plan_approval.approved_plan_digest mismatch",
+                code="package_approval_digest_mismatch",
+            )
+        approval_file = str(
+            planning_run.get("inherited_plan_approval_file") or ""
+        ).strip()
+        if approval_file:
+            approval_path = _contained_package_path(
+                package_dir, approval_file, label="inherited plan approval"
+            )
+            if approval_path.is_file():
+                file_attestation = _load_json(approval_path)
+                if file_attestation != attestation:
+                    raise ExecutionPackageError(
+                        "inherited_plan_approval file does not match embedded attestation",
+                        code="package_approval_file_mismatch",
+                    )
 
         context = manifest.get("context")
         if not isinstance(context, dict):
@@ -272,7 +309,113 @@ class ExecutionPackageLoader:
                 code="package_input_refs_invalid",
             )
 
-        approved_plan_digest = str(planning_run.get("approved_plan_digest") or "")
+        approved_plan_digest = str(planning_run.get("approved_plan_digest") or "").strip()
+        if not approved_plan_digest:
+            raise ExecutionPackageError(
+                "planning_run.approved_plan_digest is required",
+                code="package_approved_plan_digest_missing",
+            )
+        from top_down_planning.domain.plan_tree import is_active_item
+        from top_down_planning.domain.sub_tdp_units import derive_sub_tdp_units
+        from top_down_planning.domain.unit_dependencies import derive_unit_dependencies
+        from top_down_planning.domain.unit_plan import (
+            build_unit_plan_snapshot,
+            collect_assigned_item_ids,
+        )
+        from top_down_planning.persistence.digests import compute_plan_digest
+
+        semantic_parent_digest = compute_plan_digest(parent_plan)
+        if approved_plan_digest != semantic_parent_digest:
+            raise ExecutionPackageError(
+                "planning_run.approved_plan_digest does not match parent plan digest",
+                code="package_approved_plan_mismatch",
+            )
+        # Re-derive units from the approved parent plan and compare inventory.
+        derived_units = derive_sub_tdp_units(parent_plan)
+        derived_ids = {unit.plan_item_id for unit in derived_units}
+        manifest_ids = set(units)
+        if derived_ids != manifest_ids:
+            raise ExecutionPackageError(
+                "manifest units do not match units derived from approved parent plan",
+                code="package_unit_inventory_mismatch",
+            )
+        derived_deps = derive_unit_dependencies(parent_plan, derived_units)
+        package_id = str(manifest.get("package_id") or "")
+        for derived in derived_units:
+            loaded = units[derived.plan_item_id]
+            if loaded.ordinal != derived.ordinal:
+                raise ExecutionPackageError(
+                    f"unit {derived.plan_item_id} ordinal mismatch with derived plan",
+                    code="package_unit_ordinal_mismatch",
+                )
+            expected_deps = list(derived_deps.get(derived.plan_item_id) or [])
+            if list(loaded.depends_on) != expected_deps:
+                raise ExecutionPackageError(
+                    f"unit {derived.plan_item_id} depends_on mismatch with derived plan",
+                    code="package_unit_deps_mismatch",
+                )
+            expected_assigned = collect_assigned_item_ids(
+                parent_plan, derived.plan_item_id
+            )
+            if list(loaded.assigned_item_ids) != expected_assigned:
+                raise ExecutionPackageError(
+                    f"unit {derived.plan_item_id} assigned_item_ids mismatch "
+                    "with derived plan",
+                    code="package_unit_assignment_mismatch",
+                )
+            rebuilt = build_unit_plan_snapshot(
+                parent_plan,
+                derived,
+                package_id=package_id,
+                all_units=derived_units,
+            )
+            rebuilt_digest = compute_plan_digest(rebuilt)
+            loaded_semantic = compute_plan_digest(loaded.plan)
+            if rebuilt_digest != loaded_semantic:
+                raise ExecutionPackageError(
+                    f"unit {derived.plan_item_id} plan does not match "
+                    "rebuilt unit snapshot from approved parent plan",
+                    code="package_unit_plan_mismatch",
+                )
+        from top_down_planning.domain.unit_dependencies import (
+            external_prerequisites_for_unit,
+        )
+
+        contract_digests = {
+            unit_id: unit.assigned_subtree_digest for unit_id, unit in units.items()
+        }
+        for derived in derived_units:
+            loaded = units[derived.plan_item_id]
+            expected_external = external_prerequisites_for_unit(
+                parent_plan,
+                derived,
+                derived_units,
+                owning_unit_contract_digests=contract_digests,
+            )
+            if list(loaded.external_prerequisites) != expected_external:
+                raise ExecutionPackageError(
+                    f"unit {derived.plan_item_id} external_prerequisites mismatch "
+                    "with derived plan",
+                    code="package_external_prereq_mismatch",
+                )
+        assigned: set[str] = set()
+        for derived in derived_units:
+            for item_id in collect_assigned_item_ids(parent_plan, derived.plan_item_id):
+                if item_id in assigned:
+                    raise ExecutionPackageError(
+                        f"overlapping unit assignment for item {item_id!r}",
+                        code="package_unit_overlap",
+                    )
+                assigned.add(item_id)
+        for item_id, item in parent_plan.items.items():
+            if item_id == "item-root" or not is_active_item(item):
+                continue
+            if item.kind == "work" and item_id not in assigned:
+                raise ExecutionPackageError(
+                    f"active work item {item_id!r} is not covered by any unit",
+                    code="package_unit_coverage",
+                )
+
         context_digests = {
             key: str(value)
             for key, value in context.items()

@@ -18,7 +18,10 @@ from top_down_planning.config.context_digests import (
     build_initial_context_snapshot_binding_with_diagnostics,
 )
 from top_down_planning.package.loader import ExecutionPackageError, LoadedExecutionPackage
-from top_down_planning.persistence.digests import compute_config_contract_digest
+from top_down_planning.persistence.digests import (
+    compute_config_contract_digest,
+    compute_config_execution_digest,
+)
 
 
 def validate_resolved_config_against_package(
@@ -41,6 +44,11 @@ def validate_resolved_config_against_package(
             "config_contract",
             compute_config_contract_digest(resolved),
             str(context.get("config_contract_digest") or ""),
+        ),
+        (
+            "config_execution",
+            compute_config_execution_digest(resolved),
+            str(context.get("config_execution_digest") or ""),
         ),
         (
             "output_goal",

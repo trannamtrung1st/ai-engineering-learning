@@ -31,6 +31,7 @@ from top_down_planning.config.execution import validate_execution_config
 __all__ = [
     "compute_input_digest",
     "compute_output_goal_digest",
+    "compute_unit_output_goal_digest",
     "finalize_resolved_config",
     "resolve_config",
     "resolve_output_goal_text",
@@ -360,3 +361,14 @@ def compute_output_goal_digest(config: dict[str, Any], *, base_dir: Path) -> str
     from core_tools.persistence.digests import digest_text
 
     return digest_text(resolve_output_goal_text(config, base_dir=base_dir))
+
+
+def compute_unit_output_goal_digest(output_goal: str) -> str:
+    """Digest the unit plan's local output goal (Sub-TDP child contract)."""
+
+    from core_tools.persistence.digests import digest_text
+
+    goal = str(output_goal or "").strip()
+    if not goal:
+        raise ValueError("unit output_goal is required for digest")
+    return digest_text(goal)

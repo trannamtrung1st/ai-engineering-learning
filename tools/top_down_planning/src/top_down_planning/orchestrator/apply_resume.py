@@ -7,7 +7,8 @@ from typing import Any
 
 from core_tools.persistence import StoreRevisionConflictError
 
-from top_down_planning.config import compute_input_digest, compute_output_goal_digest
+from top_down_planning.config import compute_input_digest, compute_output_goal_digest, compute_unit_output_goal_digest
+from top_down_planning.domain.run_kind import RUN_KIND_SUB_TDP_EXECUTION, resolve_run_kind
 from top_down_planning.config.context import compute_context_spec_digest_from_config
 from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.domain.resume_plan import ResumePlan
@@ -141,6 +142,14 @@ def apply_resume_plan_atomically(
                 effective_config,
                 base_dir=workspace,
             )
+            try:
+                if resolve_run_kind(run) == RUN_KIND_SUB_TDP_EXECUTION:
+                    plan = store.load_plan_model(run_id)
+                    next_digests["output_goal"] = compute_unit_output_goal_digest(
+                        plan.output_goal
+                    )
+            except ValueError:
+                pass
         next_digests["context_spec"] = compute_context_spec_digest_from_config(
             effective_config,
             workspace=workspace,

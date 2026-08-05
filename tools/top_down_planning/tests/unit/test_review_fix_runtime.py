@@ -346,6 +346,7 @@ def test_attach_rejected_during_whole_output_review(tmp_path: Path) -> None:
         package.manifest,
         manifest_path=str(package.manifest_path),
         units=derive_sub_tdp_units(package.parent_plan),
+        package_units=package.units,
     )
     merged = merge_sub_tdp_state_into_production(production, state)
     store.save_production("run-20260101T002020-002020", {**merged, "revision": 1}, 0)

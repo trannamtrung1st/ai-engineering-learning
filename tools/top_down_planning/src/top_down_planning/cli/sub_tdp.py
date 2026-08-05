@@ -58,6 +58,14 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             stream_json=args.stream_json,
             code="sub_tdp_attach_rejected",
         )
+    if parent_status != "paused":
+        emit_error_message(
+            "parent run must be paused before attach "
+            "(use tdp execute --parent-only or pause an active parent)",
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
     if phase not in _ALLOWED_ATTACH_PHASES:
         emit_error_message(
             f"parent phase must be {SUB_TDPS} to attach children "
@@ -121,6 +129,23 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             code="sub_tdp_attach_rejected",
         )
 
+    from top_down_planning.package.lineage import validate_accepted_child_delivery
+
+    try:
+        validate_accepted_child_delivery(
+            store=store,
+            child_run_id=child_run_id,
+            child_run=child_run,
+            child_production=child_production,
+        )
+    except ValueError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_attach_rejected",
+        )
+
     if state is None:
         emit_error_message(
             "parent production missing sub_tdps orchestration state",
@@ -157,13 +182,20 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
         child_production=child_production,
         unit_id=plan_item_id,
         unit_plan_digest=unit.plan_digest,
+        package_id=str(package.manifest.get("package_id") or ""),
+        package_digest=str(package.manifest.get("package_digest") or ""),
+        assigned_subtree_digest=unit.assigned_subtree_digest,
     )
+    from top_down_planning.package.lineage import accepted_result_digest
 
     unit_record["child_run_id"] = child_run_id
     unit_record["status"] = unit_status_from_child_run(child_run)
     unit_record["summary"] = child_run_summary(child_production, child_run)
     unit_record["accepted_result"] = accepted
-    unit_record["accepted_result_digest"] = accepted.get("output_digest")
+    unit_record["accepted_result_digest"] = accepted_result_digest(accepted)
+    from top_down_planning.package.lineage import verify_accepted_result_attestation
+
+    verify_accepted_result_attestation(unit_record)
     state["active_unit_id"] = None
     merged = merge_sub_tdp_state_into_production(production, state)
     expected_revision = int(production["revision"])
@@ -183,6 +215,7 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
                     "child_status": str(child_run.get("status") or ""),
                     "package_id": package.manifest.get("package_id"),
                     "output_digest": accepted.get("output_digest"),
+                    "accepted_result_digest": unit_record["accepted_result_digest"],
                 }
             ],
         ),
@@ -195,7 +228,7 @@ def handle_sub_tdp_attach_command(args: Namespace) -> None:
             "plan_item_id": plan_item_id,
             "child_run_id": child_run_id,
             "unit_status": unit_record["status"],
-            "accepted_result_digest": accepted.get("output_digest"),
+            "accepted_result_digest": unit_record["accepted_result_digest"],
             "runs_dir": str(resolved_runs.path),
         },
     )

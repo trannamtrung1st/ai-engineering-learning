@@ -1315,7 +1315,9 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "object",
                 "description": (
                     "Parent production strategy. Use tdp prepare and tdp execute "
-                    "for Sub-TDP work; single is the only supported mode here."
+                    "for Sub-TDP work; single is the only supported mode here. "
+                    "Prepared parent/unit execution uses `tdp prepare` / `tdp execute` "
+                    "packages (manifest.json), not this config leaf."
                 ),
                 "properties": {
                     "mode": {

@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from top_down_planning.config.defaults import DEFAULT_CONFIG
-from top_down_planning.config import compute_input_digest, compute_output_goal_digest
+from top_down_planning.config import (
+    compute_input_digest,
+    compute_output_goal_digest,
+    compute_unit_output_goal_digest,
+)
+from top_down_planning.domain.run_kind import RUN_KIND_SUB_TDP_EXECUTION, resolve_run_kind
 from top_down_planning.domain.outcome import (
     evaluate_acceptance_invariant,
     load_approvals_for_acceptance,
@@ -281,6 +286,18 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
                 "whole-output approval record missing for current output revision",
             )
 
+        try:
+            kind = resolve_run_kind(run)
+        except ValueError:
+            kind = None
+        if kind == RUN_KIND_SUB_TDP_EXECUTION:
+            actual_output_goal_digest = compute_unit_output_goal_digest(plan.output_goal)
+        else:
+            actual_output_goal_digest = compute_output_goal_digest(
+                config,
+                base_dir=run_workspace(run),
+            )
+
         invariant, plan_validation, output_validation = evaluate_acceptance_invariant(
             plan=plan,
             production=production,
@@ -295,10 +312,7 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
                 config,
                 base_dir=run_workspace(run),
             ),
-            actual_output_goal_digest=compute_output_goal_digest(
-                config,
-                base_dir=run_workspace(run),
-            ),
+            actual_output_goal_digest=actual_output_goal_digest,
             actual_context_spec_digest=(run.get("digests") or {}).get("context_spec"),
             actual_context_snapshot_digest=(run.get("digests") or {}).get(
                 "context_snapshot"
@@ -324,6 +338,8 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
                 "acceptance invariant was not satisfied after whole-output approval",
             )
 
+        from top_down_planning.package.builder import digest_review_record
+
         expected_revision = int(run["revision"])
         revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
         revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_OUTPUT_REVIEW)
@@ -332,6 +348,17 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
         run["phase"] = OUTPUT_VALIDATED
         run["status"] = "completed"
         run["outcome"] = outcome
+        binding = dict(run.get("package_binding") or {})
+        if isinstance(binding, dict) and binding:
+            review_id = str(output_approval.get("id") or "").strip()
+            if not review_id:
+                return self._driver_host.terminate(
+                    "blocked",
+                    "whole-output approval record missing id",
+                )
+            binding["whole_output_review_id"] = review_id
+            binding["whole_output_review_digest"] = digest_review_record(output_approval)
+            run["package_binding"] = binding
         self._store.save_run(self._run_id, run, expected_revision)
         self._driver_host.append_event(
             "whole_output_review_approved",
@@ -365,6 +392,11 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
         if not isinstance(claim, dict):
             raise ProviderRunError(
                 "whole-output review requires a production completion claim"
+            )
+        if claim.get("goal_met") is not True:
+            raise ProviderRunError(
+                "whole-output review requires a completion claim with goal_met=true; "
+                f"got status={claim.get('status')!r} goal_met={claim.get('goal_met')!r}"
             )
 
     def _require_plan_approval(self) -> None:

@@ -254,7 +254,7 @@ class ExecutionPackageBuilder:
                 {
                     "owning_unit_id": entry["owning_unit_id"],
                     "dependency_item_id": entry["dependency_item_id"],
-                    "required_result_digest": entry["required_result_digest"],
+                    "upstream_contract_digest": entry["upstream_contract_digest"],
                 }
                 for entry in external
             ]

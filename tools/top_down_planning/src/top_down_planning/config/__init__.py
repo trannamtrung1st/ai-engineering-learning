@@ -60,6 +60,7 @@ from top_down_planning.config.defaults import (
 from top_down_planning.config.resolve import (
     compute_input_digest,
     compute_output_goal_digest,
+    compute_unit_output_goal_digest,
     finalize_resolved_config,
     resolve_config,
     resolve_output_goal_text,
@@ -151,6 +152,7 @@ __all__ = [
     "validate_run_production_snapshot_drift",
     "compute_input_digest",
     "compute_output_goal_digest",
+    "compute_unit_output_goal_digest",
     "finalize_resolved_config",
     "invalid_production_evidence_refs",
     "is_path_within_workspace",

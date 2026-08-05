@@ -469,8 +469,20 @@ def map_audit_event(payload: dict[str, Any]) -> ConsoleEvent | None:
         "sub_tdp_child_started": ("sub-tdp:start", "sub-tdp child started"),
         "sub_tdp_child_resumed": ("sub-tdp:resume", "sub-tdp child resumed"),
         "sub_tdp_child_completed": ("sub-tdp:end", "sub-tdp child completed"),
+        "sub_tdp_child_paused": ("sub-tdp:paused", "sub-tdp child paused"),
+        "sub_tdp_child_failed": ("sub-tdp:failed", "sub-tdp child failed"),
+        "sub_tdp_child_cancelled": ("sub-tdp:cancelled", "sub-tdp child cancelled"),
         "sub_tdp_child_attached": ("sub-tdp:attach", "sub-tdp child attached"),
         "sub_tdp_child_blocked": ("sub-tdp:blocked", "sub-tdp child blocked"),
+        "sub_tdps_phase_entered": ("sub-tdp:phase", "sub-tdps phase entered"),
+        "sub_tdps_prepared": ("sub-tdp:prepare", "sub-tdps orchestration prepared"),
+        "sub_tdps_synthesis_completed": ("sub-tdp:synthesize", "sub-tdps synthesis completed"),
+        "sub_tdps_integration_production_entered": (
+            "sub-tdp:integrate",
+            "sub-tdps integration production entered",
+        ),
+        "sub_tdps_completed": ("sub-tdp:phase-end", "sub-tdps phase completed"),
+        "sub_tdps_awaiting_children": ("sub-tdp:await", "sub-tdps awaiting children"),
     }
     mapped = mapping.get(event_type)
     if mapped is None:

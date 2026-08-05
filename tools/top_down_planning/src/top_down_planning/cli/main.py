@@ -187,6 +187,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--unit",
         help="Execute one prepared unit directly instead of the parent graph.",
     )
+    execute_parser.add_argument(
+        "--parent-only",
+        action="store_true",
+        help=(
+            "Create the parent execution run and enter sub_tdps ready for attach, "
+            "without driving child units."
+        ),
+    )
+    execute_parser.add_argument(
+        "--upstream",
+        action="append",
+        default=[],
+        metavar="UNIT=RUN_ID",
+        help=(
+            "Explicit upstream accepted child run for a dependency unit "
+            "(repeatable; unit_id=run_id). Skips filesystem discovery when set."
+        ),
+    )
     execute_parser.add_argument("--config", help="YAML configuration file.")
     execute_parser.add_argument(
         "--set",

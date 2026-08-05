@@ -6,9 +6,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.domain.run_kind import RUN_KIND_SUB_TDP_EXECUTION, resolve_run_kind
-from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED
 from top_down_planning.package.loader import LoadedExecutionPackage
-from top_down_planning.persistence.digests import compute_output_digest, compute_plan_digest
+from top_down_planning.persistence.digests import (
+    compute_output_digest,
+    compute_plan_digest,
+    digest_canonical_payload,
+)
+
+# Keep in sync with orchestrator.phases.OUTPUT_VALIDATED — do not import
+# orchestrator here (circular: package.lineage → orchestrator → package.lineage).
+_OUTPUT_VALIDATED = "output_validated"
 
 
 @dataclass(frozen=True)
@@ -47,8 +54,8 @@ class ExecutionLineageValidator:
 
         if status != "completed":
             mismatches.append(LineageMismatch("status", "completed", status))
-        if phase != OUTPUT_VALIDATED:
-            mismatches.append(LineageMismatch("phase", OUTPUT_VALIDATED, phase))
+        if phase != _OUTPUT_VALIDATED:
+            mismatches.append(LineageMismatch("phase", _OUTPUT_VALIDATED, phase))
         if outcome != "accepted":
             mismatches.append(
                 LineageMismatch("outcome", "accepted", outcome or "<missing>")
@@ -77,13 +84,17 @@ class ExecutionLineageValidator:
             mismatches.append(
                 LineageMismatch("completion_claim", "present", "<missing>")
             )
+        elif claim.get("goal_met") is not True:
+            mismatches.append(
+                LineageMismatch(
+                    "completion_claim.goal_met",
+                    "true",
+                    str(claim.get("goal_met")),
+                )
+            )
         output_digest = compute_output_digest(child_production)
         binding = child_run.get("package_binding") or {}
-        expected_output = str(
-            binding.get("accepted_output_digest")
-            or (child_run.get("digests") or {}).get("output")
-            or ""
-        ).strip()
+        expected_output = str((child_run.get("digests") or {}).get("output") or "").strip()
         if not expected_output:
             mismatches.append(
                 LineageMismatch("output_digest", "present", "<missing>")
@@ -91,6 +102,17 @@ class ExecutionLineageValidator:
         elif expected_output != output_digest:
             mismatches.append(
                 LineageMismatch("output_digest", expected_output, output_digest)
+            )
+
+        review_id = str(binding.get("whole_output_review_id") or "").strip()
+        review_digest = str(binding.get("whole_output_review_digest") or "").strip()
+        if not review_id:
+            mismatches.append(
+                LineageMismatch("whole_output_review_id", "present", "<missing>")
+            )
+        if not review_digest:
+            mismatches.append(
+                LineageMismatch("whole_output_review_digest", "present", "<missing>")
             )
 
         return mismatches
@@ -220,25 +242,210 @@ def accepted_result_record(
     child_production: dict[str, Any],
     unit_id: str,
     unit_plan_digest: str,
+    package_id: str,
+    package_digest: str,
+    assigned_subtree_digest: str,
+    whole_output_review_id: str = "",
+    whole_output_review_digest: str = "",
+    evidence_digest: str = "",
 ) -> dict[str, Any]:
+    package_id = str(package_id or "").strip()
+    package_digest = str(package_digest or "").strip()
+    assigned_subtree_digest = str(assigned_subtree_digest or "").strip()
+    unit_plan_digest = str(unit_plan_digest or "").strip()
+    if not package_id:
+        raise ValueError("accepted_result_record requires package_id")
+    if not package_digest:
+        raise ValueError("accepted_result_record requires package_digest")
+    if not assigned_subtree_digest:
+        raise ValueError("accepted_result_record requires assigned_subtree_digest")
+    if not unit_plan_digest:
+        raise ValueError("accepted_result_record requires unit_plan_digest")
+    if not unit_id:
+        raise ValueError("accepted_result_record requires unit_id")
+
     digests = child_run.get("digests") or {}
+    binding = child_run.get("package_binding") or {}
+    if not isinstance(binding, dict):
+        binding = {}
+    output_digest = str(
+        digests.get("output") or compute_output_digest(child_production)
+    ).strip()
+    if not output_digest:
+        raise ValueError("accepted_result_record requires a child output digest")
+    review_id = str(
+        whole_output_review_id
+        or binding.get("whole_output_review_id")
+        or ""
+    ).strip()
+    review_digest = str(
+        whole_output_review_digest
+        or binding.get("whole_output_review_digest")
+        or ""
+    ).strip()
+    if not review_id:
+        raise ValueError("accepted_result_record requires whole_output_review_id")
+    if not review_digest:
+        raise ValueError("accepted_result_record requires whole_output_review_digest")
+    if not evidence_digest:
+        evidence_ids = [
+            str(item.get("id") or "")
+            for item in (child_production.get("output_evidence") or [])
+            if isinstance(item, dict) and item.get("id")
+        ]
+        evidence_digest = digest_canonical_payload({"evidence_ids": evidence_ids})
+    # Delivery shape for downstream producers (proposal prepared_execution).
+    output_refs = [
+        dict(item)
+        for item in (child_production.get("outputs") or [])
+        if isinstance(item, dict)
+    ]
+    contributions = [
+        dict(item)
+        for item in (child_production.get("contributions") or [])
+        if isinstance(item, dict)
+    ]
+    claim = child_production.get("completion_claim")
+    completion_assessment = ""
+    if isinstance(claim, dict):
+        completion_assessment = str(
+            claim.get("goal_assessment") or claim.get("assessment") or ""
+        ).strip()
     return {
-        "child_run_id": child_run.get("id"),
+        "schema_version": 1,
+        "package_id": package_id,
+        "package_digest": package_digest,
         "unit_id": unit_id,
         "unit_plan_digest": unit_plan_digest,
+        "assigned_subtree_digest": assigned_subtree_digest,
+        "child_run_id": child_run.get("id"),
         "output_revision": int(child_production.get("output_revision") or 0),
-        "output_digest": str(
-            digests.get("output") or compute_output_digest(child_production)
-        ),
-        "whole_output_review_id": str(
-            (child_run.get("package_binding") or {}).get("whole_output_review_id") or ""
-        ),
+        "output_digest": output_digest,
+        "whole_output_review_id": review_id,
+        "whole_output_review_digest": review_digest,
         "outcome": str(child_run.get("outcome") or ""),
+        "evidence_digest": evidence_digest,
+        "output_refs": output_refs,
+        "contributions": contributions,
+        "completion_assessment": completion_assessment,
     }
+
+
+def accepted_result_digest(record: dict[str, Any]) -> str:
+    """Digest the canonical accepted-result attestation (not just output digest)."""
+
+    return digest_canonical_payload(record)
+
+
+def verify_accepted_result_attestation(unit_record: dict[str, Any]) -> None:
+    """Fail closed when stored accepted_result digests do not match the attestation."""
+
+    accepted = unit_record.get("accepted_result")
+    digest = str(unit_record.get("accepted_result_digest") or "").strip()
+    if not isinstance(accepted, dict):
+        raise ValueError("unit accepted_result attestation is missing")
+    if not digest:
+        raise ValueError("unit accepted_result_digest is missing")
+    recomputed = accepted_result_digest(accepted)
+    if recomputed != digest:
+        raise ValueError(
+            "unit accepted_result_digest does not match accepted_result attestation"
+        )
+    if str(accepted.get("outcome") or "") != "accepted":
+        raise ValueError(
+            f"accepted_result outcome must be accepted, got {accepted.get('outcome')!r}"
+        )
+    if not str(accepted.get("output_digest") or "").strip():
+        raise ValueError("accepted_result missing output_digest")
+    if not str(accepted.get("package_id") or "").strip():
+        raise ValueError("accepted_result missing package_id")
+    if not str(accepted.get("package_digest") or "").strip():
+        raise ValueError("accepted_result missing package_digest")
+    if not str(accepted.get("assigned_subtree_digest") or "").strip():
+        raise ValueError("accepted_result missing assigned_subtree_digest")
+    if not str(accepted.get("whole_output_review_id") or "").strip():
+        raise ValueError("accepted_result missing whole_output_review_id")
+    if not str(accepted.get("whole_output_review_digest") or "").strip():
+        raise ValueError("accepted_result missing whole_output_review_digest")
+    if "output_refs" not in accepted or not isinstance(accepted.get("output_refs"), list):
+        raise ValueError("accepted_result missing output_refs")
+    if "contributions" not in accepted or not isinstance(
+        accepted.get("contributions"), list
+    ):
+        raise ValueError("accepted_result missing contributions")
+    if "completion_assessment" not in accepted:
+        raise ValueError("accepted_result missing completion_assessment")
+
+
+def validate_accepted_child_delivery(
+    *,
+    store: Any,
+    child_run_id: str,
+    child_run: dict[str, Any] | None = None,
+    child_production: dict[str, Any] | None = None,
+    verify_evidence: bool = True,
+) -> None:
+    """Fail closed when child WOR attestation or evidence cannot be proven."""
+
+    from top_down_planning.agent_tool.artifacts import verify_evidence_snapshot
+    from top_down_planning.domain.reviews import find_whole_output_approval
+    from top_down_planning.package.builder import digest_review_record
+
+    run = child_run if child_run is not None else store.load_run(child_run_id)
+    production = (
+        child_production
+        if child_production is not None
+        else store.load_production(child_run_id)
+    )
+    binding = run.get("package_binding") or {}
+    if not isinstance(binding, dict):
+        raise ValueError("child package_binding is missing")
+    review_id = str(binding.get("whole_output_review_id") or "").strip()
+    review_digest = str(binding.get("whole_output_review_digest") or "").strip()
+    if not review_id:
+        raise ValueError("child whole_output_review_id is missing")
+    if not review_digest:
+        raise ValueError("child whole_output_review_digest is missing")
+    approval = find_whole_output_approval(
+        store.list_reviews(child_run_id),
+        int(production.get("output_revision") or 0),
+    )
+    if approval is None:
+        raise ValueError("child whole-output approval record missing")
+    if str(approval.get("id") or "").strip() != review_id:
+        raise ValueError(
+            "child whole_output_review_id does not match approved review record"
+        )
+    if digest_review_record(approval) != review_digest:
+        raise ValueError(
+            "child whole_output_review_digest does not match approved review record"
+        )
+    claim = production.get("completion_claim")
+    if not isinstance(claim, dict) or claim.get("goal_met") is not True:
+        raise ValueError("child completion claim must assert goal_met=true")
+    approved_digests = approval.get("approved_digests") or {}
+    if isinstance(approved_digests, dict):
+        expected_output = str((run.get("digests") or {}).get("output") or "").strip()
+        approved_output = str(approved_digests.get("output") or "").strip()
+        if expected_output and approved_output and expected_output != approved_output:
+            raise ValueError(
+                "child whole-output approval output digest does not match run digests"
+            )
+    if not verify_evidence:
+        return
+    for entry in production.get("output_evidence") or []:
+        if not isinstance(entry, dict):
+            raise ValueError("child output_evidence entry is invalid")
+        if not entry.get("snapshot_ref"):
+            continue
+        verify_evidence_snapshot(store, child_run_id, entry)
 
 
 __all__ = [
     "ExecutionLineageValidator",
     "LineageMismatch",
+    "accepted_result_digest",
     "accepted_result_record",
+    "validate_accepted_child_delivery",
+    "verify_accepted_result_attestation",
 ]

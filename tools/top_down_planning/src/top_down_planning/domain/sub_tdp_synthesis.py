@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable
 
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.plan_tree import is_active_item, walk_active_tree
@@ -16,6 +16,8 @@ from top_down_planning.domain.production import (
 _CHILD_OUTPUT_VALIDATED_PHASE = "output_validated"
 _ORCHESTRATION_STATUS_COMPLETED = "completed"
 _UNIT_STATUS_COMPLETED = "completed"
+
+EvidencePromoter = Callable[[dict[str, Any], str], dict[str, Any]]
 
 
 def _is_child_terminal_accepted(child_run: dict[str, Any]) -> bool:
@@ -44,11 +46,15 @@ def synthesize_parent_production(
     *,
     child_runs: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
     parent_output_goal: str,
+    promote_evidence: EvidencePromoter | None = None,
 ) -> dict[str, Any]:
     """
-    Build parent production snapshot for whole_output_review.
+    Build parent production snapshot for integration production.
 
     ``child_runs`` is a list of (unit_record, child_run, child_production).
+
+    When ``promote_evidence`` is provided it receives ``(evidence, child_run_id)``
+    and must return an evidence dict whose ``snapshot_ref`` is parent-local.
 
     Synthesis is fail-closed on missing child dispositions and does **not**
     assert that the parent goal is met — that requires a subsequent
@@ -68,6 +74,8 @@ def synthesize_parent_production(
 
     batch_id = "batch-integration-01"
     seen_evidence_ids: set[str] = set()
+    evidence_id_remap: dict[tuple[str, str], str] = {}
+
     for unit, child_run, child_production in child_runs:
         plan_item_id = str(unit.get("plan_item_id") or unit.get("id") or "")
         if not plan_item_id:
@@ -78,7 +86,9 @@ def synthesize_parent_production(
                 "must reach output_validated with outcome=accepted before synthesis"
             )
         summary = child_run_summary(child_production, child_run)
-        child_output_refs: list[str] = []
+        child_run_id = str(child_run.get("id") or "")
+        assigned_ids = set(collect_assigned_item_ids(plan, plan_item_id))
+
         for evidence in child_production.get("output_evidence") or []:
             if not isinstance(evidence, dict):
                 continue
@@ -87,29 +97,72 @@ def synthesize_parent_production(
                 continue
             unique_id = evidence_id
             if unique_id in seen_evidence_ids:
-                unique_id = f"{child_run.get('id')}-{evidence_id}"
+                unique_id = f"{child_run_id}-{evidence_id}"
             seen_evidence_ids.add(unique_id)
+            evidence_id_remap[(child_run_id, evidence_id)] = unique_id
             merged_evidence = dict(evidence)
+            if promote_evidence is not None:
+                merged_evidence = promote_evidence(merged_evidence, child_run_id)
             merged_evidence["id"] = unique_id
             merged_evidence["batch_id"] = batch_id
             merged_evidence["source_child_batch_id"] = str(
                 evidence.get("batch_id") or ""
             )
             merged_evidence["source_child_evidence_id"] = evidence_id
-            merged_evidence["sub_tdp_child_run_id"] = child_run.get("id")
+            merged_evidence["sub_tdp_child_run_id"] = child_run_id
             merged_evidence["sub_tdp_unit_id"] = plan_item_id
             merged_evidence["sub_tdp_plan_item_id"] = plan_item_id
             output_evidence.append(merged_evidence)
-            child_output_refs.append(unique_id)
-        contributions.append(
-            {
-                "item_id": plan_item_id,
-                "output_refs": child_output_refs,
-                "summary": summary,
-            }
-        )
+
+        # Merge child contributions item-by-item for descendant work items.
+        child_contributions = child_production.get("contributions") or []
+        if isinstance(child_contributions, list) and child_contributions:
+            for contribution in child_contributions:
+                if not isinstance(contribution, dict):
+                    continue
+                item_id = str(contribution.get("item_id") or "").strip()
+                if not item_id:
+                    continue
+                if item_id not in assigned_ids:
+                    raise ValueError(
+                        f"child contribution for item {item_id!r} is outside "
+                        f"assigned subtree of unit {plan_item_id}"
+                    )
+                remapped_refs = []
+                for ref in contribution.get("output_refs") or []:
+                    ref_s = str(ref)
+                    remapped_refs.append(
+                        evidence_id_remap.get((child_run_id, ref_s), ref_s)
+                    )
+                contributions.append(
+                    {
+                        "item_id": item_id,
+                        "output_refs": remapped_refs,
+                        "summary": str(contribution.get("summary") or summary),
+                        "batch_id": str(contribution.get("batch_id") or ""),
+                        "source_child_run_id": child_run_id,
+                        "source_unit_id": plan_item_id,
+                    }
+                )
+        else:
+            unit_refs = [
+                evidence_id_remap[(child_run_id, str(ev.get("id") or ""))]
+                for ev in (child_production.get("output_evidence") or [])
+                if isinstance(ev, dict)
+                and (child_run_id, str(ev.get("id") or "")) in evidence_id_remap
+            ]
+            contributions.append(
+                {
+                    "item_id": plan_item_id,
+                    "output_refs": unit_refs,
+                    "summary": summary,
+                    "source_child_run_id": child_run_id,
+                    "source_unit_id": plan_item_id,
+                }
+            )
+
         child_dispositions = child_production.get("dispositions") or {}
-        for assigned_id in collect_assigned_item_ids(plan, plan_item_id):
+        for assigned_id in assigned_ids:
             assigned_item = plan.items.get(assigned_id)
             if assigned_item is None or assigned_item.kind != "work":
                 continue
@@ -119,7 +172,7 @@ def synthesize_parent_production(
                 disposition_records[assigned_id] = {
                     "disposition": child_disp.strip(),
                     "evidence": (
-                        f"Sub-TDP child {child_run.get('id')} disposition for "
+                        f"Sub-TDP child {child_run_id} disposition for "
                         f"{assigned_id}."
                     ),
                 }

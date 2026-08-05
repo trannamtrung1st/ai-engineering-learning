@@ -9,6 +9,7 @@ from typing import Any
 from top_down_planning.config import (
     compute_input_digest,
     compute_output_goal_digest,
+    compute_unit_output_goal_digest,
 )
 from top_down_planning.config.context_digests import (
     build_initial_context_snapshot_binding_with_diagnostics,
@@ -165,6 +166,29 @@ class PreparedRunFactory:
             selected_unit_id=selected_unit_id,
             unit_record=unit_record,
         )
+        parent_output_goal_digest = compute_output_goal_digest(
+            resolved_config, base_dir=workspace
+        )
+        if run_kind == RUN_KIND_SUB_TDP_EXECUTION:
+            unit_goal = str(plan.output_goal or "").strip()
+            unit_goal_digest = compute_unit_output_goal_digest(unit_goal)
+            package_binding["unit_output_goal"] = unit_goal
+            package_binding["unit_output_goal_digest"] = unit_goal_digest
+            package_binding["parent_output_goal_digest"] = parent_output_goal_digest
+            output_goal_digest = unit_goal_digest
+            sub_tdp = (invocation or {}).get("sub_tdp") or {}
+            if not isinstance(sub_tdp, dict):
+                sub_tdp = {}
+            parent_run_id = str(sub_tdp.get("parent_run_id") or "").strip() or "direct"
+            unit_id = str(
+                sub_tdp.get("unit_id") or selected_unit_id or ""
+            ).strip()
+            if unit_id:
+                package_binding["creation_key"] = (
+                    f"{package_binding['package_digest']}:{parent_run_id}:{unit_id}"
+                )
+        else:
+            output_goal_digest = parent_output_goal_digest
         run_record_extras = {
             "run_kind": run_kind,
             "package_binding": package_binding,
@@ -176,9 +200,7 @@ class PreparedRunFactory:
             plan=plan,
             resolved_config=resolved_config,
             input_digest=compute_input_digest(resolved_config, base_dir=workspace),
-            output_goal_digest=compute_output_goal_digest(
-                resolved_config, base_dir=workspace
-            ),
+            output_goal_digest=output_goal_digest,
             context_spec_digest=context_spec_digest,
             context_snapshot_digest=context_snapshot_digest,
             context_snapshot_binding=binding,

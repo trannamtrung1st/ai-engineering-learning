@@ -7,14 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from core_tools.observability import ConsoleEvent
-from core_tools.provider import create_provider as build_provider
 
 from top_down_planning.cli.common import (
     ResolvedRunsDir,
     emit_error_message,
     emit_payload,
     format_run_startup_diagnostics,
-    provider_extra_env,
     resolve_runs_dir_from_args,
     run_startup_diagnostics_payload,
 )
@@ -40,6 +38,29 @@ from top_down_planning.persistence.sub_tdp_state import (
     initial_sub_tdp_state_from_package,
     merge_sub_tdp_state_into_production,
 )
+
+
+def parse_upstream_bindings(raw: list[str] | None) -> dict[str, str]:
+    """Parse ``unit_id=run_id`` bindings for ``tdp execute --upstream``."""
+
+    bindings: dict[str, str] = {}
+    for item in raw or []:
+        text = str(item or "").strip()
+        if "=" not in text:
+            raise ValueError(
+                f"invalid --upstream binding {text!r}; expected unit_id=run_id"
+            )
+        unit_id, run_id = text.split("=", 1)
+        unit_id = unit_id.strip()
+        run_id = run_id.strip()
+        if not unit_id or not run_id:
+            raise ValueError(
+                f"invalid --upstream binding {text!r}; expected unit_id=run_id"
+            )
+        if unit_id in bindings:
+            raise ValueError(f"duplicate --upstream unit_id {unit_id!r}")
+        bindings[unit_id] = run_id
+    return bindings
 
 
 def _presentation_sets(set_overrides: list[str] | None) -> list[str]:
@@ -135,6 +156,14 @@ def handle_execute_command(args: Namespace) -> None:
     invocation_dict["manifest"] = str(manifest_path)
 
     unit_id = str(getattr(args, "unit", "") or "").strip() or None
+    parent_only = bool(getattr(args, "parent_only", False))
+    if unit_id and parent_only:
+        emit_error_message(
+            "--parent-only cannot be combined with --unit",
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="invalid_execute_options",
+        )
     workspace = package.workspace_path
     run_factory = PreparedRunFactory()
 
@@ -175,11 +204,59 @@ def handle_execute_command(args: Namespace) -> None:
             )
             for unit in sorted(package.units.values(), key=lambda item: item.ordinal)
         ],
+        package_units=package.units,
     )
     merged = merge_sub_tdp_state_into_production(production, state)
     expected_revision = int(production["revision"])
     merged["revision"] = expected_revision + 1
     store.save_production(run_id, merged, expected_revision)
+
+    if parent_only:
+        # Enter sub_tdps without driving children so attach can bind independently
+        # executed units. Pause the parent to prevent concurrent orchestration writes.
+        from top_down_planning.domain.run_lifecycle import StopRecord
+        from top_down_planning.orchestrator.phases import SUB_TDPS
+        from top_down_planning.orchestrator.run_transitions import pause_run
+
+        run = store.load_run(run_id)
+        expected_run = int(run["revision"])
+        run = dict(run)
+        run["revision"] = expected_run + 1
+        run["phase"] = SUB_TDPS
+        store.save_run(run_id, run, expected_run)
+        store.append_event(
+            run_id,
+            {
+                "type": "sub_tdps_phase_entered",
+                "run_id": run_id,
+                "parent_only": True,
+            },
+        )
+        pause_run(
+            store,
+            run_id,
+            stop=StopRecord(
+                code="sub_tdps_awaiting_children",
+                category="operational",
+                phase=SUB_TDPS,
+                message="parent-only: waiting for independently executed children",
+            ),
+            revoke_phase=SUB_TDPS,
+            event_type="sub_tdps_awaiting_children",
+        )
+        paused = store.load_run(run_id)
+        emit_payload(
+            {
+                "ok": True,
+                "run_id": run_id,
+                "phase": SUB_TDPS,
+                "status": paused.get("status"),
+                "parent_only": True,
+                "package_id": package.manifest.get("package_id"),
+                "runs_dir": str(resolved_runs.path),
+            }
+        )
+        return
 
     _drive_execution_run(
         args,
@@ -228,12 +305,22 @@ def _execute_unit(
     notifications = NotificationContext(options=invocation_opts.notifications)
 
     try:
+        upstream_bindings = parse_upstream_bindings(getattr(args, "upstream", None))
+    except ValueError as exc:
+        emit_error_message(
+            str(exc),
+            exit_code=1,
+            stream_json=args.stream_json,
+            code="sub_tdp_upstream_invalid",
+        )
+    try:
         child_run_id = executor.create_or_load_child_run(
             store,
             package,
             unit_id,
             resolved_config=resolved,
             invocation=invocation_dict,
+            explicit_upstream=upstream_bindings or None,
         )
     except PreparedUnitExecutor.DependencyUnmetError as exc:
         emit_error_message(
@@ -264,27 +351,36 @@ def _execute_unit(
         )
     )
 
-    def _provider_factory(config: dict[str, Any], ws: Path) -> Any:
-        return build_provider(
-            config,
-            workspace=ws,
-            extra_env=provider_extra_env(
-                resolved_runs, run_id=child_run_id, store=store
-            ),
-            on_provider_event=observability.provider_callback(),
-        )
+    from top_down_planning.orchestrator.execution_runtime import build_execution_runtime
+
+    runtime = build_execution_runtime(
+        store=store,
+        run_id=child_run_id,
+        resolved_runs=resolved_runs,
+        observability=observability,
+        workspace=workspace,
+    )
+    _provider_factory = runtime.create_provider
 
     continuation_ok = False
     cancelled = False
     try:
-        child_run = executor.drive_child_run(
+        child_result = executor.drive_child_run(
             store,
             child_run_id,
             create_provider=_provider_factory,
             workspace=workspace,
             observability=observability,
         )
-        continuation_ok = _child_success(child_run)
+        cancelled = child_result.cancelled
+        continuation_ok = child_result.ok and _child_success(child_result.run)
+        if cancelled:
+            _exit_for_cancel(
+                run_id=child_run_id,
+                store=store,
+                stream_json=args.stream_json,
+            )
+            return
     except KeyboardInterrupt:
         cancelled = True
         _handle_blocking_run_interrupt(
@@ -396,4 +492,4 @@ def _drive_execution_run(
     )
 
 
-__all__ = ["handle_execute_command"]
+__all__ = ["handle_execute_command", "parse_upstream_bindings"]

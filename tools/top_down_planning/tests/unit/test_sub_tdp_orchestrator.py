@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from core_tools.provider import StubProvider
 from top_down_planning.domain.run_kind import RUN_KIND_PARENT_EXECUTION
-from top_down_planning.orchestrator.phases import SUB_TDPS, WHOLE_OUTPUT_REVIEW
+from top_down_planning.orchestrator.phases import PRODUCTION, SUB_TDPS
 from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
 from top_down_planning.orchestrator.sub_tdps import SubTdpsPhaseOrchestrator
 from top_down_planning.orchestrator.sub_tdp_child_driver import continue_child_sub_tdp
@@ -52,6 +52,7 @@ def _setup_parent_execution(
         package.manifest,
         manifest_path=str(package.manifest_path),
         units=units,
+        package_units=package.units,
     )
     merged = merge_sub_tdp_state_into_production(production, state)
     expected_revision = int(production["revision"])
@@ -70,7 +71,9 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
         create_provider,
         workspace: Path,
         observability=None,
-    ) -> dict:
+    ):
+        from top_down_planning.orchestrator.sub_tdp_child_driver import PreparedChildResult
+
         plan = child_store.load_plan_model(child_run_id)
         work_item_ids = [
             item_id
@@ -108,15 +111,27 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
             {"goal_assessment": "Child goal met."},
             handler="submit_completion",
         )()
+        from top_down_planning.persistence.digests import compute_output_digest
+
+        production = child_store.load_production(child_run_id)
         run = child_store.load_run(child_run_id)
         expected = int(run["revision"])
         run = dict(run)
+        digests = dict(run.get("digests") or {})
+        digests["output"] = compute_output_digest(production)
+        run["digests"] = digests
+        binding = dict(run.get("package_binding") or {})
+        binding["whole_output_review_id"] = "review-whole-output-1"
+        binding["whole_output_review_digest"] = "r" * 64
+        run["package_binding"] = binding
         run["revision"] = expected + 1
         run["status"] = "completed"
         run["phase"] = "output_validated"
         run["outcome"] = "accepted"
         child_store.save_run(child_run_id, run, expected)
-        return child_store.load_run(child_run_id)
+        return PreparedChildResult.from_run(
+            child_store.load_run(child_run_id), ok=True
+        )
 
     with patch(
         "top_down_planning.orchestrator.prepared_unit_executor.continue_child_sub_tdp",
@@ -129,11 +144,16 @@ def test_sub_tdps_orchestrator_completes_child_and_synthesizes(tmp_path: Path) -
         ).run()
 
     assert result.ok is True
-    assert result.phase == WHOLE_OUTPUT_REVIEW
+    # Synthesis enters parent integration production before whole-output review.
+    from top_down_planning.orchestrator.phases import PRODUCTION
+
+    assert result.phase == PRODUCTION
     parent_run = store.load_run(parent_id)
     assert parent_run.get("run_kind") == RUN_KIND_PARENT_EXECUTION
+    assert parent_run["phase"] == PRODUCTION
     production = store.load_production(parent_id)
     assert production.get("completion_claim") is not None
+    assert production["completion_claim"]["status"] == "integration_pending"
     state = load_sub_tdp_state(production)
     assert state is not None
     assert state["status"] == "completed"
@@ -228,7 +248,8 @@ def test_continue_child_sub_tdp_applies_resume_when_paused(tmp_path: Path) -> No
 
     prepare_mock.assert_called_once()
     apply_mock.assert_called_once()
-    assert child_run["phase"] == "output_validated"
+    assert child_run.ok is True
+    assert child_run.run["phase"] == "output_validated"
 
 
 def test_continue_child_sub_tdp_skips_already_terminal_child(tmp_path: Path) -> None:
@@ -259,4 +280,5 @@ def test_continue_child_sub_tdp_skips_already_terminal_child(tmp_path: Path) -> 
         )
         engine_cls.assert_not_called()
 
-    assert child_run["phase"] == "output_validated"
+    assert child_run.ok is True
+    assert child_run.run["phase"] == "output_validated"

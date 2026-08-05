@@ -21,16 +21,24 @@ UNIT_STATUS_COMPLETED = "completed"
 UNIT_STATUS_FAILED = "failed"
 
 
-def _unit_record(unit: SubTdpUnit) -> dict[str, Any]:
-    return {
+def _unit_record(unit: SubTdpUnit, *, package_unit: Any | None = None) -> dict[str, Any]:
+    record = {
         "id": unit.plan_item_id,
         "plan_item_id": unit.plan_item_id,
         "title": unit.title,
         "directory": unit.directory,
+        "ordinal": unit.ordinal,
         "status": UNIT_STATUS_PENDING,
         "child_run_id": None,
         "notes": [],
     }
+    if package_unit is not None:
+        record["unit_plan_digest"] = str(getattr(package_unit, "plan_digest", "") or "")
+        record["assigned_subtree_digest"] = str(
+            getattr(package_unit, "assigned_subtree_digest", "") or ""
+        )
+        record["depends_on"] = list(getattr(package_unit, "depends_on", None) or [])
+    return record
 
 
 def initial_sub_tdp_state(units: list[SubTdpUnit]) -> dict[str, Any]:
@@ -47,8 +55,20 @@ def initial_sub_tdp_state_from_package(
     *,
     manifest_path: str,
     units: list[SubTdpUnit],
+    package_units: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    state = initial_sub_tdp_state(units)
+    state = {
+        "version": 2,
+        "status": ORCHESTRATION_STATUS_PREPARING,
+        "active_unit_id": None,
+        "units": [
+            _unit_record(
+                unit,
+                package_unit=(package_units or {}).get(unit.plan_item_id),
+            )
+            for unit in units
+        ],
+    }
     state["package_id"] = package_manifest.get("package_id")
     state["package_digest"] = package_manifest.get("package_digest")
     state["manifest_path"] = manifest_path
@@ -85,6 +105,8 @@ def unit_dependencies_satisfied(
 ) -> bool:
     """Return whether orchestration state shows all package dependencies completed."""
 
+    from top_down_planning.package.lineage import verify_accepted_result_attestation
+
     loaded = package_units.get(unit_id)
     if loaded is None:
         raise ValueError(f"unknown unit in dependency check: {unit_id!r}")
@@ -95,7 +117,9 @@ def unit_dependencies_satisfied(
             return False
         if str(dep_record.get("status") or "") != UNIT_STATUS_COMPLETED:
             return False
-        if not str(dep_record.get("accepted_result_digest") or "").strip():
+        try:
+            verify_accepted_result_attestation(dep_record)
+        except ValueError:
             return False
     return True
 
@@ -189,6 +213,8 @@ def ensure_sub_tdp_state_matches_units(
 
 
 def all_units_completed(state: dict[str, Any], units: list[SubTdpUnit]) -> bool:
+    from top_down_planning.package.lineage import verify_accepted_result_attestation
+
     unit_records = {
         str(unit.get("plan_item_id") or ""): unit
         for unit in state.get("units") or []
@@ -200,7 +226,9 @@ def all_units_completed(state: dict[str, Any], units: list[SubTdpUnit]) -> bool:
             return False
         if str(record.get("status") or "") != UNIT_STATUS_COMPLETED:
             return False
-        if not str(record.get("accepted_result_digest") or "").strip():
+        try:
+            verify_accepted_result_attestation(record)
+        except ValueError:
             return False
     return True
 

@@ -83,7 +83,17 @@ def _build_package(tmp_path: Path) -> tuple[FileRunStore, Path, Plan]:
 def _force_run_fields(store: FileRunStore, run_id: str, **fields) -> None:
     run = store.load_run(run_id)
     expected = int(run["revision"])
+    run = dict(run)
     run.update(fields)
+    if (
+        str(run.get("outcome") or "") == "accepted"
+        and str(run.get("phase") or "") == OUTPUT_VALIDATED
+    ):
+        binding = dict(run.get("package_binding") or {})
+        if not str(binding.get("whole_output_review_id") or "").strip():
+            binding["whole_output_review_id"] = "review-whole-output-1"
+            binding["whole_output_review_digest"] = "r" * 64
+            run["package_binding"] = binding
     run["revision"] = expected + 1
     store.save_run(run_id, run, expected)
 
@@ -113,7 +123,28 @@ def test_all_units_completed_requires_accepted_digest() -> None:
     state = initial_sub_tdp_state(units)
     state["units"][0]["status"] = "completed"
     assert all_units_completed(state, units) is False
-    state["units"][0]["accepted_result_digest"] = "a" * 64
+    from top_down_planning.package.lineage import accepted_result_digest
+
+    accepted = {
+        "schema_version": 1,
+        "package_id": "pkg",
+        "package_digest": "p" * 64,
+        "unit_id": "item-a",
+        "unit_plan_digest": "u" * 64,
+        "assigned_subtree_digest": "s" * 64,
+        "child_run_id": "run-a",
+        "output_revision": 1,
+        "output_digest": "o" * 64,
+        "whole_output_review_id": "review-whole-output-1",
+        "whole_output_review_digest": "r" * 64,
+        "outcome": "accepted",
+        "evidence_digest": "e" * 64,
+        "output_refs": [],
+        "contributions": [],
+        "completion_assessment": "done",
+    }
+    state["units"][0]["accepted_result"] = accepted
+    state["units"][0]["accepted_result_digest"] = accepted_result_digest(accepted)
     assert all_units_completed(state, units) is True
 
 
@@ -141,8 +172,8 @@ def test_external_prerequisites_carry_owning_unit_contract_digest(tmp_path: Path
     assert unit_b.external_prerequisites
     for entry in unit_b.external_prerequisites:
         assert entry["owning_unit_id"] == "item-a"
-        assert entry["required_result_digest"] == expected
-        assert entry["required_result_digest"]
+        assert entry["upstream_contract_digest"] == expected
+        assert entry["upstream_contract_digest"]
 
 
 def test_attach_rejects_missing_output_digest(tmp_path: Path) -> None:
@@ -206,6 +237,10 @@ def test_prepared_run_persists_package_inside_run_store(tmp_path: Path) -> None:
 
 
 def test_child_run_binds_upstream_accepted_results(tmp_path: Path) -> None:
+    from top_down_planning.package.builder import digest_review_record
+    from top_down_planning.persistence.digests import compute_output_digest
+    from tests.helpers import whole_output_approval_record
+
     store, output_dir, _ = _build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir)
     unit_a = package.units["item-a"]
@@ -222,9 +257,18 @@ def test_child_run_binds_upstream_accepted_results(tmp_path: Path) -> None:
         "status": "accepted",
         "goal_assessment": "A done",
     }
+    production["output_revision"] = max(1, int(production.get("output_revision") or 0))
     _save_production(store, dep_id, production)
+    approval = whole_output_approval_record(store, dep_id)
+    store.save_review(dep_id, approval)
+    production = store.load_production(dep_id)
+    output_digest = compute_output_digest(production)
     digests = dict(store.load_run(dep_id).get("digests") or {})
-    digests["output"] = "a" * 64
+    digests["output"] = output_digest
+    run = store.load_run(dep_id)
+    binding = dict(run.get("package_binding") or {})
+    binding["whole_output_review_id"] = str(approval.get("id") or "")
+    binding["whole_output_review_digest"] = digest_review_record(approval)
     _force_run_fields(
         store,
         dep_id,
@@ -232,6 +276,7 @@ def test_child_run_binds_upstream_accepted_results(tmp_path: Path) -> None:
         phase=OUTPUT_VALIDATED,
         outcome="accepted",
         digests=digests,
+        package_binding=binding,
     )
 
     child_id = PreparedUnitExecutor().create_or_load_child_run(
@@ -247,7 +292,8 @@ def test_child_run_binds_upstream_accepted_results(tmp_path: Path) -> None:
     assert len(upstream) == 1
     assert upstream[0]["unit_id"] == "item-a"
     assert upstream[0]["child_run_id"] == dep_id
-    assert upstream[0]["output_digest"] == "a" * 64
+    assert upstream[0]["output_digest"] == output_digest
+    assert upstream[0].get("upstream_contract_digest") == unit_a.assigned_subtree_digest
 
 
 def test_parent_provider_factory_does_not_swallow_child_factory_errors(
@@ -294,15 +340,21 @@ def test_parent_provider_factory_does_not_swallow_child_factory_errors(
     captured: dict[str, object] = {}
 
     def fake_execute_unit(*_args, **kwargs):
-        factory = kwargs["create_provider"]
+        factory_for_run = kwargs.get("provider_factory_for_run")
+        if factory_for_run is not None:
+            factory = factory_for_run(child_id)
+        else:
+            factory = kwargs["create_provider"]
         captured["factory"] = factory
         # Invoke as drive would — must not silently fall back to parent.
         factory(package.resolved_config, tmp_path)
-        return store.load_run(child_id)
+        from top_down_planning.orchestrator.sub_tdp_child_driver import PreparedChildResult
+
+        return PreparedChildResult.from_run(store.load_run(child_id), ok=True)
 
     with (
         patch(
-            "core_tools.provider.create_provider",
+            "top_down_planning.orchestrator.execution_runtime.build_provider",
             side_effect=RuntimeError("child provider must fail loudly"),
         ),
         patch.object(
@@ -321,6 +373,7 @@ def test_parent_provider_factory_does_not_swallow_child_factory_errors(
                 package=package,
                 child_store=store,
                 child_run_id=child_id,
+                was_existing=True,
             )
 
 
@@ -382,7 +435,28 @@ def test_unit_dependencies_satisfied_requires_accepted_digest() -> None:
         )(),
     }
     assert unit_dependencies_satisfied(state, package_units, "item-b") is False
-    state["units"][0]["accepted_result_digest"] = "a" * 64
+    from top_down_planning.package.lineage import accepted_result_digest
+
+    accepted = {
+        "schema_version": 1,
+        "package_id": "pkg",
+        "package_digest": "p" * 64,
+        "unit_id": "item-a",
+        "unit_plan_digest": "u" * 64,
+        "assigned_subtree_digest": "s" * 64,
+        "child_run_id": "run-a",
+        "output_revision": 1,
+        "output_digest": "o" * 64,
+        "whole_output_review_id": "review-whole-output-1",
+        "whole_output_review_digest": "r" * 64,
+        "outcome": "accepted",
+        "evidence_digest": "e" * 64,
+        "output_refs": [],
+        "contributions": [],
+        "completion_assessment": "done",
+    }
+    state["units"][0]["accepted_result"] = accepted
+    state["units"][0]["accepted_result_digest"] = accepted_result_digest(accepted)
     assert unit_dependencies_satisfied(state, package_units, "item-b") is True
 
 

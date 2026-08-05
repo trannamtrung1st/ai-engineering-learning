@@ -77,13 +77,28 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
     unit_record["child_run_id"] = "run-20260101T000911-000911"
     unit_record["status"] = "completed"
     unit_record["accepted_result"] = {
-        "child_run_id": "run-20260101T000911-000911",
+        "schema_version": 1,
+        "package_id": "pkg",
+        "package_digest": "p" * 64,
         "unit_id": "item-a",
         "unit_plan_digest": "plan-digest-a",
+        "assigned_subtree_digest": "s" * 64,
+        "child_run_id": "run-20260101T000911-000911",
+        "output_revision": 1,
         "output_digest": "a" * 64,
+        "whole_output_review_id": "review-whole-output-1",
+        "whole_output_review_digest": "r" * 64,
         "outcome": "accepted",
+        "evidence_digest": "e" * 64,
+        "output_refs": [],
+        "contributions": [],
+        "completion_assessment": "Child goal met.",
     }
-    unit_record["accepted_result_digest"] = "a" * 64
+    from top_down_planning.package.lineage import accepted_result_digest
+
+    unit_record["accepted_result_digest"] = accepted_result_digest(
+        unit_record["accepted_result"]
+    )
     child_run = {
         "id": "run-20260101T000911-000911",
         "status": "completed",
@@ -106,6 +121,11 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
         child_runs=[(unit_record, child_run, child_production)],
         parent_output_goal="Ship the product.",
     )
+    # Integration producer replaces the pending claim before whole-output review.
+    synthesized["completion_claim"] = {
+        "goal_met": True,
+        "goal_assessment": "Parent integration validated; goal met.",
+    }
     store.save_production(run_id, synthesized, int(production["revision"]))
 
     run = store.load_run(run_id)
