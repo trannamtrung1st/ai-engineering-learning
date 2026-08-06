@@ -223,7 +223,7 @@ def test_synthesize_sets_integration_pending_not_goal_met() -> None:
     }
     child_production = {
         "completion_claim": {"goal_met": True, "goal_assessment": "Child done."},
-        "output_evidence": [{"id": "ev-1", "batch_id": "child-batch-1", "path": "out.md"}],
+        "output_evidence": [{"id": "ev-1", "batch_id": "child-batch-1", "path": "temp/out.md"}],
         "dispositions": {
             "item-a": {"disposition": "completed", "evidence": "done"},
         },

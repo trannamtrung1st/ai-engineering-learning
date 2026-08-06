@@ -235,12 +235,13 @@ def test_accepted_result_includes_delivery_shape(tmp_path: Path) -> None:
     )
     from tests.helpers import accept_child_run
 
-    artifact = tmp_path / "out.md"
+    artifact = tmp_path / "temp" / "out.md"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text("unit output\n", encoding="utf-8")
     accept_child_run(
         store,
         child_id,
-        outputs=[{"id": "output-foundation", "type": "artifact", "ref": "out.md"}],
+        outputs=[{"id": "output-foundation", "type": "artifact", "ref": "temp/out.md"}],
         contributions=[
             {
                 "item_id": "item-foundation",
@@ -261,7 +262,7 @@ def test_accepted_result_includes_delivery_shape(tmp_path: Path) -> None:
         assigned_subtree_digest=unit.assigned_subtree_digest,
     )
     assert record["output_refs"][0]["id"] == "output-foundation"
-    assert record["output_refs"][0]["ref"] == "out.md"
+    assert record["output_refs"][0]["ref"] == "temp/out.md"
     assert record["contributions"] == [
         {
             "item_id": "item-foundation",

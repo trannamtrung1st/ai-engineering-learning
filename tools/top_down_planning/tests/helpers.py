@@ -1147,7 +1147,7 @@ def accept_child_run(
 
     output_id = f"output-{child_run_id[-6:]}"
     batch_outputs = outputs or [
-        {"id": output_id, "type": "artifact", "ref": "out.md"},
+        {"id": output_id, "type": "artifact", "ref": "temp/out.md"},
     ]
     for item in batch_outputs:
         ref = str(item.get("ref") or "")
