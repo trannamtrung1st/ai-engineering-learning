@@ -502,6 +502,7 @@ This is not published as a standalone wheel. The `file:../core_tools` dependency
 tdp --help
 python -m pytest                  # unit tests (default; excludes integration)
 python scripts/build_packaging_wheelhouse.py /tmp/tdp-packaging-wheelhouse
-TDP_PACKAGING_WHEELHOUSE=/tmp/tdp-packaging-wheelhouse python -m pytest -m integration
-python -m pytest -m ""            # full suite (requires TDP_PACKAGING_WHEELHOUSE)
+export TDP_PACKAGING_WHEELHOUSE=/tmp/tdp-packaging-wheelhouse
+python -m pytest -m integration
+python -m pytest -m ""            # full suite (includes packaging integration tests)
 ```
