@@ -243,6 +243,61 @@ def test_validate_child_bindings_rejects_empty_lineage_digest_entry(tmp_path: Pa
     assert "empty digest" in error
 
 
+def test_validate_child_bindings_rejects_empty_lineage_with_nonempty_wrappers_at_s0(
+    tmp_path: Path,
+) -> None:
+    """Empty baseline_accepted_result_digests must not pass when wrappers are nonempty."""
+
+    from top_down_planning.package.lineage import validate_child_package_bindings
+
+    store, package, config = _build_restore_snapshot_package(tmp_path)
+    executor = PreparedUnitExecutor()
+    parent_id = PreparedRunFactory().create_parent_run(
+        store, package, resolved_config=config, invocation={"command": "execute"},
+    )
+    shared = Path(package.workspace_path) / "shared"
+
+    child_a = executor.create_or_load_child_run(
+        store, package, "item-a", resolved_config=config,
+        invocation={"command": "execute"}, parent_run_id=parent_id,
+    )
+    (shared / "x.json").write_text('{"value": 1}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_a,
+        outputs=[{"id": "out-x-a", "type": "artifact", "ref": "shared/x.json"}],
+        contributions=[{"item_id": "item-a", "output_refs": ["out-x-a"], "summary": "A"}],
+    )
+
+    (shared / "x.json").write_text('{"value": 1}\n', encoding="utf-8")
+    child_b = executor.create_or_load_child_run(
+        store, package, "item-b", resolved_config=config,
+        invocation={"command": "execute"},
+        parent_run_id=parent_id,
+        explicit_baseline_run_ids=[child_a],
+        explicit_upstream_only=True,
+    )
+    (shared / "x.json").write_text('{"value": 0}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_b,
+        outputs=[{"id": "out-x-b", "type": "artifact", "ref": "shared/x.json"}],
+        contributions=[{"item_id": "item-b", "output_refs": ["out-x-b"], "summary": "B"}],
+    )
+
+    (shared / "x.json").write_text('{"value": 0}\n', encoding="utf-8")
+    child_c = executor.create_or_load_child_run(
+        store, package, "item-c", resolved_config=config,
+        invocation={"command": "execute"},
+        parent_run_id=parent_id,
+        explicit_baseline_run_ids=[child_a, child_b],
+        explicit_upstream_only=True,
+    )
+    binding = dict(store.load_run(child_c)["package_binding"])
+    binding["baseline_accepted_result_digests"] = []
+    error = validate_child_package_bindings(binding)
+    assert error is not None
+    assert "exactly match" in error
+
+
 def test_c_baselines_a_only_rejects_overwrite_of_b_path(tmp_path: Path) -> None:
     """C with baseline A only must not overwrite paths last written by independent B."""
 

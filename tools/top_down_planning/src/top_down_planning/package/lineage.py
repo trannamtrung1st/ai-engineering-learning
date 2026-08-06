@@ -786,16 +786,15 @@ def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
     package_initial = _package_initial_snapshot_from_binding(binding)
     if package_initial is None:
         return "child package_binding missing manifest_path for baseline lineage validation"
-    if not binding_digest_set:
-        if baseline_snapshot != package_initial:
-            return (
-                "child with empty baseline_accepted_result_digests must be at "
-                "package initial snapshot"
-            )
-    elif binding_digest_set != wrapper_digest_set:
+    if binding_digest_set != wrapper_digest_set:
         return (
             "child baseline_accepted_result_digests must exactly match "
             "workspace_baseline_accepted_results"
+        )
+    if not binding_digest_set and baseline_snapshot != package_initial:
+        return (
+            "child with empty baseline_accepted_result_digests must be at "
+            "package initial snapshot"
         )
     if "external_prerequisites" not in binding:
         return "child missing external_prerequisites binding"
