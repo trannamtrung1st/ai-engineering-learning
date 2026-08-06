@@ -593,6 +593,52 @@ def validate_resume_context_bindings(
     return None
 
 
+def sync_run_production_digests(
+    store: Any,
+    run_id: str,
+    *,
+    extra_authorized_paths: set[str] | None = None,
+) -> bool:
+    """Atomically refresh output and context_snapshot digests from live production."""
+
+    from top_down_planning.persistence.digests import compute_output_digest
+    from top_down_planning.workspace import run_workspace
+
+    run = store.load_run(run_id)
+    production = store.load_production(run_id)
+    config = store.load_resolved_config(run_id)
+    workspace = run_workspace(run)
+    expected_revision = int(run["revision"])
+    digests = dict(run.get("digests") or {})
+    old_binding = dict(run.get("context_snapshot_binding") or {})
+    old_snapshot_digest = str(digests.get("context_snapshot") or "")
+
+    new_binding, new_snapshot_digest, _ = recompute_context_snapshot_binding_with_diagnostics(
+        config,
+        workspace=workspace,
+    )
+    snapshot_rebased = False
+    if new_snapshot_digest != old_snapshot_digest:
+        validate_production_snapshot_rebase(
+            old_binding,
+            new_binding,
+            production,
+            workspace=workspace,
+            extra_authorized_paths=extra_authorized_paths,
+        )
+        snapshot_rebased = True
+
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    digests["output"] = compute_output_digest(production)
+    if snapshot_rebased:
+        digests["context_snapshot"] = new_snapshot_digest
+        run["context_snapshot_binding"] = new_binding
+    run["digests"] = digests
+    store.save_run(run_id, run, expected_revision)
+    return snapshot_rebased
+
+
 __all__ = [
     "InvalidProductionEvidenceError",
     "UnauthorizedContextMutationError",
@@ -610,6 +656,7 @@ __all__ = [
     "recompute_context_snapshot_binding_with_diagnostics",
     "short_path_for_observability",
     "split_unauthorized_snapshot_paths",
+    "sync_run_production_digests",
     "validate_production_snapshot_rebase",
     "validate_run_production_snapshot_drift",
     "validate_resume_context_bindings",

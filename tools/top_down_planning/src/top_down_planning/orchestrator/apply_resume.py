@@ -120,6 +120,8 @@ def apply_resume_plan_atomically(
             verify_upstream_wrapper_matches_live_delivery,
         )
 
+        from top_down_planning.package.loader import ExecutionPackageError
+
         kind = resolve_run_kind(run)
         if kind == RUN_KIND_PARENT_EXECUTION:
             production = store.load_production(run_id)
@@ -132,6 +134,12 @@ def apply_resume_plan_atomically(
             binding = run.get("package_binding") or {}
             if not isinstance(binding, dict):
                 raise ValueError("child package_binding is missing at resume apply")
+            from top_down_planning.package.execution_validation import (
+                baseline_auth_params_from_binding,
+                verify_merged_baseline_workspace_bytes,
+            )
+
+            seen_digests: set[str] = set()
             for key in (
                 "upstream_accepted_results",
                 "workspace_baseline_accepted_results",
@@ -141,8 +149,25 @@ def apply_resume_plan_atomically(
                         raise ValueError(
                             f"child {key} entry is invalid at resume apply"
                         )
+                    digest = str(wrapper.get("accepted_result_digest") or "").strip()
+                    if digest and digest in seen_digests:
+                        continue
+                    if digest:
+                        seen_digests.add(digest)
                     verify_upstream_wrapper_matches_live_delivery(store, wrapper)
-    except ValueError as exc:
+            baseline_wrappers = binding.get("workspace_baseline_accepted_results") or []
+            if baseline_wrappers:
+                initial_snapshot, unit_depends_on = baseline_auth_params_from_binding(
+                    binding
+                )
+                verify_merged_baseline_workspace_bytes(
+                    list(baseline_wrappers),
+                    workspace=run_workspace(run),
+                    initial_snapshot_digest=initial_snapshot,
+                    unit_depends_on=unit_depends_on,
+                    production_overlay=store.load_production(run_id),
+                )
+    except (ValueError, ExecutionPackageError) as exc:
         raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc
 
     effective_config = resume_plan.effective_config or resolved_config

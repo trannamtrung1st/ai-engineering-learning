@@ -240,10 +240,10 @@ class ExecutionLineageValidator:
 def workspace_changes_from_output_evidence(
     output_evidence: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """Build a content-bound workspace-change map from output evidence history.
+    """Build a content-bound workspace-change map from live output evidence.
 
     When the same path was captured multiple times, the latest entry wins.
-    Older captures remain in production audit history but do not define final state.
+    Callers must pass live-batch evidence only (see ``extract_accepted_delivery``).
     """
 
     changes: dict[str, dict[str, Any]] = {}
@@ -610,17 +610,11 @@ def verify_accepted_result_matches_live_delivery(
     return live
 
 
-def verify_upstream_wrapper_matches_live_delivery(
+def verify_wrapper_delivery_integrity(
     store: Any,
     wrapper: dict[str, Any],
 ) -> dict[str, Any]:
-    """Validate an upstream/baseline wrapper against live child delivery and workspace."""
-
-    from top_down_planning.package.execution_validation import (
-        verify_workspace_matches_authorized_changes,
-        workspace_changes_from_accepted_result,
-    )
-    from top_down_planning.workspace import run_workspace
+    """Validate wrapper attestation against live child delivery (not current workspace)."""
 
     verify_upstream_accepted_result_binding(wrapper)
     accepted = wrapper["accepted_result"]
@@ -636,7 +630,7 @@ def verify_upstream_wrapper_matches_live_delivery(
         child_production=child_production,
         verify_evidence=True,
     )
-    live = verify_accepted_result_matches_live_delivery(
+    return verify_accepted_result_matches_live_delivery(
         {
             "plan_item_id": str(accepted.get("unit_id") or ""),
             "child_run_id": child_run_id,
@@ -647,18 +641,19 @@ def verify_upstream_wrapper_matches_live_delivery(
         child_run=child_run,
         child_production=child_production,
     )
-    workspace = run_workspace(child_run)
-    authorized_changes = workspace_changes_from_accepted_result(
-        live,
-        workspace=workspace,
-    )
-    if authorized_changes:
-        verify_workspace_matches_authorized_changes(
-            sorted(authorized_changes),
-            authorized_changes=authorized_changes,
-            workspace=workspace,
-        )
-    return live
+
+
+def verify_upstream_wrapper_matches_live_delivery(
+    store: Any,
+    wrapper: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate wrapper delivery integrity only.
+
+    Current workspace bytes are verified once against the fully merged baseline map
+    via ``verify_merged_baseline_workspace_bytes``, not per historical wrapper.
+    """
+
+    return verify_wrapper_delivery_integrity(store, wrapper)
 
 
 def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
@@ -934,4 +929,5 @@ __all__ = [
     "verify_accepted_result_matches_live_delivery",
     "verify_upstream_accepted_result_binding",
     "verify_upstream_wrapper_matches_live_delivery",
+    "verify_wrapper_delivery_integrity",
 ]

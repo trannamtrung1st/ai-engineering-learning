@@ -199,6 +199,7 @@ def _verify_prepared_package_binding(
             return "prepared assigned_subtree_digest mismatch blocks resume"
         upstream_error = _verify_child_upstream_bindings(
             store,
+            run_id=run_id,
             binding=binding,
             unit=unit,
             package=package,
@@ -289,6 +290,7 @@ def _verify_prepared_package_binding(
 def _verify_child_upstream_bindings(
     store: RunStore,
     *,
+    run_id: str,
     binding: dict[str, Any],
     unit,
     package,
@@ -300,6 +302,7 @@ def _verify_child_upstream_bindings(
         verify_upstream_accepted_result_binding,
         verify_upstream_wrapper_matches_live_delivery,
     )
+    from top_down_planning.package.loader import ExecutionPackageError
 
     binding_error = validate_child_package_bindings(binding)
     if binding_error:
@@ -391,6 +394,28 @@ def _verify_child_upstream_bindings(
         if not digest:
             return "prepared workspace baseline wrapper missing accepted_result_digest"
         baseline_digests.add(digest)
+    if baseline_wrappers:
+        from top_down_planning.package.execution_validation import (
+            verify_merged_baseline_workspace_bytes,
+        )
+
+        expected_snapshot = str(
+            (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
+        )
+        production_overlay = store.load_production(run_id)
+        try:
+            verify_merged_baseline_workspace_bytes(
+                baseline_wrappers,
+                workspace=package.workspace_path,
+                initial_snapshot_digest=expected_snapshot,
+                unit_depends_on={
+                    unit_id: list(unit.depends_on)
+                    for unit_id, unit in package.units.items()
+                },
+                production_overlay=production_overlay,
+            )
+        except ExecutionPackageError as exc:
+            return f"prepared workspace baseline bytes invalid: {exc}"
     missing_in_baseline = sorted(
         d for d in upstream_digests if d and d not in baseline_digests
     )
@@ -402,17 +427,23 @@ def _verify_child_upstream_bindings(
     return None
 
 
-def _topo_sort_sub_tdp_unit_records(unit_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return unit records in dependency order for workspace-change succession."""
+def _topo_sort_sub_tdp_unit_records(
+    unit_records: list[dict[str, Any]],
+    *,
+    initial_snapshot_digest: str = "",
+) -> list[dict[str, Any]]:
+    """Return unit records in workspace-succession order."""
 
-    from top_down_planning.package.execution_validation import topo_sort_sub_tdp_items
+    from top_down_planning.package.execution_validation import order_workspace_succession_items
 
     indexed_records = [
         record
         for record in unit_records
-        if isinstance(record, dict) and str(record.get("plan_item_id") or "").strip()
+        if isinstance(record, dict)
+        and str(record.get("plan_item_id") or "").strip()
+        and isinstance(record.get("accepted_result"), dict)
     ]
-    return topo_sort_sub_tdp_items(
+    return order_workspace_succession_items(
         indexed_records,
         item_id=lambda record: str(record.get("plan_item_id") or "").strip(),
         depends_on_ids=lambda record: [
@@ -420,6 +451,8 @@ def _topo_sort_sub_tdp_unit_records(unit_records: list[dict[str, Any]]) -> list[
             for dep in (record.get("depends_on") or [])
             if isinstance(record.get("depends_on"), list)
         ],
+        accepted_result=lambda record: record["accepted_result"],
+        initial_snapshot_digest=initial_snapshot_digest,
     )
 
 
@@ -438,6 +471,7 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
 
     from top_down_planning.package.execution_validation import (
         merge_accepted_result_workspace_changes,
+        merge_parent_integration_workspace_evidence,
     )
     from top_down_planning.package.lineage import (
         validate_accepted_child_delivery,
@@ -493,6 +527,11 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
             raise ValueError(
                 f"parent sub_tdps workspace_changes invalid for {plan_item_id!r}: {exc}"
             ) from exc
+    authorized_changes = merge_parent_integration_workspace_evidence(
+        authorized_changes,
+        production,
+        workspace=workspace,
+    )
     return authorized_changes
 
 

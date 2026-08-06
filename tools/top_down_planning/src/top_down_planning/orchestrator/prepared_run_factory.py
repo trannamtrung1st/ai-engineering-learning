@@ -195,6 +195,9 @@ class PreparedRunFactory:
             workspace=workspace,
         )
         if run_kind == RUN_KIND_SUB_TDP_EXECUTION:
+            from top_down_planning.package.execution_validation import (
+                verify_merged_baseline_workspace_bytes,
+            )
             from top_down_planning.package.lineage import (
                 verify_upstream_wrapper_matches_live_delivery,
             )
@@ -205,6 +208,25 @@ class PreparedRunFactory:
                 except (OSError, ValueError, KeyError) as exc:
                     raise ExecutionPackageError(
                         f"workspace baseline wrapper delivery invalid: {exc}",
+                        code="sub_tdp_upstream_invalid",
+                    ) from exc
+            if baseline_for_auth:
+                expected_snapshot = str(
+                    (package.manifest.get("context") or {}).get("context_snapshot_digest")
+                    or ""
+                )
+                try:
+                    verify_merged_baseline_workspace_bytes(
+                        baseline_for_auth,
+                        workspace=workspace,
+                        initial_snapshot_digest=expected_snapshot,
+                        unit_depends_on={
+                            uid: list(u.depends_on) for uid, u in package.units.items()
+                        },
+                    )
+                except ExecutionPackageError as exc:
+                    raise ExecutionPackageError(
+                        f"workspace baseline bytes invalid: {exc}",
                         code="sub_tdp_upstream_invalid",
                     ) from exc
         run_id = new_run_id()

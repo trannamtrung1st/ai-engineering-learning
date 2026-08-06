@@ -345,10 +345,12 @@ def test_topo_sort_cycle_raises() -> None:
         )
 
 
-def test_verify_upstream_wrapper_rejects_workspace_tamper(tmp_path: Path) -> None:
-    """Live delivery match must also verify current workspace bytes."""
+def test_verify_merged_baseline_rejects_workspace_tamper(tmp_path: Path) -> None:
+    """Merged baseline map must reject bytes that diverge from accepted hashes."""
 
-    from top_down_planning.package.lineage import verify_upstream_wrapper_matches_live_delivery
+    from top_down_planning.package.execution_validation import (
+        verify_merged_baseline_workspace_bytes,
+    )
 
     store, package = _build_package(tmp_path)
     child_id = _create_and_accept_shared_writer(
@@ -359,8 +361,18 @@ def test_verify_upstream_wrapper_rejects_workspace_tamper(tmp_path: Path) -> Non
     )
     shared = Path(package.workspace_path) / "shared" / "state.json"
     shared.write_text('{"tampered": true}\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="sha256|workspace"):
-        verify_upstream_wrapper_matches_live_delivery(store, wrapper)
+    expected_snapshot = str(
+        (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
+    )
+    with pytest.raises(ExecutionPackageError, match="do not match accepted sha256"):
+        verify_merged_baseline_workspace_bytes(
+            [wrapper],
+            workspace=Path(package.workspace_path),
+            initial_snapshot_digest=expected_snapshot,
+            unit_depends_on={
+                uid: list(u.depends_on) for uid, u in package.units.items()
+            },
+        )
 
 
 def test_agent_readme_documents_content_bound_accepted_result_fields() -> None:

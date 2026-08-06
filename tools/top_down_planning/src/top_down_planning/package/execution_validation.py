@@ -356,21 +356,123 @@ def topo_sort_sub_tdp_items(
     return ordered
 
 
+def order_workspace_succession_items(
+    items: list[dict[str, Any]],
+    *,
+    item_id: Callable[[dict[str, Any]], str],
+    depends_on_ids: Callable[[dict[str, Any]], list[str]],
+    accepted_result: Callable[[dict[str, Any]], dict[str, Any]],
+    initial_snapshot_digest: str = "",
+) -> list[dict[str, Any]]:
+    """Order items for workspace-change succession using snapshot lineage and depends_on.
+
+    Primary ordering follows ``baseline_context_snapshot_digest`` matching a prior
+    ``final_context_snapshot_digest`` within the set. Package ``depends_on`` edges are
+    additional constraints. Raises on cycles, duplicate unit ids, or ambiguous lineage.
+    """
+
+    indexed: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = str(item_id(item) or "").strip()
+        if not key:
+            continue
+        if key in indexed:
+            raise ExecutionPackageError(
+                f"duplicate baseline accepted result for unit {key!r}",
+                code="sub_tdp_upstream_invalid",
+            )
+        indexed[key] = item
+
+    initial = str(initial_snapshot_digest or "").strip()
+    final_by_unit: dict[str, str] = {}
+    for key, item in indexed.items():
+        accepted = accepted_result(item)
+        if not isinstance(accepted, dict):
+            raise ExecutionPackageError(
+                f"accepted_result missing for unit {key!r}",
+                code="sub_tdp_upstream_invalid",
+            )
+        final = str(accepted.get("final_context_snapshot_digest") or "").strip()
+        if not final:
+            raise ExecutionPackageError(
+                f"accepted_result missing final_context_snapshot_digest for unit {key!r}",
+                code="sub_tdp_upstream_invalid",
+            )
+        final_by_unit[key] = final
+
+    lineage_pred: dict[str, str] = {}
+    for key, item in indexed.items():
+        accepted = accepted_result(item)
+        baseline = str(accepted.get("baseline_context_snapshot_digest") or "").strip()
+        if not baseline:
+            raise ExecutionPackageError(
+                f"accepted_result missing baseline_context_snapshot_digest for unit {key!r}",
+                code="sub_tdp_upstream_invalid",
+            )
+        if baseline == initial:
+            continue
+        preds = [
+            unit
+            for unit, final in final_by_unit.items()
+            if final == baseline and unit in indexed and unit != key
+        ]
+        if not preds:
+            continue
+        if len(preds) > 1:
+            raise ExecutionPackageError(
+                f"ambiguous snapshot predecessors for unit {key!r}",
+                code="sub_tdp_upstream_invalid",
+            )
+        lineage_pred[key] = preds[0]
+
+    depends_on: dict[str, list[str]] = {}
+    for key, item in indexed.items():
+        raw_deps = depends_on_ids(item)
+        deps = [str(dep).strip() for dep in raw_deps if str(dep).strip() in indexed]
+        pred = lineage_pred.get(key)
+        if pred and pred not in deps:
+            deps.append(pred)
+        depends_on[key] = deps
+
+    indegree = {key: 0 for key in indexed}
+    for key, deps in depends_on.items():
+        indegree[key] = len(deps)
+
+    queue = sorted([key for key, count in indegree.items() if count == 0])
+    ordered: list[dict[str, Any]] = []
+    while queue:
+        key = queue.pop(0)
+        ordered.append(indexed[key])
+        for peer_key, deps in depends_on.items():
+            if key not in deps:
+                continue
+            indegree[peer_key] -= 1
+            if indegree[peer_key] == 0:
+                queue.append(peer_key)
+        queue.sort()
+
+    if len(ordered) != len(indexed):
+        raise ExecutionPackageError(
+            "workspace succession cycle prevents baseline ordering",
+            code="sub_tdp_upstream_invalid",
+        )
+    return ordered
+
+
 def _topo_sort_baseline_wrappers(
     wrappers: list[dict[str, Any]],
     *,
     unit_depends_on: dict[str, list[str]],
+    initial_snapshot_digest: str = "",
 ) -> list[dict[str, Any]]:
     valid = [
         wrapper
         for wrapper in wrappers
         if isinstance(wrapper, dict) and isinstance(wrapper.get("accepted_result"), dict)
     ]
-    indexed_ids = {
-        str((wrapper.get("accepted_result") or {}).get("unit_id") or "").strip()
-        for wrapper in valid
-    }
-    return topo_sort_sub_tdp_items(
+    return order_workspace_succession_items(
         valid,
         item_id=lambda wrapper: str(
             (wrapper.get("accepted_result") or {}).get("unit_id") or ""
@@ -381,8 +483,9 @@ def _topo_sort_baseline_wrappers(
                 str((wrapper.get("accepted_result") or {}).get("unit_id") or "").strip(),
                 [],
             )
-            if str(dep).strip() in indexed_ids
         ],
+        accepted_result=lambda wrapper: wrapper["accepted_result"],
+        initial_snapshot_digest=initial_snapshot_digest,
     )
 
 
@@ -468,10 +571,10 @@ def _authorized_workspace_changes_from_baseline(
 ) -> dict[str, dict[str, Any]]:
     from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
 
-    ordered_wrappers = (
-        _topo_sort_baseline_wrappers(baseline_wrappers, unit_depends_on=unit_depends_on or {})
-        if unit_depends_on
-        else list(baseline_wrappers)
+    ordered_wrappers = _topo_sort_baseline_wrappers(
+        baseline_wrappers,
+        unit_depends_on=unit_depends_on or {},
+        initial_snapshot_digest=initial_snapshot_digest,
     )
     merged: dict[str, dict[str, Any]] = {}
     cumulative = str(initial_snapshot_digest or "").strip()
@@ -490,6 +593,106 @@ def _authorized_workspace_changes_from_baseline(
             workspace=workspace,
         )
     return merged
+
+
+def verify_merged_baseline_workspace_bytes(
+    baseline_wrappers: list[dict[str, Any]],
+    *,
+    workspace: Path,
+    initial_snapshot_digest: str = "",
+    unit_depends_on: dict[str, list[str]] | None = None,
+    production_overlay: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Verify current workspace once against the fully merged baseline map."""
+
+    authorized = _authorized_workspace_changes_from_baseline(
+        baseline_wrappers,
+        workspace=workspace,
+        initial_snapshot_digest=initial_snapshot_digest,
+        unit_depends_on=unit_depends_on,
+    )
+    if production_overlay is not None:
+        authorized = merge_parent_integration_workspace_evidence(
+            authorized,
+            production_overlay,
+            workspace=workspace,
+        )
+    if authorized:
+        verify_workspace_matches_authorized_changes(
+            sorted(authorized),
+            authorized_changes=authorized,
+            workspace=workspace,
+        )
+    return authorized
+
+
+def baseline_auth_params_from_binding(
+    binding: dict[str, Any],
+) -> tuple[str, dict[str, list[str]]]:
+    """Return package initial snapshot digest and unit depends_on map from a binding."""
+
+    manifest_path = str(binding.get("manifest_path") or "").strip()
+    if not manifest_path:
+        return "", {}
+    from top_down_planning.package.loader import ExecutionPackageLoader
+
+    try:
+        package = ExecutionPackageLoader().load(
+            Path(manifest_path).parent,
+            verify_workspace=False,
+        )
+    except (OSError, ValueError, TypeError):
+        return "", {}
+    initial_snapshot = str(
+        (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
+    )
+    unit_depends_on = {
+        unit_id: list(unit.depends_on) for unit_id, unit in package.units.items()
+    }
+    return initial_snapshot, unit_depends_on
+
+
+def merge_parent_integration_workspace_evidence(
+    merged: dict[str, dict[str, Any]],
+    production: dict[str, Any],
+    *,
+    workspace: Path,
+) -> dict[str, dict[str, Any]]:
+    """Overlay live production output evidence atop a merged workspace-change map.
+
+    Used for parent integration (child closure + parent batches) and for paused
+    child resume (baseline closure + the child's own in-progress production).
+    """
+
+    from core_tools.persistence import digest_file
+    from top_down_planning.config.context_digests import latest_output_evidence_by_path
+
+    overlay: dict[str, dict[str, Any]] = {}
+    for path, entry in latest_output_evidence_by_path(
+        production,
+        workspace=workspace,
+    ).items():
+        expected = str(entry.get("sha256") or "").strip()
+        if not expected:
+            continue
+        target = workspace / path
+        if not target.is_file():
+            continue
+        if digest_file(target) != expected:
+            continue
+        overlay[path] = {
+            "operation": "write",
+            "sha256": expected,
+            "size": int(entry.get("size") or target.stat().st_size),
+            "snapshot_ref": str(entry.get("snapshot_ref") or entry.get("id") or path),
+        }
+    if not overlay:
+        return merged
+    return merge_authorized_workspace_changes(
+        merged,
+        overlay,
+        allow_same_path_overwrite=True,
+    )
 
 
 def verify_workspace_matches_authorized_changes(
@@ -637,8 +840,12 @@ __all__ = [
     "authorized_paths_from_accepted_result",
     "merge_accepted_result_workspace_changes",
     "merge_authorized_workspace_changes",
+    "baseline_auth_params_from_binding",
+    "merge_parent_integration_workspace_evidence",
+    "order_workspace_succession_items",
     "topo_sort_sub_tdp_items",
     "validate_resolved_config_against_package",
+    "verify_merged_baseline_workspace_bytes",
     "verify_package_authoritative_inputs",
     "verify_package_context_snapshot_exact",
     "verify_package_context_snapshot_with_baseline",

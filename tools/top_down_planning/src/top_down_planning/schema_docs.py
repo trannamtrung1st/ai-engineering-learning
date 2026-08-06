@@ -2813,23 +2813,28 @@ Parent Sub-TDP orchestration binds each completed unit with an immutable
 attestation is content-bound:
 
 - `workspace_changes`: map of canonical relative path → write record with
-  `operation: "write"`, `sha256`, `size`, and `snapshot_ref`. Built from the full
-  `output_evidence` history; the latest capture per path is the authoritative final
+  `operation: "write"`, `sha256`, `size`, and `snapshot_ref`. Built from live-batch
+  `output_evidence` only; the latest capture per path is the authoritative final
   state. Path authorization from bare `output_refs` is rejected.
   Delete tombstones are not supported until production can capture them.
 - `baseline_context_snapshot_digest`: context snapshot when the child started.
-- `final_context_snapshot_digest`: context snapshot when the child finished.
+- `final_context_snapshot_digest`: context snapshot when the child finished
+  (rebased after whole-output owner revisions that change resources).
 - `output_refs`: objects with `id`/`type`/`ref`; each `ref` must appear in
   `workspace_changes`.
 
-Cumulative workspace baselines merge accepted results in dependency order. Same-path
-hash overwrites are allowed only when the incoming result's baseline snapshot digest
-matches the cumulative snapshot after prior accepted results (ordered succession).
+Cumulative workspace baselines merge accepted results in snapshot-lineage order
+(`baseline_context_snapshot_digest` must chain to a prior `final_context_snapshot_digest`
+within the baseline set; `depends_on` adds further constraints). Same-path hash
+overwrites are allowed only when the incoming result's baseline snapshot digest
+matches the cumulative snapshot after prior accepted results.
 
 Upstream wrappers also carry `accepted_result_digest` and
 `upstream_contract_digest`. Parent resume, baseline authorization, and
-whole-output entry re-derive the attestation from live child delivery and
-require current workspace bytes to match accepted write digests.
+whole-output entry re-derive each wrapper's delivery from live child production,
+then verify current workspace bytes once against the fully merged baseline map
+(not per historical wrapper individually). Parent integration production evidence
+may supersede child hashes on shared paths when the parent captures new output.
 
 Run records carry top-level `schema_version` (currently `3`), distinct from config document
 `version`. Old absolute-path or list-shaped bindings and unsupported schema versions are

@@ -270,7 +270,9 @@ class FocusedReviewAdapter:
     def after_owner_turn(self, session_id: str) -> None:
         loop = self._require_loop()
         if loop.type == "focused_output":
-            _sync_output_digest(self._store, self._run_id)
+            from top_down_planning.config.context_digests import sync_run_production_digests
+
+            sync_run_production_digests(self._store, self._run_id)
 
     def complete_approval(self, loop: ReviewLoop) -> MandatoryWholeReviewResult:
         raise ProviderRunError("focused reviews do not use complete_approval")
@@ -543,15 +545,3 @@ def build_focused_review_package(
                 artifact_digest=artifact_digest,
             )
     return package
-
-
-def _sync_output_digest(store: RunStore, run_id: str) -> None:
-    run = store.load_run(run_id)
-    production = store.load_production(run_id)
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    digests = dict(run.get("digests") or {})
-    digests["output"] = compute_output_digest(production)
-    run["digests"] = digests
-    store.save_run(run_id, run, expected_revision)

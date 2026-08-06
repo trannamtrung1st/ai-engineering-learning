@@ -11,7 +11,11 @@ from top_down_planning.config import (
     compute_output_goal_digest,
     compute_unit_output_goal_digest,
 )
-from top_down_planning.domain.run_kind import RUN_KIND_SUB_TDP_EXECUTION, resolve_run_kind
+from top_down_planning.domain.run_kind import (
+    RUN_KIND_PARENT_EXECUTION,
+    RUN_KIND_SUB_TDP_EXECUTION,
+    resolve_run_kind,
+)
 from top_down_planning.domain.outcome import (
     evaluate_acceptance_invariant,
     load_approvals_for_acceptance,
@@ -248,9 +252,10 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
         )
 
     def after_owner_turn(self, session_id: str) -> None:
-        self._sync_output_digest()
+        self._sync_owner_revision_digests()
 
     def complete_approval(self, loop: ReviewLoop) -> MandatoryWholeReviewResult:
+        self._sync_owner_revision_digests()
         plan = self._store.load_plan_model(self._run_id)
         production = self._store.load_production(self._run_id)
         run = self._store.load_run(self._run_id)
@@ -375,16 +380,31 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
         run = self._store.load_run(self._run_id)
         return self._driver_host.result_from_run(run, ok=True, loop=loop)
 
-    def _sync_output_digest(self) -> None:
+    def _sync_owner_revision_digests(self) -> None:
+        from top_down_planning.config.context_digests import sync_run_production_digests
+
+        extra_authorized: set[str] | None = None
         run = self._store.load_run(self._run_id)
-        production = self._store.load_production(self._run_id)
-        expected_revision = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        digests = dict(run.get("digests") or {})
-        digests["output"] = compute_output_digest(production)
-        run["digests"] = digests
-        self._store.save_run(self._run_id, run, expected_revision)
+        try:
+            kind = resolve_run_kind(run)
+        except ValueError:
+            kind = None
+        if kind == RUN_KIND_PARENT_EXECUTION:
+            from top_down_planning.orchestrator.prepare_resume import (
+                verify_parent_sub_tdp_workspace_matches_accepted,
+            )
+
+            production = self._store.load_production(self._run_id)
+            extra_authorized = verify_parent_sub_tdp_workspace_matches_accepted(
+                self._store,
+                production=production,
+                workspace=run_workspace(run),
+            ) or None
+        sync_run_production_digests(
+            self._store,
+            self._run_id,
+            extra_authorized_paths=extra_authorized,
+        )
 
     def _require_completion_claim(self) -> None:
         production = self._store.load_production(self._run_id)
