@@ -35,6 +35,13 @@ jobs:
           python -m pip install -e ../core_tools
           python -m pip install -e ".[dev]"
 
+      - name: Build offline packaging wheelhouse
+        id: wheelhouse
+        run: |
+          WHEELHOUSE="${RUNNER_TEMP}/tdp-packaging-wheelhouse"
+          python tools/top_down_planning/scripts/build_packaging_wheelhouse.py "$WHEELHOUSE"
+          echo "path=$WHEELHOUSE" >> "$GITHUB_OUTPUT"
+
       - name: Syntax gate
         run: python -m compileall -q tools/top_down_planning/src tools/core_tools/src
 
@@ -44,9 +51,14 @@ jobs:
           python -m pytest
 
       - name: Integration tests
+        env:
+          TDP_PACKAGING_WHEELHOUSE: ${{ steps.wheelhouse.outputs.path }}
         run: |
           cd tools/top_down_planning
           python -m pytest -m integration
+
+      - name: Wheel build gate
+        run: python -m build --wheel tools/top_down_planning
 
       - name: core_tools unit tests
         run: |

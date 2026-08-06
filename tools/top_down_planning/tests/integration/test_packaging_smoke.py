@@ -1,7 +1,8 @@
-"""Packaging and install smoke tests (wheel assembly + documented editable install)."""
+"""Packaging and install smoke tests (offline wheelhouse + isolated interpreters)."""
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -13,7 +14,7 @@ import pytest
 pytest.importorskip("build")
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_CORE_TOOLS_ROOT = _PROJECT_ROOT.parent / "core_tools"
+_BUILD_SCRIPT = _PROJECT_ROOT / "scripts" / "build_packaging_wheelhouse.py"
 
 
 def _venv_python(venv_dir: Path) -> Path:
@@ -23,6 +24,12 @@ def _venv_python(venv_dir: Path) -> Path:
     windows = venv_dir / "Scripts" / "python.exe"
     assert windows.is_file(), f"venv python not found under {venv_dir}"
     return windows
+
+
+def _isolated_venv(base: Path) -> Path:
+    venv_dir = base / "venv"
+    venv.create(venv_dir, with_pip=True, system_site_packages=False)
+    return _venv_python(venv_dir)
 
 
 def _run_python(
@@ -55,7 +62,7 @@ def _run_module(
     )
 
 
-def _assert_bundled_skills_load(python: Path | str, env: dict[str, str] | None = None) -> None:
+def _assert_bundled_skills_load(python: Path | str) -> None:
     result = _run_python(
         python,
         (
@@ -71,12 +78,11 @@ def _assert_bundled_skills_load(python: Path | str, env: dict[str, str] | None =
             "for entries in [load_bundled_skills_for_role(role)]"
             ")"
         ),
-        env=env,
     )
     assert result.returncode == 0, result.stderr or result.stdout
 
 
-def _assert_planner_protocol_renders(python: Path | str, env: dict[str, str] | None = None) -> None:
+def _assert_planner_protocol_renders(python: Path | str) -> None:
     result = _run_python(
         python,
         (
@@ -86,100 +92,107 @@ def _assert_planner_protocol_renders(python: Path | str, env: dict[str, str] | N
             "assert isinstance(protocol, str); "
             "assert 'TDP planner' in protocol"
         ),
-        env=env,
     )
     assert result.returncode == 0, result.stderr or result.stdout
 
 
-def _assert_cli_surfaces(python: Path | str, env: dict[str, str] | None = None) -> None:
-    help_result = _run_module(python, ["--help"], env=env)
+def _assert_cli_surfaces(python: Path | str) -> None:
+    help_result = _run_module(python, ["--help"])
     assert help_result.returncode == 0, help_result.stderr or help_result.stdout
     assert "run" in help_result.stdout.lower()
 
-    readme_result = _run_module(python, ["agent", "readme"], env=env)
+    readme_result = _run_module(python, ["agent", "readme"])
     assert readme_result.returncode == 0, readme_result.stderr or readme_result.stdout
     assert "tdp agent" in readme_result.stdout.lower()
 
-    schema_result = _run_module(python, ["agent", "schema", "plan-transaction"], env=env)
+    schema_result = _run_module(python, ["agent", "schema", "plan-transaction"])
     assert schema_result.returncode == 0, schema_result.stderr or schema_result.stdout
 
-    example_result = _run_module(python, ["agent", "example", "expand-branch"], env=env)
+    example_result = _run_module(python, ["agent", "example", "expand-branch"])
     assert example_result.returncode == 0, example_result.stderr or example_result.stdout
+
+
+def _pip_offline(
+    python: Path | str,
+    wheelhouse: Path,
+    args: list[str],
+    *,
+    cwd: Path | None = None,
+) -> None:
+    subprocess.run(
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--no-index",
+            "--find-links",
+            str(wheelhouse),
+            *args,
+        ],
+        cwd=str(cwd) if cwd is not None else None,
+        check=True,
+    )
+
+
+def _install_all_wheels_offline(python: Path | str, wheelhouse: Path) -> None:
+    wheels = sorted(wheelhouse.glob("*.whl"))
+    if not wheels:
+        raise AssertionError(f"packaging wheelhouse has no wheels: {wheelhouse}")
+    for wheel in wheels:
+        _pip_offline(python, wheelhouse, ["--no-deps", str(wheel)])
 
 
 @pytest.fixture(scope="session")
 def packaging_wheelhouse(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Local wheelhouse: sibling packages plus runtime deps (no index during install)."""
+    """Offline wheelhouse from env, or build once per session from the local environment."""
 
-    from build import ProjectBuilder
+    configured = os.environ.get("TDP_PACKAGING_WHEELHOUSE")
+    if configured:
+        wheelhouse = Path(configured).resolve()
+        if not list(wheelhouse.glob("*.whl")):
+            pytest.fail(f"TDP_PACKAGING_WHEELHOUSE has no wheels: {wheelhouse}")
+        return wheelhouse
 
-    wheelhouse = tmp_path_factory.mktemp("wheelhouse")
-    ProjectBuilder(_CORE_TOOLS_ROOT).build("wheel", wheelhouse)
-    ProjectBuilder(_PROJECT_ROOT).build("wheel", wheelhouse)
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "wheel",
-            "--no-deps",
-            "jinja2",
-            "pathspec",
-            "-w",
-            str(wheelhouse),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
+    destination = tmp_path_factory.mktemp("packaging-wheelhouse")
+    spec = importlib.util.spec_from_file_location(
+        "build_packaging_wheelhouse",
+        _BUILD_SCRIPT,
     )
-    return wheelhouse
-
-
-@pytest.fixture
-def installed_wheel_site(packaging_wheelhouse: Path, tmp_path: Path) -> tuple[Path, str]:
-    """Install built wheels into an isolated target dir using only the local wheelhouse."""
-
-    site = tmp_path / "site"
-    site.mkdir()
-    python = sys.executable
-
-    for wheel in sorted(packaging_wheelhouse.glob("*.whl")):
-        subprocess.run(
-            [
-                python,
-                "-m",
-                "pip",
-                "install",
-                "--quiet",
-                "--no-index",
-                "--find-links",
-                str(packaging_wheelhouse),
-                "--no-deps",
-                str(wheel),
-                "-t",
-                str(site),
-            ],
-            check=True,
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        return module.build_packaging_wheelhouse(destination)
+    except subprocess.CalledProcessError as exc:
+        pytest.fail(
+            "failed to build offline packaging wheelhouse; install editable dev packages "
+            "then run tools/top_down_planning/scripts/build_packaging_wheelhouse.py, or set "
+            f"TDP_PACKAGING_WHEELHOUSE: {exc}"
         )
-
-    return site, python
 
 
 @pytest.mark.integration
-def test_documented_editable_install_smoke(tmp_path: Path) -> None:
-    """Documented monorepo editable install runs core CLI and bundled-skill surfaces."""
+def test_documented_editable_install_smoke(
+    packaging_wheelhouse: Path,
+    tmp_path: Path,
+) -> None:
+    """README install commands from tools/top_down_planning with an offline wheelhouse."""
 
-    venv_dir = tmp_path / "venv"
-    venv.create(venv_dir, with_pip=True)
-    python = _venv_python(venv_dir)
-
-    subprocess.run(
-        [str(python), "-m", "pip", "install", "--quiet", "-e", str(_CORE_TOOLS_ROOT)],
-        check=True,
+    python = _isolated_venv(tmp_path)
+    _pip_offline(python, packaging_wheelhouse, ["build", "hatchling"])
+    _pip_offline(
+        python,
+        packaging_wheelhouse,
+        ["-e", "../core_tools"],
+        cwd=_PROJECT_ROOT,
     )
-    subprocess.run(
-        [str(python), "-m", "pip", "install", "--quiet", "-e", f"{_PROJECT_ROOT}[dev]"],
-        check=True,
+    _pip_offline(
+        python,
+        packaging_wheelhouse,
+        ["-e", ".[dev]"],
+        cwd=_PROJECT_ROOT,
     )
 
     _assert_cli_surfaces(python)
@@ -188,13 +201,15 @@ def test_documented_editable_install_smoke(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_installed_wheel_smoke(installed_wheel_site: tuple[Path, str]) -> None:
-    """Assembled wheel artifact exposes the same CLI, skill, and prompt surfaces."""
+def test_installed_wheel_smoke(
+    packaging_wheelhouse: Path,
+    tmp_path: Path,
+) -> None:
+    """Assembled wheels run in an isolated venv without the test runner site-packages."""
 
-    site, python = installed_wheel_site
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(site)
+    python = _isolated_venv(tmp_path)
+    _install_all_wheels_offline(python, packaging_wheelhouse)
 
-    _assert_cli_surfaces(python, env=env)
-    _assert_bundled_skills_load(python, env=env)
-    _assert_planner_protocol_renders(python, env=env)
+    _assert_cli_surfaces(python)
+    _assert_bundled_skills_load(python)
+    _assert_planner_protocol_renders(python)

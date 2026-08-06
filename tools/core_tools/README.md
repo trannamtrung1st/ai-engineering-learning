@@ -34,11 +34,12 @@ cd tools/core_tools
 python -m pip install -e ".[dev]"
 ```
 
-When working on a product package, install both packages from the repository root (sequential commands — a single combined `-e` fails on a fresh environment because of the `file:../core_tools` dependency):
+When working on TDP, use the authoritative install workflow from [`top_down_planning`](../top_down_planning/README.md#development) (location-dependent `file:../core_tools` metadata requires `tools/top_down_planning` as the working directory):
 
 ```bash
-python -m pip install -e tools/core_tools
-python -m pip install -e "tools/top_down_planning[dev]"
+cd tools/top_down_planning
+python -m pip install -e ../core_tools
+python -m pip install -e ".[dev]"
 ```
 
 TDP is monorepo editable only; see [`top_down_planning`](../top_down_planning/README.md#development) for the packaging contract.
