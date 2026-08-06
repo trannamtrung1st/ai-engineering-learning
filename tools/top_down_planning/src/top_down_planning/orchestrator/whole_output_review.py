@@ -476,6 +476,7 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
             from top_down_planning.package.lineage import (
                 validate_accepted_child_delivery,
                 verify_accepted_result_attestation,
+                verify_accepted_result_matches_live_delivery,
             )
 
             try:
@@ -486,6 +487,11 @@ class SubTdpWholeOutputReviewAdapter(OutputWholeReviewAdapter):
                     child_run=child_run,
                     child_production=child_production,
                     verify_evidence=True,
+                )
+                accepted = verify_accepted_result_matches_live_delivery(
+                    unit_record,
+                    child_run=child_run,
+                    child_production=child_production,
                 )
             except ValueError as exc:
                 raise ProviderRunError(
@@ -558,6 +564,19 @@ class WholeOutputReviewOrchestrator:
                 "parent_execution whole-output review requires production.sub_tdps state"
             )
         if has_sub_tdps:
+            from top_down_planning.orchestrator.prepare_resume import (
+                verify_parent_sub_tdp_workspace_matches_accepted,
+            )
+            from top_down_planning.workspace import run_workspace
+
+            try:
+                verify_parent_sub_tdp_workspace_matches_accepted(
+                    store,
+                    production=production,
+                    workspace=run_workspace(run),
+                )
+            except ValueError as exc:
+                raise ProviderRunError(str(exc)) from exc
             adapter: OutputWholeReviewAdapter | SubTdpWholeOutputReviewAdapter = (
                 SubTdpWholeOutputReviewAdapter(store, run_id)
             )

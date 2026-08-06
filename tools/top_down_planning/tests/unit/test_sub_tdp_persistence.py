@@ -42,6 +42,9 @@ def _accepted_attestation(unit_id: str = "item-a") -> dict:
         "evidence_digest": "e" * 64,
         "output_refs": [],
         "contributions": [],
+        "workspace_changes": {},
+        "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "completion_assessment": "done",
     }
 

@@ -237,6 +237,40 @@ class ExecutionLineageValidator:
         return mismatches
 
 
+def workspace_changes_from_output_evidence(
+    output_evidence: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Build a content-bound workspace-change map from captured output evidence."""
+
+    changes: dict[str, dict[str, Any]] = {}
+    for entry in output_evidence:
+        if not isinstance(entry, dict):
+            continue
+        path = str(entry.get("ref") or "").strip()
+        sha256 = str(entry.get("sha256") or "").strip()
+        if not path:
+            continue
+        if not sha256:
+            raise ValueError(
+                f"output evidence for {path!r} missing sha256 for workspace_changes"
+            )
+        size = int(entry.get("size") or 0)
+        snapshot_ref = str(entry.get("snapshot_ref") or "").strip()
+        change = {
+            "sha256": sha256,
+            "size": size,
+            "snapshot_ref": snapshot_ref,
+            "operation": "write",
+        }
+        existing = changes.get(path)
+        if existing is not None and existing.get("sha256") != sha256:
+            raise ValueError(
+                f"conflicting output evidence sha256 for path {path!r}"
+            )
+        changes[path] = change
+    return changes
+
+
 def accepted_result_record(
     *,
     child_run: dict[str, Any],
@@ -303,10 +337,25 @@ def accepted_result_record(
         evidence_digest = digest_canonical_payload({"evidence_ids": evidence_ids})
     output_refs = list(delivery.outputs)
     contributions = list(delivery.contributions)
+    workspace_changes = workspace_changes_from_output_evidence(
+        list(delivery.output_evidence)
+    )
     claim = child_production.get("completion_claim")
     completion_assessment = ""
     if isinstance(claim, dict):
         completion_assessment = str(claim.get("goal_assessment") or "").strip()
+    baseline_snapshot = str(
+        binding.get("baseline_context_snapshot_digest") or ""
+    ).strip()
+    if not baseline_snapshot:
+        raise ValueError(
+            "accepted_result_record requires package_binding.baseline_context_snapshot_digest"
+        )
+    final_snapshot = str(digests.get("context_snapshot") or "").strip()
+    if not final_snapshot:
+        raise ValueError(
+            "accepted_result_record requires run digests.context_snapshot"
+        )
     return {
         "schema_version": 1,
         "package_id": package_id,
@@ -324,6 +373,9 @@ def accepted_result_record(
         "output_refs": output_refs,
         "contributions": contributions,
         "completion_assessment": completion_assessment,
+        "workspace_changes": workspace_changes,
+        "baseline_context_snapshot_digest": baseline_snapshot,
+        "final_context_snapshot_digest": final_snapshot,
     }
 
 
@@ -444,6 +496,152 @@ def verify_accepted_result_attestation(unit_record: dict[str, Any]) -> None:
         raise ValueError("accepted_result missing contributions")
     if "completion_assessment" not in accepted:
         raise ValueError("accepted_result missing completion_assessment")
+    workspace_changes = accepted.get("workspace_changes")
+    if not isinstance(workspace_changes, dict):
+        raise ValueError("accepted_result missing workspace_changes")
+    for output in accepted.get("output_refs") or []:
+        if not isinstance(output, dict):
+            raise ValueError(
+                "accepted_result output_refs entries must be objects with ref"
+            )
+        ref = str(output.get("ref") or "").strip()
+        if not ref:
+            raise ValueError("accepted_result output_refs entry missing ref")
+        if ref not in workspace_changes:
+            raise ValueError(
+                f"accepted_result output_refs path {ref!r} missing from workspace_changes"
+            )
+    for path, change in workspace_changes.items():
+        if not isinstance(change, dict):
+            raise ValueError(
+                f"accepted_result workspace_changes[{path!r}] must be an object"
+            )
+        operation = str(change.get("operation") or "").strip()
+        if operation == "delete":
+            raise ValueError(
+                "accepted_result workspace_changes delete operation is not supported "
+                "until production can capture delete tombstones"
+            )
+        if operation != "write":
+            raise ValueError(
+                f"accepted_result workspace_changes[{path!r}] has invalid operation"
+            )
+        if not str(change.get("sha256") or "").strip():
+            raise ValueError(
+                f"accepted_result workspace_changes[{path!r}] missing sha256"
+            )
+    if "baseline_context_snapshot_digest" not in accepted:
+        raise ValueError("accepted_result missing baseline_context_snapshot_digest")
+    if not str(accepted.get("baseline_context_snapshot_digest") or "").strip():
+        raise ValueError("accepted_result baseline_context_snapshot_digest is empty")
+    if "final_context_snapshot_digest" not in accepted:
+        raise ValueError("accepted_result missing final_context_snapshot_digest")
+    if not str(accepted.get("final_context_snapshot_digest") or "").strip():
+        raise ValueError("accepted_result final_context_snapshot_digest is empty")
+
+
+def verify_accepted_result_matches_live_delivery(
+    unit_record: dict[str, Any],
+    *,
+    child_run: dict[str, Any],
+    child_production: dict[str, Any],
+) -> dict[str, Any]:
+    """Recompute accepted_result from live child and require digest equality.
+
+    Parent and baseline consumers must not authorize from a stored
+    ``workspace_changes`` map that disagrees with live ``output_evidence``.
+    Identity fields are taken from the live child ``package_binding``.
+    """
+
+    verify_accepted_result_attestation(unit_record)
+    stored = unit_record["accepted_result"]
+    stored_digest = str(unit_record["accepted_result_digest"])
+    binding = child_run.get("package_binding") or {}
+    if not isinstance(binding, dict):
+        raise ValueError("child package_binding is missing for live accepted_result match")
+    package_id = str(binding.get("package_id") or "").strip()
+    package_digest = str(binding.get("package_digest") or "").strip()
+    unit_id = str(
+        binding.get("selected_unit_id") or binding.get("unit_id") or ""
+    ).strip()
+    unit_plan_digest = str(binding.get("unit_plan_digest") or "").strip()
+    assigned_subtree_digest = str(binding.get("assigned_subtree_digest") or "").strip()
+    if not package_id or not package_digest:
+        raise ValueError(
+            "child package_binding missing package identity for live accepted_result match"
+        )
+    if not unit_id or not unit_plan_digest or not assigned_subtree_digest:
+        raise ValueError(
+            "child package_binding missing unit identity for live accepted_result match"
+        )
+    if str(stored.get("package_id") or "").strip() != package_id:
+        raise ValueError(
+            "accepted_result package_id does not match child package_binding"
+        )
+    if str(stored.get("package_digest") or "").strip() != package_digest:
+        raise ValueError(
+            "accepted_result package_digest does not match child package_binding"
+        )
+    if str(stored.get("unit_id") or "").strip() != unit_id:
+        raise ValueError(
+            "accepted_result unit_id does not match child package_binding"
+        )
+    if str(stored.get("unit_plan_digest") or "").strip() != unit_plan_digest:
+        raise ValueError(
+            "accepted_result unit_plan_digest does not match child package_binding"
+        )
+    if str(stored.get("assigned_subtree_digest") or "").strip() != assigned_subtree_digest:
+        raise ValueError(
+            "accepted_result assigned_subtree_digest does not match child package_binding"
+        )
+    live = accepted_result_record(
+        child_run=child_run,
+        child_production=child_production,
+        unit_id=unit_id,
+        unit_plan_digest=unit_plan_digest,
+        package_id=package_id,
+        package_digest=package_digest,
+        assigned_subtree_digest=assigned_subtree_digest,
+    )
+    live_digest = accepted_result_digest(live)
+    if live_digest != stored_digest:
+        raise ValueError(
+            "accepted_result does not match live child delivery attestation"
+        )
+    return live
+
+
+def verify_upstream_wrapper_matches_live_delivery(
+    store: Any,
+    wrapper: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate an upstream/baseline wrapper against live child delivery."""
+
+    verify_upstream_accepted_result_binding(wrapper)
+    accepted = wrapper["accepted_result"]
+    child_run_id = str(accepted.get("child_run_id") or "").strip()
+    if not child_run_id:
+        raise ValueError("accepted_result missing child_run_id")
+    child_run = store.load_run(child_run_id)
+    child_production = store.load_production(child_run_id)
+    validate_accepted_child_delivery(
+        store=store,
+        child_run_id=child_run_id,
+        child_run=child_run,
+        child_production=child_production,
+        verify_evidence=True,
+    )
+    return verify_accepted_result_matches_live_delivery(
+        {
+            "plan_item_id": str(accepted.get("unit_id") or ""),
+            "child_run_id": child_run_id,
+            "unit_plan_digest": str(accepted.get("unit_plan_digest") or ""),
+            "accepted_result": accepted,
+            "accepted_result_digest": str(wrapper.get("accepted_result_digest") or ""),
+        },
+        child_run=child_run,
+        child_production=child_production,
+    )
 
 
 def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
@@ -466,6 +664,8 @@ def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
     external = binding.get("external_prerequisites")
     if not isinstance(external, list):
         return "child external_prerequisites is invalid"
+    if not str(binding.get("baseline_context_snapshot_digest") or "").strip():
+        return "child missing baseline_context_snapshot_digest binding"
     return None
 
 
@@ -714,5 +914,7 @@ __all__ = [
     "validate_accepted_child_delivery",
     "revalidate_terminal_child_delivery",
     "verify_accepted_result_attestation",
+    "verify_accepted_result_matches_live_delivery",
     "verify_upstream_accepted_result_binding",
+    "verify_upstream_wrapper_matches_live_delivery",
 ]

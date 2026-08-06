@@ -432,12 +432,51 @@ class ProductionPhaseOrchestrator:
             )
             changed_paths: list[str] = []
             if new_snapshot_digest != old_snapshot_digest:
+                extra_authorized = None
+                if isinstance(production.get("sub_tdps"), dict):
+                    from top_down_planning.orchestrator.prepare_resume import (
+                        verify_parent_sub_tdp_workspace_matches_accepted,
+                    )
+
+                    try:
+                        extra_authorized = (
+                            verify_parent_sub_tdp_workspace_matches_accepted(
+                                self._store,
+                                production=production,
+                                workspace=workspace,
+                            )
+                        )
+                    except ValueError as exc:
+                        return self._terminate(
+                            "blocked",
+                            str(exc),
+                            session_id=session_id,
+                        )
                 changed_paths = validate_production_snapshot_rebase(
                     old_binding,
                     new_binding,
                     production,
                     workspace=workspace,
+                    extra_authorized_paths=extra_authorized or None,
                 )
+            if isinstance(production.get("sub_tdps"), dict):
+                from top_down_planning.orchestrator.prepare_resume import (
+                    verify_parent_sub_tdp_workspace_matches_accepted,
+                )
+
+                try:
+                    verify_parent_sub_tdp_workspace_matches_accepted(
+                        self._store,
+                        production=production,
+                        workspace=workspace,
+                    )
+                except ValueError as exc:
+                    return self._terminate(
+                        "blocked",
+                        str(exc),
+                        session_id=session_id,
+                    )
+
         except ValueError as exc:
             return self._terminate(
                 "blocked",
@@ -708,6 +747,7 @@ def _prepared_execution_section(
                 from top_down_planning.package.lineage import (
                     validate_accepted_child_delivery,
                     verify_accepted_result_attestation,
+                    verify_accepted_result_matches_live_delivery,
                 )
 
                 try:
@@ -761,11 +801,16 @@ def _prepared_execution_section(
                         child_production=child_production,
                         verify_evidence=True,
                     )
+                    live_accepted = verify_accepted_result_matches_live_delivery(
+                        unit,
+                        child_run=child_run,
+                        child_production=child_production,
+                    )
                 except (OSError, ValueError, KeyError) as exc:
                     raise ProviderRunError(
                         f"child delivery invalid for integration: {exc}"
                     ) from exc
-                child_results.append(dict(accepted))
+                child_results.append(dict(live_accepted))
             return {
                 "package_id": binding.get("package_id"),
                 "unit_id": None,

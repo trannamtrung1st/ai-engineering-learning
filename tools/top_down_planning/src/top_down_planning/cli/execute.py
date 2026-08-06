@@ -69,6 +69,22 @@ def parse_upstream_bindings(raw: list[str] | None) -> dict[str, str]:
     return bindings
 
 
+def parse_baseline_run_ids(raw: list[str] | None) -> list[str]:
+    """Parse accepted run ids for ``tdp execute --baseline`` workspace lineage."""
+
+    run_ids: list[str] = []
+    seen: set[str] = set()
+    for item in raw or []:
+        run_id = str(item or "").strip()
+        if not run_id:
+            raise ValueError("invalid --baseline value; expected a non-empty run id")
+        if run_id in seen:
+            raise ValueError(f"duplicate --baseline run id {run_id!r}")
+        seen.add(run_id)
+        run_ids.append(run_id)
+    return run_ids
+
+
 def _is_execute_presentation_path(path: str) -> bool:
     if path in RESUME_PRESENTATION_ALLOWLIST:
         return True
@@ -192,6 +208,14 @@ def handle_execute_command(args: Namespace) -> None:
             exit_code=2,
             stream_json=args.stream_json,
             code="sub_tdp_upstream_invalid",
+        )
+    baseline_raw = list(getattr(args, "baseline", None) or [])
+    if baseline_raw and not unit_id:
+        emit_error_message(
+            "--baseline requires --unit",
+            exit_code=2,
+            stream_json=args.stream_json,
+            code="sub_tdp_baseline_invalid",
         )
     if unit_id and parent_only:
         emit_error_message(
@@ -342,10 +366,14 @@ def _execute_unit(
 
     upstream_raw = list(getattr(args, "upstream", None) or [])
     upstream_bindings: dict[str, str] = {}
+    baseline_run_ids: list[str] = []
     try:
         upstream_bindings = parse_upstream_bindings(upstream_raw)
         if upstream_bindings:
             validate_explicit_upstream_bindings(package, unit_id, upstream_bindings)
+        baseline_run_ids = parse_baseline_run_ids(
+            list(getattr(args, "baseline", None) or [])
+        )
     except ValueError as exc:
         emit_error_message(
             str(exc),
@@ -369,6 +397,7 @@ def _execute_unit(
             invocation=invocation_dict,
             explicit_upstream=upstream_bindings if upstream_bindings else None,
             explicit_upstream_only=bool(upstream_bindings),
+            explicit_baseline_run_ids=baseline_run_ids or None,
         )
     except PreparedUnitExecutor.DependencyUnmetError as exc:
         emit_error_message(
@@ -540,4 +569,8 @@ def _drive_execution_run(
     )
 
 
-__all__ = ["handle_execute_command", "parse_upstream_bindings"]
+__all__ = [
+    "handle_execute_command",
+    "parse_baseline_run_ids",
+    "parse_upstream_bindings",
+]

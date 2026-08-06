@@ -2804,6 +2804,26 @@ persisted evidence refs fail rebase validation rather than masquerading as unaut
 drift. `.gitignore` is not inherited. Omitting
 `context_snapshot` equals `excludes.defaults: true` with empty user patterns.
 
+## Sub-TDP accepted results
+
+Parent Sub-TDP orchestration binds each completed unit with an immutable
+`accepted_result` attestation and matching `accepted_result_digest`. The
+attestation is content-bound:
+
+- `workspace_changes`: map of canonical relative path → write record with
+  `operation: "write"`, `sha256`, `size`, and `snapshot_ref` from live
+  `output_evidence`. Path authorization from bare `output_refs` is rejected.
+  Delete tombstones are not supported until production can capture them.
+- `baseline_context_snapshot_digest`: context snapshot when the child started.
+- `final_context_snapshot_digest`: context snapshot when the child finished.
+- `output_refs`: objects with `id`/`type`/`ref`; each `ref` must appear in
+  `workspace_changes`.
+
+Upstream wrappers also carry `accepted_result_digest` and
+`upstream_contract_digest`. Parent resume, baseline authorization, and
+whole-output entry re-derive the attestation from live child delivery and
+require current workspace bytes to match accepted write digests.
+
 Run records carry top-level `schema_version` (currently `3`), distinct from config document
 `version`. Old absolute-path or list-shaped bindings and unsupported schema versions are
 rejected — recreate the run; there is no migrator. Prefer snapshot excludes over

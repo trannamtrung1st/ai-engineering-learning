@@ -24,7 +24,11 @@ from top_down_planning.package.execution_validation import (
     verify_package_context_snapshot_with_baseline,
     verify_package_immutable_contract,
 )
-from top_down_planning.package.loader import LoadedExecutionPackage, LoadedUnit
+from top_down_planning.package.loader import (
+    ExecutionPackageError,
+    LoadedExecutionPackage,
+    LoadedUnit,
+)
 from top_down_planning.package.store_persist import persist_package_in_store
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.path_ids import new_run_id
@@ -153,11 +157,20 @@ class PreparedRunFactory:
     ) -> str:
         workspace = package.workspace_path
         upstream = list(upstream_accepted_results or [])
-        baseline_for_auth = list(
-            workspace_baseline_results
-            if workspace_baseline_results is not None
-            else []
-        )
+        if (
+            run_kind == RUN_KIND_SUB_TDP_EXECUTION
+            and unit_record is not None
+            and unit_record.depends_on
+            and not upstream
+        ):
+            raise ExecutionPackageError(
+                f"unit {unit_record.unit_id!r} depends_on requires upstream_accepted_results",
+                code="sub_tdp_upstream_invalid",
+            )
+        if workspace_baseline_results is not None:
+            baseline_for_auth = list(workspace_baseline_results)
+        else:
+            baseline_for_auth = list(upstream)
         if baseline_for_auth:
             verify_package_immutable_contract(package)
             binding = verify_package_context_snapshot_with_baseline(
@@ -181,6 +194,19 @@ class PreparedRunFactory:
             resolved_config,
             workspace=workspace,
         )
+        if run_kind == RUN_KIND_SUB_TDP_EXECUTION:
+            from top_down_planning.package.lineage import (
+                verify_upstream_wrapper_matches_live_delivery,
+            )
+
+            for wrapper in baseline_for_auth:
+                try:
+                    verify_upstream_wrapper_matches_live_delivery(store, wrapper)
+                except (OSError, ValueError, KeyError) as exc:
+                    raise ExecutionPackageError(
+                        f"workspace baseline wrapper delivery invalid: {exc}",
+                        code="sub_tdp_upstream_invalid",
+                    ) from exc
         run_id = new_run_id()
         persisted_manifest = persist_package_in_store(store.root, package)
         package_binding = package_binding_from_manifest(
@@ -217,6 +243,7 @@ class PreparedRunFactory:
             package_binding["external_prerequisites"] = list(
                 unit_record.external_prerequisites if unit_record else []
             )
+            package_binding["baseline_context_snapshot_digest"] = context_snapshot_digest
         else:
             output_goal_digest = parent_output_goal_digest
         run_record_extras = {

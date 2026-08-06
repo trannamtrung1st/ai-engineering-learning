@@ -38,7 +38,7 @@ from top_down_planning.orchestrator.phases import (
     SUB_TDPS,
     WHOLE_OUTPUT_REVIEW,
 )
-from top_down_planning.orchestrator.run_transitions import pause_run
+from top_down_planning.orchestrator.run_transitions import fail_run, pause_run
 from top_down_planning.orchestrator.sub_tdp_child_driver import (
     PreparedChildResult,
     ProviderFactory,
@@ -181,11 +181,32 @@ class SubTdpsPhaseOrchestrator:
                     continue
                 if str(unit_record.get("status") or "") == UNIT_STATUS_FAILED:
                     plan_item_id = str(unit_record.get("plan_item_id") or "")
+                    reason = f"sub-tdp unit {plan_item_id} previously failed"
+                    stop = StopRecord(
+                        code="sub_tdp_unit_permanently_failed",
+                        category="invariant",
+                        phase=SUB_TDPS,
+                        message=reason,
+                        details={
+                            "unit_id": plan_item_id,
+                            "child_run_id": str(
+                                unit_record.get("child_run_id") or ""
+                            ),
+                        },
+                    )
+                    fail_run(
+                        self._store,
+                        self._run_id,
+                        stop=stop,
+                        revoke_phase=SUB_TDPS,
+                        plan_item_id=plan_item_id,
+                        unit_id=plan_item_id,
+                    )
                     return self._result_from_run(
                         self._store.load_run(self._run_id),
                         ok=False,
                         units_completed=units_completed,
-                        reason=f"sub-tdp unit {plan_item_id} previously failed",
+                        reason=reason,
                     )
 
             plan_item_id = next_ready_unit_id(state, package.units)
@@ -657,6 +678,7 @@ class SubTdpsPhaseOrchestrator:
             from top_down_planning.package.lineage import (
                 validate_accepted_child_delivery,
                 verify_accepted_result_attestation,
+                verify_accepted_result_matches_live_delivery,
             )
 
             try:
@@ -698,6 +720,11 @@ class SubTdpsPhaseOrchestrator:
                     child_run=child_run,
                     child_production=child_production,
                     verify_evidence=True,
+                )
+                verify_accepted_result_matches_live_delivery(
+                    unit_record,
+                    child_run=child_run,
+                    child_production=child_production,
                 )
             except ValueError as exc:
                 raise ProviderRunError(
@@ -784,15 +811,49 @@ class SubTdpsPhaseOrchestrator:
             )
         )
         changed_paths: list[str] = []
-        if new_snapshot_digest != old_snapshot_digest:
-            changed_paths = validate_production_snapshot_rebase(
-                old_binding,
-                new_binding,
-                production,
+        from top_down_planning.orchestrator.prepare_resume import (
+            verify_parent_sub_tdp_workspace_matches_accepted,
+        )
+
+        try:
+            # Always content-check attached accepted evidence before WOR entry.
+            extra_authorized = verify_parent_sub_tdp_workspace_matches_accepted(
+                self._store,
+                production=production,
                 workspace=workspace,
             )
+        except ValueError as exc:
+            raise ProviderRunError(str(exc)) from exc
+        if new_snapshot_digest != old_snapshot_digest:
+            # Recompute after verify so persisted binding reflects post-check bytes.
+            new_binding, new_snapshot_digest, diagnostics = (
+                recompute_context_snapshot_binding_with_diagnostics(
+                    config,
+                    workspace=workspace,
+                )
+            )
+            try:
+                verify_parent_sub_tdp_workspace_matches_accepted(
+                    self._store,
+                    production=production,
+                    workspace=workspace,
+                )
+            except ValueError as exc:
+                raise ProviderRunError(str(exc)) from exc
+            if new_snapshot_digest == old_snapshot_digest:
+                snapshot_rebased = False
+            else:
+                changed_paths = validate_production_snapshot_rebase(
+                    old_binding,
+                    new_binding,
+                    production,
+                    workspace=workspace,
+                    extra_authorized_paths=extra_authorized or None,
+                )
+                snapshot_rebased = True
+        else:
+            snapshot_rebased = False
 
-        snapshot_rebased = new_snapshot_digest != old_snapshot_digest
         run = dict(run)
         run["revision"] = expected_revision + 1
         run["phase"] = WHOLE_OUTPUT_REVIEW

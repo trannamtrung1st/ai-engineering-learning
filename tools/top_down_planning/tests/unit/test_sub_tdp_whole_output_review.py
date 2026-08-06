@@ -188,6 +188,9 @@ def test_sub_tdp_whole_output_review_fails_when_child_run_missing(
         "evidence_digest": "e" * 64,
         "output_refs": [],
         "contributions": [],
+        "workspace_changes": {},
+        "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "completion_assessment": "Child goal met.",
     }
     unit_record["accepted_result_digest"] = accepted_result_digest(

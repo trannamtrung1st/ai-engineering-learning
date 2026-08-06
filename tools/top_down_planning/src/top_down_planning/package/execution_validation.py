@@ -234,35 +234,123 @@ def authorized_paths_from_accepted_result(
     *,
     workspace: Path,
 ) -> set[str]:
-    """Derive authorized workspace paths from an immutable accepted-result record."""
+    """Derive authorized workspace paths from content-bound ``workspace_changes``."""
+
+    return set(
+        workspace_changes_from_accepted_result(
+            accepted,
+            workspace=workspace,
+        )
+    )
+
+
+def workspace_changes_from_accepted_result(
+    accepted: dict[str, Any],
+    *,
+    workspace: Path,
+) -> dict[str, dict[str, Any]]:
+    """Return content-bound workspace changes keyed by canonical relative path.
+
+    ``workspace_changes`` is required. Path authorization from ``output_refs`` is
+    not accepted.
+    """
 
     from top_down_planning.config.snapshot_policy import (
         CanonicalPathError,
         canonicalize_evidence_ref,
     )
 
-    authorized: set[str] = set()
-    for output in accepted.get("output_refs") or []:
-        if not isinstance(output, dict):
-            continue
-        ref_text = str(output.get("ref") or "").strip()
-        if not ref_text:
+    raw = accepted.get("workspace_changes")
+    if not isinstance(raw, dict):
+        raise ExecutionPackageError(
+            "accepted_result missing workspace_changes for content-bound authorization",
+            code="sub_tdp_upstream_invalid",
+        )
+    changes: dict[str, dict[str, Any]] = {}
+    for path, change in raw.items():
+        if not isinstance(change, dict):
+            raise ExecutionPackageError(
+                f"accepted_result workspace_changes[{path!r}] must be an object",
+                code="sub_tdp_upstream_invalid",
+            )
+        text = str(path or "").strip()
+        if not text:
             continue
         try:
-            authorized.add(canonicalize_evidence_ref(ref_text, workspace=workspace))
-        except CanonicalPathError:
+            canonical = canonicalize_evidence_ref(text, workspace=workspace)
+        except CanonicalPathError as exc:
+            raise ExecutionPackageError(
+                f"accepted_result workspace_changes path invalid: {text!r}",
+                code="sub_tdp_upstream_invalid",
+            ) from exc
+        operation = str(change.get("operation") or "").strip()
+        if operation == "delete":
+            raise ExecutionPackageError(
+                "accepted_result workspace_changes delete operation is not supported "
+                "until production can capture delete tombstones",
+                code="sub_tdp_upstream_invalid",
+            )
+        if operation not in {"write"}:
+            raise ExecutionPackageError(
+                f"accepted_result workspace_changes[{path!r}] missing operation",
+                code="sub_tdp_upstream_invalid",
+            )
+        if not str(change.get("sha256") or "").strip():
+            raise ExecutionPackageError(
+                f"accepted_result workspace_changes[{path!r}] missing sha256",
+                code="sub_tdp_upstream_invalid",
+            )
+        changes[canonical] = dict(change)
+    return changes
+
+
+def merge_authorized_workspace_changes(
+    existing: dict[str, dict[str, Any]],
+    incoming: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Merge content-bound workspace changes; reject operation/hash conflicts."""
+
+    merged = dict(existing)
+    for path, change in incoming.items():
+        new_op = str(change.get("operation") or "").strip()
+        if new_op == "delete":
+            raise ExecutionPackageError(
+                "accepted workspace_changes delete operation is not supported "
+                "until production can capture delete tombstones",
+                code="sub_tdp_upstream_invalid",
+            )
+        if new_op != "write":
+            raise ExecutionPackageError(
+                f"accepted workspace change for {path} missing operation",
+                code="sub_tdp_upstream_invalid",
+            )
+        prior = merged.get(path)
+        if prior is None:
+            merged[path] = dict(change)
             continue
-    return authorized
+        existing_op = str(prior.get("operation") or "").strip()
+        if existing_op != new_op:
+            raise ExecutionPackageError(
+                f"conflicting accepted workspace operations for {path}",
+                code="package_context_drift",
+            )
+        if str(prior.get("sha256") or "") != str(change.get("sha256") or ""):
+            raise ExecutionPackageError(
+                f"conflicting accepted workspace hashes for {path}",
+                code="package_context_drift",
+            )
+        merged[path] = dict(change)
+    return merged
 
 
-def _authorized_paths_from_baseline(
+def _authorized_workspace_changes_from_baseline(
     baseline_wrappers: list[dict[str, Any]],
     *,
     workspace: Path,
-) -> set[str]:
+) -> dict[str, dict[str, Any]]:
     from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
 
-    authorized: set[str] = set()
+    merged: dict[str, dict[str, Any]] = {}
     for wrapper in baseline_wrappers:
         verify_upstream_accepted_result_binding(wrapper)
         accepted = wrapper["accepted_result"]
@@ -271,11 +359,63 @@ def _authorized_paths_from_baseline(
                 "baseline accepted_result missing child_run_id",
                 code="sub_tdp_upstream_invalid",
             )
-        authorized |= authorized_paths_from_accepted_result(
+        changes = workspace_changes_from_accepted_result(
             accepted,
             workspace=workspace,
         )
-    return authorized
+        merged = merge_authorized_workspace_changes(merged, changes)
+    return merged
+
+
+def verify_workspace_matches_authorized_changes(
+    paths: list[str],
+    *,
+    authorized_changes: dict[str, dict[str, Any]],
+    workspace: Path,
+) -> None:
+    unauthorized: list[str] = []
+    for path in paths:
+        change = authorized_changes.get(path)
+        if change is None:
+            unauthorized.append(path)
+            continue
+        operation = str(change.get("operation") or "").strip()
+        if operation == "delete":
+            raise ExecutionPackageError(
+                "accepted workspace_changes delete operation is not supported "
+                "until production can capture delete tombstones",
+                code="sub_tdp_upstream_invalid",
+            )
+        if operation != "write":
+            raise ExecutionPackageError(
+                f"accepted workspace change for {path} missing operation",
+                code="sub_tdp_upstream_invalid",
+            )
+        target = workspace / path
+        if not target.is_file():
+            raise ExecutionPackageError(
+                f"workspace path {path} missing for accepted write",
+                code="package_context_drift",
+            )
+        actual = digest_file(target)
+        expected = str(change.get("sha256") or "").strip()
+        if not expected:
+            raise ExecutionPackageError(
+                f"accepted workspace change for {path} missing sha256",
+                code="sub_tdp_upstream_invalid",
+            )
+        if actual != expected:
+            raise ExecutionPackageError(
+                f"workspace bytes for {path} do not match accepted sha256",
+                code="package_context_drift",
+            )
+    if unauthorized:
+        joined = ", ".join(unauthorized)
+        raise ExecutionPackageError(
+            f"context snapshot resource drift not authorized by workspace baseline "
+            f"accepted results: {joined}",
+            code="package_context_drift",
+        )
 
 
 def verify_package_context_snapshot_with_baseline(
@@ -289,6 +429,10 @@ def verify_package_context_snapshot_with_baseline(
     ``baseline_wrappers`` is the cumulative workspace baseline lineage used for
     context authorization (direct deps plus previously accepted sibling/closure
     results). Empty wrappers require an exact package snapshot match.
+
+    Authorization is content-bound: changed resource paths must appear in the
+    baseline workspace_changes map and current workspace bytes must match the
+    accepted write sha256.
     """
 
     del store  # call-site keeps store for symmetry; auth uses immutable records only
@@ -332,18 +476,15 @@ def verify_package_context_snapshot_with_baseline(
             code="package_context_drift",
         )
 
-    authorized = _authorized_paths_from_baseline(
+    authorized_changes = _authorized_workspace_changes_from_baseline(
         baseline_wrappers,
         workspace=workspace,
     )
-    unauthorized = [path for path in evidence_gaps if path not in authorized]
-    if unauthorized:
-        joined = ", ".join(unauthorized)
-        raise ExecutionPackageError(
-            f"context snapshot resource drift not authorized by workspace baseline "
-            f"accepted results: {joined}",
-            code="package_context_drift",
-        )
+    verify_workspace_matches_authorized_changes(
+        evidence_gaps,
+        authorized_changes=authorized_changes,
+        workspace=workspace,
+    )
     return new_binding
 
 
@@ -365,9 +506,12 @@ def _aggregate_input_digest(context: dict[str, Any]) -> str:
 
 __all__ = [
     "authorized_paths_from_accepted_result",
+    "merge_authorized_workspace_changes",
     "validate_resolved_config_against_package",
     "verify_package_authoritative_inputs",
     "verify_package_context_snapshot_exact",
     "verify_package_context_snapshot_with_baseline",
     "verify_package_immutable_contract",
+    "verify_workspace_matches_authorized_changes",
+    "workspace_changes_from_accepted_result",
 ]

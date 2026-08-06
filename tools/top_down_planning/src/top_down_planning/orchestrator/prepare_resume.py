@@ -138,6 +138,7 @@ def _verify_prepared_package_binding(
     from top_down_planning.package.lineage import (
         validate_accepted_child_delivery,
         verify_accepted_result_attestation,
+        verify_accepted_result_matches_live_delivery,
     )
     from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 
@@ -248,6 +249,11 @@ def _verify_prepared_package_binding(
                         child_production=child_production,
                         verify_evidence=True,
                     )
+                    verify_accepted_result_matches_live_delivery(
+                        unit_record,
+                        child_run=child_run,
+                        child_production=child_production,
+                    )
                 except (OSError, ValueError, KeyError) as exc:
                     return (
                         f"parent sub_tdps child delivery invalid for "
@@ -290,7 +296,9 @@ def _verify_child_upstream_bindings(
     from top_down_planning.package.lineage import (
         validate_accepted_child_delivery,
         validate_child_package_bindings,
+        verify_accepted_result_matches_live_delivery,
         verify_upstream_accepted_result_binding,
+        verify_upstream_wrapper_matches_live_delivery,
     )
 
     binding_error = validate_child_package_bindings(binding)
@@ -344,6 +352,19 @@ def _verify_child_upstream_bindings(
                 child_production=child_production,
                 verify_evidence=True,
             )
+            verify_accepted_result_matches_live_delivery(
+                {
+                    "plan_item_id": dep_id,
+                    "child_run_id": child_run_id,
+                    "unit_plan_digest": str(accepted.get("unit_plan_digest") or ""),
+                    "accepted_result": accepted,
+                    "accepted_result_digest": str(
+                        wrapper.get("accepted_result_digest") or ""
+                    ),
+                },
+                child_run=child_run,
+                child_production=child_production,
+            )
         except (OSError, ValueError, KeyError) as exc:
             return f"prepared upstream child delivery invalid for {dep_id!r}: {exc}"
     if seen != set(expected_deps):
@@ -363,8 +384,8 @@ def _verify_child_upstream_bindings(
         if not isinstance(wrapper, dict):
             return "prepared workspace_baseline_accepted_results entry is invalid"
         try:
-            verify_upstream_accepted_result_binding(wrapper)
-        except ValueError as exc:
+            verify_upstream_wrapper_matches_live_delivery(store, wrapper)
+        except (OSError, ValueError, KeyError) as exc:
             return f"prepared workspace baseline attestation invalid: {exc}"
         digest = str(wrapper.get("accepted_result_digest") or "").strip()
         if not digest:
@@ -381,37 +402,32 @@ def _verify_child_upstream_bindings(
     return None
 
 
-def _extra_authorized_paths_for_resume(
+def collect_parent_sub_tdp_authorized_workspace_changes(
     store: RunStore,
     *,
-    run: dict[str, Any],
     production: dict[str, Any],
     workspace: Any,
-) -> set[str] | None:
-    """Authorize parent resume drift from attached accepted-result output_refs only."""
+) -> dict[str, dict[str, Any]]:
+    """Merge content-bound workspace_changes from attached accepted Sub-TDP units.
 
-    from top_down_planning.domain.run_kind import (
-        RUN_KIND_PARENT_EXECUTION,
-        resolve_run_kind,
-    )
+    Validates attestation and live child delivery for every completed unit with an
+    accepted_result, then merges workspace_changes with conflict detection.
+    """
+
     from top_down_planning.package.execution_validation import (
-        authorized_paths_from_accepted_result,
+        merge_authorized_workspace_changes,
+        workspace_changes_from_accepted_result,
     )
     from top_down_planning.package.lineage import (
         validate_accepted_child_delivery,
-        verify_accepted_result_attestation,
+        verify_accepted_result_matches_live_delivery,
     )
+    from top_down_planning.package.loader import ExecutionPackageError
 
-    try:
-        kind = resolve_run_kind(run)
-    except ValueError:
-        return None
-    if kind != RUN_KIND_PARENT_EXECUTION:
-        return None
     state = production.get("sub_tdps")
     if not isinstance(state, dict):
-        return None
-    authorized: set[str] = set()
+        return {}
+    authorized_changes: dict[str, dict[str, Any]] = {}
     for unit_record in state.get("units") or []:
         if not isinstance(unit_record, dict):
             continue
@@ -419,12 +435,6 @@ def _extra_authorized_paths_for_resume(
         if not isinstance(accepted, dict):
             continue
         plan_item_id = str(unit_record.get("plan_item_id") or "").strip() or "<unknown>"
-        try:
-            verify_accepted_result_attestation(unit_record)
-        except ValueError as exc:
-            raise ValueError(
-                f"parent sub_tdps attestation invalid for {plan_item_id!r}: {exc}"
-            ) from exc
         child_run_id = str(accepted.get("child_run_id") or "").strip()
         if not child_run_id:
             raise ValueError(
@@ -440,14 +450,86 @@ def _extra_authorized_paths_for_resume(
                 child_production=child_production,
                 verify_evidence=True,
             )
+            live_accepted = verify_accepted_result_matches_live_delivery(
+                unit_record,
+                child_run=child_run,
+                child_production=child_production,
+            )
         except (OSError, ValueError, KeyError) as exc:
             raise ValueError(
                 f"parent sub_tdps child delivery invalid for {plan_item_id!r}: {exc}"
             ) from exc
-        authorized |= authorized_paths_from_accepted_result(
-            accepted,
+        try:
+            changes = workspace_changes_from_accepted_result(
+                live_accepted,
+                workspace=workspace,
+            )
+            authorized_changes = merge_authorized_workspace_changes(
+                authorized_changes,
+                changes,
+            )
+        except (ExecutionPackageError, ValueError, TypeError) as exc:
+            raise ValueError(
+                f"parent sub_tdps workspace_changes invalid for {plan_item_id!r}: {exc}"
+            ) from exc
+    return authorized_changes
+
+
+def verify_parent_sub_tdp_workspace_matches_accepted(
+    store: RunStore,
+    *,
+    production: dict[str, Any],
+    workspace: Any,
+) -> set[str]:
+    """Fail closed unless live workspace bytes match attached accepted changes."""
+
+    from top_down_planning.package.execution_validation import (
+        verify_workspace_matches_authorized_changes,
+    )
+
+    authorized_changes = collect_parent_sub_tdp_authorized_workspace_changes(
+        store,
+        production=production,
+        workspace=workspace,
+    )
+    if authorized_changes:
+        verify_workspace_matches_authorized_changes(
+            sorted(authorized_changes),
+            authorized_changes=authorized_changes,
             workspace=workspace,
         )
+    return set(authorized_changes)
+
+
+def _extra_authorized_paths_for_resume(
+    store: RunStore,
+    *,
+    run: dict[str, Any],
+    production: dict[str, Any],
+    workspace: Any,
+) -> set[str] | None:
+    """Authorize parent resume drift from attached accepted-result workspace_changes.
+
+    Paths are authorized only when current workspace bytes match the accepted
+    sha256 (content-bound), not merely because the pathname was previously emitted.
+    """
+
+    from top_down_planning.domain.run_kind import (
+        RUN_KIND_PARENT_EXECUTION,
+        resolve_run_kind,
+    )
+
+    try:
+        kind = resolve_run_kind(run)
+    except ValueError:
+        return None
+    if kind != RUN_KIND_PARENT_EXECUTION:
+        return None
+    authorized = verify_parent_sub_tdp_workspace_matches_accepted(
+        store,
+        production=production,
+        workspace=workspace,
+    )
     return authorized or None
 
 

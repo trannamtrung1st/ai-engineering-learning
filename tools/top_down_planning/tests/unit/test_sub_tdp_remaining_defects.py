@@ -358,3 +358,75 @@ def test_prepare_resume_revalidates_prepared_package_binding(tmp_path: Path) -> 
 
     with pytest.raises(PrepareResumeBlockedError, match="package"):
         prepare_resume(store, parent_id, config)
+
+
+def test_factory_defaults_workspace_baseline_to_upstream_results(tmp_path: Path) -> None:
+    """P1#9: omitted workspace_baseline_results defaults to upstream, not empty."""
+
+    from top_down_planning.package.lineage import upstream_accepted_result_binding
+    from tests.helpers import accept_child_run
+    from tests.unit.test_sub_tdp_defect_pass import _build_package
+
+    store, output_dir, _ = _build_package(tmp_path)
+    package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
+    config = package.resolved_config
+    factory = PreparedRunFactory()
+
+    child_a = factory.create_child_run(
+        store,
+        package,
+        package.units["item-a"],
+        resolved_config=config,
+        invocation={"command": "execute"},
+    )
+    accept_child_run(store, child_a)
+    accepted = accepted_result_record(
+        child_run=store.load_run(child_a),
+        child_production=store.load_production(child_a),
+        unit_id="item-a",
+        unit_plan_digest=package.units["item-a"].plan_digest,
+        package_id=str(package.manifest.get("package_id") or ""),
+        package_digest=str(package.manifest.get("package_digest") or ""),
+        assigned_subtree_digest=package.units["item-a"].assigned_subtree_digest,
+    )
+    wrapper = upstream_accepted_result_binding(
+        accepted,
+        upstream_contract_digest=package.units["item-a"].assigned_subtree_digest,
+    )
+
+    child_b = factory.create_child_run(
+        store,
+        package,
+        package.units["item-b"],
+        resolved_config=config,
+        invocation={"command": "execute"},
+        upstream_accepted_results=[wrapper],
+        # workspace_baseline_results intentionally omitted
+    )
+    binding = store.load_run(child_b)["package_binding"]
+    assert binding["upstream_accepted_results"]
+    assert binding["workspace_baseline_accepted_results"]
+    assert (
+        binding["workspace_baseline_accepted_results"][0]["accepted_result_digest"]
+        == wrapper["accepted_result_digest"]
+    )
+
+
+def test_factory_rejects_dependent_unit_without_upstream(tmp_path: Path) -> None:
+    """P1#9: dependent units cannot be created with an empty upstream set."""
+
+    from tests.unit.test_sub_tdp_defect_pass import _build_package
+
+    store, output_dir, _ = _build_package(tmp_path)
+    package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
+    config = package.resolved_config
+
+    with pytest.raises(ExecutionPackageError, match="depends_on|upstream"):
+        PreparedRunFactory().create_child_run(
+            store,
+            package,
+            package.units["item-b"],
+            resolved_config=config,
+            invocation={"command": "execute"},
+            upstream_accepted_results=[],
+        )

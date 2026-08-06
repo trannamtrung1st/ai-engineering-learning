@@ -28,6 +28,7 @@ FailedStopCode = Literal[
     "unsupported_phase_state",
     "orchestrator_invariant_failure",
     "session_recovery_exhausted",
+    "sub_tdp_unit_permanently_failed",
 ]
 
 StopCode = PausedStopCode | FailedStopCode
@@ -55,6 +56,7 @@ FAILED_STOP_CODES: frozenset[str] = frozenset(
         "unsupported_phase_state",
         "orchestrator_invariant_failure",
         "session_recovery_exhausted",
+        "sub_tdp_unit_permanently_failed",
     }
 )
 

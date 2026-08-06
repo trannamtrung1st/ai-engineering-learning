@@ -84,6 +84,7 @@ class PreparedUnitExecutor:
         orchestration_state: dict[str, Any] | None = None,
         explicit_upstream: dict[str, str] | None = None,
         explicit_upstream_only: bool = False,
+        explicit_baseline_run_ids: list[str] | None = None,
     ) -> str:
         unit = package.units.get(unit_id)
         if unit is None:
@@ -138,6 +139,7 @@ class PreparedUnitExecutor:
             orchestration_state=orchestration_state,
             explicit_upstream=explicit_upstream,
             explicit_upstream_only=explicit_upstream_only,
+            explicit_baseline_run_ids=explicit_baseline_run_ids,
         )
 
         if existing_child_run_id:
@@ -461,6 +463,7 @@ class PreparedUnitExecutor:
         orchestration_state: dict[str, Any] | None,
         explicit_upstream: dict[str, str] | None = None,
         explicit_upstream_only: bool = False,
+        explicit_baseline_run_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Cumulative accepted results authorizing shared-workspace resource drift."""
 
@@ -477,7 +480,7 @@ class PreparedUnitExecutor:
         seen: set[str] = set()
         results: list[dict[str, Any]] = []
 
-        def add_wrapper(wrapper: dict[str, Any]) -> None:
+        def add_wrapper(wrapper: dict[str, Any], *, require_live: bool = False) -> None:
             try:
                 verify_upstream_accepted_result_binding(wrapper)
             except ValueError as exc:
@@ -485,6 +488,18 @@ class PreparedUnitExecutor:
                     str(exc),
                     code="sub_tdp_upstream_invalid",
                 ) from exc
+            if require_live:
+                from top_down_planning.package.lineage import (
+                    verify_upstream_wrapper_matches_live_delivery,
+                )
+
+                try:
+                    verify_upstream_wrapper_matches_live_delivery(child_store, wrapper)
+                except (OSError, ValueError, KeyError) as exc:
+                    raise ExecutionPackageError(
+                        f"baseline closure wrapper delivery invalid: {exc}",
+                        code="sub_tdp_upstream_invalid",
+                    ) from exc
             digest = str(wrapper.get("accepted_result_digest") or "")
             if not digest or digest in seen:
                 return
@@ -516,11 +531,21 @@ class PreparedUnitExecutor:
             ):
                 for nested in binding.get(key) or []:
                     if isinstance(nested, dict):
-                        add_wrapper(nested)
+                        add_wrapper(nested, require_live=True)
 
         for wrapper in list(results):
             accepted = wrapper.get("accepted_result") or {}
             add_closure_from_child(str(accepted.get("child_run_id") or "").strip())
+
+        for baseline_run_id in explicit_baseline_run_ids or []:
+            wrapper = self._wrapper_from_accepted_child_run(
+                child_store,
+                package=package,
+                child_run_id=str(baseline_run_id).strip(),
+                error_label=f"explicit baseline {baseline_run_id!r}",
+            )
+            add_wrapper(wrapper)
+            add_closure_from_child(str(baseline_run_id).strip())
 
         if orchestration_state is not None:
             for unit_record in orchestration_state.get("units") or []:
@@ -625,6 +650,65 @@ class PreparedUnitExecutor:
             add_closure_from_child(str(child_run.get("id") or ""))
         return results
 
+    def _wrapper_from_accepted_child_run(
+        self,
+        child_store: FileRunStore,
+        *,
+        package: LoadedExecutionPackage,
+        child_run_id: str,
+        error_label: str,
+    ) -> dict[str, Any]:
+        """Resolve an accepted child run into a digest-verified baseline wrapper."""
+
+        from top_down_planning.package.lineage import upstream_accepted_result_binding
+
+        if not child_run_id:
+            raise ExecutionPackageError(
+                f"{error_label} missing run id",
+                code="sub_tdp_baseline_invalid",
+            )
+        try:
+            child_run = child_store.load_run(child_run_id)
+        except (OSError, ValueError, KeyError) as exc:
+            raise ExecutionPackageError(
+                f"{error_label} is missing or unreadable",
+                code="sub_tdp_baseline_invalid",
+            ) from exc
+        binding = child_run.get("package_binding") or {}
+        if not isinstance(binding, dict):
+            raise ExecutionPackageError(
+                f"{error_label} missing package_binding",
+                code="sub_tdp_baseline_invalid",
+            )
+        bound_unit_id = str(binding.get("unit_id") or "").strip()
+        if not bound_unit_id or bound_unit_id not in package.units:
+            raise ExecutionPackageError(
+                f"{error_label} is not bound to a unit in this package",
+                code="sub_tdp_baseline_invalid",
+            )
+        peer_unit = package.units[bound_unit_id]
+        package_id = str(package.manifest.get("package_id") or "")
+        package_digest = str(package.manifest.get("package_digest") or "")
+        if str(binding.get("package_digest") or "") != package_digest:
+            raise ExecutionPackageError(
+                f"{error_label} package_digest does not match current package",
+                code="sub_tdp_baseline_invalid",
+            )
+        entry = self._validated_accepted_result_entry(
+            child_store,
+            child_run_id=child_run_id,
+            unit_id=bound_unit_id,
+            unit_plan_digest=peer_unit.plan_digest,
+            package_id=package_id,
+            package_digest=package_digest,
+            assigned_subtree_digest=peer_unit.assigned_subtree_digest,
+            error_label=error_label,
+        )
+        return upstream_accepted_result_binding(
+            entry,
+            upstream_contract_digest=peer_unit.assigned_subtree_digest,
+        )
+
     @staticmethod
     def _validated_accepted_result_entry(
         child_store: FileRunStore,
@@ -728,6 +812,9 @@ class PreparedUnitExecutor:
             stored_upstream = binding.get("upstream_accepted_results")
             stored_baseline = binding.get("workspace_baseline_accepted_results")
             stored_external = binding.get("external_prerequisites")
+            stored_baseline_digest = str(
+                binding.get("baseline_context_snapshot_digest") or ""
+            ).strip()
             if (
                 stored_upstream != desired_upstream
                 or stored_baseline != desired_baseline
@@ -735,6 +822,11 @@ class PreparedUnitExecutor:
             ):
                 raise ExecutionPackageError(
                     "child package bindings are immutable after execution starts",
+                    code="sub_tdp_binding_immutable",
+                )
+            if not stored_baseline_digest:
+                raise ExecutionPackageError(
+                    "child missing baseline_context_snapshot_digest after execution started",
                     code="sub_tdp_binding_immutable",
                 )
             # Do not rebase context from package+baseline; prepare_resume owns
@@ -757,6 +849,8 @@ class PreparedUnitExecutor:
             and "upstream_accepted_results" in binding
             and "workspace_baseline_accepted_results" in binding
             and "external_prerequisites" in binding
+            and str(binding.get("baseline_context_snapshot_digest") or "")
+            == context_snapshot_digest
         )
         snapshot_unchanged = (
             run.get("context_snapshot_binding") == snapshot_binding
@@ -788,6 +882,7 @@ class PreparedUnitExecutor:
         binding["upstream_accepted_results"] = desired_upstream
         binding["workspace_baseline_accepted_results"] = desired_baseline
         binding["external_prerequisites"] = external
+        binding["baseline_context_snapshot_digest"] = context_snapshot_digest
         run["package_binding"] = binding
         run["context_snapshot_binding"] = snapshot_binding
         digests = dict(run.get("digests") or {})

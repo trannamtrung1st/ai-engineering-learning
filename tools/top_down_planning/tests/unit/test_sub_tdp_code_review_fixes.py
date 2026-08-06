@@ -111,6 +111,7 @@ def test_child_b_starts_after_upstream_modifies_configured_resource(tmp_path: Pa
         resolved_config=package.resolved_config,
         invocation={"command": "execute"},
     )
+    shared.write_text('{"version": 2}\n', encoding="utf-8")
     accept_child_run(
         store,
         child_a_id,
@@ -124,7 +125,6 @@ def test_child_b_starts_after_upstream_modifies_configured_resource(tmp_path: Pa
         ],
         claim_assessment="A done",
     )
-    shared.write_text('{"version": 2}\n', encoding="utf-8")
 
     child_b_id = PreparedUnitExecutor().create_or_load_child_run(
         store,
@@ -145,12 +145,22 @@ def test_explicit_upstream_rejects_wrong_unit_run(tmp_path: Path) -> None:
 
     store, output_dir, _ = _build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
-    wrong_unit_run_id = PreparedRunFactory().create_child_run(
+    child_a_id = PreparedUnitExecutor().create_or_load_child_run(
         store,
         package,
-        package.units["item-b"],
+        "item-a",
         resolved_config=package.resolved_config,
         invocation={"command": "execute"},
+    )
+    accept_child_run(store, child_a_id)
+    wrong_unit_run_id = PreparedUnitExecutor().create_or_load_child_run(
+        store,
+        package,
+        "item-b",
+        resolved_config=package.resolved_config,
+        invocation={"command": "execute"},
+        explicit_upstream={"item-a": child_a_id},
+        explicit_upstream_only=True,
     )
     accept_child_run(store, wrong_unit_run_id)
 
@@ -373,7 +383,7 @@ def test_execute_manifest_requires_manifest_json_filename(tmp_path: Path) -> Non
 def test_child_reuse_completes_missing_bindings_after_factory_only_create(
     tmp_path: Path,
 ) -> None:
-    """P0: factory-only child without bindings must be completed on executor retry."""
+    """Factory-created dependent children must carry upstream; executor reuses them."""
 
     store, output_dir, _plan = _build_package(tmp_path)
     package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
@@ -391,6 +401,21 @@ def test_child_reuse_completes_missing_bindings_after_factory_only_create(
     )
     accept_child_run(store, child_a_id)
 
+    a_accepted = accepted_result_record(
+        child_run=store.load_run(child_a_id),
+        child_production=store.load_production(child_a_id),
+        unit_id="item-a",
+        unit_plan_digest=package.units["item-a"].plan_digest,
+        package_id=str(package.manifest.get("package_id") or ""),
+        package_digest=str(package.manifest.get("package_digest") or ""),
+        assigned_subtree_digest=package.units["item-a"].assigned_subtree_digest,
+    )
+    from top_down_planning.package.lineage import upstream_accepted_result_binding
+
+    wrapper = upstream_accepted_result_binding(
+        a_accepted,
+        upstream_contract_digest=package.units["item-a"].assigned_subtree_digest,
+    )
     child_b_id = PreparedRunFactory().create_child_run(
         store,
         package,
@@ -401,9 +426,10 @@ def test_child_reuse_completes_missing_bindings_after_factory_only_create(
             "observability": {},
             "sub_tdp": {"parent_run_id": parent_id, "unit_id": "item-b"},
         },
+        upstream_accepted_results=[wrapper],
     )
     binding_before = store.load_run(child_b_id).get("package_binding") or {}
-    assert binding_before.get("upstream_accepted_results") == []
+    assert len(binding_before.get("upstream_accepted_results") or []) == 1
     assert isinstance(binding_before.get("external_prerequisites"), list)
 
     child_b_retry = executor.create_or_load_child_run(
@@ -447,6 +473,21 @@ def test_prepare_resume_rejects_child_missing_binding_keys(tmp_path: Path) -> No
     )
     accept_child_run(store, child_a_id)
 
+    a_accepted = accepted_result_record(
+        child_run=store.load_run(child_a_id),
+        child_production=store.load_production(child_a_id),
+        unit_id="item-a",
+        unit_plan_digest=package.units["item-a"].plan_digest,
+        package_id=str(package.manifest.get("package_id") or ""),
+        package_digest=str(package.manifest.get("package_digest") or ""),
+        assigned_subtree_digest=package.units["item-a"].assigned_subtree_digest,
+    )
+    from top_down_planning.package.lineage import upstream_accepted_result_binding
+
+    wrapper = upstream_accepted_result_binding(
+        a_accepted,
+        upstream_contract_digest=package.units["item-a"].assigned_subtree_digest,
+    )
     child_b_id = PreparedRunFactory().create_child_run(
         store,
         package,
@@ -456,6 +497,7 @@ def test_prepare_resume_rejects_child_missing_binding_keys(tmp_path: Path) -> No
             "command": "execute",
             "sub_tdp": {"parent_run_id": parent_id, "unit_id": "item-b"},
         },
+        upstream_accepted_results=[wrapper],
     )
     run = store.load_run(child_b_id)
     expected = int(run["revision"])
@@ -481,27 +523,15 @@ def test_prepare_resume_rejects_child_missing_binding_keys(tmp_path: Path) -> No
         prepare_resume(store, child_b_id, candidate)
 
 
-def test_factory_early_child_rebases_snapshot_when_upstream_retrofitted(
+def test_factory_child_binds_upstream_resource_snapshot_at_create(
     tmp_path: Path,
 ) -> None:
-    """Early factory child must rebase context snapshot when upstream is bound later."""
+    """Dependent factory create with upstream authorizes resource drift at create time."""
 
     store, _output_dir, package = _build_package_with_shared_resource(tmp_path)
     shared = tmp_path / "shared" / "state.json"
     parent_id = "parent-run-1"
     config = package.resolved_config
-
-    child_b_id = PreparedRunFactory().create_child_run(
-        store,
-        package,
-        package.units["item-b"],
-        resolved_config=config,
-        invocation={
-            "command": "execute",
-            "sub_tdp": {"parent_run_id": parent_id, "unit_id": "item-b"},
-        },
-    )
-    snapshot_before = store.load_run(child_b_id).get("context_snapshot_binding") or {}
 
     child_a_id = PreparedUnitExecutor().create_or_load_child_run(
         store,
@@ -511,6 +541,7 @@ def test_factory_early_child_rebases_snapshot_when_upstream_retrofitted(
         invocation={"command": "execute"},
         parent_run_id=parent_id,
     )
+    shared.write_text('{"version": 2}\n', encoding="utf-8")
     accept_child_run(
         store,
         child_a_id,
@@ -524,24 +555,35 @@ def test_factory_early_child_rebases_snapshot_when_upstream_retrofitted(
         ],
         claim_assessment="A done",
     )
-    shared.write_text('{"version": 2}\n', encoding="utf-8")
+    a_accepted = accepted_result_record(
+        child_run=store.load_run(child_a_id),
+        child_production=store.load_production(child_a_id),
+        unit_id="item-a",
+        unit_plan_digest=package.units["item-a"].plan_digest,
+        package_id=str(package.manifest.get("package_id") or ""),
+        package_digest=str(package.manifest.get("package_digest") or ""),
+        assigned_subtree_digest=package.units["item-a"].assigned_subtree_digest,
+    )
+    from top_down_planning.package.lineage import upstream_accepted_result_binding
 
-    child_b_retry = PreparedUnitExecutor().create_or_load_child_run(
+    wrapper = upstream_accepted_result_binding(
+        a_accepted,
+        upstream_contract_digest=package.units["item-a"].assigned_subtree_digest,
+    )
+    child_b_id = PreparedRunFactory().create_child_run(
         store,
         package,
-        "item-b",
+        package.units["item-b"],
         resolved_config=config,
-        invocation={"command": "execute"},
-        parent_run_id=parent_id,
-        explicit_upstream={"item-a": child_a_id},
-        explicit_upstream_only=True,
+        invocation={
+            "command": "execute",
+            "sub_tdp": {"parent_run_id": parent_id, "unit_id": "item-b"},
+        },
+        upstream_accepted_results=[wrapper],
+        workspace_baseline_results=[wrapper],
     )
-    assert child_b_retry == child_b_id
-    snapshot_after = store.load_run(child_b_id).get("context_snapshot_binding") or {}
-    assert snapshot_after != snapshot_before
-    assert snapshot_after["resource_digests"]["shared/state.json"] != snapshot_before[
-        "resource_digests"
-    ]["shared/state.json"]
+    snapshot = store.load_run(child_b_id).get("context_snapshot_binding") or {}
+    assert "shared/state.json" in (snapshot.get("resource_digests") or {})
 
 
 def test_continue_child_sub_tdp_revalidates_terminal_delivery(tmp_path: Path) -> None:
@@ -781,6 +823,10 @@ def _accept_shared_resource_change(
     item_id: str,
     workspace: Path,
 ) -> None:
+    # Write accepted bytes before capture so workspace_changes sha256 matches live files.
+    (workspace / "shared" / "state.json").write_text(
+        '{"version": 2}\n', encoding="utf-8"
+    )
     accept_child_run(
         store,
         child_id,
@@ -793,9 +839,6 @@ def _accept_shared_resource_change(
             }
         ],
         claim_assessment=f"{item_id} done",
-    )
-    (workspace / "shared" / "state.json").write_text(
-        '{"version": 2}\n', encoding="utf-8"
     )
 
 
@@ -918,6 +961,7 @@ def test_transitive_unit_c_starts_after_a_and_b_modify_shared_resource(
         explicit_upstream={"item-a": child_a_id},
         explicit_upstream_only=True,
     )
+    (tmp_path / "shared" / "b.json").write_text('{"from": "b"}\n', encoding="utf-8")
     accept_child_run(
         store,
         child_b_id,
@@ -931,7 +975,6 @@ def test_transitive_unit_c_starts_after_a_and_b_modify_shared_resource(
         ],
         claim_assessment="B done",
     )
-    (tmp_path / "shared" / "b.json").write_text('{"from": "b"}\n', encoding="utf-8")
     # A's change remains; B did not re-attest shared/state.json
     assert shared.read_text(encoding="utf-8") == '{"version": 2}\n'
 
@@ -1208,7 +1251,7 @@ def test_persist_rejects_package_id_path_escape(tmp_path: Path) -> None:
 def test_context_auth_rejects_paths_only_present_in_live_production(
     tmp_path: Path,
 ) -> None:
-    """Context authorization must use accepted_result.output_refs only — no production fallback."""
+    """Context authorization uses accepted workspace_changes only — never live production."""
 
     from top_down_planning.package.execution_validation import (
         verify_package_context_snapshot_with_baseline,

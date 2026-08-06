@@ -183,6 +183,64 @@ def test_child_failure_pauses_parent_with_valid_stop(tmp_path: Path) -> None:
     validate_stop_record(parent["stop"], expected_category="operational")
 
 
+def test_resume_after_failed_child_terminates_parent_not_running_dead_end(
+    tmp_path: Path,
+) -> None:
+    """P0#4: resume must not leave parent running after a noncontinuable failed unit."""
+
+    from top_down_planning.domain.run_lifecycle import StopRecord
+    from top_down_planning.orchestrator.run_transitions import pause_run
+    from top_down_planning.persistence.sub_tdp_state import (
+        UNIT_STATUS_FAILED,
+        load_sub_tdp_state,
+        merge_sub_tdp_state_into_production,
+    )
+
+    store, package, parent_id, _config = _setup_parent_execution(tmp_path)
+    production = store.load_production(parent_id)
+    state = load_sub_tdp_state(production)
+    assert state is not None
+    unit = state["units"][0]
+    unit["status"] = UNIT_STATUS_FAILED
+    unit["child_run_id"] = "child-failed-1"
+    state["status"] = "failed"
+    state["active_unit_id"] = unit["plan_item_id"]
+    merged = merge_sub_tdp_state_into_production(production, state)
+    expected = int(production["revision"])
+    merged["revision"] = expected + 1
+    store.save_production(parent_id, merged, expected)
+
+    pause_run(
+        store,
+        parent_id,
+        stop=StopRecord(
+            code="sub_tdp_child_failed",
+            category="operational",
+            phase=SUB_TDPS,
+            message="child Sub-TDP failed",
+        ),
+        revoke_phase=SUB_TDPS,
+        event_type="run_paused",
+    )
+
+    # Simulate resume apply clearing pause into running before orchestrator re-enters.
+    run = store.load_run(parent_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["status"] = "running"
+    run["stop"] = None
+    store.save_run(parent_id, run, expected)
+
+    result = SubTdpsPhaseOrchestrator(store, parent_id, StubProvider()).run()
+
+    assert result.ok is False
+    parent = store.load_run(parent_id)
+    assert parent["status"] == "failed"
+    assert parent["status"] != "running"
+    assert parent["stop"]["code"] == "sub_tdp_unit_permanently_failed"
+
+
 def test_attach_rejects_package_digest_mismatch_vs_parent_binding(
     tmp_path: Path,
 ) -> None:
@@ -488,6 +546,9 @@ def test_attestation_rejects_unit_id_mismatch() -> None:
         "evidence_digest": "e" * 64,
         "output_refs": [],
         "contributions": [],
+        "workspace_changes": {},
+        "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "completion_assessment": "done",
     }
     unit = {
@@ -547,6 +608,9 @@ def test_attestation_rejects_unit_child_run_id_mismatch() -> None:
         "evidence_digest": "e" * 64,
         "output_refs": [],
         "contributions": [],
+        "workspace_changes": {},
+        "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "completion_assessment": "done",
     }
     unit = {

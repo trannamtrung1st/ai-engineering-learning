@@ -8,7 +8,11 @@ from typing import Any
 from core_tools.persistence import StoreRevisionConflictError
 
 from top_down_planning.config import compute_input_digest, compute_output_goal_digest, compute_unit_output_goal_digest
-from top_down_planning.domain.run_kind import RUN_KIND_SUB_TDP_EXECUTION, resolve_run_kind
+from top_down_planning.domain.run_kind import (
+    RUN_KIND_PARENT_EXECUTION,
+    RUN_KIND_SUB_TDP_EXECUTION,
+    resolve_run_kind,
+)
 from top_down_planning.config.context import compute_context_spec_digest_from_config
 from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.domain.resume_plan import ResumePlan
@@ -100,6 +104,40 @@ def apply_resume_plan_atomically(
     prior_phase = str(run.get("phase") or "")
     digests = dict(run.get("digests") or {})
     old_execution_digest = str(digests.get("config_execution") or "")
+
+    # Re-verify content-bound Sub-TDP auth at apply time (prepare/apply gap).
+    try:
+        from top_down_planning.orchestrator.prepare_resume import (
+            verify_parent_sub_tdp_workspace_matches_accepted,
+        )
+        from top_down_planning.package.lineage import (
+            verify_upstream_wrapper_matches_live_delivery,
+        )
+
+        kind = resolve_run_kind(run)
+        if kind == RUN_KIND_PARENT_EXECUTION:
+            production = store.load_production(run_id)
+            verify_parent_sub_tdp_workspace_matches_accepted(
+                store,
+                production=production,
+                workspace=run_workspace(run),
+            )
+        elif kind == RUN_KIND_SUB_TDP_EXECUTION:
+            binding = run.get("package_binding") or {}
+            if not isinstance(binding, dict):
+                raise ValueError("child package_binding is missing at resume apply")
+            for key in (
+                "upstream_accepted_results",
+                "workspace_baseline_accepted_results",
+            ):
+                for wrapper in binding.get(key) or []:
+                    if not isinstance(wrapper, dict):
+                        raise ValueError(
+                            f"child {key} entry is invalid at resume apply"
+                        )
+                    verify_upstream_wrapper_matches_live_delivery(store, wrapper)
+    except ValueError as exc:
+        raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc
 
     review_loop: ReviewLoop | None = None
     if prior_status == "paused" and isinstance(prior_stop, dict):

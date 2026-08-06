@@ -205,6 +205,17 @@ def build_parser() -> argparse.ArgumentParser:
             "(repeatable; unit_id=run_id). Skips filesystem discovery when set."
         ),
     )
+    execute_parser.add_argument(
+        "--baseline",
+        action="append",
+        default=[],
+        metavar="RUN_ID",
+        help=(
+            "Accepted child run whose workspace changes belong in the cumulative "
+            "workspace baseline for direct --unit execution (repeatable). Does not "
+            "create a semantic dependency; use --upstream for depends_on bindings."
+        ),
+    )
     execute_parser.add_argument("--config", help="YAML configuration file.")
     execute_parser.add_argument(
         "--set",

@@ -141,6 +141,9 @@ def test_all_units_completed_requires_accepted_digest() -> None:
         "evidence_digest": "e" * 64,
         "output_refs": [],
         "contributions": [],
+        "workspace_changes": {},
+        "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "completion_assessment": "done",
     }
     state["units"][0]["accepted_result"] = accepted
@@ -455,6 +458,9 @@ def test_unit_dependencies_satisfied_requires_accepted_digest() -> None:
         "evidence_digest": "e" * 64,
         "output_refs": [],
         "contributions": [],
+        "workspace_changes": {},
+        "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "completion_assessment": "done",
     }
     state["units"][0]["accepted_result"] = accepted

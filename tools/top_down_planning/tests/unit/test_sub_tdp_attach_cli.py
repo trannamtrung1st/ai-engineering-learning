@@ -362,6 +362,24 @@ def test_sub_tdp_attach_rejects_dependent_child_without_upstream_wrappers(
     )
     assert attach_a.exit_code == 0, attach_a.stderr
 
+    from top_down_planning.package.lineage import (
+        accepted_result_record,
+        upstream_accepted_result_binding,
+    )
+
+    a_accepted = accepted_result_record(
+        child_run=store.load_run(child_a_id),
+        child_production=store.load_production(child_a_id),
+        unit_id="item-a",
+        unit_plan_digest=package.units["item-a"].plan_digest,
+        package_id=str(package.manifest.get("package_id") or ""),
+        package_digest=str(package.manifest.get("package_digest") or ""),
+        assigned_subtree_digest=package.units["item-a"].assigned_subtree_digest,
+    )
+    wrapper = upstream_accepted_result_binding(
+        a_accepted,
+        upstream_contract_digest=package.units["item-a"].assigned_subtree_digest,
+    )
     child_b_id = PreparedRunFactory().create_child_run(
         store,
         package,
@@ -371,7 +389,18 @@ def test_sub_tdp_attach_rejects_dependent_child_without_upstream_wrappers(
             "command": "execute",
             "sub_tdp": {"parent_run_id": parent_id, "unit_id": "item-b"},
         },
+        upstream_accepted_results=[wrapper],
     )
+    # Strip upstream wrappers to simulate a dependency-invalid child at attach time.
+    run = store.load_run(child_b_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    binding = dict(run.get("package_binding") or {})
+    binding["upstream_accepted_results"] = []
+    binding["workspace_baseline_accepted_results"] = []
+    run["package_binding"] = binding
+    run["revision"] = expected + 1
+    store.save_run(child_b_id, run, expected)
     accept_child_run(store, child_b_id)
 
     config_path = tmp_path / "project.yaml"
