@@ -337,6 +337,100 @@ def test_c_baselines_a_only_rejects_overwrite_of_b_path(tmp_path: Path) -> None:
         )
 
 
+def test_c_baselines_b_only_rejects_overwrite_of_a_path(tmp_path: Path) -> None:
+    """C with baseline B only must not overwrite paths last written by independent A."""
+
+    store, package, config = _build_parallel_package(tmp_path)
+    executor = PreparedUnitExecutor()
+    factory = PreparedRunFactory()
+    shared = Path(package.workspace_path) / "shared"
+
+    parent_id = factory.create_parent_run(
+        store, package, resolved_config=config, invocation={"command": "execute"},
+    )
+
+    child_a = executor.create_or_load_child_run(
+        store, package, "item-a", resolved_config=config,
+        invocation={"command": "execute"}, parent_run_id=parent_id,
+    )
+    (shared / "x.json").write_text('{"writer": "a"}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_a,
+        outputs=[{"id": "out-x", "type": "artifact", "ref": "shared/x.json"}],
+        contributions=[{"item_id": "item-a", "output_refs": ["out-x"], "summary": "A"}],
+    )
+
+    (shared / "a.json").write_text('{"unit": "a"}\n', encoding="utf-8")
+    (shared / "b.json").write_text('{"unit": "b"}\n', encoding="utf-8")
+    (shared / "x.json").unlink(missing_ok=True)
+
+    child_b = executor.create_or_load_child_run(
+        store, package, "item-b", resolved_config=config,
+        invocation={"command": "execute"},
+        parent_run_id=parent_id,
+        explicit_upstream_only=True,
+    )
+    (shared / "b.json").write_text('{"writer": "b"}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_b,
+        outputs=[{"id": "out-b", "type": "artifact", "ref": "shared/b.json"}],
+        contributions=[{"item_id": "item-b", "output_refs": ["out-b"], "summary": "B"}],
+    )
+
+    (shared / "a.json").write_text('{"unit": "a"}\n', encoding="utf-8")
+    (shared / "b.json").write_text('{"writer": "b"}\n', encoding="utf-8")
+
+    child_c = executor.create_or_load_child_run(
+        store, package, "item-c", resolved_config=config,
+        invocation={"command": "execute"},
+        parent_run_id=parent_id,
+        explicit_baseline_run_ids=[child_b],
+        explicit_upstream_only=True,
+    )
+    binding_c = store.load_run(child_c)["package_binding"]
+    assert len(binding_c["baseline_accepted_result_digests"]) == 1
+
+    (shared / "x.json").write_text('{"writer": "c-overwrites-x"}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_c,
+        outputs=[{"id": "out-c-x", "type": "artifact", "ref": "shared/x.json"}],
+        contributions=[{"item_id": "item-c", "output_refs": ["out-c-x"], "summary": "C"}],
+    )
+
+    units = [
+        SubTdpUnit(
+            plan_item_id=u.unit_id,
+            title=u.title,
+            outcome="",
+            directory=u.plan_file.parent.name,
+            ordinal=u.ordinal,
+        )
+        for u in sorted(package.units.values(), key=lambda item: item.ordinal)
+    ]
+    production = store.load_production(parent_id)
+    parent_binding = store.load_run(parent_id).get("package_binding") or {}
+    state = initial_sub_tdp_state_from_package(
+        package.manifest,
+        manifest_path=str(parent_binding.get("manifest_path") or package.manifest_path),
+        units=units,
+        package_units=package.units,
+    )
+    _attach_completed_unit(store, package, state, child_id=child_a, unit_id="item-a")
+    _attach_completed_unit(store, package, state, child_id=child_b, unit_id="item-b")
+    _attach_completed_unit(store, package, state, child_id=child_c, unit_id="item-c")
+    merged = merge_sub_tdp_state_into_production(production, state)
+    expected_revision = int(production["revision"])
+    merged["revision"] = expected_revision + 1
+    store.save_production(parent_id, merged, expected_revision)
+
+    with pytest.raises(ValueError, match="conflicting accepted workspace hashes"):
+        collect_parent_sub_tdp_authorized_workspace_changes(
+            store,
+            production=store.load_production(parent_id),
+            workspace=package.workspace_path,
+        )
+
+
 def test_parallel_composite_join_c_overwrites_a_json(tmp_path: Path) -> None:
     """Independent A and B from S0; C joins A+B and overwrites a.json."""
 

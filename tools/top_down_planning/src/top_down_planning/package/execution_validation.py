@@ -580,14 +580,15 @@ def merge_authorized_workspace_changes(
         if str(prior.get("sha256") or "") != str(change.get("sha256") or ""):
             allowed = allow_same_path_overwrite
             if not allowed:
-                if baseline_equals_cumulative:
-                    allowed = True
-                elif path_writers is not None and lineage_digests is not None:
+                if path_writers is not None:
                     prior_writer = path_writers.get(path)
                     allowed = (
                         prior_writer is not None
+                        and lineage_digests is not None
                         and prior_writer in lineage_digests
                     )
+                elif baseline_equals_cumulative:
+                    allowed = True
             if not allowed:
                 raise ExecutionPackageError(
                     f"conflicting accepted workspace hashes for {path}",
