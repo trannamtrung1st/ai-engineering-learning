@@ -252,6 +252,34 @@ def make_review_loop(**kwargs: Any) -> Any:
     payload.setdefault("finding_actions", [])
     payload.setdefault("advisory_handoffs_completed", [])
     payload.setdefault("finding_ids_by_set", {})
+    loop_finding_set_id = payload.get("finding_set_id")
+    families_raw = payload.get("finding_families")
+    if isinstance(families_raw, list) and families_raw:
+        from top_down_planning.domain.finding_families import compute_family_fingerprint
+
+        normalized_families: list[Any] = []
+        for entry in families_raw:
+            if hasattr(entry, "to_dict"):
+                normalized_families.append(entry.to_dict())
+                continue
+            if not isinstance(entry, dict):
+                normalized_families.append(entry)
+                continue
+            family = dict(entry)
+            if loop_finding_set_id and not family.get("finding_set_id"):
+                family["finding_set_id"] = loop_finding_set_id
+            if not family.get("family_fingerprint"):
+                rule_id = str(family.get("rule_id") or "").strip()
+                subject_key = str(family.get("subject_key") or "").strip()
+                scope_kind = str(family.get("scope_kind") or "active-plan").strip()
+                if rule_id and subject_key:
+                    family["family_fingerprint"] = compute_family_fingerprint(
+                        rule_id=rule_id,
+                        subject_key=subject_key,
+                        scope_kind=scope_kind,
+                    )
+            normalized_families.append(family)
+        payload["finding_families"] = normalized_families
     loop_type = str(payload.get("type") or "").strip()
     payload.setdefault("review_record_schema_version", 2)
     payload.setdefault("review_contract_version", 2)

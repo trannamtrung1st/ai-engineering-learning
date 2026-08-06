@@ -30,6 +30,8 @@ def has_meaningful_list_entries(entries: list[str]) -> bool:
 
 
 def has_item_scope_contract(item: PlanItem) -> bool:
+    if not isinstance(item.scope, Scope):
+        return False
     return (
         has_meaningful_list_entries(item.scope.includes)
         or has_meaningful_list_entries(item.scope.excludes)

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.reviews import ReviewLoop, UnsupportedReviewSchemaVersionError
 
 
 def test_whole_plan_v1_contract_payload_rejected_on_load() -> None:
-    with pytest.raises(ValueError, match="review_contract_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         ReviewLoop.from_dict(
             {
                 "id": "review-whole-plan-01",
@@ -30,7 +30,7 @@ def test_whole_plan_v1_contract_payload_rejected_on_load() -> None:
 
 
 def test_whole_output_v1_contract_payload_rejected_on_load() -> None:
-    with pytest.raises(ValueError, match="review_contract_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         ReviewLoop.from_dict(
             {
                 "id": "review-whole-output-01",
@@ -52,7 +52,7 @@ def test_whole_output_v1_contract_payload_rejected_on_load() -> None:
 
 
 def test_whole_output_v1_record_schema_rejected_on_load() -> None:
-    with pytest.raises(ValueError, match="review_record_schema_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         ReviewLoop.from_dict(
             {
                 "id": "review-whole-output-legacy",

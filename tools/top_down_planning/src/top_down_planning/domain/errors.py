@@ -49,3 +49,12 @@ class UnsupportedPlanSchemaVersionError(DomainError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+class UnsupportedReviewSchemaVersionError(DomainError):
+    """Persisted review record uses an unsupported schema or contract version."""
+
+    code = "unsupported_review_schema"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)

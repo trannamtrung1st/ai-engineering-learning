@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.reviews import ReviewLoop, UnsupportedReviewSchemaVersionError
 from top_down_planning.orchestrator.review_analysis_context import contract_fields
 from tests.helpers import make_review_loop
 
@@ -17,7 +17,7 @@ def test_family_protocol_enabled_follows_contract_version() -> None:
         review_contract_version=2,
     )
     assert contract_fields(v2_loop)["family_protocol_enabled"] is True
-    with pytest.raises(ValueError, match="review_contract_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         ReviewLoop.from_dict(
             {
                 "id": "review-whole-plan-v1",

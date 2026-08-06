@@ -140,7 +140,7 @@ class FindingFamily:
         if is_builtin_rule_id(rule_id) and rule_definition is not None:
             raise ValueError("built-in rule families must not include rule_definition")
         return cls(
-            id=require_exact_string(payload["id"], "id"),
+            id=require_non_empty_string(payload["id"], "id"),
             finding_set_id=require_non_empty_string(
                 payload.get("finding_set_id"),
                 "finding_set_id",
@@ -223,7 +223,7 @@ class FamilySweepRecord:
         if actor_role not in {"reviewer", "planner", "producer"}:
             raise ValueError(f"unsupported family sweep actor_role: {actor_role!r}")
         return cls(
-            id=require_exact_string(payload["id"], "id"),
+            id=require_non_empty_string(payload["id"], "id"),
             family_id=require_non_empty_string(payload.get("family_id"), "family_id"),
             actor_role=actor_role,  # type: ignore[arg-type]
             stage=stage,  # type: ignore[arg-type]
@@ -353,7 +353,7 @@ class AuditAttestationRun:
                 raise ValueError(f"audit run passes[{index}] must be an object")
             passes.append(AuditAttestationPass.from_dict(item))
         return cls(
-            id=require_exact_string(payload["id"], "id"),
+            id=require_non_empty_string(payload["id"], "id"),
             finding_set_id=require_non_empty_string(
                 payload.get("finding_set_id"),
                 "finding_set_id",

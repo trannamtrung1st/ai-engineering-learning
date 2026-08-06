@@ -8,7 +8,7 @@ from typing import Any, Literal
 from top_down_planning.domain.approval_digests import reject_legacy_approved_config_digest
 from top_down_planning.domain.dependencies import dependency_cycle_issue
 from top_down_planning.domain.dispositions import DispositionMap, SATISFIED_DISPOSITIONS
-from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits
+from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits, Scope
 from top_down_planning.domain.plan_schema import (
     PLANNING_STATUSES,
     PLAN_SCHEMA_VERSION,
@@ -236,6 +236,8 @@ def _has_active_work_descendant(plan: Plan, item_id: str) -> bool:
 
 
 def _contract_fingerprint(item: PlanItem) -> tuple[Any, ...]:
+    if not isinstance(item.scope, Scope):
+        return ("", "", (), (), ())
     return (
         _safe_strip(item.title).casefold(),
         _safe_strip(item.outcome).casefold(),
@@ -243,6 +245,29 @@ def _contract_fingerprint(item: PlanItem) -> tuple[Any, ...]:
         tuple(_safe_strip(entry).casefold() for entry in item.scope.excludes),
         tuple(_safe_strip(entry).casefold() for entry in item.acceptance),
     )
+
+
+def _item_path_prefix(item_id: str, item: PlanItem) -> str:
+    if isinstance(item.id, str) and item.id.strip():
+        return item.id
+    return item_id
+
+
+def _validate_scope_field_issues(
+    scope: Any,
+    *,
+    path: list[str],
+) -> list[ValidationIssue]:
+    if isinstance(scope, Scope):
+        return []
+    return [
+        _issue(
+            "invalid_plan_field",
+            "error",
+            "scope must be a Scope object",
+            path,
+        )
+    ]
 
 
 def _safe_strip(value: Any) -> str:
@@ -530,7 +555,18 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
 
     seen_ids: dict[str, str] = {}
     for item_id, item in plan.items.items():
-        if item.id != item_id:
+        path_prefix = _item_path_prefix(item_id, item)
+
+        if not isinstance(item.id, str) or not item.id.strip():
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    "item id must be a non-empty string",
+                    [item_id, "id"],
+                )
+            )
+        elif item.id != item_id:
             issues.append(
                 _issue(
                     "duplicate_item_id",
@@ -539,7 +575,7 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     [item_id],
                 )
             )
-        if item.id in seen_ids:
+        elif item.id in seen_ids:
             issues.append(
                 _issue(
                     "duplicate_item_id",
@@ -551,17 +587,7 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
         else:
             seen_ids[item.id] = item_id
 
-        if not isinstance(item.id, str) or not item.id.strip():
-            issues.append(
-                _issue(
-                    "invalid_plan_field",
-                    "error",
-                    "item id must be a non-empty string",
-                    [item_id, "id"],
-                )
-            )
-
-        if item.planning_status not in PLANNING_STATUSES:
+        if not isinstance(item.planning_status, str):
             issues.append(
                 _issue(
                     "invalid_planning_status",
@@ -570,7 +596,19 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                         "planning_status must be one of: "
                         + ", ".join(sorted(PLANNING_STATUSES))
                     ),
-                    [item.id, "planning_status"],
+                    [path_prefix, "planning_status"],
+                )
+            )
+        elif item.planning_status not in PLANNING_STATUSES:
+            issues.append(
+                _issue(
+                    "invalid_planning_status",
+                    "error",
+                    (
+                        "planning_status must be one of: "
+                        + ", ".join(sorted(PLANNING_STATUSES))
+                    ),
+                    [path_prefix, "planning_status"],
                 )
             )
 
@@ -582,16 +620,20 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     "invalid_plan_field",
                     "error",
                     "superseded items require superseded_by",
-                    [item.id, "superseded_by"],
+                    [path_prefix, "superseded_by"],
                 )
             )
-        if item.planning_status != "superseded" and item.superseded_by is not None:
+        if (
+            isinstance(item.planning_status, str)
+            and item.planning_status != "superseded"
+            and item.superseded_by is not None
+        ):
             issues.append(
                 _issue(
                     "invalid_plan_field",
                     "error",
                     "superseded_by is only valid when planning_status is superseded",
-                    [item.id, "superseded_by"],
+                    [path_prefix, "superseded_by"],
                 )
             )
 
@@ -601,7 +643,7 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     "invalid_plan_field",
                     "error",
                     "item outcome must be a string",
-                    [item.id, "outcome"],
+                    [path_prefix, "outcome"],
                 )
             )
 
@@ -611,9 +653,15 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     "invalid_plan_field",
                     "error",
                     "item parent_id must be a string or null",
-                    [item.id, "parent_id"],
+                    [path_prefix, "parent_id"],
                 )
             )
+
+        scope_issues = _validate_scope_field_issues(
+            item.scope,
+            path=[path_prefix, "scope"],
+        )
+        issues.extend(scope_issues)
 
         if not is_active_item(item):
             continue
@@ -624,7 +672,7 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     "missing_required_field",
                     "error",
                     "active item order_key is required",
-                    [item.id, "order_key"],
+                    [path_prefix, "order_key"],
                 )
             )
         if not isinstance(item.title, str) or not item.title.strip():
@@ -633,7 +681,7 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     "missing_required_field",
                     "error",
                     "active item title is required",
-                    [item.id, "title"],
+                    [path_prefix, "title"],
                 )
             )
         if item.kind not in ("aggregate", "work"):
@@ -642,61 +690,70 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     "invalid_item_kind",
                     "error",
                     f"active item kind must be aggregate or work, got {item.kind!r}",
-                    [item.id, "kind"],
+                    [path_prefix, "kind"],
                 )
             )
+
+        if scope_issues:
+            continue
 
         issues.extend(
             _validate_string_list_issues(
                 item.boundaries,
-                path=[item.id, "boundaries"],
+                path=[path_prefix, "boundaries"],
                 field_name="boundaries",
             )
         )
         issues.extend(
             _validate_string_list_issues(
                 item.acceptance,
-                path=[item.id, "acceptance"],
+                path=[path_prefix, "acceptance"],
                 field_name="acceptance",
             )
         )
         issues.extend(
             _validate_string_list_issues(
                 item.depends_on,
-                path=[item.id, "depends_on"],
+                path=[path_prefix, "depends_on"],
                 field_name="depends_on",
             )
         )
         issues.extend(
             _validate_string_list_issues(
                 item.scope.includes,
-                path=[item.id, "scope", "includes"],
+                path=[path_prefix, "scope", "includes"],
                 field_name="scope.includes",
             )
         )
         issues.extend(
             _validate_string_list_issues(
                 item.scope.excludes,
-                path=[item.id, "scope", "excludes"],
+                path=[path_prefix, "scope", "excludes"],
                 field_name="scope.excludes",
             )
         )
         issues.extend(
             _validate_string_list_issues(
                 item.risks,
-                path=[item.id, "risks"],
+                path=[path_prefix, "risks"],
                 field_name="risks",
             )
         )
         issues.extend(
             _validate_string_list_issues(
                 item.source_refs,
-                path=[item.id, "source_refs"],
+                path=[path_prefix, "source_refs"],
                 field_name="source_refs",
             )
         )
 
     issues.extend(validate_plan_quality_warnings(plan))
+
+    plan_scope_issues = _validate_scope_field_issues(
+        plan.scope,
+        path=["plan", "scope"],
+    )
+    issues.extend(plan_scope_issues)
 
     for field_name in ("boundaries", "constraints", "assumptions", "acceptance", "risks"):
         value = getattr(plan, field_name)
@@ -725,20 +782,21 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
             field_name="plan input_refs",
         )
     )
-    issues.extend(
-        _validate_string_list_issues(
-            plan.scope.includes,
-            path=["plan", "scope", "includes"],
-            field_name="plan scope.includes",
+    if not plan_scope_issues:
+        issues.extend(
+            _validate_string_list_issues(
+                plan.scope.includes,
+                path=["plan", "scope", "includes"],
+                field_name="plan scope.includes",
+            )
         )
-    )
-    issues.extend(
-        _validate_string_list_issues(
-            plan.scope.excludes,
-            path=["plan", "scope", "excludes"],
-            field_name="plan scope.excludes",
+        issues.extend(
+            _validate_string_list_issues(
+                plan.scope.excludes,
+                path=["plan", "scope", "excludes"],
+                field_name="plan scope.excludes",
+            )
         )
-    )
 
     return issues
 
@@ -913,7 +971,17 @@ def validate_dependencies(
             continue
 
         seen_deps: set[str] = set()
-        for dep_id in item.depends_on:
+        for dep_index, dep_id in enumerate(item.depends_on):
+            if not isinstance(dep_id, str):
+                issues.append(
+                    _issue(
+                        "invalid_plan_field",
+                        "error",
+                        "depends_on entries must be strings",
+                        [item_id, "depends_on", str(dep_index)],
+                    )
+                )
+                continue
             if dep_id in seen_deps:
                 issues.append(
                     _issue(

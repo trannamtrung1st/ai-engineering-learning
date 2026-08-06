@@ -40,6 +40,7 @@ from top_down_planning.domain.reviews import (
     CURRENT_REVIEW_RECORD_SCHEMA_VERSION,
     ReviewFinding,
     ReviewLoop,
+    UnsupportedReviewSchemaVersionError,
     parse_review_version_fields,
     uses_finding_family_protocol,
 )
@@ -64,7 +65,7 @@ def test_parse_review_version_fields_rejects_legacy_alias() -> None:
 
 
 def test_parse_review_version_fields_rejects_legacy_v1() -> None:
-    with pytest.raises(ValueError, match="review_record_schema_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         parse_review_version_fields(
             {"review_record_schema_version": 1, "review_contract_version": 1}
         )
@@ -79,11 +80,11 @@ def test_parse_review_version_fields_accepts_supported_versions() -> None:
 
 
 def test_parse_review_version_fields_rejects_unsupported_versions() -> None:
-    with pytest.raises(ValueError, match="review_record_schema_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         parse_review_version_fields(
             {"review_record_schema_version": 3, "review_contract_version": 2}
         )
-    with pytest.raises(ValueError, match="review_contract_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         parse_review_version_fields(
             {"review_record_schema_version": 2, "review_contract_version": 3}
         )
@@ -92,7 +93,7 @@ def test_parse_review_version_fields_rejects_unsupported_versions() -> None:
 def test_uses_finding_family_protocol_gates_on_contract_version() -> None:
     loop = make_review_loop(id="loop-1", type="whole_plan", **_FAMILY_PROTOCOL_VERSIONS)
     assert uses_finding_family_protocol(loop)
-    with pytest.raises(ValueError, match="review_record_schema_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         ReviewLoop.from_dict(
             {
                 "id": "loop-2",
@@ -2742,7 +2743,7 @@ def test_active_family_view_includes_discovery_sweep_dimensions() -> None:
 
 
 def test_whole_plan_v1_payload_rejected_on_load() -> None:
-    with pytest.raises(ValueError, match="review_record_schema_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         ReviewLoop.from_dict(
             {
                 "id": "review-whole-plan-legacy",
@@ -2762,7 +2763,7 @@ def test_whole_plan_v1_payload_rejected_on_load() -> None:
 
 
 def test_completed_v1_whole_output_record_rejected_on_load() -> None:
-    with pytest.raises(ValueError, match="review_record_schema_version"):
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
         ReviewLoop.from_dict(
             {
                 "id": "review-whole-output-legacy",

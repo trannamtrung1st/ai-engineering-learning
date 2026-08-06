@@ -19,10 +19,16 @@ from top_down_planning.domain.artifact_refs import (
     artifact_ref_to_dict,
     parse_artifact_ref,
 )
+from top_down_planning.domain.errors import UnsupportedReviewSchemaVersionError
 from top_down_planning.domain.review_schema import (
+    require_exact_string,
     require_non_empty_string,
     require_non_negative_int,
     require_optional_exact_string,
+    require_optional_object,
+    require_optional_string_dict,
+    require_scope_object,
+    require_string_list,
 )
 from top_down_planning.domain.session_bindings import (
     SessionBinding,
@@ -47,6 +53,10 @@ CURRENT_REVIEW_RECORD_SCHEMA_VERSION = 2
 CURRENT_REVIEW_CONTRACT_VERSION = 2
 SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS = frozenset({CURRENT_REVIEW_RECORD_SCHEMA_VERSION})
 SUPPORTED_REVIEW_CONTRACT_VERSIONS = frozenset({CURRENT_REVIEW_CONTRACT_VERSION})
+UNSUPPORTED_REVIEW_SCHEMA_MESSAGE = (
+    "Unsupported review record schema version. Contract-v1 review records are not "
+    "supported; recreate the run using the current TDP version."
+)
 
 _ACTIVE_REVIEW_BLOCKING_STATUSES = frozenset(
     {"changes_requested", "needs_revision"}
@@ -405,48 +415,28 @@ class ReviewFinding:
     def from_dict(cls, payload: dict[str, Any]) -> ReviewFinding:
         severity = _severity_from_payload(payload)
         category_raw = payload.get("category")
-        if category_raw is None or not str(category_raw).strip():
+        if category_raw is None:
             raise ValueError("finding requires category")
-        category = validate_finding_category(str(category_raw))
+        category = validate_finding_category(require_non_empty_string(category_raw, "category"))
 
         if "recommended_change" not in payload:
             raise ValueError("finding requires recommended_change")
-        recommended_change = str(payload.get("recommended_change") or "")
+        recommended_change = require_exact_string(
+            payload.get("recommended_change"),
+            "recommended_change",
+        )
         if payload.get("importance") is not None or payload.get("required_change") is not None:
             raise ValueError(
                 "legacy finding fields importance and required_change are not accepted"
             )
 
-        reopens_raw = payload.get("reopens_finding_id")
-        reopens_finding_id = (
-            str(reopens_raw).strip()
-            if reopens_raw is not None and str(reopens_raw).strip()
-            else None
+        reopens_finding_id = require_optional_exact_string(
+            payload.get("reopens_finding_id"),
+            "reopens_finding_id",
         )
-        evidence_raw = payload.get("evidence") or []
-        if not isinstance(evidence_raw, list):
-            raise ValueError("finding evidence must be a list")
-        evidence = []
-        for index, item in enumerate(evidence_raw):
-            if not isinstance(item, str):
-                raise ValueError(f"finding evidence[{index}] must be a string")
-            evidence.append(item)
-
-        target_refs_raw = payload.get("target_refs") or []
-        if not isinstance(target_refs_raw, list):
-            raise ValueError("finding target_refs must be a list")
-        target_refs: list[str] = []
-        for index, ref in enumerate(target_refs_raw):
-            if not isinstance(ref, str):
-                raise ValueError(f"finding target_refs[{index}] must be a string")
-            target_refs.append(ref)
-
-        family_raw = payload.get("family_id")
-        family_id = (
-            str(family_raw).strip()
-            if family_raw is not None and str(family_raw).strip()
-            else None
-        )
+        evidence = require_string_list(payload.get("evidence"), "finding evidence")
+        target_refs = require_string_list(payload.get("target_refs"), "finding target_refs")
+        family_id = require_optional_exact_string(payload.get("family_id"), "family_id")
         instance_ref_raw = payload.get("instance_ref")
         if instance_ref_raw is None:
             instance_ref = None
@@ -456,13 +446,15 @@ class ReviewFinding:
             instance_ref = parse_artifact_ref(instance_ref_raw)
 
         return cls(
-            id=str(payload["id"]),
+            id=require_non_empty_string(payload["id"], "finding id"),
             severity=severity,
             category=category,
             target_refs=target_refs,
-            issue=str(payload.get("issue") or ""),
+            issue=require_exact_string(payload.get("issue", ""), "issue"),
             recommended_change=recommended_change,
-            status=validate_finding_status(str(payload.get("status") or "unresolved")),
+            status=validate_finding_status(
+                require_exact_string(payload.get("status", "unresolved"), "status")
+            ),
             evidence=evidence,
             reopens_finding_id=reopens_finding_id,
             family_id=family_id,
@@ -471,11 +463,11 @@ class ReviewFinding:
 
 
 def _severity_from_payload(payload: Mapping[str, Any]) -> ReviewSeverity:
-    if payload.get("severity") is None or not str(payload.get("severity")).strip():
+    if payload.get("severity") is None:
         raise ValueError("finding requires severity")
     if payload.get("importance") is not None:
         raise ValueError("legacy finding field importance is not accepted")
-    return validate_review_severity(str(payload["severity"]))
+    return validate_review_severity(require_non_empty_string(payload["severity"], "severity"))
 
 
 @dataclass
@@ -551,7 +543,9 @@ def parse_finding_action(payload: Mapping[str, Any]) -> FindingAction:
     if not isinstance(payload, Mapping):
         raise ValueError("finding_actions entry must be an object")
     finding_id = require_non_empty_string(payload.get("finding_id"), "finding_id")
-    action = validate_finding_owner_action(str(payload.get("action") or ""))
+    action = validate_finding_owner_action(
+        require_non_empty_string(payload.get("action"), "action")
+    )
     actor_role = require_non_empty_string(payload.get("actor_role"), "actor_role")
     if actor_role not in {"planner", "producer"}:
         raise ValueError("finding_actions actor_role must be planner or producer")
@@ -564,39 +558,34 @@ def parse_finding_action(payload: Mapping[str, Any]) -> FindingAction:
         "artifact_revision",
     )
 
-    rationale_raw = payload.get("rationale")
-    rationale = (
-        str(rationale_raw).strip()
-        if rationale_raw is not None and str(rationale_raw).strip()
-        else None
-    )
+    rationale = require_optional_exact_string(payload.get("rationale"), "rationale")
     if action in ACTIONS_REQUIRING_RATIONALE and not rationale:
         raise ValueError(f"finding action {action!r} requires rationale")
 
     proposed_raw = payload.get("proposed_disposition")
     proposed_disposition: ChallengeProposedDisposition | None = None
-    if proposed_raw is not None and str(proposed_raw).strip():
-        proposed = str(proposed_raw).strip()
+    if proposed_raw is not None:
+        proposed = require_non_empty_string(proposed_raw, "proposed_disposition")
         if proposed not in CHALLENGE_PROPOSED_DISPOSITIONS:
             raise ValueError(
                 "proposed_disposition must be one of: invalid, superseded"
             )
         proposed_disposition = proposed  # type: ignore[assignment]
 
-    superseded_raw = payload.get("superseded_by_finding_id")
-    superseded_by_finding_id = (
-        str(superseded_raw).strip()
-        if superseded_raw is not None and str(superseded_raw).strip()
-        else None
+    superseded_by_finding_id = require_optional_exact_string(
+        payload.get("superseded_by_finding_id"),
+        "superseded_by_finding_id",
     )
 
     if action == "challenge":
         if proposed_disposition is None:
             raise ValueError("challenge requires proposed_disposition")
         challenge_reason_raw = payload.get("challenge_reason")
-        if challenge_reason_raw is None or not str(challenge_reason_raw).strip():
+        if challenge_reason_raw is None:
             raise ValueError("challenge requires challenge_reason")
-        challenge_reason = validate_challenge_reason(str(challenge_reason_raw))
+        challenge_reason = validate_challenge_reason(
+            require_non_empty_string(challenge_reason_raw, "challenge_reason")
+        )
         if proposed_disposition == "superseded" and not superseded_by_finding_id:
             raise ValueError(
                 "challenge with proposed_disposition superseded requires "
@@ -604,8 +593,7 @@ def parse_finding_action(payload: Mapping[str, Any]) -> FindingAction:
             )
     else:
         challenge_reason = None
-        challenge_reason_raw = payload.get("challenge_reason")
-        if challenge_reason_raw is not None and str(challenge_reason_raw).strip():
+        if payload.get("challenge_reason") is not None:
             raise ValueError(
                 "challenge_reason is only valid for challenge actions"
             )
@@ -678,6 +666,10 @@ def is_mandatory_whole_review(loop: ReviewLoop) -> bool:
     return loop.type in {"whole_plan", "whole_output"}
 
 
+def _unsupported_review_schema_error() -> UnsupportedReviewSchemaVersionError:
+    return UnsupportedReviewSchemaVersionError(UNSUPPORTED_REVIEW_SCHEMA_MESSAGE)
+
+
 def parse_review_version_fields(payload: Mapping[str, Any]) -> tuple[int, int]:
     """Parse persisted review record and contract schema versions (v2-only)."""
 
@@ -700,17 +692,26 @@ def parse_review_version_fields(payload: Mapping[str, Any]) -> tuple[int, int]:
         "review_contract_version",
     )
 
-    if record_version not in SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS:
-        raise ValueError(
-            f"unsupported review_record_schema_version: {record_version!r}; "
-            f"supported: {sorted(SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS)}"
-        )
-    if contract_version not in SUPPORTED_REVIEW_CONTRACT_VERSIONS:
-        raise ValueError(
-            f"unsupported review_contract_version: {contract_version!r}; "
-            f"supported: {sorted(SUPPORTED_REVIEW_CONTRACT_VERSIONS)}"
-        )
+    if (
+        record_version != CURRENT_REVIEW_RECORD_SCHEMA_VERSION
+        or contract_version != CURRENT_REVIEW_CONTRACT_VERSION
+    ):
+        raise _unsupported_review_schema_error()
     return record_version, contract_version
+
+
+def validate_mandatory_review_loop_consistency(loop: ReviewLoop) -> None:
+    """Reject persisted mandatory loops whose terminal state is internally inconsistent."""
+
+    if not is_mandatory_whole_review(loop):
+        return
+    if loop.lifecycle_status != "approved":
+        return
+    if not is_mandatory_gate_approval_record(loop.to_dict()):
+        raise ValueError(
+            "approved mandatory review loop requires canonical approved "
+            "scope_review_result"
+        )
 
 
 @dataclass
@@ -861,41 +862,34 @@ class ReviewLoop:
             if not isinstance(item, dict):
                 raise ValueError(f"findings[{index}] must be an object")
             findings.append(ReviewFinding.from_dict(item))
-        approved = payload.get("approved_digests")
-        approved_digests = (
-            {str(key): str(value) for key, value in approved.items()}
-            if isinstance(approved, dict)
-            else None
+        approved_digests = require_optional_string_dict(
+            payload.get("approved_digests"),
+            "approved_digests",
         )
         lifecycle_raw = payload.get("lifecycle_status")
         lifecycle_status = validate_lifecycle_status(
-            str(lifecycle_raw).strip()
-            if lifecycle_raw is not None and str(lifecycle_raw).strip()
-            else None
+            require_optional_exact_string(lifecycle_raw, "lifecycle_status")
         )
         stage_raw = payload.get("active_stage")
         active_stage = validate_review_stage(
-            str(stage_raw).strip()
-            if stage_raw is not None and str(stage_raw).strip()
-            else None
+            require_optional_exact_string(stage_raw, "active_stage")
         )
-        finding_set_raw = payload.get("finding_set_id")
-        finding_set_id = (
-            str(finding_set_raw).strip()
-            if finding_set_raw is not None and str(finding_set_raw).strip()
-            else None
+        finding_set_id = require_optional_exact_string(
+            payload.get("finding_set_id"),
+            "finding_set_id",
         )
-        verification_raw = payload.get("verification_result")
-        verification_result = (
-            dict(verification_raw) if isinstance(verification_raw, dict) else None
+        verification_result = require_optional_object(
+            payload.get("verification_result"),
+            "verification_result",
         )
         blocker_raw = payload.get("scope_review_result")
         if blocker_raw is None and payload.get("blocker_review_result") is not None:
             raise ValueError(
                 "legacy field blocker_review_result is not accepted; use scope_review_result"
             )
-        scope_review_result = (
-            dict(blocker_raw) if isinstance(blocker_raw, dict) else None
+        scope_review_result = require_optional_object(
+            blocker_raw,
+            "scope_review_result",
         )
         exhausted_raw = payload.get("exhausted_budget")
         exhausted_budget = normalize_exhausted_budget(
@@ -939,14 +933,15 @@ class ReviewLoop:
                 raise ValueError(f"finding_actions[{index}] must be an object")
             finding_actions.append(parse_finding_action(item))
         incomplete_raw = payload.get("review_incomplete")
-        review_incomplete = (
-            dict(incomplete_raw) if isinstance(incomplete_raw, dict) else None
+        review_incomplete = require_optional_object(
+            incomplete_raw,
+            "review_incomplete",
         )
-        advisory_handoffs_completed = [
-            str(item).strip()
-            for item in (payload.get("advisory_handoffs_completed") or [])
-            if str(item).strip()
-        ]
+        advisory_handoffs_completed = require_string_list(
+            payload.get("advisory_handoffs_completed"),
+            "advisory_handoffs_completed",
+            drop_empty=True,
+        )
         finding_ids_by_set: dict[str, list[str]] = {}
         raw_ids_by_set = payload.get("finding_ids_by_set")
         if raw_ids_by_set is None:
@@ -969,7 +964,11 @@ class ReviewLoop:
             finding_ids_by_set[set_id] = normalized_ids
         binding_raw = payload.get("reviewer_binding")
         reviewer_binding: SessionBinding | None = None
-        if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
+        if binding_raw is not None:
+            if not isinstance(binding_raw, dict):
+                raise ValueError("reviewer_binding must be an object")
+            if not binding_raw.get("session_instance_id"):
+                raise ValueError("reviewer_binding requires session_instance_id")
             reviewer_binding = SessionBinding.from_dict(binding_raw)
         if "reviewer_session_id" in payload:
             raise ValueError(
@@ -980,14 +979,14 @@ class ReviewLoop:
         family_sweeps = parse_family_sweeps(payload.get("family_sweeps"))
         audit_runs = parse_audit_runs(payload.get("audit_runs"))
 
-        return cls(
-            id=str(payload["id"]),
+        loop = cls(
+            id=require_non_empty_string(payload["id"], "id"),
             type=loop_type,  # type: ignore[arg-type]
             target_revision=_require_non_negative_int(
                 payload.get("target_revision"),
                 "target_revision",
             ),
-            scope=dict(payload.get("scope") or {}),
+            scope=require_scope_object(payload.get("scope")),
             status=status_raw,  # type: ignore[arg-type]
             findings=findings,
             revision_cycles=_require_non_negative_int(
@@ -1019,6 +1018,8 @@ class ReviewLoop:
                 "gate_agent_turns",
             ),
         )
+        validate_mandatory_review_loop_consistency(loop)
+        return loop
 
 
 _REVIEW_GATE_LIMIT_DEFAULTS = {"max_agent_turns_per_gate": 5}

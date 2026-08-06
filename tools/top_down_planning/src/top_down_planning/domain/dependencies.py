@@ -29,7 +29,7 @@ def active_dependency_edges(plan: Plan) -> dict[str, list[str]]:
         edges[item_id] = [
             dep
             for dep in item.depends_on
-            if dep in plan.items and is_active_item(plan.items[dep])
+            if isinstance(dep, str) and dep in plan.items and is_active_item(plan.items[dep])
         ]
     return edges
 

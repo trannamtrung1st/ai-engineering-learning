@@ -85,6 +85,43 @@ def require_string_list(
     return normalized
 
 
+def require_optional_object(
+    value: Any,
+    field_label: str,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_label} must be an object or null")
+    return dict(value)
+
+
+def require_optional_string_dict(
+    value: Any,
+    field_label: str,
+) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_label} must be an object or null")
+    normalized: dict[str, str] = {}
+    for key, entry in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{field_label} keys must be non-empty strings")
+        if not isinstance(entry, str):
+            raise ValueError(f"{field_label} values must be strings")
+        normalized[key] = entry
+    return normalized
+
+
+def require_scope_object(value: Any, *, field_label: str = "scope") -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_label} must be an object")
+    return dict(value)
+
+
 def require_output_record_kind(value: Any, field_label: str) -> str:
     record_kind = require_non_empty_string(value, field_label)
     if record_kind not in OUTPUT_RECORD_KINDS:
@@ -102,6 +139,9 @@ __all__ = [
     "require_non_negative_int",
     "require_optional_exact_string",
     "require_optional_non_negative_int",
+    "require_optional_object",
+    "require_optional_string_dict",
     "require_output_record_kind",
+    "require_scope_object",
     "require_string_list",
 ]

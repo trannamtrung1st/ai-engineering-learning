@@ -59,6 +59,7 @@ from tests.helpers import (
     seed_mandatory_scope_review_decision_loop,
     set_loop_revise_at,
     StallingAfterEventsProvider,
+    whole_plan_approval_record,
 )
 
 
@@ -1051,6 +1052,12 @@ def test_get_or_create_does_not_resurrect_older_limit_reached_after_approved(
     planner_session_id, _loop_id = _create_driver_run(store, run_id, provider=provider)
     adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
     revision, _digest = adapter.current_artifact_binding()
+    approved = whole_plan_approval_record(
+        store,
+        run_id,
+        id="review-whole-plan-02",
+        target_revision=revision,
+    )
 
     save_review_payload(
         store,
@@ -1072,25 +1079,7 @@ def test_get_or_create_does_not_resurrect_older_limit_reached_after_approved(
             "review_contract_version": 2,
         },
     )
-    save_review_payload(
-        store,
-        run_id,
-        {
-            "id": "review-whole-plan-02",
-            "type": "whole_plan",
-            "revise_at": "blocker",
-            "target_revision": revision,
-            "scope": {"kind": "whole_plan"},
-            "status": "approved",
-            "findings": [],
-            "revision_cycles": 0,
-            "lifecycle_status": "approved",
-            "active_stage": "scope_review",
-            "scope_review_rounds": 1,
-            "review_record_schema_version": 2,
-            "review_contract_version": 2,
-        },
-    )
+    save_review_payload(store, run_id, approved)
 
     driver = ReviewLoopDriver(store, run_id, provider, adapter)
     selected = driver._get_or_create_active_loop()

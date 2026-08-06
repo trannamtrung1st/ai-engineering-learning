@@ -12,7 +12,10 @@ import pytest
 from top_down_planning.agent_tool import PlanAgentService
 from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.domain.mutations import apply_operations
-from top_down_planning.domain.errors import InvalidMutationError
+from top_down_planning.domain.errors import (
+    InvalidMutationError,
+    UnsupportedReviewSchemaVersionError,
+)
 from top_down_planning.domain.finding_families import (
     AuditAttestationPass,
     AuditAttestationRun,
@@ -22,10 +25,13 @@ from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID, display_traver
 from top_down_planning.domain.reviews import (
     ReviewFinding,
     ReviewLoop,
+    UNSUPPORTED_REVIEW_SCHEMA_MESSAGE,
     findings_permit_approval,
     is_open_finding_status,
+    is_terminal_review_loop,
     is_unresolved_finding_status,
     parse_finding_action,
+    parse_review_version_fields,
 )
 from top_down_planning.domain.validators import validate_plan
 from top_down_planning.persistence.digests import compute_plan_digest
@@ -838,3 +844,241 @@ def test_validator_returns_issues_for_malformed_plan_metadata_without_raising() 
     assert any(
         issue.path == ["plan", "constraints", "0"] for issue in result.issues
     )
+
+
+# --- TDP-S2-009 / TDP-S2-010 / TDP-S2-011: second remediation ---
+
+
+def test_review_loop_from_dict_rejects_wrong_type_scope_review_result() -> None:
+    payload = _base_review_loop_payload(scope_review_result="CORRUPT")
+
+    with pytest.raises(ValueError, match="scope_review_result"):
+        ReviewLoop.from_dict(payload)
+
+
+def test_review_loop_from_dict_rejects_wrong_type_verification_result() -> None:
+    payload = _base_review_loop_payload(verification_result="CORRUPT")
+
+    with pytest.raises(ValueError, match="verification_result"):
+        ReviewLoop.from_dict(payload)
+
+
+def test_review_loop_from_dict_rejects_wrong_type_review_incomplete() -> None:
+    payload = _base_review_loop_payload(review_incomplete="CORRUPT")
+
+    with pytest.raises(ValueError, match="review_incomplete"):
+        ReviewLoop.from_dict(payload)
+
+
+def test_review_loop_from_dict_rejects_wrong_type_reviewer_binding() -> None:
+    payload = _base_review_loop_payload(reviewer_binding="CORRUPT")
+
+    with pytest.raises(ValueError, match="reviewer_binding"):
+        ReviewLoop.from_dict(payload)
+
+
+def test_approved_mandatory_loop_without_scope_review_result_fails_load() -> None:
+    payload = _base_review_loop_payload(
+        status="approved",
+        lifecycle_status="approved",
+        active_stage="scope_review",
+        scope_review_result=None,
+    )
+
+    with pytest.raises(ValueError, match="scope_review_result"):
+        ReviewLoop.from_dict(payload)
+
+
+def test_parse_finding_action_rejects_numeric_rationale() -> None:
+    with pytest.raises(ValueError, match="rationale"):
+        parse_finding_action(
+            {
+                "finding_id": "finding-minor",
+                "action": "accept_as_is",
+                "actor_role": "planner",
+                "artifact_revision": 1,
+                "finding_set_id": "set-1",
+                "rationale": 123,
+            }
+        )
+
+
+def test_malformed_action_cannot_satisfy_findings_permit_approval() -> None:
+    finding = ReviewFinding(
+        id="finding-minor",
+        severity="minor",
+        category="other",
+        target_refs=["item-a"],
+        issue="Optional",
+        recommended_change="Polish",
+        status="unresolved",
+    )
+
+    with pytest.raises(ValueError, match="rationale"):
+        parse_finding_action(
+            {
+                "finding_id": "finding-minor",
+                "action": "accept_as_is",
+                "actor_role": "planner",
+                "artifact_revision": 1,
+                "finding_set_id": "set-1",
+                "rationale": 123,
+            }
+        )
+
+    assert findings_permit_approval([finding], [], "major") is False
+
+
+def test_family_sweep_record_rejects_empty_id() -> None:
+    with pytest.raises(ValueError, match="id"):
+        FamilySweepRecord.from_dict(_minimal_sweep_payload(id=""))
+
+
+def test_validator_returns_issue_for_unhashable_item_id_without_raising() -> None:
+    root = seed_plan_root_item()
+    child = PlanItem(
+        id=["bad"],  # type: ignore[arg-type]
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000000",
+        title="Child",
+        kind="work",
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={"item-child": child},
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(issue.path == ["item-child", "id"] for issue in result.issues)
+
+
+def test_validator_returns_issue_for_unhashable_planning_status_without_raising() -> None:
+    root = seed_plan_root_item()
+    root.planning_status = ["open"]  # type: ignore[assignment]
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(
+        issue.path == [PLAN_ROOT_ITEM_ID, "planning_status"] for issue in result.issues
+    )
+
+
+def test_validator_returns_issue_for_none_item_scope_without_raising() -> None:
+    root = seed_plan_root_item()
+    child = PlanItem(
+        id="item-child",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000000",
+        title="Child",
+        kind="work",
+        scope=None,  # type: ignore[arg-type]
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root, "item-child": child},
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(
+        issue.path == ["item-child", "scope"] for issue in result.issues
+    )
+
+
+def test_validator_returns_issue_for_none_plan_scope_without_raising() -> None:
+    root = seed_plan_root_item()
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+        scope=None,  # type: ignore[arg-type]
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(issue.path == ["plan", "scope"] for issue in result.issues)
+
+
+def test_validator_returns_issues_for_unhashable_depends_on_member_without_raising() -> None:
+    root = seed_plan_root_item()
+    child = PlanItem(
+        id="item-child",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000000",
+        title="Child",
+        kind="work",
+        depends_on=[{}],  # type: ignore[list-item]
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root, "item-child": child},
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(
+        issue.path == ["item-child", "depends_on", "0"] for issue in result.issues
+    )
+
+
+def test_parse_review_version_fields_raises_guided_error_for_v1() -> None:
+    with pytest.raises(UnsupportedReviewSchemaVersionError, match="recreate the run"):
+        parse_review_version_fields(
+            {"review_record_schema_version": 1, "review_contract_version": 1}
+        )
+
+
+def test_persisted_v1_review_record_raises_guided_error_on_load(tmp_path: Path) -> None:
+    from top_down_planning.persistence import FileRunStore
+    from tests.helpers import create_run_kwargs
+
+    run_id = "run-20260101T000001-000001"
+    store = FileRunStore(tmp_path)
+    plan = _plan_with_root_child()
+    store.create_run(
+        run_id,
+        plan=plan,
+        **create_run_kwargs(tmp_path, resolved_config={"run": {"output_goal": plan.output_goal}}),
+    )
+    store.save_review(
+        run_id,
+        {
+            "id": "review-whole-plan-01",
+            "type": "whole_plan",
+            "target_revision": 0,
+            "scope": {"kind": "whole_plan"},
+            "status": "approved",
+            "lifecycle_status": "approved",
+            "revise_at": "blocker",
+            "findings": [],
+            "finding_actions": [],
+            "revision_cycles": 0,
+            "revision": 0,
+            "review_record_schema_version": 1,
+            "review_contract_version": 1,
+        },
+    )
+
+    with pytest.raises(UnsupportedReviewSchemaVersionError) as exc_info:
+        ReviewLoop.from_dict(store.load_review(run_id, "review-whole-plan-01"))
+
+    assert UNSUPPORTED_REVIEW_SCHEMA_MESSAGE in str(exc_info.value)
