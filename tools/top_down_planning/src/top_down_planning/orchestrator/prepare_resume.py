@@ -540,7 +540,7 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
     authorized_changes: dict[str, dict[str, Any]] = {}
     package_initial_snapshot, _ = _parent_package_auth_from_production(production)
     cumulative_snapshot = package_initial_snapshot
-    merged_predecessor_digests: set[str] = set()
+    path_writers: dict[str, str] = {}
     for unit_record in _topo_sort_sub_tdp_unit_records(
         unit_records,
         initial_snapshot_digest=package_initial_snapshot,
@@ -572,20 +572,19 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
                 f"parent sub_tdps child delivery invalid for {plan_item_id!r}: {exc}"
             ) from exc
         try:
+            digest = str(unit_record.get("accepted_result_digest") or "").strip()
             authorized_changes, cumulative_snapshot = merge_accepted_result_workspace_changes(
                 authorized_changes,
                 live_accepted,
                 cumulative_snapshot_digest=cumulative_snapshot,
                 workspace=workspace,
-                merged_predecessor_digests=merged_predecessor_digests,
+                path_writers=path_writers,
+                accepted_result_digest=digest,
             )
         except (ExecutionPackageError, ValueError, TypeError) as exc:
             raise ValueError(
                 f"parent sub_tdps workspace_changes invalid for {plan_item_id!r}: {exc}"
             ) from exc
-        digest = str(unit_record.get("accepted_result_digest") or "").strip()
-        if digest:
-            merged_predecessor_digests.add(digest)
     authorized_changes = merge_parent_integration_workspace_evidence(
         authorized_changes,
         production,

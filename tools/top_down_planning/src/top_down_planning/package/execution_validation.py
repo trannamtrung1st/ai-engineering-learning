@@ -547,6 +547,9 @@ def merge_authorized_workspace_changes(
     incoming: dict[str, dict[str, Any]],
     *,
     allow_same_path_overwrite: bool = False,
+    path_writers: dict[str, str] | None = None,
+    lineage_digests: set[str] | None = None,
+    baseline_equals_cumulative: bool = False,
 ) -> dict[str, dict[str, Any]]:
     """Merge content-bound workspace changes; reject unrelated hash conflicts."""
 
@@ -575,36 +578,23 @@ def merge_authorized_workspace_changes(
                 code="package_context_drift",
             )
         if str(prior.get("sha256") or "") != str(change.get("sha256") or ""):
-            if not allow_same_path_overwrite:
+            allowed = allow_same_path_overwrite
+            if not allowed:
+                if baseline_equals_cumulative:
+                    allowed = True
+                elif path_writers is not None and lineage_digests is not None:
+                    prior_writer = path_writers.get(path)
+                    allowed = (
+                        prior_writer is not None
+                        and prior_writer in lineage_digests
+                    )
+            if not allowed:
                 raise ExecutionPackageError(
                     f"conflicting accepted workspace hashes for {path}",
                     code="package_context_drift",
                 )
         merged[path] = dict(change)
     return merged
-
-
-def _lineage_allows_same_path_overwrite(
-    accepted_result: dict[str, Any],
-    *,
-    cumulative_snapshot_digest: str,
-    merged_predecessor_digests: set[str],
-) -> bool:
-    """Return whether same-path overwrites are authorized for this transition."""
-
-    baseline = str(
-        accepted_result.get("baseline_context_snapshot_digest") or ""
-    ).strip()
-    cumulative = str(cumulative_snapshot_digest or "").strip()
-    if baseline == cumulative:
-        return True
-    lineage = accepted_result.get("baseline_accepted_result_digests")
-    if not isinstance(lineage, list):
-        return False
-    normalized = {str(digest).strip() for digest in lineage if str(digest).strip()}
-    if not normalized:
-        return False
-    return normalized <= merged_predecessor_digests
 
 
 def merge_accepted_result_workspace_changes(
@@ -614,7 +604,8 @@ def merge_accepted_result_workspace_changes(
     cumulative_snapshot_digest: str,
     workspace: Path,
     allow_same_path_overwrite: bool | None = None,
-    merged_predecessor_digests: set[str] | None = None,
+    path_writers: dict[str, str] | None = None,
+    accepted_result_digest: str | None = None,
 ) -> tuple[dict[str, dict[str, Any]], str]:
     """Apply one accepted result as a snapshot transition in dependency order."""
 
@@ -631,20 +622,33 @@ def merge_accepted_result_workspace_changes(
         accepted_result,
         workspace=workspace,
     )
-    if allow_same_path_overwrite is None:
-        preds = merged_predecessor_digests or set()
-        allow_overwrite = _lineage_allows_same_path_overwrite(
-            accepted_result,
-            cumulative_snapshot_digest=cumulative_snapshot_digest,
-            merged_predecessor_digests=preds,
-        )
-    else:
-        allow_overwrite = allow_same_path_overwrite
+    lineage_raw = accepted_result.get("baseline_accepted_result_digests")
+    lineage_digests: set[str] | None = None
+    baseline_equals_cumulative = baseline == str(cumulative_snapshot_digest or "").strip()
+    global_allow = False
+    if allow_same_path_overwrite is not None:
+        global_allow = allow_same_path_overwrite
+    elif path_writers is not None:
+        if isinstance(lineage_raw, list):
+            lineage_digests = {
+                str(digest).strip()
+                for digest in lineage_raw
+                if str(digest).strip()
+            }
+        else:
+            lineage_digests = set()
     merged = merge_authorized_workspace_changes(
         merged,
         changes,
-        allow_same_path_overwrite=allow_overwrite,
+        allow_same_path_overwrite=global_allow,
+        path_writers=path_writers,
+        lineage_digests=lineage_digests,
+        baseline_equals_cumulative=baseline_equals_cumulative,
     )
+    digest = str(accepted_result_digest or "").strip()
+    if path_writers is not None and digest:
+        for path in changes:
+            path_writers[path] = digest
     return merged, final
 
 
@@ -671,7 +675,7 @@ def _authorized_workspace_changes_from_baseline(
     )
     merged: dict[str, dict[str, Any]] = {}
     cumulative = str(initial_snapshot_digest or "").strip()
-    merged_predecessor_digests: set[str] = set()
+    path_writers: dict[str, str] = {}
     for wrapper in ordered_wrappers:
         verify_upstream_accepted_result_binding(wrapper)
         accepted = wrapper["accepted_result"]
@@ -680,16 +684,15 @@ def _authorized_workspace_changes_from_baseline(
                 "baseline accepted_result missing child_run_id",
                 code="sub_tdp_upstream_invalid",
             )
+        digest = str(wrapper.get("accepted_result_digest") or "").strip()
         merged, cumulative = merge_accepted_result_workspace_changes(
             merged,
             accepted,
             cumulative_snapshot_digest=cumulative,
             workspace=workspace,
-            merged_predecessor_digests=merged_predecessor_digests,
+            path_writers=path_writers,
+            accepted_result_digest=digest,
         )
-        digest = str(wrapper.get("accepted_result_digest") or "").strip()
-        if digest:
-            merged_predecessor_digests.add(digest)
     return merged
 
 

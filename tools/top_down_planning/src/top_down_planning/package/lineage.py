@@ -758,15 +758,11 @@ def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
     binding_baseline_digests = binding.get("baseline_accepted_result_digests")
     if not isinstance(binding_baseline_digests, list):
         return "child baseline_accepted_result_digests is invalid"
-    binding_digest_set = {
-        str(digest).strip()
-        for digest in binding_baseline_digests
-        if str(digest).strip()
-    }
-    if len(binding_digest_set) != len(
-        [d for d in binding_baseline_digests if str(d).strip()]
-    ):
+    if any(not str(digest).strip() for digest in binding_baseline_digests):
         return "child baseline_accepted_result_digests contains empty digest"
+    binding_digest_set = {str(digest).strip() for digest in binding_baseline_digests}
+    if len(binding_digest_set) != len(binding_baseline_digests):
+        return "child baseline_accepted_result_digests contains duplicate digest"
     wrapper_digest_set = {
         str(wrapper.get("accepted_result_digest") or "").strip()
         for wrapper in baseline

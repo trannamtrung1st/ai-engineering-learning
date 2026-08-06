@@ -2836,10 +2836,11 @@ predecessor closure (empty for roots at the package initial snapshot, one digest
 for linear joins, multiple for composite multi-result `--baseline` joins).
 `depends_on` adds further constraints. Same-path hash overwrites are allowed when
 the incoming result's baseline snapshot digest matches the cumulative snapshot
-after prior accepted results, or when every digest in
-`baseline_accepted_result_digests` is already present in the merged predecessor
-closure (composite joins where cumulative replay order differs from the composite
-baseline snapshot). Unrepresentable baseline joins fail closed.
+after prior accepted results, or when the digest of the result that last wrote
+that path is listed in the incoming result's
+`baseline_accepted_result_digests` (composite joins where cumulative replay
+order differs from the composite baseline snapshot). Unrepresentable baseline
+joins fail closed.
 
 Upstream wrappers also carry `accepted_result_digest` and
 `upstream_contract_digest`. Parent resume, baseline authorization, and
