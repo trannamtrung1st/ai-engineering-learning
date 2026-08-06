@@ -19,13 +19,25 @@ def is_active_item(item: PlanItem) -> bool:
     return item.planning_status == ACTIVE_PLANNING_STATUS
 
 
+def is_usable_parent_reference(parent_id: Any) -> bool:
+    """True when parent_id can be used as a dict key or hierarchy link."""
+
+    return parent_id is None or isinstance(parent_id, str)
+
+
+def _sibling_order_key(item: PlanItem) -> str:
+    if isinstance(item.order_key, str):
+        return item.order_key
+    return ""
+
+
 def active_children_of(plan: Plan, parent_id: str | None) -> list[PlanItem]:
     siblings = [
         item
         for item in plan.items.values()
         if item.parent_id == parent_id and is_active_item(item)
     ]
-    siblings.sort(key=lambda item: item.order_key)
+    siblings.sort(key=_sibling_order_key)
     return siblings
 
 
@@ -121,6 +133,8 @@ def item_depth(plan: Plan, item_id: str) -> int:
     current = plan.items.get(item_id)
     while current is not None and current.parent_id is not None:
         parent_id = current.parent_id
+        if not is_usable_parent_reference(parent_id):
+            break
         if parent_id in seen:
             break
         seen.add(parent_id)
@@ -139,6 +153,8 @@ def ancestor_path(plan: Plan, item_id: str) -> list[str]:
     current = plan.items.get(item_id)
     while current is not None and current.parent_id is not None:
         parent_id = current.parent_id
+        if not is_usable_parent_reference(parent_id):
+            break
         if parent_id in seen:
             break
         seen.add(parent_id)
@@ -181,6 +197,8 @@ def find_hierarchy_cycle(plan: Plan, item_id: str) -> list[str] | None:
     current = plan.items[item_id]
     while current.parent_id is not None:
         parent_id = current.parent_id
+        if not is_usable_parent_reference(parent_id):
+            return None
         if parent_id in seen:
             cycle_start = path.index(parent_id)
             return path[cycle_start:] + [parent_id]

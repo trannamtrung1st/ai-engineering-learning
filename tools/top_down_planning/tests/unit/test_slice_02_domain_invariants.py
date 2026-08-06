@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from top_down_planning.agent_tool import PlanAgentService
-from top_down_planning.domain.models import Plan, PlanItem, Scope
+from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits, Scope
 from top_down_planning.domain.mutations import apply_operations
 from top_down_planning.domain.errors import (
     InvalidMutationError,
@@ -1082,3 +1082,152 @@ def test_persisted_v1_review_record_raises_guided_error_on_load(tmp_path: Path) 
         ReviewLoop.from_dict(store.load_review(run_id, "review-whole-plan-01"))
 
     assert UNSUPPORTED_REVIEW_SCHEMA_MESSAGE in str(exc_info.value)
+
+
+def _plan_with_child_parent_id(parent_id: object, **child_overrides: object) -> Plan:
+    root = seed_plan_root_item()
+    child = PlanItem(
+        id="item-child",
+        parent_id=parent_id,  # type: ignore[arg-type]
+        order_key="0000000000",
+        title="Child",
+        kind="work",
+        **child_overrides,
+    )
+    return Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root, "item-child": child},
+    )
+
+
+@pytest.mark.parametrize(
+    "parent_id",
+    [
+        [],
+        {},
+        1,
+    ],
+)
+def test_validate_plan_returns_parent_id_issue_for_malformed_parent_without_raising(
+    parent_id: object,
+) -> None:
+    plan = _plan_with_child_parent_id(parent_id)
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(
+        issue.path == ["item-child", "parent_id"] for issue in result.issues
+    )
+
+
+def test_validate_plan_with_mixed_malformed_and_valid_parents_does_not_raise() -> None:
+    root = seed_plan_root_item()
+    malformed = PlanItem(
+        id="item-bad",
+        parent_id=[],  # type: ignore[arg-type]
+        order_key="0000000001",
+        title="Bad",
+        kind="work",
+    )
+    valid = PlanItem(
+        id="item-good",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000002",
+        title="Good",
+        kind="work",
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={
+            PLAN_ROOT_ITEM_ID: root,
+            "item-bad": malformed,
+            "item-good": valid,
+        },
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(issue.path == ["item-bad", "parent_id"] for issue in result.issues)
+
+
+def test_validate_plan_with_malformed_parent_and_siblings_does_not_raise() -> None:
+    root = seed_plan_root_item()
+    siblings = [
+        PlanItem(
+            id=f"item-sib-{index}",
+            parent_id=[],  # type: ignore[arg-type]
+            order_key=f"000000000{index}",
+            title=f"Sibling {index}",
+            kind="work",
+        )
+        for index in range(3)
+    ]
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root, **{item.id: item for item in siblings}},
+    )
+
+    result = validate_plan(plan, mode="approval", limits=PlanningLimits(max_depth=3))
+
+    assert result.ok is False
+    for item in siblings:
+        assert any(issue.path == [item.id, "parent_id"] for issue in result.issues)
+
+
+def test_validate_plan_malformed_parent_with_soft_limits_does_not_raise() -> None:
+    plan = _plan_with_child_parent_id([])
+
+    result = validate_plan(plan, mode="draft", limits=PlanningLimits(max_depth=2))
+
+    assert result.ok is False
+    assert any(
+        issue.path == ["item-child", "parent_id"] for issue in result.issues
+    )
+
+
+def test_validate_plan_malformed_order_key_does_not_raise_traversal() -> None:
+    root = seed_plan_root_item()
+    child = PlanItem(
+        id="item-child",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key=[],  # type: ignore[arg-type]
+        title="Child",
+        kind="work",
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root, "item-child": child},
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(
+        issue.path == ["item-child", "order_key"] for issue in result.issues
+    )
+
+
+def test_validate_plan_rejects_non_dict_items_container_without_raising() -> None:
+    root = seed_plan_root_item()
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+    )
+    plan.items = []  # type: ignore[assignment]
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(issue.path == ["plan", "items"] for issue in result.issues)

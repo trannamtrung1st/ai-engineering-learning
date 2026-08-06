@@ -21,6 +21,7 @@ from top_down_planning.domain.plan_tree import (
     compute_planning_budget,
     find_hierarchy_cycle,
     is_active_item,
+    is_usable_parent_reference,
     walk_active_tree,
 )
 from top_down_planning.domain.readiness import ReviewBlockedFn, detect_deadlock, resolve_satisfaction
@@ -276,11 +277,32 @@ def _safe_strip(value: Any) -> str:
     return value.strip()
 
 
+def _plan_items_container_issue(plan: Plan) -> ValidationIssue | None:
+    if isinstance(plan.items, dict):
+        return None
+    return _issue(
+        "invalid_plan_field",
+        "error",
+        "plan items must be a mapping",
+        ["plan", "items"],
+    )
+
+
+def _plan_item_entries(plan: Plan) -> dict[str, PlanItem]:
+    if isinstance(plan.items, dict):
+        return plan.items
+    return {}
+
+
 def validate_canonical_root(plan: Plan) -> list[ValidationIssue]:
     """Require exactly one active canonical aggregate root and a single-root tree."""
 
     issues: list[ValidationIssue] = []
-    root = plan.items.get(PLAN_ROOT_ITEM_ID)
+    items_issue = _plan_items_container_issue(plan)
+    if items_issue is not None:
+        return [items_issue]
+
+    root = _plan_item_entries(plan).get(PLAN_ROOT_ITEM_ID)
     if root is None:
         issues.append(
             _issue(
@@ -324,7 +346,7 @@ def validate_canonical_root(plan: Plan) -> list[ValidationIssue]:
 
     active_roots = [
         item.id
-        for item in plan.items.values()
+        for item in _plan_item_entries(plan).values()
         if is_active_item(item) and item.parent_id is None
     ]
     if len(active_roots) > 1:
@@ -338,7 +360,7 @@ def validate_canonical_root(plan: Plan) -> list[ValidationIssue]:
             )
         )
 
-    for item_id, item in sorted(plan.items.items()):
+    for item_id, item in sorted(_plan_item_entries(plan).items()):
         if not is_active_item(item):
             continue
         if item_id == PLAN_ROOT_ITEM_ID:
@@ -360,7 +382,7 @@ def validate_root_item_populated(plan: Plan) -> list[ValidationIssue]:
     """Require a named root outcome once decomposition children exist."""
 
     issues: list[ValidationIssue] = []
-    root = plan.items.get(PLAN_ROOT_ITEM_ID)
+    root = _plan_item_entries(plan).get(PLAN_ROOT_ITEM_ID)
     if root is None or not is_active_item(root):
         return issues
     if not active_children_of(plan, PLAN_ROOT_ITEM_ID):
@@ -408,7 +430,7 @@ def validate_work_item_scope_contract(
     """Require item-level scope or boundaries on active work leaves."""
 
     issues: list[ValidationIssue] = []
-    for item_id, item in sorted(plan.items.items()):
+    for item_id, item in sorted(_plan_item_entries(plan).items()):
         if not is_active_item(item) or item.kind != "work":
             continue
         if _work_item_has_scope_contract(item):
@@ -432,7 +454,7 @@ def validate_plan_quality_warnings(plan: Plan) -> list[ValidationIssue]:
 
     issues: list[ValidationIssue] = []
 
-    for item_id, item in sorted(plan.items.items()):
+    for item_id, item in sorted(_plan_item_entries(plan).items()):
         if not is_active_item(item):
             continue
         if item.kind == "aggregate":
@@ -464,8 +486,10 @@ def validate_plan_quality_warnings(plan: Plan) -> list[ValidationIssue]:
             )
 
     siblings_by_parent: dict[str | None, list[PlanItem]] = {}
-    for item in plan.items.values():
+    for item in _plan_item_entries(plan).values():
         if not is_active_item(item):
+            continue
+        if not is_usable_parent_reference(item.parent_id):
             continue
         siblings_by_parent.setdefault(item.parent_id, []).append(item)
 
@@ -509,6 +533,10 @@ def plan_advisory_warning_messages(plan: Plan) -> list[str]:
 
 def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
+
+    items_issue = _plan_items_container_issue(plan)
+    if items_issue is not None:
+        issues.append(items_issue)
 
     if isinstance(plan.revision, bool) or not isinstance(plan.revision, int):
         issues.append(
@@ -554,7 +582,7 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
         )
 
     seen_ids: dict[str, str] = {}
-    for item_id, item in plan.items.items():
+    for item_id, item in sorted(_plan_item_entries(plan).items()):
         path_prefix = _item_path_prefix(item_id, item)
 
         if not isinstance(item.id, str) or not item.id.strip():
@@ -805,11 +833,16 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     reported_cycles: set[tuple[str, ...]] = set()
 
+    items_issue = _plan_items_container_issue(plan)
+    if items_issue is not None:
+        return [items_issue]
+
+    item_entries = _plan_item_entries(plan)
     siblings_by_parent: dict[str | None, list[PlanItem]] = {}
-    for item in plan.items.values():
+    for item in item_entries.values():
         if not is_active_item(item):
             continue
-        if item.parent_id is not None and not isinstance(item.parent_id, str):
+        if not is_usable_parent_reference(item.parent_id):
             issues.append(
                 _issue(
                     "invalid_plan_field",
@@ -843,8 +876,11 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
                 )
             )
 
-    for item_id, item in sorted(plan.items.items()):
+    for item_id, item in sorted(item_entries.items()):
         if not is_active_item(item):
+            continue
+
+        if not is_usable_parent_reference(item.parent_id):
             continue
 
         if item.parent_id == item_id:
@@ -859,7 +895,7 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
             continue
 
         if item.parent_id is not None:
-            parent = plan.items.get(item.parent_id)
+            parent = item_entries.get(item.parent_id)
             if parent is None:
                 issues.append(
                     _issue(
@@ -907,7 +943,7 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
     traversal_ids = [item_id for item_id, _, _ in walk.rows]
     active_ids = {
         active_id
-        for active_id, active_item in plan.items.items()
+        for active_id, active_item in item_entries.items()
         if is_active_item(active_item)
     }
     traversal_set = set(traversal_ids)
@@ -944,6 +980,12 @@ def validate_dependencies(
     dispositions = dispositions or {}
     issues: list[ValidationIssue] = []
 
+    items_issue = _plan_items_container_issue(plan)
+    if items_issue is not None:
+        return [items_issue]
+
+    item_entries = _plan_item_entries(plan)
+
     cycle_issue = dependency_cycle_issue(plan)
     if cycle_issue is not None:
         issues.append(
@@ -955,7 +997,7 @@ def validate_dependencies(
             )
         )
 
-    for item_id, item in sorted(plan.items.items()):
+    for item_id, item in sorted(item_entries.items()):
         if not is_active_item(item):
             continue
 
@@ -1004,7 +1046,7 @@ def validate_dependencies(
                 )
                 continue
 
-            dep_item = plan.items.get(dep_id)
+            dep_item = item_entries.get(dep_id)
             if dep_item is None:
                 issues.append(
                     _issue(
@@ -1027,7 +1069,7 @@ def validate_dependencies(
         disposition = dispositions.get(item_id)
         if disposition in SATISFIED_DISPOSITIONS:
             for dep_id in item.depends_on:
-                if dep_id not in plan.items:
+                if not isinstance(dep_id, str) or dep_id not in item_entries:
                     continue
                 dep_result = resolve_satisfaction(plan, dep_id, dispositions)
                 if dep_result.state == "satisfied":
@@ -1046,11 +1088,11 @@ def validate_dependencies(
                 )
 
     has_hierarchy_cycle = any(
-        find_hierarchy_cycle(plan, item_id) is not None for item_id in plan.items
+        find_hierarchy_cycle(plan, item_id) is not None for item_id in item_entries
     )
     has_missing_parent = any(
-        item.parent_id is not None and item.parent_id not in plan.items
-        for item in plan.items.values()
+        isinstance(item.parent_id, str) and item.parent_id not in item_entries
+        for item in item_entries.values()
         if is_active_item(item)
     )
     has_duplicate_ids = bool(walk_active_tree(plan).duplicate_ids)
@@ -1085,7 +1127,7 @@ def validate_soft_limits(
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
-    for item_id, item in sorted(plan.items.items()):
+    for item_id, item in sorted(_plan_item_entries(plan).items()):
         if not is_active_item(item):
             continue
 
