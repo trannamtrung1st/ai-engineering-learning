@@ -826,14 +826,22 @@ class PreparedUnitExecutor:
             expected_initial = str(
                 (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
             )
-            if stored_baseline_digest == expected_initial:
-                desired_lineage_for_check: list[str] = []
-            else:
-                desired_lineage_for_check = [
-                    str(wrapper.get("accepted_result_digest") or "").strip()
-                    for wrapper in desired_baseline
-                    if str(wrapper.get("accepted_result_digest") or "").strip()
-                ]
+            from top_down_planning.package.lineage import (
+                baseline_accepted_result_digests_from_wrappers,
+            )
+
+            desired_lineage_for_check = baseline_accepted_result_digests_from_wrappers(
+                desired_baseline
+            )
+            if (
+                not desired_lineage_for_check
+                and stored_baseline_digest != expected_initial
+            ):
+                raise ExecutionPackageError(
+                    "child with empty baseline_accepted_result_digests must be at "
+                    "package initial snapshot",
+                    code="sub_tdp_upstream_invalid",
+                )
             if (
                 stored_upstream != desired_upstream
                 or stored_baseline != desired_baseline
@@ -862,17 +870,22 @@ class PreparedUnitExecutor:
             snapshot_binding
         )
 
+        from top_down_planning.package.lineage import (
+            baseline_accepted_result_digests_from_wrappers,
+        )
+
         expected_initial = str(
             (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
         )
-        if context_snapshot_digest == expected_initial:
-            desired_baseline_digests: list[str] = []
-        else:
-            desired_baseline_digests = [
-                str(wrapper.get("accepted_result_digest") or "").strip()
-                for wrapper in desired_baseline
-                if str(wrapper.get("accepted_result_digest") or "").strip()
-            ]
+        desired_baseline_digests = baseline_accepted_result_digests_from_wrappers(
+            desired_baseline
+        )
+        if not desired_baseline_digests and context_snapshot_digest != expected_initial:
+            raise ExecutionPackageError(
+                "child with empty baseline_accepted_result_digests must be at "
+                "package initial snapshot",
+                code="sub_tdp_upstream_invalid",
+            )
 
         binding_unchanged = (
             binding.get("upstream_accepted_results") == desired_upstream

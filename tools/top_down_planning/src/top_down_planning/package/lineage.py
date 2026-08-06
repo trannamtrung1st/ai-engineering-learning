@@ -738,6 +738,19 @@ def _package_initial_snapshot_from_binding(binding: dict[str, Any]) -> str | Non
     ).strip() or None
 
 
+def baseline_accepted_result_digests_from_wrappers(
+    wrappers: list[dict[str, Any]],
+) -> list[str]:
+    """Extract accepted-result digests from workspace baseline wrappers."""
+
+    return [
+        str(wrapper.get("accepted_result_digest") or "").strip()
+        for wrapper in wrappers
+        if isinstance(wrapper, dict)
+        and str(wrapper.get("accepted_result_digest") or "").strip()
+    ]
+
+
 def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
     """Require production-ready binding keys on prepared child runs."""
 
@@ -773,11 +786,11 @@ def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
     package_initial = _package_initial_snapshot_from_binding(binding)
     if package_initial is None:
         return "child package_binding missing manifest_path for baseline lineage validation"
-    if baseline_snapshot == package_initial:
-        if binding_digest_set:
+    if not binding_digest_set:
+        if baseline_snapshot != package_initial:
             return (
-                "child at package initial snapshot must have empty "
-                "baseline_accepted_result_digests"
+                "child with empty baseline_accepted_result_digests must be at "
+                "package initial snapshot"
             )
     elif binding_digest_set != wrapper_digest_set:
         return (
@@ -1040,6 +1053,7 @@ __all__ = [
     "LineageMismatch",
     "accepted_result_digest",
     "accepted_result_record",
+    "baseline_accepted_result_digests_from_wrappers",
     "unwrap_upstream_accepted_result",
     "upstream_accepted_result_binding",
     "validate_attach_dependency_consistency",

@@ -765,6 +765,180 @@ def test_composite_baseline_ab_then_c_parent_resume_and_closure(tmp_path: Path) 
         )
 
 
+def _plan_restore_snapshot(run_id: str) -> Plan:
+    return Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Restore snapshot composite baseline.",
+        input_refs=[],
+        items={
+            PLAN_ROOT_ITEM_ID: _item(
+                PLAN_ROOT_ITEM_ID,
+                parent_id=None,
+                order_key="0",
+                title="Root",
+                kind="aggregate",
+            ),
+            "item-a": _item("item-a", parent_id=PLAN_ROOT_ITEM_ID, order_key="1", title="A"),
+            "item-b": _item("item-b", parent_id=PLAN_ROOT_ITEM_ID, order_key="2", title="B"),
+            "item-c": _item("item-c", parent_id=PLAN_ROOT_ITEM_ID, order_key="3", title="C"),
+        },
+    )
+
+
+def _build_restore_snapshot_package(tmp_path: Path):
+    from top_down_planning.config import resolve_config
+    from top_down_planning.package.builder import ExecutionPackageBuilder
+
+    workspace = tmp_path
+    shared = workspace / "shared"
+    shared.mkdir(parents=True)
+    (shared / "x.json").write_text('{"value": 0}\n', encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "restore-snapshot-cfg.yaml",
+            """
+run:
+  output_goal: Restore snapshot composite baseline.
+agent_context:
+  roles:
+    producer:
+      resources:
+        - shared/
+""",
+        ),
+        cwd=workspace,
+    )
+    store = FileRunStore(tmp_path / "runs")
+    run_id = "run-20260101T009101-009101"
+    kwargs = create_run_kwargs(workspace, resolved_config=config)
+    store.create_run(
+        run_id,
+        plan=_plan_restore_snapshot(run_id),
+        phase="plan_validated",
+        **kwargs,
+    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    output_dir = tmp_path / "restore-snapshot-pkg"
+    ExecutionPackageBuilder().build_from_planning_run(store, run_id, output_dir=output_dir)
+    package = ExecutionPackageLoader().load(output_dir, verify_workspace=False)
+    return store, package, config
+
+
+def test_composite_baseline_at_initial_snapshot_preserves_lineage(tmp_path: Path) -> None:
+    """S0→A changes x; B baselines A and restores S0; C baselines A+B and overwrites x."""
+
+    store, package, config = _build_restore_snapshot_package(tmp_path)
+    executor = PreparedUnitExecutor()
+    factory = PreparedRunFactory()
+    shared = Path(package.workspace_path) / "shared"
+    package_initial = str(
+        (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
+    )
+
+    parent_id = factory.create_parent_run(
+        store, package, resolved_config=config, invocation={"command": "execute"},
+    )
+
+    child_a = executor.create_or_load_child_run(
+        store, package, "item-a", resolved_config=config,
+        invocation={"command": "execute"}, parent_run_id=parent_id,
+    )
+    (shared / "x.json").write_text('{"value": 1}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_a,
+        outputs=[{"id": "out-x-a", "type": "artifact", "ref": "shared/x.json"}],
+        contributions=[{"item_id": "item-a", "output_refs": ["out-x-a"], "summary": "A"}],
+    )
+    wrapper_a, _ = _wrapper_for(store, package, child_a, "item-a")
+
+    (shared / "x.json").write_text('{"value": 1}\n', encoding="utf-8")
+    child_b = executor.create_or_load_child_run(
+        store, package, "item-b", resolved_config=config,
+        invocation={"command": "execute"},
+        parent_run_id=parent_id,
+        explicit_baseline_run_ids=[child_a],
+        explicit_upstream_only=True,
+    )
+    binding_b = store.load_run(child_b)["package_binding"]
+    assert binding_b["baseline_accepted_result_digests"] == [
+        wrapper_a["accepted_result_digest"],
+    ]
+    (shared / "x.json").write_text('{"value": 0}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_b,
+        outputs=[{"id": "out-x-b", "type": "artifact", "ref": "shared/x.json"}],
+        contributions=[{"item_id": "item-b", "output_refs": ["out-x-b"], "summary": "B"}],
+    )
+    wrapper_b, accepted_b = _wrapper_for(store, package, child_b, "item-b")
+    assert accepted_b["baseline_accepted_result_digests"] == [
+        wrapper_a["accepted_result_digest"],
+    ]
+
+    (shared / "x.json").write_text('{"value": 0}\n', encoding="utf-8")
+    child_c = executor.create_or_load_child_run(
+        store, package, "item-c", resolved_config=config,
+        invocation={"command": "execute"},
+        parent_run_id=parent_id,
+        explicit_baseline_run_ids=[child_a, child_b],
+        explicit_upstream_only=True,
+    )
+    binding_c = store.load_run(child_c)["package_binding"]
+    assert binding_c["baseline_context_snapshot_digest"] == package_initial
+    assert set(binding_c["baseline_accepted_result_digests"]) == {
+        wrapper_a["accepted_result_digest"],
+        wrapper_b["accepted_result_digest"],
+    }
+
+    (shared / "x.json").write_text('{"value": 2}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_c,
+        outputs=[{"id": "out-x-c", "type": "artifact", "ref": "shared/x.json"}],
+        contributions=[{"item_id": "item-c", "output_refs": ["out-x-c"], "summary": "C"}],
+    )
+    _, accepted_c = _wrapper_for(store, package, child_c, "item-c")
+
+    units = [
+        SubTdpUnit(
+            plan_item_id=u.unit_id,
+            title=u.title,
+            outcome="",
+            directory=u.plan_file.parent.name,
+            ordinal=u.ordinal,
+        )
+        for u in sorted(package.units.values(), key=lambda item: item.ordinal)
+    ]
+    production = store.load_production(parent_id)
+    parent_binding = store.load_run(parent_id).get("package_binding") or {}
+    state = initial_sub_tdp_state_from_package(
+        package.manifest,
+        manifest_path=str(parent_binding.get("manifest_path") or package.manifest_path),
+        units=units,
+        package_units=package.units,
+    )
+    _attach_completed_unit(store, package, state, child_id=child_a, unit_id="item-a")
+    _attach_completed_unit(store, package, state, child_id=child_b, unit_id="item-b")
+    _attach_completed_unit(store, package, state, child_id=child_c, unit_id="item-c")
+    merged = merge_sub_tdp_state_into_production(production, state)
+    expected_revision = int(production["revision"])
+    merged["revision"] = expected_revision + 1
+    store.save_production(parent_id, merged, expected_revision)
+
+    authorized = collect_parent_sub_tdp_authorized_workspace_changes(
+        store,
+        production=store.load_production(parent_id),
+        workspace=package.workspace_path,
+    )
+    assert authorized["shared/x.json"]["sha256"] == accepted_c["workspace_changes"][
+        "shared/x.json"
+    ]["sha256"]
+    verify_parent_sub_tdp_workspace_matches_accepted(
+        store,
+        production=store.load_production(parent_id),
+        workspace=package.workspace_path,
+    )
+
+
 def _wrapper_for(store, package, child_id: str, unit_id: str):
     from top_down_planning.package.lineage import upstream_accepted_result_binding
 

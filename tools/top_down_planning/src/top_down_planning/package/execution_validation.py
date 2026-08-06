@@ -367,13 +367,13 @@ def order_workspace_succession_items(
 ) -> list[dict[str, Any]]:
     """Order items for workspace-change succession using explicit baseline lineage.
 
-    Roots use ``baseline_context_snapshot_digest == initial_snapshot_digest`` with
-    empty ``baseline_accepted_result_digests``. Non-root results list predecessor
-    accepted-result digests in ``baseline_accepted_result_digests`` (one for linear
-    closure, multiple for composite ``--baseline`` joins). Package ``depends_on``
-    edges add further constraints. Rejects missing, duplicate, unknown, or cyclic
-    baseline digests. Does not infer historical snapshot state from live workspace
-    bytes.
+    Roots have empty ``baseline_accepted_result_digests`` and must be at the
+    package initial snapshot. Non-root results list predecessor accepted-result
+    digests in ``baseline_accepted_result_digests`` (one for linear closure,
+    multiple for composite ``--baseline`` joins), including when the merged
+    baseline snapshot equals the initial digest. Package ``depends_on`` edges add
+    further constraints. Rejects missing, duplicate, unknown, or cyclic baseline
+    digests. Does not infer historical snapshot state from live workspace bytes.
     """
 
     def resolve_item_digest(item: dict[str, Any]) -> str:
@@ -448,20 +448,15 @@ def order_workspace_succession_items(
                 f"duplicate baseline_accepted_result_digests for unit {key!r}",
                 code="sub_tdp_upstream_invalid",
             )
-        if baseline == initial:
-            if normalized_digests:
+        if not normalized_digests:
+            if baseline != initial:
                 raise ExecutionPackageError(
-                    f"unit {key!r} rooted at package initial snapshot must have "
-                    "empty baseline_accepted_result_digests",
+                    f"unit {key!r} with empty baseline_accepted_result_digests must be "
+                    "at package initial snapshot",
                     code="sub_tdp_upstream_invalid",
                 )
             lineage_preds[key] = []
             continue
-        if not normalized_digests:
-            raise ExecutionPackageError(
-                f"unit {key!r} missing baseline_accepted_result_digests for non-root baseline",
-                code="sub_tdp_upstream_invalid",
-            )
         preds: list[str] = []
         for digest in normalized_digests:
             pred_unit = digest_to_unit.get(digest)

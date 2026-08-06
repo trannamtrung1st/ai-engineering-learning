@@ -276,14 +276,22 @@ class PreparedRunFactory:
                 (package.manifest.get("context") or {}).get("context_snapshot_digest")
                 or ""
             )
-            if context_snapshot_digest == expected_initial:
-                package_binding["baseline_accepted_result_digests"] = []
-            else:
-                package_binding["baseline_accepted_result_digests"] = [
-                    str(wrapper.get("accepted_result_digest") or "").strip()
-                    for wrapper in baseline_for_auth
-                    if str(wrapper.get("accepted_result_digest") or "").strip()
-                ]
+            from top_down_planning.package.lineage import (
+                baseline_accepted_result_digests_from_wrappers,
+            )
+
+            package_binding["baseline_accepted_result_digests"] = (
+                baseline_accepted_result_digests_from_wrappers(baseline_for_auth)
+            )
+            if (
+                not package_binding["baseline_accepted_result_digests"]
+                and context_snapshot_digest != expected_initial
+            ):
+                raise ExecutionPackageError(
+                    "child with empty baseline_accepted_result_digests must be at "
+                    "package initial snapshot",
+                    code="sub_tdp_upstream_invalid",
+                )
             package_binding["external_prerequisites"] = list(
                 unit_record.external_prerequisites if unit_record else []
             )
