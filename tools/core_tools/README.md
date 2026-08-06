@@ -34,11 +34,14 @@ cd tools/core_tools
 python -m pip install -e ".[dev]"
 ```
 
-When working on a product package, install both packages (product `pyproject.toml` depends on `core-tools`):
+When working on a product package, install both packages from the repository root (sequential commands — a single combined `-e` fails on a fresh environment because of the `file:../core_tools` dependency):
 
 ```bash
-python -m pip install -e tools/core_tools -e "tools/top_down_planning[dev]"
+python -m pip install -e tools/core_tools
+python -m pip install -e "tools/top_down_planning[dev]"
 ```
+
+TDP is monorepo editable only; see [`top_down_planning`](../top_down_planning/README.md#development) for the packaging contract.
 
 ## Import boundary
 

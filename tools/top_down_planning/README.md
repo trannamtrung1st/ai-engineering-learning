@@ -10,7 +10,8 @@ Agent protocol: `tdp agent readme` · schemas and examples: `tdp agent schema` /
 
 ```bash
 cd tools/top_down_planning
-python -m pip install -e ../core_tools -e ".[dev]"
+python -m pip install -e ../core_tools
+python -m pip install -e ".[dev]"
 cd ../..
 
 tdp agent help
@@ -116,10 +117,11 @@ Agent session lifecycle: `[session:start]` on `planner_session_started` / `produ
 
 Blocking `tdp run` and `tdp resume` can send optional desktop alerts when a run reaches a milestone or needs attention. Notifications are driven by existing `events.jsonl` audit records (no orchestrator changes) plus one CLI-only outcome: partial `--until` milestones on blocking `tdp run` / `tdp resume --until …` (`target_reached`). Ctrl+C is surfaced as **TDP run cancelled** via the engine’s `run_paused` audit event (`stop.code: user_cancelled`); if the interrupt escapes the engine loop, the CLI still pauses the run, kills orphan agents, and sends the cancelled alert before exit 130. Default single-step `tdp resume` (no `--until`) does not emit `target_reached`.
 
-Install the optional transport:
+Install the optional transport after editable `core_tools` is installed (see [Development](#development)):
 
 ```bash
-pip install "./tools/top_down_planning[notifications]"
+cd tools/top_down_planning
+python -m pip install -e ".[notifications]"
 ```
 
 Without `notify-py`, notifications are silently skipped. `CI=true` and headless Linux environments are suppressed at send time.
@@ -484,13 +486,21 @@ When planning dependencies, prefer the narrowest meaningful plan item as the dep
 
 ## Development
 
-TDP is developed inside this monorepo and depends on the sibling [`core_tools`](../core_tools) package (`core-tools @ file:../core_tools`). Install both editable packages together; this is not published as a standalone wheel.
+TDP is developed inside this monorepo and depends on the sibling [`core_tools`](../core_tools) package (`core-tools @ file:../core_tools`). **Supported installation is monorepo editable only** — install both packages from `tools/top_down_planning`:
 
 ```bash
 cd tools/top_down_planning
-python -m pip install -e ../core_tools -e ".[dev]"
+python -m pip install -e ../core_tools
+python -m pip install -e ".[dev]"
+```
+
+Install `core_tools` before TDP: pip cannot resolve `file:../core_tools` when both packages are passed in one combined `pip install -e … -e …` on a fresh environment.
+
+This is not published as a standalone wheel. The `file:../core_tools` dependency is location-dependent; a built wheel is used only for **packaging verification** in CI (template, skill, and import smoke against the assembled artifact). Do not install the wheel outside the monorepo layout expecting portable dependency resolution.
+
+```bash
 tdp --help
-pytest                  # unit tests (default; excludes integration)
-pytest -m integration   # stub-provider e2e and smoke tests
-pytest -m ""            # full suite
+python -m pytest                  # unit tests (default; excludes integration)
+python -m pytest -m integration   # stub-provider e2e, packaging smoke, and install gates
+python -m pytest -m ""            # full suite
 ```

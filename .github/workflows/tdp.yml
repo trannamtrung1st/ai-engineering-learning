@@ -1,0 +1,55 @@
+name: TDP
+
+on:
+  push:
+    paths:
+      - "tools/top_down_planning/**"
+      - "tools/core_tools/**"
+      - ".github/workflows/tdp.yml"
+  pull_request:
+    paths:
+      - "tools/top_down_planning/**"
+      - "tools/core_tools/**"
+      - ".github/workflows/tdp.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install editable monorepo packages
+        run: |
+          python -m pip install --upgrade pip
+          cd tools/top_down_planning
+          python -m pip install -e ../core_tools
+          python -m pip install -e ".[dev]"
+
+      - name: Syntax gate
+        run: python -m compileall -q tools/top_down_planning/src tools/core_tools/src
+
+      - name: Unit tests
+        run: |
+          cd tools/top_down_planning
+          python -m pytest
+
+      - name: Integration tests
+        run: |
+          cd tools/top_down_planning
+          python -m pytest -m integration
+
+      - name: core_tools unit tests
+        run: |
+          cd tools/core_tools
+          python -m pip install -e ".[dev]"
+          python -m pytest
