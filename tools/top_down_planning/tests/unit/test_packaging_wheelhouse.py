@@ -35,6 +35,18 @@ def test_resolve_packaging_wheelhouse_rejects_nonexistent_directory(
         resolve_packaging_wheelhouse()
 
 
+def test_resolve_packaging_wheelhouse_rejects_file_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "not-a-directory.whl"
+    file_path.write_bytes(b"wheel")
+    monkeypatch.setenv("TDP_PACKAGING_WHEELHOUSE", str(file_path))
+
+    with pytest.raises(PackagingWheelhouseError, match="is not a directory"):
+        resolve_packaging_wheelhouse()
+
+
 def test_resolve_packaging_wheelhouse_rejects_empty_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -73,3 +85,23 @@ def test_resolve_packaging_wheelhouse_accepts_valid_wheelhouse(
 
     assert resolved == wheelhouse.resolve()
     assert os.environ["TDP_PACKAGING_WHEELHOUSE"] == str(wheelhouse)
+
+
+def test_resolve_packaging_wheelhouse_does_not_launch_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    wheelhouse = tmp_path / "wheelhouse"
+    wheelhouse.mkdir()
+    _write_product_wheels(wheelhouse)
+    monkeypatch.setenv("TDP_PACKAGING_WHEELHOUSE", str(wheelhouse))
+
+    def _forbidden_subprocess(*_args, **_kwargs):
+        raise AssertionError("resolve_packaging_wheelhouse must not launch subprocesses")
+
+    monkeypatch.setattr("subprocess.run", _forbidden_subprocess)
+    monkeypatch.setattr("subprocess.Popen", _forbidden_subprocess)
+
+    resolved = resolve_packaging_wheelhouse()
+
+    assert resolved == wheelhouse.resolve()

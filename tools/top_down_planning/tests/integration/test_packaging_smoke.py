@@ -10,8 +10,6 @@ import pytest
 
 from tests.packaging_wheelhouse import PackagingWheelhouseError, resolve_packaging_wheelhouse
 
-pytest.importorskip("build")
-
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 

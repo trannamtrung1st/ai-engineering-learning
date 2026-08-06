@@ -25,6 +25,8 @@ def resolve_packaging_wheelhouse(env_var: str = _ENV_VAR) -> Path:
 
     wheelhouse = Path(configured).expanduser().resolve()
     if not wheelhouse.is_dir():
+        if wheelhouse.exists():
+            raise PackagingWheelhouseError(f"{env_var} is not a directory: {wheelhouse}")
         raise PackagingWheelhouseError(f"{env_var} does not exist: {wheelhouse}")
 
     wheels = sorted(wheelhouse.glob("*.whl"))
