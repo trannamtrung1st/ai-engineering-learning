@@ -8,6 +8,13 @@ from dataclasses import dataclass
 from typing import Any, Literal, Union
 
 from top_down_planning.domain.digest import digest_canonical_payload
+from top_down_planning.domain.review_schema import (
+    require_non_empty_string,
+    require_non_negative_int,
+    require_optional_exact_string,
+    require_optional_non_negative_int,
+    require_output_record_kind,
+)
 
 ArtifactRefKind = Literal["plan_item_field", "plan_dependency", "output_path", "output_record"]
 
@@ -102,26 +109,21 @@ def artifact_refs_equal(left: ArtifactRef, right: ArtifactRef) -> bool:
 
 
 def parse_artifact_ref(payload: Mapping[str, Any]) -> ArtifactRef:
-    kind = str(payload.get("kind") or "").strip()
+    kind = require_non_empty_string(payload.get("kind"), "artifact ref kind")
     if kind == _PLAN_ITEM_FIELD_KIND:
-        item_id = str(payload.get("item_id") or "").strip()
-        field = str(payload.get("field") or "").strip()
-        value_digest = str(payload.get("value_digest") or "").strip()
-        if not item_id or not field or not value_digest:
-            raise ValueError(
-                "plan_item_field ref requires item_id, field, and value_digest"
-            )
-        duplicate_raw = payload.get("duplicate_ordinal")
-        duplicate_ordinal = (
-            int(duplicate_raw)
-            if duplicate_raw is not None and str(duplicate_raw).strip() != ""
-            else None
+        item_id = require_non_empty_string(payload.get("item_id"), "item_id")
+        field = require_non_empty_string(payload.get("field"), "field")
+        value_digest = require_non_empty_string(
+            payload.get("value_digest"),
+            "value_digest",
         )
-        position_raw = payload.get("position_hint")
-        position_hint = (
-            int(position_raw)
-            if position_raw is not None and str(position_raw).strip() != ""
-            else None
+        duplicate_ordinal = require_optional_non_negative_int(
+            payload.get("duplicate_ordinal"),
+            "duplicate_ordinal",
+        )
+        position_hint = require_optional_non_negative_int(
+            payload.get("position_hint"),
+            "position_hint",
         )
         return PlanItemFieldRef(
             kind="plan_item_field",
@@ -132,26 +134,21 @@ def parse_artifact_ref(payload: Mapping[str, Any]) -> ArtifactRef:
             position_hint=position_hint,
         )
     if kind == _PLAN_DEPENDENCY_KIND:
-        item_id = str(payload.get("item_id") or "").strip()
-        dependency_id = str(payload.get("dependency_id") or "").strip()
-        if not item_id or not dependency_id:
-            raise ValueError(
-                "plan_dependency ref requires item_id and dependency_id"
-            )
+        item_id = require_non_empty_string(payload.get("item_id"), "item_id")
+        dependency_id = require_non_empty_string(
+            payload.get("dependency_id"),
+            "dependency_id",
+        )
         return PlanDependencyRef(
             kind="plan_dependency",
             item_id=item_id,
             dependency_id=dependency_id,
         )
     if kind == _OUTPUT_PATH_KIND:
-        path = str(payload.get("path") or "").strip()
-        if not path:
-            raise ValueError("output_path ref requires path")
-        content_raw = payload.get("content_digest")
-        content_digest = (
-            str(content_raw).strip()
-            if content_raw is not None and str(content_raw).strip()
-            else None
+        path = require_non_empty_string(payload.get("path"), "path")
+        content_digest = require_optional_exact_string(
+            payload.get("content_digest"),
+            "content_digest",
         )
         return OutputPathRef(
             kind="output_path",
@@ -159,17 +156,15 @@ def parse_artifact_ref(payload: Mapping[str, Any]) -> ArtifactRef:
             content_digest=content_digest,
         )
     if kind == _OUTPUT_RECORD_KIND:
-        record_kind = str(payload.get("record_kind") or "").strip()
-        record_key = str(payload.get("record_key") or "").strip()
-        if not record_kind or not record_key:
-            raise ValueError("output_record ref requires record_kind and record_key")
-        field_raw = payload.get("field")
-        field = str(field_raw).strip() if field_raw is not None and str(field_raw).strip() else None
-        digest_raw = payload.get("value_digest")
-        value_digest = (
-            str(digest_raw).strip()
-            if digest_raw is not None and str(digest_raw).strip()
-            else None
+        record_kind = require_output_record_kind(
+            payload.get("record_kind"),
+            "record_kind",
+        )
+        record_key = require_non_empty_string(payload.get("record_key"), "record_key")
+        field = require_optional_exact_string(payload.get("field"), "field")
+        value_digest = require_optional_exact_string(
+            payload.get("value_digest"),
+            "value_digest",
         )
         return OutputRecordRef(
             kind="output_record",
@@ -222,7 +217,12 @@ def parse_artifact_ref_list(raw: Any) -> list[ArtifactRef]:
         return []
     if not isinstance(raw, list):
         raise ValueError("artifact refs must be a list")
-    return [parse_artifact_ref(item) for item in raw if isinstance(item, Mapping)]
+    refs: list[ArtifactRef] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"artifact refs[{index}] must be an object")
+        refs.append(parse_artifact_ref(item))
+    return refs
 
 
 def validate_artifact_ref_kinds(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import os
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,11 @@ from top_down_planning.agent_tool import PlanAgentService
 from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.domain.mutations import apply_operations
 from top_down_planning.domain.errors import InvalidMutationError
+from top_down_planning.domain.finding_families import (
+    AuditAttestationPass,
+    AuditAttestationRun,
+    FamilySweepRecord,
+)
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID, display_traversal, seed_plan_root_item
 from top_down_planning.domain.reviews import (
     ReviewFinding,
@@ -19,6 +25,7 @@ from top_down_planning.domain.reviews import (
     findings_permit_approval,
     is_open_finding_status,
     is_unresolved_finding_status,
+    parse_finding_action,
 )
 from top_down_planning.domain.validators import validate_plan
 from top_down_planning.persistence.digests import compute_plan_digest
@@ -479,6 +486,7 @@ def test_domain_modules_import_in_fresh_interpreter() -> None:
             capture_output=True,
             text=True,
             cwd=_PACKAGE_ROOT.parent,
+            env={**os.environ, "PYTHONPATH": str(_PACKAGE_ROOT)},
             check=False,
         )
         if completed.returncode != 0:
@@ -549,3 +557,284 @@ def test_equivalent_payloads_produce_identical_digest_regardless_of_item_order()
 
     assert compute_plan_digest(plan_ab) == compute_plan_digest(plan_ba)
     assert display_traversal(plan_ab) == display_traversal(plan_ba)
+
+
+# --- TDP-S2-006: strict review evidence parsing ---
+
+
+def _minimal_sweep_payload(**overrides: object) -> dict:
+    payload = {
+        "id": "sweep-1",
+        "family_id": "family-1",
+        "actor_role": "planner",
+        "stage": "owner_fix",
+        "artifact_revision": 1,
+        "artifact_digest": "digest-1",
+        "finding_set_id": "set-1",
+        "searched_refs": [],
+        "search_dimensions": [],
+        "additional_fixed_refs": [],
+        "remaining_instance_refs": [],
+        "completed": True,
+        "summary": "done",
+        "evidence": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("completed", "false", "completed"),
+        ("completed", 1, "completed"),
+        ("artifact_revision", "-1", "artifact_revision"),
+        ("artifact_revision", True, "artifact_revision"),
+        ("searched_refs", "abc", "searched_refs"),
+        ("search_dimensions", [1, "x"], "search_dimensions"),
+        ("evidence", [123], "evidence"),
+    ],
+)
+def test_family_sweep_record_rejects_coerced_fields(
+    field: str,
+    value: object,
+    match: str,
+) -> None:
+    payload = _minimal_sweep_payload(**{field: value})
+
+    with pytest.raises(ValueError, match=match):
+        FamilySweepRecord.from_dict(payload)
+
+
+def test_family_sweep_record_rejects_malformed_remaining_instance_refs() -> None:
+    payload = _minimal_sweep_payload(remaining_instance_refs=["CORRUPT"])
+
+    with pytest.raises(ValueError, match="artifact refs"):
+        FamilySweepRecord.from_dict(payload)
+
+
+def test_audit_attestation_pass_rejects_string_completed() -> None:
+    with pytest.raises(ValueError, match="completed"):
+        AuditAttestationPass.from_dict(
+            {"pass_id": "pass-1", "completed": "false"},
+        )
+
+
+def test_audit_attestation_run_rejects_non_list_passes() -> None:
+    with pytest.raises(ValueError, match="passes must be a list"):
+        AuditAttestationRun.from_dict(
+            {
+                "id": "audit-1",
+                "finding_set_id": "set-1",
+                "artifact_revision": 1,
+                "artifact_digest": "digest-1",
+                "passes": {},
+                "recorded_at": "2026-01-01T00:00:00Z",
+            }
+        )
+
+
+def test_review_finding_rejects_malformed_instance_ref() -> None:
+    with pytest.raises(ValueError, match="instance_ref"):
+        ReviewFinding.from_dict(
+            {
+                "id": "f-1",
+                "severity": "blocker",
+                "category": "correctness",
+                "target_refs": ["item-a"],
+                "issue": "Broken",
+                "recommended_change": "Fix it",
+                "instance_ref": "CORRUPT",
+            }
+        )
+
+
+def test_parse_finding_action_rejects_coerced_artifact_revision() -> None:
+    base = {
+        "finding_id": "f-1",
+        "action": "fix",
+        "actor_role": "planner",
+        "finding_set_id": "set-1",
+    }
+    for revision in ("1", True, -1):
+        with pytest.raises(ValueError, match="artifact_revision"):
+            parse_finding_action({**base, "artifact_revision": revision})
+
+
+def test_review_loop_from_dict_rejects_falsey_wrong_containers() -> None:
+    base = _base_review_loop_payload()
+    for field in ("findings", "finding_actions"):
+        payload = dict(base)
+        payload[field] = {}
+        with pytest.raises(ValueError, match=field):
+            ReviewLoop.from_dict(payload)
+
+
+def test_malformed_owner_sweep_payload_rejected_on_load() -> None:
+    with pytest.raises(ValueError):
+        FamilySweepRecord.from_dict(
+            _minimal_sweep_payload(
+                completed="false",
+                remaining_instance_refs=["CORRUPT"],
+            )
+        )
+
+
+def test_malformed_audit_pass_rejected_on_load() -> None:
+    with pytest.raises(ValueError, match="completed"):
+        AuditAttestationRun.from_dict(
+            {
+                "id": "audit-1",
+                "finding_set_id": "set-1",
+                "artifact_revision": 1,
+                "artifact_digest": "digest-1",
+                "passes": [{"pass_id": "pass-1", "completed": "false"}],
+                "recorded_at": "2026-01-01T00:00:00Z",
+            }
+        )
+
+
+# --- TDP-S2-007: mutation and validator contract unification ---
+
+
+def test_apply_operations_rejects_non_string_item_outcome() -> None:
+    plan = _plan_with_root_child()
+
+    with pytest.raises(InvalidMutationError, match="outcome"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-child",
+                    "patch": {"outcome": 123},
+                }
+            ],
+            reviews=[],
+        )
+
+
+def test_apply_operations_rejects_non_string_list_members() -> None:
+    plan = _plan_with_root_child()
+
+    with pytest.raises(InvalidMutationError, match="boundaries"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-child",
+                    "patch": {"boundaries": [456]},
+                }
+            ],
+            reviews=[],
+        )
+
+
+def test_apply_operations_rejects_non_string_plan_metadata_members() -> None:
+    plan = _plan_with_root_child()
+
+    with pytest.raises(InvalidMutationError, match="constraints"):
+        apply_operations(
+            plan,
+            base_revision=1,
+            operations=[
+                {
+                    "op": "update_plan",
+                    "patch": {"constraints": [123]},
+                }
+            ],
+            reviews=[],
+        )
+
+
+def test_successful_mutation_result_round_trips_through_plan_from_dict() -> None:
+    plan = _plan_with_root_child()
+
+    result = apply_operations(
+        plan,
+        base_revision=1,
+        operations=[
+            {
+                "op": "update_item",
+                "item_id": "item-child",
+                "patch": {
+                    "title": "Updated child",
+                    "outcome": "Done",
+                    "boundaries": ["scope boundary"],
+                },
+            },
+            {
+                "op": "update_plan",
+                "patch": {"constraints": ["no regressions"]},
+            },
+        ],
+        reviews=[],
+    )
+
+    round_trip = Plan.from_dict(result.plan.to_dict())
+
+    assert round_trip.revision == result.revision
+    assert round_trip.items["item-child"].title == "Updated child"
+    assert round_trip.constraints == ["no regressions"]
+
+
+@pytest.mark.parametrize("revision", [-1, True, "1"])
+def test_validator_rejects_invalid_in_memory_plan_revision(revision: object) -> None:
+    root = seed_plan_root_item()
+    plan = Plan(
+        id="plan-001",
+        revision=revision,  # type: ignore[arg-type]
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(issue.path == ["plan", "revision"] for issue in result.issues)
+
+
+def test_validator_returns_issues_for_malformed_depends_on_without_raising() -> None:
+    root = seed_plan_root_item()
+    child = PlanItem(
+        id="item-child",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000000",
+        title="Child",
+        kind="work",
+        depends_on=123,  # type: ignore[arg-type]
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root, "item-child": child},
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(
+        issue.path == ["item-child", "depends_on"] for issue in result.issues
+    )
+
+
+def test_validator_returns_issues_for_malformed_plan_metadata_without_raising() -> None:
+    root = seed_plan_root_item()
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root},
+        constraints=[123],  # type: ignore[list-item]
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(
+        issue.path == ["plan", "constraints", "0"] for issue in result.issues
+    )

@@ -456,7 +456,10 @@ def _normalize_reported_findings(
 
 
 def _loop_uses_family_protocol(loop: Mapping[str, Any]) -> bool:
-    return int(loop.get("review_contract_version") or 1) == 2
+    version = loop.get("review_contract_version")
+    if version is None:
+        return False
+    return int(version) == 2
 
 
 def _synthetic_whole_plan_families(

@@ -19,12 +19,16 @@ from top_down_planning.domain.artifact_refs import (
     artifact_ref_to_dict,
     parse_artifact_ref,
 )
+from top_down_planning.domain.review_schema import (
+    require_non_empty_string,
+    require_non_negative_int,
+    require_optional_exact_string,
+)
 from top_down_planning.domain.session_bindings import (
     SessionBinding,
     binding_provider_session_id,
     new_session_binding,
 )
-
 from top_down_planning.domain.review_policy import (
     BUILTIN_REVISE_AT,
     CATEGORY_DEFINITIONS,
@@ -39,8 +43,6 @@ from top_down_planning.domain.review_policy import (
 )
 
 # Persisted review-record schema version (separate from run-record schema_version).
-LEGACY_REVIEW_RECORD_SCHEMA_VERSION = 1
-LEGACY_REVIEW_CONTRACT_VERSION = 1
 CURRENT_REVIEW_RECORD_SCHEMA_VERSION = 2
 CURRENT_REVIEW_CONTRACT_VERSION = 2
 SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS = frozenset({CURRENT_REVIEW_RECORD_SCHEMA_VERSION})
@@ -446,11 +448,12 @@ class ReviewFinding:
             else None
         )
         instance_ref_raw = payload.get("instance_ref")
-        instance_ref = (
-            parse_artifact_ref(instance_ref_raw)
-            if isinstance(instance_ref_raw, Mapping)
-            else None
-        )
+        if instance_ref_raw is None:
+            instance_ref = None
+        elif not isinstance(instance_ref_raw, Mapping):
+            raise ValueError("finding instance_ref must be an object")
+        else:
+            instance_ref = parse_artifact_ref(instance_ref_raw)
 
         return cls(
             id=str(payload["id"]),
@@ -547,22 +550,19 @@ def parse_finding_action(payload: Mapping[str, Any]) -> FindingAction:
 
     if not isinstance(payload, Mapping):
         raise ValueError("finding_actions entry must be an object")
-    finding_id = str(payload.get("finding_id") or "").strip()
-    if not finding_id:
-        raise ValueError("finding_actions entry requires finding_id")
+    finding_id = require_non_empty_string(payload.get("finding_id"), "finding_id")
     action = validate_finding_owner_action(str(payload.get("action") or ""))
-    actor_role = str(payload.get("actor_role") or "").strip()
+    actor_role = require_non_empty_string(payload.get("actor_role"), "actor_role")
     if actor_role not in {"planner", "producer"}:
         raise ValueError("finding_actions actor_role must be planner or producer")
-    finding_set_id = str(payload.get("finding_set_id") or "").strip()
-    if not finding_set_id:
-        raise ValueError("finding_actions entry requires finding_set_id")
-    try:
-        artifact_revision = int(payload.get("artifact_revision"))
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            "finding_actions entry requires integer artifact_revision"
-        ) from exc
+    finding_set_id = require_non_empty_string(
+        payload.get("finding_set_id"),
+        "finding_set_id",
+    )
+    artifact_revision = require_non_negative_int(
+        payload.get("artifact_revision"),
+        "artifact_revision",
+    )
 
     rationale_raw = payload.get("rationale")
     rationale = (
@@ -851,7 +851,9 @@ class ReviewLoop:
         raw_type = payload.get("type")
         loop_type = validate_review_loop_type(str(raw_type or ""))
 
-        findings_raw = payload.get("findings") or []
+        findings_raw = payload.get("findings")
+        if findings_raw is None:
+            findings_raw = []
         if not isinstance(findings_raw, list):
             raise ValueError("findings must be a list")
         findings: list[ReviewFinding] = []
@@ -927,7 +929,12 @@ class ReviewLoop:
         status_raw = validate_review_loop_status(str(payload.get("status") or "pending"))
 
         finding_actions = []
-        for index, item in enumerate(payload.get("finding_actions") or []):
+        finding_actions_raw = payload.get("finding_actions")
+        if finding_actions_raw is None:
+            finding_actions_raw = []
+        if not isinstance(finding_actions_raw, list):
+            raise ValueError("finding_actions must be a list")
+        for index, item in enumerate(finding_actions_raw):
             if not isinstance(item, dict):
                 raise ValueError(f"finding_actions[{index}] must be an object")
             finding_actions.append(parse_finding_action(item))

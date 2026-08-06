@@ -52,24 +52,22 @@ def test_output_record_ref_minimal_fields() -> None:
 
 
 def test_output_record_ref_requires_record_kind_and_key() -> None:
-    with pytest.raises(ValueError, match="record_kind and record_key"):
+    with pytest.raises(ValueError, match="record_key"):
         parse_artifact_ref({"kind": "output_record", "record_kind": "output"})
 
 
-def test_parse_artifact_ref_list_filters_non_objects() -> None:
-    refs = parse_artifact_ref_list(
-        [
-            {
-                "kind": "output_record",
-                "record_kind": "contribution",
-                "record_key": "contrib-01",
-            },
-            "ignored",
-            None,
-        ]
-    )
-    assert len(refs) == 1
-    assert isinstance(refs[0], OutputRecordRef)
+def test_parse_artifact_ref_list_rejects_non_objects() -> None:
+    with pytest.raises(ValueError, match="artifact refs\\[1\\] must be an object"):
+        parse_artifact_ref_list(
+            [
+                {
+                    "kind": "output_record",
+                    "record_kind": "contribution",
+                    "record_key": "contrib-01",
+                },
+                "ignored",
+            ]
+        )
 
 
 def test_validate_artifact_ref_kinds_allows_output_record() -> None:

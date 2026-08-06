@@ -25,6 +25,14 @@ from top_down_planning.domain.digest import digest_canonical_payload
 from top_down_planning.domain.mandatory_audit_passes import (
     mandatory_audit_pass_ids_for_loop,
 )
+from top_down_planning.domain.review_schema import (
+    require_bool,
+    require_exact_string,
+    require_non_empty_string,
+    require_non_negative_int,
+    require_optional_exact_string,
+    require_string_list,
+)
 
 if TYPE_CHECKING:
     from top_down_planning.domain.reviews import (
@@ -103,46 +111,59 @@ class FindingFamily:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> FindingFamily:
-        scope_kind = str(payload.get("scope_kind") or "").strip()
+        scope_kind = require_non_empty_string(payload.get("scope_kind"), "scope_kind")
         if scope_kind not in FAMILY_SCOPE_KINDS:
             raise ValueError(f"unsupported family scope_kind: {scope_kind!r}")
-        confirmed_raw = payload.get("confirmed_finding_ids") or []
-        if not isinstance(confirmed_raw, list) or not confirmed_raw:
+        confirmed_finding_ids = require_string_list(
+            payload.get("confirmed_finding_ids"),
+            "confirmed_finding_ids",
+            drop_empty=True,
+        )
+        if not confirmed_finding_ids:
             raise ValueError("finding family requires non-empty confirmed_finding_ids")
-        confirmed_finding_ids = [str(item).strip() for item in confirmed_raw]
         if len(set(confirmed_finding_ids)) != len(confirmed_finding_ids):
             raise ValueError("confirmed_finding_ids must be unique")
-        seed = str(payload.get("seed_finding_id") or "").strip()
+        seed = require_non_empty_string(payload.get("seed_finding_id"), "seed_finding_id")
         if seed not in confirmed_finding_ids:
             raise ValueError("seed_finding_id must be included in confirmed_finding_ids")
-        rule_id = validate_rule_id(str(payload.get("rule_id") or ""))
+        rule_id = validate_rule_id(require_non_empty_string(payload.get("rule_id"), "rule_id"))
         rule_definition_raw = payload.get("rule_definition")
-        rule_definition = (
-            normalize_rule_definition(str(rule_definition_raw))
-            if rule_definition_raw is not None and str(rule_definition_raw).strip()
-            else None
-        )
+        if rule_definition_raw is None:
+            rule_definition = None
+        else:
+            normalized_definition = normalize_rule_definition(
+                require_exact_string(rule_definition_raw, "rule_definition")
+            )
+            rule_definition = normalized_definition or None
         if is_custom_rule_id(rule_id) and rule_definition is None:
             raise ValueError("custom rule families require rule_definition")
         if is_builtin_rule_id(rule_id) and rule_definition is not None:
             raise ValueError("built-in rule families must not include rule_definition")
         return cls(
-            id=str(payload["id"]),
-            finding_set_id=str(payload.get("finding_set_id") or "").strip(),
+            id=require_exact_string(payload["id"], "id"),
+            finding_set_id=require_non_empty_string(
+                payload.get("finding_set_id"),
+                "finding_set_id",
+            ),
             rule_id=rule_id,
-            subject_key=str(payload.get("subject_key") or ""),
+            subject_key=require_exact_string(payload.get("subject_key", ""), "subject_key"),
             scope_kind=scope_kind,  # type: ignore[arg-type]
-            family_fingerprint=str(payload.get("family_fingerprint") or "").strip(),
-            title=str(payload.get("title") or ""),
+            family_fingerprint=require_non_empty_string(
+                payload.get("family_fingerprint"),
+                "family_fingerprint",
+            ),
+            title=require_exact_string(payload.get("title", ""), "title"),
             seed_finding_id=seed,
             confirmed_finding_ids=confirmed_finding_ids,
             candidate_refs=parse_artifact_ref_list(payload.get("candidate_refs")),
-            recommended_change=str(payload.get("recommended_change") or ""),
+            recommended_change=require_exact_string(
+                payload.get("recommended_change", ""),
+                "recommended_change",
+            ),
             rule_definition=rule_definition,
-            reopens_family_id=(
-                str(payload.get("reopens_family_id")).strip()
-                if payload.get("reopens_family_id")
-                else None
+            reopens_family_id=require_optional_exact_string(
+                payload.get("reopens_family_id"),
+                "reopens_family_id",
             ),
         )
 
@@ -195,52 +216,59 @@ class FamilySweepRecord:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> FamilySweepRecord:
-        stage = str(payload.get("stage") or "").strip()
+        stage = require_non_empty_string(payload.get("stage"), "stage")
         if stage not in {"discovery", "owner_fix", "verification", "scope_review"}:
             raise ValueError(f"unsupported family sweep stage: {stage!r}")
-        actor_role = str(payload.get("actor_role") or "").strip()
+        actor_role = require_non_empty_string(payload.get("actor_role"), "actor_role")
         if actor_role not in {"reviewer", "planner", "producer"}:
             raise ValueError(f"unsupported family sweep actor_role: {actor_role!r}")
         return cls(
-            id=str(payload["id"]),
-            family_id=str(payload.get("family_id") or "").strip(),
+            id=require_exact_string(payload["id"], "id"),
+            family_id=require_non_empty_string(payload.get("family_id"), "family_id"),
             actor_role=actor_role,  # type: ignore[arg-type]
             stage=stage,  # type: ignore[arg-type]
-            artifact_revision=int(payload.get("artifact_revision") or 0),
-            artifact_digest=str(payload.get("artifact_digest") or "").strip(),
-            finding_set_id=str(payload.get("finding_set_id") or "").strip(),
-            searched_refs=[
-                str(item).strip()
-                for item in (payload.get("searched_refs") or [])
-                if str(item).strip()
-            ],
-            search_dimensions=[
-                str(item).strip()
-                for item in (payload.get("search_dimensions") or [])
-                if str(item).strip()
-            ],
+            artifact_revision=require_non_negative_int(
+                payload.get("artifact_revision"),
+                "artifact_revision",
+            ),
+            artifact_digest=require_non_empty_string(
+                payload.get("artifact_digest"),
+                "artifact_digest",
+            ),
+            finding_set_id=require_non_empty_string(
+                payload.get("finding_set_id"),
+                "finding_set_id",
+            ),
+            searched_refs=require_string_list(
+                payload.get("searched_refs"),
+                "searched_refs",
+                drop_empty=True,
+            ),
+            search_dimensions=require_string_list(
+                payload.get("search_dimensions"),
+                "search_dimensions",
+                drop_empty=True,
+            ),
             additional_fixed_refs=parse_artifact_ref_list(
                 payload.get("additional_fixed_refs")
             ),
             remaining_instance_refs=parse_artifact_ref_list(
                 payload.get("remaining_instance_refs")
             ),
-            completed=bool(payload.get("completed")),
-            summary=str(payload.get("summary") or ""),
-            evidence=[
-                str(item)
-                for item in (payload.get("evidence") or [])
-                if str(item).strip()
-            ],
-            idempotency_key=(
-                str(payload.get("idempotency_key")).strip()
-                if payload.get("idempotency_key")
-                else None
+            completed=require_bool(payload.get("completed"), "completed"),
+            summary=require_exact_string(payload.get("summary", ""), "summary"),
+            evidence=require_string_list(
+                payload.get("evidence"),
+                "evidence",
+                drop_empty=True,
             ),
-            request_digest=(
-                str(payload.get("request_digest")).strip()
-                if payload.get("request_digest")
-                else None
+            idempotency_key=require_optional_exact_string(
+                payload.get("idempotency_key"),
+                "idempotency_key",
+            ),
+            request_digest=require_optional_exact_string(
+                payload.get("request_digest"),
+                "request_digest",
             ),
         )
 
@@ -271,29 +299,25 @@ class AuditAttestationPass:
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> AuditAttestationPass:
         return cls(
-            pass_id=str(payload.get("pass_id") or "").strip(),
-            completed=bool(payload.get("completed")),
-            scope_id=(
-                str(payload.get("scope_id")).strip()
-                if payload.get("scope_id")
-                else None
+            pass_id=require_non_empty_string(payload.get("pass_id"), "pass_id"),
+            completed=require_bool(payload.get("completed"), "completed"),
+            scope_id=require_optional_exact_string(payload.get("scope_id"), "scope_id"),
+            search_dimensions=require_string_list(
+                payload.get("search_dimensions"),
+                "search_dimensions",
+                drop_empty=True,
             ),
-            search_dimensions=[
-                str(item).strip()
-                for item in (payload.get("search_dimensions") or [])
-                if str(item).strip()
-            ],
-            inspected_refs=[
-                str(item).strip()
-                for item in (payload.get("inspected_refs") or [])
-                if str(item).strip()
-            ],
-            rubric_item_ids=[
-                str(item).strip()
-                for item in (payload.get("rubric_item_ids") or [])
-                if str(item).strip()
-            ],
-            summary=str(payload.get("summary") or ""),
+            inspected_refs=require_string_list(
+                payload.get("inspected_refs"),
+                "inspected_refs",
+                drop_empty=True,
+            ),
+            rubric_item_ids=require_string_list(
+                payload.get("rubric_item_ids"),
+                "rubric_item_ids",
+                drop_empty=True,
+            ),
+            summary=require_exact_string(payload.get("summary", ""), "summary"),
         )
 
 
@@ -318,7 +342,9 @@ class AuditAttestationRun:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> AuditAttestationRun:
-        passes_raw = payload.get("passes") or []
+        passes_raw = payload.get("passes")
+        if passes_raw is None:
+            passes_raw = []
         if not isinstance(passes_raw, list):
             raise ValueError("audit run passes must be a list")
         passes = []
@@ -327,12 +353,21 @@ class AuditAttestationRun:
                 raise ValueError(f"audit run passes[{index}] must be an object")
             passes.append(AuditAttestationPass.from_dict(item))
         return cls(
-            id=str(payload["id"]),
-            finding_set_id=str(payload.get("finding_set_id") or "").strip(),
-            artifact_revision=int(payload.get("artifact_revision") or 0),
-            artifact_digest=str(payload.get("artifact_digest") or "").strip(),
+            id=require_exact_string(payload["id"], "id"),
+            finding_set_id=require_non_empty_string(
+                payload.get("finding_set_id"),
+                "finding_set_id",
+            ),
+            artifact_revision=require_non_negative_int(
+                payload.get("artifact_revision"),
+                "artifact_revision",
+            ),
+            artifact_digest=require_non_empty_string(
+                payload.get("artifact_digest"),
+                "artifact_digest",
+            ),
             passes=passes,
-            recorded_at=str(payload.get("recorded_at") or ""),
+            recorded_at=require_exact_string(payload.get("recorded_at", ""), "recorded_at"),
         )
 
 

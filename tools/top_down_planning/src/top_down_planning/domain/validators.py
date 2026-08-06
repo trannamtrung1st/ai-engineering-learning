@@ -485,6 +485,25 @@ def plan_advisory_warning_messages(plan: Plan) -> list[str]:
 def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
+    if isinstance(plan.revision, bool) or not isinstance(plan.revision, int):
+        issues.append(
+            _issue(
+                "invalid_plan_field",
+                "error",
+                "plan revision must be an integer",
+                ["plan", "revision"],
+            )
+        )
+    elif plan.revision < 0:
+        issues.append(
+            _issue(
+                "invalid_plan_field",
+                "error",
+                "plan revision must be non-negative",
+                ["plan", "revision"],
+            )
+        )
+
     if not isinstance(plan.id, str) or not plan.id.strip():
         issues.append(
             _issue("missing_required_field", "error", "plan id is required", ["plan", "id"])
@@ -552,6 +571,47 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                         + ", ".join(sorted(PLANNING_STATUSES))
                     ),
                     [item.id, "planning_status"],
+                )
+            )
+
+        if item.planning_status == "superseded" and (
+            not isinstance(item.superseded_by, str) or not item.superseded_by.strip()
+        ):
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    "superseded items require superseded_by",
+                    [item.id, "superseded_by"],
+                )
+            )
+        if item.planning_status != "superseded" and item.superseded_by is not None:
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    "superseded_by is only valid when planning_status is superseded",
+                    [item.id, "superseded_by"],
+                )
+            )
+
+        if not isinstance(item.outcome, str):
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    "item outcome must be a string",
+                    [item.id, "outcome"],
+                )
+            )
+
+        if item.parent_id is not None and not isinstance(item.parent_id, str):
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    "item parent_id must be a string or null",
+                    [item.id, "parent_id"],
                 )
             )
 
@@ -649,15 +709,36 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     ["plan", field_name],
                 )
             )
-
-    if isinstance(plan.risks, list):
+            continue
         issues.extend(
             _validate_string_list_issues(
-                plan.risks,
-                path=["plan", "risks"],
-                field_name="plan risks",
+                value,
+                path=["plan", field_name],
+                field_name=f"plan {field_name}",
             )
         )
+
+    issues.extend(
+        _validate_string_list_issues(
+            plan.input_refs,
+            path=["plan", "input_refs"],
+            field_name="plan input_refs",
+        )
+    )
+    issues.extend(
+        _validate_string_list_issues(
+            plan.scope.includes,
+            path=["plan", "scope", "includes"],
+            field_name="plan scope.includes",
+        )
+    )
+    issues.extend(
+        _validate_string_list_issues(
+            plan.scope.excludes,
+            path=["plan", "scope", "excludes"],
+            field_name="plan scope.excludes",
+        )
+    )
 
     return issues
 
@@ -669,6 +750,16 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
     siblings_by_parent: dict[str | None, list[PlanItem]] = {}
     for item in plan.items.values():
         if not is_active_item(item):
+            continue
+        if item.parent_id is not None and not isinstance(item.parent_id, str):
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    "item parent_id must be a string or null",
+                    [item.id, "parent_id"],
+                )
+            )
             continue
         siblings_by_parent.setdefault(item.parent_id, []).append(item)
 
@@ -808,6 +899,17 @@ def validate_dependencies(
 
     for item_id, item in sorted(plan.items.items()):
         if not is_active_item(item):
+            continue
+
+        if not isinstance(item.depends_on, list):
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    "depends_on must be a list",
+                    [item_id, "depends_on"],
+                )
+            )
             continue
 
         seen_deps: set[str] = set()

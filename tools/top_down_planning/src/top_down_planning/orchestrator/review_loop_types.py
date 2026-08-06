@@ -7,7 +7,6 @@ from typing import Literal
 
 from top_down_planning.domain.reviews import (
     ReviewLoop,
-    is_terminal_review_loop,
     uses_finding_family_protocol,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
@@ -39,17 +38,15 @@ class MandatoryWholeReviewResult:
     reason: str | None = None
 
 
-def reject_nonterminal_mandatory_contract_v1_loop(loop: ReviewLoop) -> None:
-    """Reject resuming nonterminal mandatory whole-artifact loops on contract v1."""
+def reject_mandatory_contract_v1_loop(loop: ReviewLoop) -> None:
+    """Reject mandatory whole-artifact loops that predate contract v2."""
 
     if loop.type not in {"whole_plan", "whole_output"}:
         return
     if uses_finding_family_protocol(loop):
         return
-    if is_terminal_review_loop(loop):
-        return
     label = loop.type.replace("_", "-")
     raise ProviderRunError(
-        f"This run predates mandatory {label} contract v2 and must be restarted. "
-        f"Nonterminal {label} contract-v1 loops cannot resume."
+        f"This run predates mandatory {label} contract v2 and must be recreated. "
+        f"Contract-v1 review records are not supported."
     )

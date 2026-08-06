@@ -24,6 +24,8 @@ def active_dependency_edges(plan: Plan) -> dict[str, list[str]]:
     for item_id, item in plan.items.items():
         if not is_active_item(item):
             continue
+        if not isinstance(item.depends_on, list):
+            continue
         edges[item_id] = [
             dep
             for dep in item.depends_on

@@ -218,6 +218,21 @@ def normalize_plan_payload(data: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def normalize_plan_metadata_patch(patch: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize plan-level metadata fields from an update patch."""
+
+    normalized: dict[str, Any] = {}
+    if "scope" in patch:
+        normalized["scope"] = require_scope_dict(patch["scope"], field_label="plan scope")
+    for field_name in ("boundaries", "constraints", "assumptions", "acceptance", "risks"):
+        if field_name in patch:
+            normalized[field_name] = _coerce_string_list(
+                patch[field_name],
+                field_label=field_name,
+            )
+    return normalized
+
+
 __all__ = [
     "ITEM_KINDS",
     "PLANNING_STATUSES",
@@ -225,6 +240,7 @@ __all__ = [
     "UNSUPPORTED_PLAN_SCHEMA_MESSAGE",
     "UnsupportedPlanSchemaVersionError",
     "normalize_plan_item_payload",
+    "normalize_plan_metadata_patch",
     "normalize_plan_payload",
     "require_int_not_bool",
     "require_non_negative_int",

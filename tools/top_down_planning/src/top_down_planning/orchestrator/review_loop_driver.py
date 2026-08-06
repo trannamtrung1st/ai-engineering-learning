@@ -114,7 +114,7 @@ from top_down_planning.orchestrator.review_loop_types import (
     MandatoryWholeReviewResult,
     MandatoryWholeReviewSpec,
     OwnerHandoff,
-    reject_nonterminal_mandatory_contract_v1_loop,
+    reject_mandatory_contract_v1_loop,
 )
 from core_tools.persistence import StoreRevisionConflictError
 from top_down_planning.persistence.interface import RunStore
@@ -260,7 +260,7 @@ class ReviewLoopDriver:
             normalize_loop_for_resume=self._normalize_loop_for_resume,
         )
         self._adapter.preflight(loop)
-        reject_nonterminal_mandatory_contract_v1_loop(loop)
+        reject_mandatory_contract_v1_loop(loop)
         loop = self._persist_loop(seed_mandatory_loop_fields(loop))
         return self._drive_loop(loop, deliver_on_existing_session, limits)
 

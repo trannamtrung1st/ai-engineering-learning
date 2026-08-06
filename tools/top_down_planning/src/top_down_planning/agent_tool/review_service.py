@@ -75,11 +75,11 @@ _FOCUSED_OUTPUT_LIMIT_DEFAULTS = DEFAULT_CONFIG["limits"]["focused_output_review
 def _reject_non_family_mandatory_loop(loop: ReviewLoop) -> None:
     if loop.type not in {"whole_plan", "whole_output"}:
         return
-    if uses_finding_family_protocol(loop) or is_terminal_review_loop(loop):
+    if uses_finding_family_protocol(loop):
         return
     raise RequestError(
         f"mandatory {loop.type} review requires contract v2 finding-family protocol; "
-        "nonterminal contract-v1 mandatory loops cannot resume — restart the run"
+        "contract-v1 review records are not supported — recreate the run"
     )
 
 

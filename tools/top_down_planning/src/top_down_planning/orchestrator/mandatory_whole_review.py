@@ -13,7 +13,7 @@ from top_down_planning.orchestrator.review_loop_types import (
     MandatoryWholeReviewResult,
     MandatoryWholeReviewSpec,
     OwnerHandoff,
-    reject_nonterminal_mandatory_contract_v1_loop,
+    reject_mandatory_contract_v1_loop,
 )
 
 __all__ = [
@@ -23,7 +23,7 @@ __all__ = [
     "OwnerHandoff",
     "ReviewLoopAdapter",
     "ReviewLoopDriver",
-    "reject_nonterminal_mandatory_contract_v1_loop",
+    "reject_mandatory_contract_v1_loop",
 ]
 
 

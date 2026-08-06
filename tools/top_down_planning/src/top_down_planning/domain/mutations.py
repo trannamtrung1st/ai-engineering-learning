@@ -263,6 +263,8 @@ _UPDATE_ITEM_PATCH_FIELDS = frozenset(
 
 
 def _apply_update_item(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
+    from top_down_planning.domain.plan_schema import normalize_plan_item_payload
+
     item_id = _resolve_id(op["item_id"], id_map)
     item = _require_active_item(plan, item_id)
     patch = op.get("patch")
@@ -285,25 +287,27 @@ def _apply_update_item(plan: Plan, op: Operation, id_map: dict[str, str], change
     if "planning_status" in patch:
         raise InvalidMutationError("update_item cannot change planning_status; use supersede_item or remove_item")
 
-    for field_name in ("title", "outcome", "boundaries", "acceptance", "risks", "source_refs"):
-        if field_name in patch:
-            value = patch[field_name]
-            if field_name == "title" and (not value or not str(value).strip()):
-                raise InvalidMutationError("item title is required")
-            if field_name in ("boundaries", "acceptance", "risks", "source_refs"):
-                if not isinstance(value, list):
-                    raise InvalidMutationError(f"update_item {field_name} must be a list")
-                value = list(value)
-            setattr(item, field_name, value)
-    if "scope" in patch:
-        item.scope = Scope.from_dict(patch["scope"])
-    if "kind" in patch:
-        kind = patch["kind"]
-        if kind is None:
-            raise InvalidMutationError("item kind is required")
-        if kind not in ("aggregate", "work"):
-            raise InvalidMutationError(f"invalid plan item kind: {kind!r}")
-        item.kind = kind
+    merged = {**item.to_dict(), **patch}
+    merged["id"] = item.id
+    merged["parent_id"] = item.parent_id
+    merged["order_key"] = item.order_key
+    merged["planning_status"] = item.planning_status
+    merged["superseded_by"] = item.superseded_by
+    merged["depends_on"] = list(item.depends_on)
+
+    try:
+        normalized = normalize_plan_item_payload(merged)
+    except ValueError as exc:
+        raise InvalidMutationError(str(exc)) from exc
+
+    item.title = normalized["title"]
+    item.outcome = normalized["outcome"]
+    item.scope = Scope.from_dict(normalized["scope"])
+    item.boundaries = list(normalized["boundaries"])
+    item.acceptance = list(normalized["acceptance"])
+    item.risks = list(normalized["risks"])
+    item.source_refs = list(normalized["source_refs"])
+    item.kind = normalized["kind"]  # type: ignore[assignment]
     changed.add(item_id)
 
 
@@ -313,6 +317,8 @@ _UPDATE_PLAN_PATCH_FIELDS = frozenset(
 
 
 def _apply_update_plan(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:
+    from top_down_planning.domain.plan_schema import normalize_plan_metadata_patch
+
     del id_map, changed
     patch = op.get("patch")
     if not isinstance(patch, dict) or not patch:
@@ -325,14 +331,16 @@ def _apply_update_plan(plan: Plan, op: Operation, id_map: dict[str, str], change
             f"update_plan patch contains unsupported fields: {joined}"
         )
 
-    if "scope" in patch:
-        plan.scope = Scope.from_dict(patch["scope"])
+    try:
+        normalized = normalize_plan_metadata_patch(patch)
+    except ValueError as exc:
+        raise InvalidMutationError(str(exc)) from exc
+
+    if "scope" in normalized:
+        plan.scope = Scope.from_dict(normalized["scope"])
     for field_name in ("boundaries", "constraints", "assumptions", "acceptance", "risks"):
-        if field_name in patch:
-            value = patch[field_name]
-            if not isinstance(value, list):
-                raise InvalidMutationError(f"update_plan {field_name} must be a list")
-            setattr(plan, field_name, list(value))
+        if field_name in normalized:
+            setattr(plan, field_name, list(normalized[field_name]))
 
 
 def _apply_move_subtree(plan: Plan, op: Operation, id_map: dict[str, str], changed: set[str]) -> None:

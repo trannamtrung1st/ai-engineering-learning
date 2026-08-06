@@ -38,8 +38,6 @@ from top_down_planning.domain.review_loop_factory import (
 from top_down_planning.domain.reviews import (
     CURRENT_REVIEW_CONTRACT_VERSION,
     CURRENT_REVIEW_RECORD_SCHEMA_VERSION,
-    LEGACY_REVIEW_CONTRACT_VERSION,
-    LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
     ReviewFinding,
     ReviewLoop,
     parse_review_version_fields,
@@ -107,8 +105,8 @@ def test_uses_finding_family_protocol_gates_on_contract_version() -> None:
                 "finding_actions": [],
                 "revision_cycles": 0,
                 "revision": 0,
-                "review_record_schema_version": LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
-                "review_contract_version": LEGACY_REVIEW_CONTRACT_VERSION,
+                "review_record_schema_version": 1,
+                "review_contract_version": 1,
             }
         )
 
@@ -2757,7 +2755,28 @@ def test_whole_plan_v1_payload_rejected_on_load() -> None:
                 "finding_actions": [],
                 "revision_cycles": 0,
                 "revision": 0,
-                "review_record_schema_version": LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
-                "review_contract_version": LEGACY_REVIEW_CONTRACT_VERSION,
+                "review_record_schema_version": 1,
+                "review_contract_version": 1,
+            }
+        )
+
+
+def test_completed_v1_whole_output_record_rejected_on_load() -> None:
+    with pytest.raises(ValueError, match="review_record_schema_version"):
+        ReviewLoop.from_dict(
+            {
+                "id": "review-whole-output-legacy",
+                "type": "whole_output",
+                "target_revision": 1,
+                "scope": {"kind": "whole_output"},
+                "status": "approved",
+                "lifecycle_status": "approved",
+                "revise_at": "blocker",
+                "findings": [],
+                "finding_actions": [],
+                "revision_cycles": 1,
+                "revision": 1,
+                "review_record_schema_version": 1,
+                "review_contract_version": 1,
             }
         )
