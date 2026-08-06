@@ -20,8 +20,14 @@ class DependencyCycleIssue:
 
 
 def active_dependency_edges(plan: Plan) -> dict[str, list[str]]:
+    from top_down_planning.domain.models import PlanItem
+
     edges: dict[str, list[str]] = {}
+    if not isinstance(plan.items, dict):
+        return edges
     for item_id, item in plan.items.items():
+        if not isinstance(item_id, str) or not isinstance(item, PlanItem):
+            continue
         if not is_active_item(item):
             continue
         if not isinstance(item.depends_on, list):
@@ -29,7 +35,10 @@ def active_dependency_edges(plan: Plan) -> dict[str, list[str]]:
         edges[item_id] = [
             dep
             for dep in item.depends_on
-            if isinstance(dep, str) and dep in plan.items and is_active_item(plan.items[dep])
+            if isinstance(dep, str)
+            and dep in plan.items
+            and isinstance(plan.items.get(dep), PlanItem)
+            and is_active_item(plan.items[dep])
         ]
     return edges
 

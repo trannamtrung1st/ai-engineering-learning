@@ -1231,3 +1231,161 @@ def test_validate_plan_rejects_non_dict_items_container_without_raising() -> Non
 
     assert result.ok is False
     assert any(issue.path == ["plan", "items"] for issue in result.issues)
+
+
+def _assert_validate_plan_fails_without_raising(
+    plan: Plan,
+    *,
+    mode: str = "draft",
+) -> None:
+    result = validate_plan(plan, mode=mode)  # type: ignore[arg-type]
+    assert result.ok is False
+
+
+def _reachable_child_with_embedded_id(item_id: object) -> Plan:
+    root = seed_plan_root_item()
+    child = PlanItem(
+        id=item_id,  # type: ignore[arg-type]
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000000",
+        title="Child",
+        kind="work",
+    )
+    return Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root, "item-child": child},
+    )
+
+
+@pytest.mark.parametrize("embedded_id", [[], {}])
+@pytest.mark.parametrize("mode", ["draft", "approval"])
+def test_validate_plan_reachable_child_with_unhashable_embedded_id_does_not_raise(
+    embedded_id: object,
+    mode: str,
+) -> None:
+    _assert_validate_plan_fails_without_raising(
+        _reachable_child_with_embedded_id(embedded_id),
+        mode=mode,
+    )
+
+
+@pytest.mark.parametrize("mode", ["draft", "approval"])
+def test_validate_plan_rejects_dict_item_value_without_raising(mode: str) -> None:
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={
+            PLAN_ROOT_ITEM_ID: seed_plan_root_item(),
+            "item-child": {},  # type: ignore[dict-item]
+        },
+    )
+
+    _assert_validate_plan_fails_without_raising(plan, mode=mode)
+    result = validate_plan(plan, mode=mode)  # type: ignore[arg-type]
+    assert any(issue.path == ["plan", "items", "item-child"] for issue in result.issues)
+
+
+@pytest.mark.parametrize("mode", ["draft", "approval"])
+def test_validate_plan_rejects_none_item_value_without_raising(mode: str) -> None:
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={
+            PLAN_ROOT_ITEM_ID: seed_plan_root_item(),
+            "item-child": None,  # type: ignore[dict-item]
+        },
+    )
+
+    _assert_validate_plan_fails_without_raising(plan, mode=mode)
+    result = validate_plan(plan, mode=mode)  # type: ignore[arg-type]
+    assert any(issue.path == ["plan", "items", "item-child"] for issue in result.issues)
+
+
+@pytest.mark.parametrize("mode", ["draft", "approval"])
+def test_validate_plan_rejects_mixed_string_and_integer_item_keys_without_raising(
+    mode: str,
+) -> None:
+    valid_child = PlanItem(
+        id="item-child",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000000",
+        title="Child",
+        kind="work",
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={
+            PLAN_ROOT_ITEM_ID: seed_plan_root_item(),
+            1: valid_child,  # type: ignore[dict-item]
+        },
+    )
+
+    _assert_validate_plan_fails_without_raising(plan, mode=mode)
+    result = validate_plan(plan, mode=mode)  # type: ignore[arg-type]
+    assert any(issue.path == ["plan", "items", "1"] for issue in result.issues)
+
+
+@pytest.mark.parametrize("mode", ["draft", "approval"])
+def test_validate_plan_rejects_integer_only_item_key_without_raising(mode: str) -> None:
+    valid_child = PlanItem(
+        id="item-child",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000000",
+        title="Child",
+        kind="work",
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={1: valid_child},  # type: ignore[dict-item]
+    )
+
+    _assert_validate_plan_fails_without_raising(plan, mode=mode)
+
+
+@pytest.mark.parametrize("mode", ["draft", "approval"])
+def test_validate_plan_rejects_invalid_root_item_value_without_raising(mode: str) -> None:
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: {}},  # type: ignore[dict-item]
+    )
+
+    _assert_validate_plan_fails_without_raising(plan, mode=mode)
+    result = validate_plan(plan, mode=mode)  # type: ignore[arg-type]
+    assert any(
+        issue.path == ["plan", "items", PLAN_ROOT_ITEM_ID] for issue in result.issues
+    )
+
+
+def test_validate_plan_with_mixed_valid_and_malformed_item_values_does_not_raise() -> None:
+    valid = PlanItem(
+        id="item-good",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000001",
+        title="Good",
+        kind="work",
+    )
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={
+            PLAN_ROOT_ITEM_ID: seed_plan_root_item(),
+            "item-good": valid,
+            "item-bad": None,  # type: ignore[dict-item]
+        },
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    assert any(issue.path == ["plan", "items", "item-bad"] for issue in result.issues)

@@ -19,6 +19,12 @@ def is_active_item(item: PlanItem) -> bool:
     return item.planning_status == ACTIVE_PLANNING_STATUS
 
 
+def is_usable_item_id(item_id: Any) -> bool:
+    """True when an item id can be used in sets, dict keys, and traversal."""
+
+    return isinstance(item_id, str) and bool(item_id.strip())
+
+
 def is_usable_parent_reference(parent_id: Any) -> bool:
     """True when parent_id can be used as a dict key or hierarchy link."""
 
@@ -32,10 +38,15 @@ def _sibling_order_key(item: PlanItem) -> str:
 
 
 def active_children_of(plan: Plan, parent_id: str | None) -> list[PlanItem]:
+    raw_items = plan.items
+    if not isinstance(raw_items, dict):
+        return []
     siblings = [
         item
-        for item in plan.items.values()
-        if item.parent_id == parent_id and is_active_item(item)
+        for item in raw_items.values()
+        if isinstance(item, PlanItem)
+        and item.parent_id == parent_id
+        and is_active_item(item)
     ]
     siblings.sort(key=_sibling_order_key)
     return siblings
@@ -57,6 +68,8 @@ def walk_active_tree(plan: Plan) -> TraversalWalk:
 
     def walk(parent_id: str | None, prefix: str, depth: int) -> None:
         for index, child in enumerate(children_of(plan, parent_id), start=1):
+            if not is_usable_item_id(child.id):
+                continue
             if child.id in visiting or child.id in seen_global:
                 if child.id not in duplicate_ids:
                     duplicate_ids.append(child.id)
