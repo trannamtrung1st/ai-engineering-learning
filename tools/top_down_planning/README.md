@@ -501,6 +501,7 @@ This is not published as a standalone wheel. The `file:../core_tools` dependency
 ```bash
 tdp --help
 python -m pytest                  # unit tests (default; excludes integration)
-python -m pytest -m integration   # stub-provider e2e, packaging smoke, and install gates
-python -m pytest -m ""            # full suite
+python scripts/build_packaging_wheelhouse.py /tmp/tdp-packaging-wheelhouse
+TDP_PACKAGING_WHEELHOUSE=/tmp/tdp-packaging-wheelhouse python -m pytest -m integration
+python -m pytest -m ""            # full suite (requires TDP_PACKAGING_WHEELHOUSE)
 ```

@@ -57,6 +57,13 @@ jobs:
           cd tools/top_down_planning
           python -m pytest -m integration
 
+      - name: Full TDP test suite
+        env:
+          TDP_PACKAGING_WHEELHOUSE: ${{ steps.wheelhouse.outputs.path }}
+        run: |
+          cd tools/top_down_planning
+          python -m pytest -m ""
+
       - name: Wheel build gate
         run: python -m build --wheel tools/top_down_planning
 

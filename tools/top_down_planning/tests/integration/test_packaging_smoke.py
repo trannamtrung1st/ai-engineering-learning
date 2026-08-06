@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import importlib.util
-import os
 import subprocess
-import sys
 import venv
 from pathlib import Path
 
 import pytest
 
+from tests.packaging_wheelhouse import PackagingWheelhouseError, resolve_packaging_wheelhouse
+
 pytest.importorskip("build")
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_BUILD_SCRIPT = _PROJECT_ROOT / "scripts" / "build_packaging_wheelhouse.py"
 
 
 def _venv_python(venv_dir: Path) -> Path:
@@ -145,32 +143,13 @@ def _install_all_wheels_offline(python: Path | str, wheelhouse: Path) -> None:
 
 
 @pytest.fixture(scope="session")
-def packaging_wheelhouse(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Offline wheelhouse from env, or build once per session from the local environment."""
+def packaging_wheelhouse() -> Path:
+    """Require a pre-built offline wheelhouse from TDP_PACKAGING_WHEELHOUSE."""
 
-    configured = os.environ.get("TDP_PACKAGING_WHEELHOUSE")
-    if configured:
-        wheelhouse = Path(configured).resolve()
-        if not list(wheelhouse.glob("*.whl")):
-            pytest.fail(f"TDP_PACKAGING_WHEELHOUSE has no wheels: {wheelhouse}")
-        return wheelhouse
-
-    destination = tmp_path_factory.mktemp("packaging-wheelhouse")
-    spec = importlib.util.spec_from_file_location(
-        "build_packaging_wheelhouse",
-        _BUILD_SCRIPT,
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     try:
-        return module.build_packaging_wheelhouse(destination)
-    except subprocess.CalledProcessError as exc:
-        pytest.fail(
-            "failed to build offline packaging wheelhouse; install editable dev packages "
-            "then run tools/top_down_planning/scripts/build_packaging_wheelhouse.py, or set "
-            f"TDP_PACKAGING_WHEELHOUSE: {exc}"
-        )
+        return resolve_packaging_wheelhouse()
+    except PackagingWheelhouseError as exc:
+        pytest.fail(str(exc))
 
 
 @pytest.mark.integration
