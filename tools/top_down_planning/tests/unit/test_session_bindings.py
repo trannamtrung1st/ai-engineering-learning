@@ -187,6 +187,8 @@ def test_review_loop_from_dict_rejects_legacy_reviewer_session_id() -> None:
                 "target_revision": 1,
                 "scope": {},
                 "revise_at": "blocker",
+                "review_record_schema_version": 2,
+                "review_contract_version": 2,
             }
         )
 

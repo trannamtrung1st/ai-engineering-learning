@@ -216,6 +216,8 @@ def test_prepare_resume_conflicting_review_loops(tmp_path: Path) -> None:
             "revision_cycles": 0,
             "lifecycle_status": "review_pending",
             "scope_review_rounds": 0,
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
         },
     )
     store.save_review(
@@ -231,6 +233,8 @@ def test_prepare_resume_conflicting_review_loops(tmp_path: Path) -> None:
             "revision_cycles": 0,
             "lifecycle_status": "review_pending",
             "scope_review_rounds": 0,
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
         },
     )
 

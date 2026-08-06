@@ -482,7 +482,7 @@ def test_supersede_item_rejects_missing_kind() -> None:
 def test_supersede_item_rejects_items_with_active_children() -> None:
     plan = _sample_plan()
 
-    with pytest.raises(InvalidMutationError, match="no active children"):
+    with pytest.raises(InvalidMutationError, match="canonical root"):
         apply_operations(
             plan,
             base_revision=1,

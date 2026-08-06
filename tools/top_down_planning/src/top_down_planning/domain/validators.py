@@ -10,6 +10,7 @@ from top_down_planning.domain.dependencies import dependency_cycle_issue
 from top_down_planning.domain.dispositions import DispositionMap, SATISFIED_DISPOSITIONS
 from top_down_planning.domain.models import Plan, PlanItem, PlanningLimits
 from top_down_planning.domain.plan_schema import (
+    PLANNING_STATUSES,
     PLAN_SCHEMA_VERSION,
     UNSUPPORTED_PLAN_SCHEMA_MESSAGE,
 )
@@ -99,17 +100,28 @@ def build_plan_approval_validation_context(
 ) -> tuple[ReviewState, DigestBundle]:
     """Build approval-mode review and digest bindings for the current plan revision."""
 
+    from top_down_planning.domain.plan_schema import (
+        require_non_negative_int,
+        require_string,
+    )
     from top_down_planning.domain.reviews import required_unresolved_finding_ids_from_payload
 
     approved_digests = approval.get("approved_digests")
-    expected_digests: dict[str, str] = (
-        {str(key): str(value) for key, value in approved_digests.items()}
-        if isinstance(approved_digests, dict)
-        else {}
-    )
+    if approved_digests is not None and not isinstance(approved_digests, dict):
+        raise ValueError("approved_digests must be an object")
+    expected_digests: dict[str, str] = {}
+    if isinstance(approved_digests, dict):
+        for key, value in approved_digests.items():
+            expected_digests[require_string(key, "approved_digests key")] = require_string(
+                value,
+                "approved_digests value",
+            )
     reject_legacy_approved_config_digest(expected_digests or None)
     review_state = ReviewState(
-        approved_revision=int(approval["target_revision"]),
+        approved_revision=require_non_negative_int(
+            approval["target_revision"],
+            "target_revision",
+        ),
         unresolved_required_findings=required_unresolved_finding_ids_from_payload(
             approval
         ),
@@ -225,12 +237,98 @@ def _has_active_work_descendant(plan: Plan, item_id: str) -> bool:
 
 def _contract_fingerprint(item: PlanItem) -> tuple[Any, ...]:
     return (
-        item.title.strip().casefold(),
-        item.outcome.strip().casefold(),
-        tuple(entry.strip().casefold() for entry in item.scope.includes),
-        tuple(entry.strip().casefold() for entry in item.scope.excludes),
-        tuple(entry.strip().casefold() for entry in item.acceptance),
+        _safe_strip(item.title).casefold(),
+        _safe_strip(item.outcome).casefold(),
+        tuple(_safe_strip(entry).casefold() for entry in item.scope.includes),
+        tuple(_safe_strip(entry).casefold() for entry in item.scope.excludes),
+        tuple(_safe_strip(entry).casefold() for entry in item.acceptance),
     )
+
+
+def _safe_strip(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def validate_canonical_root(plan: Plan) -> list[ValidationIssue]:
+    """Require exactly one active canonical aggregate root and a single-root tree."""
+
+    issues: list[ValidationIssue] = []
+    root = plan.items.get(PLAN_ROOT_ITEM_ID)
+    if root is None:
+        issues.append(
+            _issue(
+                "missing_canonical_root",
+                "error",
+                f"plan requires canonical root item {PLAN_ROOT_ITEM_ID!r}",
+                [PLAN_ROOT_ITEM_ID],
+            )
+        )
+        return issues
+
+    if not is_active_item(root):
+        issues.append(
+            _issue(
+                "inactive_canonical_root",
+                "error",
+                f"canonical root {PLAN_ROOT_ITEM_ID!r} must be active",
+                [PLAN_ROOT_ITEM_ID, "planning_status"],
+            )
+        )
+
+    if root.parent_id is not None:
+        issues.append(
+            _issue(
+                "invalid_canonical_root_parent",
+                "error",
+                f"canonical root {PLAN_ROOT_ITEM_ID!r} must have parent_id null",
+                [PLAN_ROOT_ITEM_ID, "parent_id"],
+            )
+        )
+
+    if root.kind != "aggregate":
+        issues.append(
+            _issue(
+                "invalid_canonical_root_kind",
+                "error",
+                f"canonical root {PLAN_ROOT_ITEM_ID!r} must have kind aggregate",
+                [PLAN_ROOT_ITEM_ID, "kind"],
+            )
+        )
+
+    active_roots = [
+        item.id
+        for item in plan.items.values()
+        if is_active_item(item) and item.parent_id is None
+    ]
+    if len(active_roots) > 1:
+        issues.append(
+            _issue(
+                "multiple_active_roots",
+                "error",
+                "exactly one active root is allowed; found "
+                + ", ".join(sorted(active_roots)),
+                sorted(active_roots),
+            )
+        )
+
+    for item_id, item in sorted(plan.items.items()):
+        if not is_active_item(item):
+            continue
+        if item_id == PLAN_ROOT_ITEM_ID:
+            continue
+        if item.parent_id is None:
+            issues.append(
+                _issue(
+                    "multiple_active_roots",
+                    "error",
+                    f"active item {item_id!r} must not be a root",
+                    [item_id, "parent_id"],
+                )
+            )
+
+    return issues
 
 
 def validate_root_item_populated(plan: Plan) -> list[ValidationIssue]:
@@ -243,7 +341,7 @@ def validate_root_item_populated(plan: Plan) -> list[ValidationIssue]:
     if not active_children_of(plan, PLAN_ROOT_ITEM_ID):
         return issues
 
-    if root.title.strip().casefold() == DEFAULT_PLAN_ROOT_TITLE.casefold():
+    if _safe_strip(root.title).casefold() == DEFAULT_PLAN_ROOT_TITLE.casefold():
         issues.append(
             _issue(
                 "default_root_title",
@@ -256,7 +354,7 @@ def validate_root_item_populated(plan: Plan) -> list[ValidationIssue]:
                 [PLAN_ROOT_ITEM_ID, "title"],
             )
         )
-    if not root.outcome.strip():
+    if not _safe_strip(root.outcome):
         issues.append(
             _issue(
                 "missing_root_outcome",
@@ -387,11 +485,11 @@ def plan_advisory_warning_messages(plan: Plan) -> list[str]:
 def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
-    if not plan.id:
+    if not isinstance(plan.id, str) or not plan.id.strip():
         issues.append(
             _issue("missing_required_field", "error", "plan id is required", ["plan", "id"])
         )
-    if not plan.output_goal:
+    if not isinstance(plan.output_goal, str) or not plan.output_goal.strip():
         issues.append(
             _issue(
                 "missing_required_field",
@@ -434,10 +532,33 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
         else:
             seen_ids[item.id] = item_id
 
+        if not isinstance(item.id, str) or not item.id.strip():
+            issues.append(
+                _issue(
+                    "invalid_plan_field",
+                    "error",
+                    "item id must be a non-empty string",
+                    [item_id, "id"],
+                )
+            )
+
+        if item.planning_status not in PLANNING_STATUSES:
+            issues.append(
+                _issue(
+                    "invalid_planning_status",
+                    "error",
+                    (
+                        "planning_status must be one of: "
+                        + ", ".join(sorted(PLANNING_STATUSES))
+                    ),
+                    [item.id, "planning_status"],
+                )
+            )
+
         if not is_active_item(item):
             continue
 
-        if not item.order_key:
+        if not isinstance(item.order_key, str) or not item.order_key.strip():
             issues.append(
                 _issue(
                     "missing_required_field",
@@ -446,7 +567,7 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     [item.id, "order_key"],
                 )
             )
-        if not item.title:
+        if not isinstance(item.title, str) or not item.title.strip():
             issues.append(
                 _issue(
                     "missing_required_field",
@@ -465,6 +586,41 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                 )
             )
 
+        issues.extend(
+            _validate_string_list_issues(
+                item.boundaries,
+                path=[item.id, "boundaries"],
+                field_name="boundaries",
+            )
+        )
+        issues.extend(
+            _validate_string_list_issues(
+                item.acceptance,
+                path=[item.id, "acceptance"],
+                field_name="acceptance",
+            )
+        )
+        issues.extend(
+            _validate_string_list_issues(
+                item.depends_on,
+                path=[item.id, "depends_on"],
+                field_name="depends_on",
+            )
+        )
+        issues.extend(
+            _validate_string_list_issues(
+                item.scope.includes,
+                path=[item.id, "scope", "includes"],
+                field_name="scope.includes",
+            )
+        )
+        issues.extend(
+            _validate_string_list_issues(
+                item.scope.excludes,
+                path=[item.id, "scope", "excludes"],
+                field_name="scope.excludes",
+            )
+        )
         issues.extend(
             _validate_string_list_issues(
                 item.risks,
@@ -509,6 +665,34 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
 def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     reported_cycles: set[tuple[str, ...]] = set()
+
+    siblings_by_parent: dict[str | None, list[PlanItem]] = {}
+    for item in plan.items.values():
+        if not is_active_item(item):
+            continue
+        siblings_by_parent.setdefault(item.parent_id, []).append(item)
+
+    for parent_id, siblings in siblings_by_parent.items():
+        seen_order_keys: dict[str, list[str]] = {}
+        for sibling in siblings:
+            if not isinstance(sibling.order_key, str) or not sibling.order_key.strip():
+                continue
+            seen_order_keys.setdefault(sibling.order_key, []).append(sibling.id)
+        for order_key, item_ids in sorted(seen_order_keys.items()):
+            if len(item_ids) < 2:
+                continue
+            path = [parent_id or PLAN_ROOT_ITEM_ID, "order_key", order_key]
+            issues.append(
+                _issue(
+                    "duplicate_sibling_order_key",
+                    "error",
+                    (
+                        "active siblings share order_key "
+                        f"{order_key!r}: {', '.join(sorted(item_ids))}"
+                    ),
+                    path + sorted(item_ids),
+                )
+            )
 
     for item_id, item in sorted(plan.items.items()):
         if not is_active_item(item):
@@ -881,6 +1065,7 @@ def collect_plan_analysis_validation_issues(plan: Plan) -> list[ValidationIssue]
             ordered.append(issue)
 
     add_issues(validate_ids_and_fields(plan))
+    add_issues(validate_canonical_root(plan))
     add_issues(validate_root_item_populated(plan))
     add_issues(validate_work_item_scope_contract(plan, mode="draft"))
     add_issues(validate_hierarchy(plan))
@@ -904,6 +1089,7 @@ def validate_plan(
     is_review_blocked = build_is_review_blocked_fn(reviews, review_types=review_types)
 
     issues.extend(validate_ids_and_fields(plan))
+    issues.extend(validate_canonical_root(plan))
     issues.extend(validate_root_item_populated(plan))
     issues.extend(validate_work_item_scope_contract(plan, mode=mode))
     issues.extend(validate_hierarchy(plan))

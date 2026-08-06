@@ -43,8 +43,8 @@ LEGACY_REVIEW_RECORD_SCHEMA_VERSION = 1
 LEGACY_REVIEW_CONTRACT_VERSION = 1
 CURRENT_REVIEW_RECORD_SCHEMA_VERSION = 2
 CURRENT_REVIEW_CONTRACT_VERSION = 2
-SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS = frozenset({1, 2})
-SUPPORTED_REVIEW_CONTRACT_VERSIONS = frozenset({1, 2})
+SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS = frozenset({CURRENT_REVIEW_RECORD_SCHEMA_VERSION})
+SUPPORTED_REVIEW_CONTRACT_VERSIONS = frozenset({CURRENT_REVIEW_CONTRACT_VERSION})
 
 _ACTIVE_REVIEW_BLOCKING_STATUSES = frozenset(
     {"changes_requested", "needs_revision"}
@@ -133,6 +133,21 @@ FINDING_DISPOSITIONS: frozenset[str] = frozenset(
         "unresolved",
         "superseded",
         "invalid",
+    }
+)
+SUPPORTED_REVIEW_LOOP_TYPES: frozenset[str] = frozenset(
+    {"whole_plan", "whole_output", "focused_plan", "focused_output"}
+)
+SUPPORTED_REVIEW_LOOP_STATUSES: frozenset[str] = frozenset(
+    {
+        "pending",
+        "advisory_pending",
+        "approved",
+        "changes_requested",
+        "blocked",
+        "verified",
+        "needs_revision",
+        "review_incomplete",
     }
 )
 OPEN_FINDING_DISPOSITIONS: frozenset[str] = frozenset(
@@ -274,7 +289,58 @@ def validate_lifecycle_status(status: str | None) -> str | None:
     if not normalized:
         return None
     _reject_legacy_lifecycle_status(normalized)
+    if normalized not in MANDATORY_REVIEW_TRANSITIONS:
+        raise ValueError(
+            "lifecycle status must be one of: "
+            + ", ".join(sorted(MANDATORY_REVIEW_TRANSITIONS))
+        )
     return normalized
+
+
+def validate_finding_status(status: str) -> FindingStatus:
+    normalized = str(status).strip()
+    if normalized not in FINDING_DISPOSITIONS:
+        raise ValueError(
+            "finding status must be one of: "
+            + ", ".join(sorted(FINDING_DISPOSITIONS))
+        )
+    return normalized  # type: ignore[return-value]
+
+
+def validate_review_loop_status(status: str) -> ReviewLoopStatus:
+    normalized = str(status).strip()
+    if normalized in _LEGACY_LOOP_STATUS_NAMES:
+        raise ValueError(
+            f"legacy review loop status {normalized!r} is not accepted"
+        )
+    if normalized not in SUPPORTED_REVIEW_LOOP_STATUSES:
+        raise ValueError(
+            "review loop status must be one of: "
+            + ", ".join(sorted(SUPPORTED_REVIEW_LOOP_STATUSES))
+        )
+    return normalized  # type: ignore[return-value]
+
+
+def validate_review_loop_type(loop_type: str) -> ReviewLoopType:
+    normalized = str(loop_type).strip()
+    if not normalized:
+        raise ValueError("review loop type is required")
+    if normalized not in SUPPORTED_REVIEW_LOOP_TYPES:
+        raise ValueError(
+            "review loop type must be one of: "
+            + ", ".join(sorted(SUPPORTED_REVIEW_LOOP_TYPES))
+        )
+    return normalized  # type: ignore[return-value]
+
+
+def _require_non_negative_int(value: Any, field_label: str, *, default: int = 0) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_label} must be an integer")
+    if value < 0:
+        raise ValueError(f"{field_label} must be non-negative")
+    return value
 
 
 def validate_scope_review_decision_value(decision: str) -> str:
@@ -358,7 +424,20 @@ class ReviewFinding:
         evidence_raw = payload.get("evidence") or []
         if not isinstance(evidence_raw, list):
             raise ValueError("finding evidence must be a list")
-        evidence = [str(item) for item in evidence_raw]
+        evidence = []
+        for index, item in enumerate(evidence_raw):
+            if not isinstance(item, str):
+                raise ValueError(f"finding evidence[{index}] must be a string")
+            evidence.append(item)
+
+        target_refs_raw = payload.get("target_refs") or []
+        if not isinstance(target_refs_raw, list):
+            raise ValueError("finding target_refs must be a list")
+        target_refs: list[str] = []
+        for index, ref in enumerate(target_refs_raw):
+            if not isinstance(ref, str):
+                raise ValueError(f"finding target_refs[{index}] must be a string")
+            target_refs.append(ref)
 
         family_raw = payload.get("family_id")
         family_id = (
@@ -377,10 +456,10 @@ class ReviewFinding:
             id=str(payload["id"]),
             severity=severity,
             category=category,
-            target_refs=[str(ref) for ref in (payload.get("target_refs") or [])],
+            target_refs=target_refs,
             issue=str(payload.get("issue") or ""),
             recommended_change=recommended_change,
-            status=str(payload.get("status") or "unresolved"),  # type: ignore[arg-type]
+            status=validate_finding_status(str(payload.get("status") or "unresolved")),
             evidence=evidence,
             reopens_finding_id=reopens_finding_id,
             family_id=family_id,
@@ -600,35 +679,32 @@ def is_mandatory_whole_review(loop: ReviewLoop) -> bool:
 
 
 def parse_review_version_fields(payload: Mapping[str, Any]) -> tuple[int, int]:
-    """Parse persisted review record and contract schema versions."""
+    """Parse persisted review record and contract schema versions (v2-only)."""
 
-    record_raw = payload.get("review_record_schema_version")
-    legacy_raw = payload.get("review_schema_version")
+    if "review_schema_version" in payload:
+        raise ValueError(
+            "legacy field review_schema_version is not accepted; "
+            "use review_record_schema_version"
+        )
+    if "review_record_schema_version" not in payload:
+        raise ValueError("review_record_schema_version is required")
+    if "review_contract_version" not in payload:
+        raise ValueError("review_contract_version is required")
 
-    if record_raw is None and legacy_raw is None:
-        record_version = LEGACY_REVIEW_RECORD_SCHEMA_VERSION
-    elif record_raw is not None and legacy_raw is not None:
-        record_int = int(record_raw)
-        legacy_int = int(legacy_raw)
-        if record_int != legacy_int:
-            raise ValueError(
-                "review_record_schema_version and review_schema_version disagree"
-            )
-        record_version = record_int
-    else:
-        record_version = int(record_raw if record_raw is not None else legacy_raw)
+    record_version = _require_non_negative_int(
+        payload["review_record_schema_version"],
+        "review_record_schema_version",
+    )
+    contract_version = _require_non_negative_int(
+        payload["review_contract_version"],
+        "review_contract_version",
+    )
 
     if record_version not in SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS:
         raise ValueError(
             f"unsupported review_record_schema_version: {record_version!r}; "
             f"supported: {sorted(SUPPORTED_REVIEW_RECORD_SCHEMA_VERSIONS)}"
         )
-
-    contract_raw = payload.get("review_contract_version")
-    if contract_raw is None:
-        contract_version = LEGACY_REVIEW_CONTRACT_VERSION
-    else:
-        contract_version = int(contract_raw)
     if contract_version not in SUPPORTED_REVIEW_CONTRACT_VERSIONS:
         raise ValueError(
             f"unsupported review_contract_version: {contract_version!r}; "
@@ -658,8 +734,8 @@ class ReviewLoop:
     scope_review_result: dict[str, Any] | None = None
     exhausted_budget: ExhaustedReviewBudget | None = None
     # Severity-threshold review fields (proposal review-record model).
-    review_record_schema_version: int = LEGACY_REVIEW_RECORD_SCHEMA_VERSION
-    review_contract_version: int = LEGACY_REVIEW_CONTRACT_VERSION
+    review_record_schema_version: int = CURRENT_REVIEW_RECORD_SCHEMA_VERSION
+    review_contract_version: int = CURRENT_REVIEW_CONTRACT_VERSION
     revise_at: ReviewSeverity | None = None
     finding_actions: list[FindingAction] = field(default_factory=list)
     review_incomplete: dict[str, Any] | None = None
@@ -773,14 +849,16 @@ class ReviewLoop:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> ReviewLoop:
         raw_type = payload.get("type")
-        if raw_type is None or not str(raw_type).strip():
-            raise ValueError("review loop type is required")
+        loop_type = validate_review_loop_type(str(raw_type or ""))
 
-        findings = [
-            ReviewFinding.from_dict(item)
-            for item in (payload.get("findings") or [])
-            if isinstance(item, dict)
-        ]
+        findings_raw = payload.get("findings") or []
+        if not isinstance(findings_raw, list):
+            raise ValueError("findings must be a list")
+        findings: list[ReviewFinding] = []
+        for index, item in enumerate(findings_raw):
+            if not isinstance(item, dict):
+                raise ValueError(f"findings[{index}] must be an object")
+            findings.append(ReviewFinding.from_dict(item))
         approved = payload.get("approved_digests")
         approved_digests = (
             {str(key): str(value) for key, value in approved.items()}
@@ -829,7 +907,10 @@ class ReviewLoop:
                 "legacy field blocker_review_rounds is not accepted; "
                 "use scope_review_rounds"
             )
-        scope_review_rounds = int(rounds_raw or 0)
+        scope_review_rounds = _require_non_negative_int(
+            rounds_raw,
+            "scope_review_rounds",
+        )
         review_record_schema_version, review_contract_version = (
             parse_review_version_fields(payload)
         )
@@ -838,23 +919,18 @@ class ReviewLoop:
         revise_at: ReviewSeverity | None = None
         if revise_raw is not None and str(revise_raw).strip():
             revise_at = validate_review_severity(str(revise_raw))
-        loop_type = str(raw_type).strip()
         if revise_at is None and loop_type in BUILTIN_REVISE_AT:
             raise ValueError(
                 f"review loop {payload.get('id')!r} is missing required revise_at"
             )
 
-        status_raw = str(payload.get("status") or "pending").strip()
-        if status_raw in _LEGACY_LOOP_STATUS_NAMES:
-            raise ValueError(
-                f"legacy review loop status {status_raw!r} is not accepted"
-            )
+        status_raw = validate_review_loop_status(str(payload.get("status") or "pending"))
 
-        finding_actions = [
-            parse_finding_action(item)
-            for item in (payload.get("finding_actions") or [])
-            if isinstance(item, dict)
-        ]
+        finding_actions = []
+        for index, item in enumerate(payload.get("finding_actions") or []):
+            if not isinstance(item, dict):
+                raise ValueError(f"finding_actions[{index}] must be an object")
+            finding_actions.append(parse_finding_action(item))
         incomplete_raw = payload.get("review_incomplete")
         review_incomplete = (
             dict(incomplete_raw) if isinstance(incomplete_raw, dict) else None
@@ -866,14 +942,24 @@ class ReviewLoop:
         ]
         finding_ids_by_set: dict[str, list[str]] = {}
         raw_ids_by_set = payload.get("finding_ids_by_set")
-        if isinstance(raw_ids_by_set, dict):
-            for key, value in raw_ids_by_set.items():
-                set_id = str(key).strip()
-                if not set_id or not isinstance(value, list):
-                    continue
-                finding_ids_by_set[set_id] = [
-                    str(item).strip() for item in value if str(item).strip()
-                ]
+        if raw_ids_by_set is None:
+            raw_ids_by_set = {}
+        if not isinstance(raw_ids_by_set, dict):
+            raise ValueError("finding_ids_by_set must be an object")
+        for key, value in raw_ids_by_set.items():
+            set_id = str(key).strip()
+            if not set_id:
+                raise ValueError("finding_ids_by_set keys must be non-empty strings")
+            if not isinstance(value, list):
+                raise ValueError(f"finding_ids_by_set[{set_id!r}] must be a list")
+            normalized_ids: list[str] = []
+            for index, item in enumerate(value):
+                if not isinstance(item, str) or not item.strip():
+                    raise ValueError(
+                        f"finding_ids_by_set[{set_id!r}][{index}] must be a non-empty string"
+                    )
+                normalized_ids.append(item.strip())
+            finding_ids_by_set[set_id] = normalized_ids
         binding_raw = payload.get("reviewer_binding")
         reviewer_binding: SessionBinding | None = None
         if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
@@ -889,13 +975,19 @@ class ReviewLoop:
 
         return cls(
             id=str(payload["id"]),
-            type=str(raw_type).strip(),  # type: ignore[arg-type]
-            target_revision=int(payload.get("target_revision") or 0),
+            type=loop_type,  # type: ignore[arg-type]
+            target_revision=_require_non_negative_int(
+                payload.get("target_revision"),
+                "target_revision",
+            ),
             scope=dict(payload.get("scope") or {}),
             status=status_raw,  # type: ignore[arg-type]
             findings=findings,
-            revision_cycles=int(payload.get("revision_cycles") or 0),
-            revision=int(payload.get("revision") or 0),
+            revision_cycles=_require_non_negative_int(
+                payload.get("revision_cycles"),
+                "revision_cycles",
+            ),
+            revision=_require_non_negative_int(payload.get("revision"), "revision"),
             approved_digests=approved_digests,
             reviewer_binding=reviewer_binding,
             lifecycle_status=lifecycle_status,  # type: ignore[arg-type]
@@ -915,7 +1007,10 @@ class ReviewLoop:
             finding_families=finding_families,
             family_sweeps=family_sweeps,
             audit_runs=audit_runs,
-            gate_agent_turns=int(payload.get("gate_agent_turns") or 0),
+            gate_agent_turns=_require_non_negative_int(
+                payload.get("gate_agent_turns"),
+                "gate_agent_turns",
+            ),
         )
 
 
@@ -1077,10 +1172,28 @@ def item_referenced_in_reviews(reviews: list[dict[str, Any]], item_id: str) -> b
     return False
 
 
+def is_known_finding_status(status: str) -> bool:
+    return str(status).strip() in FINDING_DISPOSITIONS
+
+
 def is_open_finding_status(status: str) -> bool:
     """True when a finding still requires verification/revision attention."""
 
-    return str(status).strip() in OPEN_FINDING_DISPOSITIONS
+    normalized = str(status).strip()
+    return normalized in OPEN_FINDING_DISPOSITIONS
+
+
+def is_unresolved_finding_status(status: str) -> bool:
+    """True when a finding blocks progress (open or unknown/corrupt status)."""
+
+    normalized = str(status).strip()
+    if normalized in OPEN_FINDING_DISPOSITIONS:
+        return True
+    return normalized not in FINDING_DISPOSITIONS
+
+
+def findings_have_unknown_status(findings: Sequence[ReviewFinding]) -> bool:
+    return any(not is_known_finding_status(finding.status) for finding in findings)
 
 
 def loop_revise_at(loop: ReviewLoop) -> ReviewSeverity:
@@ -1095,7 +1208,7 @@ def open_findings(findings: Sequence[ReviewFinding]) -> list[ReviewFinding]:
     return [
         finding
         for finding in findings
-        if is_open_finding_status(finding.status)
+        if is_unresolved_finding_status(finding.status)
     ]
 
 
@@ -1323,6 +1436,8 @@ def findings_permit_approval(
 ) -> bool:
     """True when required findings are clear and optionals need no verification."""
 
+    if findings_have_unknown_status(findings):
+        return False
     if required_open_findings(findings, threshold):
         return False
     if open_optional_findings_blocking_approval(
@@ -1342,6 +1457,8 @@ def findings_permit_approval_for_loop(
     """True when the loop may approve, scoped to the active discovery pass."""
 
     resolved = loop.findings if findings is None else findings
+    if findings_have_unknown_status(resolved):
+        return False
     threshold = loop_revise_at(loop)
     if required_open_findings(resolved, threshold):
         return False
@@ -1633,11 +1750,14 @@ def blocking_focused_findings_for_items(
 
 
 def required_unresolved_finding_ids_from_payload(review: dict[str, Any]) -> list[str]:
-    findings = [
-        ReviewFinding.from_dict(item)
-        for item in (review.get("findings") or [])
-        if isinstance(item, dict)
-    ]
+    findings_raw = review.get("findings") or []
+    if not isinstance(findings_raw, list):
+        raise ValueError("findings must be a list")
+    findings: list[ReviewFinding] = []
+    for index, item in enumerate(findings_raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"findings[{index}] must be an object")
+        findings.append(ReviewFinding.from_dict(item))
     revise_raw = review.get("revise_at")
     if revise_raw is None or not str(revise_raw).strip():
         raise ValueError(
@@ -1806,16 +1926,22 @@ def is_mandatory_gate_approval_record(payload: Mapping[str, Any]) -> bool:
         return False
     if not str(blocker_raw.get("target_digest") or "").strip():
         return False
-    findings = [
-        ReviewFinding.from_dict(item)
-        for item in (payload.get("findings") or [])
-        if isinstance(item, dict)
-    ]
-    finding_actions = [
-        parse_finding_action(item)
-        for item in (payload.get("finding_actions") or [])
-        if isinstance(item, dict)
-    ]
+    findings_raw = payload.get("findings") or []
+    if not isinstance(findings_raw, list):
+        raise ValueError("findings must be a list")
+    findings: list[ReviewFinding] = []
+    for index, item in enumerate(findings_raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"findings[{index}] must be an object")
+        findings.append(ReviewFinding.from_dict(item))
+    finding_actions_raw = payload.get("finding_actions") or []
+    if not isinstance(finding_actions_raw, list):
+        raise ValueError("finding_actions must be a list")
+    finding_actions = []
+    for index, item in enumerate(finding_actions_raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"finding_actions[{index}] must be an object")
+        finding_actions.append(parse_finding_action(item))
     revise_raw = payload.get("revise_at")
     if revise_raw is None or not str(revise_raw).strip():
         raise ValueError("mandatory gate approval record requires revise_at")
@@ -2024,11 +2150,12 @@ def parse_request_finding_actions(
     raw = request.get("finding_actions")
     if not isinstance(raw, list):
         raise ValueError("finding_actions must be a list")
-    return [
-        parse_finding_action(item)
-        for item in raw
-        if isinstance(item, dict)
-    ]
+    actions: list[FindingAction] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"finding_actions[{index}] must be an object")
+        actions.append(parse_finding_action(item))
+    return actions
 
 
 DiscoveryDerivedOutcome = Literal[
@@ -2810,13 +2937,15 @@ def build_review_budget_fields(
     raise ValueError(f"unsupported review loop type for review_budget: {loop_type!r}")
 
 
+_DEFAULT_FOCUSED_PLAN_REVIEW_MAX_REVISION_CYCLES = 3
+_DEFAULT_FOCUSED_OUTPUT_REVIEW_MAX_REVISION_CYCLES = 3
+
+
 def focused_review_revision_limit_from_config(
     config: Mapping[str, Any],
     review_type: Literal["focused_plan", "focused_output"],
 ) -> int:
     """Load per-loop revision budget for focused plan/output review."""
-
-    from top_down_planning.config.defaults import DEFAULT_CONFIG
 
     limits_key = (
         "focused_plan_review"
@@ -2824,11 +2953,15 @@ def focused_review_revision_limit_from_config(
         else "focused_output_review"
     )
     section = (config.get("limits") or {}).get(limits_key) or {}
-    default_section = DEFAULT_CONFIG["limits"][limits_key]
+    default_cycles = (
+        _DEFAULT_FOCUSED_PLAN_REVIEW_MAX_REVISION_CYCLES
+        if review_type == "focused_plan"
+        else _DEFAULT_FOCUSED_OUTPUT_REVIEW_MAX_REVISION_CYCLES
+    )
     return int(
         section.get(
             "max_revision_cycles_per_loop",
-            default_section["max_revision_cycles_per_loop"],
+            default_cycles,
         )
     )
 
@@ -3436,16 +3569,24 @@ class FindingVerificationResult:
                 "finding verification result stage must be 'finding_verification'"
             )
         decision = validate_verification_decision(str(payload.get("decision") or ""))
-        finding_results = [
-            FindingVerificationEntry.from_dict(item)
-            for item in (payload.get("finding_results") or [])
-            if isinstance(item, dict)
-        ]
-        side_effects = [
-            ReviewFinding.from_dict(item)
-            for item in (payload.get("new_direct_side_effect_findings") or [])
-            if isinstance(item, dict)
-        ]
+        finding_results_raw = payload.get("finding_results") or []
+        if not isinstance(finding_results_raw, list):
+            raise ValueError("finding_results must be a list")
+        finding_results = []
+        for index, item in enumerate(finding_results_raw):
+            if not isinstance(item, dict):
+                raise ValueError(f"finding_results[{index}] must be an object")
+            finding_results.append(FindingVerificationEntry.from_dict(item))
+        side_effects_raw = payload.get("new_direct_side_effect_findings") or []
+        if not isinstance(side_effects_raw, list):
+            raise ValueError("new_direct_side_effect_findings must be a list")
+        side_effects = []
+        for index, item in enumerate(side_effects_raw):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"new_direct_side_effect_findings[{index}] must be an object"
+                )
+            side_effects.append(ReviewFinding.from_dict(item))
         return cls(
             target_digest=str(payload.get("target_digest") or ""),
             decision=decision,
@@ -3507,11 +3648,13 @@ class ScopeReviewResult:
             raise ValueError("legacy field blocking_findings is not accepted")
         decision = validate_scope_review_decision_value(str(payload.get("decision") or ""))
         raw_findings = payload.get("reported_findings") or []
-        reported = [
-            ReviewFinding.from_dict(item)
-            for item in raw_findings
-            if isinstance(item, dict)
-        ]
+        if not isinstance(raw_findings, list):
+            raise ValueError("reported_findings must be a list")
+        reported = []
+        for index, item in enumerate(raw_findings):
+            if not isinstance(item, dict):
+                raise ValueError(f"reported_findings[{index}] must be an object")
+            reported.append(ReviewFinding.from_dict(item))
         return cls(
             target_digest=str(payload.get("target_digest") or ""),
             decision=decision,  # type: ignore[arg-type]
@@ -3551,13 +3694,9 @@ def validate_scope_review_decision(decision: str) -> ScopeReviewDecision:
 def validate_mandatory_lifecycle_status(
     status: str,
 ) -> MandatoryReviewLifecycleStatus:
-    normalized = str(status).strip()
-    _reject_legacy_lifecycle_status(normalized)
-    if normalized not in MANDATORY_REVIEW_TRANSITIONS:
-        raise ValueError(
-            "mandatory review lifecycle status must be one of: "
-            + ", ".join(sorted(MANDATORY_REVIEW_TRANSITIONS))
-        )
+    normalized = validate_lifecycle_status(status)
+    if normalized is None:
+        raise ValueError("mandatory review lifecycle status is required")
     return normalized  # type: ignore[return-value]
 
 

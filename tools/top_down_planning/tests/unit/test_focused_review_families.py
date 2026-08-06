@@ -298,7 +298,7 @@ def test_focused_verification_rejects_stale_target_digest(tmp_path: Path) -> Non
         findings=[finding],
         status="changes_requested",
         active_stage="finding_verification",
-        review_contract_version=1,
+        review_contract_version=2,
     )
     save_review_payload(store, run_id, loop.to_dict())
 
@@ -357,7 +357,7 @@ def test_focused_verification_rejects_out_of_scope_side_effect_finding(
         findings=[finding],
         status="changes_requested",
         active_stage="finding_verification",
-        review_contract_version=1,
+        review_contract_version=2,
     )
     save_review_payload(store, run_id, loop.to_dict())
 
@@ -478,7 +478,7 @@ def test_focused_verification_recheck_includes_active_families() -> None:
         finding_families=[family.to_dict()],
         finding_ids_by_set={"set-1": ["finding-001"]},
         active_stage="finding_verification",
-        review_contract_version=1,
+        review_contract_version=2,
     )
 
     recheck = verification_recheck_request(

@@ -125,6 +125,8 @@ def test_sync_reviewer_loop_session_id_promotes_starting_binding_to_bound(
             "revision_cycles": 1,
             "lifecycle_status": "revision_in_progress",
             "reviewer_binding": binding.to_dict(),
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
         },
     )
 
@@ -249,6 +251,8 @@ def test_sync_reviewer_loop_session_id_ignores_unrelated_durable_session_id(
             "revision_cycles": 0,
             "lifecycle_status": "review_pending",
             "reviewer_binding": binding.to_dict(),
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
         },
     )
 

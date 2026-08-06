@@ -19,6 +19,7 @@ from top_down_planning.domain.models import (
     Scope,
 )
 from top_down_planning.domain.plan_tree import (
+    PLAN_ROOT_ITEM_ID,
     children_of,
     clone_plan,
     collect_budget_warnings,
@@ -109,8 +110,17 @@ def _require_active_item(plan: Plan, item_id: str) -> PlanItem:
 
 def _require_active_parent(plan: Plan, parent_id: str | None) -> None:
     if parent_id is None:
-        return
+        raise InvalidMutationError(
+            "parent_id is required; only the canonical root may have no parent"
+        )
     _require_active_item(plan, parent_id)
+
+
+def _guard_canonical_root(item_id: str, operation: str) -> None:
+    if item_id == PLAN_ROOT_ITEM_ID:
+        raise InvalidMutationError(
+            f"{operation} is not allowed on the canonical root {PLAN_ROOT_ITEM_ID!r}"
+        )
 
 
 def _validate_depends_on(
@@ -144,32 +154,38 @@ def _item_payload_from_op(op: Operation) -> dict[str, Any]:
 
 
 def _build_item(item_id: str, parent_id: str | None, order_key: str, payload: dict[str, Any]) -> PlanItem:
+    from top_down_planning.domain.plan_schema import normalize_plan_item_payload
+
     if payload.get("planning_status") not in (None, "open"):
         raise InvalidMutationError(
             "new items must use planning_status open; use supersede_item or remove_item"
         )
-    title = payload.get("title")
-    if not title or not str(title).strip():
-        raise InvalidMutationError("item title is required")
-    kind = payload.get("kind")
-    if kind is None:
-        raise InvalidMutationError("item kind is required")
-    if kind not in ("aggregate", "work"):
-        raise InvalidMutationError(f"invalid plan item kind: {kind!r}")
+    try:
+        normalized = normalize_plan_item_payload(
+            {
+                **payload,
+                "id": item_id,
+                "parent_id": parent_id,
+                "order_key": order_key,
+                "planning_status": "open",
+            }
+        )
+    except ValueError as exc:
+        raise InvalidMutationError(str(exc)) from exc
     return PlanItem(
-        id=item_id,
-        parent_id=parent_id,
-        order_key=order_key,
-        title=str(title).strip(),
-        outcome=payload.get("outcome", ""),
-        scope=Scope.from_dict(payload.get("scope")),
-        boundaries=list(payload.get("boundaries") or []),
-        depends_on=list(payload.get("depends_on") or []),
-        acceptance=list(payload.get("acceptance") or []),
-        risks=list(payload.get("risks") or []),
-        source_refs=list(payload.get("source_refs") or []),
-        planning_status="open",
-        kind=kind,
+        id=normalized["id"],
+        parent_id=normalized["parent_id"],
+        order_key=normalized["order_key"],
+        title=normalized["title"],
+        outcome=normalized["outcome"],
+        scope=Scope.from_dict(normalized["scope"]),
+        boundaries=list(normalized["boundaries"]),
+        depends_on=list(normalized["depends_on"]),
+        acceptance=list(normalized["acceptance"]),
+        risks=list(normalized["risks"]),
+        source_refs=list(normalized["source_refs"]),
+        planning_status=normalized["planning_status"],  # type: ignore[arg-type]
+        kind=normalized["kind"],  # type: ignore[arg-type]
     )
 
 
@@ -252,6 +268,12 @@ def _apply_update_item(plan: Plan, op: Operation, id_map: dict[str, str], change
     patch = op.get("patch")
     if not patch:
         raise InvalidMutationError("update_item requires a patch payload")
+    if item_id == PLAN_ROOT_ITEM_ID and "kind" in patch:
+        kind = patch["kind"]
+        if kind != "aggregate":
+            raise InvalidMutationError(
+                f"canonical root {PLAN_ROOT_ITEM_ID!r} must remain kind aggregate"
+            )
 
     unknown_fields = sorted(set(patch) - _UPDATE_ITEM_PATCH_FIELDS)
     if unknown_fields:
@@ -326,6 +348,7 @@ def _apply_move_subtree(plan: Plan, op: Operation, id_map: dict[str, str], chang
         }
 
     item = _require_active_item(plan, item_id)
+    _guard_canonical_root(item_id, "move_subtree")
     old_parent = item.parent_id
     _require_active_parent(plan, new_parent_id)
     move_item_subtree(plan, item_id, new_parent_id, placement)
@@ -345,6 +368,7 @@ def _apply_supersede_item(
     materialized_temp_ids: set[str],
 ) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
+    _guard_canonical_root(item_id, "supersede_item")
     old_item = _require_active_item(plan, item_id)
     if children_of(plan, item_id):
         raise InvalidMutationError(
@@ -393,6 +417,7 @@ def _apply_remove_item(
     reviews: list[dict[str, Any]] | None = None,
 ) -> None:
     item_id = _resolve_id(op["item_id"], id_map)
+    _guard_canonical_root(item_id, "remove_item")
     item = _require_active_item(plan, item_id)
     if children_of(plan, item_id):
         raise InvalidMutationError("remove_item requires the item to have no children")

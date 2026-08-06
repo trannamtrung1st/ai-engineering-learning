@@ -154,7 +154,7 @@ def test_revision_guidance_includes_family_repair_for_contract_v2() -> None:
     assert "remaining_instance_refs" in guidance
 
 
-def test_focused_optional_family_revision_guidance_omits_family_fix() -> None:
+def test_focused_optional_family_revision_guidance_includes_family_protocol() -> None:
     from top_down_planning.domain.finding_families import (
         FindingFamily,
         compute_family_fingerprint,
@@ -196,7 +196,7 @@ def test_focused_optional_family_revision_guidance_omits_family_fix() -> None:
             )
         ],
         finding_families=[family.to_dict()],
-        review_contract_version=1,
+        review_contract_version=2,
     )
     config = {
         "limits": {
@@ -211,8 +211,7 @@ def test_focused_optional_family_revision_guidance_omits_family_fix() -> None:
         config=config,
     )
     assert "active_families" in guidance
-    assert "per-finding record-actions" in guidance
-    assert "family_fix" not in guidance
+    assert "family_fix" in guidance
 
 
 def test_primary_review_resume_fields_includes_focused_active_families() -> None:
@@ -257,7 +256,7 @@ def test_primary_review_resume_fields_includes_focused_active_families() -> None
         findings=[finding],
         finding_families=[family.to_dict()],
         finding_ids_by_set={"set-1": ["finding-001"]},
-        review_contract_version=1,
+        review_contract_version=2,
     )
     config = {
         "limits": {
@@ -354,12 +353,14 @@ def test_mandatory_whole_plan_advisory_guidance_requires_reviewer_scope_clear() 
 
 
 def test_build_review_budget_fields_rejects_unknown_loop_type() -> None:
+    from dataclasses import replace
+
     loop = make_review_loop(
         id="loop-unknown",
         type="whole_plan",
         target_revision=1,
         scope={"kind": "whole_plan"},
     )
-    loop = loop.__class__.from_dict({**loop.to_dict(), "type": "unknown"})
+    loop = replace(loop, type="unknown")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="unsupported review loop type"):
         build_review_budget_fields(loop, {})

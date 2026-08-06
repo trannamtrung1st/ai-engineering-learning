@@ -893,7 +893,11 @@ class ReviewAgentService:
 
         family_events: list[dict[str, Any]] = []
         try:
-            if raw_fixes and uses_finding_family_protocol(loop):
+            if (
+                raw_fixes
+                and uses_finding_family_protocol(loop)
+                and loop.type in {"whole_plan", "whole_output"}
+            ):
                 target_digest = str(request.get("target_digest") or "").strip()
                 if not target_digest:
                     raise RequestError("family_fixes require target_digest")

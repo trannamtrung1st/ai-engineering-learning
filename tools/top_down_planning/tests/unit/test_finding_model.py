@@ -8,7 +8,6 @@ from tests.helpers import review_loop_dict_with_binding, make_review_loop
 
 from top_down_planning.domain.reviews import (
     CURRENT_REVIEW_RECORD_SCHEMA_VERSION,
-    LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
     FindingAction,
     ReviewFinding,
     ReviewLoop,
@@ -176,7 +175,7 @@ def test_review_loop_persists_revise_at_actions_and_schema_version() -> None:
         review_incomplete=None,
     )
     payload = loop.to_dict()
-    assert payload["review_record_schema_version"] == LEGACY_REVIEW_RECORD_SCHEMA_VERSION
+    assert payload["review_record_schema_version"] == CURRENT_REVIEW_RECORD_SCHEMA_VERSION
     assert "review_schema_version" not in payload
     assert payload["revise_at"] == "major"
     restored = ReviewLoop.from_dict(payload)

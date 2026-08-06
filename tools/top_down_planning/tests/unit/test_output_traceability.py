@@ -257,7 +257,7 @@ def test_whole_output_package_includes_traceability(tmp_path: Path) -> None:
         reviewer_session_id="sess",
         target_revision=1,
         scope={"kind": "whole_output"},
-        status="in_progress",
+        status="pending",
     )
     package = build_whole_output_review_package(
         "run-20260101T000901-000901",
@@ -288,7 +288,7 @@ def test_focused_output_package_includes_scoped_traceability(tmp_path: Path) -> 
         reviewer_session_id="sess",
         target_revision=1,
         scope={"kind": "focused_output", "item_ids": ["item-a"]},
-        status="in_progress",
+        status="pending",
     )
     package = build_focused_review_package(
         "run-20260101T000902-000902",

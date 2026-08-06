@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from top_down_planning.domain.plan_schema import PLAN_SCHEMA_VERSION, normalize_plan_payload
+from top_down_planning.domain.plan_schema import (
+    PLAN_SCHEMA_VERSION,
+    normalize_plan_item_payload,
+    normalize_plan_payload,
+)
 
 PlanningStatus = Literal["open", "superseded", "removed"]
 ItemKind = Literal["aggregate", "work"]
@@ -21,11 +25,12 @@ class Scope:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> Scope:
-        if not data:
-            return cls()
+        from top_down_planning.domain.plan_schema import require_scope_dict
+
+        normalized = require_scope_dict(data, field_label="scope")
         return cls(
-            includes=list(data.get("includes") or []),
-            excludes=list(data.get("excludes") or []),
+            includes=list(normalized["includes"]),
+            excludes=list(normalized["excludes"]),
         )
 
 
@@ -68,26 +73,22 @@ class PlanItem:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PlanItem:
-        kind = data.get("kind")
-        if kind is None:
-            raise ValueError("plan item kind is required")
-        if kind not in ("aggregate", "work"):
-            raise ValueError(f"invalid plan item kind: {kind!r}")
+        normalized = normalize_plan_item_payload(data)
         return cls(
-            id=data["id"],
-            parent_id=data.get("parent_id"),
-            order_key=data["order_key"],
-            title=data["title"],
-            outcome=data.get("outcome", ""),
-            scope=Scope.from_dict(data.get("scope")),
-            boundaries=list(data.get("boundaries") or []),
-            depends_on=list(data.get("depends_on") or []),
-            acceptance=list(data.get("acceptance") or []),
-            risks=list(data.get("risks") or []),
-            source_refs=list(data.get("source_refs") or []),
-            planning_status=data.get("planning_status", "open"),
-            superseded_by=data.get("superseded_by"),
-            kind=kind,
+            id=normalized["id"],
+            parent_id=normalized["parent_id"],
+            order_key=normalized["order_key"],
+            title=normalized["title"],
+            outcome=normalized["outcome"],
+            scope=Scope.from_dict(normalized["scope"]),
+            boundaries=list(normalized["boundaries"]),
+            depends_on=list(normalized["depends_on"]),
+            acceptance=list(normalized["acceptance"]),
+            risks=list(normalized["risks"]),
+            source_refs=list(normalized["source_refs"]),
+            planning_status=normalized["planning_status"],  # type: ignore[arg-type]
+            superseded_by=normalized["superseded_by"],
+            kind=normalized["kind"],  # type: ignore[arg-type]
         )
 
 
@@ -129,9 +130,9 @@ class Plan:
         from top_down_planning.domain.plan_tree import validate_persisted_item_depths
 
         normalized = normalize_plan_payload(data)
-        schema_version = int(normalized["schema_version"])
+        schema_version = normalized["schema_version"]
 
-        items_list = normalized.get("items") or []
+        items_list = normalized["items"]
         items: dict[str, PlanItem] = {}
         for raw_item in items_list:
             if not isinstance(raw_item, dict):
@@ -142,8 +143,8 @@ class Plan:
             items[item.id] = item
         plan = cls(
             id=normalized["id"],
-            revision=int(normalized["revision"]),
-            output_goal=normalized.get("output_goal", ""),
+            revision=normalized["revision"],
+            output_goal=normalized["output_goal"],
             items=items,
             input_refs=list(normalized.get("input_refs") or []),
             scope=Scope.from_dict(normalized.get("scope")),
@@ -160,7 +161,7 @@ class Plan:
 
 @dataclass
 class PlanningLimits:
-    """Soft planning limits; defaults match ``config.defaults.DEFAULT_CONFIG.planning``."""
+    """Soft planning limits with package defaults."""
 
     max_depth: int = 4
     max_expansion_per_item: int = 7

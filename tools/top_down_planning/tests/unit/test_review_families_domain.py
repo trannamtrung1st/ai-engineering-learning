@@ -52,22 +52,23 @@ _FAMILY_PROTOCOL_VERSIONS = {
 }
 
 
-def test_parse_review_version_fields_defaults_to_legacy() -> None:
-    record, contract = parse_review_version_fields({})
-    assert record == LEGACY_REVIEW_RECORD_SCHEMA_VERSION
-    assert contract == LEGACY_REVIEW_CONTRACT_VERSION
+def test_parse_review_version_fields_requires_explicit_versions() -> None:
+    with pytest.raises(ValueError, match="review_record_schema_version is required"):
+        parse_review_version_fields({})
+
+    with pytest.raises(ValueError, match="review_contract_version is required"):
+        parse_review_version_fields({"review_record_schema_version": 2})
 
 
-def test_parse_review_version_fields_accepts_legacy_alias() -> None:
-    record, contract = parse_review_version_fields({"review_schema_version": 1})
-    assert record == 1
-    assert contract == 1
+def test_parse_review_version_fields_rejects_legacy_alias() -> None:
+    with pytest.raises(ValueError, match="review_schema_version"):
+        parse_review_version_fields({"review_schema_version": 1})
 
 
-def test_parse_review_version_fields_rejects_disagreeing_alias() -> None:
-    with pytest.raises(ValueError, match="disagree"):
+def test_parse_review_version_fields_rejects_legacy_v1() -> None:
+    with pytest.raises(ValueError, match="review_record_schema_version"):
         parse_review_version_fields(
-            {"review_record_schema_version": 2, "review_schema_version": 1}
+            {"review_record_schema_version": 1, "review_contract_version": 1}
         )
 
 
@@ -81,21 +82,35 @@ def test_parse_review_version_fields_accepts_supported_versions() -> None:
 
 def test_parse_review_version_fields_rejects_unsupported_versions() -> None:
     with pytest.raises(ValueError, match="review_record_schema_version"):
-        parse_review_version_fields({"review_record_schema_version": 3})
+        parse_review_version_fields(
+            {"review_record_schema_version": 3, "review_contract_version": 2}
+        )
     with pytest.raises(ValueError, match="review_contract_version"):
-        parse_review_version_fields({"review_contract_version": 3})
+        parse_review_version_fields(
+            {"review_record_schema_version": 2, "review_contract_version": 3}
+        )
 
 
 def test_uses_finding_family_protocol_gates_on_contract_version() -> None:
     loop = make_review_loop(id="loop-1", type="whole_plan", **_FAMILY_PROTOCOL_VERSIONS)
     assert uses_finding_family_protocol(loop)
-    legacy = make_review_loop(
-        id="loop-2",
-        type="whole_plan",
-        review_record_schema_version=LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
-        review_contract_version=LEGACY_REVIEW_CONTRACT_VERSION,
-    )
-    assert not uses_finding_family_protocol(legacy)
+    with pytest.raises(ValueError, match="review_record_schema_version"):
+        ReviewLoop.from_dict(
+            {
+                "id": "loop-2",
+                "type": "whole_plan",
+                "target_revision": 0,
+                "scope": {"kind": "whole_plan"},
+                "status": "pending",
+                "revise_at": "blocker",
+                "findings": [],
+                "finding_actions": [],
+                "revision_cycles": 0,
+                "revision": 0,
+                "review_record_schema_version": LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
+                "review_contract_version": LEGACY_REVIEW_CONTRACT_VERSION,
+            }
+        )
 
 
 def test_new_whole_plan_review_loop_sets_contract_v2() -> None:
@@ -118,7 +133,7 @@ def test_new_whole_output_review_loop_uses_contract_v2() -> None:
     assert loop.review_contract_version == CURRENT_REVIEW_CONTRACT_VERSION
 
 
-def test_new_focused_review_loop_uses_record_v2_contract_v1() -> None:
+def test_new_focused_review_loop_uses_contract_v2() -> None:
     loop = new_focused_review_loop(
         loop_id="review-focused-plan-01",
         review_type="focused_plan",
@@ -127,7 +142,7 @@ def test_new_focused_review_loop_uses_record_v2_contract_v1() -> None:
         config={"review": {"focused_plan": {"revise_at": "blocker"}}},
     )
     assert loop.review_record_schema_version == CURRENT_REVIEW_RECORD_SCHEMA_VERSION
-    assert loop.review_contract_version == 1
+    assert loop.review_contract_version == CURRENT_REVIEW_CONTRACT_VERSION
 
 
 def test_focused_plan_family_fingerprint_uses_focused_plan_scope() -> None:
@@ -1273,12 +1288,12 @@ def test_loop_round_trip_preserves_explicit_versions() -> None:
         id="loop-v2",
         type="focused_plan",
         review_record_schema_version=2,
-        review_contract_version=1,
+        review_contract_version=2,
     )
     payload = loop.to_dict()
     restored = ReviewLoop.from_dict(payload)
     assert restored.review_record_schema_version == 2
-    assert restored.review_contract_version == 1
+    assert restored.review_contract_version == 2
     assert "review_schema_version" not in payload
 
 
@@ -2728,67 +2743,21 @@ def test_active_family_view_includes_discovery_sweep_dimensions() -> None:
     assert sweep["searched_refs"] == ["active-items:*"]
 
 
-def test_mandatory_whole_plan_v1_respond_rejected(tmp_path: Path) -> None:
-    from top_down_planning.agent_tool import ReviewAgentService
-    from top_down_planning.agent_tool.errors import RequestError
-    from top_down_planning.domain.models import Plan, PlanItem
-    from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
-    from top_down_planning.persistence import FileRunStore
-    from top_down_planning.persistence.digests import compute_plan_digest
-
-    store = FileRunStore(tmp_path)
-    run_id = "run-20260101T009950-009950"
-    root = PlanItem(
-        id="item-root",
-        parent_id=None,
-        order_key="0000000000",
-        title="Root",
-        outcome="Done.",
-        kind="aggregate",
-    )
-    plan = Plan(
-        id=f"plan-{run_id}",
-        revision=0,
-        output_goal="Deliver.",
-        items={"item-root": root},
-    )
-    store.create_run(
-        run_id,
-        plan=plan,
-        **create_run_kwargs(store.root, resolved_config=minimal_resolved_config()),
-        phase=WHOLE_PLAN_REVIEW,
-    )
-    loop = make_review_loop(
-        id="review-whole-plan-legacy",
-        type="whole_plan",
-        reviewer_session_id="sess",
-        target_revision=0,
-        scope={"kind": "whole_plan"},
-        finding_set_id="review-whole-plan-legacy-fs-01",
-        review_record_schema_version=LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
-        review_contract_version=LEGACY_REVIEW_CONTRACT_VERSION,
-    )
-    store.save_review(run_id, loop.to_dict())
-    digest = compute_plan_digest(plan)
-    token = grant_capability(
-        store,
-        run_id,
-        role="reviewer",
-        phase=WHOLE_PLAN_REVIEW,
-        loop_id=loop.id,
-        session_id="sess",
-    )
-    with pytest.raises(RequestError, match="contract v2"):
-        ReviewAgentService(store, run_id).respond(
+def test_whole_plan_v1_payload_rejected_on_load() -> None:
+    with pytest.raises(ValueError, match="review_record_schema_version"):
+        ReviewLoop.from_dict(
             {
-                "loop_id": loop.id,
+                "id": "review-whole-plan-legacy",
+                "type": "whole_plan",
                 "target_revision": 0,
-                "stage": "initial_review",
-                "finding_set_id": loop.finding_set_id,
-                "reported_findings": [],
-                "review_completed": True,
-                "target_digest": digest,
-                "summary": "Clear legacy review.",
-            },
-            capability_token=token,
+                "scope": {"kind": "whole_plan"},
+                "status": "pending",
+                "revise_at": "blocker",
+                "findings": [],
+                "finding_actions": [],
+                "revision_cycles": 0,
+                "revision": 0,
+                "review_record_schema_version": LEGACY_REVIEW_RECORD_SCHEMA_VERSION,
+                "review_contract_version": LEGACY_REVIEW_CONTRACT_VERSION,
+            }
         )

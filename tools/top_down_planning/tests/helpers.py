@@ -205,6 +205,8 @@ def review_loop_dict_with_binding(payload: dict[str, Any]) -> dict[str, Any]:
     from top_down_planning.domain.session_bindings import reviewer_binding_for_provider_session
 
     data = dict(payload)
+    data.setdefault("review_record_schema_version", 2)
+    data.setdefault("review_contract_version", 2)
     session_id = data.pop("reviewer_session_id", None)
     if "reviewer_binding" not in data and session_id:
         binding = reviewer_binding_for_provider_session(
@@ -251,9 +253,8 @@ def make_review_loop(**kwargs: Any) -> Any:
     payload.setdefault("advisory_handoffs_completed", [])
     payload.setdefault("finding_ids_by_set", {})
     loop_type = str(payload.get("type") or "").strip()
-    if loop_type in {"whole_plan", "whole_output"}:
-        payload.setdefault("review_contract_version", 2)
-        payload.setdefault("review_record_schema_version", 2)
+    payload.setdefault("review_record_schema_version", 2)
+    payload.setdefault("review_contract_version", 2)
     if loop_type and payload.get("revise_at") is None:
         from top_down_planning.domain.review_policy import BUILTIN_REVISE_AT
 

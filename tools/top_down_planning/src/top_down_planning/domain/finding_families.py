@@ -318,11 +318,14 @@ class AuditAttestationRun:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> AuditAttestationRun:
-        passes = [
-            AuditAttestationPass.from_dict(item)
-            for item in (payload.get("passes") or [])
-            if isinstance(item, Mapping)
-        ]
+        passes_raw = payload.get("passes") or []
+        if not isinstance(passes_raw, list):
+            raise ValueError("audit run passes must be a list")
+        passes = []
+        for index, item in enumerate(passes_raw):
+            if not isinstance(item, Mapping):
+                raise ValueError(f"audit run passes[{index}] must be an object")
+            passes.append(AuditAttestationPass.from_dict(item))
         return cls(
             id=str(payload["id"]),
             finding_set_id=str(payload.get("finding_set_id") or "").strip(),
@@ -422,7 +425,7 @@ def family_open_required_members(
     return [
         finding
         for finding in family_required_members(loop, family_id)
-        if reviews.is_open_finding_status(finding.status)
+        if reviews.is_unresolved_finding_status(finding.status)
     ]
 
 
@@ -453,7 +456,7 @@ def family_unverified_members(
             family_id,
             proposed_actions,
         )
-        if reviews.is_open_finding_status(finding.status)
+        if reviews.is_unresolved_finding_status(finding.status)
     ]
 
 
@@ -880,7 +883,12 @@ def parse_finding_families(raw: Any) -> list[FindingFamily]:
         return []
     if not isinstance(raw, list):
         raise ValueError("finding_families must be a list")
-    return [FindingFamily.from_dict(item) for item in raw if isinstance(item, Mapping)]
+    families: list[FindingFamily] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"finding_families[{index}] must be an object")
+        families.append(FindingFamily.from_dict(item))
+    return families
 
 
 def parse_family_sweeps(raw: Any) -> list[FamilySweepRecord]:
@@ -888,7 +896,12 @@ def parse_family_sweeps(raw: Any) -> list[FamilySweepRecord]:
         return []
     if not isinstance(raw, list):
         raise ValueError("family_sweeps must be a list")
-    return [FamilySweepRecord.from_dict(item) for item in raw if isinstance(item, Mapping)]
+    sweeps: list[FamilySweepRecord] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"family_sweeps[{index}] must be an object")
+        sweeps.append(FamilySweepRecord.from_dict(item))
+    return sweeps
 
 
 def parse_audit_runs(raw: Any) -> list[AuditAttestationRun]:
@@ -896,7 +909,12 @@ def parse_audit_runs(raw: Any) -> list[AuditAttestationRun]:
         return []
     if not isinstance(raw, list):
         raise ValueError("audit_runs must be a list")
-    return [AuditAttestationRun.from_dict(item) for item in raw if isinstance(item, Mapping)]
+    runs: list[AuditAttestationRun] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"audit_runs[{index}] must be an object")
+        runs.append(AuditAttestationRun.from_dict(item))
+    return runs
 
 
 def family_observability_fields(

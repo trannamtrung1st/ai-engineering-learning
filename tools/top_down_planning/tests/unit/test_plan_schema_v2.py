@@ -39,6 +39,7 @@ def _minimal_plan_dict(**overrides: object) -> dict:
                 "depth": 0,
                 "title": "Root",
                 "kind": "aggregate",
+                "planning_status": "open",
                 "risks": [],
                 "source_refs": [],
             }

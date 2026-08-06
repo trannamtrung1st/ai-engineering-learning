@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from top_down_planning.config.defaults import DEFAULT_CONFIG
 from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS, TerminalDisposition
 from top_down_planning.domain.item_contract import build_item_production_contract
 from top_down_planning.domain.models import Plan
@@ -640,10 +639,14 @@ def amendment_request_count(production: dict[str, Any]) -> int:
     return len(production.get("amendment_requests") or [])
 
 
+_DEFAULT_AMENDMENT_MAX_REQUESTS = 3
+
+
 def amendment_limit(config: dict[str, Any]) -> int:
     amendment_limits = (config.get("limits") or {}).get("amendment") or {}
-    defaults = DEFAULT_CONFIG["limits"]["amendment"]
-    return int(amendment_limits.get("max_requests", defaults["max_requests"]))
+    return int(
+        amendment_limits.get("max_requests", _DEFAULT_AMENDMENT_MAX_REQUESTS)
+    )
 
 
 def has_pending_amendment(production: dict[str, Any]) -> bool:

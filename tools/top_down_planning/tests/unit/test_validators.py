@@ -9,16 +9,25 @@ from top_down_planning.domain.validators import validate_plan
 
 
 def _chain_plan(depth: int) -> Plan:
-    """Build an active chain of depth `depth` (root at depth 0)."""
+    """Build an active chain under the canonical root (deepest leaf at ``depth``)."""
 
-    items: dict[str, PlanItem] = {}
-    parent_id: str | None = None
-    for level in range(depth + 1):
+    items: dict[str, PlanItem] = {
+        "item-root": PlanItem(
+            id="item-root",
+            parent_id=None,
+            order_key="0000000000",
+            title="Deliverable",
+            outcome="Root outcome.",
+            kind="aggregate",
+        )
+    }
+    parent_id = "item-root"
+    for level in range(depth):
         item_id = f"item-{level}"
         items[item_id] = PlanItem(
             id=item_id,
             parent_id=parent_id,
-            order_key="0000000000",
+            order_key=f"{level:010d}",
             title=f"Level {level}",
             kind="work",
         )
@@ -34,20 +43,22 @@ def _chain_plan(depth: int) -> Plan:
 
 def test_approval_mode_fails_on_depth_overflow_draft_mode_warns() -> None:
     limits = PlanningLimits(max_depth=2)
-    plan = _chain_plan(depth=3)
+    depth = 3
+    plan = _chain_plan(depth=depth)
 
     draft = validate_plan(plan, limits=limits, mode="draft")
     assert draft.ok
     depth_issues = [issue for issue in draft.issues if issue.code == "exceeded_depth_limit"]
     assert len(depth_issues) == 1
     assert depth_issues[0].severity == "warning"
-    assert depth_issues[0].path == ["item-3"]
+    assert depth_issues[0].path == [f"item-{depth - 1}"]
 
     approval = validate_plan(plan, limits=limits, mode="approval")
     assert not approval.ok
     approval_depth = [issue for issue in approval.issues if issue.code == "exceeded_depth_limit"]
     assert len(approval_depth) == 1
     assert approval_depth[0].severity == "error"
+    assert approval_depth[0].path == [f"item-{depth - 1}"]
 
 
 def test_hierarchy_cycle_and_dependency_cycle_have_distinct_codes_and_paths() -> None:
@@ -237,9 +248,17 @@ def test_executable_parent_overlap_warns_without_blocking() -> None:
         revision=0,
         output_goal="Goal.",
         items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Deliverable",
+                outcome="Root outcome.",
+                kind="aggregate",
+            ),
             "item-parent": PlanItem(
                 id="item-parent",
-                parent_id=None,
+                parent_id="item-root",
                 order_key="0000000000",
                 title="Parent work",
                 kind="work",
@@ -248,7 +267,7 @@ def test_executable_parent_overlap_warns_without_blocking() -> None:
             "item-child": PlanItem(
                 id="item-child",
                 parent_id="item-parent",
-                order_key="0000000000",
+                order_key="0000000100",
                 title="Child work",
                 kind="work",
                 outcome="Child outcome.",
@@ -316,9 +335,17 @@ def test_plan_quality_warnings_remain_warnings_in_approval_mode() -> None:
         revision=0,
         output_goal="Goal.",
         items={
+            "item-root": PlanItem(
+                id="item-root",
+                parent_id=None,
+                order_key="0000000000",
+                title="Deliverable",
+                outcome="Root outcome.",
+                kind="aggregate",
+            ),
             "item-parent": PlanItem(
                 id="item-parent",
-                parent_id=None,
+                parent_id="item-root",
                 order_key="0000000000",
                 title="Parent work",
                 kind="work",
@@ -327,7 +354,7 @@ def test_plan_quality_warnings_remain_warnings_in_approval_mode() -> None:
             "item-child": PlanItem(
                 id="item-child",
                 parent_id="item-parent",
-                order_key="0000000000",
+                order_key="0000000100",
                 title="Child work",
                 kind="work",
                 scope=Scope(includes=["child capability"]),
