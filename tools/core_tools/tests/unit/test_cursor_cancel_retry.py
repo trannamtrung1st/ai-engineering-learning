@@ -19,7 +19,7 @@ def test_cursor_provider_does_not_retry_after_terminate_all_sessions(tmp_path: P
     def flaky_runner(argv: list[str], cwd: Path):
         attempts["count"] += 1
         if attempts["count"] == 1:
-            release.wait(timeout=1)
+            release.wait(timeout=0.15)
             raise ProviderTurnError("broken pipe")
         yield from ()
 
@@ -47,7 +47,7 @@ def test_cursor_provider_does_not_retry_after_terminate_all_sessions(tmp_path: P
     time.sleep(0.05)
     provider.terminate_all_sessions()
     release.set()
-    thread.join(timeout=1)
+    thread.join(timeout=0.5)
 
     assert not thread.is_alive()
     assert attempts["count"] == 1
@@ -59,7 +59,7 @@ def test_cursor_provider_terminate_session_aborts_inflight_turn(tmp_path: Path) 
     release = threading.Event()
 
     def blocking_runner(argv: list[str], cwd: Path):
-        release.wait(timeout=1)
+        release.wait(timeout=0.15)
         yield from ()
 
     provider = CursorProvider(
@@ -86,7 +86,7 @@ def test_cursor_provider_terminate_session_aborts_inflight_turn(tmp_path: Path) 
     time.sleep(0.05)
     provider.terminate_session(session_id)
     release.set()
-    thread.join(timeout=1)
+    thread.join(timeout=0.5)
 
     assert not thread.is_alive()
     assert errors == []
@@ -100,7 +100,7 @@ def test_cursor_provider_abort_turn_keeps_session_for_follow_up(tmp_path: Path) 
 
     def blocking_runner(argv: list[str], cwd: Path):
         attempts["count"] += 1
-        release.wait(timeout=1)
+        release.wait(timeout=0.15)
         yield from ()
 
     provider = CursorProvider(
@@ -122,7 +122,7 @@ def test_cursor_provider_abort_turn_keeps_session_for_follow_up(tmp_path: Path) 
     time.sleep(0.05)
     provider.abort_turn(session_id)
     release.set()
-    thread.join(timeout=1)
+    thread.join(timeout=0.5)
 
     assert not thread.is_alive()
     assert session_id in provider._sessions
@@ -160,9 +160,9 @@ def test_cursor_provider_abort_turn_drops_buffered_events(tmp_path: Path) -> Non
 
     def slow_runner(argv: list[str], cwd: Path):
         yield stream_lines[0]
-        block_second.wait(timeout=1)
+        block_second.wait(timeout=0.15)
         yield stream_lines[1]
-        release.wait(timeout=1)
+        release.wait(timeout=0.15)
 
     provider = CursorProvider(
         {"limits": {"provider": {"max_retries_per_call": 0}}},
@@ -186,7 +186,7 @@ def test_cursor_provider_abort_turn_drops_buffered_events(tmp_path: Path) -> Non
     provider.abort_turn(session_id)
     block_second.set()
     release.set()
-    thread.join(timeout=1)
+    thread.join(timeout=0.5)
 
     assert not thread.is_alive()
     assert all(event.get("type") != "assistant" for event in events)
@@ -198,7 +198,7 @@ def test_cursor_provider_abort_turn_before_durable_id_does_not_raise(tmp_path: P
     release = threading.Event()
 
     def blocking_runner(argv: list[str], cwd: Path):
-        release.wait(timeout=1)
+        release.wait(timeout=0.15)
         yield from ()
 
     provider = CursorProvider(
@@ -224,7 +224,7 @@ def test_cursor_provider_abort_turn_before_durable_id_does_not_raise(tmp_path: P
     time.sleep(0.05)
     provider.abort_turn(session_id)
     release.set()
-    thread.join(timeout=1)
+    thread.join(timeout=0.5)
 
     assert not thread.is_alive()
     assert errors == []
@@ -246,7 +246,7 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
                 "session_id": durable_id,
             }
         )
-        release.wait(timeout=2)
+        release.wait(timeout=0.15)
         yield json.dumps(
             {
                 "type": "result",
@@ -281,7 +281,7 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
     provider.abort_turn(session_id)
     provider.resume_primary_session(session_id, {"goal": "turn-2"})
     release.set()
-    thread.join(timeout=2)
+    thread.join(timeout=0.5)
 
     assert not thread.is_alive()
     assert errors == []
@@ -304,7 +304,7 @@ def test_cursor_provider_wait_turn_settled_after_abort(tmp_path: Path) -> None:
                 "session_id": durable_id,
             }
         )
-        release.wait(timeout=2)
+        release.wait(timeout=0.15)
         yield json.dumps(
             {
                 "type": "result",
@@ -334,7 +334,7 @@ def test_cursor_provider_wait_turn_settled_after_abort(tmp_path: Path) -> None:
     provider.abort_turn(session_id)
     provider.wait_turn_settled(session_id)
     release.set()
-    thread.join(timeout=2)
+    thread.join(timeout=0.5)
 
     assert not thread.is_alive()
     session = provider._sessions[durable_id]

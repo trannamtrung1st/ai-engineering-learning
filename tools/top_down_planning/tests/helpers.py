@@ -1673,13 +1673,19 @@ class StallingAfterEventsProvider(StubProvider):
                 session_id=session_id,
             )
         session = self._require_session(session_id)
+        self._release.clear()
+        saw_done = False
         if session.pending_hook is not None:
             hook = session.pending_hook
             session.pending_hook = None
             hook()
         while session.pending_events:
-            yield session.pending_events.popleft()
-        self._release.wait(timeout=1)
+            event = session.pending_events.popleft()
+            if event.get("type") == "done":
+                saw_done = True
+            yield event
+        if not saw_done:
+            self._release.wait()
 
     def abort_turn(self, session_id: str) -> None:
         self._release.set()

@@ -23,14 +23,10 @@ def test_reconcile_stale_running_run_requires_orphan_agents_by_default(
     _create_run(store, run_id="run-20260101T002001-002001", phase=PLANNING)
 
     with patch(
-        "top_down_planning.domain.run_ownership.is_run_orchestrator_alive",
+        "top_down_planning.orchestrator.run_lifecycle_reconciliation.is_run_orchestrator_alive",
         return_value=False,
     ):
-        with patch(
-            "top_down_planning.orchestrator.run_lifecycle_reconciliation.scan_orphan_agent_pids",
-            return_value=[],
-        ):
-            reconciled = reconcile_stale_running_run(store, "run-20260101T002001-002001")
+        reconciled = reconcile_stale_running_run(store, "run-20260101T002001-002001")
 
     assert reconciled is False
     assert store.load_run("run-20260101T002001-002001")["status"] == "running"
@@ -41,7 +37,7 @@ def test_reconcile_stale_running_run_pauses_when_orphans_present(tmp_path: Path)
     _create_run(store, run_id="run-20260101T002011-002011", phase=PLANNING)
 
     with patch(
-        "top_down_planning.domain.run_ownership.is_run_orchestrator_alive",
+        "top_down_planning.orchestrator.run_lifecycle_reconciliation.is_run_orchestrator_alive",
         return_value=False,
     ):
         with patch(
@@ -64,18 +60,14 @@ def test_reconcile_stale_running_run_force_without_orphans(tmp_path: Path) -> No
     _create_run(store, run_id="run-20260101T002012-002012", phase=PLANNING)
 
     with patch(
-        "top_down_planning.domain.run_ownership.is_run_orchestrator_alive",
+        "top_down_planning.orchestrator.run_lifecycle_reconciliation.is_run_orchestrator_alive",
         return_value=False,
     ):
-        with patch(
-            "top_down_planning.orchestrator.run_lifecycle_reconciliation.scan_orphan_agent_pids",
-            return_value=[],
-        ):
-            reconciled = reconcile_stale_running_run(
-                store,
-                "run-20260101T002012-002012",
-                require_orphan_agents=False,
-            )
+        reconciled = reconcile_stale_running_run(
+            store,
+            "run-20260101T002012-002012",
+            require_orphan_agents=False,
+        )
 
     assert reconciled is True
     assert store.load_run("run-20260101T002012-002012")["status"] == "paused"
@@ -86,7 +78,7 @@ def test_reconcile_stale_running_run_skips_live_owner(tmp_path: Path) -> None:
     _create_run(store, run_id="run-20260101T002002-002002", phase=PLANNING)
 
     with patch(
-        "top_down_planning.domain.run_ownership.is_run_orchestrator_alive",
+        "top_down_planning.orchestrator.run_lifecycle_reconciliation.is_run_orchestrator_alive",
         return_value=True,
     ):
         reconciled = reconcile_stale_running_run(store, "run-20260101T002002-002002")
@@ -127,7 +119,7 @@ def test_workspace_diagnostics_splits_idle_and_interrupted_running(tmp_path: Pat
         return []
 
     with patch(
-        "top_down_planning.domain.run_ownership.is_run_orchestrator_alive",
+        "top_down_planning.orchestrator.run_lifecycle_reconciliation.is_run_orchestrator_alive",
         return_value=False,
     ):
         with patch(

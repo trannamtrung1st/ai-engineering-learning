@@ -25,6 +25,7 @@ OUTCOME_SEND_DESKTOP = SEND_DESKTOP_NOTIFICATION_TARGETS[2]
 # import scan_orphan_agent_pids directly still exercise real logic with injected fakes.
 ORPHAN_AGENT_SCAN_TARGETS = (
     "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
+    "top_down_planning.orchestrator.run_lifecycle_reconciliation.scan_orphan_agent_pids",
     "top_down_planning.cli.doctor.scan_orphan_agent_pids",
 )
 
