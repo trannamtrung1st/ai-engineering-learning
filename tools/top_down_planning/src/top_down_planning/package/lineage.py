@@ -349,6 +349,16 @@ def accepted_result_record(
         raise ValueError(
             "accepted_result_record requires package_binding.baseline_context_snapshot_digest"
         )
+    binding_baseline_digests = binding.get("baseline_accepted_result_digests")
+    if not isinstance(binding_baseline_digests, list):
+        raise ValueError(
+            "accepted_result_record requires package_binding.baseline_accepted_result_digests"
+        )
+    baseline_accepted_result_digests = [
+        str(digest).strip()
+        for digest in binding_baseline_digests
+        if str(digest).strip()
+    ]
     final_snapshot = str(digests.get("context_snapshot") or "").strip()
     if not final_snapshot:
         raise ValueError(
@@ -373,6 +383,7 @@ def accepted_result_record(
         "completion_assessment": completion_assessment,
         "workspace_changes": workspace_changes,
         "baseline_context_snapshot_digest": baseline_snapshot,
+        "baseline_accepted_result_digests": baseline_accepted_result_digests,
         "final_context_snapshot_digest": final_snapshot,
     }
 
@@ -532,6 +543,14 @@ def verify_accepted_result_attestation(unit_record: dict[str, Any]) -> None:
         raise ValueError("accepted_result missing baseline_context_snapshot_digest")
     if not str(accepted.get("baseline_context_snapshot_digest") or "").strip():
         raise ValueError("accepted_result baseline_context_snapshot_digest is empty")
+    baseline_result_digests = accepted.get("baseline_accepted_result_digests")
+    if not isinstance(baseline_result_digests, list):
+        raise ValueError("accepted_result missing baseline_accepted_result_digests")
+    for digest in baseline_result_digests:
+        if not str(digest).strip():
+            raise ValueError(
+                "accepted_result baseline_accepted_result_digests contains empty digest"
+            )
     if "final_context_snapshot_digest" not in accepted:
         raise ValueError("accepted_result missing final_context_snapshot_digest")
     if not str(accepted.get("final_context_snapshot_digest") or "").strip():
@@ -712,6 +731,26 @@ def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
     baseline = binding.get("workspace_baseline_accepted_results")
     if not isinstance(baseline, list):
         return "child workspace_baseline_accepted_results is invalid"
+    if "baseline_accepted_result_digests" not in binding:
+        return "child missing baseline_accepted_result_digests binding"
+    binding_baseline_digests = binding.get("baseline_accepted_result_digests")
+    if not isinstance(binding_baseline_digests, list):
+        return "child baseline_accepted_result_digests is invalid"
+    baseline_digests_in_wrappers = {
+        str(wrapper.get("accepted_result_digest") or "").strip()
+        for wrapper in baseline
+        if isinstance(wrapper, dict)
+        and str(wrapper.get("accepted_result_digest") or "").strip()
+    }
+    for digest in binding_baseline_digests:
+        token = str(digest).strip()
+        if not token:
+            return "child baseline_accepted_result_digests contains empty digest"
+        if token not in baseline_digests_in_wrappers:
+            return (
+                "child baseline_accepted_result_digests references digest "
+                f"not present in workspace_baseline_accepted_results: {token}"
+            )
     if "external_prerequisites" not in binding:
         return "child missing external_prerequisites binding"
     external = binding.get("external_prerequisites")

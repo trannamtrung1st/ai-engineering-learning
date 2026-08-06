@@ -143,6 +143,7 @@ def test_all_units_completed_requires_accepted_digest() -> None:
         "contributions": [],
         "workspace_changes": {},
         "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "baseline_accepted_result_digests": [],
         "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "completion_assessment": "done",
     }
@@ -460,6 +461,7 @@ def test_unit_dependencies_satisfied_requires_accepted_digest() -> None:
         "contributions": [],
         "workspace_changes": {},
         "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "baseline_accepted_result_digests": [],
         "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "completion_assessment": "done",
     }

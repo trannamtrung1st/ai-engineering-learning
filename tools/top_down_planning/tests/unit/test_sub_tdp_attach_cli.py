@@ -398,6 +398,7 @@ def test_sub_tdp_attach_rejects_dependent_child_without_upstream_wrappers(
     binding = dict(run.get("package_binding") or {})
     binding["upstream_accepted_results"] = []
     binding["workspace_baseline_accepted_results"] = []
+    binding["baseline_accepted_result_digests"] = []
     run["package_binding"] = binding
     run["revision"] = expected + 1
     store.save_run(child_b_id, run, expected)

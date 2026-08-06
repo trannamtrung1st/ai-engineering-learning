@@ -473,12 +473,8 @@ def _topo_sort_sub_tdp_unit_records(
     unit_records: list[dict[str, Any]],
     *,
     initial_snapshot_digest: str,
-    workspace: Any,
-    resolved_config: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Return unit records in workspace-succession order."""
-
-    from pathlib import Path
 
     from top_down_planning.package.execution_validation import order_workspace_succession_items
 
@@ -493,7 +489,6 @@ def _topo_sort_sub_tdp_unit_records(
         raise ValueError(
             "package initial context_snapshot_digest is required for sub_tdp ordering"
         )
-    workspace_path = Path(workspace)
     return order_workspace_succession_items(
         indexed_records,
         item_id=lambda record: str(record.get("plan_item_id") or "").strip(),
@@ -504,8 +499,7 @@ def _topo_sort_sub_tdp_unit_records(
         ],
         accepted_result=lambda record: record["accepted_result"],
         initial_snapshot_digest=initial_snapshot_digest,
-        workspace=workspace_path,
-        resolved_config=resolved_config,
+        item_digest=lambda record: str(record.get("accepted_result_digest") or "").strip(),
     )
 
 
@@ -544,13 +538,11 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
     if not unit_records:
         return {}
     authorized_changes: dict[str, dict[str, Any]] = {}
-    package_initial_snapshot, resolved_config = _parent_package_auth_from_production(production)
+    package_initial_snapshot, _ = _parent_package_auth_from_production(production)
     cumulative_snapshot = package_initial_snapshot
     for unit_record in _topo_sort_sub_tdp_unit_records(
         unit_records,
         initial_snapshot_digest=package_initial_snapshot,
-        workspace=workspace,
-        resolved_config=resolved_config,
     ):
         accepted = unit_record["accepted_result"]
         plan_item_id = str(unit_record.get("plan_item_id") or "").strip() or "<unknown>"

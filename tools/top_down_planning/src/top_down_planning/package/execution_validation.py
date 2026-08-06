@@ -17,7 +17,6 @@ from top_down_planning.config.context import (
 from top_down_planning.config.context_digests import (
     build_initial_context_snapshot_binding_with_diagnostics,
     diff_snapshot_binding_paths,
-    recompute_context_snapshot_binding_with_diagnostics,
     split_unauthorized_snapshot_paths,
 )
 from top_down_planning.package.loader import ExecutionPackageError, LoadedExecutionPackage
@@ -357,88 +356,6 @@ def topo_sort_sub_tdp_items(
     return ordered
 
 
-def _snapshot_digest_for_authorized_workspace(
-    authorized_changes: dict[str, dict[str, Any]],
-    *,
-    workspace: Path,
-    resolved_config: dict[str, Any],
-    verify_workspace_bytes: bool = True,
-) -> str:
-    """Return context snapshot digest when workspace bytes match authorized changes."""
-
-    if verify_workspace_bytes and authorized_changes:
-        verify_workspace_matches_authorized_changes(
-            sorted(authorized_changes),
-            authorized_changes=authorized_changes,
-            workspace=workspace,
-        )
-    _, digest, _ = recompute_context_snapshot_binding_with_diagnostics(
-        resolved_config,
-        workspace=workspace,
-    )
-    snapshot_digest = str(digest or "").strip()
-    if not snapshot_digest:
-        raise ExecutionPackageError(
-            "failed to compute context snapshot digest for merged workspace baseline",
-            code="sub_tdp_upstream_invalid",
-        )
-    return snapshot_digest
-
-
-def _cumulative_snapshot_after_units(
-    unit_keys: list[str],
-    indexed: dict[str, dict[str, Any]],
-    *,
-    item_id: Callable[[dict[str, Any]], str],
-    depends_on_ids: Callable[[dict[str, Any]], list[str]],
-    accepted_result: Callable[[dict[str, Any]], dict[str, Any]],
-    initial_snapshot_digest: str,
-    workspace: Path,
-    resolved_config: dict[str, Any],
-) -> str:
-    """Return context snapshot digest after merging workspace changes for unit_keys."""
-
-    if not unit_keys:
-        return str(initial_snapshot_digest or "").strip()
-    key_set = {key for key in unit_keys if key in indexed}
-    subset = [indexed[key] for key in sorted(key_set)]
-
-    def filtered_depends_on(item: dict[str, Any]) -> list[str]:
-        return [
-            str(dep).strip()
-            for dep in depends_on_ids(item)
-            if str(dep).strip() in key_set
-        ]
-
-    ordered = order_workspace_succession_items(
-        subset,
-        item_id=item_id,
-        depends_on_ids=filtered_depends_on,
-        accepted_result=accepted_result,
-        initial_snapshot_digest=initial_snapshot_digest,
-        workspace=workspace,
-        resolved_config=resolved_config,
-        allow_composite_joins=False,
-    )
-    merged: dict[str, dict[str, Any]] = {}
-    cumulative = str(initial_snapshot_digest or "").strip()
-    for record in ordered:
-        merged, cumulative = merge_accepted_result_workspace_changes(
-            merged,
-            accepted_result(record),
-            cumulative_snapshot_digest=cumulative,
-            workspace=workspace,
-        )
-    if not merged:
-        return cumulative
-    return _snapshot_digest_for_authorized_workspace(
-        merged,
-        workspace=workspace,
-        resolved_config=resolved_config,
-        verify_workspace_bytes=False,
-    )
-
-
 def order_workspace_succession_items(
     items: list[dict[str, Any]],
     *,
@@ -446,19 +363,28 @@ def order_workspace_succession_items(
     depends_on_ids: Callable[[dict[str, Any]], list[str]],
     accepted_result: Callable[[dict[str, Any]], dict[str, Any]],
     initial_snapshot_digest: str,
-    workspace: Path,
-    resolved_config: dict[str, Any],
-    allow_composite_joins: bool = True,
+    item_digest: Callable[[dict[str, Any]], str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Order items for workspace-change succession using snapshot lineage and depends_on.
+    """Order items for workspace-change succession using explicit baseline lineage.
 
-    Roots use ``baseline_context_snapshot_digest == initial_snapshot_digest`` (the
-    prepared package context snapshot for parent sub-TDP merges). Otherwise ordering
-    follows a prior ``final_context_snapshot_digest`` or, for composite multi-result
-    baseline joins, merged workspace lineage from all other items in the set.
-    Package ``depends_on`` edges are additional constraints. Raises on cycles,
-    duplicate unit ids, ambiguous lineage, or unrepresentable baseline joins.
+    Roots use ``baseline_context_snapshot_digest == initial_snapshot_digest`` with
+    empty ``baseline_accepted_result_digests``. Non-root results list predecessor
+    accepted-result digests in ``baseline_accepted_result_digests`` (one for linear
+    closure, multiple for composite ``--baseline`` joins). Package ``depends_on``
+    edges add further constraints. Rejects missing, duplicate, unknown, or cyclic
+    baseline digests. Does not infer historical snapshot state from live workspace
+    bytes.
     """
+
+    def resolve_item_digest(item: dict[str, Any]) -> str:
+        if item_digest is not None:
+            return str(item_digest(item) or "").strip()
+        stored = str(item.get("accepted_result_digest") or "").strip()
+        if stored:
+            return stored
+        from top_down_planning.package.lineage import accepted_result_digest
+
+        return accepted_result_digest(accepted_result(item))
 
     indexed: dict[str, dict[str, Any]] = {}
     for item in items:
@@ -475,7 +401,28 @@ def order_workspace_succession_items(
         indexed[key] = item
 
     initial = str(initial_snapshot_digest or "").strip()
-    final_by_unit: dict[str, str] = {}
+    if not initial:
+        raise ExecutionPackageError(
+            "package initial context_snapshot_digest is required for workspace succession",
+            code="sub_tdp_upstream_invalid",
+        )
+
+    digest_to_unit: dict[str, str] = {}
+    for key, item in indexed.items():
+        digest = resolve_item_digest(item)
+        if not digest:
+            raise ExecutionPackageError(
+                f"accepted_result_digest missing for unit {key!r}",
+                code="sub_tdp_upstream_invalid",
+            )
+        if digest in digest_to_unit and digest_to_unit[digest] != key:
+            raise ExecutionPackageError(
+                f"duplicate accepted_result_digest in baseline set for unit {key!r}",
+                code="sub_tdp_upstream_invalid",
+            )
+        digest_to_unit[digest] = key
+
+    lineage_preds: dict[str, list[str]] = {}
     for key, item in indexed.items():
         accepted = accepted_result(item)
         if not isinstance(accepted, dict):
@@ -483,69 +430,54 @@ def order_workspace_succession_items(
                 f"accepted_result missing for unit {key!r}",
                 code="sub_tdp_upstream_invalid",
             )
-        final = str(accepted.get("final_context_snapshot_digest") or "").strip()
-        if not final:
-            raise ExecutionPackageError(
-                f"accepted_result missing final_context_snapshot_digest for unit {key!r}",
-                code="sub_tdp_upstream_invalid",
-            )
-        final_by_unit[key] = final
-
-    lineage_preds: dict[str, list[str]] = {}
-    for key, item in indexed.items():
-        accepted = accepted_result(item)
         baseline = str(accepted.get("baseline_context_snapshot_digest") or "").strip()
         if not baseline:
             raise ExecutionPackageError(
                 f"accepted_result missing baseline_context_snapshot_digest for unit {key!r}",
                 code="sub_tdp_upstream_invalid",
             )
+        baseline_digests = accepted.get("baseline_accepted_result_digests")
+        if not isinstance(baseline_digests, list):
+            raise ExecutionPackageError(
+                f"accepted_result missing baseline_accepted_result_digests for unit {key!r}",
+                code="sub_tdp_upstream_invalid",
+            )
+        normalized_digests = [str(d).strip() for d in baseline_digests if str(d).strip()]
+        if len(normalized_digests) != len(set(normalized_digests)):
+            raise ExecutionPackageError(
+                f"duplicate baseline_accepted_result_digests for unit {key!r}",
+                code="sub_tdp_upstream_invalid",
+            )
         if baseline == initial:
+            if normalized_digests:
+                raise ExecutionPackageError(
+                    f"unit {key!r} rooted at package initial snapshot must have "
+                    "empty baseline_accepted_result_digests",
+                    code="sub_tdp_upstream_invalid",
+                )
+            lineage_preds[key] = []
             continue
-        single_final_preds = [
-            unit
-            for unit, final in final_by_unit.items()
-            if final == baseline and unit in indexed and unit != key
-        ]
-        if len(single_final_preds) > 1:
+        if not normalized_digests:
             raise ExecutionPackageError(
-                f"ambiguous snapshot predecessors for unit {key!r}",
+                f"unit {key!r} missing baseline_accepted_result_digests for non-root baseline",
                 code="sub_tdp_upstream_invalid",
             )
-        if len(single_final_preds) == 1:
-            lineage_preds[key] = [single_final_preds[0]]
-            continue
-        if not allow_composite_joins:
-            raise ExecutionPackageError(
-                f"unit {key!r} baseline does not match package initial snapshot "
-                "or a single prior final_context_snapshot_digest",
-                code="sub_tdp_upstream_invalid",
-            )
-        others = sorted([unit for unit in indexed if unit != key])
-        if not others:
-            raise ExecutionPackageError(
-                f"unit {key!r} baseline does not match package initial snapshot",
-                code="sub_tdp_upstream_invalid",
-            )
-        merged_digest = _cumulative_snapshot_after_units(
-            others,
-            indexed,
-            item_id=item_id,
-            depends_on_ids=depends_on_ids,
-            accepted_result=accepted_result,
-            initial_snapshot_digest=initial,
-            workspace=workspace,
-            resolved_config=resolved_config,
-        )
-        if merged_digest == baseline:
-            lineage_preds[key] = others
-            continue
-        raise ExecutionPackageError(
-            f"unit {key!r} baseline does not match package initial snapshot, "
-            "a single prior final_context_snapshot_digest, or merged workspace "
-            "lineage from other units",
-            code="sub_tdp_upstream_invalid",
-        )
+        preds: list[str] = []
+        for digest in normalized_digests:
+            pred_unit = digest_to_unit.get(digest)
+            if pred_unit is None:
+                raise ExecutionPackageError(
+                    f"unit {key!r} references unknown baseline_accepted_result_digest "
+                    f"{digest!r}",
+                    code="sub_tdp_upstream_invalid",
+                )
+            if pred_unit == key:
+                raise ExecutionPackageError(
+                    f"unit {key!r} baseline_accepted_result_digests cannot reference self",
+                    code="sub_tdp_upstream_invalid",
+                )
+            preds.append(pred_unit)
+        lineage_preds[key] = sorted(set(preds))
 
     depends_on: dict[str, list[str]] = {}
     for key, item in indexed.items():
@@ -586,8 +518,6 @@ def _topo_sort_baseline_wrappers(
     *,
     unit_depends_on: dict[str, list[str]],
     initial_snapshot_digest: str,
-    workspace: Path,
-    resolved_config: dict[str, Any],
 ) -> list[dict[str, Any]]:
     valid = [
         wrapper
@@ -608,8 +538,7 @@ def _topo_sort_baseline_wrappers(
         ],
         accepted_result=lambda wrapper: wrapper["accepted_result"],
         initial_snapshot_digest=initial_snapshot_digest,
-        workspace=workspace,
-        resolved_config=resolved_config,
+        item_digest=lambda wrapper: str(wrapper.get("accepted_result_digest") or "").strip(),
     )
 
 
@@ -706,8 +635,6 @@ def _authorized_workspace_changes_from_baseline(
         baseline_wrappers,
         unit_depends_on=unit_depends_on or {},
         initial_snapshot_digest=initial_snapshot_digest,
-        workspace=workspace,
-        resolved_config=resolved_config,
     )
     merged: dict[str, dict[str, Any]] = {}
     cumulative = str(initial_snapshot_digest or "").strip()

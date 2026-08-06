@@ -198,6 +198,7 @@ def test_producer_manifest_includes_prepared_execution_for_child(
                 "contributions": [],
                 "workspace_changes": {},
                 "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "baseline_accepted_result_digests": [],
                 "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                 "completion_assessment": "upstream done",
             },

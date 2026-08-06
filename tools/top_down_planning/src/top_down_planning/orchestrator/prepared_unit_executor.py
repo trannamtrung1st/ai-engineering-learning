@@ -849,12 +849,26 @@ class PreparedUnitExecutor:
             snapshot_binding
         )
 
+        expected_initial = str(
+            (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
+        )
+        if context_snapshot_digest == expected_initial:
+            desired_baseline_digests: list[str] = []
+        else:
+            desired_baseline_digests = [
+                str(wrapper.get("accepted_result_digest") or "").strip()
+                for wrapper in desired_baseline
+                if str(wrapper.get("accepted_result_digest") or "").strip()
+            ]
+
         binding_unchanged = (
             binding.get("upstream_accepted_results") == desired_upstream
             and binding.get("workspace_baseline_accepted_results") == desired_baseline
+            and binding.get("baseline_accepted_result_digests") == desired_baseline_digests
             and binding.get("external_prerequisites") == external
             and "upstream_accepted_results" in binding
             and "workspace_baseline_accepted_results" in binding
+            and "baseline_accepted_result_digests" in binding
             and "external_prerequisites" in binding
             and str(binding.get("baseline_context_snapshot_digest") or "")
             == context_snapshot_digest
@@ -888,6 +902,7 @@ class PreparedUnitExecutor:
 
         binding["upstream_accepted_results"] = desired_upstream
         binding["workspace_baseline_accepted_results"] = desired_baseline
+        binding["baseline_accepted_result_digests"] = desired_baseline_digests
         binding["external_prerequisites"] = external
         binding["baseline_context_snapshot_digest"] = context_snapshot_digest
         run["package_binding"] = binding

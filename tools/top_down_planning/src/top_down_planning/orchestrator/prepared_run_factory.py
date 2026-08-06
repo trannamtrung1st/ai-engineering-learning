@@ -272,6 +272,18 @@ class PreparedRunFactory:
             package_binding["workspace_baseline_accepted_results"] = list(
                 baseline_for_auth
             )
+            expected_initial = str(
+                (package.manifest.get("context") or {}).get("context_snapshot_digest")
+                or ""
+            )
+            if context_snapshot_digest == expected_initial:
+                package_binding["baseline_accepted_result_digests"] = []
+            else:
+                package_binding["baseline_accepted_result_digests"] = [
+                    str(wrapper.get("accepted_result_digest") or "").strip()
+                    for wrapper in baseline_for_auth
+                    if str(wrapper.get("accepted_result_digest") or "").strip()
+                ]
             package_binding["external_prerequisites"] = list(
                 unit_record.external_prerequisites if unit_record else []
             )
