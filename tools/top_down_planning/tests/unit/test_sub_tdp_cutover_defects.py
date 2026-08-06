@@ -222,6 +222,7 @@ def test_parent_collect_rejects_tampered_stored_workspace_changes(
     tampered["workspace_changes"] = changes
     production = {
         "sub_tdps": {
+            "manifest_path": str(package.manifest_path),
             "units": [
                 {
                     "plan_item_id": "item-a",
@@ -231,10 +232,42 @@ def test_parent_collect_rejects_tampered_stored_workspace_changes(
                     "accepted_result": tampered,
                     "accepted_result_digest": accepted_result_digest(tampered),
                 }
-            ]
+            ],
         }
     }
     with pytest.raises(ValueError, match="live|does not match|attestation"):
+        collect_parent_sub_tdp_authorized_workspace_changes(
+            store,
+            production=production,
+            workspace=package.workspace_path,
+        )
+
+
+def test_parent_collect_requires_sub_tdps_manifest_path(tmp_path: Path) -> None:
+    """Parent auth must load package initial snapshot from sub_tdps.manifest_path."""
+
+    store, package = _build_package(tmp_path)
+    child_id = _create_and_accept_shared_writer(
+        store, package, unit_id="item-a", content='{"version": 2}\n'
+    )
+    _, accepted = _accepted_wrapper_for_shared(
+        store, package, child_id, unit_id="item-a"
+    )
+    production = {
+        "sub_tdps": {
+            "units": [
+                {
+                    "plan_item_id": "item-a",
+                    "child_run_id": child_id,
+                    "unit_plan_digest": package.units["item-a"].plan_digest,
+                    "status": "completed",
+                    "accepted_result": accepted,
+                    "accepted_result_digest": accepted_result_digest(accepted),
+                }
+            ],
+        }
+    }
+    with pytest.raises(ValueError, match="manifest_path"):
         collect_parent_sub_tdp_authorized_workspace_changes(
             store,
             production=production,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 
 from core_tools.provider.cursor import CursorProvider
@@ -101,11 +100,13 @@ def test_cursor_provider_does_not_retry_after_idle_timeout(tmp_path: Path) -> No
 def test_cursor_provider_idle_timeout_disabled_by_default(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
+    started = threading.Event()
     release = threading.Event()
     errors: list[BaseException] = []
 
     def blocking_runner(argv: list[str], cwd: Path):
-        release.wait(timeout=0.2)
+        started.set()
+        release.wait(timeout=0.5)
         yield from ()
 
     provider = CursorProvider(
@@ -127,7 +128,7 @@ def test_cursor_provider_idle_timeout_disabled_by_default(tmp_path: Path) -> Non
 
     thread = threading.Thread(target=consume)
     thread.start()
-    time.sleep(0.05)
+    assert started.wait(timeout=0.5), "fake runner did not reach blocking point"
     release.set()
     thread.join(timeout=1)
 

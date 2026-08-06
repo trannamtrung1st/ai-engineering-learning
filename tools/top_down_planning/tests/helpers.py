@@ -1661,9 +1661,11 @@ def script_mandatory_clear_approval(
 class StallingAfterEventsProvider(StubProvider):
     """Simulate a provider turn that stalls after scripted events (no done)."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, stall_timeout_seconds: float = 0.5) -> None:
         super().__init__()
-        self._release = threading.Event()
+        self._stall_timeout_seconds = stall_timeout_seconds
+        self._stream_started = threading.Event()
+        self._abort_release = threading.Event()
 
     def stream_events(self, session_id: str):
         if session_id in self._not_found_sessions:
@@ -1673,7 +1675,7 @@ class StallingAfterEventsProvider(StubProvider):
                 session_id=session_id,
             )
         session = self._require_session(session_id)
-        self._release.clear()
+        self._stream_started.set()
         saw_done = False
         if session.pending_hook is not None:
             hook = session.pending_hook
@@ -1685,10 +1687,14 @@ class StallingAfterEventsProvider(StubProvider):
                 saw_done = True
             yield event
         if not saw_done:
-            self._release.wait()
+            if not self._abort_release.wait(timeout=self._stall_timeout_seconds):
+                raise AssertionError(
+                    "StallingAfterEventsProvider stalled without abort_turn "
+                    f"(timeout={self._stall_timeout_seconds}s)"
+                )
 
     def abort_turn(self, session_id: str) -> None:
-        self._release.set()
+        self._abort_release.set()
         super().abort_turn(session_id)
 
 

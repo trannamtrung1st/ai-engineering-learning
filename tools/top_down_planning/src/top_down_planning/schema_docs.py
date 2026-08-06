@@ -2823,11 +2823,16 @@ attestation is content-bound:
 - `output_refs`: objects with `id`/`type`/`ref`; each `ref` must appear in
   `workspace_changes`.
 
-Cumulative workspace baselines merge accepted results in snapshot-lineage order
-(`baseline_context_snapshot_digest` must chain to a prior `final_context_snapshot_digest`
-within the baseline set; `depends_on` adds further constraints). Same-path hash
-overwrites are allowed only when the incoming result's baseline snapshot digest
-matches the cumulative snapshot after prior accepted results.
+Cumulative workspace baselines merge accepted results in snapshot-lineage order.
+Parent sub-TDP authorization loads the prepared package's initial
+`context_snapshot_digest` as the succession root. Within a baseline set,
+`baseline_context_snapshot_digest` must match the package initial snapshot,
+a prior `final_context_snapshot_digest`, or the merged workspace lineage from
+all other accepted results in the set (composite multi-result `--baseline`
+joins). `depends_on` adds further constraints. Same-path hash overwrites are
+allowed only when the incoming result's baseline snapshot digest matches the
+cumulative snapshot after prior accepted results. Unrepresentable baseline
+joins fail closed.
 
 Upstream wrappers also carry `accepted_result_digest` and
 `upstream_contract_digest`. Parent resume, baseline authorization, and

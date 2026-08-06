@@ -3,23 +3,32 @@
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 
 from core_tools.provider.cursor import CursorProvider
 from core_tools.provider.errors import ProviderTurnError
 
 
+def _wait_for_runner_block(
+    started: threading.Event,
+    *,
+    timeout: float = 0.5,
+) -> None:
+    assert started.wait(timeout=timeout), "fake runner did not reach blocking point"
+
+
 def test_cursor_provider_does_not_retry_after_terminate_all_sessions(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
     attempts = {"count": 0}
+    started = threading.Event()
     release = threading.Event()
 
     def flaky_runner(argv: list[str], cwd: Path):
         attempts["count"] += 1
         if attempts["count"] == 1:
-            release.wait(timeout=0.15)
+            started.set()
+            release.wait(timeout=0.5)
             raise ProviderTurnError("broken pipe")
         yield from ()
 
@@ -44,7 +53,7 @@ def test_cursor_provider_does_not_retry_after_terminate_all_sessions(tmp_path: P
 
     thread = threading.Thread(target=consume)
     thread.start()
-    time.sleep(0.05)
+    _wait_for_runner_block(started)
     provider.terminate_all_sessions()
     release.set()
     thread.join(timeout=0.5)
@@ -56,10 +65,12 @@ def test_cursor_provider_does_not_retry_after_terminate_all_sessions(tmp_path: P
 def test_cursor_provider_terminate_session_aborts_inflight_turn(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
+    started = threading.Event()
     release = threading.Event()
 
     def blocking_runner(argv: list[str], cwd: Path):
-        release.wait(timeout=0.15)
+        started.set()
+        release.wait(timeout=0.5)
         yield from ()
 
     provider = CursorProvider(
@@ -83,7 +94,7 @@ def test_cursor_provider_terminate_session_aborts_inflight_turn(tmp_path: Path) 
 
     thread = threading.Thread(target=consume)
     thread.start()
-    time.sleep(0.05)
+    _wait_for_runner_block(started)
     provider.terminate_session(session_id)
     release.set()
     thread.join(timeout=0.5)
@@ -95,12 +106,14 @@ def test_cursor_provider_terminate_session_aborts_inflight_turn(tmp_path: Path) 
 def test_cursor_provider_abort_turn_keeps_session_for_follow_up(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
+    started = threading.Event()
     release = threading.Event()
     attempts = {"count": 0}
 
     def blocking_runner(argv: list[str], cwd: Path):
         attempts["count"] += 1
-        release.wait(timeout=0.15)
+        started.set()
+        release.wait(timeout=0.5)
         yield from ()
 
     provider = CursorProvider(
@@ -119,7 +132,7 @@ def test_cursor_provider_abort_turn_keeps_session_for_follow_up(tmp_path: Path) 
 
     thread = threading.Thread(target=consume)
     thread.start()
-    time.sleep(0.05)
+    _wait_for_runner_block(started)
     provider.abort_turn(session_id)
     release.set()
     thread.join(timeout=0.5)
@@ -135,6 +148,7 @@ def test_cursor_provider_abort_turn_drops_buffered_events(tmp_path: Path) -> Non
 
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
+    started = threading.Event()
     release = threading.Event()
     block_second = threading.Event()
     durable_id = "chat-producer-1"
@@ -160,9 +174,10 @@ def test_cursor_provider_abort_turn_drops_buffered_events(tmp_path: Path) -> Non
 
     def slow_runner(argv: list[str], cwd: Path):
         yield stream_lines[0]
-        block_second.wait(timeout=0.15)
+        started.set()
+        block_second.wait(timeout=0.5)
         yield stream_lines[1]
-        release.wait(timeout=0.15)
+        release.wait(timeout=0.5)
 
     provider = CursorProvider(
         {"limits": {"provider": {"max_retries_per_call": 0}}},
@@ -182,7 +197,7 @@ def test_cursor_provider_abort_turn_drops_buffered_events(tmp_path: Path) -> Non
 
     thread = threading.Thread(target=consume)
     thread.start()
-    time.sleep(0.05)
+    _wait_for_runner_block(started)
     provider.abort_turn(session_id)
     block_second.set()
     release.set()
@@ -195,10 +210,12 @@ def test_cursor_provider_abort_turn_drops_buffered_events(tmp_path: Path) -> Non
 def test_cursor_provider_abort_turn_before_durable_id_does_not_raise(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
+    started = threading.Event()
     release = threading.Event()
 
     def blocking_runner(argv: list[str], cwd: Path):
-        release.wait(timeout=0.15)
+        started.set()
+        release.wait(timeout=0.5)
         yield from ()
 
     provider = CursorProvider(
@@ -221,7 +238,7 @@ def test_cursor_provider_abort_turn_before_durable_id_does_not_raise(tmp_path: P
 
     thread = threading.Thread(target=consume)
     thread.start()
-    time.sleep(0.05)
+    _wait_for_runner_block(started)
     provider.abort_turn(session_id)
     release.set()
     thread.join(timeout=0.5)
@@ -235,6 +252,7 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
 
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
+    started = threading.Event()
     release = threading.Event()
     durable_id = "chat-producer-stall"
 
@@ -246,7 +264,8 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
                 "session_id": durable_id,
             }
         )
-        release.wait(timeout=0.15)
+        started.set()
+        release.wait(timeout=0.5)
         yield json.dumps(
             {
                 "type": "result",
@@ -277,7 +296,7 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
 
     thread = threading.Thread(target=consume)
     thread.start()
-    time.sleep(0.05)
+    _wait_for_runner_block(started)
     provider.abort_turn(session_id)
     provider.resume_primary_session(session_id, {"goal": "turn-2"})
     release.set()
@@ -293,6 +312,7 @@ def test_cursor_provider_wait_turn_settled_after_abort(tmp_path: Path) -> None:
 
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
+    started = threading.Event()
     release = threading.Event()
     durable_id = "chat-producer-abort-wait"
 
@@ -304,7 +324,8 @@ def test_cursor_provider_wait_turn_settled_after_abort(tmp_path: Path) -> None:
                 "session_id": durable_id,
             }
         )
-        release.wait(timeout=0.15)
+        started.set()
+        release.wait(timeout=0.5)
         yield json.dumps(
             {
                 "type": "result",
@@ -330,7 +351,7 @@ def test_cursor_provider_wait_turn_settled_after_abort(tmp_path: Path) -> None:
 
     thread = threading.Thread(target=consume)
     thread.start()
-    time.sleep(0.05)
+    _wait_for_runner_block(started)
     provider.abort_turn(session_id)
     provider.wait_turn_settled(session_id)
     release.set()

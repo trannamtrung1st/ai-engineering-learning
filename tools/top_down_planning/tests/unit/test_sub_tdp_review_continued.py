@@ -571,6 +571,142 @@ def test_parent_resume_ab_chain_after_b_overwrites_a(tmp_path: Path) -> None:
     assert store.load_run(parent_id)["status"] == "running"
 
 
+def test_parent_resume_two_no_change_children_with_matching_snapshots(
+    tmp_path: Path,
+) -> None:
+    """Two accepted children with baseline=final=S0 must not cycle during parent auth."""
+
+    from top_down_planning.domain.sub_tdp_units import SubTdpUnit
+    from top_down_planning.orchestrator.apply_resume import apply_resume_plan_atomically
+    from top_down_planning.orchestrator.phases import SUB_TDPS
+    from top_down_planning.orchestrator.prepare_resume import (
+        collect_parent_sub_tdp_authorized_workspace_changes,
+        prepare_resume,
+        verify_parent_sub_tdp_workspace_matches_accepted,
+    )
+    from top_down_planning.orchestrator.whole_output_review import WholeOutputReviewOrchestrator
+    from top_down_planning.package.lineage import accepted_result_digest, accepted_result_record
+    from top_down_planning.persistence.sub_tdp_state import (
+        initial_sub_tdp_state_from_package,
+        merge_sub_tdp_state_into_production,
+    )
+    from core_tools.provider import StubProvider
+
+    store, package = _build_package(tmp_path, dependent=False)
+    config = package.resolved_config
+    parent_id = PreparedRunFactory().create_parent_run(
+        store, package, resolved_config=config, invocation={"command": "execute"},
+    )
+    child_a = PreparedUnitExecutor().create_or_load_child_run(
+        store, package, "item-a", resolved_config=config,
+        invocation={"command": "execute"}, parent_run_id=parent_id,
+    )
+    accept_child_run(store, child_a)
+    child_b = PreparedUnitExecutor().create_or_load_child_run(
+        store, package, "item-b", resolved_config=config,
+        invocation={"command": "execute"}, parent_run_id=parent_id,
+    )
+    accept_child_run(store, child_b)
+
+    package_initial = str(
+        (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
+    )
+    assert package_initial
+    for child_id, unit_id in [(child_a, "item-a"), (child_b, "item-b")]:
+        unit = package.units[unit_id]
+        accepted = accepted_result_record(
+            child_run=store.load_run(child_id),
+            child_production=store.load_production(child_id),
+            unit_id=unit_id,
+            unit_plan_digest=unit.plan_digest,
+            package_id=str(package.manifest.get("package_id") or ""),
+            package_digest=str(package.manifest.get("package_digest") or ""),
+            assigned_subtree_digest=unit.assigned_subtree_digest,
+        )
+        assert accepted["baseline_context_snapshot_digest"] == package_initial
+        assert accepted["final_context_snapshot_digest"] == package_initial
+
+    run = store.load_run(parent_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["phase"] = SUB_TDPS
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "sub_tdps_awaiting_children",
+        "category": "operational",
+        "phase": SUB_TDPS,
+        "message": "waiting",
+        "role": None,
+        "details": {},
+    }
+    store.save_run(parent_id, run, expected)
+
+    units = [
+        SubTdpUnit(
+            plan_item_id=u.unit_id,
+            title=u.title,
+            outcome="",
+            directory=u.plan_file.parent.name,
+            ordinal=u.ordinal,
+        )
+        for u in sorted(package.units.values(), key=lambda item: item.ordinal)
+    ]
+    production = store.load_production(parent_id)
+    parent_binding = store.load_run(parent_id).get("package_binding") or {}
+    state = initial_sub_tdp_state_from_package(
+        package.manifest,
+        manifest_path=str(parent_binding.get("manifest_path") or package.manifest_path),
+        units=units,
+        package_units=package.units,
+    )
+    for idx, (child_id, unit_id) in enumerate([(child_a, "item-a"), (child_b, "item-b")]):
+        unit = package.units[unit_id]
+        accepted = accepted_result_record(
+            child_run=store.load_run(child_id),
+            child_production=store.load_production(child_id),
+            unit_id=unit_id,
+            unit_plan_digest=unit.plan_digest,
+            package_id=str(package.manifest.get("package_id") or ""),
+            package_digest=str(package.manifest.get("package_digest") or ""),
+            assigned_subtree_digest=unit.assigned_subtree_digest,
+        )
+        state["units"][idx]["child_run_id"] = child_id
+        state["units"][idx]["status"] = "completed"
+        state["units"][idx]["accepted_result"] = accepted
+        state["units"][idx]["accepted_result_digest"] = accepted_result_digest(accepted)
+    merged = merge_sub_tdp_state_into_production(production, state)
+    expected_revision = int(production["revision"])
+    merged["revision"] = expected_revision + 1
+    store.save_production(parent_id, merged, expected_revision)
+
+    production = store.load_production(parent_id)
+    collect_parent_sub_tdp_authorized_workspace_changes(
+        store,
+        production=production,
+        workspace=Path(package.workspace_path),
+    )
+    verify_parent_sub_tdp_workspace_matches_accepted(
+        store,
+        production=production,
+        workspace=Path(package.workspace_path),
+    )
+
+    invocation = store.load_invocation(parent_id)
+    plan = prepare_resume(store, parent_id, config)
+    assert plan.validation.context_binding_valid is True
+    result = apply_resume_plan_atomically(
+        store,
+        plan,
+        resolved_config=config,
+        invocation=invocation,
+    )
+    assert result["ok"] is True
+
+    # WOR entry re-verifies parent sub-TDP workspace auth before review starts.
+    WholeOutputReviewOrchestrator(store, parent_id, StubProvider())
+
+
 def test_parent_integration_overlay_supersedes_child_workspace_hash(
     tmp_path: Path,
 ) -> None:
