@@ -1048,6 +1048,12 @@ def mandatory_verification_needs_revision_request(
     return payload
 
 
+MANDATORY_REVIEW_V2_VERSION_FIELDS = {
+    "review_record_schema_version": 2,
+    "review_contract_version": 2,
+}
+
+
 def whole_plan_approval_record(store: Any, run_id: str, **fields: Any) -> dict[str, Any]:
     from top_down_planning.domain.session_bindings import reviewer_binding_for_provider_session
     from top_down_planning.persistence.digests import compute_plan_digest
@@ -1072,8 +1078,7 @@ def whole_plan_approval_record(store: Any, run_id: str, **fields: Any) -> dict[s
         "id": "review-whole-plan-01",
         "type": "whole_plan",
         "revise_at": "blocker",
-        "review_record_schema_version": 2,
-        "review_contract_version": 2,
+        **MANDATORY_REVIEW_V2_VERSION_FIELDS,
         "reviewer_binding": binding.to_dict() if binding is not None else None,
         "target_revision": 0,
         "scope": {"kind": "whole_plan"},
@@ -1116,6 +1121,7 @@ def whole_output_approval_record(store: Any, run_id: str, **fields: Any) -> dict
         "id": "review-whole-output-01",
         "type": "whole_output",
         "revise_at": "blocker",
+        **MANDATORY_REVIEW_V2_VERSION_FIELDS,
         "reviewer_binding": binding.to_dict() if binding is not None else None,
         "target_revision": int(production["output_revision"]),
         "scope": {"kind": "whole_output"},
