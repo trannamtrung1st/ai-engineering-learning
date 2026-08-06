@@ -584,12 +584,37 @@ def merge_authorized_workspace_changes(
     return merged
 
 
+def _lineage_allows_same_path_overwrite(
+    accepted_result: dict[str, Any],
+    *,
+    cumulative_snapshot_digest: str,
+    merged_predecessor_digests: set[str],
+) -> bool:
+    """Return whether same-path overwrites are authorized for this transition."""
+
+    baseline = str(
+        accepted_result.get("baseline_context_snapshot_digest") or ""
+    ).strip()
+    cumulative = str(cumulative_snapshot_digest or "").strip()
+    if baseline == cumulative:
+        return True
+    lineage = accepted_result.get("baseline_accepted_result_digests")
+    if not isinstance(lineage, list):
+        return False
+    normalized = {str(digest).strip() for digest in lineage if str(digest).strip()}
+    if not normalized:
+        return False
+    return normalized <= merged_predecessor_digests
+
+
 def merge_accepted_result_workspace_changes(
     merged: dict[str, dict[str, Any]],
     accepted_result: dict[str, Any],
     *,
     cumulative_snapshot_digest: str,
     workspace: Path,
+    allow_same_path_overwrite: bool | None = None,
+    merged_predecessor_digests: set[str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], str]:
     """Apply one accepted result as a snapshot transition in dependency order."""
 
@@ -606,7 +631,15 @@ def merge_accepted_result_workspace_changes(
         accepted_result,
         workspace=workspace,
     )
-    allow_overwrite = baseline == cumulative_snapshot_digest
+    if allow_same_path_overwrite is None:
+        preds = merged_predecessor_digests or set()
+        allow_overwrite = _lineage_allows_same_path_overwrite(
+            accepted_result,
+            cumulative_snapshot_digest=cumulative_snapshot_digest,
+            merged_predecessor_digests=preds,
+        )
+    else:
+        allow_overwrite = allow_same_path_overwrite
     merged = merge_authorized_workspace_changes(
         merged,
         changes,
@@ -638,6 +671,7 @@ def _authorized_workspace_changes_from_baseline(
     )
     merged: dict[str, dict[str, Any]] = {}
     cumulative = str(initial_snapshot_digest or "").strip()
+    merged_predecessor_digests: set[str] = set()
     for wrapper in ordered_wrappers:
         verify_upstream_accepted_result_binding(wrapper)
         accepted = wrapper["accepted_result"]
@@ -651,7 +685,11 @@ def _authorized_workspace_changes_from_baseline(
             accepted,
             cumulative_snapshot_digest=cumulative,
             workspace=workspace,
+            merged_predecessor_digests=merged_predecessor_digests,
         )
+        digest = str(wrapper.get("accepted_result_digest") or "").strip()
+        if digest:
+            merged_predecessor_digests.add(digest)
     return merged
 
 

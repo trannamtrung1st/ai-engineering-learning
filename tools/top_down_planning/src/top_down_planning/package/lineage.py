@@ -716,6 +716,28 @@ def verify_upstream_wrapper_matches_live_delivery(
     return verify_wrapper_delivery_integrity(store, wrapper)
 
 
+def _package_initial_snapshot_from_binding(binding: dict[str, Any]) -> str | None:
+    """Load the prepared package initial context snapshot digest from binding."""
+
+    manifest_path = str(binding.get("manifest_path") or "").strip()
+    if not manifest_path:
+        return None
+    from pathlib import Path
+
+    from top_down_planning.package.loader import ExecutionPackageLoader
+
+    try:
+        package = ExecutionPackageLoader().load(
+            Path(manifest_path).parent,
+            verify_workspace=False,
+        )
+    except (OSError, ValueError, TypeError):
+        return None
+    return str(
+        (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
+    ).strip() or None
+
+
 def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
     """Require production-ready binding keys on prepared child runs."""
 
@@ -736,21 +758,36 @@ def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:
     binding_baseline_digests = binding.get("baseline_accepted_result_digests")
     if not isinstance(binding_baseline_digests, list):
         return "child baseline_accepted_result_digests is invalid"
-    baseline_digests_in_wrappers = {
+    binding_digest_set = {
+        str(digest).strip()
+        for digest in binding_baseline_digests
+        if str(digest).strip()
+    }
+    if len(binding_digest_set) != len(
+        [d for d in binding_baseline_digests if str(d).strip()]
+    ):
+        return "child baseline_accepted_result_digests contains empty digest"
+    wrapper_digest_set = {
         str(wrapper.get("accepted_result_digest") or "").strip()
         for wrapper in baseline
         if isinstance(wrapper, dict)
         and str(wrapper.get("accepted_result_digest") or "").strip()
     }
-    for digest in binding_baseline_digests:
-        token = str(digest).strip()
-        if not token:
-            return "child baseline_accepted_result_digests contains empty digest"
-        if token not in baseline_digests_in_wrappers:
+    baseline_snapshot = str(binding.get("baseline_context_snapshot_digest") or "").strip()
+    package_initial = _package_initial_snapshot_from_binding(binding)
+    if package_initial is None:
+        return "child package_binding missing manifest_path for baseline lineage validation"
+    if baseline_snapshot == package_initial:
+        if binding_digest_set:
             return (
-                "child baseline_accepted_result_digests references digest "
-                f"not present in workspace_baseline_accepted_results: {token}"
+                "child at package initial snapshot must have empty "
+                "baseline_accepted_result_digests"
             )
+    elif binding_digest_set != wrapper_digest_set:
+        return (
+            "child baseline_accepted_result_digests must exactly match "
+            "workspace_baseline_accepted_results"
+        )
     if "external_prerequisites" not in binding:
         return "child missing external_prerequisites binding"
     external = binding.get("external_prerequisites")

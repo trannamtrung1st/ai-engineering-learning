@@ -822,10 +822,23 @@ class PreparedUnitExecutor:
             stored_baseline_digest = str(
                 binding.get("baseline_context_snapshot_digest") or ""
             ).strip()
+            stored_lineage = binding.get("baseline_accepted_result_digests")
+            expected_initial = str(
+                (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
+            )
+            if stored_baseline_digest == expected_initial:
+                desired_lineage_for_check: list[str] = []
+            else:
+                desired_lineage_for_check = [
+                    str(wrapper.get("accepted_result_digest") or "").strip()
+                    for wrapper in desired_baseline
+                    if str(wrapper.get("accepted_result_digest") or "").strip()
+                ]
             if (
                 stored_upstream != desired_upstream
                 or stored_baseline != desired_baseline
                 or stored_external != external
+                or stored_lineage != desired_lineage_for_check
             ):
                 raise ExecutionPackageError(
                     "child package bindings are immutable after execution starts",
@@ -889,6 +902,7 @@ class PreparedUnitExecutor:
         bindings_changing = (
             binding.get("upstream_accepted_results") != desired_upstream
             or binding.get("workspace_baseline_accepted_results") != desired_baseline
+            or binding.get("baseline_accepted_result_digests") != desired_baseline_digests
         )
         if (
             bindings_present

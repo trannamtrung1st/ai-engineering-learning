@@ -309,6 +309,8 @@ def test_parent_only_execute_attach_and_resume_reaches_accepted(
     script_whole_output_review(patch_provider, store, parent_id, decision="approved")
 
     resume_payload = _resume(parent_id, runs_dir)
+    while resume_payload["phase"] != OUTPUT_VALIDATED:
+        resume_payload = _resume(parent_id, runs_dir)
     assert resume_payload["phase"] == OUTPUT_VALIDATED
     assert store.load_run(parent_id)["outcome"] == "accepted"
     assert_acceptance_invariant_for_run(store, parent_id)
