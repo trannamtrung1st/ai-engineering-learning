@@ -14,6 +14,7 @@ from top_down_planning.package.lineage import (
     accepted_result_digest,
     verify_accepted_result_attestation,
     verify_accepted_result_matches_live_delivery,
+    workspace_changes_from_output_evidence,
 )
 from top_down_planning.package.loader import ExecutionPackageError
 from top_down_planning.orchestrator.prepare_resume import (
@@ -304,9 +305,122 @@ def test_live_match_rejects_identity_fields_that_disagree_with_child_binding(
         )
 
 
+def test_workspace_changes_from_evidence_uses_latest_per_path() -> None:
+    """Accepted workspace_changes reflect final captured bytes, not first batch."""
+
+    evidence = [
+        {
+            "ref": "shared/state.json",
+            "sha256": "a" * 64,
+            "size": 1,
+            "snapshot_ref": "artifacts/first",
+        },
+        {
+            "ref": "shared/state.json",
+            "sha256": "b" * 64,
+            "size": 2,
+            "snapshot_ref": "artifacts/second",
+        },
+    ]
+    changes = workspace_changes_from_output_evidence(evidence)
+    assert changes["shared/state.json"]["sha256"] == "b" * 64
+    assert changes["shared/state.json"]["size"] == 2
+
+
+def test_topo_sort_cycle_raises() -> None:
+    """Dependency cycles must fail closed, not merge in arbitrary order."""
+
+    from top_down_planning.package.execution_validation import topo_sort_sub_tdp_items
+    from top_down_planning.package.loader import ExecutionPackageError
+
+    records = [
+        {"plan_item_id": "a", "depends_on": ["b"]},
+        {"plan_item_id": "b", "depends_on": ["a"]},
+    ]
+    with pytest.raises(ExecutionPackageError, match="cycle"):
+        topo_sort_sub_tdp_items(
+            records,
+            item_id=lambda r: str(r["plan_item_id"]),
+            depends_on_ids=lambda r: list(r.get("depends_on") or []),
+        )
+
+
+def test_verify_upstream_wrapper_rejects_workspace_tamper(tmp_path: Path) -> None:
+    """Live delivery match must also verify current workspace bytes."""
+
+    from top_down_planning.package.lineage import verify_upstream_wrapper_matches_live_delivery
+
+    store, package = _build_package(tmp_path)
+    child_id = _create_and_accept_shared_writer(
+        store, package, unit_id="item-a", content='{"version": 2}\n'
+    )
+    wrapper, _ = _accepted_wrapper_for_shared(
+        store, package, child_id, unit_id="item-a"
+    )
+    shared = Path(package.workspace_path) / "shared" / "state.json"
+    shared.write_text('{"tampered": true}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="sha256|workspace"):
+        verify_upstream_wrapper_matches_live_delivery(store, wrapper)
+
+
 def test_agent_readme_documents_content_bound_accepted_result_fields() -> None:
     from top_down_planning.schema_docs import AGENT_README_TEXT
 
     assert "workspace_changes" in AGENT_README_TEXT
     assert "baseline_context_snapshot_digest" in AGENT_README_TEXT
     assert "final_context_snapshot_digest" in AGENT_README_TEXT
+
+
+def test_accepted_child_two_batches_same_file_records_final_hash(tmp_path: Path) -> None:
+    """One child may capture the same path twice; acceptance binds the latest hash."""
+
+    from core_tools.persistence import digest_file
+    from top_down_planning.agent_tool.artifacts import capture_output_artifact
+    from top_down_planning.persistence.digests import compute_output_digest
+
+    store, package = _build_package(tmp_path)
+    shared = Path(package.workspace_path) / "shared" / "state.json"
+    child_id = _create_and_accept_shared_writer(
+        store, package, unit_id="item-a", content='{"version": 2}\n'
+    )
+    shared.write_text('{"version": 3}\n', encoding="utf-8")
+    capture_output_artifact(
+        store,
+        child_id,
+        workspace=Path(package.workspace_path),
+        ref="shared/state.json",
+    )
+    production = store.load_production(child_id)
+    batch_id = str((production.get("batches") or [{}])[0].get("id") or "")
+    evidence = list(production.get("output_evidence") or [])
+    evidence.append(
+        {
+            "id": "out-a-v3",
+            "ref": "shared/state.json",
+            "sha256": digest_file(shared),
+            "size": shared.stat().st_size,
+            "snapshot_ref": "artifacts/manual-v3",
+            "batch_id": batch_id,
+        }
+    )
+    expected_prod = int(production["revision"])
+    production = dict(production)
+    production["output_evidence"] = evidence
+    production["output_revision"] = int(production.get("output_revision") or 0) + 1
+    production["revision"] = expected_prod + 1
+    store.save_production(child_id, production, expected_prod)
+
+    run = store.load_run(child_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    digests = dict(run.get("digests") or {})
+    digests["output"] = compute_output_digest(production)
+    run["digests"] = digests
+    run["revision"] = expected + 1
+    store.save_run(child_id, run, expected)
+
+    _, accepted = _accepted_wrapper_for_shared(
+        store, package, child_id, unit_id="item-a"
+    )
+    entry = accepted["workspace_changes"]["shared/state.json"]
+    assert entry["sha256"] == digest_file(shared)

@@ -167,7 +167,11 @@ def test_continuation_into_whole_output_succeeds_after_working_resource_mutation
 
 
 def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -> None:
-    """§15 mutable-workspace cases: modify/add/delete under configured dirs across batches."""
+    """§15 mutable-workspace cases: modify and add under configured dirs across batches.
+
+    Mid-production deletes are not authorized until tombstone capture exists; this
+    case only mutates and adds files with matching evidence per batch.
+    """
 
     store = FileRunStore(tmp_path)
     src = tmp_path / "src"
@@ -256,16 +260,10 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
                             "type": "artifact",
                             "ref": "src/feature.py",
                         },
-                        {
-                            "id": "output-obsolete",
-                            "type": "artifact",
-                            "ref": "src/obsolete.py",
-                        },
                     ],
                 ),
                 handler="apply",
             )(),
-            obsolete.unlink(),
         ),
     )
     provider.script_turn(
@@ -302,7 +300,7 @@ def test_multi_batch_working_resource_mutations_then_resume_ok(tmp_path: Path) -
     assert result.ok is True
     assert result.phase == WHOLE_OUTPUT_REVIEW
     assert result.batch_count == 2
-    assert not obsolete.exists()
+    assert obsolete.is_file()
     assert (tests_dir / "test_feature.py").is_file()
 
 

@@ -7,7 +7,12 @@ from typing import Any
 
 from core_tools.persistence import StoreRevisionConflictError
 
-from top_down_planning.config import compute_input_digest, compute_output_goal_digest, compute_unit_output_goal_digest
+from top_down_planning.config import (
+    compute_input_digest,
+    compute_output_goal_digest,
+    compute_unit_output_goal_digest,
+)
+from top_down_planning.config.context_digests import validate_resume_context_bindings
 from top_down_planning.domain.run_kind import (
     RUN_KIND_PARENT_EXECUTION,
     RUN_KIND_SUB_TDP_EXECUTION,
@@ -28,6 +33,7 @@ from top_down_planning.domain.run_ownership import (
     resolve_run_dir,
 )
 from top_down_planning.orchestrator.errors import OrchestratorError
+from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.orchestrator.resume_stop_validators import (
     ResumeStopValidationError,
     validate_stop_for_resume_apply,
@@ -138,6 +144,34 @@ def apply_resume_plan_atomically(
                     verify_upstream_wrapper_matches_live_delivery(store, wrapper)
     except ValueError as exc:
         raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc
+
+    effective_config = resume_plan.effective_config or resolved_config
+    if prior_phase != PRODUCTION:
+        production = store.load_production(run_id)
+        workspace_path = Path(run_workspace(run))
+        try:
+            from top_down_planning.orchestrator.prepare_resume import (
+                _extra_authorized_paths_for_resume,
+            )
+
+            extra_authorized = _extra_authorized_paths_for_resume(
+                store,
+                run=run,
+                production=production,
+                workspace=workspace_path,
+            )
+        except ValueError as exc:
+            raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc
+        context_error = validate_resume_context_bindings(
+            run,
+            production,
+            effective_config,
+            workspace=workspace_path,
+            context_spec_may_change=resume_plan.context_spec_may_change,
+            extra_authorized_paths=extra_authorized,
+        )
+        if context_error is not None:
+            raise ApplyResumeError(context_error, code="resume_apply_blocked")
 
     review_loop: ReviewLoop | None = None
     if prior_status == "paused" and isinstance(prior_stop, dict):

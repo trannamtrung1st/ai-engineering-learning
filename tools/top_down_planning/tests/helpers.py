@@ -1191,6 +1191,23 @@ def accept_child_run(
         handler="submit_completion",
     )()
 
+    from top_down_planning.config import recompute_context_snapshot_binding
+
+    config = store.load_resolved_config(child_run_id)
+    new_binding, new_snapshot_digest = recompute_context_snapshot_binding(
+        config,
+        workspace=workspace,
+    )
+    run = store.load_run(child_run_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    digests = dict(run.get("digests") or {})
+    digests["context_snapshot"] = new_snapshot_digest
+    run["digests"] = digests
+    run["context_snapshot_binding"] = new_binding
+    run["revision"] = expected + 1
+    store.save_run(child_run_id, run, expected)
+
     approval = whole_output_approval_record(store, child_run_id)
     store.save_review(child_run_id, approval)
     production = store.load_production(child_run_id)

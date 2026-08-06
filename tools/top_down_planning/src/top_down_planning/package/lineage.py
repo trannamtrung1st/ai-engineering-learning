@@ -240,7 +240,11 @@ class ExecutionLineageValidator:
 def workspace_changes_from_output_evidence(
     output_evidence: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """Build a content-bound workspace-change map from captured output evidence."""
+    """Build a content-bound workspace-change map from output evidence history.
+
+    When the same path was captured multiple times, the latest entry wins.
+    Older captures remain in production audit history but do not define final state.
+    """
 
     changes: dict[str, dict[str, Any]] = {}
     for entry in output_evidence:
@@ -262,11 +266,6 @@ def workspace_changes_from_output_evidence(
             "snapshot_ref": snapshot_ref,
             "operation": "write",
         }
-        existing = changes.get(path)
-        if existing is not None and existing.get("sha256") != sha256:
-            raise ValueError(
-                f"conflicting output evidence sha256 for path {path!r}"
-            )
         changes[path] = change
     return changes
 
@@ -328,18 +327,17 @@ def accepted_result_record(
     if not review_digest:
         raise ValueError("accepted_result_record requires whole_output_review_digest")
     delivery = extract_accepted_delivery(child_production)
+    live_output_evidence = list(delivery.output_evidence)
     if not evidence_digest:
         evidence_ids = [
             str(item.get("id") or "")
-            for item in delivery.output_evidence
+            for item in live_output_evidence
             if item.get("id")
         ]
         evidence_digest = digest_canonical_payload({"evidence_ids": evidence_ids})
     output_refs = list(delivery.outputs)
     contributions = list(delivery.contributions)
-    workspace_changes = workspace_changes_from_output_evidence(
-        list(delivery.output_evidence)
-    )
+    workspace_changes = workspace_changes_from_output_evidence(live_output_evidence)
     claim = child_production.get("completion_claim")
     completion_assessment = ""
     if isinstance(claim, dict):
@@ -549,7 +547,8 @@ def verify_accepted_result_matches_live_delivery(
     """Recompute accepted_result from live child and require digest equality.
 
     Parent and baseline consumers must not authorize from a stored
-    ``workspace_changes`` map that disagrees with live ``output_evidence``.
+    ``workspace_changes`` map that disagrees with live ``output_evidence`` history
+    (latest capture per path wins).
     Identity fields are taken from the live child ``package_binding``.
     """
 
@@ -615,7 +614,13 @@ def verify_upstream_wrapper_matches_live_delivery(
     store: Any,
     wrapper: dict[str, Any],
 ) -> dict[str, Any]:
-    """Validate an upstream/baseline wrapper against live child delivery."""
+    """Validate an upstream/baseline wrapper against live child delivery and workspace."""
+
+    from top_down_planning.package.execution_validation import (
+        verify_workspace_matches_authorized_changes,
+        workspace_changes_from_accepted_result,
+    )
+    from top_down_planning.workspace import run_workspace
 
     verify_upstream_accepted_result_binding(wrapper)
     accepted = wrapper["accepted_result"]
@@ -631,7 +636,7 @@ def verify_upstream_wrapper_matches_live_delivery(
         child_production=child_production,
         verify_evidence=True,
     )
-    return verify_accepted_result_matches_live_delivery(
+    live = verify_accepted_result_matches_live_delivery(
         {
             "plan_item_id": str(accepted.get("unit_id") or ""),
             "child_run_id": child_run_id,
@@ -642,6 +647,18 @@ def verify_upstream_wrapper_matches_live_delivery(
         child_run=child_run,
         child_production=child_production,
     )
+    workspace = run_workspace(child_run)
+    authorized_changes = workspace_changes_from_accepted_result(
+        live,
+        workspace=workspace,
+    )
+    if authorized_changes:
+        verify_workspace_matches_authorized_changes(
+            sorted(authorized_changes),
+            authorized_changes=authorized_changes,
+            workspace=workspace,
+        )
+    return live
 
 
 def validate_child_package_bindings(binding: dict[str, Any]) -> str | None:

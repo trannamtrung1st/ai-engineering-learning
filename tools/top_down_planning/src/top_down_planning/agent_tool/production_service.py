@@ -760,6 +760,8 @@ class ProductionAgentService:
         )
 
         try:
+            from top_down_planning.config.context_digests import prospective_batch_output_refs
+
             validate_run_production_snapshot_drift(
                 run,
                 config,
@@ -767,6 +769,9 @@ class ProductionAgentService:
                 workspace=workspace,
                 new_binding=new_binding,
                 new_snapshot_digest=new_snapshot_digest,
+                prospective_output_refs=prospective_batch_output_refs(
+                    candidate_production
+                ),
             )
         except UnauthorizedContextMutationError as exc:
             drift_counts = _snapshot_drift_count_fields(exc)

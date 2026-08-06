@@ -299,3 +299,144 @@ def test_baseline_rejects_conflicting_accepted_hashes_for_same_path(
             store=store,
             baseline_wrappers=[wrapper_a, wrapper_b],
         )
+
+
+def test_dependent_children_same_path_ordered_overwrite_composes(
+    tmp_path: Path,
+) -> None:
+    """A then B on the same resource composes when B's baseline includes A's final state."""
+
+    from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
+
+    store, package = _build_package(tmp_path, dependent=True)
+    config = package.resolved_config
+    factory = PreparedRunFactory()
+    shared = Path(package.workspace_path) / "shared" / "state.json"
+
+    child_a = factory.create_child_run(
+        store,
+        package,
+        package.units["item-a"],
+        resolved_config=config,
+        invocation={"command": "execute"},
+    )
+    shared.write_text('{"writer": "a"}\n', encoding="utf-8")
+    accept_child_run(
+        store,
+        child_a,
+        outputs=[{"id": "out-a", "type": "artifact", "ref": "shared/state.json"}],
+        contributions=[
+            {
+                "item_id": "item-a",
+                "output_refs": ["out-a"],
+                "summary": "A wrote state",
+            }
+        ],
+    )
+    wrapper_a, _ = _accepted_wrapper_for_shared(
+        store, package, child_a, unit_id="item-a"
+    )
+
+    child_b = factory.create_child_run(
+        store,
+        package,
+        package.units["item-b"],
+        resolved_config=config,
+        invocation={"command": "execute"},
+        upstream_accepted_results=[wrapper_a],
+    )
+    shared.write_text('{"writer": "b"}\n', encoding="utf-8")
+    accept_child_run(
+        store,
+        child_b,
+        outputs=[{"id": "out-b", "type": "artifact", "ref": "shared/state.json"}],
+        contributions=[
+            {
+                "item_id": "item-b",
+                "output_refs": ["out-b"],
+                "summary": "B updated state",
+            }
+        ],
+    )
+    wrapper_b, accepted_b = _accepted_wrapper_for_shared(
+        store, package, child_b, unit_id="item-b"
+    )
+
+    binding = verify_package_context_snapshot_with_baseline(
+        package,
+        store=store,
+        baseline_wrappers=[wrapper_a, wrapper_b],
+    )
+    assert isinstance(binding, dict)
+    assert accepted_b["workspace_changes"]["shared/state.json"]["sha256"]
+
+
+def test_disjoint_independent_branches_compose_successfully(tmp_path: Path) -> None:
+    """Independent units writing different paths both authorize baseline closure."""
+
+    from top_down_planning.orchestrator.prepared_run_factory import PreparedRunFactory
+
+    store, package = _build_package(tmp_path, dependent=False)
+    config = package.resolved_config
+    factory = PreparedRunFactory()
+    workspace = Path(package.workspace_path)
+    shared_a = workspace / "shared" / "a.json"
+    shared_b = workspace / "shared" / "b.json"
+    shared_a.parent.mkdir(parents=True, exist_ok=True)
+
+    child_a = factory.create_child_run(
+        store,
+        package,
+        package.units["item-a"],
+        resolved_config=config,
+        invocation={"command": "execute"},
+    )
+    shared_a.write_text('{"unit": "a"}\n', encoding="utf-8")
+    accept_child_run(
+        store,
+        child_a,
+        outputs=[{"id": "out-a", "type": "artifact", "ref": "shared/a.json"}],
+        contributions=[
+            {
+                "item_id": "item-a",
+                "output_refs": ["out-a"],
+                "summary": "A wrote a.json",
+            }
+        ],
+    )
+    wrapper_a, _ = _accepted_wrapper_for_shared(
+        store, package, child_a, unit_id="item-a"
+    )
+    child_b = factory.create_child_run(
+        store,
+        package,
+        package.units["item-b"],
+        resolved_config=config,
+        invocation={"command": "execute"},
+        workspace_baseline_results=[wrapper_a],
+    )
+    shared_b.write_text('{"unit": "b"}\n', encoding="utf-8")
+    accept_child_run(
+        store,
+        child_b,
+        outputs=[{"id": "out-b", "type": "artifact", "ref": "shared/b.json"}],
+        contributions=[
+            {
+                "item_id": "item-b",
+                "output_refs": ["out-b"],
+                "summary": "B wrote b.json",
+            }
+        ],
+    )
+    wrapper_b, _ = _accepted_wrapper_for_shared(
+        store, package, child_b, unit_id="item-b"
+    )
+
+    binding = verify_package_context_snapshot_with_baseline(
+        package,
+        store=store,
+        baseline_wrappers=[wrapper_a, wrapper_b],
+    )
+    assert isinstance(binding, dict)
+    assert "shared/a.json" in (binding.get("resource_digests") or {})
+    assert "shared/b.json" in (binding.get("resource_digests") or {})

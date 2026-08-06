@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from core_tools.persistence import digest_file
 
@@ -304,11 +304,95 @@ def workspace_changes_from_accepted_result(
     return changes
 
 
+def topo_sort_sub_tdp_items(
+    items: list[dict[str, Any]],
+    *,
+    item_id: Callable[[dict[str, Any]], str],
+    depends_on_ids: Callable[[dict[str, Any]], list[str]],
+) -> list[dict[str, Any]]:
+    """Return items in dependency order for workspace-change succession.
+
+    Raises when ``depends_on`` forms a cycle among the provided items.
+    """
+
+    indexed: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = str(item_id(item) or "").strip()
+        if key:
+            indexed[key] = item
+
+    depends_on: dict[str, list[str]] = {}
+    for key, item in indexed.items():
+        raw_deps = depends_on_ids(item)
+        depends_on[key] = [
+            str(dep).strip() for dep in raw_deps if str(dep).strip() in indexed
+        ]
+
+    indegree = {key: 0 for key in indexed}
+    for key, deps in depends_on.items():
+        for dep in deps:
+            indegree[key] += 1
+
+    queue = sorted([key for key, count in indegree.items() if count == 0])
+    ordered: list[dict[str, Any]] = []
+    while queue:
+        key = queue.pop(0)
+        ordered.append(indexed[key])
+        for peer_key, deps in depends_on.items():
+            if key not in deps:
+                continue
+            indegree[peer_key] -= 1
+            if indegree[peer_key] == 0:
+                queue.append(peer_key)
+        queue.sort()
+
+    if len(ordered) != len(indexed):
+        raise ExecutionPackageError(
+            "sub_tdp dependency cycle prevents workspace-change succession ordering",
+            code="sub_tdp_upstream_invalid",
+        )
+    return ordered
+
+
+def _topo_sort_baseline_wrappers(
+    wrappers: list[dict[str, Any]],
+    *,
+    unit_depends_on: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    valid = [
+        wrapper
+        for wrapper in wrappers
+        if isinstance(wrapper, dict) and isinstance(wrapper.get("accepted_result"), dict)
+    ]
+    indexed_ids = {
+        str((wrapper.get("accepted_result") or {}).get("unit_id") or "").strip()
+        for wrapper in valid
+    }
+    return topo_sort_sub_tdp_items(
+        valid,
+        item_id=lambda wrapper: str(
+            (wrapper.get("accepted_result") or {}).get("unit_id") or ""
+        ).strip(),
+        depends_on_ids=lambda wrapper: [
+            str(dep).strip()
+            for dep in unit_depends_on.get(
+                str((wrapper.get("accepted_result") or {}).get("unit_id") or "").strip(),
+                [],
+            )
+            if str(dep).strip() in indexed_ids
+        ],
+    )
+
+
 def merge_authorized_workspace_changes(
     existing: dict[str, dict[str, Any]],
     incoming: dict[str, dict[str, Any]],
+    *,
+    allow_same_path_overwrite: bool = False,
 ) -> dict[str, dict[str, Any]]:
-    """Merge content-bound workspace changes; reject operation/hash conflicts."""
+    """Merge content-bound workspace changes; reject unrelated hash conflicts."""
 
     merged = dict(existing)
     for path, change in incoming.items():
@@ -335,23 +419,63 @@ def merge_authorized_workspace_changes(
                 code="package_context_drift",
             )
         if str(prior.get("sha256") or "") != str(change.get("sha256") or ""):
-            raise ExecutionPackageError(
-                f"conflicting accepted workspace hashes for {path}",
-                code="package_context_drift",
-            )
+            if not allow_same_path_overwrite:
+                raise ExecutionPackageError(
+                    f"conflicting accepted workspace hashes for {path}",
+                    code="package_context_drift",
+                )
         merged[path] = dict(change)
     return merged
+
+
+def merge_accepted_result_workspace_changes(
+    merged: dict[str, dict[str, Any]],
+    accepted_result: dict[str, Any],
+    *,
+    cumulative_snapshot_digest: str,
+    workspace: Path,
+) -> tuple[dict[str, dict[str, Any]], str]:
+    """Apply one accepted result as a snapshot transition in dependency order."""
+
+    baseline = str(
+        accepted_result.get("baseline_context_snapshot_digest") or ""
+    ).strip()
+    final = str(accepted_result.get("final_context_snapshot_digest") or "").strip()
+    if not final:
+        raise ExecutionPackageError(
+            "accepted_result missing final_context_snapshot_digest",
+            code="sub_tdp_upstream_invalid",
+        )
+    changes = workspace_changes_from_accepted_result(
+        accepted_result,
+        workspace=workspace,
+    )
+    allow_overwrite = baseline == cumulative_snapshot_digest
+    merged = merge_authorized_workspace_changes(
+        merged,
+        changes,
+        allow_same_path_overwrite=allow_overwrite,
+    )
+    return merged, final
 
 
 def _authorized_workspace_changes_from_baseline(
     baseline_wrappers: list[dict[str, Any]],
     *,
     workspace: Path,
+    initial_snapshot_digest: str = "",
+    unit_depends_on: dict[str, list[str]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
 
+    ordered_wrappers = (
+        _topo_sort_baseline_wrappers(baseline_wrappers, unit_depends_on=unit_depends_on or {})
+        if unit_depends_on
+        else list(baseline_wrappers)
+    )
     merged: dict[str, dict[str, Any]] = {}
-    for wrapper in baseline_wrappers:
+    cumulative = str(initial_snapshot_digest or "").strip()
+    for wrapper in ordered_wrappers:
         verify_upstream_accepted_result_binding(wrapper)
         accepted = wrapper["accepted_result"]
         if not str(accepted.get("child_run_id") or "").strip():
@@ -359,11 +483,12 @@ def _authorized_workspace_changes_from_baseline(
                 "baseline accepted_result missing child_run_id",
                 code="sub_tdp_upstream_invalid",
             )
-        changes = workspace_changes_from_accepted_result(
+        merged, cumulative = merge_accepted_result_workspace_changes(
+            merged,
             accepted,
+            cumulative_snapshot_digest=cumulative,
             workspace=workspace,
         )
-        merged = merge_authorized_workspace_changes(merged, changes)
     return merged
 
 
@@ -479,6 +604,10 @@ def verify_package_context_snapshot_with_baseline(
     authorized_changes = _authorized_workspace_changes_from_baseline(
         baseline_wrappers,
         workspace=workspace,
+        initial_snapshot_digest=expected_snapshot,
+        unit_depends_on={
+            unit_id: list(unit.depends_on) for unit_id, unit in package.units.items()
+        },
     )
     verify_workspace_matches_authorized_changes(
         evidence_gaps,
@@ -506,7 +635,9 @@ def _aggregate_input_digest(context: dict[str, Any]) -> str:
 
 __all__ = [
     "authorized_paths_from_accepted_result",
+    "merge_accepted_result_workspace_changes",
     "merge_authorized_workspace_changes",
+    "topo_sort_sub_tdp_items",
     "validate_resolved_config_against_package",
     "verify_package_authoritative_inputs",
     "verify_package_context_snapshot_exact",

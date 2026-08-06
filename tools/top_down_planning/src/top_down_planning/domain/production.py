@@ -670,6 +670,32 @@ class AcceptedDelivery:
     contributions: list[dict[str, Any]]
 
 
+def live_batch_ids(production: dict[str, Any]) -> set[str]:
+    """Batch ids that remain authoritative after reconciliation."""
+
+    ids: set[str] = set()
+    for batch in production.get("batches") or []:
+        if not isinstance(batch, dict):
+            continue
+        if batch.get("evidence_status") == "invalidated_by_reconciliation":
+            continue
+        batch_id = str(batch.get("id") or "").strip()
+        if batch_id:
+            ids.add(batch_id)
+    return ids
+
+
+def live_output_evidence_entries(production: dict[str, Any]) -> list[dict[str, Any]]:
+    """Output-evidence rows tied to live (non-invalidated) production batches."""
+
+    live_ids = live_batch_ids(production)
+    return [
+        dict(entry)
+        for entry in (production.get("output_evidence") or [])
+        if isinstance(entry, dict) and str(entry.get("batch_id") or "") in live_ids
+    ]
+
+
 def extract_accepted_delivery(
     production: dict[str, Any],
     *,
@@ -683,16 +709,11 @@ def extract_accepted_delivery(
         if isinstance(batch, dict)
         and batch.get("evidence_status") != "invalidated_by_reconciliation"
     ]
-    live_batch_ids = {
-        str(batch.get("id") or "")
-        for batch in live_batches
-        if batch.get("id")
-    }
+    live_ids = live_batch_ids(production)
     output_evidence = [
         dict(entry)
         for entry in (production.get("output_evidence") or [])
-        if isinstance(entry, dict)
-        and str(entry.get("batch_id") or "") in live_batch_ids
+        if isinstance(entry, dict) and str(entry.get("batch_id") or "") in live_ids
     ]
     evidence_ids = {
         str(entry.get("id") or "")

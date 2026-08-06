@@ -2797,8 +2797,10 @@ maps; guidance remains a list of digest entries). Exclusions apply to resource c
 only — skills and guidance stay bound. Direct file resources always bind; directory/glob
 discoveries are filtered. Each `production apply` validates cumulative snapshot drift
 against the candidate batch outputs; production completion re-validates and rebases the
-snapshot when drift is attributable to production evidence (same canonical relative paths
-as evidence `ref`); unauthorized drift blocks apply retry, completion, or resume. Resource paths and evidence refs must
+snapshot when drift is attributable to hash-matched production evidence (latest
+``output_evidence`` per path must match current workspace bytes). Apply authorizes
+candidate batch output refs before capture. Unauthorized drift blocks apply retry,
+completion, or resume. Resource paths and evidence refs must
 resolve inside the workspace; escapes and absolute refs fail explicitly. Invalid
 persisted evidence refs fail rebase validation rather than masquerading as unauthorized
 drift. `.gitignore` is not inherited. Omitting
@@ -2811,13 +2813,18 @@ Parent Sub-TDP orchestration binds each completed unit with an immutable
 attestation is content-bound:
 
 - `workspace_changes`: map of canonical relative path → write record with
-  `operation: "write"`, `sha256`, `size`, and `snapshot_ref` from live
-  `output_evidence`. Path authorization from bare `output_refs` is rejected.
+  `operation: "write"`, `sha256`, `size`, and `snapshot_ref`. Built from the full
+  `output_evidence` history; the latest capture per path is the authoritative final
+  state. Path authorization from bare `output_refs` is rejected.
   Delete tombstones are not supported until production can capture them.
 - `baseline_context_snapshot_digest`: context snapshot when the child started.
 - `final_context_snapshot_digest`: context snapshot when the child finished.
 - `output_refs`: objects with `id`/`type`/`ref`; each `ref` must appear in
   `workspace_changes`.
+
+Cumulative workspace baselines merge accepted results in dependency order. Same-path
+hash overwrites are allowed only when the incoming result's baseline snapshot digest
+matches the cumulative snapshot after prior accepted results (ordered succession).
 
 Upstream wrappers also carry `accepted_result_digest` and
 `upstream_contract_digest`. Parent resume, baseline authorization, and

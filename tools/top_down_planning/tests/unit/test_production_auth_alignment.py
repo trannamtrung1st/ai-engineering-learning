@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from core_tools.persistence.digests import digest_file
 from top_down_planning.agent_tool.artifacts import capture_output_artifact
 from top_down_planning.agent_tool.errors import RequestError
 from top_down_planning.config import (
@@ -24,6 +25,41 @@ from top_down_planning.config import (
 from top_down_planning.config.snapshot_policy import CanonicalPathError
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import create_run_kwargs, minimal_resolved_config, write_config
+
+
+def _evidence_for_path(workspace: Path, ref: str, *, evidence_id: str = "o1") -> dict[str, object]:
+    target = workspace / ref
+    return {
+        "id": evidence_id,
+        "ref": ref,
+        "sha256": digest_file(target),
+        "size": target.stat().st_size,
+    }
+
+
+def _production_with_live_evidence(
+    entries: list[dict[str, object]],
+    *,
+    batch_id: str = "batch-1",
+) -> dict[str, object]:
+    """Production snapshot with evidence rows tied to a live batch."""
+
+    live_entries: list[dict[str, object]] = []
+    outputs: list[dict[str, str]] = []
+    for entry in entries:
+        ev = dict(entry)
+        ev.setdefault("batch_id", batch_id)
+        live_entries.append(ev)
+        outputs.append(
+            {
+                "id": str(ev.get("id") or ""),
+                "ref": str(ev.get("ref") or ""),
+            }
+        )
+    return {
+        "batches": [{"id": batch_id, "result": {"outputs": outputs}}],
+        "output_evidence": live_entries,
+    }
 
 
 def test_canonicalize_evidence_ref_valid_relative(tmp_path: Path) -> None:
@@ -176,10 +212,9 @@ agent_context:
             "context_snapshot": compute_context_snapshot_digest_from_payload(old_binding)
         },
     }
-    production = {
-        "output_evidence": [{"id": "o1", "ref": "src/feature.py"}],
-        "batches": [],
-    }
+    production = _production_with_live_evidence(
+        [_evidence_for_path(workspace, "src/feature.py")]
+    )
 
     changed = validate_run_production_snapshot_drift(
         run,
@@ -232,10 +267,9 @@ agent_context:
     assert changed == ["src/feature.py"]
     assert not any("__pycache__" in path or ".pytest_cache" in path for path in changed)
 
-    production = {
-        "output_evidence": [{"id": "o1", "ref": "src/feature.py"}],
-        "batches": [],
-    }
+    production = _production_with_live_evidence(
+        [_evidence_for_path(workspace, "src/feature.py")]
+    )
     assert validate_production_snapshot_rebase(
         old_binding,
         new_binding,
@@ -286,13 +320,12 @@ def test_authorized_paths_alias_to_same_canonical_key(tmp_path: Path) -> None:
     real.parent.mkdir(parents=True)
     real.write_text("ok\n", encoding="utf-8")
     (workspace / "alias.py").symlink_to(real)
-    production = {
-        "output_evidence": [
-            {"ref": "alias.py"},
-            {"ref": "real/file.py"},
-        ],
-        "batches": [],
-    }
+    production = _production_with_live_evidence(
+        [
+            _evidence_for_path(workspace, "alias.py", evidence_id="a1"),
+            _evidence_for_path(workspace, "real/file.py", evidence_id="a2"),
+        ]
+    )
     authorized = authorized_production_workspace_paths(production, workspace=workspace)
     assert authorized == {"real/file.py"}
 
@@ -326,6 +359,179 @@ agent_context:
         "batches": [],
     }
     with pytest.raises(InvalidProductionEvidenceError, match="invalid evidence refs"):
+        validate_production_snapshot_rebase(
+            old_binding,
+            new_binding,
+            production,
+            workspace=workspace,
+        )
+
+
+def test_production_completion_blocks_post_capture_file_mutation(tmp_path: Path) -> None:
+    """Paths captured at X cannot authorize workspace bytes Y at completion."""
+
+    workspace = tmp_path / "ws"
+    src = workspace / "src"
+    src.mkdir(parents=True)
+    module = src / "feature.py"
+    module.write_text("v1\n", encoding="utf-8")
+    evidence = _evidence_for_path(workspace, "src/feature.py")
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  roles:
+    producer:
+      resources:
+        - src/
+""",
+        ),
+        cwd=workspace,
+    )
+    old_binding = build_context_snapshot_payload(config, workspace=workspace)
+    module.write_text("v2-unauthorized\n", encoding="utf-8")
+    new_binding, _ = recompute_context_snapshot_binding(config, workspace=workspace)
+    production = _production_with_live_evidence([evidence])
+
+    with pytest.raises(UnauthorizedContextMutationError, match="src/feature.py"):
+        validate_production_snapshot_rebase(
+            old_binding,
+            new_binding,
+            production,
+            workspace=workspace,
+        )
+
+
+def test_latest_evidence_per_path_authorizes_final_bytes(tmp_path: Path) -> None:
+    """Iterative production keeps audit history but only latest hash authorizes."""
+
+    workspace = tmp_path / "ws"
+    src = workspace / "src"
+    src.mkdir(parents=True)
+    module = src / "feature.py"
+    module.write_text("v1\n", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  roles:
+    producer:
+      resources:
+        - src/
+""",
+        ),
+        cwd=workspace,
+    )
+    old_binding = build_context_snapshot_payload(config, workspace=workspace)
+    first = _evidence_for_path(workspace, "src/feature.py", evidence_id="o1")
+    module.write_text("v2\n", encoding="utf-8")
+    second = _evidence_for_path(workspace, "src/feature.py", evidence_id="o2")
+    new_binding, _ = recompute_context_snapshot_binding(config, workspace=workspace)
+    production = _production_with_live_evidence([first, second])
+
+    assert validate_production_snapshot_rebase(
+        old_binding,
+        new_binding,
+        production,
+        workspace=workspace,
+    ) == ["src/feature.py"]
+
+
+def test_stale_invalidated_evidence_does_not_authorize_rebase(tmp_path: Path) -> None:
+    """Orphan output_evidence from invalidated batches must not authorize drift."""
+
+    workspace = tmp_path / "ws"
+    src = workspace / "src"
+    src.mkdir(parents=True)
+    module = src / "feature.py"
+    module.write_text("v1\n", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  roles:
+    producer:
+      resources:
+        - src/
+""",
+        ),
+        cwd=workspace,
+    )
+    old_binding = build_context_snapshot_payload(config, workspace=workspace)
+    module.write_text("v2-stale\n", encoding="utf-8")
+    new_binding, _ = recompute_context_snapshot_binding(config, workspace=workspace)
+    stale_sha = digest_file(workspace / "src" / "feature.py")
+    module.write_text("v1\n", encoding="utf-8")
+    production = {
+        "batches": [
+            {
+                "id": "batch-1",
+                "evidence_status": "invalidated_by_reconciliation",
+                "result": {"outputs": [{"ref": "src/feature.py"}]},
+            }
+        ],
+        "output_evidence": [
+            {
+                "id": "stale",
+                "ref": "src/feature.py",
+                "sha256": stale_sha,
+                "batch_id": "batch-1",
+            }
+        ],
+    }
+    with pytest.raises(UnauthorizedContextMutationError, match="src/feature.py"):
+        validate_production_snapshot_rebase(
+            old_binding,
+            new_binding,
+            production,
+            workspace=workspace,
+        )
+
+
+def test_delete_after_capture_does_not_authorize_snapshot_rebase(tmp_path: Path) -> None:
+    """Deleting a captured file removes hash authorization for that path."""
+
+    workspace = tmp_path / "ws"
+    src = workspace / "src"
+    src.mkdir(parents=True)
+    module = src / "feature.py"
+    obsolete = src / "obsolete.py"
+    module.write_text("v1\n", encoding="utf-8")
+    obsolete.write_text("gone\n", encoding="utf-8")
+    config = resolve_config(
+        write_config(
+            tmp_path / "cfg.yaml",
+            """
+run:
+  output_goal: Goal.
+agent_context:
+  roles:
+    producer:
+      resources:
+        - src/
+""",
+        ),
+        cwd=workspace,
+    )
+    old_binding = build_context_snapshot_payload(config, workspace=workspace)
+    production = _production_with_live_evidence(
+        [
+            _evidence_for_path(workspace, "src/feature.py", evidence_id="o1"),
+            _evidence_for_path(workspace, "src/obsolete.py", evidence_id="o2"),
+        ]
+    )
+    obsolete.unlink()
+    new_binding, _ = recompute_context_snapshot_binding(config, workspace=workspace)
+    with pytest.raises(UnauthorizedContextMutationError, match="obsolete.py"):
         validate_production_snapshot_rebase(
             old_binding,
             new_binding,

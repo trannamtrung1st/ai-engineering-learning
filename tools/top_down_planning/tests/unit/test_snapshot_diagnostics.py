@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from core_tools.persistence.digests import digest_file
 from top_down_planning.config import (
     UnauthorizedContextMutationError,
     build_context_snapshot_payload_with_diagnostics,
@@ -114,7 +115,17 @@ agent_context:
         validate_production_snapshot_rebase(
             old_binding,
             new_binding,
-            {"output_evidence": [{"ref": "src/feature.py"}], "batches": []},
+            {
+                "batches": [{"id": "batch-1", "result": {"outputs": [{"ref": "src/feature.py"}]}}],
+                "output_evidence": [
+                    {
+                        "id": "o1",
+                        "ref": "src/feature.py",
+                        "sha256": digest_file(module),
+                        "batch_id": "batch-1",
+                    }
+                ],
+            },
             workspace=workspace,
         )
     message = str(exc_info.value)

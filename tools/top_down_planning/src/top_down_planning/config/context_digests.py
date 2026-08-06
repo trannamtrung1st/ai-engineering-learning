@@ -146,6 +146,8 @@ def _format_snapshot_drift_label(key: str) -> str:
 
 
 def _production_evidence_ref_strings(production: dict[str, Any]) -> list[str]:
+    """Every persisted evidence ref for canonicalization corruption checks."""
+
     refs: list[str] = []
     for entry in production.get("output_evidence") or []:
         if isinstance(entry, dict):
@@ -154,8 +156,6 @@ def _production_evidence_ref_strings(production: dict[str, Any]) -> list[str]:
                 refs.append(ref_text)
     for batch in production.get("batches") or []:
         if not isinstance(batch, dict):
-            continue
-        if batch.get("evidence_status") == "invalidated_by_reconciliation":
             continue
         result = batch.get("result")
         if not isinstance(result, dict):
@@ -184,25 +184,88 @@ def invalid_production_evidence_refs(
     return tuple(invalid)
 
 
+def latest_output_evidence_by_path(
+    production: dict[str, Any],
+    *,
+    workspace: Path,
+) -> dict[str, dict[str, Any]]:
+    """Return the latest live output-evidence entry per canonical workspace path."""
+
+    from top_down_planning.domain.production import live_output_evidence_entries
+
+    latest: dict[str, dict[str, Any]] = {}
+    for entry in live_output_evidence_entries(production):
+        ref_text = str(entry.get("ref") or "").strip()
+        if not ref_text:
+            continue
+        try:
+            canonical = canonicalize_evidence_ref(ref_text, workspace=workspace)
+        except CanonicalPathError:
+            continue
+        latest[canonical] = dict(entry)
+    return latest
+
+
+def prospective_batch_output_refs(production: dict[str, Any]) -> tuple[str, ...]:
+    """Output refs on the latest batch (apply candidates before artifact capture)."""
+
+    batches = production.get("batches") or []
+    if not batches:
+        return ()
+    last = batches[-1]
+    if not isinstance(last, dict):
+        return ()
+    result = last.get("result")
+    if not isinstance(result, dict):
+        return ()
+    refs: list[str] = []
+    for output in result.get("outputs") or []:
+        if isinstance(output, dict):
+            ref = str(output.get("ref") or "").strip()
+            if ref:
+                refs.append(ref)
+    return tuple(refs)
+
+
 def authorized_production_workspace_paths(
     production: dict[str, Any],
     *,
     workspace: Path,
+    prospective_output_refs: tuple[str, ...] | None = None,
 ) -> set[str]:
-    """Canonical relative paths attributable to persisted production evidence.
+    """Canonical paths authorized by hash-matched evidence and optional apply candidates.
 
-    Uses the same evidence-ref canonicalization as artifact capture so authorized
-    paths compare equal to snapshot resource binding keys.
+    Completion and resume rebase use persisted evidence only: each changed path must
+    appear in the latest ``output_evidence`` entry for that path and the recorded
+    sha256 must match current workspace bytes.
+
+    ``production apply`` may pass ``prospective_output_refs`` (refs from the candidate
+    batch about to be captured) so drift on those paths is authorized before capture.
     """
 
+    from core_tools.persistence import digest_file
+
     authorized: set[str] = set()
-    for ref_text in _production_evidence_ref_strings(production):
-        try:
-            authorized.add(canonicalize_evidence_ref(ref_text, workspace=workspace))
-        except CanonicalPathError:
-            # Invalid refs are surfaced by invalid_production_evidence_refs /
-            # validate_production_snapshot_rebase before authorization checks.
+    for path, entry in latest_output_evidence_by_path(
+        production,
+        workspace=workspace,
+    ).items():
+        expected = str(entry.get("sha256") or "").strip()
+        if not expected:
             continue
+        target = workspace / path
+        if not target.is_file():
+            continue
+        if digest_file(target) == expected:
+            authorized.add(path)
+    for ref_text in prospective_output_refs or ():
+        try:
+            canonical = canonicalize_evidence_ref(ref_text, workspace=workspace)
+        except CanonicalPathError:
+            continue
+        target = workspace / canonical
+        if target.is_file():
+            authorized.add(canonical)
     return authorized
 
 
@@ -259,6 +322,7 @@ def validate_production_snapshot_rebase(
     *,
     workspace: Path,
     extra_authorized_paths: set[str] | None = None,
+    prospective_output_refs: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Authorize snapshot drift from production evidence; return changed paths."""
 
@@ -270,7 +334,11 @@ def validate_production_snapshot_rebase(
     if invalid_refs:
         raise InvalidProductionEvidenceError(invalid_refs)
 
-    authorized = authorized_production_workspace_paths(production, workspace=workspace)
+    authorized = authorized_production_workspace_paths(
+        production,
+        workspace=workspace,
+        prospective_output_refs=prospective_output_refs,
+    )
     if extra_authorized_paths:
         authorized |= set(extra_authorized_paths)
     authorized_changed = [path for path in changed_paths if path in authorized]
@@ -293,6 +361,7 @@ def validate_run_production_snapshot_drift(
     workspace: Path,
     new_binding: dict[str, Any] | None = None,
     new_snapshot_digest: str | None = None,
+    prospective_output_refs: tuple[str, ...] | None = None,
 ) -> list[str] | None:
     """Authorize cumulative production evidence for snapshot drift on a run.
 
@@ -318,6 +387,7 @@ def validate_run_production_snapshot_drift(
         new_binding,
         production,
         workspace=workspace,
+        prospective_output_refs=prospective_output_refs,
     )
 
 
@@ -530,6 +600,8 @@ __all__ = [
     "build_initial_context_snapshot_binding",
     "build_initial_context_snapshot_binding_with_diagnostics",
     "context_spec_diff_is_model_only",
+    "latest_output_evidence_by_path",
+    "prospective_batch_output_refs",
     "resolve_context_spec_may_change",
     "diff_snapshot_binding_paths",
     "invalid_production_evidence_refs",

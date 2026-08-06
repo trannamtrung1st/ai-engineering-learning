@@ -402,6 +402,27 @@ def _verify_child_upstream_bindings(
     return None
 
 
+def _topo_sort_sub_tdp_unit_records(unit_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return unit records in dependency order for workspace-change succession."""
+
+    from top_down_planning.package.execution_validation import topo_sort_sub_tdp_items
+
+    indexed_records = [
+        record
+        for record in unit_records
+        if isinstance(record, dict) and str(record.get("plan_item_id") or "").strip()
+    ]
+    return topo_sort_sub_tdp_items(
+        indexed_records,
+        item_id=lambda record: str(record.get("plan_item_id") or "").strip(),
+        depends_on_ids=lambda record: [
+            str(dep).strip()
+            for dep in (record.get("depends_on") or [])
+            if isinstance(record.get("depends_on"), list)
+        ],
+    )
+
+
 def collect_parent_sub_tdp_authorized_workspace_changes(
     store: RunStore,
     *,
@@ -411,12 +432,12 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
     """Merge content-bound workspace_changes from attached accepted Sub-TDP units.
 
     Validates attestation and live child delivery for every completed unit with an
-    accepted_result, then merges workspace_changes with conflict detection.
+    accepted_result, then merges workspace_changes in dependency order with snapshot
+    succession for ordered overwrites.
     """
 
     from top_down_planning.package.execution_validation import (
-        merge_authorized_workspace_changes,
-        workspace_changes_from_accepted_result,
+        merge_accepted_result_workspace_changes,
     )
     from top_down_planning.package.lineage import (
         validate_accepted_child_delivery,
@@ -427,13 +448,15 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
     state = production.get("sub_tdps")
     if not isinstance(state, dict):
         return {}
+    unit_records = [
+        record
+        for record in (state.get("units") or [])
+        if isinstance(record, dict) and isinstance(record.get("accepted_result"), dict)
+    ]
     authorized_changes: dict[str, dict[str, Any]] = {}
-    for unit_record in state.get("units") or []:
-        if not isinstance(unit_record, dict):
-            continue
-        accepted = unit_record.get("accepted_result")
-        if not isinstance(accepted, dict):
-            continue
+    cumulative_snapshot = ""
+    for unit_record in _topo_sort_sub_tdp_unit_records(unit_records):
+        accepted = unit_record["accepted_result"]
         plan_item_id = str(unit_record.get("plan_item_id") or "").strip() or "<unknown>"
         child_run_id = str(accepted.get("child_run_id") or "").strip()
         if not child_run_id:
@@ -460,13 +483,11 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
                 f"parent sub_tdps child delivery invalid for {plan_item_id!r}: {exc}"
             ) from exc
         try:
-            changes = workspace_changes_from_accepted_result(
-                live_accepted,
-                workspace=workspace,
-            )
-            authorized_changes = merge_authorized_workspace_changes(
+            authorized_changes, cumulative_snapshot = merge_accepted_result_workspace_changes(
                 authorized_changes,
-                changes,
+                live_accepted,
+                cumulative_snapshot_digest=cumulative_snapshot,
+                workspace=workspace,
             )
         except (ExecutionPackageError, ValueError, TypeError) as exc:
             raise ValueError(
