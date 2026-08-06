@@ -17,6 +17,7 @@ from top_down_planning.config.context import (
 from top_down_planning.config.context_digests import (
     build_initial_context_snapshot_binding_with_diagnostics,
     diff_snapshot_binding_paths,
+    recompute_context_snapshot_binding_with_diagnostics,
     split_unauthorized_snapshot_paths,
 )
 from top_down_planning.package.loader import ExecutionPackageError, LoadedExecutionPackage
@@ -356,6 +357,34 @@ def topo_sort_sub_tdp_items(
     return ordered
 
 
+def _snapshot_digest_for_authorized_workspace(
+    authorized_changes: dict[str, dict[str, Any]],
+    *,
+    workspace: Path,
+    resolved_config: dict[str, Any],
+    verify_workspace_bytes: bool = True,
+) -> str:
+    """Return context snapshot digest when workspace bytes match authorized changes."""
+
+    if verify_workspace_bytes and authorized_changes:
+        verify_workspace_matches_authorized_changes(
+            sorted(authorized_changes),
+            authorized_changes=authorized_changes,
+            workspace=workspace,
+        )
+    _, digest, _ = recompute_context_snapshot_binding_with_diagnostics(
+        resolved_config,
+        workspace=workspace,
+    )
+    snapshot_digest = str(digest or "").strip()
+    if not snapshot_digest:
+        raise ExecutionPackageError(
+            "failed to compute context snapshot digest for merged workspace baseline",
+            code="sub_tdp_upstream_invalid",
+        )
+    return snapshot_digest
+
+
 def _cumulative_snapshot_after_units(
     unit_keys: list[str],
     indexed: dict[str, dict[str, Any]],
@@ -365,6 +394,7 @@ def _cumulative_snapshot_after_units(
     accepted_result: Callable[[dict[str, Any]], dict[str, Any]],
     initial_snapshot_digest: str,
     workspace: Path,
+    resolved_config: dict[str, Any],
 ) -> str:
     """Return context snapshot digest after merging workspace changes for unit_keys."""
 
@@ -387,17 +417,26 @@ def _cumulative_snapshot_after_units(
         accepted_result=accepted_result,
         initial_snapshot_digest=initial_snapshot_digest,
         workspace=workspace,
+        resolved_config=resolved_config,
         allow_composite_joins=False,
     )
+    merged: dict[str, dict[str, Any]] = {}
     cumulative = str(initial_snapshot_digest or "").strip()
     for record in ordered:
-        _, cumulative = merge_accepted_result_workspace_changes(
-            {},
+        merged, cumulative = merge_accepted_result_workspace_changes(
+            merged,
             accepted_result(record),
             cumulative_snapshot_digest=cumulative,
             workspace=workspace,
         )
-    return cumulative
+    if not merged:
+        return cumulative
+    return _snapshot_digest_for_authorized_workspace(
+        merged,
+        workspace=workspace,
+        resolved_config=resolved_config,
+        verify_workspace_bytes=False,
+    )
 
 
 def order_workspace_succession_items(
@@ -408,6 +447,7 @@ def order_workspace_succession_items(
     accepted_result: Callable[[dict[str, Any]], dict[str, Any]],
     initial_snapshot_digest: str,
     workspace: Path,
+    resolved_config: dict[str, Any],
     allow_composite_joins: bool = True,
 ) -> list[dict[str, Any]]:
     """Order items for workspace-change succession using snapshot lineage and depends_on.
@@ -495,6 +535,7 @@ def order_workspace_succession_items(
             accepted_result=accepted_result,
             initial_snapshot_digest=initial,
             workspace=workspace,
+            resolved_config=resolved_config,
         )
         if merged_digest == baseline:
             lineage_preds[key] = others
@@ -546,6 +587,7 @@ def _topo_sort_baseline_wrappers(
     unit_depends_on: dict[str, list[str]],
     initial_snapshot_digest: str,
     workspace: Path,
+    resolved_config: dict[str, Any],
 ) -> list[dict[str, Any]]:
     valid = [
         wrapper
@@ -567,6 +609,7 @@ def _topo_sort_baseline_wrappers(
         accepted_result=lambda wrapper: wrapper["accepted_result"],
         initial_snapshot_digest=initial_snapshot_digest,
         workspace=workspace,
+        resolved_config=resolved_config,
     )
 
 
@@ -648,6 +691,7 @@ def _authorized_workspace_changes_from_baseline(
     *,
     workspace: Path,
     initial_snapshot_digest: str,
+    resolved_config: dict[str, Any],
     unit_depends_on: dict[str, list[str]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     from top_down_planning.package.lineage import verify_upstream_accepted_result_binding
@@ -663,6 +707,7 @@ def _authorized_workspace_changes_from_baseline(
         unit_depends_on=unit_depends_on or {},
         initial_snapshot_digest=initial_snapshot_digest,
         workspace=workspace,
+        resolved_config=resolved_config,
     )
     merged: dict[str, dict[str, Any]] = {}
     cumulative = str(initial_snapshot_digest or "").strip()
@@ -688,6 +733,7 @@ def verify_merged_baseline_workspace_bytes(
     *,
     workspace: Path,
     initial_snapshot_digest: str,
+    resolved_config: dict[str, Any],
     unit_depends_on: dict[str, list[str]] | None = None,
     production_overlay: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
@@ -697,6 +743,7 @@ def verify_merged_baseline_workspace_bytes(
         baseline_wrappers,
         workspace=workspace,
         initial_snapshot_digest=initial_snapshot_digest,
+        resolved_config=resolved_config,
         unit_depends_on=unit_depends_on,
     )
     if production_overlay is not None:
@@ -716,8 +763,8 @@ def verify_merged_baseline_workspace_bytes(
 
 def baseline_auth_params_from_binding(
     binding: dict[str, Any],
-) -> tuple[str, dict[str, list[str]]]:
-    """Return package initial snapshot digest and unit depends_on map from a binding."""
+) -> tuple[str, dict[str, list[str]], dict[str, Any], dict[str, Any]]:
+    """Return initial snapshot, depends_on map, resolved config, and package units."""
 
     manifest_path = str(binding.get("manifest_path") or "").strip()
     if not manifest_path:
@@ -745,10 +792,16 @@ def baseline_auth_params_from_binding(
             "package missing context_snapshot_digest",
             code="sub_tdp_upstream_invalid",
         )
+    resolved_config = package.resolved_config
+    if not isinstance(resolved_config, dict):
+        raise ExecutionPackageError(
+            "prepared package is missing embedded execution config",
+            code="package_config_missing",
+        )
     unit_depends_on = {
         unit_id: list(unit.depends_on) for unit_id, unit in package.units.items()
     }
-    return initial_snapshot, unit_depends_on
+    return initial_snapshot, unit_depends_on, resolved_config, package.units
 
 
 def merge_parent_integration_workspace_evidence(
@@ -907,6 +960,7 @@ def verify_package_context_snapshot_with_baseline(
         baseline_wrappers,
         workspace=workspace,
         initial_snapshot_digest=expected_snapshot,
+        resolved_config=resolved,
         unit_depends_on={
             unit_id: list(unit.depends_on) for unit_id, unit in package.units.items()
         },

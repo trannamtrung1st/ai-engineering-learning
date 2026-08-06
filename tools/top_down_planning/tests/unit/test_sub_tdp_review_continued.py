@@ -146,6 +146,7 @@ def test_historical_wrapper_delivery_ok_when_workspace_superseded(tmp_path: Path
         [wrapper_a, wrapper_b],
         workspace=Path(package.workspace_path),
         initial_snapshot_digest=expected_snapshot,
+        resolved_config=package.resolved_config,
         unit_depends_on={uid: list(u.depends_on) for uid, u in package.units.items()},
     )
 
@@ -166,6 +167,7 @@ def test_merged_baseline_rejects_workspace_tamper(tmp_path: Path) -> None:
             [wrapper],
             workspace=Path(package.workspace_path),
             initial_snapshot_digest=expected_snapshot,
+            resolved_config=package.resolved_config,
             unit_depends_on={uid: list(u.depends_on) for uid, u in package.units.items()},
         )
 
@@ -836,9 +838,225 @@ def test_baseline_auth_params_from_binding_loads_depends_on(tmp_path: Path) -> N
         invocation={"command": "execute"}, upstream_accepted_results=[wrapper_a],
     )
     binding = dict(store.load_run(child_b).get("package_binding") or {})
-    initial_snapshot, unit_depends_on = baseline_auth_params_from_binding(binding)
+    initial_snapshot, unit_depends_on, resolved_config, package_units = (
+        baseline_auth_params_from_binding(binding)
+    )
     expected_snapshot = str(
         (package.manifest.get("context") or {}).get("context_snapshot_digest") or ""
     )
     assert initial_snapshot == expected_snapshot
     assert unit_depends_on.get("item-b") == ["item-a"]
+    assert resolved_config == package.resolved_config
+    assert "item-a" in package_units
+
+
+def test_apply_resume_production_phase_blocks_unauthorized_resource_drift(
+    tmp_path: Path,
+) -> None:
+    """Apply must reject configured-resource drift even when paused in production."""
+
+    from top_down_planning.orchestrator.apply_resume import ApplyResumeError, apply_resume_plan_atomically
+    from top_down_planning.orchestrator.phases import PRODUCTION
+    from top_down_planning.orchestrator.prepare_resume import prepare_resume
+    from tests.helpers import apply_production
+
+    store, package = _build_package(tmp_path, dependent=True)
+    config = package.resolved_config
+    factory = PreparedRunFactory()
+    shared = Path(package.workspace_path) / "shared" / "state.json"
+
+    child_a = factory.create_child_run(
+        store, package, package.units["item-a"], resolved_config=config,
+        invocation={"command": "execute"},
+    )
+    shared.write_text('{"writer": "a"}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_a,
+        outputs=[{"id": "out-a", "type": "artifact", "ref": "shared/state.json"}],
+        contributions=[{"item_id": "item-a", "output_refs": ["out-a"], "summary": "A"}],
+    )
+
+    child_b = PreparedUnitExecutor().create_or_load_child_run(
+        store, package, "item-b", resolved_config=config,
+        invocation={"command": "execute"},
+        explicit_upstream={"item-a": child_a},
+        explicit_upstream_only=True,
+    )
+    run = store.load_run(child_b)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["phase"] = PRODUCTION
+    store.save_run(child_b, run, expected)
+
+    shared.write_text('{"writer": "b"}\n', encoding="utf-8")
+    apply_production(
+        store,
+        child_b,
+        {
+            "production_revision": int(store.load_production(child_b)["revision"]),
+            "plan_items": ["item-b"],
+            "dispositions": {"item-b": {"disposition": "completed", "evidence": "B wrote"}},
+            "outputs": [{"id": "out-b", "type": "artifact", "ref": "shared/state.json"}],
+            "contributions": [
+                {"item_id": "item-b", "output_refs": ["out-b"], "summary": "B batch"},
+            ],
+            "summary": "production batch",
+        },
+        handler="apply",
+        phase=PRODUCTION,
+    )()
+
+    run = store.load_run(child_b)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "user_cancelled",
+        "category": "operational",
+        "phase": PRODUCTION,
+        "message": "paused mid-production",
+        "role": None,
+        "details": {},
+    }
+    store.save_run(child_b, run, expected)
+
+    invocation = store.load_invocation(child_b)
+    plan = prepare_resume(store, child_b, config)
+    assert plan.validation.context_binding_valid is True
+
+    # Unauthorized configured-resource drift between prepare and apply.
+    (Path(package.workspace_path) / "shared" / "drift.json").write_text(
+        "unauthorized\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ApplyResumeError, match="not authorized|drift|context"):
+        apply_resume_plan_atomically(
+            store,
+            plan,
+            resolved_config=config,
+            invocation=invocation,
+        )
+
+
+def test_baseline_wrapper_rejects_foreign_package_identity(tmp_path: Path) -> None:
+    """Baseline-only wrappers must match the current prepared package contract."""
+
+    from top_down_planning.package.lineage import (
+        accepted_result_digest,
+        verify_baseline_wrapper_matches_current_package,
+    )
+
+    store, package = _build_package(tmp_path)
+    child_id = _create_and_accept_shared_writer(
+        store, package, unit_id="item-a", content='{"version": 2}\n'
+    )
+    wrapper, _ = _accepted_wrapper_for_shared(
+        store, package, child_id, unit_id="item-a"
+    )
+    forged = dict(wrapper)
+    forged_accepted = dict(forged["accepted_result"])
+    forged_accepted["package_digest"] = "0" * 64
+    forged["accepted_result"] = forged_accepted
+    forged["accepted_result_digest"] = accepted_result_digest(forged_accepted)
+    with pytest.raises(ValueError, match="package_digest"):
+        verify_baseline_wrapper_matches_current_package(
+            forged,
+            package_id=str(package.manifest.get("package_id") or ""),
+            package_digest=str(package.manifest.get("package_digest") or ""),
+            package_units=package.units,
+        )
+
+
+def test_apply_resume_at_apply_checks_baseline_package_identity(
+    tmp_path: Path,
+) -> None:
+    """Child apply_resume invokes baseline package-identity validation."""
+
+    from top_down_planning.orchestrator.apply_resume import apply_resume_plan_atomically
+    from top_down_planning.orchestrator.phases import PRODUCTION
+    from top_down_planning.orchestrator.prepare_resume import prepare_resume
+    from top_down_planning.package.lineage import verify_baseline_wrapper_matches_current_package
+    from tests.helpers import apply_production
+
+    store, package = _build_package(tmp_path, dependent=True)
+    config = package.resolved_config
+    factory = PreparedRunFactory()
+    shared = Path(package.workspace_path) / "shared" / "state.json"
+
+    child_a = factory.create_child_run(
+        store, package, package.units["item-a"], resolved_config=config,
+        invocation={"command": "execute"},
+    )
+    shared.write_text('{"writer": "a"}\n', encoding="utf-8")
+    accept_child_run(
+        store, child_a,
+        outputs=[{"id": "out-a", "type": "artifact", "ref": "shared/state.json"}],
+        contributions=[{"item_id": "item-a", "output_refs": ["out-a"], "summary": "A"}],
+    )
+
+    child_b = PreparedUnitExecutor().create_or_load_child_run(
+        store, package, "item-b", resolved_config=config,
+        invocation={"command": "execute"},
+        explicit_upstream={"item-a": child_a},
+        explicit_upstream_only=True,
+    )
+    run = store.load_run(child_b)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["phase"] = PRODUCTION
+    store.save_run(child_b, run, expected)
+
+    shared.write_text('{"writer": "b"}\n', encoding="utf-8")
+    apply_production(
+        store,
+        child_b,
+        {
+            "production_revision": int(store.load_production(child_b)["revision"]),
+            "plan_items": ["item-b"],
+            "dispositions": {"item-b": {"disposition": "completed", "evidence": "B wrote"}},
+            "outputs": [{"id": "out-b", "type": "artifact", "ref": "shared/state.json"}],
+            "contributions": [
+                {"item_id": "item-b", "output_refs": ["out-b"], "summary": "B batch"},
+            ],
+            "summary": "production batch",
+        },
+        handler="apply",
+        phase=PRODUCTION,
+    )()
+
+    run = store.load_run(child_b)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "user_cancelled",
+        "category": "operational",
+        "phase": PRODUCTION,
+        "message": "paused",
+        "role": None,
+        "details": {},
+    }
+    store.save_run(child_b, run, expected)
+
+    binding = dict(store.load_run(child_b).get("package_binding") or {})
+    wrapper = binding["workspace_baseline_accepted_results"][0]
+    verify_baseline_wrapper_matches_current_package(
+        wrapper,
+        package_id=str(binding.get("package_id") or ""),
+        package_digest=str(binding.get("package_digest") or ""),
+        package_units=package.units,
+    )
+
+    invocation = store.load_invocation(child_b)
+    plan = prepare_resume(store, child_b, config)
+    result = apply_resume_plan_atomically(
+        store,
+        plan,
+        resolved_config=config,
+        invocation=invocation,
+    )
+    assert result["ok"] is True

@@ -299,6 +299,7 @@ def _verify_child_upstream_bindings(
         validate_accepted_child_delivery,
         validate_child_package_bindings,
         verify_accepted_result_matches_live_delivery,
+        verify_baseline_wrapper_matches_current_package,
         verify_upstream_accepted_result_binding,
         verify_upstream_wrapper_matches_live_delivery,
     )
@@ -315,6 +316,9 @@ def _verify_child_upstream_bindings(
             "prepared upstream_accepted_results count does not match unit dependencies"
         )
 
+    package_id = str(package.manifest.get("package_id") or "").strip()
+    package_digest = str(package.manifest.get("package_digest") or "").strip()
+
     seen: set[str] = set()
     upstream_digests: set[str] = set()
     for wrapper in wrappers:
@@ -322,6 +326,12 @@ def _verify_child_upstream_bindings(
             return "prepared upstream_accepted_results entry is invalid"
         try:
             verify_upstream_accepted_result_binding(wrapper)
+            verify_baseline_wrapper_matches_current_package(
+                wrapper,
+                package_id=package_id,
+                package_digest=package_digest,
+                package_units=package.units,
+            )
         except ValueError as exc:
             return f"prepared upstream attestation invalid: {exc}"
         accepted = wrapper.get("accepted_result") or {}
@@ -388,6 +398,12 @@ def _verify_child_upstream_bindings(
             return "prepared workspace_baseline_accepted_results entry is invalid"
         try:
             verify_upstream_wrapper_matches_live_delivery(store, wrapper)
+            verify_baseline_wrapper_matches_current_package(
+                wrapper,
+                package_id=package_id,
+                package_digest=package_digest,
+                package_units=package.units,
+            )
         except (OSError, ValueError, KeyError) as exc:
             return f"prepared workspace baseline attestation invalid: {exc}"
         digest = str(wrapper.get("accepted_result_digest") or "").strip()
@@ -408,6 +424,7 @@ def _verify_child_upstream_bindings(
                 baseline_wrappers,
                 workspace=package.workspace_path,
                 initial_snapshot_digest=expected_snapshot,
+                resolved_config=package.resolved_config,
                 unit_depends_on={
                     unit_id: list(unit.depends_on)
                     for unit_id, unit in package.units.items()
@@ -427,10 +444,10 @@ def _verify_child_upstream_bindings(
     return None
 
 
-def _parent_package_initial_snapshot_from_production(
+def _parent_package_auth_from_production(
     production: dict[str, Any],
-) -> str:
-    """Load package initial context snapshot digest from parent sub_tdps state."""
+) -> tuple[str, dict[str, Any]]:
+    """Load package initial snapshot digest and resolved config from sub_tdps state."""
 
     from top_down_planning.package.execution_validation import baseline_auth_params_from_binding
     from top_down_planning.package.loader import ExecutionPackageError
@@ -444,12 +461,12 @@ def _parent_package_initial_snapshot_from_production(
             "parent sub_tdps missing manifest_path required for workspace succession"
         )
     try:
-        initial_snapshot, _ = baseline_auth_params_from_binding(
+        initial_snapshot, _, resolved_config, _ = baseline_auth_params_from_binding(
             {"manifest_path": manifest_path}
         )
     except ExecutionPackageError as exc:
         raise ValueError(str(exc)) from exc
-    return initial_snapshot
+    return initial_snapshot, resolved_config
 
 
 def _topo_sort_sub_tdp_unit_records(
@@ -457,6 +474,7 @@ def _topo_sort_sub_tdp_unit_records(
     *,
     initial_snapshot_digest: str,
     workspace: Any,
+    resolved_config: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Return unit records in workspace-succession order."""
 
@@ -487,6 +505,7 @@ def _topo_sort_sub_tdp_unit_records(
         accepted_result=lambda record: record["accepted_result"],
         initial_snapshot_digest=initial_snapshot_digest,
         workspace=workspace_path,
+        resolved_config=resolved_config,
     )
 
 
@@ -525,12 +544,13 @@ def collect_parent_sub_tdp_authorized_workspace_changes(
     if not unit_records:
         return {}
     authorized_changes: dict[str, dict[str, Any]] = {}
-    package_initial_snapshot = _parent_package_initial_snapshot_from_production(production)
+    package_initial_snapshot, resolved_config = _parent_package_auth_from_production(production)
     cumulative_snapshot = package_initial_snapshot
     for unit_record in _topo_sort_sub_tdp_unit_records(
         unit_records,
         initial_snapshot_digest=package_initial_snapshot,
         workspace=workspace,
+        resolved_config=resolved_config,
     ):
         accepted = unit_record["accepted_result"]
         plan_item_id = str(unit_record.get("plan_item_id") or "").strip() or "<unknown>"

@@ -357,6 +357,36 @@ def test_producer_turn_closes_when_completion_claimed_while_stream_stalls(
     assert store.load_production(run_id)["completion_claim"]["goal_met"] is True
 
 
+def test_stalling_after_events_provider_supports_multiple_stalled_turns(
+    tmp_path: Path,
+) -> None:
+    """Each stalled turn must block until abort_turn; events are not one-shot."""
+
+    import threading
+
+    from tests.helpers import StallingAfterEventsProvider
+
+    provider = StallingAfterEventsProvider(stall_timeout_seconds=0.5)
+    provider.script_turn(done_events(text="producer session start"))
+    session_id = provider.start_primary_session("producer", {"goal": "x"})
+
+    for turn in range(2):
+        provider.script_turn([{"type": "assistant", "text": f"stall-{turn + 1}"}])
+        provider.resume_primary_session(session_id, {"goal": f"turn-{turn + 1}"})
+        stream = provider.stream_events(session_id)
+
+        def consume() -> None:
+            list(stream)
+
+        thread = threading.Thread(target=consume)
+        thread.start()
+        assert provider._stream_started.wait(timeout=0.5)
+        provider._stream_started.clear()
+        provider.abort_turn(session_id)
+        thread.join(timeout=0.5)
+        assert not thread.is_alive()
+
+
 def test_ready_set_blocks_item_with_unmet_dependency(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run_at_plan_validated(store)

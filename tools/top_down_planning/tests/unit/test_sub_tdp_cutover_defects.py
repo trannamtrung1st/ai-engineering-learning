@@ -402,6 +402,7 @@ def test_verify_merged_baseline_rejects_workspace_tamper(tmp_path: Path) -> None
             [wrapper],
             workspace=Path(package.workspace_path),
             initial_snapshot_digest=expected_snapshot,
+            resolved_config=package.resolved_config,
             unit_depends_on={
                 uid: list(u.depends_on) for uid, u in package.units.items()
             },

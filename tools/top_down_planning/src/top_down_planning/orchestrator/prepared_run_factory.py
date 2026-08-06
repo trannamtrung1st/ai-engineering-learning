@@ -200,11 +200,20 @@ class PreparedRunFactory:
             )
             from top_down_planning.package.lineage import (
                 verify_upstream_wrapper_matches_live_delivery,
+                verify_baseline_wrapper_matches_current_package,
             )
 
+            package_id = str(package.manifest.get("package_id") or "").strip()
+            package_digest = str(package.manifest.get("package_digest") or "").strip()
             for wrapper in baseline_for_auth:
                 try:
                     verify_upstream_wrapper_matches_live_delivery(store, wrapper)
+                    verify_baseline_wrapper_matches_current_package(
+                        wrapper,
+                        package_id=package_id,
+                        package_digest=package_digest,
+                        package_units=package.units,
+                    )
                 except (OSError, ValueError, KeyError) as exc:
                     raise ExecutionPackageError(
                         f"workspace baseline wrapper delivery invalid: {exc}",
@@ -220,6 +229,7 @@ class PreparedRunFactory:
                         baseline_for_auth,
                         workspace=workspace,
                         initial_snapshot_digest=expected_snapshot,
+                        resolved_config=resolved_config,
                         unit_depends_on={
                             uid: list(u.depends_on) for uid, u in package.units.items()
                         },

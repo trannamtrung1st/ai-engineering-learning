@@ -138,12 +138,22 @@ def apply_resume_plan_atomically(
                 baseline_auth_params_from_binding,
                 verify_merged_baseline_workspace_bytes,
             )
+            from top_down_planning.package.lineage import (
+                verify_baseline_wrapper_matches_current_package,
+                verify_upstream_wrapper_matches_live_delivery,
+            )
 
+            package_id = str(binding.get("package_id") or "").strip()
+            package_digest = str(binding.get("package_digest") or "").strip()
+            if not package_id or not package_digest:
+                raise ValueError(
+                    "child package_binding missing package identity at resume apply"
+                )
+            initial_snapshot, unit_depends_on, resolved_config, package_units = (
+                baseline_auth_params_from_binding(binding)
+            )
             seen_digests: set[str] = set()
-            for key in (
-                "upstream_accepted_results",
-                "workspace_baseline_accepted_results",
-            ):
+            for key in ("upstream_accepted_results",):
                 for wrapper in binding.get(key) or []:
                     if not isinstance(wrapper, dict):
                         raise ValueError(
@@ -155,15 +165,37 @@ def apply_resume_plan_atomically(
                     if digest:
                         seen_digests.add(digest)
                     verify_upstream_wrapper_matches_live_delivery(store, wrapper)
+                    verify_baseline_wrapper_matches_current_package(
+                        wrapper,
+                        package_id=package_id,
+                        package_digest=package_digest,
+                        package_units=package_units,
+                    )
             baseline_wrappers = binding.get("workspace_baseline_accepted_results") or []
-            if baseline_wrappers:
-                initial_snapshot, unit_depends_on = baseline_auth_params_from_binding(
-                    binding
+            for wrapper in baseline_wrappers:
+                if not isinstance(wrapper, dict):
+                    raise ValueError(
+                        "child workspace_baseline_accepted_results entry is invalid "
+                        "at resume apply"
+                    )
+                digest = str(wrapper.get("accepted_result_digest") or "").strip()
+                if digest and digest in seen_digests:
+                    continue
+                if digest:
+                    seen_digests.add(digest)
+                verify_upstream_wrapper_matches_live_delivery(store, wrapper)
+                verify_baseline_wrapper_matches_current_package(
+                    wrapper,
+                    package_id=package_id,
+                    package_digest=package_digest,
+                    package_units=package_units,
                 )
+            if baseline_wrappers:
                 verify_merged_baseline_workspace_bytes(
                     list(baseline_wrappers),
                     workspace=run_workspace(run),
                     initial_snapshot_digest=initial_snapshot,
+                    resolved_config=resolved_config,
                     unit_depends_on=unit_depends_on,
                     production_overlay=store.load_production(run_id),
                 )
@@ -171,32 +203,31 @@ def apply_resume_plan_atomically(
         raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc
 
     effective_config = resume_plan.effective_config or resolved_config
-    if prior_phase != PRODUCTION:
-        production = store.load_production(run_id)
-        workspace_path = Path(run_workspace(run))
-        try:
-            from top_down_planning.orchestrator.prepare_resume import (
-                _extra_authorized_paths_for_resume,
-            )
-
-            extra_authorized = _extra_authorized_paths_for_resume(
-                store,
-                run=run,
-                production=production,
-                workspace=workspace_path,
-            )
-        except ValueError as exc:
-            raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc
-        context_error = validate_resume_context_bindings(
-            run,
-            production,
-            effective_config,
-            workspace=workspace_path,
-            context_spec_may_change=resume_plan.context_spec_may_change,
-            extra_authorized_paths=extra_authorized,
+    production = store.load_production(run_id)
+    workspace_path = Path(run_workspace(run))
+    try:
+        from top_down_planning.orchestrator.prepare_resume import (
+            _extra_authorized_paths_for_resume,
         )
-        if context_error is not None:
-            raise ApplyResumeError(context_error, code="resume_apply_blocked")
+
+        extra_authorized = _extra_authorized_paths_for_resume(
+            store,
+            run=run,
+            production=production,
+            workspace=workspace_path,
+        )
+    except ValueError as exc:
+        raise ApplyResumeError(str(exc), code="resume_apply_blocked") from exc
+    context_error = validate_resume_context_bindings(
+        run,
+        production,
+        effective_config,
+        workspace=workspace_path,
+        context_spec_may_change=resume_plan.context_spec_may_change,
+        extra_authorized_paths=extra_authorized,
+    )
+    if context_error is not None:
+        raise ApplyResumeError(context_error, code="resume_apply_blocked")
 
     review_loop: ReviewLoop | None = None
     if prior_status == "paused" and isinstance(prior_stop, dict):

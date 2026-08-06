@@ -643,6 +643,47 @@ def verify_wrapper_delivery_integrity(
     )
 
 
+def verify_baseline_wrapper_matches_current_package(
+    wrapper: dict[str, Any],
+    *,
+    package_id: str,
+    package_digest: str,
+    package_units: dict[str, Any],
+) -> None:
+    """Require accepted-result wrappers to belong to the current prepared package."""
+
+    verify_upstream_accepted_result_binding(wrapper)
+    accepted = wrapper["accepted_result"]
+    if str(accepted.get("package_id") or "").strip() != str(package_id or "").strip():
+        raise ValueError("baseline wrapper package_id does not match current package")
+    if str(accepted.get("package_digest") or "").strip() != str(package_digest or "").strip():
+        raise ValueError("baseline wrapper package_digest does not match current package")
+    unit_id = str(accepted.get("unit_id") or "").strip()
+    unit = package_units.get(unit_id)
+    if unit is None:
+        raise ValueError(
+            f"baseline wrapper unit_id {unit_id!r} missing from current package"
+        )
+    if str(accepted.get("unit_plan_digest") or "").strip() != str(
+        getattr(unit, "plan_digest", "") or ""
+    ).strip():
+        raise ValueError(
+            "baseline wrapper unit_plan_digest does not match current package unit"
+        )
+    if str(accepted.get("assigned_subtree_digest") or "").strip() != str(
+        getattr(unit, "assigned_subtree_digest", "") or ""
+    ).strip():
+        raise ValueError(
+            "baseline wrapper assigned_subtree_digest does not match current package unit"
+        )
+    contract = str(wrapper.get("upstream_contract_digest") or "").strip()
+    expected_contract = str(getattr(unit, "assigned_subtree_digest", "") or "").strip()
+    if contract and contract != expected_contract:
+        raise ValueError(
+            "baseline wrapper upstream_contract_digest does not match package unit contract"
+        )
+
+
 def verify_upstream_wrapper_matches_live_delivery(
     store: Any,
     wrapper: dict[str, Any],
@@ -782,11 +823,19 @@ def validate_attach_dependency_consistency(
 
     baseline_wrappers = binding["workspace_baseline_accepted_results"]
     baseline_digests: set[str] = set()
+    package_id = str(package.manifest.get("package_id") or "").strip()
+    package_digest = str(package.manifest.get("package_digest") or "").strip()
     for wrapper in baseline_wrappers:
         if not isinstance(wrapper, dict):
             return "child workspace_baseline_accepted_results entry is invalid"
         try:
             verify_upstream_accepted_result_binding(wrapper)
+            verify_baseline_wrapper_matches_current_package(
+                wrapper,
+                package_id=package_id,
+                package_digest=package_digest,
+                package_units=package.units,
+            )
         except ValueError as exc:
             return f"child workspace baseline wrapper invalid: {exc}"
         digest = str(wrapper.get("accepted_result_digest") or "").strip()
@@ -927,6 +976,7 @@ __all__ = [
     "revalidate_terminal_child_delivery",
     "verify_accepted_result_attestation",
     "verify_accepted_result_matches_live_delivery",
+    "verify_baseline_wrapper_matches_current_package",
     "verify_upstream_accepted_result_binding",
     "verify_upstream_wrapper_matches_live_delivery",
     "verify_wrapper_delivery_integrity",

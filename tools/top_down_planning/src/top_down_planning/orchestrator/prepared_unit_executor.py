@@ -471,6 +471,7 @@ class PreparedUnitExecutor:
             accepted_result_record,
             upstream_accepted_result_binding,
             verify_accepted_result_attestation,
+            verify_baseline_wrapper_matches_current_package,
             verify_upstream_accepted_result_binding,
         )
         from top_down_planning.persistence.sub_tdp_state import UNIT_STATUS_COMPLETED
@@ -483,6 +484,12 @@ class PreparedUnitExecutor:
         def add_wrapper(wrapper: dict[str, Any], *, require_live: bool = False) -> None:
             try:
                 verify_upstream_accepted_result_binding(wrapper)
+                verify_baseline_wrapper_matches_current_package(
+                    wrapper,
+                    package_id=package_id,
+                    package_digest=package_digest,
+                    package_units=package.units,
+                )
             except ValueError as exc:
                 raise ExecutionPackageError(
                     str(exc),

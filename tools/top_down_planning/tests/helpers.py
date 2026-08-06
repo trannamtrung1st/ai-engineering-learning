@@ -1665,7 +1665,7 @@ class StallingAfterEventsProvider(StubProvider):
         super().__init__()
         self._stall_timeout_seconds = stall_timeout_seconds
         self._stream_started = threading.Event()
-        self._abort_release = threading.Event()
+        self._active_abort_release: threading.Event | None = None
 
     def stream_events(self, session_id: str):
         if session_id in self._not_found_sessions:
@@ -1675,6 +1675,8 @@ class StallingAfterEventsProvider(StubProvider):
                 session_id=session_id,
             )
         session = self._require_session(session_id)
+        abort_release = threading.Event()
+        self._active_abort_release = abort_release
         self._stream_started.set()
         saw_done = False
         if session.pending_hook is not None:
@@ -1687,14 +1689,19 @@ class StallingAfterEventsProvider(StubProvider):
                 saw_done = True
             yield event
         if not saw_done:
-            if not self._abort_release.wait(timeout=self._stall_timeout_seconds):
-                raise AssertionError(
-                    "StallingAfterEventsProvider stalled without abort_turn "
-                    f"(timeout={self._stall_timeout_seconds}s)"
-                )
+            try:
+                if not abort_release.wait(timeout=self._stall_timeout_seconds):
+                    raise AssertionError(
+                        "StallingAfterEventsProvider stalled without abort_turn "
+                        f"(timeout={self._stall_timeout_seconds}s)"
+                    )
+            finally:
+                if self._active_abort_release is abort_release:
+                    self._active_abort_release = None
 
     def abort_turn(self, session_id: str) -> None:
-        self._abort_release.set()
+        if self._active_abort_release is not None:
+            self._active_abort_release.set()
         super().abort_turn(session_id)
 
 
