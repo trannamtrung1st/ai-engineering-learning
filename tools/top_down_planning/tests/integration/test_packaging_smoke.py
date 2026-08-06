@@ -150,6 +150,33 @@ def packaging_wheelhouse() -> Path:
         pytest.fail(str(exc))
 
 
+def _install_documented_editable_offline(
+    python: Path | str,
+    wheelhouse: Path,
+    project_root: Path,
+) -> None:
+    """Mirror README editable install from ``project_root`` using only the wheelhouse.
+
+    ``pip install -e ".[dev]"`` with ``--no-index`` cannot resolve the monorepo
+    ``core-tools @ file:../core_tools`` metadata URL. Stage wheels first, install
+    ``core_tools`` editable, then install TDP editable with ``--no-deps`` after
+    ``core_tools`` is already present in the venv.
+    """
+
+    _pip_offline(python, wheelhouse, ["build", "hatchling", "pytest", "jinja2", "pathspec"])
+    _pip_offline(
+        python,
+        wheelhouse,
+        ["-e", "../core_tools"],
+        cwd=project_root,
+    )
+    _pip_offline(
+        python,
+        wheelhouse,
+        ["--no-deps", "-e", ".[dev]"],
+        cwd=project_root,
+    )
+
 @pytest.mark.integration
 def test_documented_editable_install_smoke(
     packaging_wheelhouse: Path,
@@ -158,19 +185,7 @@ def test_documented_editable_install_smoke(
     """README install commands from tools/top_down_planning with an offline wheelhouse."""
 
     python = _isolated_venv(tmp_path)
-    _pip_offline(python, packaging_wheelhouse, ["build", "hatchling"])
-    _pip_offline(
-        python,
-        packaging_wheelhouse,
-        ["-e", "../core_tools"],
-        cwd=_PROJECT_ROOT,
-    )
-    _pip_offline(
-        python,
-        packaging_wheelhouse,
-        ["-e", ".[dev]"],
-        cwd=_PROJECT_ROOT,
-    )
+    _install_documented_editable_offline(python, packaging_wheelhouse, _PROJECT_ROOT)
 
     _assert_cli_surfaces(python)
     _assert_bundled_skills_load(python)
