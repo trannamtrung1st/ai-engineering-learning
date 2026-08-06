@@ -25,8 +25,10 @@ def merge_string_lists(*lists: list[str]) -> list[str]:
     return merged
 
 
-def has_meaningful_list_entries(entries: list[str]) -> bool:
-    return any(entry.strip() for entry in entries)
+def has_meaningful_list_entries(entries: Any) -> bool:
+    if not isinstance(entries, list):
+        return False
+    return any(isinstance(entry, str) and entry.strip() for entry in entries)
 
 
 def has_item_scope_contract(item: PlanItem) -> bool:

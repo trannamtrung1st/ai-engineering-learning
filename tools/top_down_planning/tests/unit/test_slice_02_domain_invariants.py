@@ -1389,3 +1389,114 @@ def test_validate_plan_with_mixed_valid_and_malformed_item_values_does_not_raise
 
     assert result.ok is False
     assert any(issue.path == ["plan", "items", "item-bad"] for issue in result.issues)
+
+
+MALFORMED_LIST_FIELD_VALUES: list[object] = [
+    1,
+    {},
+    "not-a-list",
+    [1],
+    [{}],
+    [None],
+]
+
+
+def _plan_with_child_field(field: str, value: object) -> Plan:
+    root = seed_plan_root_item()
+    child = PlanItem(
+        id="item-child",
+        parent_id=PLAN_ROOT_ITEM_ID,
+        order_key="0000000000",
+        title="Child",
+        kind="work",
+    )
+    if field == "scope.includes":
+        child.scope.includes = value  # type: ignore[assignment]
+    elif field == "scope.excludes":
+        child.scope.excludes = value  # type: ignore[assignment]
+    else:
+        setattr(child, field, value)
+    return Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={PLAN_ROOT_ITEM_ID: root, "item-child": child},
+    )
+
+
+def _expected_field_issue_path(field: str) -> list[str]:
+    if field.startswith("scope."):
+        return ["item-child", "scope", field.split(".", 1)[1]]
+    return ["item-child", field]
+
+
+@pytest.mark.parametrize("field", [
+    "scope.includes",
+    "scope.excludes",
+    "boundaries",
+    "acceptance",
+    "depends_on",
+    "risks",
+    "source_refs",
+])
+@pytest.mark.parametrize("value", MALFORMED_LIST_FIELD_VALUES)
+def test_validate_plan_returns_issue_for_malformed_list_field_without_raising(
+    field: str,
+    value: object,
+) -> None:
+    plan = _plan_with_child_field(field, value)
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False
+    expected_path = _expected_field_issue_path(field)
+    if isinstance(value, list) and value and not isinstance(value[0], str):
+        expected_path = [*expected_path, "0"]
+    assert any(issue.path == expected_path for issue in result.issues)
+
+
+@pytest.mark.parametrize("mode", ["draft", "approval"])
+def test_validate_plan_malformed_acceptance_with_limits_does_not_raise(mode: str) -> None:
+    plan = _plan_with_child_field("acceptance", 1)
+
+    result = validate_plan(plan, mode=mode, limits=PlanningLimits(max_depth=3))  # type: ignore[arg-type]
+
+    assert result.ok is False
+
+
+def test_validate_plan_duplicate_looking_siblings_with_malformed_ids_does_not_raise() -> None:
+    root = seed_plan_root_item()
+    siblings = [
+        PlanItem(
+            id=[],  # type: ignore[arg-type]
+            parent_id=PLAN_ROOT_ITEM_ID,
+            order_key="0000000001",
+            title="Same",
+            kind="work",
+            outcome="Same outcome",
+            acceptance=["same"],
+        ),
+        PlanItem(
+            id={},  # type: ignore[arg-type]
+            parent_id=PLAN_ROOT_ITEM_ID,
+            order_key="0000000002",
+            title="Same",
+            kind="work",
+            outcome="Same outcome",
+            acceptance=["same"],
+        ),
+    ]
+    plan = Plan(
+        id="plan-001",
+        revision=1,
+        output_goal="Deliver the output.",
+        items={
+            PLAN_ROOT_ITEM_ID: root,
+            "item-sib-a": siblings[0],
+            "item-sib-b": siblings[1],
+        },
+    )
+
+    result = validate_plan(plan, mode="draft")
+
+    assert result.ok is False

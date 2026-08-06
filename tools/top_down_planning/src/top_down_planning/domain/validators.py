@@ -21,6 +21,7 @@ from top_down_planning.domain.plan_tree import (
     compute_planning_budget,
     find_hierarchy_cycle,
     is_active_item,
+    is_usable_item_id,
     is_usable_parent_reference,
     walk_active_tree,
 )
@@ -242,9 +243,17 @@ def _contract_fingerprint(item: PlanItem) -> tuple[Any, ...]:
     return (
         _safe_strip(item.title).casefold(),
         _safe_strip(item.outcome).casefold(),
-        tuple(_safe_strip(entry).casefold() for entry in item.scope.includes),
-        tuple(_safe_strip(entry).casefold() for entry in item.scope.excludes),
-        tuple(_safe_strip(entry).casefold() for entry in item.acceptance),
+        _safe_string_list_fingerprint(item.scope.includes),
+        _safe_string_list_fingerprint(item.scope.excludes),
+        _safe_string_list_fingerprint(item.acceptance),
+    )
+
+
+def _safe_string_list_fingerprint(entries: Any) -> tuple[str, ...]:
+    if not isinstance(entries, list):
+        return ()
+    return tuple(
+        _safe_strip(entry).casefold() for entry in entries if isinstance(entry, str)
     )
 
 
@@ -281,6 +290,49 @@ def _safe_strip(value: Any) -> str:
 class PlanItemsStructure:
     issues: list[ValidationIssue]
     entries: dict[str, PlanItem]
+    semantic_safe_keys: frozenset[str]
+
+
+def _item_nested_field_issues(item_id: str, item: PlanItem) -> list[ValidationIssue]:
+    path_prefix = _item_path_prefix(item_id, item)
+    issues: list[ValidationIssue] = []
+    scope_issues = _validate_scope_field_issues(
+        item.scope,
+        path=[path_prefix, "scope"],
+    )
+    issues.extend(scope_issues)
+    if isinstance(item.scope, Scope):
+        issues.extend(
+            _validate_string_list_issues(
+                item.scope.includes,
+                path=[path_prefix, "scope", "includes"],
+                field_name="scope.includes",
+            )
+        )
+        issues.extend(
+            _validate_string_list_issues(
+                item.scope.excludes,
+                path=[path_prefix, "scope", "excludes"],
+                field_name="scope.excludes",
+            )
+        )
+    for field_name in ("boundaries", "acceptance", "depends_on", "risks", "source_refs"):
+        issues.extend(
+            _validate_string_list_issues(
+                getattr(item, field_name),
+                path=[path_prefix, field_name],
+                field_name=field_name,
+            )
+        )
+    return issues
+
+
+def _semantic_safe_entries(structure: PlanItemsStructure) -> dict[str, PlanItem]:
+    return {
+        item_id: item
+        for item_id, item in structure.entries.items()
+        if item_id in structure.semantic_safe_keys
+    }
 
 
 def _plan_items_key_label(key: Any) -> str:
@@ -303,8 +355,13 @@ def _analyze_plan_items(plan: Plan) -> PlanItemsStructure:
                 ["plan", "items"],
             )
         )
-        return PlanItemsStructure(issues=issues, entries=entries)
+        return PlanItemsStructure(
+            issues=issues,
+            entries=entries,
+            semantic_safe_keys=frozenset(),
+        )
 
+    semantic_safe_keys: set[str] = set()
     for key, value in raw_items.items():
         if not isinstance(key, str):
             issues.append(
@@ -327,8 +384,21 @@ def _analyze_plan_items(plan: Plan) -> PlanItemsStructure:
             )
             continue
         entries[key] = value
+        nested_issues = _item_nested_field_issues(key, value)
+        issues.extend(nested_issues)
+        if (
+            not nested_issues
+            and is_usable_parent_reference(value.parent_id)
+            and is_usable_item_id(value.id)
+            and isinstance(value.order_key, str)
+        ):
+            semantic_safe_keys.add(key)
 
-    return PlanItemsStructure(issues=issues, entries=entries)
+    return PlanItemsStructure(
+        issues=issues,
+        entries=entries,
+        semantic_safe_keys=frozenset(semantic_safe_keys),
+    )
 
 
 def _sorted_plan_item_entries(entries: dict[str, PlanItem]) -> list[tuple[str, PlanItem]]:
@@ -472,8 +542,9 @@ def validate_work_item_scope_contract(
     """Require item-level scope or boundaries on active work leaves."""
 
     issues: list[ValidationIssue] = []
-    entries = _analyze_plan_items(plan).entries
-    for item_id, item in _sorted_plan_item_entries(entries):
+    structure = _analyze_plan_items(plan)
+    safe_entries = _semantic_safe_entries(structure)
+    for item_id, item in _sorted_plan_item_entries(safe_entries):
         if not is_active_item(item) or item.kind != "work":
             continue
         if _work_item_has_scope_contract(item):
@@ -496,10 +567,12 @@ def validate_plan_quality_warnings(plan: Plan) -> list[ValidationIssue]:
     """Advisory semantic warnings that never escalate to hard errors alone."""
 
     issues: list[ValidationIssue] = []
-    entries = _analyze_plan_items(plan).entries
+    structure = _analyze_plan_items(plan)
+    entries = structure.entries
+    safe_keys = structure.semantic_safe_keys
 
     for item_id, item in _sorted_plan_item_entries(entries):
-        if not is_active_item(item):
+        if item_id not in safe_keys or not is_active_item(item):
             continue
         if item.kind == "aggregate":
             from top_down_planning.domain.plan_tree import active_children_of
@@ -529,23 +602,23 @@ def validate_plan_quality_warnings(plan: Plan) -> list[ValidationIssue]:
                 )
             )
 
-    siblings_by_parent: dict[str | None, list[PlanItem]] = {}
-    for item in entries.values():
-        if not is_active_item(item):
+    siblings_by_parent: dict[str | None, list[tuple[str, PlanItem]]] = {}
+    for item_id, item in entries.items():
+        if item_id not in safe_keys or not is_active_item(item):
             continue
         if not is_usable_parent_reference(item.parent_id):
             continue
-        siblings_by_parent.setdefault(item.parent_id, []).append(item)
+        siblings_by_parent.setdefault(item.parent_id, []).append((item_id, item))
 
     for siblings in siblings_by_parent.values():
         # Direct siblings only; keep duplicate detection conservative (exact match).
         by_fingerprint: dict[tuple[Any, ...], list[str]] = {}
-        for sibling in siblings:
+        for item_id, sibling in siblings:
             fingerprint = _contract_fingerprint(sibling)
             # Skip empty/near-empty contracts to avoid noisy false positives.
             if fingerprint == ("", "", (), (), ()):
                 continue
-            by_fingerprint.setdefault(fingerprint, []).append(sibling.id)
+            by_fingerprint.setdefault(fingerprint, []).append(item_id)
         for item_ids in by_fingerprint.values():
             if len(item_ids) < 2:
                 continue
@@ -726,12 +799,6 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                 )
             )
 
-        scope_issues = _validate_scope_field_issues(
-            item.scope,
-            path=[path_prefix, "scope"],
-        )
-        issues.extend(scope_issues)
-
         if not is_active_item(item):
             continue
 
@@ -762,61 +829,6 @@ def validate_ids_and_fields(plan: Plan) -> list[ValidationIssue]:
                     [path_prefix, "kind"],
                 )
             )
-
-        if scope_issues:
-            continue
-
-        issues.extend(
-            _validate_string_list_issues(
-                item.boundaries,
-                path=[path_prefix, "boundaries"],
-                field_name="boundaries",
-            )
-        )
-        issues.extend(
-            _validate_string_list_issues(
-                item.acceptance,
-                path=[path_prefix, "acceptance"],
-                field_name="acceptance",
-            )
-        )
-        issues.extend(
-            _validate_string_list_issues(
-                item.depends_on,
-                path=[path_prefix, "depends_on"],
-                field_name="depends_on",
-            )
-        )
-        issues.extend(
-            _validate_string_list_issues(
-                item.scope.includes,
-                path=[path_prefix, "scope", "includes"],
-                field_name="scope.includes",
-            )
-        )
-        issues.extend(
-            _validate_string_list_issues(
-                item.scope.excludes,
-                path=[path_prefix, "scope", "excludes"],
-                field_name="scope.excludes",
-            )
-        )
-        issues.extend(
-            _validate_string_list_issues(
-                item.risks,
-                path=[path_prefix, "risks"],
-                field_name="risks",
-            )
-        )
-        issues.extend(
-            _validate_string_list_issues(
-                item.source_refs,
-                path=[path_prefix, "source_refs"],
-                field_name="source_refs",
-            )
-        )
-
-    issues.extend(validate_plan_quality_warnings(plan))
 
     plan_scope_issues = _validate_scope_field_issues(
         plan.scope,
@@ -877,8 +889,9 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
     structure = _analyze_plan_items(plan)
     issues.extend(structure.issues)
     item_entries = structure.entries
-    siblings_by_parent: dict[str | None, list[PlanItem]] = {}
-    for item in item_entries.values():
+    safe_keys = structure.semantic_safe_keys
+    siblings_by_parent: dict[str | None, list[tuple[str, PlanItem]]] = {}
+    for item_id, item in item_entries.items():
         if not is_active_item(item):
             continue
         if not is_usable_parent_reference(item.parent_id):
@@ -887,18 +900,20 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
                     "invalid_plan_field",
                     "error",
                     "item parent_id must be a string or null",
-                    [item.id, "parent_id"],
+                    [item_id, "parent_id"],
                 )
             )
             continue
-        siblings_by_parent.setdefault(item.parent_id, []).append(item)
+        siblings_by_parent.setdefault(item.parent_id, []).append((item_id, item))
 
     for parent_id, siblings in siblings_by_parent.items():
         seen_order_keys: dict[str, list[str]] = {}
-        for sibling in siblings:
+        for item_id, sibling in siblings:
+            if item_id not in safe_keys:
+                continue
             if not isinstance(sibling.order_key, str) or not sibling.order_key.strip():
                 continue
-            seen_order_keys.setdefault(sibling.order_key, []).append(sibling.id)
+            seen_order_keys.setdefault(sibling.order_key, []).append(item_id)
         for order_key, item_ids in sorted(seen_order_keys.items()):
             if len(item_ids) < 2:
                 continue
@@ -915,8 +930,8 @@ def validate_hierarchy(plan: Plan) -> list[ValidationIssue]:
                 )
             )
 
-    for item_id, item in sorted(item_entries.items()):
-        if not is_active_item(item):
+    for item_id, item in _sorted_plan_item_entries(item_entries):
+        if item_id not in safe_keys or not is_active_item(item):
             continue
 
         if not is_usable_parent_reference(item.parent_id):
@@ -1020,6 +1035,7 @@ def validate_dependencies(
     structure = _analyze_plan_items(plan)
     issues: list[ValidationIssue] = list(structure.issues)
     item_entries = structure.entries
+    safe_keys = structure.semantic_safe_keys
 
     cycle_issue = dependency_cycle_issue(plan)
     if cycle_issue is not None:
@@ -1033,7 +1049,7 @@ def validate_dependencies(
         )
 
     for item_id, item in _sorted_plan_item_entries(item_entries):
-        if not is_active_item(item):
+        if item_id not in safe_keys or not is_active_item(item):
             continue
 
         if not isinstance(item.depends_on, list):
@@ -1162,8 +1178,10 @@ def validate_soft_limits(
     mode: ValidationMode,
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
+    structure = _analyze_plan_items(plan)
 
-    for item_id, item in _sorted_plan_item_entries(_analyze_plan_items(plan).entries):
+    for item_id in sorted(structure.semantic_safe_keys):
+        item = structure.entries[item_id]
         if not is_active_item(item):
             continue
 
@@ -1315,6 +1333,7 @@ def collect_plan_analysis_validation_issues(plan: Plan) -> list[ValidationIssue]
     add_issues(validate_ids_and_fields(plan))
     add_issues(validate_canonical_root(plan))
     add_issues(validate_root_item_populated(plan))
+    add_issues(validate_plan_quality_warnings(plan))
     add_issues(validate_work_item_scope_contract(plan, mode="draft"))
     add_issues(validate_hierarchy(plan))
     add_issues(validate_dependencies(plan))
@@ -1339,6 +1358,7 @@ def validate_plan(
     issues.extend(validate_ids_and_fields(plan))
     issues.extend(validate_canonical_root(plan))
     issues.extend(validate_root_item_populated(plan))
+    issues.extend(validate_plan_quality_warnings(plan))
     issues.extend(validate_work_item_scope_contract(plan, mode=mode))
     issues.extend(validate_hierarchy(plan))
     issues.extend(

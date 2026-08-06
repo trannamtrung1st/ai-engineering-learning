@@ -540,7 +540,8 @@ def test_work_item_scope_contract_rejects_whitespace_only_entries() -> None:
     approval = validate_plan(plan, mode="approval")
     assert not approval.ok
     assert any(
-        issue.code == "missing_work_item_scope_contract"
+        issue.code == "invalid_plan_field"
+        and issue.path == ["item-work", "scope", "includes", "0"]
         for issue in approval.issues
     )
 
