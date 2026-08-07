@@ -24,7 +24,7 @@ from tests.fixtures.persistence_review_worker import (
     commit_lock_writer_worker,
     load_config_reader_worker,
 )
-from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config
+from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config, recovery_journal_events
 from tests.unit.test_commit_crash_recovery import (
     _crash_before_appending_events,
     _find_txn_dir,
@@ -279,22 +279,19 @@ def test_recovery_rejects_out_of_order_transaction_event_indices(tmp_path: Path)
             "txn_id": "out-of-order",
             "status": "appending_events",
             "files": [],
-            "events": [
-                {
-                    "type": "event_a",
-                    "run_id": run_id,
-                    "txn_id": "out-of-order",
-                    "event_index": 0,
-                    "event_count": 2,
-                },
-                {
-                    "type": "event_b",
-                    "run_id": run_id,
-                    "txn_id": "out-of-order",
-                    "event_index": 1,
-                    "event_count": 2,
-                },
-            ],
+            "events": recovery_journal_events(
+                "out-of-order",
+                [
+                    {
+                        "type": "event_a",
+                        "run_id": run_id,
+                    },
+                    {
+                        "type": "event_b",
+                        "run_id": run_id,
+                    },
+                ],
+            ),
             "backups": [],
             "replaced": [],
             **boundary,

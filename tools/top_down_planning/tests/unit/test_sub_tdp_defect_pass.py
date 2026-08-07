@@ -265,14 +265,16 @@ def test_child_run_binds_upstream_accepted_results(tmp_path: Path) -> None:
     _save_production(store, dep_id, production)
     approval = whole_output_approval_record(store, dep_id)
     store.save_review(dep_id, approval)
+    review_id = str(approval.get("id") or "")
+    stored_approval = store.load_review(dep_id, review_id)
     production = store.load_production(dep_id)
     output_digest = compute_output_digest(production)
     digests = dict(store.load_run(dep_id).get("digests") or {})
     digests["output"] = output_digest
     run = store.load_run(dep_id)
     binding = dict(run.get("package_binding") or {})
-    binding["whole_output_review_id"] = str(approval.get("id") or "")
-    binding["whole_output_review_digest"] = digest_review_record(approval)
+    binding["whole_output_review_id"] = review_id
+    binding["whole_output_review_digest"] = digest_review_record(stored_approval)
     _force_run_fields(
         store,
         dep_id,

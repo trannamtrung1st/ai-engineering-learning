@@ -442,16 +442,31 @@ def test_committed_journal_still_reconciles_missing_events(tmp_path: Path) -> No
     txn_dir = store.run_dir(run_id) / f".txn-{txn_id}"
     txn_dir.mkdir()
     events_path = store.run_dir(run_id) / "events.jsonl"
+    journal_events = [
+        {
+            "type": "late_event",
+            "run_id": run_id,
+            "txn_id": txn_id,
+            "event_index": 0,
+            "event_count": 2,
+            "ts": "2026-01-01T00:00:00Z",
+        },
+        {
+            "type": "late_event_b",
+            "run_id": run_id,
+            "txn_id": txn_id,
+            "event_index": 1,
+            "event_count": 2,
+            "ts": "2026-01-01T00:00:01Z",
+        },
+    ]
     atomic_write_json(
         txn_dir / "journal.json",
         {
             "txn_id": txn_id,
             "status": "committed",
             "files": [],
-            "events": [
-                {"type": "late_event", "run_id": run_id},
-                {"type": "late_event_b", "run_id": run_id},
-            ],
+            "events": journal_events,
             "backups": [],
             "replaced": [],
             **events_append_boundary(events_path),

@@ -950,7 +950,18 @@ class PreparedUnitExecutor:
             approved = dict(updated.get("approved_digests") or {})
             approved["context_snapshot"] = context_snapshot_digest
             updated["approved_digests"] = approved
-            child_store.save_review(child_run_id, updated)
+            from top_down_planning.persistence.review_commit import (
+                review_record_revision,
+                save_review_with_expected_revision,
+            )
+
+            review_id = str(updated.get("id") or "")
+            save_review_with_expected_revision(
+                child_store,
+                child_run_id,
+                updated,
+                expected_revision=review_record_revision(approval),
+            )
 
     @staticmethod
     def _find_accepted_dependency_run(

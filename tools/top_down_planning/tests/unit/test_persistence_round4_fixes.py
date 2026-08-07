@@ -9,7 +9,7 @@ import pytest
 
 from core_tools.persistence import TransactionRecoveryError, atomic_write_json, digest_file
 from top_down_planning.persistence import FileRunStore, PersistenceError
-from tests.helpers import events_append_boundary
+from tests.helpers import events_append_boundary, recovery_journal_events
 from tests.unit.test_persistence_correction_fixes import _create_run, _find_txn_dir_local
 
 
@@ -104,7 +104,10 @@ def test_appending_events_with_partial_replaced_fails_closed(tmp_path: Path) -> 
                     had_destination=False,
                 ),
             ],
-            "events": [{"type": "transition", "run_id": run_id}],
+            "events": recovery_journal_events(
+                "partial-replaced",
+                [{"type": "transition", "run_id": run_id}],
+            ),
             "backups": ["run.json"],
             "replaced": ["run.json"],
             **events_append_boundary(events_path),
@@ -148,7 +151,10 @@ def test_committed_with_digest_mismatch_fails_closed(tmp_path: Path) -> None:
                     had_destination=True,
                 ),
             ],
-            "events": [{"type": "transition", "run_id": run_id}],
+            "events": recovery_journal_events(
+                "digest-mismatch",
+                [{"type": "transition", "run_id": run_id}],
+            ),
             "backups": ["run.json"],
             "replaced": ["run.json"],
             **events_append_boundary(events_path),

@@ -1248,6 +1248,8 @@ def accept_child_run(
 
     approval = whole_output_approval_record(store, child_run_id)
     store.save_review(child_run_id, approval)
+    review_id = str(approval.get("id") or "")
+    stored_approval = store.load_review(child_run_id, review_id)
     production = store.load_production(child_run_id)
     output_digest = compute_output_digest(production)
     run = store.load_run(child_run_id)
@@ -1257,8 +1259,8 @@ def accept_child_run(
     digests["output"] = output_digest
     run["digests"] = digests
     binding = dict(run.get("package_binding") or {})
-    binding["whole_output_review_id"] = str(approval.get("id") or "")
-    binding["whole_output_review_digest"] = digest_review_record(approval)
+    binding["whole_output_review_id"] = review_id
+    binding["whole_output_review_digest"] = digest_review_record(stored_approval)
     run["package_binding"] = binding
     run["revision"] = expected + 1
     run["status"] = "completed"
@@ -1269,6 +1271,11 @@ def accept_child_run(
 
 
 def save_review_payload(store: Any, run_id: str, payload: dict[str, Any]) -> None:
+    from top_down_planning.persistence.review_commit import (
+        review_record_revision,
+        save_review_with_expected_revision,
+    )
+
     data = dict(payload)
     loop_type = str(data.get("type") or "")
     if loop_type in {"whole_plan", "whole_output"}:
@@ -1276,7 +1283,19 @@ def save_review_payload(store: Any, run_id: str, payload: dict[str, Any]) -> Non
             data["review_contract_version"] = 2
         if data.get("review_record_schema_version") is None:
             data["review_record_schema_version"] = 2
-    store.save_review(run_id, review_loop_dict_with_binding(data))
+    normalized = review_loop_dict_with_binding(data)
+    review_id = str(normalized.get("id") or "")
+    review_path = store.reviews_dir(run_id) / f"{review_id}.json"
+    if review_path.is_file():
+        stored = store.load_review(run_id, review_id)
+        save_review_with_expected_revision(
+            store,
+            run_id,
+            normalized,
+            expected_revision=review_record_revision(stored),
+        )
+    else:
+        store.save_review(run_id, normalized)
 
 
 def grant_capability(
@@ -2091,6 +2110,26 @@ def plan_apply_turn(
 
     del base_revision, operations
     return done_events(signal=signal, text=assistant_text)
+
+
+def recovery_journal_events(
+    txn_id: str,
+    events: list[dict[str, Any]],
+    *,
+    ts: str = "2026-01-01T00:00:00Z",
+) -> list[dict[str, Any]]:
+    """Normalize journal recovery event metadata for strict recovery parsing."""
+
+    count = len(events)
+    normalized: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        entry = dict(event)
+        entry.setdefault("txn_id", txn_id)
+        entry.setdefault("event_index", index)
+        entry.setdefault("event_count", count)
+        entry.setdefault("ts", ts)
+        normalized.append(entry)
+    return normalized
 
 
 def events_append_boundary(events_path: Path) -> dict[str, int | str]:

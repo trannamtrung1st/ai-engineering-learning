@@ -1048,6 +1048,7 @@ def test_parse_review_version_fields_raises_guided_error_for_v1() -> None:
 
 
 def test_persisted_v1_review_record_raises_guided_error_on_load(tmp_path: Path) -> None:
+    from core_tools.persistence import atomic_write_json
     from top_down_planning.persistence import FileRunStore
     from tests.helpers import create_run_kwargs
 
@@ -1059,8 +1060,10 @@ def test_persisted_v1_review_record_raises_guided_error_on_load(tmp_path: Path) 
         plan=plan,
         **create_run_kwargs(tmp_path, resolved_config={"run": {"output_goal": plan.output_goal}}),
     )
-    store.save_review(
-        run_id,
+    review_path = store.reviews_dir(run_id) / "review-whole-plan-01.json"
+    review_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        review_path,
         {
             "id": "review-whole-plan-01",
             "type": "whole_plan",

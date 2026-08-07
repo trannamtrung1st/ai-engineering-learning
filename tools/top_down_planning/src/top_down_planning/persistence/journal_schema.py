@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from core_tools.persistence import TransactionRecoveryError, digest_bytes
+from core_tools.persistence import PersistenceError, TransactionRecoveryError, digest_bytes
+
+from top_down_planning.persistence.path_containment import validate_journal_basename
+from top_down_planning.persistence.path_ids import validate_store_id
 
 _KNOWN_FILE_KINDS = frozenset(
     {"run", "plan", "production", "resolved_config", "invocation", "review"}
@@ -69,6 +72,20 @@ def _require_list_field(
     return list(raw)
 
 
+def _journal_store_id(value: str, *, label: str, run_id: str, txn_id: str) -> str:
+    try:
+        return validate_store_id(value, label=label)
+    except PersistenceError as exc:
+        raise _recovery_error(str(exc), run_id=run_id, txn_id=txn_id) from exc
+
+
+def _journal_basename(value: str, *, label: str, run_id: str, txn_id: str) -> str:
+    try:
+        return validate_journal_basename(value, label=label)
+    except PersistenceError as exc:
+        raise _recovery_error(str(exc), run_id=run_id, txn_id=txn_id) from exc
+
+
 def _parse_string_list(
     values: list[Any],
     *,
@@ -84,7 +101,7 @@ def _parse_string_list(
                 run_id=run_id,
                 txn_id=txn_id,
             )
-        parsed.append(value)
+        parsed.append(_journal_basename(value, label=f"{field}[{index}]", run_id=run_id, txn_id=txn_id))
     return parsed
 
 
@@ -109,13 +126,12 @@ def _parse_file_entries(
                 run_id=run_id,
                 txn_id=txn_id,
             )
-        name = str(entry.get("name") or "").strip()
-        if not name:
-            raise _recovery_error(
-                f"transaction journal files[{index}] missing name",
-                run_id=run_id,
-                txn_id=txn_id,
-            )
+        name = _journal_basename(
+            str(entry.get("name") or "").strip(),
+            label=f"files[{index}].name",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
         digest = str(entry.get("digest") or "").strip()
         if not digest:
             raise _recovery_error(
@@ -132,13 +148,12 @@ def _parse_file_entries(
             )
         review_id: str | None = None
         if kind == "review":
-            review_id = str(entry.get("review_id") or "").strip()
-            if not review_id:
-                raise _recovery_error(
-                    f"transaction journal files[{index}] missing review_id",
-                    run_id=run_id,
-                    txn_id=txn_id,
-                )
+            review_id = _journal_store_id(
+                str(entry.get("review_id") or "").strip(),
+                label="review_id",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
         parsed.append(
             JournalFileEntry(
                 kind=kind,
@@ -156,12 +171,61 @@ def _parse_event_entries(
     *,
     run_id: str,
     txn_id: str,
+    expected_txn_id: str,
 ) -> list[dict[str, Any]]:
+    event_count = len(entries)
     parsed: list[dict[str, Any]] = []
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise _recovery_error(
                 f"transaction journal events[{index}] must be a mapping",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        journal_txn_id = entry.get("txn_id")
+        if not isinstance(journal_txn_id, str) or journal_txn_id.strip() != expected_txn_id:
+            raise _recovery_error(
+                f"transaction journal events[{index}] txn_id mismatch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        event_index = entry.get("event_index")
+        if isinstance(event_index, bool) or not isinstance(event_index, int):
+            raise _recovery_error(
+                f"transaction journal events[{index}] event_index must be an integer",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        if event_index != index:
+            raise _recovery_error(
+                f"transaction journal events[{index}] event_index must equal list position",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        raw_event_count = entry.get("event_count")
+        if isinstance(raw_event_count, bool) or not isinstance(raw_event_count, int):
+            raise _recovery_error(
+                f"transaction journal events[{index}] event_count must be an integer",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        if raw_event_count != event_count:
+            raise _recovery_error(
+                f"transaction journal events[{index}] event_count must equal journal event list length",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        ts = entry.get("ts")
+        if not isinstance(ts, str) or not ts.strip():
+            raise _recovery_error(
+                f"transaction journal events[{index}] ts must be a non-empty string",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        event_type = entry.get("type")
+        if not isinstance(event_type, str) or not event_type.strip():
+            raise _recovery_error(
+                f"transaction journal events[{index}] type must be a non-empty string",
                 run_id=run_id,
                 txn_id=txn_id,
             )
@@ -344,6 +408,7 @@ def parse_recovery_journal(
         _require_list_field(journal, "events", run_id=run_id, txn_id=expected_txn_id),
         run_id=run_id,
         txn_id=expected_txn_id,
+        expected_txn_id=expected_txn_id,
     )
     backups = _parse_string_list(
         _require_list_field(journal, "backups", run_id=run_id, txn_id=expected_txn_id),

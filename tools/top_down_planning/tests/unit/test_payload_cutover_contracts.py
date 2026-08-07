@@ -157,13 +157,14 @@ def test_mandatory_discovery_helper_emits_lean_sweeps(tmp_path: Path) -> None:
         {
             "id": loop_id,
             "type": "whole_plan",
-            "status": "open",
+            "status": "pending",
+            "revise_at": "blocker",
             "target_revision": 1,
             "review_record_schema_version": 2,
             "review_contract_version": 2,
             "finding_set_id": f"{loop_id}-fs-01",
             "active_stage": "initial_review",
-            "lifecycle_status": "discovery_pending",
+            "lifecycle_status": "review_pending",
             "scope": {"kind": "whole_plan"},
         },
     )

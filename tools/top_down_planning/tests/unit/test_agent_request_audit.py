@@ -395,10 +395,15 @@ def test_transaction_rollback_does_not_remove_agent_requests_files(
     plan = store.load_plan(run_id)
     run_expected = int(run["revision"])
     plan_expected = int(plan["revision"])
+    from top_down_planning.persistence.digests import compute_plan_digest
+
     run = dict(run)
     run["revision"] = run_expected + 1
     plan = dict(plan)
     plan["revision"] = plan_expected + 1
+    digests = dict(run.get("digests") or {})
+    digests["plan"] = compute_plan_digest(plan)
+    run["digests"] = digests
 
     original_replace = Path.replace
     calls = 0
@@ -460,10 +465,15 @@ def test_plan_commit_rollback_preserves_prior_agent_request_events(
     plan = store.load_plan(run_id)
     run_expected = int(run["revision"])
     plan_expected = int(plan["revision"])
+    from top_down_planning.persistence.digests import compute_plan_digest
+
     run = dict(run)
     run["revision"] = run_expected + 1
     plan = dict(plan)
     plan["revision"] = plan_expected + 1
+    digests = dict(run.get("digests") or {})
+    digests["plan"] = compute_plan_digest(plan)
+    run["digests"] = digests
 
     original_replace = Path.replace
     calls = 0

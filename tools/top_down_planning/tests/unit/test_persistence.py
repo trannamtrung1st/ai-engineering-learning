@@ -287,7 +287,7 @@ def test_reload_after_new_store_instance(tmp_path: Path) -> None:
 
     reloaded = FileRunStore(tmp_path)
     assert reloaded.load_plan("run-20260101T000001-000001")["revision"] == 1
-    assert reloaded.load_run("run-20260101T000001-000001")["revision"] == 0
+    assert reloaded.load_run("run-20260101T000001-000001")["revision"] == 1
 
 
 def test_append_event_is_append_only(tmp_path: Path) -> None:

@@ -435,6 +435,12 @@ def test_load_review_rejects_bool_revision(tmp_path: Path) -> None:
             "revision": True,
             "type": "focused_plan",
             "status": "requested",
+            "target_revision": 0,
+            "scope": {"kind": "plan"},
+            "findings": [],
+            "lifecycle_status": "review_pending",
+            "review_record_schema_version": 2,
+            "review_contract_version": 2,
         },
     )
 

@@ -128,6 +128,74 @@ class SessionBinding:
         validate_session_binding(binding)
         return binding
 
+    @classmethod
+    def from_persisted_dict(cls, payload: dict[str, Any]) -> SessionBinding:
+        """Strict persisted-session binding constructor without implicit defaults."""
+
+        if not isinstance(payload, dict):
+            raise SessionBindingError("session binding payload must be a mapping")
+        instance_id = str(payload.get("session_instance_id") or "").strip()
+        if not instance_id:
+            raise SessionBindingError("session_instance_id is required")
+        role = str(payload.get("role") or "").strip()
+        kind = str(payload.get("kind") or "").strip()
+        if not role or not kind:
+            raise SessionBindingError("session binding role and kind are required")
+        if "state" not in payload:
+            raise SessionBindingError("state is required on persisted session bindings")
+        state_raw = payload["state"]
+        if not isinstance(state_raw, str) or state_raw not in {
+            "unbound",
+            "starting",
+            "bound",
+        }:
+            raise SessionBindingError(f"unsupported session binding state: {state_raw!r}")
+        generation = payload.get("generation")
+        if isinstance(generation, bool) or not isinstance(generation, int) or generation < 1:
+            raise SessionBindingError("generation must be a positive integer")
+        for field in (
+            "provider",
+            "provider_session_id",
+            "model",
+            "activity",
+            "context_digest",
+        ):
+            raw = payload.get(field)
+            if raw is not None and not isinstance(raw, str):
+                raise SessionBindingError(f"{field} must be a string or null")
+        provider = payload.get("provider")
+        provider = str(provider).strip() if isinstance(provider, str) and provider.strip() else None
+        provider_session_id = payload.get("provider_session_id")
+        provider_session_id = (
+            str(provider_session_id).strip()
+            if isinstance(provider_session_id, str) and provider_session_id.strip()
+            else None
+        )
+        model = payload.get("model")
+        model = str(model).strip() if isinstance(model, str) and model.strip() else None
+        activity = payload.get("activity")
+        activity = str(activity).strip() if isinstance(activity, str) and activity.strip() else None
+        context_digest = payload.get("context_digest")
+        context_digest = (
+            str(context_digest).strip()
+            if isinstance(context_digest, str) and context_digest.strip()
+            else None
+        )
+        binding = cls(
+            session_instance_id=instance_id,
+            generation=generation,
+            role=role,
+            kind=kind,
+            state=state_raw,  # type: ignore[arg-type]
+            provider=provider,
+            provider_session_id=provider_session_id,
+            model=model,
+            activity=activity,
+            context_digest=context_digest,
+        )
+        validate_session_binding(binding)
+        return binding
+
     def with_next_generation(self) -> SessionBinding:
         """In-flight replacement: new generation, ``starting``, id cleared until allocate."""
 

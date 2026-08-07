@@ -12,7 +12,7 @@ import pytest
 
 from core_tools.persistence import TransactionRecoveryError, atomic_write_json, digest_bytes, digest_file
 from top_down_planning.persistence import FileRunStore, PersistenceError
-from tests.helpers import events_append_boundary
+from tests.helpers import events_append_boundary, recovery_journal_events
 from tests.unit.test_persistence_correction_fixes import _create_run, _find_txn_dir_local
 
 
@@ -233,15 +233,15 @@ def test_recovery_rejects_unrelated_malformed_trailing_fragment(tmp_path: Path) 
             "txn_id": "unrelated-fragment",
             "status": "appending_events",
             "files": [],
-            "events": [
-                {
-                    "type": "late_event",
-                    "run_id": run_id,
-                    "txn_id": "unrelated-fragment",
-                    "event_index": 0,
-                    "event_count": 1,
-                }
-            ],
+            "events": recovery_journal_events(
+                "unrelated-fragment",
+                [
+                    {
+                        "type": "late_event",
+                        "run_id": run_id,
+                    }
+                ],
+            ),
             "backups": [],
             "replaced": [],
             **boundary,

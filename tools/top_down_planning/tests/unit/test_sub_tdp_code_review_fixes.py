@@ -1316,7 +1316,9 @@ def test_context_auth_rejects_paths_only_present_in_live_production(
         batch["result"] = result
         batches[0] = batch
         production["batches"] = batches
-    store.save_production(child_a_id, production, expected)
+    from core_tools.persistence import atomic_write_json
+
+    atomic_write_json(store.run_dir(child_a_id) / "production.json", production)
     shared.write_text('{"version": "unauthorized"}\n', encoding="utf-8")
 
     with pytest.raises(ExecutionPackageError, match="not authorized by workspace baseline"):

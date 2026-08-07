@@ -365,7 +365,17 @@ def test_reviewer_session_missing_and_replaced(tmp_path: Path) -> None:
     )
     list(provider.stream_events(session_id))
     updated = loop.with_reviewer_provider_session_id(session_id)
-    store.save_review(run_id, updated.to_dict())
+    from top_down_planning.persistence.review_commit import (
+        review_record_revision,
+        save_review_with_expected_revision,
+    )
+
+    save_review_with_expected_revision(
+        store,
+        run_id,
+        updated.to_dict(),
+        expected_revision=review_record_revision(store.load_review(run_id, loop.id)),
+    )
 
     provider.mark_session_not_found(session_id)
     provider.script_turn(done_events(text="replacement reviewer turn"))

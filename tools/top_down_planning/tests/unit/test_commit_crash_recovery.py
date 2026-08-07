@@ -15,7 +15,7 @@ from core_tools.persistence import atomic_write_json, digest_file
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.commit import CommitSpec
-from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config
+from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config, recovery_journal_events
 
 
 def _create_run(store: FileRunStore, run_id: str = "run-20260101T000601-000601") -> None:
@@ -43,14 +43,18 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000601-000601")
 
 
 def _multi_file_commit(store: FileRunStore, run_id: str) -> None:
+    from top_down_planning.persistence.snapshot_bindings import bind_run_digests_for_plan_update
+
     run = store.load_run(run_id)
     plan = store.load_plan(run_id)
     run_expected = int(run["revision"])
     plan_expected = int(plan["revision"])
-    run = dict(run)
-    run["revision"] = run_expected + 1
     plan = dict(plan)
     plan["revision"] = plan_expected + 1
+    run = bind_run_digests_for_plan_update(
+        {**dict(run), "revision": run_expected + 1},
+        plan,
+    )
     store.commit(
         run_id,
         CommitSpec(
@@ -250,15 +254,15 @@ def test_false_replaced_journal_without_digest_mismatch_rolls_back(tmp_path: Pat
         "txn_id": "false-replaced",
         "status": "replacing",
         "files": [{"kind": "plan", "name": "plan.json", "digest": "deadbeef", "had_destination": True}],
-        "events": [
-            {
-                "type": "test_commit",
-                "run_id": "run-20260101T000601-000601",
-                "txn_id": "false-replaced",
-                "event_index": 0,
-                "event_count": 1,
-            }
-        ],
+        "events": recovery_journal_events(
+            "false-replaced",
+            [
+                {
+                    "type": "test_commit",
+                    "run_id": "run-20260101T000601-000601",
+                }
+            ],
+        ),
         "backups": ["plan.json"],
         "replaced": ["plan.json"],
         **events_append_boundary(store.run_dir("run-20260101T000601-000601") / "events.jsonl"),

@@ -55,16 +55,19 @@ class ApplyResumeError(OrchestratorError):
 def _review_updates_for_resume_apply(
     *,
     review_loop: ReviewLoop | None,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     if review_loop is None:
-        return []
+        return [], {}
     if review_loop.lifecycle_status == "limit_reached":
         normalized = prepare_limit_reached_retry(review_loop)
     else:
         normalized = prepare_review_incomplete_retry(review_loop)
     if normalized.to_dict() == review_loop.to_dict():
-        return []
-    return [normalized.to_dict()]
+        return [], {}
+    from top_down_planning.persistence.review_commit import review_record_revision
+
+    loop_id = str(normalized.id)
+    return [normalized.to_dict()], {loop_id: review_record_revision(review_loop.to_dict())}
 
 
 def _limit_extended_paths(config_changes: dict[str, dict[str, Any]]) -> list[str]:
@@ -334,12 +337,16 @@ def apply_resume_plan_atomically(
             }
         )
 
+    review_updates, review_expected = _review_updates_for_resume_apply(
+        review_loop=review_loop,
+    )
     spec = CommitSpec(
         run=run_payload,
         run_expected_revision=expected_revision,
         resolved_config=config_update.resolved_config,
         invocation=config_update.invocation,
-        reviews=_review_updates_for_resume_apply(review_loop=review_loop),
+        reviews=review_updates,
+        review_expected_revisions=review_expected,
         events=events,
     )
 

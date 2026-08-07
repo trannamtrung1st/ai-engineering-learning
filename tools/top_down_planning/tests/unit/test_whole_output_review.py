@@ -13,7 +13,7 @@ from top_down_planning.agent_tool import RequestError, ReviewAgentService
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.finding_families import FindingFamily, compute_family_fingerprint
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.domain.reviews import ReviewFinding
+from top_down_planning.domain.reviews import ReviewFinding, ReviewLoop
 from top_down_planning.orchestrator import ProviderRunError, WholeOutputReviewOrchestrator
 from top_down_planning.orchestrator.mandatory_review_stages import enter_owner_revision_cycle
 from top_down_planning.orchestrator.phases import OUTPUT_VALIDATED, WHOLE_OUTPUT_REVIEW
@@ -1309,6 +1309,7 @@ def test_persist_loop_rejects_stale_loop_revision_after_store_advanced(
         mark_verification_pending,
     )
     from top_down_planning.persistence.review_commit import (
+        review_record_revision,
         save_review_with_expected_revision,
     )
 
@@ -1331,7 +1332,13 @@ def test_persist_loop_rejects_stale_loop_revision_after_store_advanced(
         review_record_schema_version=2,
         review_contract_version=2,
     )
-    save_review_payload(store, run_id, loop.to_dict())
+    save_review_with_expected_revision(
+        store,
+        run_id,
+        loop.to_dict(),
+        expected_revision=review_record_revision(store.load_review(run_id, loop_id)),
+    )
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
 
     driver = WholeOutputReviewOrchestrator(store, run_id, provider)._driver
     loop = driver._persist_loop(loop)

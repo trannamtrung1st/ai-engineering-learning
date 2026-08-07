@@ -815,7 +815,12 @@ def test_apply_returns_post_mutation_validation_issues_for_pre_existing_errors(
                 "planning": {"max_depth": 4, "max_expansion_per_item": 7},
             },
         ),
-        production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
+        production={
+            "dispositions": {"item-gate": "blocked"},
+            "batches": [],
+            "revision": 0,
+            "output_revision": 0,
+        },
     )
 
     service = PlanAgentService(store, "run-20260101T000001-000001")
@@ -896,7 +901,12 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
                 "planning": {"max_depth": 4, "max_expansion_per_item": 7},
             },
         ),
-        production={"dispositions": {"item-gate": "blocked"}, "revision": 0},
+        production={
+            "dispositions": {"item-gate": "blocked"},
+            "batches": [],
+            "revision": 0,
+            "output_revision": 0,
+        },
     )
     set_capability_token_file(
         monkeypatch,

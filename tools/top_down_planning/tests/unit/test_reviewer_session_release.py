@@ -26,6 +26,7 @@ from tests.helpers import (
     done_events,
     mandatory_initial_respond_request,
     respond_review,
+    save_review_payload,
 )
 from tests.integration.e2e_helpers import script_whole_plan_review
 from tests.unit.test_whole_plan_review import _create_run_at_whole_plan_review
@@ -78,7 +79,7 @@ def test_release_reviewer_session_after_decision_releases_on_terminal_status(
         status="approved",
         active_stage="scope_review",
     )
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
     events: list[dict] = []
 
     def append_event(event_type: str, **fields: object) -> None:
@@ -167,7 +168,7 @@ def test_sync_reviewer_loop_session_id_before_release(tmp_path: Path) -> None:
         scope={"kind": "whole_plan"},
         revise_at="blocker",
     )
-    store.save_review(run_id, loop.to_dict())
+    save_review_payload(store, run_id, loop.to_dict())
 
     canonical = sync_reviewer_loop_session_id(
         provider,

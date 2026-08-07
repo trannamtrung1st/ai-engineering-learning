@@ -409,7 +409,17 @@ def test_review_service_rejects_reused_finding_id_on_merge(tmp_path: Path) -> No
     existing["findings"] = [
         _finding("finding-001", severity="blocker", status="resolved").to_dict()
     ]
-    store.save_review(run_id, existing)
+    from top_down_planning.persistence.review_commit import (
+        review_record_revision,
+        save_review_with_expected_revision,
+    )
+
+    save_review_with_expected_revision(
+        store,
+        run_id,
+        existing,
+        expected_revision=review_record_revision(loop.to_dict()),
+    )
     service = ReviewAgentService(store, run_id)
     with pytest.raises(RequestError, match="already exists"):
         service.respond(

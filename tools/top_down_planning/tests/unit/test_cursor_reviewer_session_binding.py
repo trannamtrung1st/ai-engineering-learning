@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -35,6 +34,7 @@ from tests.helpers import (
     make_review_loop,
     mandatory_initial_respond_request,
     respond_review,
+    save_review_payload,
 )
 from tests.unit.test_whole_plan_review import _create_run_at_whole_plan_review
 
@@ -86,10 +86,10 @@ def _cursor_provider(
         if not streams:
             return
         stream = streams[min(index, len(streams) - 1)]
-        for line_index, line in enumerate(stream):
+        for line in stream:
             yield line
-            if line_index == 0 and hook is not None:
-                threading.Thread(target=hook, daemon=True).start()
+        if hook is not None:
+            hook()
 
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
@@ -112,7 +112,8 @@ def test_sync_reviewer_loop_session_id_promotes_starting_binding_to_bound(
         new_session_binding(role="reviewer", kind="reviewer", state="starting")
         .with_provider_session_id("chat-reviewer-1")
     )
-    store.save_review(
+    save_review_payload(
+        store,
         run_id,
         {
             "id": "review-whole-plan-01",
@@ -238,7 +239,8 @@ def test_sync_reviewer_loop_session_id_ignores_unrelated_durable_session_id(
         new_session_binding(role="reviewer", kind="reviewer", state="starting")
         .with_provider_session_id("chat-reviewer-1")
     )
-    store.save_review(
+    save_review_payload(
+        store,
         run_id,
         {
             "id": "review-whole-plan-01",

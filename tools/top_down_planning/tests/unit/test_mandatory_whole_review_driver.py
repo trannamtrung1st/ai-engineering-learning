@@ -673,6 +673,7 @@ def test_driver_discovery_review_incomplete_pauses_run(tmp_path: Path) -> None:
     )
     assert outcome == "review_incomplete"
     save_review_payload(store, run_id, incomplete_loop.to_dict())
+    incomplete_loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
     with patch.object(
         ReviewLoopDriver,
         "_normalize_loop_for_resume",

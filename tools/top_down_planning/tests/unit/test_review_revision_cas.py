@@ -141,7 +141,14 @@ def test_record_finding_actions_bumps_review_record_revision(tmp_path: Path) -> 
     loop_payload["finding_ids_by_set"] = {
         "review-whole-output-01-fs-01": ["finding-01"]
     }
-    store.save_review(run_id, loop_payload)
+    save_review_with_expected_revision(
+        store,
+        run_id,
+        loop_payload,
+        expected_revision=review_record_revision(
+            store.load_review(run_id, loop_id),
+        ),
+    )
 
     revision = int(store.load_production(run_id)["output_revision"])
     digest = mandatory_output_digest(store, run_id)
@@ -180,4 +187,4 @@ def test_record_finding_actions_bumps_review_record_revision(tmp_path: Path) -> 
     )
 
     loaded = store.load_review(run_id, loop_id)
-    assert review_record_revision(loaded) == 1
+    assert review_record_revision(loaded) == 2

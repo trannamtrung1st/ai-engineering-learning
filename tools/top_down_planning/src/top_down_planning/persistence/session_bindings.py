@@ -15,8 +15,9 @@ from top_down_planning.domain.session_bindings import (
     resumable_binding_provider_session_id,
     validate_session_binding,
 )
+from top_down_planning.persistence.path_ids import validate_store_id
 from top_down_planning.persistence.persisted_validation import (
-    validate_persisted_review_binding,
+    canonicalize_persisted_review,
     validate_persisted_sessions,
 )
 
@@ -189,7 +190,8 @@ def review_record_for_persistence(review: dict[str, Any]) -> dict[str, Any]:
                 f"legacy review field {field!r} is not accepted; "
                 "use reviewer_binding; recreate the run"
             )
-    return validate_persisted_review_binding(payload)
+    review_id = validate_store_id(str(payload.get("id") or ""), label="review_id")
+    return canonicalize_persisted_review(review_id, payload)
 
 
 __all__ = [

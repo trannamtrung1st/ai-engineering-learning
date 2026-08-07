@@ -12,6 +12,22 @@ from top_down_planning.persistence.commit import CommitSpec
 class RunStore(Protocol):
     """Abstract storage for run state, plan revisions, and append-only events."""
 
+    @property
+    def root(self) -> Path:
+        """Return the configured runs root directory."""
+
+    def run_dir(self, run_id: str) -> Path:
+        """Return the contained directory for a run id."""
+
+    def reviews_dir(self, run_id: str) -> Path:
+        """Return the contained reviews directory for a run."""
+
+    def capabilities_dir(self, run_id: str) -> Path:
+        """Return the contained capabilities directory for a run."""
+
+    def artifacts_dir(self, run_id: str) -> Path:
+        """Return the contained artifacts directory for a run."""
+
     def create_run(
         self,
         run_id: str,

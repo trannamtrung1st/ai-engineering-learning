@@ -98,6 +98,7 @@ def test_approval_record_helpers_include_mandatory_v2_version_fields(
     production = {
         "revision": 1,
         "output_revision": 1,
+        "batches": [],
         "outputs": [],
         "contributions": [],
         "dispositions": {},

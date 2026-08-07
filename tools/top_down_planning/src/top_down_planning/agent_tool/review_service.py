@@ -289,6 +289,7 @@ class ReviewAgentService:
         target_revision = int(request["target_revision"])
 
         loop = ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+        expected_review_revision = review_record_revision(loop.to_dict())
         if is_review_respond_closed(loop):
             raise RequestError(f"review loop {loop_id} is already terminal: {loop.status}")
 
@@ -759,6 +760,7 @@ class ReviewAgentService:
                     CommitSpec(
                         reviews=[updated.to_dict()],
                         events=[event, *extra_events, *family_events, incomplete_event],
+                        review_expected_revisions={loop_id: expected_review_revision},
                     ),
                 )
             else:
@@ -779,6 +781,7 @@ class ReviewAgentService:
                         events=[event, *extra_events, *family_events, incomplete_event],
                         run=run_patch,
                         run_expected_revision=expected_run_revision,
+                        review_expected_revisions={loop_id: expected_review_revision},
                     ),
                 )
         else:
@@ -787,6 +790,7 @@ class ReviewAgentService:
                 CommitSpec(
                     reviews=[updated.to_dict()],
                     events=[event, *extra_events, *family_events],
+                    review_expected_revisions={loop_id: expected_review_revision},
                 ),
             )
 

@@ -43,15 +43,21 @@ def exclusive_create_bytes(path: Path, data: bytes) -> None:
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Write bytes via a temp file and atomic replace."""
+    """Write bytes via a unique temp file and atomic replace."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    tmp_path = path.with_name(f".{path.name}.tmp-{os.getpid()}-{uuid.uuid4().hex[:8]}")
     try:
-        tmp_path.write_bytes(data)
+        fd = os.open(str(tmp_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        try:
+            _write_fd_all(fd, data)
+        finally:
+            os.close(fd)
+        if tmp_path.read_bytes() != data:
+            raise OSError("temporary write incomplete")
         tmp_path.replace(path)
     finally:
-        if tmp_path.exists():
-            tmp_path.unlink(missing_ok=True)
+        tmp_path.unlink(missing_ok=True)
 
 
 def atomic_write_text(path: Path, text: str) -> None:

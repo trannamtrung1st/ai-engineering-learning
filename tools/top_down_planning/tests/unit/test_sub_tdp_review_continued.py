@@ -788,9 +788,25 @@ def test_parent_integration_overlay_supersedes_child_workspace_hash(
     batches.append(
         {
             "id": batch_id,
-            "evidence_status": "live",
+            "plan_items": ["item-root"],
+            "status": "completed",
             "result": {
-                "outputs": [{"id": "out-parent-overlay", "ref": "shared/state.json"}],
+                "outputs": [
+                    {
+                        "id": "out-parent-overlay",
+                        "type": "artifact",
+                        "ref": "shared/state.json",
+                        "sha256": digest_file(shared),
+                        "size": shared.stat().st_size,
+                        "media_type": "application/json",
+                        "captured_at": "2026-01-01T00:00:00Z",
+                        "batch_id": batch_id,
+                        "snapshot_ref": "artifacts/parent-overlay",
+                    }
+                ],
+                "contributions": [],
+                "dispositions": {},
+                "summary": "parent overlay",
             },
         }
     )
@@ -798,9 +814,12 @@ def test_parent_integration_overlay_supersedes_child_workspace_hash(
     evidence.append(
         {
             "id": "out-parent-overlay",
+            "type": "artifact",
             "ref": "shared/state.json",
             "sha256": digest_file(shared),
             "size": shared.stat().st_size,
+            "media_type": "application/json",
+            "captured_at": "2026-01-01T00:00:00Z",
             "snapshot_ref": "artifacts/parent-overlay",
             "batch_id": batch_id,
         }
