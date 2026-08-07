@@ -2092,3 +2092,16 @@ def plan_apply_turn(
     del base_revision, operations
     return done_events(signal=signal, text=assistant_text)
 
+
+def events_append_boundary(events_path: Path) -> dict[str, int | str]:
+    """Journal fields proving the event-log byte state before txn append."""
+
+    from core_tools.persistence import digest_bytes
+
+    if not events_path.is_file() or events_path.stat().st_size == 0:
+        return {"events_base_size": 0, "events_base_digest": digest_bytes(b"")}
+    data = events_path.read_bytes()
+    return {
+        "events_base_size": len(data),
+        "events_base_digest": digest_bytes(data),
+    }

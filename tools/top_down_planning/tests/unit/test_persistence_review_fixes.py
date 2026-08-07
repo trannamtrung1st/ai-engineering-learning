@@ -15,7 +15,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import FileRunStore, PersistenceError
 from top_down_planning.persistence.commit import CommitSpec
 from tests.fixtures.persistence_review_worker import concurrent_create_worker
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config
 from tests.unit.test_persistence_correction_fixes import (
     test_load_resolved_config_blocks_behind_active_commit_lock,
 )
@@ -204,6 +204,7 @@ def test_partial_event_json_line_truncated_and_recovered(tmp_path: Path) -> None
             ],
             "backups": [],
             "replaced": [],
+            **events_append_boundary(events_path),
         },
     )
 
@@ -435,6 +436,7 @@ def test_committed_journal_still_reconciles_missing_events(tmp_path: Path) -> No
     txn_id = "committed-missing-events"
     txn_dir = store.run_dir(run_id) / f".txn-{txn_id}"
     txn_dir.mkdir()
+    events_path = store.run_dir(run_id) / "events.jsonl"
     atomic_write_json(
         txn_dir / "journal.json",
         {
@@ -447,6 +449,7 @@ def test_committed_journal_still_reconciles_missing_events(tmp_path: Path) -> No
             ],
             "backups": [],
             "replaced": [],
+            **events_append_boundary(events_path),
         },
     )
 

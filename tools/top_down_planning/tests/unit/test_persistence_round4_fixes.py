@@ -9,6 +9,7 @@ import pytest
 
 from core_tools.persistence import TransactionRecoveryError, atomic_write_json, digest_file
 from top_down_planning.persistence import FileRunStore, PersistenceError
+from tests.helpers import events_append_boundary
 from tests.unit.test_persistence_correction_fixes import _create_run, _find_txn_dir_local
 
 
@@ -43,6 +44,8 @@ def _write_appending_journal(
 ) -> Path:
     txn_dir = store.run_dir(run_id) / f".txn-{txn_id}"
     txn_dir.mkdir()
+    events_path = store.run_dir(run_id) / "events.jsonl"
+    boundary = events_append_boundary(events_path) if events else {}
     atomic_write_json(
         txn_dir / "journal.json",
         {
@@ -52,6 +55,7 @@ def _write_appending_journal(
             "events": events,
             "backups": backups,
             "replaced": replaced,
+            **boundary,
         },
     )
     return txn_dir
@@ -77,6 +81,7 @@ def test_appending_events_with_partial_replaced_fails_closed(tmp_path: Path) -> 
     backups_dir.mkdir()
     (backups_dir / "run.json").write_bytes((store.run_dir(run_id) / "run.json").read_bytes())
     atomic_write_json(store.run_dir(run_id) / "run.json", staged_run)
+    events_path = store.run_dir(run_id) / "events.jsonl"
     atomic_write_json(
         txn_dir / "journal.json",
         {
@@ -99,6 +104,7 @@ def test_appending_events_with_partial_replaced_fails_closed(tmp_path: Path) -> 
             "events": [{"type": "transition", "run_id": run_id}],
             "backups": ["run.json"],
             "replaced": ["run.json"],
+            **events_append_boundary(events_path),
         },
     )
 
@@ -125,6 +131,7 @@ def test_committed_with_digest_mismatch_fails_closed(tmp_path: Path) -> None:
     backups_dir.mkdir()
     (backups_dir / "run.json").write_bytes((store.run_dir(run_id) / "run.json").read_bytes())
     atomic_write_json(store.run_dir(run_id) / "run.json", run_before)
+    events_path = store.run_dir(run_id) / "events.jsonl"
     atomic_write_json(
         txn_dir / "journal.json",
         {
@@ -141,6 +148,7 @@ def test_committed_with_digest_mismatch_fails_closed(tmp_path: Path) -> None:
             "events": [{"type": "transition", "run_id": run_id}],
             "backups": ["run.json"],
             "replaced": ["run.json"],
+            **events_append_boundary(events_path),
         },
     )
 

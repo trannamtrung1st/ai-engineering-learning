@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from core_tools.persistence import TransactionRecoveryError
+from core_tools.persistence import TransactionRecoveryError, digest_bytes
 
 _KNOWN_FILE_KINDS = frozenset(
     {"run", "plan", "production", "resolved_config", "invocation", "review"}
@@ -37,6 +37,8 @@ class ParsedRecoveryJournal:
     events: list[dict[str, Any]]
     backups: list[str]
     replaced: list[str]
+    events_base_size: int
+    events_base_digest: str
 
 
 def _recovery_error(
@@ -263,6 +265,52 @@ def validate_parsed_recovery_journal_invariants(
         )
 
 
+def _parse_events_append_boundary(
+    journal: dict[str, Any],
+    *,
+    events: list[dict[str, Any]],
+    status: str,
+    run_id: str,
+    txn_id: str,
+) -> tuple[int, str]:
+    if not events:
+        return 0, digest_bytes(b"")
+    if status not in {"appending_events", "committed"}:
+        raw_size = journal.get("events_base_size", 0)
+        raw_digest = str(journal.get("events_base_digest") or "")
+        if raw_size == 0 and not raw_digest:
+            return 0, digest_bytes(b"")
+        if "events_base_size" not in journal or "events_base_digest" not in journal:
+            raise _recovery_error(
+                "transaction journal missing events append boundary",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+    else:
+        if "events_base_size" not in journal or "events_base_digest" not in journal:
+            raise _recovery_error(
+                "transaction journal missing events append boundary",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        raw_size = journal["events_base_size"]
+        raw_digest = journal["events_base_digest"]
+
+    if not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size < 0:
+        raise _recovery_error(
+            "transaction journal events_base_size must be a non-negative integer",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+    if not isinstance(raw_digest, str) or not raw_digest.strip():
+        raise _recovery_error(
+            "transaction journal events_base_digest must be a non-empty string",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+    return raw_size, raw_digest.strip()
+
+
 def parse_recovery_journal(
     journal: dict[str, Any],
     *,
@@ -321,6 +369,13 @@ def parse_recovery_journal(
         run_id=run_id,
         txn_id=expected_txn_id,
     )
+    events_base_size, events_base_digest = _parse_events_append_boundary(
+        journal,
+        events=events,
+        status=status,
+        run_id=run_id,
+        txn_id=expected_txn_id,
+    )
 
     parsed = ParsedRecoveryJournal(
         txn_id=expected_txn_id,
@@ -329,6 +384,8 @@ def parse_recovery_journal(
         backups=backups,
         events=events,
         replaced=replaced,
+        events_base_size=events_base_size,
+        events_base_digest=events_base_digest,
     )
     validate_parsed_recovery_journal_invariants(parsed, run_id=run_id, txn_id=expected_txn_id)
     return parsed

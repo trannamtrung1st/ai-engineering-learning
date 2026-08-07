@@ -21,6 +21,7 @@ from core_tools.persistence import (
     assert_next_revision,
     atomic_write_json,
     atomic_write_text,
+    digest_bytes,
     digest_file,
     dump_yaml,
     exclusive_create_bytes,
@@ -386,18 +387,21 @@ class FileRunStore:
             review_payloads.append((validated_review_id, review_payload))
 
         txn_id = uuid.uuid4().hex
+        journal_events = self._normalize_journal_events(
+            txn_id,
+            [dict(event) for event in spec.events],
+            assign_timestamp=True,
+        )
+
+        if journal_events:
+            self._ensure_events_file_append_boundary(validated_run_id)
+
         staging_dir = self._assert_contained(run_dir / f".txn-{txn_id}")
         journal_path = staging_dir / "journal.json"
         backups_dir = staging_dir / "backups"
         staging_dir.mkdir()
         backups_dir.mkdir()
         staged_files: list[dict[str, Any]] = []
-
-        journal_events = self._normalize_journal_events(
-            txn_id,
-            [dict(event) for event in spec.events],
-            assign_timestamp=True,
-        )
 
         committed = False
         try:
@@ -517,10 +521,17 @@ class FileRunStore:
                 atomic_write_json(journal_path, journal)
 
             journal["status"] = "appending_events"
+            events_path = self._events_path(validated_run_id)
+            if journal_events:
+                events_bytes = events_path.read_bytes() if events_path.is_file() else b""
+                journal["events_base_size"] = len(events_bytes)
+                journal["events_base_digest"] = digest_bytes(events_bytes)
+            else:
+                journal["events_base_size"] = 0
+                journal["events_base_digest"] = digest_bytes(b"")
             atomic_write_json(journal_path, journal)
 
             if journal_events:
-                events_path = self._events_path(validated_run_id)
                 with events_path.open("a", encoding="utf-8") as handle:
                     for event in journal_events:
                         handle.write(self._serialize_journal_event_line(dict(event)))
@@ -850,7 +861,13 @@ class FileRunStore:
                 )
             ):
                 if txn_id and journal_events:
-                    self._ensure_events_appended(run_id, txn_id, journal_events)
+                    self._ensure_events_appended(
+                        run_id,
+                        txn_id,
+                        journal_events,
+                        events_base_size=parsed.events_base_size,
+                        events_base_digest=parsed.events_base_digest,
+                    )
                 shutil.rmtree(staging_dir)
                 return
             self._rollback_replaced_files(
@@ -875,7 +892,13 @@ class FileRunStore:
                 txn_id=txn_id,
             )
             if txn_id and journal_events:
-                self._ensure_events_appended(run_id, txn_id, journal_events)
+                self._ensure_events_appended(
+                    run_id,
+                    txn_id,
+                    journal_events,
+                    events_base_size=parsed.events_base_size,
+                    events_base_digest=parsed.events_base_digest,
+                )
             shutil.rmtree(staging_dir)
             return
 
@@ -888,7 +911,13 @@ class FileRunStore:
                 txn_id=txn_id,
             )
             if txn_id and journal_events:
-                self._ensure_events_appended(run_id, txn_id, journal_events)
+                self._ensure_events_appended(
+                    run_id,
+                    txn_id,
+                    journal_events,
+                    events_base_size=parsed.events_base_size,
+                    events_base_digest=parsed.events_base_digest,
+                )
             shutil.rmtree(staging_dir)
             return
 
@@ -1088,6 +1117,68 @@ class FileRunStore:
         self._require_journaled_event_fields(payload)
         return payload
 
+    def _ensure_events_file_append_boundary(self, run_id: str) -> None:
+        events_path = self._events_path(run_id)
+        if not events_path.is_file():
+            return
+        text = events_path.read_text(encoding="utf-8")
+        if not text or text.endswith("\n"):
+            return
+        trailing = text.rsplit("\n", 1)[-1]
+        if not trailing.strip():
+            self._atomically_publish_events_text(events_path, text + "\n")
+            return
+        try:
+            payload = json.loads(trailing)
+        except json.JSONDecodeError as exc:
+            raise PersistenceError(
+                f"events.jsonl has malformed trailing content in {events_path}: {exc}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise PersistenceError(
+                f"events.jsonl trailing content in {events_path} must be a JSON object"
+            )
+        self._require_journaled_event_fields(payload)
+        self._atomically_publish_events_text(events_path, text + "\n")
+
+    def _verify_events_journal_boundary(
+        self,
+        run_id: str,
+        txn_id: str,
+        *,
+        events_base_size: int,
+        events_base_digest: str,
+    ) -> None:
+        events_path = self._events_path(run_id)
+        if events_base_size == 0 and events_base_digest == digest_bytes(b""):
+            if events_path.is_file() and events_path.stat().st_size > 0:
+                raise TransactionRecoveryError(
+                    "events append boundary mismatch",
+                    run_id=run_id,
+                    txn_id=txn_id,
+                )
+            return
+        if not events_path.is_file():
+            raise TransactionRecoveryError(
+                "events append boundary mismatch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        data = events_path.read_bytes()
+        if len(data) < events_base_size:
+            raise TransactionRecoveryError(
+                "events append boundary mismatch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        prefix = data[:events_base_size]
+        if digest_bytes(prefix) != events_base_digest:
+            raise TransactionRecoveryError(
+                "events append boundary mismatch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+
     def _repair_recoverable_trailing_fragment(
         self,
         run_id: str,
@@ -1104,10 +1195,19 @@ class FileRunStore:
         trailing = text.rsplit("\n", 1)[-1]
         if trailing.strip():
             try:
-                json.loads(trailing)
-                return
+                payload = json.loads(trailing)
             except json.JSONDecodeError:
                 pass
+            else:
+                if isinstance(payload, dict):
+                    self._require_journaled_event_fields(payload)
+                    self._atomically_publish_events_text(events_path, text + "\n")
+                    return
+                raise TransactionRecoveryError(
+                    "unrelated trailing event fragment in events.jsonl",
+                    run_id=run_id,
+                    txn_id=txn_id,
+                )
 
         event_count = int(normalized_events[0]["event_count"]) if normalized_events else 0
         existing_indices = (
@@ -1280,10 +1380,21 @@ class FileRunStore:
         run_id: str,
         txn_id: str,
         journal_events: list[dict[str, Any]],
+        *,
+        events_base_size: int = 0,
+        events_base_digest: str = "",
     ) -> None:
         normalized_events = self._normalize_journal_events(txn_id, journal_events)
         if not normalized_events:
             return
+
+        if journal_events:
+            self._verify_events_journal_boundary(
+                run_id,
+                txn_id,
+                events_base_size=events_base_size,
+                events_base_digest=events_base_digest,
+            )
 
         self._repair_recoverable_trailing_fragment(run_id, txn_id, journal_events)
 

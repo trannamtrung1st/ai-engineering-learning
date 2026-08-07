@@ -24,7 +24,7 @@ from tests.fixtures.persistence_review_worker import (
     commit_lock_writer_worker,
     load_config_reader_worker,
 )
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config
 from tests.unit.test_commit_crash_recovery import (
     _crash_before_appending_events,
     _find_txn_dir,
@@ -296,6 +296,7 @@ def test_recovery_rejects_out_of_order_transaction_event_indices(tmp_path: Path)
             ],
             "backups": [],
             "replaced": [],
+            **events_append_boundary(events_path),
         },
     )
 
