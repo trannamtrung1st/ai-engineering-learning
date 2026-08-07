@@ -1,4 +1,8 @@
-"""Journaled commit contract for run-store mutations."""
+"""Journaled commit contract for run-store mutations.
+
+Each commit appends zero or more audit events. Journaled events carry
+``txn_id``, ``event_index``, and ``event_count`` for crash-safe recovery.
+"""
 
 from __future__ import annotations
 

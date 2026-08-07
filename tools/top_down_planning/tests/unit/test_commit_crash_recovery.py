@@ -239,7 +239,15 @@ def test_false_replaced_journal_without_digest_mismatch_rolls_back(tmp_path: Pat
         "txn_id": "false-replaced",
         "status": "replacing",
         "files": [{"kind": "plan", "name": "plan.json", "digest": "deadbeef"}],
-        "events": [{"type": "test_commit", "run_id": "run-20260101T000601-000601", "txn_id": "false-replaced"}],
+        "events": [
+            {
+                "type": "test_commit",
+                "run_id": "run-20260101T000601-000601",
+                "txn_id": "false-replaced",
+                "event_index": 0,
+                "event_count": 1,
+            }
+        ],
         "backups": ["plan.json"],
         "replaced": ["plan.json"],
     }

@@ -16,12 +16,13 @@ from core_tools.persistence import (
     PersistenceError,
     RunNotFoundError,
     StoreRevisionConflictError,
+    TransactionRecoveryError,
     assert_next_revision,
-    atomic_write_bytes,
     atomic_write_json,
     atomic_write_text,
     digest_file,
     dump_yaml,
+    exclusive_create_bytes,
     exclusive_file_lock,
     load_yaml,
     require_revision_field,
@@ -74,6 +75,10 @@ _EMPTY_PRODUCTION: dict[str, Any] = {
     "blocker_report": None,
     "sub_tdps": None,
 }
+
+_KNOWN_TXN_STATUSES = frozenset(
+    {"prepared", "replacing", "appending_events", "committed"}
+)
 
 
 def _utc_now() -> str:
@@ -170,6 +175,8 @@ class FileRunStore:
         invocation: dict[str, Any],
         run_extras: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """Create a run atomically with its initial ``run_created`` audit event."""
+
         validated_run_id = validate_run_id(run_id)
         if not input_digest or not output_goal_digest or not context_spec_digest:
             raise PersistenceError(
@@ -186,75 +193,82 @@ class FileRunStore:
             raise PersistenceError("invocation metadata is required")
 
         final_run_dir = self.run_dir(validated_run_id)
-        if final_run_dir.exists():
-            raise PersistenceError(f"run already exists: {validated_run_id}")
-
-        staging_dir = self._assert_contained(self._root / f".creating-{validated_run_id}")
-        if staging_dir.exists():
-            shutil.rmtree(staging_dir)
-
-        plan_payload = _canonical_plan_payload(plan)
-        config_contract_digest = compute_config_contract_digest(resolved_config)
-        config_execution_digest = compute_config_execution_digest(resolved_config)
-        plan_digest = compute_plan_digest(plan_payload)
-        run_record = new_run_record(
-            validated_run_id,
-            input_digest=input_digest,
-            output_goal_digest=output_goal_digest,
-            config_contract_digest=config_contract_digest,
-            config_execution_digest=config_execution_digest,
-            plan_digest=plan_digest,
-            context_spec_digest=context_spec_digest,
-            context_snapshot_digest=context_snapshot_digest,
-            context_snapshot_binding=context_snapshot_binding,
-            phase=phase,
-            workspace=workspace,
+        creation_lock_path = self._assert_contained(
+            self._root / f".creating-{validated_run_id}.lock"
         )
-        if run_extras:
-            for key, value in run_extras.items():
-                run_record[key] = value
-        if not str(run_record.get("run_kind") or "").strip():
-            from top_down_planning.domain.run_kind import default_run_kind_for_phase
+        remove_creation_lock = False
+        with exclusive_file_lock(creation_lock_path):
+            if final_run_dir.exists():
+                raise PersistenceError(f"run already exists: {validated_run_id}")
 
-            run_record["run_kind"] = default_run_kind_for_phase(phase)
-
-        try:
-            staging_dir.mkdir(parents=True)
-            (staging_dir / "reviews").mkdir()
-            (staging_dir / "capabilities").mkdir()
-            (staging_dir / "artifacts").mkdir()
-            (staging_dir / AGENT_REQUESTS_DIR).mkdir()
-            atomic_write_text(
-                staging_dir / "resolved-config.yaml",
-                dump_yaml(resolved_config) + "\n",
-            )
-            atomic_write_json(staging_dir / "run.json", run_record)
-            atomic_write_json(staging_dir / "plan.json", plan_payload)
-            atomic_write_json(
-                staging_dir / "production.json",
-                production if production is not None else dict(_EMPTY_PRODUCTION),
-            )
-            atomic_write_json(staging_dir / "invocation.json", invocation)
-            (staging_dir / "events.jsonl").write_text("", encoding="utf-8")
-            staging_dir.rename(final_run_dir)
-        except Exception:
+            staging_dir = self._assert_contained(self._root / f".creating-{validated_run_id}")
             if staging_dir.exists():
                 shutil.rmtree(staging_dir)
-            raise
 
-        self.commit(
-            validated_run_id,
-            CommitSpec(
-                events=[
-                    {
-                        "type": "run_created",
-                        "run_id": validated_run_id,
-                        "revision": run_record["revision"],
-                        "phase": run_record["phase"],
-                    }
-                ]
-            ),
-        )
+            plan_payload = _canonical_plan_payload(plan)
+            config_contract_digest = compute_config_contract_digest(resolved_config)
+            config_execution_digest = compute_config_execution_digest(resolved_config)
+            plan_digest = compute_plan_digest(plan_payload)
+            run_record = new_run_record(
+                validated_run_id,
+                input_digest=input_digest,
+                output_goal_digest=output_goal_digest,
+                config_contract_digest=config_contract_digest,
+                config_execution_digest=config_execution_digest,
+                plan_digest=plan_digest,
+                context_spec_digest=context_spec_digest,
+                context_snapshot_digest=context_snapshot_digest,
+                context_snapshot_binding=context_snapshot_binding,
+                phase=phase,
+                workspace=workspace,
+            )
+            if run_extras:
+                for key, value in run_extras.items():
+                    run_record[key] = value
+            if not str(run_record.get("run_kind") or "").strip():
+                from top_down_planning.domain.run_kind import default_run_kind_for_phase
+
+                run_record["run_kind"] = default_run_kind_for_phase(phase)
+
+            run_created_event = {
+                "type": "run_created",
+                "run_id": validated_run_id,
+                "revision": run_record["revision"],
+                "phase": run_record["phase"],
+                "ts": _utc_now(),
+            }
+
+            try:
+                staging_dir.mkdir(parents=True)
+                (staging_dir / "reviews").mkdir()
+                (staging_dir / "capabilities").mkdir()
+                (staging_dir / "artifacts").mkdir()
+                (staging_dir / AGENT_REQUESTS_DIR).mkdir()
+                atomic_write_text(
+                    staging_dir / "resolved-config.yaml",
+                    dump_yaml(resolved_config) + "\n",
+                )
+                atomic_write_json(staging_dir / "run.json", run_record)
+                atomic_write_json(staging_dir / "plan.json", plan_payload)
+                atomic_write_json(
+                    staging_dir / "production.json",
+                    production if production is not None else dict(_EMPTY_PRODUCTION),
+                )
+                atomic_write_json(staging_dir / "invocation.json", invocation)
+                atomic_write_text(
+                    staging_dir / "events.jsonl",
+                    json.dumps(run_created_event, sort_keys=True) + "\n",
+                )
+                staging_dir.rename(final_run_dir)
+                remove_creation_lock = True
+            except Exception:
+                if staging_dir.exists():
+                    shutil.rmtree(staging_dir)
+                raise
+
+        if remove_creation_lock and creation_lock_path.exists():
+            creation_lock_path.unlink(missing_ok=True)
+
         return self.load_run(validated_run_id)
 
     @contextmanager
@@ -374,9 +388,10 @@ class FileRunStore:
         backups_dir.mkdir()
         staged_files: list[dict[str, Any]] = []
 
-        journal_events = [dict(event) for event in spec.events]
-        for event in journal_events:
-            event["txn_id"] = txn_id
+        journal_events = self._normalize_journal_events(
+            txn_id,
+            [dict(event) for event in spec.events],
+        )
 
         committed = False
         try:
@@ -559,43 +574,45 @@ class FileRunStore:
             path = self._events_path(validated_run_id)
             if not path.exists():
                 raise RunNotFoundError(validated_run_id, "events.jsonl missing", runs_root=self._root)
-            events: list[dict[str, Any]] = []
-            for line in path.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                events.append(json.loads(line))
+            events = self._load_event_payloads(validated_run_id)
+            self._validate_run_created_anchor(validated_run_id, events)
             return events
 
     def load_resolved_config(self, run_id: str) -> dict[str, Any]:
-        path = self.run_dir(run_id) / "resolved-config.yaml"
-        if not path.exists():
-            raise RunNotFoundError(
-                run_id,
-                "resolved-config.yaml missing",
-                runs_root=self._root,
-            )
-        payload = load_yaml(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            raise PersistenceError("resolved-config.yaml must contain a mapping")
-        return payload
+        with self._with_recovered_run(run_id) as validated_run_id:
+            path = self.run_dir(validated_run_id) / "resolved-config.yaml"
+            if not path.exists():
+                raise RunNotFoundError(
+                    validated_run_id,
+                    "resolved-config.yaml missing",
+                    runs_root=self._root,
+                )
+            payload = load_yaml(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise PersistenceError("resolved-config.yaml must contain a mapping")
+            return payload
 
     def save_invocation(self, run_id: str, invocation: dict[str, Any]) -> None:
-        """Persist CLI invocation metadata (presentation/store bootstrap; not digested)."""
+        """Persist CLI invocation metadata under the per-run commit lock.
 
-        path = self.run_dir(run_id) / "invocation.json"
-        if not path.parent.is_dir():
-            raise RunNotFoundError(run_id, "run directory missing", runs_root=self._root)
-        atomic_write_json(path, invocation)
+        Presentation-only metadata is not journaled or digested; callers that need
+        snapshot consistency with canonical files should use ``CommitSpec.invocation``.
+        """
+
+        with self._with_run_commit_lock(run_id) as validated_run_id:
+            path = self.run_dir(validated_run_id) / "invocation.json"
+            atomic_write_json(path, invocation)
 
     def load_invocation(self, run_id: str) -> dict[str, Any]:
-        path = self.run_dir(run_id) / "invocation.json"
-        if not path.exists():
-            raise RunNotFoundError(
-                run_id,
-                "invocation.json missing",
-                runs_root=self._root,
-            )
-        return self._read_json(path)
+        with self._with_recovered_run(run_id) as validated_run_id:
+            path = self.run_dir(validated_run_id) / "invocation.json"
+            if not path.exists():
+                raise RunNotFoundError(
+                    validated_run_id,
+                    "invocation.json missing",
+                    runs_root=self._root,
+                )
+            return self._read_json(path)
 
     def reviews_dir(self, run_id: str) -> Path:
         return self._assert_contained(self.run_dir(run_id) / "reviews")
@@ -691,7 +708,12 @@ class FileRunStore:
     ) -> str:
         path = self.artifact_path(run_id, snapshot_id, filename)
         path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_bytes(path, data)
+        try:
+            exclusive_create_bytes(path, data)
+        except FileExistsError as exc:
+            raise PersistenceError(
+                f"artifact snapshot already exists: {snapshot_id}/{filename}"
+            ) from exc
         return str(
             Path("artifacts")
             / validate_store_id(snapshot_id, label="snapshot_id")
@@ -758,18 +780,34 @@ class FileRunStore:
         run_dir: Path,
         staging_dir: Path,
     ) -> None:
+        txn_id = staging_dir.name.removeprefix(".txn-")
+        if not txn_id:
+            raise TransactionRecoveryError(
+                "invalid transaction directory name",
+                run_id=run_id,
+                txn_id="unknown",
+            )
+
         journal_path = staging_dir / "journal.json"
         if not journal_path.is_file():
-            shutil.rmtree(staging_dir)
-            return
+            raise TransactionRecoveryError(
+                "transaction journal missing",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
 
-        journal = self._read_json(journal_path)
+        journal = self._read_transaction_journal(journal_path, run_id, txn_id)
         status = str(journal.get("status") or "prepared")
-        txn_id = str(journal.get("txn_id") or "")
-        staged_files = list(journal.get("files") or [])
-        journal_events = list(journal.get("events") or [])
+        if status not in _KNOWN_TXN_STATUSES:
+            raise TransactionRecoveryError(
+                f"unknown transaction status: {status}",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        staged_files = self._journal_list_field(journal, "files", run_id, txn_id)
+        journal_events = self._journal_list_field(journal, "events", run_id, txn_id)
         backups_dir = staging_dir / "backups"
-        replaced = list(journal.get("replaced") or [])
+        replaced = self._journal_list_field(journal, "replaced", run_id, txn_id)
 
         if status in {"prepared", "replacing"}:
             all_names = {str(entry.get("name") or "") for entry in staged_files}
@@ -808,10 +846,222 @@ class FileRunStore:
             return
 
         if status == "committed":
+            if txn_id and journal_events:
+                self._ensure_events_appended(run_id, txn_id, journal_events)
             shutil.rmtree(staging_dir)
             return
 
-        shutil.rmtree(staging_dir)
+    def _validate_run_created_anchor(
+        self,
+        run_id: str,
+        events: list[dict[str, Any]],
+    ) -> None:
+        if not events:
+            raise PersistenceError("events.jsonl must contain a run_created event")
+        first = events[0]
+        if first.get("type") != "run_created":
+            raise PersistenceError("events.jsonl must begin with run_created")
+        if str(first.get("run_id") or "") != run_id:
+            raise PersistenceError("run_created run_id does not match run")
+
+    def _read_transaction_journal(
+        self,
+        journal_path: Path,
+        run_id: str,
+        expected_txn_id: str,
+    ) -> dict[str, Any]:
+        try:
+            payload = json.loads(journal_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise TransactionRecoveryError(
+                f"transaction journal is malformed: {exc}",
+                run_id=run_id,
+                txn_id=expected_txn_id,
+            ) from exc
+        if not isinstance(payload, dict):
+            raise TransactionRecoveryError(
+                "transaction journal must be a mapping",
+                run_id=run_id,
+                txn_id=expected_txn_id,
+            )
+        journal_txn_id = str(payload.get("txn_id") or "").strip()
+        if not journal_txn_id:
+            raise TransactionRecoveryError(
+                "transaction journal missing txn_id",
+                run_id=run_id,
+                txn_id=expected_txn_id,
+            )
+        if journal_txn_id != expected_txn_id:
+            raise TransactionRecoveryError(
+                "transaction journal txn_id mismatch with staging directory",
+                run_id=run_id,
+                txn_id=expected_txn_id,
+            )
+        return payload
+
+    def _journal_list_field(
+        self,
+        journal: dict[str, Any],
+        field: str,
+        run_id: str,
+        txn_id: str,
+    ) -> list[Any]:
+        raw = journal.get(field)
+        if raw is None:
+            return []
+        if not isinstance(raw, list):
+            raise TransactionRecoveryError(
+                f"transaction journal {field} must be a list",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        return list(raw)
+
+    def _normalize_journal_events(
+        self,
+        txn_id: str,
+        journal_events: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        event_count = len(journal_events)
+        normalized: list[dict[str, Any]] = []
+        for event_index, event in enumerate(journal_events):
+            payload = dict(event)
+            payload["txn_id"] = txn_id
+            payload["event_index"] = event_index
+            payload["event_count"] = event_count
+            normalized.append(payload)
+        return normalized
+
+    def _require_journaled_event_fields(self, payload: dict[str, Any]) -> None:
+        txn_id = payload.get("txn_id")
+        has_txn = txn_id is not None and str(txn_id).strip() != ""
+        has_index = "event_index" in payload
+        has_count = "event_count" in payload
+
+        if not has_txn and not has_index and not has_count:
+            return
+
+        if not has_txn or not has_index or not has_count:
+            missing: list[str] = []
+            if not has_txn:
+                missing.append("txn_id")
+            if not has_index:
+                missing.append("event_index")
+            if not has_count:
+                missing.append("event_count")
+            raise PersistenceError(
+                "events.jsonl journaled event missing required fields: "
+                + ", ".join(missing)
+            )
+
+        event_index = payload["event_index"]
+        event_count = payload["event_count"]
+        if not isinstance(event_index, int) or isinstance(event_index, bool):
+            raise PersistenceError("events.jsonl event_index must be an integer")
+        if not isinstance(event_count, int) or isinstance(event_count, bool):
+            raise PersistenceError("events.jsonl event_count must be an integer")
+        if event_count <= 0:
+            raise PersistenceError("events.jsonl event_count must be positive")
+        if event_index < 0 or event_index >= event_count:
+            raise PersistenceError(
+                "events.jsonl event_index must satisfy 0 <= event_index < event_count"
+            )
+
+    def _validate_event_log_integrity(self, events: list[dict[str, Any]]) -> None:
+        txn_indices: dict[str, set[int]] = {}
+        txn_counts: dict[str, int] = {}
+        seen: set[tuple[str, int]] = set()
+
+        for payload in events:
+            txn_id = payload.get("txn_id")
+            if txn_id is None or not str(txn_id).strip():
+                continue
+            normalized_txn_id = str(txn_id)
+            event_index = int(payload["event_index"])
+            event_count = int(payload["event_count"])
+            key = (normalized_txn_id, event_index)
+            if key in seen:
+                raise PersistenceError(
+                    f"duplicate journaled event {normalized_txn_id!r} index {event_index}"
+                )
+            seen.add(key)
+
+            previous_count = txn_counts.get(normalized_txn_id)
+            if previous_count is not None and previous_count != event_count:
+                raise PersistenceError(
+                    f"events.jsonl txn_id {normalized_txn_id!r} has inconsistent event_count"
+                )
+            txn_counts[normalized_txn_id] = event_count
+            txn_indices.setdefault(normalized_txn_id, set()).add(event_index)
+
+        for normalized_txn_id, indices in txn_indices.items():
+            expected = set(range(txn_counts[normalized_txn_id]))
+            if indices != expected:
+                raise PersistenceError(
+                    f"incomplete journaled event set for txn_id {normalized_txn_id!r}"
+                )
+
+    def _repair_events_file_trailing_partial_line(self, run_id: str) -> None:
+        events_path = self._events_path(run_id)
+        if not events_path.is_file():
+            return
+        text = events_path.read_text(encoding="utf-8")
+        if not text or text.endswith("\n"):
+            return
+        last_newline = text.rfind("\n")
+        if last_newline == -1:
+            events_path.write_text("", encoding="utf-8")
+            return
+        events_path.write_text(text[: last_newline + 1], encoding="utf-8")
+
+    def _load_event_payloads(
+        self,
+        run_id: str,
+        *,
+        validate_integrity: bool = True,
+    ) -> list[dict[str, Any]]:
+        self._repair_events_file_trailing_partial_line(run_id)
+        events_path = self._events_path(run_id)
+        if not events_path.is_file():
+            return []
+        events: list[dict[str, Any]] = []
+        for line in events_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise PersistenceError(
+                    f"failed to load malformed events.jsonl line in {events_path}: {exc}"
+                ) from exc
+            if not isinstance(payload, dict):
+                raise PersistenceError(
+                    f"events.jsonl line in {events_path} must be a JSON object"
+                )
+            self._require_journaled_event_fields(payload)
+            events.append(payload)
+        if validate_integrity:
+            self._validate_event_log_integrity(events)
+        return events
+
+    def _existing_transaction_event_indices(
+        self,
+        run_id: str,
+        txn_id: str,
+        *,
+        expected_event_count: int,
+    ) -> set[int]:
+        indices: set[int] = set()
+        for payload in self._load_event_payloads(run_id, validate_integrity=False):
+            if str(payload.get("txn_id") or "") != txn_id:
+                continue
+            event_count = int(payload["event_count"])
+            if event_count != expected_event_count:
+                raise PersistenceError(
+                    f"events.jsonl txn_id {txn_id!r} has inconsistent event_count"
+                )
+            indices.add(int(payload["event_index"]))
+        return indices
 
     def _destination_for_staged_entry(self, run_dir: Path, entry: dict[str, Any]) -> Path:
         if entry.get("kind") == "review":
@@ -886,24 +1136,30 @@ class FileRunStore:
         txn_id: str,
         journal_events: list[dict[str, Any]],
     ) -> None:
-        events_path = self._events_path(run_id)
-        existing_txn_ids: set[str] = set()
-        if events_path.is_file():
-            for line in events_path.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                payload = json.loads(line)
-                event_txn_id = payload.get("txn_id")
-                if event_txn_id is not None:
-                    existing_txn_ids.add(str(event_txn_id))
-
-        if txn_id in existing_txn_ids:
+        normalized_events = self._normalize_journal_events(txn_id, journal_events)
+        if not normalized_events:
             return
 
+        event_count = int(normalized_events[0]["event_count"])
+        existing_indices = self._existing_transaction_event_indices(
+            run_id,
+            txn_id,
+            expected_event_count=event_count,
+        )
+        if existing_indices >= set(range(event_count)):
+            return
+
+        events_path = self._events_path(run_id)
+        missing_events = [
+            event
+            for event in normalized_events
+            if int(event["event_index"]) not in existing_indices
+        ]
+        missing_events.sort(key=lambda event: int(event["event_index"]))
+
         with events_path.open("a", encoding="utf-8") as handle:
-            for event in journal_events:
+            for event in missing_events:
                 payload = dict(event)
-                payload.setdefault("txn_id", txn_id)
                 payload.setdefault("ts", _utc_now())
                 handle.write(json.dumps(payload, sort_keys=True) + "\n")
 

@@ -4,6 +4,7 @@ from core_tools.persistence import (
     PersistenceError,
     RunNotFoundError,
     StoreRevisionConflictError,
+    TransactionRecoveryError,
 )
 
 from top_down_planning.persistence.digests import (
@@ -39,6 +40,7 @@ __all__ = [
     "RunNotFoundError",
     "RunStore",
     "StoreRevisionConflictError",
+    "TransactionRecoveryError",
     "CURRENT_RUN_SCHEMA_VERSION",
     "PLAN_SCHEMA_VERSION",
     "UNSUPPORTED_PLAN_SCHEMA_MESSAGE",

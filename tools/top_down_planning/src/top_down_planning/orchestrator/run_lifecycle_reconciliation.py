@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from core_tools.persistence import try_exclusive_file_lock
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import (
     is_run_orchestrator_alive,
@@ -140,7 +141,11 @@ def cleanup_staging_dirs(store: RunStore) -> list[str]:
         path = root_path / name
         if not path.is_dir():
             continue
-        shutil.rmtree(path, ignore_errors=True)
+        lock_path = root_path / f"{name}.lock"
+        with try_exclusive_file_lock(lock_path) as acquired:
+            if not acquired:
+                continue
+            shutil.rmtree(path, ignore_errors=True)
         if not path.exists():
             removed.append(name)
     return removed

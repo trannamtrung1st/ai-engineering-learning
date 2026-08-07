@@ -28,7 +28,7 @@ class RunStore(Protocol):
         workspace: str,
         invocation: dict[str, Any],
     ) -> dict[str, Any]:
-        """Create a new run directory and initial artifacts."""
+        """Create a new run directory, including the initial ``run_created`` audit event."""
 
     def load_run(self, run_id: str) -> dict[str, Any]:
         """Load the current run record under the per-run commit lock."""
@@ -52,7 +52,13 @@ class RunStore(Protocol):
         """Append a single audit event to events.jsonl."""
 
     def load_resolved_config(self, run_id: str) -> dict[str, Any]:
-        """Load the resolved configuration snapshot for a run."""
+        """Load the resolved configuration snapshot under the per-run commit lock."""
+
+    def load_invocation(self, run_id: str) -> dict[str, Any]:
+        """Load CLI invocation metadata under the per-run commit lock."""
+
+    def save_invocation(self, run_id: str, invocation: dict[str, Any]) -> None:
+        """Persist presentation-only invocation metadata under the per-run commit lock."""
 
     def save_review(
         self,
@@ -109,4 +115,7 @@ class RunStore(Protocol):
         filename: str,
         data: bytes,
     ) -> str:
-        """Write artifact bytes under an immutable snapshot id and return the relative ref."""
+        """Write artifact bytes under an immutable snapshot id and return the relative ref.
+
+        Raises ``PersistenceError`` when the snapshot path already exists.
+        """

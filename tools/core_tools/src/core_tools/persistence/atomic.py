@@ -8,6 +8,18 @@ from pathlib import Path
 from typing import Any
 
 
+def exclusive_create_bytes(path: Path, data: bytes) -> None:
+    """Create ``path`` with ``data``; fail if the file already exists."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    fd = os.open(path, flags, 0o644)
+    try:
+        os.write(fd, data)
+    finally:
+        os.close(fd)
+
+
 def atomic_write_bytes(path: Path, data: bytes) -> None:
     """Write bytes via a temp file and atomic replace."""
     path.parent.mkdir(parents=True, exist_ok=True)
