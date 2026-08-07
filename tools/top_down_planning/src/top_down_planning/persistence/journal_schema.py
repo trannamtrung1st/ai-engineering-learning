@@ -10,6 +10,13 @@ from core_tools.persistence import TransactionRecoveryError
 _KNOWN_FILE_KINDS = frozenset(
     {"run", "plan", "production", "resolved_config", "invocation", "review"}
 )
+_KIND_CANONICAL_NAMES = {
+    "run": "run.json",
+    "plan": "plan.json",
+    "production": "production.json",
+    "resolved_config": "resolved-config.yaml",
+    "invocation": "invocation.json",
+}
 _REQUIRED_JOURNAL_FIELDS = ("status", "files", "events", "backups", "replaced")
 
 
@@ -151,6 +158,76 @@ def _parse_event_entries(
     return parsed
 
 
+def validate_parsed_recovery_journal_invariants(
+    parsed: ParsedRecoveryJournal,
+    *,
+    run_id: str,
+    txn_id: str,
+) -> None:
+    seen_names: set[str] = set()
+    for index, entry in enumerate(parsed.files):
+        if entry.name in seen_names:
+            raise _recovery_error(
+                f"transaction journal files contains duplicate file name {entry.name!r}",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        seen_names.add(entry.name)
+
+        if entry.kind == "review":
+            expected_name = f"review__{entry.review_id}.json"
+            if entry.name != expected_name:
+                raise _recovery_error(
+                    f"transaction journal files[{index}] review name must be {expected_name!r}",
+                    run_id=run_id,
+                    txn_id=txn_id,
+                )
+        else:
+            expected_name = _KIND_CANONICAL_NAMES.get(entry.kind)
+            if expected_name is None or entry.name != expected_name:
+                raise _recovery_error(
+                    f"transaction journal files[{index}] kind/name mismatch: "
+                    f"kind={entry.kind!r}, name={entry.name!r}",
+                    run_id=run_id,
+                    txn_id=txn_id,
+                )
+
+    if len(parsed.backups) != len(set(parsed.backups)):
+        raise _recovery_error(
+            "transaction journal backups contains duplicate names",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+    if len(parsed.replaced) != len(set(parsed.replaced)):
+        raise _recovery_error(
+            "transaction journal replaced contains duplicate names",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+
+    for name in parsed.backups:
+        if name not in seen_names:
+            raise _recovery_error(
+                f"transaction journal backups references unknown file {name!r}",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+    for name in parsed.replaced:
+        if name not in seen_names:
+            raise _recovery_error(
+                f"transaction journal replaced references unknown file {name!r}",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+
+    if parsed.status == "prepared" and (parsed.backups or parsed.replaced):
+        raise _recovery_error(
+            "prepared transaction journal cannot list replaced or backup files",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+
+
 def parse_recovery_journal(
     journal: dict[str, Any],
     *,
@@ -210,7 +287,7 @@ def parse_recovery_journal(
         txn_id=expected_txn_id,
     )
 
-    return ParsedRecoveryJournal(
+    parsed = ParsedRecoveryJournal(
         txn_id=expected_txn_id,
         status=status,
         files=files,
@@ -218,6 +295,8 @@ def parse_recovery_journal(
         events=events,
         replaced=replaced,
     )
+    validate_parsed_recovery_journal_invariants(parsed, run_id=run_id, txn_id=expected_txn_id)
+    return parsed
 
 
 def journal_file_entry_as_dict(entry: JournalFileEntry) -> dict[str, Any]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import uuid
 from collections.abc import Iterator
@@ -814,6 +815,15 @@ class FileRunStore:
         backups_dir = staging_dir / "backups"
         replaced = parsed.replaced
 
+        for name in parsed.backups:
+            backup_path = backups_dir / name
+            if not backup_path.is_file():
+                raise TransactionRecoveryError(
+                    f"transaction journal backup missing on disk: {name}",
+                    run_id=run_id,
+                    txn_id=txn_id,
+                )
+
         if status in {"prepared", "replacing"}:
             all_names = {str(entry.get("name") or "") for entry in staged_files}
             replaced_names = {str(name) for name in replaced}
@@ -955,7 +965,7 @@ class FileRunStore:
             )
 
     def _validate_event_log_integrity(self, events: list[dict[str, Any]]) -> None:
-        txn_indices: dict[str, set[int]] = {}
+        txn_indices: dict[str, list[int]] = {}
         txn_counts: dict[str, int] = {}
         seen: set[tuple[str, int]] = set()
 
@@ -979,14 +989,20 @@ class FileRunStore:
                     f"events.jsonl txn_id {normalized_txn_id!r} has inconsistent event_count"
                 )
             txn_counts[normalized_txn_id] = event_count
-            txn_indices.setdefault(normalized_txn_id, set()).add(event_index)
+            txn_indices.setdefault(normalized_txn_id, []).append(event_index)
 
-        for normalized_txn_id, indices in txn_indices.items():
-            expected = set(range(txn_counts[normalized_txn_id]))
-            if indices != expected:
+        for normalized_txn_id, ordered in txn_indices.items():
+            event_count = txn_counts[normalized_txn_id]
+            expected = list(range(event_count))
+            if ordered == expected:
+                continue
+            if set(ordered) == set(expected):
                 raise PersistenceError(
-                    f"incomplete journaled event set for txn_id {normalized_txn_id!r}"
+                    f"journaled events for txn_id {normalized_txn_id!r} are out of physical order"
                 )
+            raise PersistenceError(
+                f"incomplete journaled event set for txn_id {normalized_txn_id!r}"
+            )
 
     def _parse_events_text(self, text: str, events_path: Path) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
@@ -1029,7 +1045,7 @@ class FileRunStore:
         self._require_journaled_event_fields(payload)
         return payload
 
-    def _truncate_recoverable_trailing_fragment(self, run_id: str) -> None:
+    def _repair_recoverable_trailing_fragment(self, run_id: str, txn_id: str) -> None:
         events_path = self._events_path(run_id)
         if not events_path.is_file():
             return
@@ -1042,12 +1058,27 @@ class FileRunStore:
                 json.loads(trailing)
                 return
             except json.JSONDecodeError:
-                pass
+                if txn_id not in trailing:
+                    raise TransactionRecoveryError(
+                        "unrelated trailing event fragment in events.jsonl",
+                        run_id=run_id,
+                        txn_id=txn_id,
+                    )
         last_newline = text.rfind("\n")
-        if last_newline == -1:
-            events_path.write_text("", encoding="utf-8")
-            return
-        events_path.write_text(text[: last_newline + 1], encoding="utf-8")
+        repaired = "" if last_newline == -1 else text[: last_newline + 1]
+        self._atomically_publish_events_text(events_path, repaired)
+
+    def _atomically_publish_events_text(self, events_path: Path, text: str) -> None:
+        tmp_path = events_path.with_name(
+            f".{events_path.name}.repair-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        )
+        try:
+            tmp_path.write_text(text, encoding="utf-8")
+            if tmp_path.read_text(encoding="utf-8") != text:
+                raise PersistenceError("temporary events repair write incomplete")
+            tmp_path.replace(events_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     def _load_event_payloads(
         self,
@@ -1167,7 +1198,7 @@ class FileRunStore:
         if not normalized_events:
             return
 
-        self._truncate_recoverable_trailing_fragment(run_id)
+        self._repair_recoverable_trailing_fragment(run_id, txn_id)
 
         event_count = int(normalized_events[0]["event_count"])
         existing_indices = self._existing_transaction_event_indices(

@@ -23,21 +23,21 @@ def exclusive_create_bytes(path: Path, data: bytes) -> None:
     """Create ``path`` with ``data``; fail if the file already exists."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(path))
-
     tmp_path = path.with_name(f".{path.name}.create-{os.getpid()}-{uuid.uuid4().hex[:8]}")
     try:
-        tmp_path.write_bytes(data)
+        fd = os.open(str(tmp_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        try:
+            _write_fd_all(fd, data)
+        finally:
+            os.close(fd)
         if tmp_path.read_bytes() != data:
             raise OSError("temporary artifact write incomplete")
-        tmp_path.replace(path)
+        try:
+            os.link(tmp_path, path)
+        except FileExistsError as exc:
+            raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(path)) from exc
         if path.read_bytes() != data:
             raise OSError("published artifact content mismatch")
-    except Exception:
-        if path.exists() and path.read_bytes() != data:
-            path.unlink(missing_ok=True)
-        raise
     finally:
         tmp_path.unlink(missing_ok=True)
 

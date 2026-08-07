@@ -48,22 +48,54 @@ def test_exclusive_create_bytes_leaves_no_partial_final_artifact_on_write_failur
     tmp_path: Path,
 ) -> None:
     from core_tools.persistence import exclusive_create_bytes
+    from core_tools.persistence import atomic as atomic_module
 
     path = tmp_path / "artifact.bin"
-    original_write_bytes = Path.write_bytes
 
-    def fail_temp_write(self: Path, data: bytes) -> int:
-        if self.name.startswith(".artifact.bin.create"):
-            raise OSError("simulated incomplete write")
-        return original_write_bytes(self, data)
-
-    with patch.object(Path, "write_bytes", fail_temp_write):
+    with patch.object(
+        atomic_module,
+        "_write_fd_all",
+        side_effect=OSError("simulated incomplete write"),
+    ):
         with pytest.raises(OSError, match="simulated incomplete write"):
             exclusive_create_bytes(path, b"payload")
 
     assert not path.exists()
     exclusive_create_bytes(path, b"payload")
     assert path.read_bytes() == b"payload"
+
+
+def test_exclusive_create_bytes_concurrent_publish_one_winner(tmp_path: Path) -> None:
+    import multiprocessing
+
+    from core_tools.persistence import exclusive_create_bytes
+    from tests.fixtures.artifact_exclusive_worker import exclusive_create_worker
+
+    artifact_path = tmp_path / "artifact.bin"
+    ctx = multiprocessing.get_context("fork")
+    result_queue: multiprocessing.Queue[str] = ctx.Queue()
+    barrier = ctx.Barrier(2)
+    processes = [
+        ctx.Process(
+            target=exclusive_create_worker,
+            args=(str(artifact_path), payload, result_queue, barrier),
+        )
+        for payload in (b"payload-a", b"payload-b")
+    ]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join()
+        assert process.exitcode == 0
+
+    results = sorted(result_queue.get(timeout=30) for _ in range(2))
+    assert results == ["conflict", "ok"]
+    assert artifact_path.is_file()
+    assert artifact_path.read_bytes() in {b"payload-a", b"payload-b"}
+    assert not list(tmp_path.glob(".*artifact.bin.create-*"))
+
+    with pytest.raises(FileExistsError):
+        exclusive_create_bytes(artifact_path, b"payload-c")
 
 
 def test_digest_text_normalizes_newlines() -> None:
