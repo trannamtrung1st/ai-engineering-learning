@@ -39,10 +39,20 @@ class RunNotFoundError(PersistenceError):
         super().__init__(message)
 
 
+def parse_revision_value(value: Any, label: str) -> int:
+    """Return a non-negative integer revision; reject coercible non-integers."""
+
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise PersistenceError(f"{label} revision must be a non-negative integer")
+    if value < 0:
+        raise PersistenceError(f"{label} revision must be a non-negative integer")
+    return value
+
+
 def require_revision_field(payload: dict[str, Any], label: str) -> int:
     if "revision" not in payload:
         raise PersistenceError(f"{label} payload must include an explicit revision")
-    return int(payload["revision"])
+    return parse_revision_value(payload["revision"], label)
 
 
 def assert_next_revision(expected_revision: int, next_revision: int) -> None:

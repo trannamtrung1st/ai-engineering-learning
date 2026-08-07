@@ -27,6 +27,7 @@ from core_tools.persistence import (
     exclusive_create_bytes,
     exclusive_file_lock,
     load_yaml,
+    parse_revision_value,
     require_revision_field,
 )
 from top_down_planning.persistence.capabilities import new_capability_record
@@ -51,8 +52,6 @@ from top_down_planning.domain.plan_schema import (
 )
 from top_down_planning.persistence.run_schema import (
     CURRENT_RUN_SCHEMA_VERSION,
-    validate_run_digests,
-    validate_run_schema_version,
 )
 from top_down_planning.config.binding_validation import validate_context_snapshot_binding
 from top_down_planning.domain.run_lifecycle import (
@@ -60,10 +59,13 @@ from top_down_planning.domain.run_lifecycle import (
     validate_run_lifecycle_invariants,
 )
 from top_down_planning.domain.session_recovery_state import validate_session_recovery_fields
+from top_down_planning.persistence.persisted_validation import (
+    reject_protected_run_extras_keys,
+    validate_persisted_review_binding,
+    validate_persisted_run,
+)
 from top_down_planning.persistence.session_bindings import (
-    normalize_sessions_for_runtime,
     initial_structured_sessions,
-    normalize_review_record_for_runtime,
     review_record_for_persistence,
     sessions_for_persistence,
 )
@@ -229,6 +231,7 @@ class FileRunStore:
                 workspace=workspace,
             )
             if run_extras:
+                reject_protected_run_extras_keys(run_extras)
                 for key, value in run_extras.items():
                     run_record[key] = value
             if not str(run_record.get("run_kind") or "").strip():
@@ -319,10 +322,14 @@ class FileRunStore:
         spec: CommitSpec,
     ) -> dict[str, Any]:
         if spec.run is not None:
-            expected = spec.run_expected_revision
-            if expected is None:
+            expected_raw = spec.run_expected_revision
+            if expected_raw is None:
                 raise PersistenceError("commit with run payload requires run_expected_revision")
-            current_revision = int(self._read_run(validated_run_id)["revision"])
+            expected = parse_revision_value(expected_raw, "run")
+            current_revision = parse_revision_value(
+                self._read_run(validated_run_id)["revision"],
+                "run",
+            )
             if current_revision != expected:
                 raise StoreRevisionConflictError(expected, current_revision)
             next_revision = require_revision_field(spec.run, "run")
@@ -330,15 +337,22 @@ class FileRunStore:
             run_payload = dict(spec.run)
             run_payload["revision"] = next_revision
             run_payload["updated_at"] = _utc_now()
-            run_payload["sessions"] = sessions_for_persistence(run_payload.get("sessions"))
+            if "sessions" in run_payload:
+                run_payload["sessions"] = sessions_for_persistence(run_payload["sessions"])
+            else:
+                run_payload["sessions"] = self._read_run(validated_run_id)["sessions"]
         else:
             run_payload = None
 
         if spec.plan is not None:
-            expected = spec.plan_expected_revision
-            if expected is None:
+            expected_raw = spec.plan_expected_revision
+            if expected_raw is None:
                 raise PersistenceError("commit with plan payload requires plan_expected_revision")
-            current_revision = int(self._read_plan(validated_run_id)["revision"])
+            expected = parse_revision_value(expected_raw, "plan")
+            current_revision = parse_revision_value(
+                self._read_plan(validated_run_id)["revision"],
+                "plan",
+            )
             if current_revision != expected:
                 raise StoreRevisionConflictError(expected, current_revision)
             next_revision = require_revision_field(spec.plan, "plan")
@@ -349,12 +363,16 @@ class FileRunStore:
             plan_payload = None
 
         if spec.production is not None:
-            expected = spec.production_expected_revision
-            if expected is None:
+            expected_raw = spec.production_expected_revision
+            if expected_raw is None:
                 raise PersistenceError(
                     "commit with production payload requires production_expected_revision"
                 )
-            current_revision = int(self._read_production(validated_run_id)["revision"])
+            expected = parse_revision_value(expected_raw, "production")
+            current_revision = parse_revision_value(
+                self._read_production(validated_run_id)["revision"],
+                "production",
+            )
             if current_revision != expected:
                 raise StoreRevisionConflictError(expected, current_revision)
             next_revision = require_revision_field(spec.production, "production")
@@ -373,16 +391,20 @@ class FileRunStore:
             review_payload = review_record_for_persistence(dict(review))
             expected_review_revision = spec.review_expected_revisions.get(validated_review_id)
             if expected_review_revision is not None:
+                expected_parsed = parse_revision_value(
+                    expected_review_revision,
+                    "review",
+                )
                 current_review_revision = self._read_review_revision(
                     validated_run_id,
                     validated_review_id,
                 )
-                if current_review_revision != int(expected_review_revision):
+                if current_review_revision != expected_parsed:
                     raise StoreRevisionConflictError(
-                        int(expected_review_revision),
+                        expected_parsed,
                         current_review_revision,
                     )
-                next_review_revision = int(expected_review_revision) + 1
+                next_review_revision = expected_parsed + 1
                 review_payload["revision"] = next_review_revision
             review_payloads.append((validated_review_id, review_payload))
 
@@ -404,17 +426,19 @@ class FileRunStore:
             events_base_size = len(events_bytes)
             events_base_digest = digest_bytes(events_bytes)
 
-        staging_dir = self._assert_contained(run_dir / f".txn-{txn_id}")
-        journal_path = staging_dir / "journal.json"
-        backups_dir = staging_dir / "backups"
-        staging_dir.mkdir()
-        backups_dir.mkdir()
+        stage_dir = self._assert_contained(run_dir / f".stage-{txn_id}")
+        journal_path = stage_dir / "journal.json"
+        backups_dir = stage_dir / "backups"
         staged_files: list[dict[str, Any]] = []
 
+        published = False
         committed = False
+        txn_dir: Path | None = None
         try:
+            stage_dir.mkdir()
+            backups_dir.mkdir()
             if run_payload is not None:
-                staged_path = staging_dir / "run.json"
+                staged_path = stage_dir / "run.json"
                 dest = run_dir / "run.json"
                 atomic_write_json(staged_path, run_payload)
                 staged_files.append(
@@ -427,7 +451,7 @@ class FileRunStore:
                 )
 
             if plan_payload is not None:
-                staged_path = staging_dir / "plan.json"
+                staged_path = stage_dir / "plan.json"
                 dest = run_dir / "plan.json"
                 atomic_write_json(staged_path, plan_payload)
                 staged_files.append(
@@ -440,7 +464,7 @@ class FileRunStore:
                 )
 
             if production_payload is not None:
-                staged_path = staging_dir / "production.json"
+                staged_path = stage_dir / "production.json"
                 dest = run_dir / "production.json"
                 atomic_write_json(staged_path, production_payload)
                 staged_files.append(
@@ -453,7 +477,7 @@ class FileRunStore:
                 )
 
             if spec.resolved_config is not None:
-                staged_path = staging_dir / "resolved-config.yaml"
+                staged_path = stage_dir / "resolved-config.yaml"
                 dest = run_dir / "resolved-config.yaml"
                 atomic_write_text(
                     staged_path,
@@ -469,7 +493,7 @@ class FileRunStore:
                 )
 
             if spec.invocation is not None:
-                staged_path = staging_dir / "invocation.json"
+                staged_path = stage_dir / "invocation.json"
                 dest = run_dir / "invocation.json"
                 atomic_write_json(staged_path, spec.invocation)
                 staged_files.append(
@@ -483,7 +507,7 @@ class FileRunStore:
 
             for review_id, review_payload in review_payloads:
                 staged_name = f"review__{review_id}.json"
-                staged_path = staging_dir / staged_name
+                staged_path = stage_dir / staged_name
                 reviews_dir = self.reviews_dir(validated_run_id)
                 dest = reviews_dir / f"{review_id}.json"
                 atomic_write_json(staged_path, review_payload)
@@ -509,11 +533,17 @@ class FileRunStore:
             }
             atomic_write_json(journal_path, journal)
 
+            txn_dir = self._assert_contained(run_dir / f".txn-{txn_id}")
+            stage_dir.rename(txn_dir)
+            published = True
+            journal_path = txn_dir / "journal.json"
+            backups_dir = txn_dir / "backups"
+
             journal["status"] = "replacing"
             atomic_write_json(journal_path, journal)
 
             for entry in staged_files:
-                staged_path = staging_dir / entry["name"]
+                staged_path = txn_dir / entry["name"]
                 if entry["kind"] == "review":
                     reviews_dir = self.reviews_dir(validated_run_id)
                     reviews_dir.mkdir(parents=True, exist_ok=True)
@@ -535,16 +565,17 @@ class FileRunStore:
 
             if journal_events:
                 events_path = self._events_path(validated_run_id)
-                with events_path.open("a", encoding="utf-8") as handle:
-                    for event in journal_events:
-                        handle.write(self._serialize_journal_event_line(dict(event)))
+                with events_path.open("ab") as handle:
+                    handle.write(self._journal_events_suffix_bytes(journal_events))
 
             journal["status"] = "committed"
             atomic_write_json(journal_path, journal)
             committed = True
         finally:
-            if committed and staging_dir.exists():
-                shutil.rmtree(staging_dir)
+            if committed and txn_dir is not None:
+                self._retire_transaction_dir(run_dir, txn_dir)
+            elif not published and stage_dir.exists():
+                shutil.rmtree(stage_dir)
 
         result: dict[str, Any] = {"ok": True}
         if run_payload is not None:
@@ -556,26 +587,29 @@ class FileRunStore:
         return result
 
     def save_run(self, run_id: str, run: dict[str, Any], expected_revision: int) -> int:
+        expected = parse_revision_value(expected_revision, "run")
         payload = dict(run)
         binding = payload.get("context_snapshot_binding")
         if binding is not None:
             validate_context_snapshot_binding(binding)
-        payload["sessions"] = sessions_for_persistence(payload.get("sessions"))
+        if "sessions" in payload:
+            payload["sessions"] = sessions_for_persistence(payload["sessions"])
         next_revision = require_revision_field(payload, "run")
-        assert_next_revision(expected_revision, next_revision)
+        assert_next_revision(expected, next_revision)
         self.commit(
             run_id,
-            CommitSpec(run=payload, run_expected_revision=expected_revision),
+            CommitSpec(run=payload, run_expected_revision=expected),
         )
         return next_revision
 
     def save_plan(self, run_id: str, plan: dict[str, Any], expected_revision: int) -> int:
+        expected = parse_revision_value(expected_revision, "plan")
         next_revision = require_revision_field(dict(plan), "plan")
         payload = _canonical_plan_payload(plan)
-        assert_next_revision(expected_revision, next_revision)
+        assert_next_revision(expected, next_revision)
         self.commit(
             run_id,
-            CommitSpec(plan=payload, plan_expected_revision=expected_revision),
+            CommitSpec(plan=payload, plan_expected_revision=expected),
         )
         return next_revision
 
@@ -585,14 +619,15 @@ class FileRunStore:
     def save_production(
         self, run_id: str, production: dict[str, Any], expected_revision: int
     ) -> int:
+        expected = parse_revision_value(expected_revision, "production")
         payload = dict(production)
         next_revision = require_revision_field(payload, "production")
-        assert_next_revision(expected_revision, next_revision)
+        assert_next_revision(expected, next_revision)
         self.commit(
             run_id,
             CommitSpec(
                 production=payload,
-                production_expected_revision=expected_revision,
+                production_expected_revision=expected,
             ),
         )
         return next_revision
@@ -631,6 +666,8 @@ class FileRunStore:
         """
 
         with self._with_recovered_run(run_id) as validated_run_id:
+            if not isinstance(invocation, dict):
+                raise PersistenceError("invocation metadata must be a mapping")
             path = self.run_dir(validated_run_id) / "invocation.json"
             atomic_write_json(path, invocation)
 
@@ -643,7 +680,7 @@ class FileRunStore:
                     "invocation.json missing",
                     runs_root=self._root,
                 )
-            return self._read_json(path)
+            return self._read_json_object(path, label="invocation.json")
 
     def reviews_dir(self, run_id: str) -> Path:
         return self._assert_contained(self.run_dir(run_id) / "reviews")
@@ -670,8 +707,9 @@ class FileRunStore:
         session_instance_id: str | None = None,
         generation: int | None = None,
     ) -> tuple[str, dict[str, Any], str]:
+        validated_run_id = self._require_existing_run(run_id)
         capability_id, record, raw_secret = new_capability_record(
-            run_id=run_id,
+            run_id=validated_run_id,
             role=role,
             phase=phase,
             allowed_ops=allowed_ops,
@@ -681,36 +719,42 @@ class FileRunStore:
             session_instance_id=session_instance_id,
             generation=generation,
         )
-        capabilities_dir = self.capabilities_dir(run_id)
+        capabilities_dir = self.capabilities_dir(validated_run_id)
         capabilities_dir.mkdir(parents=True, exist_ok=True)
         atomic_write_json(capabilities_dir / f"{capability_id}.json", record)
         return capability_id, record, raw_secret
 
     def load_capability(self, run_id: str, capability_id: str) -> dict[str, Any]:
+        validated_run_id = self._require_existing_run(run_id)
         validated_id = validate_store_id(capability_id, label="capability_id")
-        path = self.capabilities_dir(run_id) / f"{validated_id}.json"
+        path = self.capabilities_dir(validated_run_id) / f"{validated_id}.json"
         if not path.exists():
             raise RunNotFoundError(
-                run_id,
+                validated_run_id,
                 f"capability {validated_id} missing",
                 runs_root=self._root,
             )
-        return self._read_json(path)
+        return self._read_json_object(path, label=f"capability {validated_id}")
 
     def list_capabilities(self, run_id: str) -> list[dict[str, Any]]:
-        capabilities_dir = self.capabilities_dir(run_id)
+        validated_run_id = self._require_existing_run(run_id)
+        capabilities_dir = self.capabilities_dir(validated_run_id)
         if not capabilities_dir.is_dir():
             return []
         records: list[dict[str, Any]] = []
         for path in sorted(capabilities_dir.glob("*.json")):
-            records.append(self._read_json(path))
+            records.append(self._read_json_object(path, label=f"capability {path.stem}"))
         return records
 
     def revoke_capability(self, run_id: str, capability_id: str) -> None:
-        record = self.load_capability(run_id, capability_id)
+        validated_run_id = self._require_existing_run(run_id)
+        record = self.load_capability(validated_run_id, capability_id)
         record["revoked"] = True
         validated_id = validate_store_id(capability_id, label="capability_id")
-        atomic_write_json(self.capabilities_dir(run_id) / f"{validated_id}.json", record)
+        atomic_write_json(
+            self.capabilities_dir(validated_run_id) / f"{validated_id}.json",
+            record,
+        )
 
     def revoke_capabilities_for_session(self, run_id: str, session_id: str) -> None:
         normalized_session_id = str(session_id).strip()
@@ -737,7 +781,8 @@ class FileRunStore:
         filename: str,
         data: bytes,
     ) -> str:
-        path = self.artifact_path(run_id, snapshot_id, filename)
+        validated_run_id = self._require_existing_run(run_id)
+        path = self.artifact_path(validated_run_id, snapshot_id, filename)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
             exclusive_create_bytes(path, data)
@@ -764,7 +809,10 @@ class FileRunStore:
         validated_review_id = validate_store_id(str(review_id), label="review_id")
         review_expected: dict[str, int] = {}
         if expected_revision is not None:
-            review_expected[validated_review_id] = int(expected_revision)
+            review_expected[validated_review_id] = parse_revision_value(
+                expected_revision,
+                "review",
+            )
         self.commit(
             run_id,
             CommitSpec(
@@ -783,7 +831,9 @@ class FileRunStore:
                     f"review {validated_review_id} missing",
                     runs_root=self._root,
                 )
-            return normalize_review_record_for_runtime(self._read_json(path))
+            return validate_persisted_review_binding(
+                self._read_json_object(path, label=f"review {validated_review_id}")
+            )
 
     def list_reviews(self, run_id: str) -> list[dict[str, Any]]:
         with self._with_recovered_run(run_id) as validated_run_id:
@@ -792,7 +842,11 @@ class FileRunStore:
                 return []
             reviews: list[dict[str, Any]] = []
             for path in sorted(reviews_dir.glob("*.json")):
-                reviews.append(normalize_review_record_for_runtime(self._read_json(path)))
+                reviews.append(
+                    validate_persisted_review_binding(
+                        self._read_json_object(path, label=f"review {path.stem}")
+                    )
+                )
             return reviews
 
     def _recover_incomplete_transactions(self, run_id: str) -> None:
@@ -800,18 +854,29 @@ class FileRunStore:
         run_dir = self.run_dir(run_id)
         if not run_dir.is_dir():
             return
-        for staging_dir in sorted(run_dir.glob(".txn-*")):
-            if not staging_dir.is_dir():
-                continue
-            self._recover_transaction_dir(run_id, run_dir, staging_dir)
+        for stage_dir in sorted(run_dir.glob(".stage-*")):
+            if stage_dir.is_dir():
+                shutil.rmtree(stage_dir, ignore_errors=True)
+        for retired_dir in sorted(run_dir.glob(".retired-txn-*")):
+            if retired_dir.is_dir():
+                shutil.rmtree(retired_dir, ignore_errors=True)
+        txn_dirs = [path for path in sorted(run_dir.glob(".txn-*")) if path.is_dir()]
+        if len(txn_dirs) > 1:
+            raise TransactionRecoveryError(
+                "multiple active transaction directories for run",
+                run_id=run_id,
+                txn_id="unknown",
+            )
+        for txn_dir in txn_dirs:
+            self._recover_transaction_dir(run_id, run_dir, txn_dir)
 
     def _recover_transaction_dir(
         self,
         run_id: str,
         run_dir: Path,
-        staging_dir: Path,
+        txn_dir: Path,
     ) -> None:
-        txn_id = staging_dir.name.removeprefix(".txn-")
+        txn_id = txn_dir.name.removeprefix(".txn-")
         if not txn_id:
             raise TransactionRecoveryError(
                 "invalid transaction directory name",
@@ -819,7 +884,7 @@ class FileRunStore:
                 txn_id="unknown",
             )
 
-        journal_path = staging_dir / "journal.json"
+        journal_path = txn_dir / "journal.json"
         if not journal_path.is_file():
             raise TransactionRecoveryError(
                 "transaction journal missing",
@@ -838,7 +903,7 @@ class FileRunStore:
             )
         staged_files = [journal_file_entry_as_dict(entry) for entry in parsed.files]
         journal_events = parsed.events
-        backups_dir = staging_dir / "backups"
+        backups_dir = txn_dir / "backups"
         replaced = parsed.replaced
 
         for name in parsed.backups:
@@ -871,7 +936,7 @@ class FileRunStore:
                         events_base_size=parsed.events_base_size,
                         events_base_digest=parsed.events_base_digest,
                     )
-                shutil.rmtree(staging_dir)
+                self._retire_transaction_dir(run_dir, txn_dir)
                 return
             self._rollback_replaced_files(
                 run_dir,
@@ -883,7 +948,7 @@ class FileRunStore:
                 ),
                 backups_dir,
             )
-            shutil.rmtree(staging_dir)
+            self._retire_transaction_dir(run_dir, txn_dir)
             return
 
         if status == "appending_events":
@@ -902,7 +967,7 @@ class FileRunStore:
                     events_base_size=parsed.events_base_size,
                     events_base_digest=parsed.events_base_digest,
                 )
-            shutil.rmtree(staging_dir)
+            self._retire_transaction_dir(run_dir, txn_dir)
             return
 
         if status == "committed":
@@ -921,7 +986,7 @@ class FileRunStore:
                     events_base_size=parsed.events_base_size,
                     events_base_digest=parsed.events_base_digest,
                 )
-            shutil.rmtree(staging_dir)
+            self._retire_transaction_dir(run_dir, txn_dir)
             return
 
     def _validate_run_created_anchor(
@@ -1040,8 +1105,12 @@ class FileRunStore:
             if txn_id is None or not str(txn_id).strip():
                 continue
             normalized_txn_id = str(txn_id)
-            event_index = int(payload["event_index"])
-            event_count = int(payload["event_count"])
+            event_index = payload["event_index"]
+            event_count = payload["event_count"]
+            if not isinstance(event_index, int) or isinstance(event_index, bool):
+                raise PersistenceError("events.jsonl event_index must be an integer")
+            if not isinstance(event_count, int) or isinstance(event_count, bool):
+                raise PersistenceError("events.jsonl event_count must be an integer")
             key = (normalized_txn_id, event_index)
             if key in seen:
                 raise PersistenceError(
@@ -1070,13 +1139,7 @@ class FileRunStore:
                 f"incomplete journaled event set for txn_id {normalized_txn_id!r}"
             )
 
-    def _parse_events_text(
-        self,
-        text: str,
-        events_path: Path,
-        *,
-        ignore_malformed_trailing: bool = False,
-    ) -> list[dict[str, Any]]:
+    def _parse_events_text(self, text: str, events_path: Path) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
         if not text:
             return events
@@ -1098,11 +1161,7 @@ class FileRunStore:
             events.append(self._parse_event_line(line, events_path))
 
         if trailing_line is not None and trailing_line.strip():
-            try:
-                events.append(self._parse_event_line(trailing_line, events_path))
-            except PersistenceError:
-                if not ignore_malformed_trailing:
-                    raise
+            events.append(self._parse_event_line(trailing_line, events_path))
 
         return events
 
@@ -1124,12 +1183,12 @@ class FileRunStore:
         events_path = self._events_path(run_id)
         if not events_path.is_file():
             return
-        text = events_path.read_text(encoding="utf-8")
-        if not text or text.endswith("\n"):
+        data = events_path.read_bytes()
+        if not data or data.endswith(b"\n"):
             return
-        trailing = text.rsplit("\n", 1)[-1]
+        trailing = data.rsplit(b"\n", 1)[-1]
         if not trailing.strip():
-            self._atomically_publish_events_text(events_path, text + "\n")
+            self._atomically_publish_events_bytes(events_path, data + b"\n")
             return
         try:
             payload = json.loads(trailing)
@@ -1142,7 +1201,7 @@ class FileRunStore:
                 f"events.jsonl trailing content in {events_path} must be a JSON object"
             )
         self._require_journaled_event_fields(payload)
-        self._atomically_publish_events_text(events_path, text + "\n")
+        self._atomically_publish_events_bytes(events_path, data + b"\n")
 
     def _verify_events_journal_boundary(
         self,
@@ -1182,134 +1241,20 @@ class FileRunStore:
                 txn_id=txn_id,
             )
 
-    def _repair_recoverable_trailing_fragment(
-        self,
-        run_id: str,
-        txn_id: str,
-        journal_events: list[dict[str, Any]],
-    ) -> None:
-        normalized_events = self._normalize_journal_events(txn_id, journal_events)
-        events_path = self._events_path(run_id)
-        if not events_path.is_file():
-            return
-        text = events_path.read_text(encoding="utf-8")
-        if not text or text.endswith("\n"):
-            return
-        trailing = text.rsplit("\n", 1)[-1]
-        if trailing.strip():
-            try:
-                payload = json.loads(trailing)
-            except json.JSONDecodeError:
-                pass
-            else:
-                if isinstance(payload, dict):
-                    self._require_journaled_event_fields(payload)
-                    self._atomically_publish_events_text(events_path, text + "\n")
-                    return
-                raise TransactionRecoveryError(
-                    "unrelated trailing event fragment in events.jsonl",
-                    run_id=run_id,
-                    txn_id=txn_id,
-                )
-
-        event_count = int(normalized_events[0]["event_count"]) if normalized_events else 0
-        existing_indices = (
-            self._existing_transaction_event_indices(
-                run_id,
-                txn_id,
-                expected_event_count=event_count,
-            )
-            if normalized_events
-            else set()
-        )
-        next_event: dict[str, Any] | None = None
-        for event in normalized_events:
-            if int(event["event_index"]) not in existing_indices:
-                next_event = event
-                break
-
-        if next_event is None:
-            if trailing.strip():
-                raise TransactionRecoveryError(
-                    "unrelated trailing event fragment in events.jsonl",
-                    run_id=run_id,
-                    txn_id=txn_id,
-                )
-            return
-
-        expected_line = json.dumps(next_event, sort_keys=True)
-        if trailing and not expected_line.startswith(trailing):
-            raise TransactionRecoveryError(
-                "unrelated trailing event fragment in events.jsonl",
-                run_id=run_id,
-                txn_id=txn_id,
-            )
-
-        last_newline = text.rfind("\n")
-        repaired = "" if last_newline == -1 else text[: last_newline + 1]
-        self._atomically_publish_events_text(events_path, repaired)
-
-    def _atomically_publish_events_text(self, events_path: Path, text: str) -> None:
-        tmp_path = events_path.with_name(
-            f".{events_path.name}.repair-{os.getpid()}-{uuid.uuid4().hex[:8]}"
-        )
-        try:
-            tmp_path.write_text(text, encoding="utf-8")
-            if tmp_path.read_text(encoding="utf-8") != text:
-                raise PersistenceError("temporary events repair write incomplete")
-            tmp_path.replace(events_path)
-        finally:
-            tmp_path.unlink(missing_ok=True)
-
     def _load_event_payloads(
         self,
         run_id: str,
         *,
         validate_integrity: bool = True,
-        ignore_malformed_trailing: bool = False,
     ) -> list[dict[str, Any]]:
         events_path = self._events_path(run_id)
         if not events_path.is_file():
             return []
         text = events_path.read_text(encoding="utf-8")
-        events = self._parse_events_text(
-            text,
-            events_path,
-            ignore_malformed_trailing=ignore_malformed_trailing,
-        )
+        events = self._parse_events_text(text, events_path)
         if validate_integrity:
             self._validate_event_log_integrity(events)
         return events
-
-    def _existing_transaction_event_indices(
-        self,
-        run_id: str,
-        txn_id: str,
-        *,
-        expected_event_count: int,
-    ) -> set[int]:
-        ordered_indices: list[int] = []
-        for payload in self._load_event_payloads(
-            run_id,
-            validate_integrity=False,
-            ignore_malformed_trailing=True,
-        ):
-            if str(payload.get("txn_id") or "") != txn_id:
-                continue
-            event_count = int(payload["event_count"])
-            if event_count != expected_event_count:
-                raise PersistenceError(
-                    f"events.jsonl txn_id {txn_id!r} has inconsistent event_count"
-                )
-            ordered_indices.append(int(payload["event_index"]))
-
-        if ordered_indices and ordered_indices != list(range(len(ordered_indices))):
-            raise TransactionRecoveryError(
-                "journaled events for transaction are out of order or gapped",
-                run_id=run_id,
-                txn_id=txn_id,
-            )
-        return set(ordered_indices)
 
     def _destination_for_staged_entry(self, run_dir: Path, entry: dict[str, Any]) -> Path:
         if entry.get("kind") == "review":
@@ -1378,6 +1323,24 @@ class FileRunStore:
             elif dest.exists():
                 dest.unlink()
 
+    def _journal_events_suffix_bytes(self, events: list[dict[str, Any]]) -> bytes:
+        return b"".join(
+            self._serialize_journal_event_line(dict(event)).encode("utf-8")
+            for event in events
+        )
+
+    def _atomically_publish_events_bytes(self, events_path: Path, data: bytes) -> None:
+        tmp_path = events_path.with_name(
+            f".{events_path.name}.repair-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        )
+        try:
+            tmp_path.write_bytes(data)
+            if tmp_path.read_bytes() != data:
+                raise PersistenceError("temporary events repair write incomplete")
+            tmp_path.replace(events_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
     def _ensure_events_appended(
         self,
         run_id: str,
@@ -1391,36 +1354,31 @@ class FileRunStore:
         if not normalized_events:
             return
 
-        if journal_events:
-            self._verify_events_journal_boundary(
-                run_id,
-                txn_id,
-                events_base_size=events_base_size,
-                events_base_digest=events_base_digest,
-            )
-
-        self._repair_recoverable_trailing_fragment(run_id, txn_id, journal_events)
-
-        event_count = int(normalized_events[0]["event_count"])
-        existing_indices = self._existing_transaction_event_indices(
+        self._verify_events_journal_boundary(
             run_id,
             txn_id,
-            expected_event_count=event_count,
+            events_base_size=events_base_size,
+            events_base_digest=events_base_digest,
         )
-        if existing_indices >= set(range(event_count)):
-            return
 
         events_path = self._events_path(run_id)
-        missing_events = [
-            event
-            for event in normalized_events
-            if int(event["event_index"]) not in existing_indices
-        ]
-        missing_events.sort(key=lambda event: int(event["event_index"]))
-
-        with events_path.open("a", encoding="utf-8") as handle:
-            for event in missing_events:
-                handle.write(self._serialize_journal_event_line(dict(event)))
+        current = events_path.read_bytes() if events_path.is_file() else b""
+        expected_suffix = self._journal_events_suffix_bytes(normalized_events)
+        target = current[:events_base_size] + expected_suffix
+        if len(current) > len(target):
+            raise TransactionRecoveryError(
+                "transaction event suffix exceeds journaled batch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        if not target.startswith(current):
+            raise TransactionRecoveryError(
+                "transaction event suffix mismatch",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        if current != target:
+            self._atomically_publish_events_bytes(events_path, target)
 
     def _require_committed_staged_files(
         self,
@@ -1450,6 +1408,34 @@ class FileRunStore:
                 txn_id=txn_id,
             )
 
+    def _require_existing_run(self, run_id: str) -> str:
+        validated_run_id = validate_run_id(run_id)
+        run_dir = self.run_dir(validated_run_id)
+        if not run_dir.is_dir():
+            raise RunNotFoundError(
+                validated_run_id,
+                "run directory missing",
+                runs_root=self._root,
+            )
+        if not (run_dir / "run.json").is_file():
+            raise RunNotFoundError(
+                validated_run_id,
+                "run.json missing",
+                runs_root=self._root,
+            )
+        return validated_run_id
+
+    def _retire_transaction_dir(self, run_dir: Path, txn_dir: Path) -> None:
+        txn_id = txn_dir.name.removeprefix(".txn-")
+        retired_dir = self._assert_contained(
+            run_dir / f".retired-txn-{txn_id}-{uuid.uuid4().hex[:8]}"
+        )
+        txn_dir.rename(retired_dir)
+        try:
+            shutil.rmtree(retired_dir)
+        except OSError:
+            return
+
     def _assert_contained(self, path: Path) -> Path:
         resolved = path.resolve()
         root = self._root.resolve()
@@ -1465,10 +1451,8 @@ class FileRunStore:
         return path
 
     def _read_run(self, run_id: str) -> dict[str, Any]:
-        # Schema-version gate before any nested run-field interpretation (§3).
-        payload = self._read_json(self._run_path(run_id))
-        validate_run_schema_version(payload)
-        validate_run_digests(payload)
+        payload = self._read_json_object(self._run_path(run_id), label="run.json")
+        payload = validate_persisted_run(run_id, payload)
         binding = payload.get("context_snapshot_binding")
         if binding is not None:
             validate_context_snapshot_binding(binding)
@@ -1477,8 +1461,6 @@ class FileRunStore:
             validate_session_recovery_fields(payload)
         except RunLifecycleError as exc:
             raise PersistenceError(str(exc)) from exc
-        payload = dict(payload)
-        payload["sessions"] = normalize_sessions_for_runtime(payload.get("sessions"))
         return payload
 
     def _plan_path(self, run_id: str) -> Path:
@@ -1487,8 +1469,9 @@ class FileRunStore:
         return path
 
     def _read_plan(self, run_id: str) -> dict[str, Any]:
-        payload = self._read_json(self._plan_path(run_id))
+        payload = self._read_json_object(self._plan_path(run_id), label="plan.json")
         validate_plan_schema_version(payload)
+        parse_revision_value(payload.get("revision"), "plan")
         return payload
 
     def _production_path(self, run_id: str) -> Path:
@@ -1497,13 +1480,21 @@ class FileRunStore:
         return path
 
     def _read_production(self, run_id: str) -> dict[str, Any]:
-        return self._read_json(self._production_path(run_id))
+        payload = self._read_json_object(
+            self._production_path(run_id),
+            label="production.json",
+        )
+        parse_revision_value(payload.get("revision"), "production")
+        return payload
 
     def _read_review_revision(self, run_id: str, review_id: str) -> int:
         path = self.reviews_dir(run_id) / f"{review_id}.json"
         if not path.exists():
             return 0
-        return int(self._read_json(path).get("revision") or 0)
+        payload = self._read_json_object(path, label=f"review {review_id}")
+        if "revision" not in payload:
+            return 0
+        return parse_revision_value(payload["revision"], "review")
 
     def _events_path(self, run_id: str) -> Path:
         return self.run_dir(run_id) / "events.jsonl"
@@ -1516,9 +1507,10 @@ class FileRunStore:
                 runs_root=self._root,
             )
 
-    def _read_json(self, path: Path) -> dict[str, Any]:
+    def _read_json_object(self, path: Path, *, label: str | None = None) -> dict[str, Any]:
+        file_label = label or path.name
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
             raise RunNotFoundError(
                 path.parent.name,
@@ -1527,3 +1519,6 @@ class FileRunStore:
             ) from exc
         except json.JSONDecodeError as exc:
             raise PersistenceError(f"failed to load {path}: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise PersistenceError(f"{file_label} must contain a JSON object")
+        return payload

@@ -267,6 +267,7 @@ def test_recovery_rejects_out_of_order_transaction_event_indices(tmp_path: Path)
         },
         sort_keys=True,
     )
+    boundary = events_append_boundary(events_path)
     events_path.write_text(events_path.read_text(encoding="utf-8") + second_only + "\n", encoding="utf-8")
     raw_before = events_path.read_bytes()
 
@@ -296,11 +297,11 @@ def test_recovery_rejects_out_of_order_transaction_event_indices(tmp_path: Path)
             ],
             "backups": [],
             "replaced": [],
-            **events_append_boundary(events_path),
+            **boundary,
         },
     )
 
-    with pytest.raises(TransactionRecoveryError, match="out of order or gapped"):
+    with pytest.raises(TransactionRecoveryError, match="suffix mismatch"):
         FileRunStore(tmp_path).load_events(run_id)
 
     assert txn_dir.is_dir()

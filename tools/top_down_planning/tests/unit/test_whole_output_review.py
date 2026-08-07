@@ -152,7 +152,7 @@ def _create_run_at_whole_output_review(
     digests = dict(run.get("digests") or {})
     digests["output"] = compute_output_digest(production)
     run["digests"] = digests
-    sessions: dict[str, str] = {}
+    sessions = dict(run["sessions"])
     if session_id is not None:
         sessions = update_primary_binding(sessions, role="producer", provider_session_id=session_id)
     run["sessions"] = sessions

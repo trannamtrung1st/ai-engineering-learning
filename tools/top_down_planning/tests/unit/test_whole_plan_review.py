@@ -105,7 +105,7 @@ def _create_run_at_whole_plan_review(
     run = store.load_run(run_id)
     expected_revision = int(run["revision"])
     run["revision"] = expected_revision + 1
-    sessions: dict[str, str] = {}
+    sessions = dict(run["sessions"])
     if session_id is not None:
         sessions = update_primary_binding(sessions, role="planner", provider_session_id=session_id)
     run["sessions"] = sessions

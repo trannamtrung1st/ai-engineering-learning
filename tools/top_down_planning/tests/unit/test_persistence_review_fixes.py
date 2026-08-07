@@ -106,14 +106,18 @@ def _crash_after_nth_event_write(line_number: int) -> Any:
     writes = 0
 
     def patched_open(self: Path, *args: Any, **kwargs: Any):
+        mode = args[0] if args else kwargs.get("mode", "")
         handle = original_open(self, *args, **kwargs)
-        if self.name != "events.jsonl" or "a" not in args and kwargs.get("mode") != "a":
+        if self.name != "events.jsonl" or mode not in {"a", "ab"}:
             return handle
         original_write = handle.write
 
-        def patched_write(data: str) -> int:
+        def patched_write(data: str | bytes) -> int:
             nonlocal writes
-            if data.endswith("\n"):
+            ends_with_line = (
+                data.endswith("\n") if isinstance(data, str) else data.endswith(b"\n")
+            )
+            if ends_with_line:
                 writes += 1
                 if writes == line_number:
                     raise OSError("simulated crash during event append")
@@ -178,6 +182,7 @@ def test_partial_event_json_line_truncated_and_recovered(tmp_path: Path) -> None
         "ts": "2026-01-01T00:00:01Z",
     }
     event_b_line = json.dumps(event_b, sort_keys=True)
+    boundary = events_append_boundary(events_path)
     events_path.write_text(
         events_path.read_text(encoding="utf-8") + first_event + "\n" + event_b_line[:40],
         encoding="utf-8",
@@ -204,7 +209,7 @@ def test_partial_event_json_line_truncated_and_recovered(tmp_path: Path) -> None
             ],
             "backups": [],
             "replaced": [],
-            **events_append_boundary(events_path),
+            **boundary,
         },
     )
 

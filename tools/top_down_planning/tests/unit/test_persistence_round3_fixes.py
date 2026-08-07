@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core_tools.persistence import TransactionRecoveryError, atomic_write_json, digest_file
+from core_tools.persistence import TransactionRecoveryError, atomic_write_json, digest_bytes, digest_file
 from top_down_planning.persistence import FileRunStore, PersistenceError
 from tests.helpers import events_append_boundary
 from tests.unit.test_persistence_correction_fixes import _create_run, _find_txn_dir_local
@@ -218,6 +218,7 @@ def test_recovery_rejects_unrelated_malformed_trailing_fragment(tmp_path: Path) 
     run_id = "run-20260101T000801-000801"
     _create_run(store)
     events_path = store.run_dir(run_id) / "events.jsonl"
+    boundary = events_append_boundary(events_path)
     events_path.write_text(
         events_path.read_text(encoding="utf-8") + '{"type": "orphan", "txn_id": "other-txn"',
         encoding="utf-8",
@@ -243,11 +244,11 @@ def test_recovery_rejects_unrelated_malformed_trailing_fragment(tmp_path: Path) 
             ],
             "backups": [],
             "replaced": [],
-            **events_append_boundary(events_path),
+            **boundary,
         },
     )
 
-    with pytest.raises(TransactionRecoveryError, match="unrelated trailing event fragment"):
+    with pytest.raises(TransactionRecoveryError, match="suffix mismatch"):
         FileRunStore(tmp_path).load_events(run_id)
 
     assert txn_dir.is_dir()
@@ -280,6 +281,7 @@ def test_event_fragment_repair_publish_failure_leaves_original_bytes(tmp_path: P
         },
         sort_keys=True,
     )
+    boundary = events_append_boundary(events_path)
     events_path.write_text(
         events_path.read_text(encoding="utf-8") + first_event + "\n" + event_b_line[:40],
         encoding="utf-8",

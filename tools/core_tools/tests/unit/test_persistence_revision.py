@@ -16,6 +16,15 @@ def test_require_revision_field() -> None:
     assert require_revision_field({"revision": 3}, "run") == 3
 
 
+@pytest.mark.parametrize(
+    "revision",
+    [True, "1", 1.9, -1],
+)
+def test_require_revision_field_rejects_malformed(revision: object) -> None:
+    with pytest.raises(PersistenceError, match="non-negative integer"):
+        require_revision_field({"revision": revision}, "run")
+
+
 def test_require_revision_field_missing() -> None:
     with pytest.raises(PersistenceError, match="must include an explicit revision"):
         require_revision_field({}, "run")

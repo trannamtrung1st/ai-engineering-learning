@@ -41,11 +41,14 @@ def _write_appending_journal(
     replaced: list[str],
     backups: list[str],
     events: list[dict[str, object]],
+    boundary: dict[str, object] | None = None,
 ) -> Path:
     txn_dir = store.run_dir(run_id) / f".txn-{txn_id}"
     txn_dir.mkdir()
     events_path = store.run_dir(run_id) / "events.jsonl"
-    boundary = events_append_boundary(events_path) if events else {}
+    resolved_boundary = boundary if boundary is not None else (
+        events_append_boundary(events_path) if events else {}
+    )
     atomic_write_json(
         txn_dir / "journal.json",
         {
@@ -55,7 +58,7 @@ def _write_appending_journal(
             "events": events,
             "backups": backups,
             "replaced": replaced,
-            **boundary,
+            **resolved_boundary,
         },
     )
     return txn_dir
@@ -248,6 +251,7 @@ def test_recovery_repairs_arbitrary_partial_event_prefix(
         event_count=2,
         ts="2026-01-01T00:00:00Z",
     )
+    boundary = events_append_boundary(events_path)
     events_path.write_text(
         events_path.read_text(encoding="utf-8")
         + _serialized_event_line(first_event)
@@ -264,16 +268,10 @@ def test_recovery_repairs_arbitrary_partial_event_prefix(
         replaced=[],
         backups=[],
         events=[
-            _normalized_journal_event(
-                run_id=run_id,
-                txn_id=txn_id,
-                event_type="event_a",
-                event_index=0,
-                event_count=2,
-                ts="2026-01-01T00:00:00Z",
-            ),
+            first_event,
             event,
         ],
+        boundary=boundary,
     )
 
     recovered = FileRunStore(tmp_path)
@@ -293,6 +291,7 @@ def test_recovery_rejects_coincidental_txn_id_substring_in_unrelated_fragment(
     _create_run(store)
     txn_id = "coincidental"
     events_path = store.run_dir(run_id) / "events.jsonl"
+    boundary = events_append_boundary(events_path)
     events_path.write_text(
         events_path.read_text(encoding="utf-8")
         + json.dumps({"note": f"mentions {txn_id} but unrelated"}, sort_keys=True)[:-1],
@@ -316,9 +315,10 @@ def test_recovery_rejects_coincidental_txn_id_substring_in_unrelated_fragment(
                 event_count=1,
             ),
         ],
+        boundary=boundary,
     )
 
-    with pytest.raises(TransactionRecoveryError, match="unrelated trailing event fragment"):
+    with pytest.raises(TransactionRecoveryError, match="suffix mismatch"):
         FileRunStore(tmp_path).load_events(run_id)
 
     assert txn_dir.is_dir()

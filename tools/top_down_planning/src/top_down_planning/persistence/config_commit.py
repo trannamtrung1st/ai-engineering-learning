@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from core_tools.persistence import StoreRevisionConflictError
+from core_tools.persistence import StoreRevisionConflictError, parse_revision_value
 
 from top_down_planning.config.resume_policy import (
     ResumeConfigComparison,
@@ -120,17 +120,18 @@ def build_resume_config_commit_spec(
     if stored_contract and stored_contract != new_contract and not contract_digest_may_change:
         raise ResumeConfigCommitError("config_contract must remain unchanged during resume")
 
+    expected = parse_revision_value(run_expected_revision, "run")
     run_payload = dict(run)
     digests = dict(run_payload.get("digests") or {})
     digests["config_contract"] = new_contract
     digests["config_execution"] = compute_config_execution_digest(resolved_config)
     run_payload["digests"] = digests
-    next_revision = int(run_expected_revision) + 1
+    next_revision = expected + 1
     run_payload["revision"] = next_revision
 
     return CommitSpec(
         run=run_payload,
-        run_expected_revision=run_expected_revision,
+        run_expected_revision=expected,
         resolved_config=resolved_config,
         invocation=invocation,
     )
@@ -146,9 +147,10 @@ def apply_resume_config_atomic(
 ) -> dict[str, Any]:
     """Persist accepted resume config, execution digest, and invocation atomically."""
 
+    expected = parse_revision_value(run_expected_revision, "run")
     run = store.load_run(run_id)
     try:
-        assert_expected_run_revision(run, run_expected_revision)
+        assert_expected_run_revision(run, expected)
         run_dir = resolve_run_dir(store, run_id)
         if run_dir is not None:
             assert_no_live_process_owns_run(run_id, run_dir=run_dir)
@@ -159,7 +161,7 @@ def apply_resume_config_atomic(
         run=run,
         resolved_config=resolved_config,
         invocation=invocation,
-        run_expected_revision=run_expected_revision,
+        run_expected_revision=expected,
     )
     try:
         result = store.commit(run_id, spec)

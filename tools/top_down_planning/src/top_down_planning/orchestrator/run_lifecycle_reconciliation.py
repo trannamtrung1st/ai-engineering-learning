@@ -23,6 +23,8 @@ from top_down_planning.persistence.interface import RunStore
 
 _RUN_DIR_PATTERN = re.compile(r"^run-\d{8}T\d{6}-[0-9a-f]{6}$")
 _CREATING_DIR_PREFIX = ".creating-"
+_COMMIT_STAGE_PREFIX = ".stage-"
+_COMMIT_RETIRED_PREFIX = ".retired-txn-"
 
 
 def _running_without_live_orchestrator(store: RunStore, run_id: str) -> bool:
@@ -126,8 +128,60 @@ def list_staging_run_dirs(store: RunStore) -> list[str]:
     return staging
 
 
+def list_commit_transaction_dirs(store: RunStore) -> list[str]:
+    """Return leftover commit ``.stage-*`` and ``.retired-txn-*`` directories under runs."""
+
+    root = getattr(store, "root", None)
+    if root is None:
+        return []
+    root_path = Path(root)
+    if not root_path.is_dir():
+        return []
+
+    leftovers: list[str] = []
+    for run_entry in sorted(root_path.iterdir()):
+        if not run_entry.is_dir() or not _RUN_DIR_PATTERN.match(run_entry.name):
+            continue
+        for entry in sorted(run_entry.iterdir()):
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            if name.startswith(_COMMIT_STAGE_PREFIX) or name.startswith(_COMMIT_RETIRED_PREFIX):
+                leftovers.append(f"{run_entry.name}/{name}")
+    return leftovers
+
+
+def cleanup_commit_transaction_dirs(store: RunStore) -> list[str]:
+    """Remove leftover commit staging and retired transaction directories under runs."""
+
+    removed: list[str] = []
+    root = getattr(store, "root", None)
+    if root is None:
+        return removed
+    root_path = Path(root)
+    if not root_path.is_dir():
+        return removed
+
+    for relative_name in list_commit_transaction_dirs(store):
+        run_id, _, txn_name = relative_name.partition("/")
+        run_dir = root_path / run_id
+        if not run_dir.is_dir():
+            continue
+        lock_path = run_dir / ".commit.lock"
+        with try_exclusive_file_lock(lock_path) as acquired:
+            if not acquired:
+                continue
+            path = run_dir / txn_name
+            if not path.is_dir():
+                continue
+            shutil.rmtree(path, ignore_errors=True)
+            if not path.exists():
+                removed.append(relative_name)
+    return removed
+
+
 def cleanup_staging_dirs(store: RunStore) -> list[str]:
-    """Remove leftover ``.creating-*`` staging directories."""
+    """Remove leftover run-creation and commit-transaction staging directories."""
 
     removed: list[str] = []
     root = getattr(store, "root", None)
@@ -148,6 +202,7 @@ def cleanup_staging_dirs(store: RunStore) -> list[str]:
             shutil.rmtree(path, ignore_errors=True)
         if not path.exists():
             removed.append(name)
+    removed.extend(cleanup_commit_transaction_dirs(store))
     return removed
 
 
@@ -180,13 +235,16 @@ def workspace_diagnostics(store: RunStore) -> dict[str, Any]:
     return {
         "incomplete_run_dirs": list_incomplete_run_dirs(store),
         "staging_run_dirs": list_staging_run_dirs(store),
+        "commit_transaction_dirs": list_commit_transaction_dirs(store),
         "idle_running_run_ids": idle_running,
         "interrupted_running_run_ids": interrupted_running,
     }
 
 
 __all__ = [
+    "cleanup_commit_transaction_dirs",
     "cleanup_staging_dirs",
+    "list_commit_transaction_dirs",
     "list_incomplete_run_dirs",
     "list_staging_run_dirs",
     "reconcile_stale_running_run",

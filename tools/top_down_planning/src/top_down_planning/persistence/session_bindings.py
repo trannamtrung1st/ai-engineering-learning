@@ -15,6 +15,10 @@ from top_down_planning.domain.session_bindings import (
     resumable_binding_provider_session_id,
     validate_session_binding,
 )
+from top_down_planning.persistence.persisted_validation import (
+    validate_persisted_review_binding,
+    validate_persisted_sessions,
+)
 
 _SLOT_ROLE_KIND: dict[str, tuple[str, str]] = {
     PRIMARY_PLANNER_SLOT: ("planner", "primary"),
@@ -62,7 +66,10 @@ def initial_structured_sessions() -> StructuredSessions:
 
 
 def coerce_structured_sessions(sessions: dict[str, Any] | None) -> StructuredSessions:
-    """Normalize in-memory session payloads to structured bindings only."""
+    """Fill in-memory session maps for orchestration mutations only.
+
+    Persisted load and save use ``validate_persisted_sessions`` instead.
+    """
 
     raw = dict(sessions or {})
     _reject_legacy_session_fields(raw)
@@ -84,19 +91,9 @@ def coerce_structured_sessions(sessions: dict[str, Any] | None) -> StructuredSes
     return structured
 
 
-def normalize_sessions_for_runtime(sessions: dict[str, Any] | None) -> StructuredSessions:
-    """Return structured session bindings for orchestration (no flat aliases)."""
-
-    return coerce_structured_sessions(sessions)
-
-
 def sessions_for_persistence(sessions: dict[str, Any] | None) -> StructuredSessions:
-    structured = coerce_structured_sessions(sessions)
-    for slot, payload in structured.items():
-        binding = SessionBinding.from_dict(payload)
-        validate_session_binding(binding)
-        structured[slot] = binding.to_dict()
-    return structured
+    _reject_legacy_session_fields(dict(sessions or {}))
+    return validate_persisted_sessions(sessions)
 
 
 def get_primary_binding(
@@ -184,21 +181,6 @@ def clear_stale_starting_primary_binding(
     return structured
 
 
-def normalize_review_record_for_runtime(review: dict[str, Any]) -> dict[str, Any]:
-    payload = dict(review)
-    for field in _REJECTED_LEGACY_REVIEW_FIELDS:
-        if field in payload:
-            raise LegacySessionFieldError(
-                f"legacy review field {field!r} is not accepted; "
-                "use reviewer_binding; recreate the run"
-            )
-    binding_raw = payload.get("reviewer_binding")
-    if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
-        binding = SessionBinding.from_dict(binding_raw)
-        payload["reviewer_binding"] = binding.to_dict()
-    return payload
-
-
 def review_record_for_persistence(review: dict[str, Any]) -> dict[str, Any]:
     payload = dict(review)
     for field in _REJECTED_LEGACY_REVIEW_FIELDS:
@@ -207,14 +189,7 @@ def review_record_for_persistence(review: dict[str, Any]) -> dict[str, Any]:
                 f"legacy review field {field!r} is not accepted; "
                 "use reviewer_binding; recreate the run"
             )
-    binding_raw = payload.get("reviewer_binding")
-    if isinstance(binding_raw, dict) and binding_raw.get("session_instance_id"):
-        binding = SessionBinding.from_dict(binding_raw)
-        validate_session_binding(binding)
-        payload["reviewer_binding"] = binding.to_dict()
-    else:
-        payload.pop("reviewer_binding", None)
-    return payload
+    return validate_persisted_review_binding(payload)
 
 
 __all__ = [
@@ -224,8 +199,6 @@ __all__ = [
     "coerce_structured_sessions",
     "get_primary_binding",
     "initial_structured_sessions",
-    "normalize_review_record_for_runtime",
-    "normalize_sessions_for_runtime",
     "primary_provider_session_id",
     "review_record_for_persistence",
     "sessions_for_persistence",

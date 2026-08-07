@@ -58,6 +58,27 @@ def atomic_write_text(path: Path, text: str) -> None:
     atomic_write_bytes(path, text.encode("utf-8"))
 
 
+def atomic_write_text_secure(path: Path, text: str, *, mode: int = 0o600) -> None:
+    """Write text via a private temp file created with ``mode``, then atomic replace."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = text.encode("utf-8")
+    tmp_path = path.with_name(
+        f".{path.name}.secure-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    )
+    try:
+        fd = os.open(str(tmp_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, mode)
+        try:
+            _write_fd_all(fd, data)
+        finally:
+            os.close(fd)
+        if tmp_path.read_bytes() != data:
+            raise OSError("temporary secure write incomplete")
+        tmp_path.replace(path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     atomic_write_text(path, text)

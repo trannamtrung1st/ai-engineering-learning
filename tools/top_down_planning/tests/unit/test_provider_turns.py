@@ -496,7 +496,6 @@ def test_planning_runs_store_created_focused_review_before_advancing(
     run = store.load_run(run_id)
     expected_revision = int(run["revision"])
     run = dict(run)
-    run["sessions"] = {}
     run["revision"] = expected_revision + 1
     store.save_run(run_id, run, expected_revision)
 

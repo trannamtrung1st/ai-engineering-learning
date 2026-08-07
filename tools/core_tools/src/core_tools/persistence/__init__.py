@@ -4,6 +4,7 @@ from core_tools.persistence.atomic import (
     atomic_write_bytes,
     atomic_write_json,
     atomic_write_text,
+    atomic_write_text_secure,
     exclusive_create_bytes,
 )
 from core_tools.persistence.errors import PersistenceError, TransactionRecoveryError
@@ -19,6 +20,7 @@ from core_tools.persistence.revision import (
     RunNotFoundError,
     StoreRevisionConflictError,
     assert_next_revision,
+    parse_revision_value,
     require_revision_field,
 )
 from core_tools.persistence.yaml_util import dump_yaml, load_yaml
@@ -32,7 +34,9 @@ __all__ = [
     "atomic_write_bytes",
     "atomic_write_json",
     "atomic_write_text",
+    "atomic_write_text_secure",
     "exclusive_create_bytes",
+    "parse_revision_value",
     "canonical_json",
     "digest_bytes",
     "digest_file",

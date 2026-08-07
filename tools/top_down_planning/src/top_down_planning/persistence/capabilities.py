@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import secrets
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core_tools.persistence import atomic_write_text
+from core_tools.persistence import atomic_write_text_secure, RunNotFoundError
 
 from top_down_planning.persistence.interface import RunStore
 
@@ -131,7 +130,9 @@ def new_capability_record(
     if session_instance_id is not None and str(session_instance_id).strip():
         record["session_instance_id"] = str(session_instance_id).strip()
     if generation is not None:
-        record["generation"] = int(generation)
+        if isinstance(generation, bool) or not isinstance(generation, int) or generation < 1:
+            raise ValueError("generation must be a positive integer")
+        record["generation"] = generation
     if loop_id is not None:
         record["loop_id"] = str(loop_id).strip()
     return token_id, record, raw_secret
@@ -175,12 +176,11 @@ def read_capability_token_file(path: Path) -> str | None:
 def write_capability_token_file(store: RunStore, run_id: str, token: str) -> Path:
     """Persist the active capability token for agent CLI reads at invocation time."""
 
+    run_dir = store.run_dir(run_id)
+    if not run_dir.is_dir() or not (run_dir / "run.json").is_file():
+        raise RunNotFoundError(run_id, "run.json missing", runs_root=store.root)
     path = capability_token_file_path(store, run_id)
-    atomic_write_text(path, f"{str(token).strip()}\n")
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+    atomic_write_text_secure(path, f"{str(token).strip()}\n")
     return path
 
 
