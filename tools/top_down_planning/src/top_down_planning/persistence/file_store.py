@@ -396,45 +396,53 @@ class FileRunStore:
         journal_events = self._normalize_journal_events(
             txn_id,
             [dict(event) for event in spec.events],
+            assign_timestamp=True,
         )
 
         committed = False
         try:
             if run_payload is not None:
                 staged_path = staging_dir / "run.json"
+                dest = run_dir / "run.json"
                 atomic_write_json(staged_path, run_payload)
                 staged_files.append(
                     {
                         "kind": "run",
                         "name": "run.json",
                         "digest": digest_file(staged_path),
+                        "had_destination": dest.exists(),
                     }
                 )
 
             if plan_payload is not None:
                 staged_path = staging_dir / "plan.json"
+                dest = run_dir / "plan.json"
                 atomic_write_json(staged_path, plan_payload)
                 staged_files.append(
                     {
                         "kind": "plan",
                         "name": "plan.json",
                         "digest": digest_file(staged_path),
+                        "had_destination": dest.exists(),
                     }
                 )
 
             if production_payload is not None:
                 staged_path = staging_dir / "production.json"
+                dest = run_dir / "production.json"
                 atomic_write_json(staged_path, production_payload)
                 staged_files.append(
                     {
                         "kind": "production",
                         "name": "production.json",
                         "digest": digest_file(staged_path),
+                        "had_destination": dest.exists(),
                     }
                 )
 
             if spec.resolved_config is not None:
                 staged_path = staging_dir / "resolved-config.yaml"
+                dest = run_dir / "resolved-config.yaml"
                 atomic_write_text(
                     staged_path,
                     dump_yaml(spec.resolved_config) + "\n",
@@ -444,23 +452,28 @@ class FileRunStore:
                         "kind": "resolved_config",
                         "name": "resolved-config.yaml",
                         "digest": digest_file(staged_path),
+                        "had_destination": dest.exists(),
                     }
                 )
 
             if spec.invocation is not None:
                 staged_path = staging_dir / "invocation.json"
+                dest = run_dir / "invocation.json"
                 atomic_write_json(staged_path, spec.invocation)
                 staged_files.append(
                     {
                         "kind": "invocation",
                         "name": "invocation.json",
                         "digest": digest_file(staged_path),
+                        "had_destination": dest.exists(),
                     }
                 )
 
             for review_id, review_payload in review_payloads:
                 staged_name = f"review__{review_id}.json"
                 staged_path = staging_dir / staged_name
+                reviews_dir = self.reviews_dir(validated_run_id)
+                dest = reviews_dir / f"{review_id}.json"
                 atomic_write_json(staged_path, review_payload)
                 staged_files.append(
                     {
@@ -468,6 +481,7 @@ class FileRunStore:
                         "name": staged_name,
                         "review_id": review_id,
                         "digest": digest_file(staged_path),
+                        "had_destination": dest.exists(),
                     }
                 )
 
@@ -509,9 +523,7 @@ class FileRunStore:
                 events_path = self._events_path(validated_run_id)
                 with events_path.open("a", encoding="utf-8") as handle:
                     for event in journal_events:
-                        payload = dict(event)
-                        payload.setdefault("ts", _utc_now())
-                        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+                        handle.write(self._serialize_journal_event_line(dict(event)))
 
             journal["status"] = "committed"
             atomic_write_json(journal_path, journal)
@@ -855,12 +867,26 @@ class FileRunStore:
             return
 
         if status == "appending_events":
+            self._require_committed_staged_files(
+                run_dir,
+                staged_files,
+                replaced,
+                run_id=run_id,
+                txn_id=txn_id,
+            )
             if txn_id and journal_events:
                 self._ensure_events_appended(run_id, txn_id, journal_events)
             shutil.rmtree(staging_dir)
             return
 
         if status == "committed":
+            self._require_committed_staged_files(
+                run_dir,
+                staged_files,
+                replaced,
+                run_id=run_id,
+                txn_id=txn_id,
+            )
             if txn_id and journal_events:
                 self._ensure_events_appended(run_id, txn_id, journal_events)
             shutil.rmtree(staging_dir)
@@ -918,6 +944,8 @@ class FileRunStore:
         self,
         txn_id: str,
         journal_events: list[dict[str, Any]],
+        *,
+        assign_timestamp: bool = False,
     ) -> list[dict[str, Any]]:
         event_count = len(journal_events)
         normalized: list[dict[str, Any]] = []
@@ -926,8 +954,14 @@ class FileRunStore:
             payload["txn_id"] = txn_id
             payload["event_index"] = event_index
             payload["event_count"] = event_count
+            if assign_timestamp or "ts" not in payload:
+                payload["ts"] = _utc_now()
             normalized.append(payload)
         return normalized
+
+    @staticmethod
+    def _serialize_journal_event_line(payload: dict[str, Any]) -> str:
+        return json.dumps(payload, sort_keys=True) + "\n"
 
     def _require_journaled_event_fields(self, payload: dict[str, Any]) -> None:
         txn_id = payload.get("txn_id")
@@ -1004,7 +1038,13 @@ class FileRunStore:
                 f"incomplete journaled event set for txn_id {normalized_txn_id!r}"
             )
 
-    def _parse_events_text(self, text: str, events_path: Path) -> list[dict[str, Any]]:
+    def _parse_events_text(
+        self,
+        text: str,
+        events_path: Path,
+        *,
+        ignore_malformed_trailing: bool = False,
+    ) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
         if not text:
             return events
@@ -1025,9 +1065,12 @@ class FileRunStore:
                 continue
             events.append(self._parse_event_line(line, events_path))
 
-        if trailing_line is not None:
-            if trailing_line.strip():
+        if trailing_line is not None and trailing_line.strip():
+            try:
                 events.append(self._parse_event_line(trailing_line, events_path))
+            except PersistenceError:
+                if not ignore_malformed_trailing:
+                    raise
 
         return events
 
@@ -1045,7 +1088,13 @@ class FileRunStore:
         self._require_journaled_event_fields(payload)
         return payload
 
-    def _repair_recoverable_trailing_fragment(self, run_id: str, txn_id: str) -> None:
+    def _repair_recoverable_trailing_fragment(
+        self,
+        run_id: str,
+        txn_id: str,
+        journal_events: list[dict[str, Any]],
+    ) -> None:
+        normalized_events = self._normalize_journal_events(txn_id, journal_events)
         events_path = self._events_path(run_id)
         if not events_path.is_file():
             return
@@ -1058,12 +1107,41 @@ class FileRunStore:
                 json.loads(trailing)
                 return
             except json.JSONDecodeError:
-                if txn_id not in trailing:
-                    raise TransactionRecoveryError(
-                        "unrelated trailing event fragment in events.jsonl",
-                        run_id=run_id,
-                        txn_id=txn_id,
-                    )
+                pass
+
+        event_count = int(normalized_events[0]["event_count"]) if normalized_events else 0
+        existing_indices = (
+            self._existing_transaction_event_indices(
+                run_id,
+                txn_id,
+                expected_event_count=event_count,
+            )
+            if normalized_events
+            else set()
+        )
+        next_event: dict[str, Any] | None = None
+        for event in normalized_events:
+            if int(event["event_index"]) not in existing_indices:
+                next_event = event
+                break
+
+        if next_event is None:
+            if trailing.strip():
+                raise TransactionRecoveryError(
+                    "unrelated trailing event fragment in events.jsonl",
+                    run_id=run_id,
+                    txn_id=txn_id,
+                )
+            return
+
+        expected_line = json.dumps(next_event, sort_keys=True)
+        if trailing and not expected_line.startswith(trailing):
+            raise TransactionRecoveryError(
+                "unrelated trailing event fragment in events.jsonl",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+
         last_newline = text.rfind("\n")
         repaired = "" if last_newline == -1 else text[: last_newline + 1]
         self._atomically_publish_events_text(events_path, repaired)
@@ -1085,12 +1163,17 @@ class FileRunStore:
         run_id: str,
         *,
         validate_integrity: bool = True,
+        ignore_malformed_trailing: bool = False,
     ) -> list[dict[str, Any]]:
         events_path = self._events_path(run_id)
         if not events_path.is_file():
             return []
         text = events_path.read_text(encoding="utf-8")
-        events = self._parse_events_text(text, events_path)
+        events = self._parse_events_text(
+            text,
+            events_path,
+            ignore_malformed_trailing=ignore_malformed_trailing,
+        )
         if validate_integrity:
             self._validate_event_log_integrity(events)
         return events
@@ -1103,7 +1186,11 @@ class FileRunStore:
         expected_event_count: int,
     ) -> set[int]:
         ordered_indices: list[int] = []
-        for payload in self._load_event_payloads(run_id, validate_integrity=False):
+        for payload in self._load_event_payloads(
+            run_id,
+            validate_integrity=False,
+            ignore_malformed_trailing=True,
+        ):
             if str(payload.get("txn_id") or "") != txn_id:
                 continue
             event_count = int(payload["event_count"])
@@ -1198,7 +1285,7 @@ class FileRunStore:
         if not normalized_events:
             return
 
-        self._repair_recoverable_trailing_fragment(run_id, txn_id)
+        self._repair_recoverable_trailing_fragment(run_id, txn_id, journal_events)
 
         event_count = int(normalized_events[0]["event_count"])
         existing_indices = self._existing_transaction_event_indices(
@@ -1219,9 +1306,35 @@ class FileRunStore:
 
         with events_path.open("a", encoding="utf-8") as handle:
             for event in missing_events:
-                payload = dict(event)
-                payload.setdefault("ts", _utc_now())
-                handle.write(json.dumps(payload, sort_keys=True) + "\n")
+                handle.write(self._serialize_journal_event_line(dict(event)))
+
+    def _require_committed_staged_files(
+        self,
+        run_dir: Path,
+        staged_files: list[dict[str, Any]],
+        replaced: list[str],
+        *,
+        run_id: str,
+        txn_id: str,
+    ) -> None:
+        all_names = {str(entry.get("name") or "") for entry in staged_files}
+        replaced_names = {str(name) for name in replaced}
+        if replaced_names != all_names:
+            raise TransactionRecoveryError(
+                "transaction journal replaced must include every staged file",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        if staged_files and not self._verify_replaced_files_match_staged(
+            run_dir,
+            staged_files,
+            replaced,
+        ):
+            raise TransactionRecoveryError(
+                "canonical destination digest mismatch for staged transaction file",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
 
     def _assert_contained(self, path: Path) -> Path:
         resolved = path.resolve()

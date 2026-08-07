@@ -15,6 +15,21 @@ from top_down_planning.persistence import FileRunStore, PersistenceError
 from tests.unit.test_persistence_correction_fixes import _create_run, _find_txn_dir_local
 
 
+def _file_entry(
+    *,
+    kind: str,
+    name: str,
+    digest: str,
+    had_destination: bool,
+) -> dict[str, object]:
+    return {
+        "kind": kind,
+        "name": name,
+        "digest": digest,
+        "had_destination": had_destination,
+    }
+
+
 def _write_journal_txn(
     store: FileRunStore,
     run_id: str,
@@ -92,6 +107,7 @@ def test_journal_missing_physical_backup_fails_closed(tmp_path: Path) -> None:
                     "kind": "run",
                     "name": "run.json",
                     "digest": digest_file(txn_dir / "run.json"),
+                    "had_destination": True,
                 }
             ],
             "events": [],
@@ -119,8 +135,8 @@ def test_journal_duplicate_file_names_fail_closed(tmp_path: Path) -> None:
             "txn_id": "dup-files",
             "status": "prepared",
             "files": [
-                {"kind": "run", "name": "run.json", "digest": "aaa"},
-                {"kind": "plan", "name": "run.json", "digest": "bbb"},
+                _file_entry(kind="run", name="run.json", digest="aaa", had_destination=False),
+                _file_entry(kind="plan", name="run.json", digest="bbb", had_destination=False),
             ],
             "events": [],
             "backups": [],
@@ -145,7 +161,7 @@ def test_journal_kind_name_mismatch_fails_closed(tmp_path: Path) -> None:
         {
             "txn_id": "kind-mismatch",
             "status": "prepared",
-            "files": [{"kind": "run", "name": "plan.json", "digest": "abc"}],
+            "files": [_file_entry(kind="run", name="plan.json", digest="abc", had_destination=False)],
             "events": [],
             "backups": [],
             "replaced": [],
@@ -242,6 +258,15 @@ def test_event_fragment_repair_publish_failure_leaves_original_bytes(tmp_path: P
     _create_run(store)
     events_path = store.run_dir(run_id) / "events.jsonl"
     txn_id = "repair-fail"
+    event_b = {
+        "type": "event_b",
+        "run_id": run_id,
+        "txn_id": txn_id,
+        "event_index": 1,
+        "event_count": 2,
+        "ts": "2026-01-01T00:00:01Z",
+    }
+    event_b_line = json.dumps(event_b, sort_keys=True)
     first_event = json.dumps(
         {
             "type": "event_a",
@@ -254,7 +279,7 @@ def test_event_fragment_repair_publish_failure_leaves_original_bytes(tmp_path: P
         sort_keys=True,
     )
     events_path.write_text(
-        events_path.read_text(encoding="utf-8") + first_event + "\n" + '{"type": "event_b", "txn_id": "repair-fail"',
+        events_path.read_text(encoding="utf-8") + first_event + "\n" + event_b_line[:40],
         encoding="utf-8",
     )
     raw_before = events_path.read_bytes()
@@ -274,14 +299,9 @@ def test_event_fragment_repair_publish_failure_leaves_original_bytes(tmp_path: P
                     "txn_id": txn_id,
                     "event_index": 0,
                     "event_count": 2,
+                    "ts": "2026-01-01T00:00:00Z",
                 },
-                {
-                    "type": "event_b",
-                    "run_id": run_id,
-                    "txn_id": txn_id,
-                    "event_index": 1,
-                    "event_count": 2,
-                },
+                event_b,
             ],
             "backups": [],
             "replaced": [],

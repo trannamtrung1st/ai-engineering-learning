@@ -238,7 +238,7 @@ def test_false_replaced_journal_without_digest_mismatch_rolls_back(tmp_path: Pat
     journal = {
         "txn_id": "false-replaced",
         "status": "replacing",
-        "files": [{"kind": "plan", "name": "plan.json", "digest": "deadbeef"}],
+        "files": [{"kind": "plan", "name": "plan.json", "digest": "deadbeef", "had_destination": True}],
         "events": [
             {
                 "type": "test_commit",
@@ -285,6 +285,7 @@ def test_prepared_journal_discarded_without_mutating_destinations(tmp_path: Path
                 "kind": "plan",
                 "name": "plan.json",
                 "digest": digest_file(staged_plan_path),
+                "had_destination": False,
             }
         ],
         "events": [],

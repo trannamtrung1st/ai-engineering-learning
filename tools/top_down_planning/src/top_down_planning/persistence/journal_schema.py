@@ -25,6 +25,7 @@ class JournalFileEntry:
     kind: str
     name: str
     digest: str
+    had_destination: bool
     review_id: str | None = None
 
 
@@ -120,6 +121,13 @@ def _parse_file_entries(
                 run_id=run_id,
                 txn_id=txn_id,
             )
+        had_destination = entry.get("had_destination")
+        if not isinstance(had_destination, bool):
+            raise _recovery_error(
+                f"transaction journal files[{index}] missing had_destination",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
         review_id: str | None = None
         if kind == "review":
             review_id = str(entry.get("review_id") or "").strip()
@@ -134,6 +142,7 @@ def _parse_file_entries(
                 kind=kind,
                 name=name,
                 digest=digest,
+                had_destination=had_destination,
                 review_id=review_id,
             )
         )
@@ -227,6 +236,32 @@ def validate_parsed_recovery_journal_invariants(
             txn_id=txn_id,
         )
 
+    backup_names = set(parsed.backups)
+    replaced_names = set(parsed.replaced)
+    if parsed.status in {"replacing", "appending_events", "committed"}:
+        for entry in parsed.files:
+            if parsed.status == "replacing" and entry.name not in replaced_names:
+                continue
+            if entry.had_destination and entry.name not in backup_names:
+                raise _recovery_error(
+                    f"transaction journal file {entry.name!r} had_destination requires backup",
+                    run_id=run_id,
+                    txn_id=txn_id,
+                )
+            if not entry.had_destination and entry.name in backup_names:
+                raise _recovery_error(
+                    f"transaction journal file {entry.name!r} is new and cannot have backup",
+                    run_id=run_id,
+                    txn_id=txn_id,
+                )
+
+    if parsed.status in {"appending_events", "committed"} and replaced_names != seen_names:
+        raise _recovery_error(
+            "transaction journal replaced must include every staged file",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+
 
 def parse_recovery_journal(
     journal: dict[str, Any],
@@ -304,6 +339,7 @@ def journal_file_entry_as_dict(entry: JournalFileEntry) -> dict[str, Any]:
         "kind": entry.kind,
         "name": entry.name,
         "digest": entry.digest,
+        "had_destination": entry.had_destination,
     }
     if entry.review_id is not None:
         payload["review_id"] = entry.review_id

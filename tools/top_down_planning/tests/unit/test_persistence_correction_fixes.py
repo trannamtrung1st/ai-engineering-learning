@@ -181,7 +181,7 @@ def test_journal_malformed_file_entry_fails_closed(tmp_path: Path) -> None:
         {
             "txn_id": "bad-file",
             "status": "prepared",
-            "files": [{"kind": "unknown_kind", "name": "run.json", "digest": "abc"}],
+            "files": [{"kind": "unknown_kind", "name": "run.json", "digest": "abc", "had_destination": False}],
             "events": [],
             "backups": [],
             "replaced": [],
@@ -332,6 +332,7 @@ def test_save_invocation_recovers_before_write_and_preserves_new_metadata(tmp_pa
                     "kind": "invocation",
                     "name": "invocation.json",
                     "digest": "deadbeef",
+                    "had_destination": True,
                 }
             ],
             "events": [],
@@ -430,11 +431,13 @@ def test_load_resolved_config_blocks_behind_active_commit_lock(tmp_path: Path) -
                     "kind": "run",
                     "name": "run.json",
                     "digest": digest_file(txn_dir / "run.json"),
+                    "had_destination": True,
                 },
                 {
                     "kind": "resolved_config",
                     "name": "resolved-config.yaml",
                     "digest": digest_file(txn_dir / "resolved-config.yaml"),
+                    "had_destination": True,
                 },
             ],
             "events": [],

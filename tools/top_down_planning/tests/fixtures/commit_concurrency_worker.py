@@ -53,7 +53,7 @@ def hold_lock_with_prepared_txn_worker(
         {
             "txn_id": "test",
             "status": "prepared",
-            "files": [{"kind": "plan", "name": "plan.json", "digest": "fake"}],
+            "files": [{"kind": "plan", "name": "plan.json", "digest": "fake", "had_destination": True}],
             "events": [],
             "backups": [],
             "replaced": [],

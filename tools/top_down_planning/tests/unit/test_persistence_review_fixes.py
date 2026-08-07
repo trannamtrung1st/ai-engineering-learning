@@ -169,8 +169,17 @@ def test_partial_event_json_line_truncated_and_recovered(tmp_path: Path) -> None
         },
         sort_keys=True,
     )
+    event_b = {
+        "type": "event_b",
+        "run_id": run_id,
+        "txn_id": "partial",
+        "event_index": 1,
+        "event_count": 2,
+        "ts": "2026-01-01T00:00:01Z",
+    }
+    event_b_line = json.dumps(event_b, sort_keys=True)
     events_path.write_text(
-        events_path.read_text(encoding="utf-8") + first_event + "\n" + '{"type": "event_b", "txn_id": "partial',
+        events_path.read_text(encoding="utf-8") + first_event + "\n" + event_b_line[:40],
         encoding="utf-8",
     )
 
@@ -189,14 +198,9 @@ def test_partial_event_json_line_truncated_and_recovered(tmp_path: Path) -> None
                     "txn_id": "partial",
                     "event_index": 0,
                     "event_count": 2,
+                    "ts": "2026-01-01T00:00:00Z",
                 },
-                {
-                    "type": "event_b",
-                    "run_id": run_id,
-                    "txn_id": "partial",
-                    "event_index": 1,
-                    "event_count": 2,
-                },
+                event_b,
             ],
             "backups": [],
             "replaced": [],
@@ -211,7 +215,7 @@ def test_partial_event_json_line_truncated_and_recovered(tmp_path: Path) -> None
     assert recovered_types == ["event_a", "event_b"]
     trailing = events_path.read_text(encoding="utf-8")
     assert trailing.endswith("\n")
-    assert not trailing.rstrip("\n").endswith('{"type": "event_b", "txn_id": "partial')
+    assert not trailing.rstrip("\n").endswith(event_b_line[:40])
     assert not _find_txn_dir(recovered, run_id)
 
 
@@ -244,6 +248,7 @@ def test_unknown_transaction_status_fails_closed_and_retains_evidence(tmp_path: 
                     "kind": "run",
                     "name": "run.json",
                     "digest": digest_file(txn_dir / "run.json"),
+                    "had_destination": True,
                 }
             ],
             "events": [],
