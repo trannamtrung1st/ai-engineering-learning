@@ -42,6 +42,27 @@ def load_config_reader_worker(
     store_root: str,
     run_id: str,
     result_queue,
+    started_queue,
+) -> None:
+    from pathlib import Path
+
+    from top_down_planning.persistence import FileRunStore
+
+    store = FileRunStore(Path(store_root))
+    started_queue.put("reader_started")
+    config = store.load_resolved_config(run_id)
+    run = store.load_run(run_id)
+    result_queue.put(
+        {
+            "config": config,
+            "run_revision": int(run["revision"]),
+        }
+    )
+
+
+def commit_lock_writer_worker(
+    store_root: str,
+    run_id: str,
     ready_queue,
     release_queue,
 ) -> None:
@@ -51,17 +72,7 @@ def load_config_reader_worker(
     from top_down_planning.persistence import FileRunStore
 
     store = FileRunStore(Path(store_root))
-    run_dir = store.run_dir(run_id)
-    lock_path = run_dir / ".commit.lock"
+    lock_path = store.run_dir(run_id) / ".commit.lock"
     with exclusive_file_lock(lock_path):
-        ready_queue.put("loading")
+        ready_queue.put("writer_locked")
         release_queue.get(timeout=30)
-
-    config = store.load_resolved_config(run_id)
-    run = store.load_run(run_id)
-    result_queue.put(
-        {
-            "config": config,
-            "run_revision": int(run["revision"]),
-        }
-    )

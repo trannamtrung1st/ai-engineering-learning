@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import multiprocessing
 from pathlib import Path
@@ -15,11 +14,11 @@ from core_tools.persistence import TransactionRecoveryError, atomic_write_json, 
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import FileRunStore, PersistenceError
 from top_down_planning.persistence.commit import CommitSpec
-from tests.fixtures.persistence_review_worker import (
-    concurrent_create_worker,
-    load_config_reader_worker,
-)
+from tests.fixtures.persistence_review_worker import concurrent_create_worker
 from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.unit.test_persistence_correction_fixes import (
+    test_load_resolved_config_blocks_behind_active_commit_lock,
+)
 
 
 def _sample_plan(run_id: str = "run-20260101T000801-000801") -> Plan:
@@ -264,74 +263,7 @@ def test_unknown_transaction_status_fails_closed_and_retains_evidence(tmp_path: 
 
 
 def test_load_resolved_config_waits_for_pending_transaction(tmp_path: Path) -> None:
-    store = FileRunStore(tmp_path)
-    run_id = "run-20260101T000801-000801"
-    _create_run(store)
-    run_dir = store.run_dir(run_id)
-    config_before = store.load_resolved_config(run_id)
-    run_before = store.load_run(run_id)
-    expected_max_depth = config_before["planning"]["max_depth"]
-
-    txn_dir = run_dir / ".txn-config"
-    txn_dir.mkdir()
-    backups_dir = txn_dir / "backups"
-    backups_dir.mkdir()
-    staged_run = dict(run_before)
-    staged_run["revision"] = 1
-    atomic_write_json(txn_dir / "run.json", staged_run)
-    shutil_copy_path = backups_dir / "run.json"
-    shutil_copy_path.write_bytes((run_dir / "run.json").read_bytes())
-    new_config = copy.deepcopy(config_before)
-    new_config["planning"]["max_depth"] = 99
-    from core_tools.persistence import dump_yaml
-
-    (txn_dir / "resolved-config.yaml").write_text(
-        dump_yaml(new_config) + "\n",
-        encoding="utf-8",
-    )
-    atomic_write_json(run_dir / "run.json", staged_run)
-    atomic_write_json(
-        txn_dir / "journal.json",
-        {
-            "txn_id": "config",
-            "status": "replacing",
-            "files": [
-                {
-                    "kind": "run",
-                    "name": "run.json",
-                    "digest": digest_file(txn_dir / "run.json"),
-                },
-                {
-                    "kind": "resolved_config",
-                    "name": "resolved-config.yaml",
-                    "digest": digest_file(txn_dir / "resolved-config.yaml"),
-                },
-            ],
-            "events": [],
-            "backups": ["run.json"],
-            "replaced": ["run.json"],
-        },
-    )
-
-    ctx = multiprocessing.get_context("fork")
-    result_queue: multiprocessing.Queue[dict[str, Any]] = ctx.Queue()
-    ready_queue: multiprocessing.Queue[str] = ctx.Queue()
-    release_queue: multiprocessing.Queue[str] = ctx.Queue()
-    reader = ctx.Process(
-        target=load_config_reader_worker,
-        args=(str(tmp_path), run_id, result_queue, ready_queue, release_queue),
-    )
-    reader.start()
-    assert ready_queue.get(timeout=30) == "loading"
-    assert result_queue.empty()
-
-    release_queue.put("release")
-    reader.join(timeout=30)
-    assert reader.exitcode == 0
-    loaded = result_queue.get(timeout=30)
-    assert loaded["run_revision"] == 0
-    assert loaded["config"]["planning"]["max_depth"] == expected_max_depth
-    assert not list(run_dir.glob(".txn-*"))
+    test_load_resolved_config_blocks_behind_active_commit_lock(tmp_path)
 
 
 def test_concurrent_create_same_run_id_exactly_one_succeeds(tmp_path: Path) -> None:

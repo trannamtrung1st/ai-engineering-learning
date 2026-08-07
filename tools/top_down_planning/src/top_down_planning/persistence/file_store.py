@@ -31,6 +31,10 @@ from top_down_planning.persistence.capabilities import new_capability_record
 
 AGENT_REQUESTS_DIR = "agent-requests"
 from top_down_planning.persistence.commit import CommitSpec
+from top_down_planning.persistence.journal_schema import (
+    journal_file_entry_as_dict,
+    parse_recovery_journal,
+)
 from top_down_planning.persistence.digests import (
     compute_config_contract_digest,
     compute_config_execution_digest,
@@ -599,7 +603,7 @@ class FileRunStore:
         snapshot consistency with canonical files should use ``CommitSpec.invocation``.
         """
 
-        with self._with_run_commit_lock(run_id) as validated_run_id:
+        with self._with_recovered_run(run_id) as validated_run_id:
             path = self.run_dir(validated_run_id) / "invocation.json"
             atomic_write_json(path, invocation)
 
@@ -797,17 +801,18 @@ class FileRunStore:
             )
 
         journal = self._read_transaction_journal(journal_path, run_id, txn_id)
-        status = str(journal.get("status") or "prepared")
+        parsed = parse_recovery_journal(journal, run_id=run_id, expected_txn_id=txn_id)
+        status = parsed.status
         if status not in _KNOWN_TXN_STATUSES:
             raise TransactionRecoveryError(
                 f"unknown transaction status: {status}",
                 run_id=run_id,
                 txn_id=txn_id,
             )
-        staged_files = self._journal_list_field(journal, "files", run_id, txn_id)
-        journal_events = self._journal_list_field(journal, "events", run_id, txn_id)
+        staged_files = [journal_file_entry_as_dict(entry) for entry in parsed.files]
+        journal_events = parsed.events
         backups_dir = staging_dir / "backups"
-        replaced = self._journal_list_field(journal, "replaced", run_id, txn_id)
+        replaced = parsed.replaced
 
         if status in {"prepared", "replacing"}:
             all_names = {str(entry.get("name") or "") for entry in staged_files}
@@ -899,24 +904,6 @@ class FileRunStore:
             )
         return payload
 
-    def _journal_list_field(
-        self,
-        journal: dict[str, Any],
-        field: str,
-        run_id: str,
-        txn_id: str,
-    ) -> list[Any]:
-        raw = journal.get(field)
-        if raw is None:
-            return []
-        if not isinstance(raw, list):
-            raise TransactionRecoveryError(
-                f"transaction journal {field} must be a list",
-                run_id=run_id,
-                txn_id=txn_id,
-            )
-        return list(raw)
-
     def _normalize_journal_events(
         self,
         txn_id: str,
@@ -1001,13 +988,61 @@ class FileRunStore:
                     f"incomplete journaled event set for txn_id {normalized_txn_id!r}"
                 )
 
-    def _repair_events_file_trailing_partial_line(self, run_id: str) -> None:
+    def _parse_events_text(self, text: str, events_path: Path) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        if not text:
+            return events
+
+        if text.endswith("\n"):
+            body_lines = text.splitlines()
+            trailing_line: str | None = None
+        else:
+            if "\n" not in text:
+                body_lines: list[str] = []
+                trailing_line = text
+            else:
+                body, trailing_line = text.rsplit("\n", 1)
+                body_lines = body.splitlines() if body else []
+
+        for line in body_lines:
+            if not line.strip():
+                continue
+            events.append(self._parse_event_line(line, events_path))
+
+        if trailing_line is not None:
+            if trailing_line.strip():
+                events.append(self._parse_event_line(trailing_line, events_path))
+
+        return events
+
+    def _parse_event_line(self, line: str, events_path: Path) -> dict[str, Any]:
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise PersistenceError(
+                f"failed to load malformed events.jsonl line in {events_path}: {exc}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise PersistenceError(
+                f"events.jsonl line in {events_path} must be a JSON object"
+            )
+        self._require_journaled_event_fields(payload)
+        return payload
+
+    def _truncate_recoverable_trailing_fragment(self, run_id: str) -> None:
         events_path = self._events_path(run_id)
         if not events_path.is_file():
             return
         text = events_path.read_text(encoding="utf-8")
         if not text or text.endswith("\n"):
             return
+        trailing = text.rsplit("\n", 1)[-1]
+        if trailing.strip():
+            try:
+                json.loads(trailing)
+                return
+            except json.JSONDecodeError:
+                pass
         last_newline = text.rfind("\n")
         if last_newline == -1:
             events_path.write_text("", encoding="utf-8")
@@ -1020,26 +1055,11 @@ class FileRunStore:
         *,
         validate_integrity: bool = True,
     ) -> list[dict[str, Any]]:
-        self._repair_events_file_trailing_partial_line(run_id)
         events_path = self._events_path(run_id)
         if not events_path.is_file():
             return []
-        events: list[dict[str, Any]] = []
-        for line in events_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise PersistenceError(
-                    f"failed to load malformed events.jsonl line in {events_path}: {exc}"
-                ) from exc
-            if not isinstance(payload, dict):
-                raise PersistenceError(
-                    f"events.jsonl line in {events_path} must be a JSON object"
-                )
-            self._require_journaled_event_fields(payload)
-            events.append(payload)
+        text = events_path.read_text(encoding="utf-8")
+        events = self._parse_events_text(text, events_path)
         if validate_integrity:
             self._validate_event_log_integrity(events)
         return events
@@ -1051,7 +1071,7 @@ class FileRunStore:
         *,
         expected_event_count: int,
     ) -> set[int]:
-        indices: set[int] = set()
+        ordered_indices: list[int] = []
         for payload in self._load_event_payloads(run_id, validate_integrity=False):
             if str(payload.get("txn_id") or "") != txn_id:
                 continue
@@ -1060,8 +1080,15 @@ class FileRunStore:
                 raise PersistenceError(
                     f"events.jsonl txn_id {txn_id!r} has inconsistent event_count"
                 )
-            indices.add(int(payload["event_index"]))
-        return indices
+            ordered_indices.append(int(payload["event_index"]))
+
+        if ordered_indices and ordered_indices != list(range(len(ordered_indices))):
+            raise TransactionRecoveryError(
+                "journaled events for transaction are out of order or gapped",
+                run_id=run_id,
+                txn_id=txn_id,
+            )
+        return set(ordered_indices)
 
     def _destination_for_staged_entry(self, run_dir: Path, entry: dict[str, Any]) -> Path:
         if entry.get("kind") == "review":
@@ -1139,6 +1166,8 @@ class FileRunStore:
         normalized_events = self._normalize_journal_events(txn_id, journal_events)
         if not normalized_events:
             return
+
+        self._truncate_recoverable_trailing_fragment(run_id)
 
         event_count = int(normalized_events[0]["event_count"])
         existing_indices = self._existing_transaction_event_indices(

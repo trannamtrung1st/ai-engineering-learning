@@ -7,6 +7,7 @@ from typing import Any
 
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
 
 
@@ -33,15 +34,20 @@ def pause_run(
     updated["status"] = "paused"
     updated["outcome"] = None
     updated["stop"] = stop.to_dict()
-    store.save_run(run_id, updated, expected_revision)
-    store.append_event(
+    store.commit(
         run_id,
-        {
-            "type": event_type,
-            "run_id": run_id,
-            "stop": stop.to_dict(),
-            **event_fields,
-        },
+        CommitSpec(
+            run=updated,
+            run_expected_revision=expected_revision,
+            events=[
+                {
+                    "type": event_type,
+                    "run_id": run_id,
+                    "stop": stop.to_dict(),
+                    **event_fields,
+                }
+            ],
+        ),
     )
     return store.load_run(run_id)
 
@@ -67,15 +73,20 @@ def fail_run(
     updated["status"] = "failed"
     updated["outcome"] = None
     updated["stop"] = stop.to_dict()
-    store.save_run(run_id, updated, expected_revision)
-    store.append_event(
+    store.commit(
         run_id,
-        {
-            "type": "run_failed",
-            "run_id": run_id,
-            "stop": stop.to_dict(),
-            **event_fields,
-        },
+        CommitSpec(
+            run=updated,
+            run_expected_revision=expected_revision,
+            events=[
+                {
+                    "type": "run_failed",
+                    "run_id": run_id,
+                    "stop": stop.to_dict(),
+                    **event_fields,
+                }
+            ],
+        ),
     )
     return store.load_run(run_id)
 
@@ -99,15 +110,20 @@ def complete_run_with_outcome(
     updated["status"] = "completed"
     updated["outcome"] = outcome
     updated["stop"] = None
-    store.save_run(run_id, updated, expected_revision)
-    store.append_event(
+    store.commit(
         run_id,
-        {
-            "type": event_type,
-            "run_id": run_id,
-            "outcome": outcome,
-            **event_fields,
-        },
+        CommitSpec(
+            run=updated,
+            run_expected_revision=expected_revision,
+            events=[
+                {
+                    "type": event_type,
+                    "run_id": run_id,
+                    "outcome": outcome,
+                    **event_fields,
+                }
+            ],
+        ),
     )
     return store.load_run(run_id)
 

@@ -2,22 +2,44 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
+import uuid
 from pathlib import Path
 from typing import Any
+
+
+def _write_fd_all(fd: int, data: bytes) -> None:
+    offset = 0
+    while offset < len(data):
+        written = os.write(fd, data[offset:])
+        if written <= 0:
+            raise OSError("short write while persisting bytes")
+        offset += written
 
 
 def exclusive_create_bytes(path: Path, data: bytes) -> None:
     """Create ``path`` with ``data``; fail if the file already exists."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    fd = os.open(path, flags, 0o644)
+    if path.exists():
+        raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(path))
+
+    tmp_path = path.with_name(f".{path.name}.create-{os.getpid()}-{uuid.uuid4().hex[:8]}")
     try:
-        os.write(fd, data)
+        tmp_path.write_bytes(data)
+        if tmp_path.read_bytes() != data:
+            raise OSError("temporary artifact write incomplete")
+        tmp_path.replace(path)
+        if path.read_bytes() != data:
+            raise OSError("published artifact content mismatch")
+    except Exception:
+        if path.exists() and path.read_bytes() != data:
+            path.unlink(missing_ok=True)
+        raise
     finally:
-        os.close(fd)
+        tmp_path.unlink(missing_ok=True)
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
