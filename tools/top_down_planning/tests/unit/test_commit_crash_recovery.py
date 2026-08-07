@@ -15,7 +15,7 @@ from core_tools.persistence import atomic_write_json, digest_file
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.commit import CommitSpec
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.helpers import create_run_kwargs, events_append_boundary, minimal_resolved_config
 
 
 def _create_run(store: FileRunStore, run_id: str = "run-20260101T000601-000601") -> None:
@@ -115,6 +115,17 @@ def _crash_before_appending_events() -> Any:
         original_write(path, payload)
         if path.name == "journal.json" and payload.get("status") == "appending_events":
             raise OSError("simulated crash")
+
+    return patched_write
+
+
+def _crash_on_appending_events_journal_write() -> Any:
+    original_write = atomic_write_json
+
+    def patched_write(path: Path, payload: dict[str, Any]) -> None:
+        if path.name == "journal.json" and payload.get("status") == "appending_events":
+            raise OSError("simulated crash")
+        original_write(path, payload)
 
     return patched_write
 
@@ -250,6 +261,7 @@ def test_false_replaced_journal_without_digest_mismatch_rolls_back(tmp_path: Pat
         ],
         "backups": ["plan.json"],
         "replaced": ["plan.json"],
+        **events_append_boundary(store.run_dir("run-20260101T000601-000601") / "events.jsonl"),
     }
     (txn_dir / "journal.json").write_text(json.dumps(journal), encoding="utf-8")
 

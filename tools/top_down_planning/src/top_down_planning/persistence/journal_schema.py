@@ -275,26 +275,14 @@ def _parse_events_append_boundary(
 ) -> tuple[int, str]:
     if not events:
         return 0, digest_bytes(b"")
-    if status not in {"appending_events", "committed"}:
-        raw_size = journal.get("events_base_size", 0)
-        raw_digest = str(journal.get("events_base_digest") or "")
-        if raw_size == 0 and not raw_digest:
-            return 0, digest_bytes(b"")
-        if "events_base_size" not in journal or "events_base_digest" not in journal:
-            raise _recovery_error(
-                "transaction journal missing events append boundary",
-                run_id=run_id,
-                txn_id=txn_id,
-            )
-    else:
-        if "events_base_size" not in journal or "events_base_digest" not in journal:
-            raise _recovery_error(
-                "transaction journal missing events append boundary",
-                run_id=run_id,
-                txn_id=txn_id,
-            )
-        raw_size = journal["events_base_size"]
-        raw_digest = journal["events_base_digest"]
+    if "events_base_size" not in journal or "events_base_digest" not in journal:
+        raise _recovery_error(
+            "transaction journal missing events append boundary",
+            run_id=run_id,
+            txn_id=txn_id,
+        )
+    raw_size = journal["events_base_size"]
+    raw_digest = journal["events_base_digest"]
 
     if not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size < 0:
         raise _recovery_error(

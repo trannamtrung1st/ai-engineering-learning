@@ -396,6 +396,14 @@ class FileRunStore:
         if journal_events:
             self._ensure_events_file_append_boundary(validated_run_id)
 
+        events_base_size = 0
+        events_base_digest = digest_bytes(b"")
+        if journal_events:
+            events_path = self._events_path(validated_run_id)
+            events_bytes = events_path.read_bytes() if events_path.is_file() else b""
+            events_base_size = len(events_bytes)
+            events_base_digest = digest_bytes(events_bytes)
+
         staging_dir = self._assert_contained(run_dir / f".txn-{txn_id}")
         journal_path = staging_dir / "journal.json"
         backups_dir = staging_dir / "backups"
@@ -496,6 +504,8 @@ class FileRunStore:
                 "events": journal_events,
                 "backups": [],
                 "replaced": [],
+                "events_base_size": events_base_size,
+                "events_base_digest": events_base_digest,
             }
             atomic_write_json(journal_path, journal)
 
@@ -521,17 +531,10 @@ class FileRunStore:
                 atomic_write_json(journal_path, journal)
 
             journal["status"] = "appending_events"
-            events_path = self._events_path(validated_run_id)
-            if journal_events:
-                events_bytes = events_path.read_bytes() if events_path.is_file() else b""
-                journal["events_base_size"] = len(events_bytes)
-                journal["events_base_digest"] = digest_bytes(events_bytes)
-            else:
-                journal["events_base_size"] = 0
-                journal["events_base_digest"] = digest_bytes(b"")
             atomic_write_json(journal_path, journal)
 
             if journal_events:
+                events_path = self._events_path(validated_run_id)
                 with events_path.open("a", encoding="utf-8") as handle:
                     for event in journal_events:
                         handle.write(self._serialize_journal_event_line(dict(event)))
