@@ -55,6 +55,11 @@ def build_packaging_wheelhouse(destination: Path) -> Path:
     return destination.resolve()
 
 
+def _default_wheelhouse_destination() -> Path:
+    _, project_root, _ = _repo_paths()
+    return project_root / "temp" / "tdp-packaging-wheelhouse"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -62,11 +67,10 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         nargs="?",
         default=None,
-        help="Wheelhouse directory (default: ./packaging-wheelhouse under package root)",
+        help="Wheelhouse directory (default: <package>/temp/tdp-packaging-wheelhouse)",
     )
     args = parser.parse_args(argv)
-    _, project_root, _ = _repo_paths()
-    destination = args.destination or (project_root / "packaging-wheelhouse")
+    destination = args.destination or _default_wheelhouse_destination()
     wheelhouse = build_packaging_wheelhouse(destination)
     print(wheelhouse)
     return 0
