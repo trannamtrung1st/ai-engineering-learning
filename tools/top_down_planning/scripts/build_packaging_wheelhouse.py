@@ -29,10 +29,12 @@ def build_packaging_wheelhouse(destination: Path) -> Path:
     subprocess.run(
         [sys.executable, "-m", "build", "--wheel", "-o", str(destination), str(core_tools_root)],
         check=True,
+        stdout=sys.stderr,
     )
     subprocess.run(
         [sys.executable, "-m", "build", "--wheel", "-o", str(destination), str(project_root)],
         check=True,
+        stdout=sys.stderr,
     )
     subprocess.run(
         [
@@ -51,6 +53,7 @@ def build_packaging_wheelhouse(destination: Path) -> Path:
             str(destination),
         ],
         check=True,
+        stdout=sys.stderr,
     )
     return destination.resolve()
 

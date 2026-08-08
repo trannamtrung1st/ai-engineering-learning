@@ -162,3 +162,29 @@ def bind_run_digests_for_config_update(
         )
     run_patch["digests"] = digests
     return run_patch
+
+
+def validate_create_run_context_binding(
+    *,
+    resolved_config: dict[str, Any],
+    workspace: Path,
+    context_snapshot_binding: dict[str, Any],
+    context_snapshot_digest: str,
+) -> None:
+    """Require initial snapshot binding/digest to match config and workspace."""
+
+    from top_down_planning.config.context_digests import recompute_context_snapshot_binding
+
+    _, expected_digest = recompute_context_snapshot_binding(
+        resolved_config,
+        workspace=workspace,
+    )
+    if str(context_snapshot_digest or "").strip() != expected_digest:
+        raise PersistenceError(
+            "context_snapshot_digest does not match resolved config and workspace"
+        )
+    actual_digest = compute_context_snapshot_digest_from_payload(context_snapshot_binding)
+    if actual_digest != expected_digest:
+        raise PersistenceError(
+            "context_snapshot_binding does not match resolved config and workspace"
+        )

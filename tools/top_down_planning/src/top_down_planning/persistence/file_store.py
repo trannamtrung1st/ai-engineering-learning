@@ -44,9 +44,10 @@ from top_down_planning.persistence.digests import (
     compute_plan_digest,
 )
 from top_down_planning.persistence.path_containment import (
-    assert_run_contained,
-    assert_store_root_contained,
     lexical_run_dir,
+    lexical_run_owned_path,
+    lexical_store_owned_path,
+    reject_symlink_path,
     require_non_symlink_run_boundary,
 )
 from top_down_planning.persistence.path_ids import validate_run_id, validate_store_id
@@ -181,7 +182,14 @@ class FileRunStore:
         return lexical
 
     def _assert_run_contained(self, run_dir: Path, path: Path) -> Path:
-        return assert_run_contained(run_dir, path)
+        return lexical_run_owned_path(run_dir, path)
+
+    def _assert_contained(self, path: Path) -> Path:
+        return lexical_store_owned_path(self._root, path)
+
+    def _owned_run_file(self, run_id: str, name: str) -> Path:
+        run_dir = self.run_dir(run_id)
+        return lexical_run_owned_path(run_dir, run_dir / name)
 
     def create_run(
         self,
@@ -269,6 +277,16 @@ class FileRunStore:
             )
             production_payload = validate_persisted_production(production_payload)
             workspace_path = Path(str(workspace)).resolve()
+            from top_down_planning.persistence.snapshot_bindings import (
+                validate_create_run_context_binding,
+            )
+
+            validate_create_run_context_binding(
+                resolved_config=resolved_config,
+                workspace=workspace_path,
+                context_snapshot_binding=context_snapshot_binding,
+                context_snapshot_digest=context_snapshot_digest,
+            )
             validate_snapshot_digest_bindings(
                 run_record,
                 plan=plan_payload,
@@ -447,6 +465,18 @@ class FileRunStore:
         if resolved_config_payload is not None and run_payload is None:
             assert auto_run_patch is not None
             workspace_path = Path(str(current_run.get("workspace") or "")).resolve()
+            from top_down_planning.config.context_digests import context_spec_diff_is_model_only
+
+            old_config = self._read_resolved_config(validated_run_id)
+            if not context_spec_diff_is_model_only(
+                old_config,
+                resolved_config_payload,
+                workspace=workspace_path,
+            ):
+                raise PersistenceError(
+                    "resolved-config structural context change requires explicit "
+                    "run binding transition"
+                )
             auto_run_patch = bind_run_digests_for_config_update(
                 auto_run_patch,
                 resolved_config_payload,
@@ -775,7 +805,7 @@ class FileRunStore:
             return self._read_resolved_config(validated_run_id)
 
     def _read_resolved_config(self, run_id: str) -> dict[str, Any]:
-        path = self.run_dir(run_id) / "resolved-config.yaml"
+        path = self._owned_run_file(run_id, "resolved-config.yaml")
         if not path.exists():
             raise RunNotFoundError(
                 run_id,
@@ -969,7 +999,11 @@ class FileRunStore:
     def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
         validated_review_id = validate_store_id(review_id, label="review_id")
         with self._with_recovered_run(run_id) as validated_run_id:
-            path = self.reviews_dir(validated_run_id) / f"{validated_review_id}.json"
+            run_dir = self.run_dir(validated_run_id)
+            path = lexical_run_owned_path(
+                run_dir,
+                run_dir / "reviews" / f"{validated_review_id}.json",
+            )
             if not path.exists():
                 raise RunNotFoundError(
                     validated_run_id,
@@ -1002,9 +1036,13 @@ class FileRunStore:
         if not run_dir.is_dir():
             return
         for stage_dir in sorted(run_dir.glob(".stage-*")):
+            if stage_dir.is_symlink():
+                raise PersistenceError("transaction stage directory must not be a symlink")
             if stage_dir.is_dir():
                 shutil.rmtree(stage_dir, ignore_errors=True)
         for retired_dir in sorted(run_dir.glob(".retired-txn-*")):
+            if retired_dir.is_symlink():
+                raise PersistenceError("retired transaction directory must not be a symlink")
             if retired_dir.is_dir():
                 shutil.rmtree(retired_dir, ignore_errors=True)
         txn_dirs = [path for path in sorted(run_dir.glob(".txn-*")) if path.is_dir()]
@@ -1015,6 +1053,8 @@ class FileRunStore:
                 txn_id="unknown",
             )
         for txn_dir in txn_dirs:
+            if txn_dir.is_symlink():
+                raise PersistenceError("transaction directory must not be a symlink")
             self._recover_transaction_dir(run_id, run_dir, txn_dir)
 
     def _recover_transaction_dir(
@@ -1598,11 +1638,8 @@ class FileRunStore:
         except OSError:
             return
 
-    def _assert_contained(self, path: Path) -> Path:
-        return assert_store_root_contained(self._root, path)
-
     def _run_path(self, run_id: str) -> Path:
-        path = self.run_dir(run_id) / "run.json"
+        path = self._owned_run_file(run_id, "run.json")
         self._require_file(path, run_id)
         return path
 
@@ -1615,7 +1652,7 @@ class FileRunStore:
         return payload
 
     def _plan_path(self, run_id: str) -> Path:
-        path = self.run_dir(run_id) / "plan.json"
+        path = self._owned_run_file(run_id, "plan.json")
         self._require_file(path, run_id)
         return path
 
@@ -1624,7 +1661,7 @@ class FileRunStore:
         return canonicalize_persisted_plan(payload)
 
     def _production_path(self, run_id: str) -> Path:
-        path = self.run_dir(run_id) / "production.json"
+        path = self._owned_run_file(run_id, "production.json")
         self._require_file(path, run_id)
         return path
 
@@ -1636,7 +1673,11 @@ class FileRunStore:
         return validate_persisted_production(payload)
 
     def _read_review_revision(self, run_id: str, review_id: str) -> int:
-        path = self.reviews_dir(run_id) / f"{review_id}.json"
+        run_dir = self.run_dir(run_id)
+        path = lexical_run_owned_path(
+            run_dir,
+            run_dir / "reviews" / f"{review_id}.json",
+        )
         if not path.exists():
             return 0
         payload = self._read_json_object(path, label=f"review {review_id}")

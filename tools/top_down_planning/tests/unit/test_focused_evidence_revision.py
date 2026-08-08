@@ -89,7 +89,7 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551")
             "id": "output-first",
             "type": "artifact",
             "ref": "first.txt",
-            "sha256": "aa",
+            "sha256": "a" * 64,
             "size": 1,
             "media_type": "text/plain",
             "captured_at": "2026-01-01T00:00:00Z",

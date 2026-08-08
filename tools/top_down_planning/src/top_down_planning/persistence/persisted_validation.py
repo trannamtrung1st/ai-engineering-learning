@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from core_tools.persistence import PersistenceError, parse_revision_value
@@ -70,6 +71,68 @@ _SLOT_ROLE_KIND: dict[str, tuple[str, str]] = {
     PRIMARY_PLANNER_SLOT: ("planner", "primary"),
     PRIMARY_PRODUCER_SLOT: ("producer", "primary"),
 }
+
+_SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+_VALID_BATCH_STATUSES = frozenset({"started", "completed", "failed", "aborted"})
+
+
+def _require_strict_non_empty_str(value: Any, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return value
+
+
+def _require_strict_non_negative_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must be a non-negative integer")
+    if value < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer")
+    return value
+
+
+def _parse_persisted_output_evidence(entry: dict[str, Any]) -> OutputEvidence:
+    evidence_id = _require_strict_non_empty_str(entry.get("id"), "id")
+    evidence_type = _require_strict_non_empty_str(entry.get("type", "artifact"), "type")
+    ref = _require_strict_non_empty_str(entry.get("ref"), "ref")
+    sha256 = _require_strict_non_empty_str(entry.get("sha256"), "sha256")
+    if not _SHA256_PATTERN.fullmatch(sha256):
+        raise ValueError("sha256 must be a 64-character lowercase hex digest")
+    size = _require_strict_non_negative_int(entry.get("size"), "size")
+    media_type = _require_strict_non_empty_str(entry.get("media_type"), "media_type")
+    captured_at = _require_strict_non_empty_str(entry.get("captured_at"), "captured_at")
+    batch_id = entry.get("batch_id")
+    if batch_id is not None and not isinstance(batch_id, str):
+        raise ValueError("batch_id must be a string or null")
+    snapshot_ref = entry.get("snapshot_ref")
+    if snapshot_ref is not None and not isinstance(snapshot_ref, str):
+        raise ValueError("snapshot_ref must be a string or null")
+    return OutputEvidence(
+        id=evidence_id,
+        type=evidence_type,
+        ref=ref,
+        sha256=sha256,
+        size=size,
+        media_type=media_type,
+        captured_at=captured_at,
+        batch_id=batch_id,
+        snapshot_ref=snapshot_ref,
+    )
+
+
+def _parse_persisted_batch(batch: dict[str, Any]) -> ProductionBatch:
+    if "status" not in batch:
+        raise ValueError("batch status is required")
+    status = _require_strict_non_empty_str(batch.get("status"), "status")
+    if status not in _VALID_BATCH_STATUSES:
+        raise ValueError(f"invalid batch status: {status!r}")
+    agent_turns = batch.get("agent_turns", 0)
+    if agent_turns is None:
+        agent_turns = 0
+    agent_turns = _require_strict_non_negative_int(agent_turns, "agent_turns")
+    normalized = dict(batch)
+    normalized["status"] = status
+    normalized["agent_turns"] = agent_turns
+    return ProductionBatch.from_dict(normalized)
 
 
 def reject_protected_run_extras_keys(run_extras: dict[str, Any]) -> None:
@@ -206,7 +269,7 @@ def validate_persisted_production(payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(batch, dict):
             raise PersistenceError(f"production.batches[{index}] must be an object")
         try:
-            ProductionBatch.from_dict(batch)
+            _parse_persisted_batch(batch)
         except (KeyError, TypeError, ValueError) as exc:
             raise PersistenceError(
                 f"production.batches[{index}] is invalid: {exc}"
@@ -242,7 +305,7 @@ def validate_persisted_production(payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(entry, dict):
             raise PersistenceError(f"production.output_evidence[{index}] must be an object")
         try:
-            OutputEvidence.from_dict(entry)
+            _parse_persisted_output_evidence(entry)
         except (KeyError, TypeError, ValueError) as exc:
             raise PersistenceError(
                 f"production.output_evidence[{index}] is invalid: {exc}"
