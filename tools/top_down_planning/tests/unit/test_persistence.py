@@ -23,7 +23,7 @@ from top_down_planning.persistence.digests import (
     compute_config_execution_digest,
     compute_plan_digest,
 )
-from tests.helpers import minimal_invocation
+from tests.helpers import create_run_kwargs, minimal_invocation, minimal_resolved_config
 
 _EMPTY_SNAPSHOT_BINDING = {
     "resource_digests": {},
@@ -32,12 +32,28 @@ _EMPTY_SNAPSHOT_BINDING = {
 }
 
 
-def _context_create_kwargs(workspace: Path) -> dict[str, str | dict]:
-    return {
-        "context_spec_digest": "0" * 64,
-        "context_snapshot_digest": "1" * 64,
-        "context_snapshot_binding": dict(_EMPTY_SNAPSHOT_BINDING),
-    }
+def _create_run_kwargs(
+    store: FileRunStore,
+    *,
+    resolved_config: dict | None = None,
+) -> dict:
+    config = minimal_resolved_config(**(resolved_config or {}))
+    return create_run_kwargs(store.root, resolved_config=config)
+
+
+def _seed_run(
+    store: FileRunStore,
+    run_id: str = "run-20260101T000001-000001",
+    *,
+    plan: Plan | None = None,
+    resolved_config: dict | None = None,
+    invocation: dict | None = None,
+) -> dict:
+    kwargs = _create_run_kwargs(store, resolved_config=resolved_config)
+    if invocation is not None:
+        kwargs = dict(kwargs)
+        kwargs["invocation"] = invocation
+    return store.create_run(run_id, plan=plan or _sample_plan(), **kwargs)
 
 
 def _sample_plan(revision: int = 0) -> Plan:
@@ -60,26 +76,17 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     plan = _sample_plan()
     config = {"limits": {"planning": {"max_agent_turns": 5}}}
+    kwargs = _create_run_kwargs(store, resolved_config=config)
+    resolved = kwargs["resolved_config"]
 
-    run = store.create_run(
-        "run-20260101T000001-000001",
-        plan=plan,
-        resolved_config=config,
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-        workspace=str(store.root),
-        invocation=minimal_invocation(store.root),
-    )
+    run = store.create_run("run-20260101T000001-000001", plan=plan, **kwargs)
 
     run_dir = tmp_path / "run-20260101T000001-000001"
     assert run["revision"] == 0
     assert run["status"] == "running"
     assert run["workspace"] == str(store.root)
-    assert run["digests"]["config_contract"] == compute_config_contract_digest(config)
-    assert run["digests"]["config_execution"] == compute_config_execution_digest(config)
+    assert run["digests"]["config_contract"] == compute_config_contract_digest(resolved)
+    assert run["digests"]["config_execution"] == compute_config_execution_digest(resolved)
     assert "config" not in run["digests"]
     assert run["digests"]["plan"] == compute_plan_digest(plan)
     assert (run_dir / "resolved-config.yaml").exists()
@@ -96,26 +103,17 @@ def test_create_run_writes_expected_layout(tmp_path: Path) -> None:
     assert loaded_plan["items"][0]["title"] == "Root"
     assert loaded_plan["items"][0]["depth"] == 0
     assert store.load_plan_model("run-20260101T000001-000001").output_goal == "Deliver the output."
-    assert store.load_run("run-20260101T000001-000001")["digests"]["input"] == "input-a"
+    assert store.load_run("run-20260101T000001-000001")["digests"]["input"] == kwargs["input_digest"]
 
 
 def test_load_resolved_config_round_trip(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    config = {"planning": {"max_depth": 5, "max_expansion_per_item": 3}}
-    store.create_run(
-        "run-20260101T000001-000001",
-        plan=_sample_plan(),
-        resolved_config=config,
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-        workspace=str(store.root),
-        invocation=minimal_invocation(store.root),
-    )
+    overrides = {"planning": {"max_depth": 5, "max_expansion_per_item": 3}}
+    expected = minimal_resolved_config(**overrides)
+    expected["project"]["workspace"] = str(store.root.resolve())
+    _seed_run(store, resolved_config=overrides)
 
-    assert store.load_resolved_config("run-20260101T000001-000001") == config
+    assert store.load_resolved_config("run-20260101T000001-000001") == expected
 
 
 def test_create_run_persists_invocation_metadata(tmp_path: Path) -> None:
@@ -125,16 +123,9 @@ def test_create_run_persists_invocation_metadata(tmp_path: Path) -> None:
         "runs_dir": {"path": str(tmp_path), "source": "config"},
         "command": "run",
     }
-    store.create_run(
-        "run-20260101T000001-000001",
-        plan=_sample_plan(),
+    _seed_run(
+        store,
         resolved_config={"run": {"output_goal": "Goal."}},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-        workspace=str(store.root),
         invocation=invocation,
     )
     assert store.load_invocation("run-20260101T000001-000001") == invocation
@@ -153,8 +144,8 @@ def test_create_run_requires_digests(tmp_path: Path) -> None:
             input_digest="",
             output_goal_digest="goal-b",
             context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
+            context_snapshot_digest="1" * 64,
+            context_snapshot_binding=dict(_EMPTY_SNAPSHOT_BINDING),
             workspace=str(store.root),
             invocation=minimal_invocation(store.root),
         )
@@ -162,53 +153,30 @@ def test_create_run_requires_digests(tmp_path: Path) -> None:
 
 def test_create_run_requires_invocation(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
+    kwargs = _create_run_kwargs(store)
     with pytest.raises(PersistenceError, match="invocation metadata is required"):
         store.create_run(
             "run-20260101T000001-000001",
             plan=_sample_plan(),
-            resolved_config={},
-            input_digest="input-a",
-            output_goal_digest="goal-b",
-            context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-            workspace=str(store.root),
-            invocation=None,
+            **{**kwargs, "invocation": None},
         )
 
 
 def test_create_run_requires_workspace(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
+    kwargs = _create_run_kwargs(store)
     with pytest.raises(PersistenceError, match="workspace is required"):
         store.create_run(
             "run-20260101T000001-000001",
             plan=_sample_plan(),
-            resolved_config={},
-            input_digest="input-a",
-            output_goal_digest="goal-b",
-            context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-            workspace="",
-            invocation=minimal_invocation(store.root),
+            **{**kwargs, "workspace": ""},
         )
 
 
 def test_save_plan_revision_conflict(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     plan = _sample_plan()
-    store.create_run(
-        "run-20260101T000001-000001",
-        plan=plan,
-        resolved_config={},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-        workspace=str(store.root),
-        invocation=minimal_invocation(store.root),
-    )
+    _seed_run(store, plan=plan)
 
     updated = plan.to_dict()
     updated["revision"] = 1
@@ -223,18 +191,7 @@ def test_save_plan_revision_conflict(tmp_path: Path) -> None:
 def test_save_plan_requires_explicit_revision(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     plan = _sample_plan()
-    store.create_run(
-        "run-20260101T000001-000001",
-        plan=plan,
-        resolved_config={},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-        workspace=str(store.root),
-        invocation=minimal_invocation(store.root),
-    )
+    _seed_run(store, plan=plan)
 
     payload = plan.to_dict()
     del payload["revision"]
@@ -245,18 +202,7 @@ def test_save_plan_requires_explicit_revision(tmp_path: Path) -> None:
 def test_save_plan_model_round_trip(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     plan = _sample_plan()
-    store.create_run(
-        "run-20260101T000001-000001",
-        plan=plan,
-        resolved_config={},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-        workspace=str(store.root),
-        invocation=minimal_invocation(store.root),
-    )
+    _seed_run(store, plan=plan)
 
     updated = _sample_plan(revision=1)
     store.save_plan_model("run-20260101T000001-000001", updated, expected_revision=0)
@@ -265,21 +211,10 @@ def test_save_plan_model_round_trip(tmp_path: Path) -> None:
 
 def test_reload_after_new_store_instance(tmp_path: Path) -> None:
     plan = _sample_plan()
-    config = {"mode": "test"}
+    config = {"limits": {"planning": {"max_agent_turns": 5}}, "mode": "test"}
 
     store = FileRunStore(tmp_path)
-    store.create_run(
-        "run-20260101T000001-000001",
-        plan=plan,
-        resolved_config=config,
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-        workspace=str(store.root),
-        invocation=minimal_invocation(store.root),
-    )
+    _seed_run(store, plan=plan, resolved_config=config)
 
     updated = plan.to_dict()
     updated["revision"] = 1
@@ -292,18 +227,7 @@ def test_reload_after_new_store_instance(tmp_path: Path) -> None:
 
 def test_append_event_is_append_only(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    store.create_run(
-        "run-20260101T000001-000001",
-        plan=_sample_plan(),
-        resolved_config={},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-        workspace=str(store.root),
-        invocation=minimal_invocation(store.root),
-    )
+    _seed_run(store)
 
     store.append_event("run-20260101T000001-000001", {"type": "phase_changed", "phase": "production"})
     store.append_event("run-20260101T000001-000001", {"type": "plan_updated", "revision": 1})
@@ -350,28 +274,6 @@ def test_digest_helpers_are_stable() -> None:
 
 def test_create_run_rejects_duplicate(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
-    store.create_run(
-        "run-20260101T000001-000001",
-        plan=_sample_plan(),
-        resolved_config={},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-        workspace=str(store.root),
-        invocation=minimal_invocation(store.root),
-    )
+    _seed_run(store)
     with pytest.raises(PersistenceError, match="already exists"):
-        store.create_run(
-            "run-20260101T000001-000001",
-            plan=_sample_plan(),
-            resolved_config={},
-            input_digest="input-a",
-            output_goal_digest="goal-b",
-            context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding=_context_create_kwargs(store.root)["context_snapshot_binding"],
-            workspace=str(store.root),
-            invocation=minimal_invocation(store.root),
-        )
+        _seed_run(store)

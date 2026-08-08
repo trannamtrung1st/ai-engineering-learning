@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core_tools.persistence import atomic_write_json
 from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
@@ -82,7 +83,6 @@ def _build_package(tmp_path: Path) -> tuple[FileRunStore, Path, Plan]:
 
 def _force_run_fields(store: FileRunStore, run_id: str, **fields) -> None:
     run = store.load_run(run_id)
-    expected = int(run["revision"])
     run = dict(run)
     run.update(fields)
     if (
@@ -94,15 +94,11 @@ def _force_run_fields(store: FileRunStore, run_id: str, **fields) -> None:
             binding["whole_output_review_id"] = "review-whole-output-1"
             binding["whole_output_review_digest"] = "r" * 64
             run["package_binding"] = binding
-    run["revision"] = expected + 1
-    store.save_run(run_id, run, expected)
+    atomic_write_json(store.run_dir(run_id) / "run.json", run)
 
 
 def _save_production(store: FileRunStore, run_id: str, production: dict) -> None:
-    expected = int(production["revision"])
-    production = dict(production)
-    production["revision"] = expected + 1
-    store.save_production(run_id, production, expected)
+    atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
 
 def test_all_units_completed_requires_accepted_digest() -> None:
@@ -483,16 +479,27 @@ def test_attach_compares_live_output_digest_when_present(tmp_path: Path) -> None
         resolved_config=package.resolved_config,
         invocation={"command": "execute"},
     )
-    production = store.load_production(child_id)
+    production = dict(store.load_production(child_id))
     production["completion_claim"] = {
         "goal_met": True,
         "status": "accepted",
         "goal_assessment": "done",
     }
     production["output_evidence"] = [
-        {"id": "ev-1", "path": "out.txt", "kind": "file", "batch_id": "b1"}
+        {
+            "id": "ev-1",
+            "type": "artifact",
+            "ref": "out.txt",
+            "sha256": "a" * 64,
+            "size": 4,
+            "media_type": "text/plain",
+            "captured_at": "2026-01-01T00:00:00Z",
+            "batch_id": "b1",
+        }
     ]
-    _save_production(store, child_id, production)
+    expected = int(production["revision"])
+    production["revision"] = expected + 1
+    store.save_production(child_id, production, expected)
     live = compute_output_digest(store.load_production(child_id))
     digests = dict(store.load_run(child_id).get("digests") or {})
     digests["output"] = "0" * 64

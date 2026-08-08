@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core_tools.persistence import atomic_write_text_secure, RunNotFoundError
+from core_tools.persistence import atomic_write_text_secure, RunNotFoundError, PersistenceError
 
 from top_down_planning.persistence.interface import RunStore
 
@@ -158,7 +158,27 @@ def parse_capability_token(value: str) -> tuple[str, str]:
 def capability_token_file_path(store: RunStore, run_id: str) -> Path:
     """Return the orchestrator-owned path for the active session capability token."""
 
+    active_path = getattr(store, "active_capability_token_path", None)
+    if callable(active_path):
+        return active_path(run_id)
     return store.capabilities_dir(run_id).parent / "capability" / "current"
+
+
+def _require_safe_capability_token_path(store: RunStore, run_id: str) -> Path:
+    from core_tools.persistence import PersistenceError
+
+    path = capability_token_file_path(store, run_id)
+    capability_dir = path.parent
+    if capability_dir.is_symlink():
+        raise PersistenceError("run path capability must not be a symlink")
+    run_dir = store.run_dir(run_id)
+    assert_run_contained = getattr(store, "_assert_run_contained", None)
+    if callable(assert_run_contained):
+        return assert_run_contained(run_dir, path)
+    resolved = path.resolve()
+    if not resolved.is_relative_to(run_dir.resolve()):
+        raise PersistenceError(f"path escapes run directory: {path}")
+    return path
 
 
 def read_capability_token_file(path: Path) -> str | None:
@@ -179,7 +199,7 @@ def write_capability_token_file(store: RunStore, run_id: str, token: str) -> Pat
     run_dir = store.run_dir(run_id)
     if not run_dir.is_dir() or not (run_dir / "run.json").is_file():
         raise RunNotFoundError(run_id, "run.json missing", runs_root=store.root)
-    path = capability_token_file_path(store, run_id)
+    path = _require_safe_capability_token_path(store, run_id)
     atomic_write_text_secure(path, f"{str(token).strip()}\n")
     return path
 
@@ -187,7 +207,7 @@ def write_capability_token_file(store: RunStore, run_id: str, token: str) -> Pat
 def clear_capability_token_file(store: RunStore, run_id: str) -> None:
     """Remove the active capability token file when a session ends."""
 
-    path = capability_token_file_path(store, run_id)
+    path = _require_safe_capability_token_path(store, run_id)
     try:
         path.unlink(missing_ok=True)
     except OSError:

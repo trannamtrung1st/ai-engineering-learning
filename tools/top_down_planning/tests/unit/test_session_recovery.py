@@ -514,7 +514,7 @@ def test_producer_replacement_blocked_by_evidence_mismatch(tmp_path: Path) -> No
     expected_production_revision = int(production["revision"])
     production = dict(production)
     production["revision"] = expected_production_revision + 1
-    production["output_evidence"] = [evidence]
+    production["output_evidence"] = [{**evidence, "id": "out-artifact"}]
     store.save_production(
         run_id,
         production,

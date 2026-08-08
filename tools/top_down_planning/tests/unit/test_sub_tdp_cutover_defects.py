@@ -442,9 +442,12 @@ def test_accepted_child_two_batches_same_file_records_final_hash(tmp_path: Path)
     evidence.append(
         {
             "id": "out-a-v3",
+            "type": "artifact",
             "ref": "shared/state.json",
             "sha256": digest_file(shared),
             "size": shared.stat().st_size,
+            "media_type": "application/json",
+            "captured_at": "2026-01-01T00:00:00Z",
             "snapshot_ref": "artifacts/manual-v3",
             "batch_id": batch_id,
         }

@@ -8,8 +8,16 @@ from core_tools.persistence import PersistenceError, parse_revision_value
 
 from top_down_planning.config.binding_validation import validate_context_snapshot_binding
 from top_down_planning.domain.models import Plan
-from top_down_planning.domain.production import ItemDispositionRecord, ProductionBatch
+from top_down_planning.domain.production import (
+    ItemDispositionRecord,
+    OutputEvidence,
+    ProductionBatch,
+)
 from top_down_planning.domain.reviews import ReviewLoop
+from top_down_planning.domain.run_lifecycle import (
+    RunLifecycleError,
+    validate_run_lifecycle_invariants,
+)
 from top_down_planning.domain.session_bindings import (
     PRIMARY_PLANNER_SLOT,
     PRIMARY_PRODUCER_SLOT,
@@ -21,6 +29,7 @@ from top_down_planning.persistence.run_schema import (
     validate_run_digests,
     validate_run_schema_version,
 )
+from top_down_planning.domain.session_recovery_state import validate_session_recovery_fields
 
 _PROTECTED_RUN_RECORD_KEYS = frozenset(
     {
@@ -147,6 +156,18 @@ def _validate_required_run_digests(payload: dict[str, Any]) -> None:
             raise PersistenceError(f"digests.{key} is required on schema v3 run records")
 
 
+def validate_canonical_run(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate a run payload for publication and reload symmetry."""
+
+    normalized = validate_persisted_run(run_id, payload)
+    try:
+        validate_run_lifecycle_invariants(normalized)
+        validate_session_recovery_fields(normalized)
+    except RunLifecycleError as exc:
+        raise PersistenceError(str(exc)) from exc
+    return normalized
+
+
 def validate_persisted_run(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     validate_run_schema_version(payload)
     validate_run_digests(payload)
@@ -212,6 +233,35 @@ def validate_persisted_production(payload: dict[str, Any]) -> dict[str, Any]:
             raise PersistenceError(
                 f"production.dispositions[{item_id!r}] is invalid: {exc}"
             ) from exc
+    output_evidence = payload.get("output_evidence")
+    if output_evidence is None:
+        output_evidence = []
+    if not isinstance(output_evidence, list):
+        raise PersistenceError("production.output_evidence must be a list")
+    for index, entry in enumerate(output_evidence):
+        if not isinstance(entry, dict):
+            raise PersistenceError(f"production.output_evidence[{index}] must be an object")
+        try:
+            OutputEvidence.from_dict(entry)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersistenceError(
+                f"production.output_evidence[{index}] is invalid: {exc}"
+            ) from exc
+    completion_claim = payload.get("completion_claim")
+    if completion_claim is not None and not isinstance(completion_claim, dict):
+        raise PersistenceError("production.completion_claim must be an object or null")
+    for field_name in ("amendment_requests", "reconciliation_reports"):
+        value = payload.get(field_name)
+        if value is None:
+            continue
+        if not isinstance(value, list):
+            raise PersistenceError(f"production.{field_name} must be a list")
+    blocker_report = payload.get("blocker_report")
+    if blocker_report is not None and not isinstance(blocker_report, dict):
+        raise PersistenceError("production.blocker_report must be an object or null")
+    sub_tdps = payload.get("sub_tdps")
+    if sub_tdps is not None and not isinstance(sub_tdps, dict):
+        raise PersistenceError("production.sub_tdps must be an object or null")
     return dict(payload)
 
 
@@ -247,6 +297,7 @@ __all__ = [
     "canonicalize_persisted_plan",
     "canonicalize_persisted_review",
     "reject_protected_run_extras_keys",
+    "validate_canonical_run",
     "validate_persisted_production",
     "validate_persisted_review_binding",
     "validate_persisted_run",

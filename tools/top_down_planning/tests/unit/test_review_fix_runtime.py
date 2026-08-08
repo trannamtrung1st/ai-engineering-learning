@@ -266,7 +266,11 @@ def test_map_audit_event_maps_sub_tdp_boundaries() -> None:
 def test_dependency_accepted_requires_same_package(tmp_path: Path) -> None:
     store, package_dir = _build_package(tmp_path)
     package = ExecutionPackageLoader().load(package_dir, verify_workspace=False)
-    kwargs = create_run_kwargs(tmp_path)
+    kwargs = create_run_kwargs(
+        tmp_path,
+        plan=package.units["item-a"].plan,
+        run_kind=RUN_KIND_SUB_TDP_EXECUTION,
+    )
     store.create_run(
         "run-20260101T002010-002010",
         plan=package.units["item-a"].plan,
@@ -351,7 +355,11 @@ def test_attach_rejected_during_whole_output_review(tmp_path: Path) -> None:
     merged = merge_sub_tdp_state_into_production(production, state)
     store.save_production("run-20260101T002020-002020", {**merged, "revision": 1}, 0)
 
-    child_kwargs = create_run_kwargs(tmp_path)
+    child_kwargs = create_run_kwargs(
+        tmp_path,
+        plan=package.units["item-a"].plan,
+        run_kind=RUN_KIND_SUB_TDP_EXECUTION,
+    )
     store.create_run(
         "run-20260101T002021-002021",
         plan=package.units["item-a"].plan,

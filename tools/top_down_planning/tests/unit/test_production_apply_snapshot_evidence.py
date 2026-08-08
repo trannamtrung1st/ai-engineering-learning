@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from core_tools.persistence import atomic_write_json
 from top_down_planning.agent_tool import (
     ProductionAgentService,
     ProductionContextMutationError,
@@ -425,6 +426,10 @@ def test_invalid_evidence_refs_fail_at_apply_time(tmp_path: Path) -> None:
             "id": "out-bad",
             "type": "artifact",
             "ref": "/etc/passwd",
+            "sha256": "0" * 64,
+            "size": 0,
+            "media_type": "application/octet-stream",
+            "captured_at": "2026-01-01T00:00:00Z",
         }
     ]
     store.save_production(run_id, production, expected_revision=expected_revision)
@@ -457,6 +462,12 @@ def test_guidance_drift_raises_context_mutation_error(tmp_path: Path) -> None:
     config["agent_context"] = agent_context
     config_path = store.run_dir(run_id) / "resolved-config.yaml"
     config_path.write_text(dump_yaml(config) + "\n", encoding="utf-8")
+    from top_down_planning.persistence.snapshot_bindings import bind_run_digests_for_config_update
+
+    run = store.load_run(run_id)
+    workspace = Path(str(run.get("workspace") or store.root)).resolve()
+    run = bind_run_digests_for_config_update(run, config, workspace=workspace)
+    atomic_write_json(store.run_dir(run_id) / "run.json", run)
 
     service = ProductionAgentService(store, run_id)
     token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)

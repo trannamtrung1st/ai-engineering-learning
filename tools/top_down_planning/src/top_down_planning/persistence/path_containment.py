@@ -7,8 +7,26 @@ from pathlib import Path
 from core_tools.persistence import PersistenceError
 
 _RUN_SCOPED_SYMLINK_CHILDREN = frozenset(
-    {"run.json", "reviews", "artifacts", "capabilities", "events.jsonl"}
+    {
+        "run.json",
+        "reviews",
+        "artifacts",
+        "capabilities",
+        "capability",
+        "agent-requests",
+        "events.jsonl",
+    }
 )
+
+
+def lexical_run_dir(root: Path, run_id: str) -> Path:
+    """Return the lexical run directory after store-root and symlink checks."""
+
+    lexical = root / run_id
+    if lexical.is_symlink():
+        raise PersistenceError("run directory must not be a symlink")
+    assert_store_root_contained(root, lexical)
+    return lexical
 
 
 def validate_journal_basename(name: str, *, label: str = "name") -> str:

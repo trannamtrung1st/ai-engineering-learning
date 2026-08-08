@@ -413,8 +413,14 @@ def create_run_kwargs(
     workspace: Path,
     *,
     resolved_config: dict[str, Any] | None = None,
+    plan: Any | None = None,
+    run_kind: str | None = None,
 ) -> dict[str, str | dict[str, Any]]:
     """Return shared ``create_run`` digest/config kwargs for tests."""
+
+    from top_down_planning.config.resolve import compute_unit_output_goal_digest
+    from top_down_planning.domain.models import Plan as PlanModel
+    from top_down_planning.domain.run_kind import RUN_KIND_SUB_TDP_EXECUTION
 
     config = _normalize_test_resolved_config(resolved_config or minimal_resolved_config())
     if isinstance(config.get("project"), dict):
@@ -424,6 +430,9 @@ def create_run_kwargs(
     input_digest, output_goal_digest, context_spec_digest, context_snapshot_digest, binding = (
         run_digests_for_config(workspace, config)
     )
+    if run_kind == RUN_KIND_SUB_TDP_EXECUTION and plan is not None:
+        plan_model = plan if isinstance(plan, PlanModel) else PlanModel.from_dict(plan)
+        output_goal_digest = compute_unit_output_goal_digest(plan_model.output_goal)
     return {
         "resolved_config": config,
         "input_digest": input_digest,

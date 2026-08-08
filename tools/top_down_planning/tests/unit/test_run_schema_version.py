@@ -16,13 +16,7 @@ from top_down_planning.persistence import (
     UnsupportedRunSchemaVersionError,
     validate_run_schema_version,
 )
-from tests.helpers import minimal_invocation
-
-_EMPTY_SNAPSHOT_BINDING = {
-    "resource_digests": {},
-    "skill_digests": {},
-    "guidance_digests": [],
-}
+from tests.helpers import create_run_kwargs
 
 
 def _sample_plan() -> Plan:
@@ -45,16 +39,7 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000001-000001")
     return store.create_run(
         run_id,
         plan=_sample_plan(),
-        resolved_config={"limits": {}},
-        input_digest="input-a",
-        output_goal_digest="goal-b",
-        context_spec_digest="0" * 64,
-        context_snapshot_digest="1" * 64,
-        context_snapshot_binding={
-            **_EMPTY_SNAPSHOT_BINDING,
-        },
-        workspace=str(store.root),
-        invocation=minimal_invocation(store.root),
+        **create_run_kwargs(store.root),
     )
 
 

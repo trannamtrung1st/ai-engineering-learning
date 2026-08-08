@@ -46,6 +46,7 @@ from top_down_planning.persistence.digests import (
 from top_down_planning.persistence.path_containment import (
     assert_run_contained,
     assert_store_root_contained,
+    lexical_run_dir,
     require_non_symlink_run_boundary,
 )
 from top_down_planning.persistence.path_ids import validate_run_id, validate_store_id
@@ -59,17 +60,13 @@ from top_down_planning.persistence.run_schema import (
     CURRENT_RUN_SCHEMA_VERSION,
 )
 from top_down_planning.config.binding_validation import validate_context_snapshot_binding
-from top_down_planning.domain.run_lifecycle import (
-    RunLifecycleError,
-    validate_run_lifecycle_invariants,
-)
-from top_down_planning.domain.session_recovery_state import validate_session_recovery_fields
 from top_down_planning.persistence.persisted_validation import (
     canonicalize_persisted_plan,
     canonicalize_persisted_review,
     reject_protected_run_extras_keys,
     validate_persisted_production,
     validate_persisted_review_binding,
+    validate_canonical_run,
     validate_persisted_run,
 )
 from top_down_planning.persistence.snapshot_bindings import (
@@ -178,10 +175,10 @@ class FileRunStore:
 
     def run_dir(self, run_id: str) -> Path:
         validated = validate_run_id(run_id)
-        run_dir = self._assert_contained(self._root / validated)
-        if run_dir.is_dir():
-            require_non_symlink_run_boundary(run_dir)
-        return run_dir
+        lexical = lexical_run_dir(self._root, validated)
+        if lexical.is_dir():
+            require_non_symlink_run_boundary(lexical)
+        return lexical
 
     def _assert_run_contained(self, run_dir: Path, path: Path) -> Path:
         return assert_run_contained(run_dir, path)
@@ -267,6 +264,19 @@ class FileRunStore:
                 "ts": _utc_now(),
             }
 
+            production_payload = (
+                production if production is not None else dict(_EMPTY_PRODUCTION)
+            )
+            production_payload = validate_persisted_production(production_payload)
+            workspace_path = Path(str(workspace)).resolve()
+            validate_snapshot_digest_bindings(
+                run_record,
+                plan=plan_payload,
+                production=production_payload,
+                resolved_config=resolved_config,
+                workspace=workspace_path,
+            )
+
             try:
                 staging_dir.mkdir(parents=True)
                 (staging_dir / "reviews").mkdir()
@@ -277,11 +287,11 @@ class FileRunStore:
                     staging_dir / "resolved-config.yaml",
                     dump_yaml(resolved_config) + "\n",
                 )
-                atomic_write_json(staging_dir / "run.json", run_record)
+                atomic_write_json(staging_dir / "run.json", validate_canonical_run(validated_run_id, run_record))
                 atomic_write_json(staging_dir / "plan.json", plan_payload)
                 atomic_write_json(
                     staging_dir / "production.json",
-                    production if production is not None else dict(_EMPTY_PRODUCTION),
+                    production_payload,
                 )
                 atomic_write_json(staging_dir / "invocation.json", invocation)
                 atomic_write_text(
@@ -436,13 +446,15 @@ class FileRunStore:
 
         if resolved_config_payload is not None and run_payload is None:
             assert auto_run_patch is not None
+            workspace_path = Path(str(current_run.get("workspace") or "")).resolve()
             auto_run_patch = bind_run_digests_for_config_update(
                 auto_run_patch,
                 resolved_config_payload,
+                workspace=workspace_path,
             )
 
         if auto_run_patch is not None and run_payload is None:
-            run_payload = validate_persisted_run(validated_run_id, auto_run_patch)
+            run_payload = validate_canonical_run(validated_run_id, auto_run_patch)
 
         review_payloads: list[tuple[str, dict[str, Any]]] = []
         for review in spec.reviews:
@@ -501,15 +513,22 @@ class FileRunStore:
             or production_payload is not None
             or resolved_config_payload is not None
         ):
+            prospective_config = (
+                resolved_config_payload
+                if resolved_config_payload is not None
+                else self._read_resolved_config(validated_run_id)
+            )
+            workspace = Path(str(prospective_run.get("workspace") or "")).resolve()
             validate_snapshot_digest_bindings(
                 prospective_run,
-                plan=prospective_plan if plan_payload is not None else None,
-                production=prospective_production if production_payload is not None else None,
-                resolved_config=resolved_config_payload,
+                plan=prospective_plan,
+                production=prospective_production,
+                resolved_config=prospective_config,
+                workspace=workspace,
             )
 
         if run_payload is not None:
-            run_payload = validate_persisted_run(validated_run_id, run_payload)
+            run_payload = validate_canonical_run(validated_run_id, run_payload)
         if plan_payload is not None:
             plan_payload = canonicalize_persisted_plan(plan_payload)
         if production_payload is not None:
@@ -753,17 +772,20 @@ class FileRunStore:
 
     def load_resolved_config(self, run_id: str) -> dict[str, Any]:
         with self._with_recovered_run(run_id) as validated_run_id:
-            path = self.run_dir(validated_run_id) / "resolved-config.yaml"
-            if not path.exists():
-                raise RunNotFoundError(
-                    validated_run_id,
-                    "resolved-config.yaml missing",
-                    runs_root=self._root,
-                )
-            payload = load_yaml(path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict):
-                raise PersistenceError("resolved-config.yaml must contain a mapping")
-            return payload
+            return self._read_resolved_config(validated_run_id)
+
+    def _read_resolved_config(self, run_id: str) -> dict[str, Any]:
+        path = self.run_dir(run_id) / "resolved-config.yaml"
+        if not path.exists():
+            raise RunNotFoundError(
+                run_id,
+                "resolved-config.yaml missing",
+                runs_root=self._root,
+            )
+        payload = load_yaml(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise PersistenceError("resolved-config.yaml must contain a mapping")
+        return payload
 
     def save_invocation(self, run_id: str, invocation: dict[str, Any]) -> None:
         """Persist CLI invocation metadata under the per-run commit lock.
@@ -800,6 +822,13 @@ class FileRunStore:
     def artifacts_dir(self, run_id: str) -> Path:
         run_dir = self.run_dir(run_id)
         return self._assert_run_contained(run_dir, run_dir / "artifacts")
+
+    def active_capability_token_path(self, run_id: str) -> Path:
+        run_dir = self.run_dir(run_id)
+        capability_dir = run_dir / "capability"
+        if capability_dir.is_symlink():
+            raise PersistenceError("run path capability must not be a symlink")
+        return self._assert_run_contained(run_dir, capability_dir / "current")
 
     def agent_requests_dir(self, run_id: str) -> Path:
         run_dir = self.run_dir(run_id)
@@ -881,8 +910,13 @@ class FileRunStore:
     def artifact_path(self, run_id: str, snapshot_id: str, filename: str) -> Path:
         validated_snapshot_id = validate_store_id(snapshot_id, label="snapshot_id")
         validated_filename = validate_store_id(filename, label="artifact_filename")
-        return self._assert_contained(
-            self.artifacts_dir(run_id) / validated_snapshot_id / validated_filename
+        run_dir = self.run_dir(run_id)
+        snapshot_dir = self.artifacts_dir(run_id) / validated_snapshot_id
+        if snapshot_dir.is_symlink():
+            raise PersistenceError("artifact snapshot path must not be a symlink")
+        return self._assert_run_contained(
+            run_dir,
+            snapshot_dir / validated_filename,
         )
 
     def write_artifact_bytes(
@@ -1574,15 +1608,10 @@ class FileRunStore:
 
     def _read_run(self, run_id: str) -> dict[str, Any]:
         payload = self._read_json_object(self._run_path(run_id), label="run.json")
-        payload = validate_persisted_run(run_id, payload)
+        payload = validate_canonical_run(run_id, payload)
         binding = payload.get("context_snapshot_binding")
         if binding is not None:
             validate_context_snapshot_binding(binding)
-        try:
-            validate_run_lifecycle_invariants(payload)
-            validate_session_recovery_fields(payload)
-        except RunLifecycleError as exc:
-            raise PersistenceError(str(exc)) from exc
         return payload
 
     def _plan_path(self, run_id: str) -> Path:

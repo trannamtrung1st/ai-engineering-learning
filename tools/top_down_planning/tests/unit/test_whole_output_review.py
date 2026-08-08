@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core_tools.persistence import atomic_write_json
 from core_tools.provider import StubProvider
 from top_down_planning.agent_tool import RequestError, ReviewAgentService
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
@@ -848,13 +849,11 @@ def test_whole_output_package_uses_current_digest_for_family_view_when_run_diges
     current_revision = int(production["output_revision"])
     current_digest = mandatory_output_digest(store, run_id)
     run = store.load_run(run_id)
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
     digests = dict(run.get("digests") or {})
     digests["output"] = "stale-output-digest-00000000"
+    run = dict(run)
     run["digests"] = digests
-    store.save_run(run_id, run, expected_revision)
+    atomic_write_json(store.run_dir(run_id) / "run.json", run)
     assert digests["output"] != current_digest
 
     finding = ReviewFinding(
