@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from typing import Any
 
 from core_tools.persistence import PersistenceError
 
@@ -77,14 +79,10 @@ def reject_symlink_path(path: Path, *, label: str) -> None:
 def reject_symlink_components_between(base: Path, path: Path) -> None:
     """Reject when any component between ``base`` and ``path`` is a symlink."""
 
-    base_resolved = base.resolve()
-    resolved = path.resolve()
-    if resolved != base_resolved and not resolved.is_relative_to(base_resolved):
-        raise PersistenceError(f"path escapes run directory: {path}")
     try:
         relative = path.relative_to(base)
-    except ValueError:
-        relative = resolved.relative_to(base_resolved)
+    except ValueError as exc:
+        raise PersistenceError(f"path escapes run directory: {path}") from exc
     current = base
     for part in relative.parts:
         current = current / part
@@ -95,9 +93,9 @@ def reject_symlink_components_between(base: Path, path: Path) -> None:
 def lexical_run_owned_path(run_dir: Path, path: Path) -> Path:
     """Return a lexical run-owned path after containment and symlink checks."""
 
-    lexical = assert_run_contained(run_dir, path)
-    reject_symlink_components_between(run_dir, lexical)
-    return lexical
+    reject_symlink_components_between(run_dir, path)
+    assert_run_contained(run_dir, path)
+    return path
 
 
 def lexical_store_owned_path(root: Path, path: Path) -> Path:
@@ -106,6 +104,28 @@ def lexical_store_owned_path(root: Path, path: Path) -> Path:
     lexical = assert_store_root_contained(root, path)
     reject_symlink_path(lexical, label=str(path.name or path))
     return lexical
+
+
+def lexical_txn_owned_path(txn_dir: Path, path: Path) -> Path:
+    """Return a lexical transaction-owned path after containment and symlink checks."""
+
+    reject_symlink_components_between(txn_dir, path)
+    txn_resolved = txn_dir.resolve()
+    resolved = path.resolve()
+    if resolved != txn_resolved and not resolved.is_relative_to(txn_resolved):
+        raise PersistenceError(f"path escapes transaction directory: {path}")
+    return path
+
+
+def require_sha256_digest(value: Any, *, field_name: str) -> str:
+    """Require a lowercase 64-character SHA-256 hex digest string."""
+
+    if not isinstance(value, str) or not value.strip():
+        raise PersistenceError(f"{field_name} must be a non-empty SHA-256 digest")
+    digest = value.strip()
+    if not re.fullmatch(r"^[a-f0-9]{64}$", digest):
+        raise PersistenceError(f"{field_name} must be a 64-character lowercase hex digest")
+    return digest
 
 
 def require_non_symlink_run_boundary(run_dir: Path) -> None:

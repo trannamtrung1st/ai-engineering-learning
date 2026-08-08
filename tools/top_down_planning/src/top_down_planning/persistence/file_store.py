@@ -47,8 +47,10 @@ from top_down_planning.persistence.path_containment import (
     lexical_run_dir,
     lexical_run_owned_path,
     lexical_store_owned_path,
+    lexical_txn_owned_path,
     reject_symlink_path,
     require_non_symlink_run_boundary,
+    validate_journal_basename,
 )
 from top_down_planning.persistence.path_ids import validate_run_id, validate_store_id
 from top_down_planning.domain.plan_schema import (
@@ -74,6 +76,7 @@ from top_down_planning.persistence.snapshot_bindings import (
     bind_run_digests_for_config_update,
     bind_run_digests_for_plan_update,
     bind_run_digests_for_production_update,
+    validate_context_snapshot_transition,
     validate_snapshot_digest_bindings,
 )
 from top_down_planning.persistence.session_bindings import (
@@ -190,6 +193,40 @@ class FileRunStore:
     def _owned_run_file(self, run_id: str, name: str) -> Path:
         run_dir = self.run_dir(run_id)
         return lexical_run_owned_path(run_dir, run_dir / name)
+
+    def _review_record_path(self, run_id: str, review_id: str) -> Path:
+        validated_review_id = validate_store_id(review_id, label="review_id")
+        run_dir = self.run_dir(run_id)
+        return lexical_run_owned_path(
+            run_dir,
+            run_dir / "reviews" / f"{validated_review_id}.json",
+        )
+
+    def _capability_record_path(self, run_id: str, capability_id: str) -> Path:
+        validated_id = validate_store_id(capability_id, label="capability_id")
+        run_dir = self.run_dir(run_id)
+        return lexical_run_owned_path(
+            run_dir,
+            run_dir / "capabilities" / f"{validated_id}.json",
+        )
+
+    def _txn_journal_path(self, txn_dir: Path) -> Path:
+        return lexical_txn_owned_path(txn_dir, txn_dir / "journal.json")
+
+    def _txn_backups_dir(self, txn_dir: Path) -> Path:
+        backups_dir = lexical_txn_owned_path(txn_dir, txn_dir / "backups")
+        if backups_dir.is_symlink():
+            raise PersistenceError("transaction backups directory must not be a symlink")
+        return backups_dir
+
+    def _txn_backup_path(self, txn_dir: Path, name: str) -> Path:
+        validated_name = validate_journal_basename(name, label="backup name")
+        backups_dir = self._txn_backups_dir(txn_dir)
+        return lexical_txn_owned_path(txn_dir, backups_dir / validated_name)
+
+    def _txn_staged_path(self, txn_dir: Path, name: str) -> Path:
+        validated_name = validate_journal_basename(name, label="staged file name")
+        return lexical_txn_owned_path(txn_dir, txn_dir / validated_name)
 
     def create_run(
         self,
@@ -537,18 +574,25 @@ class FileRunStore:
             if production_payload is not None
             else self._read_production(validated_run_id)
         )
+        prospective_config = (
+            resolved_config_payload
+            if resolved_config_payload is not None
+            else self._read_resolved_config(validated_run_id)
+        )
         if (
             run_payload is not None
             or plan_payload is not None
             or production_payload is not None
             or resolved_config_payload is not None
         ):
-            prospective_config = (
-                resolved_config_payload
-                if resolved_config_payload is not None
-                else self._read_resolved_config(validated_run_id)
-            )
             workspace = Path(str(prospective_run.get("workspace") or "")).resolve()
+            validate_context_snapshot_transition(
+                current_run,
+                prospective_run,
+                self._read_resolved_config(validated_run_id),
+                prospective_config,
+                workspace=workspace,
+            )
             validate_snapshot_digest_bindings(
                 prospective_run,
                 plan=prospective_plan,
@@ -692,14 +736,14 @@ class FileRunStore:
             txn_dir = self._assert_run_contained(run_dir, run_dir / f".txn-{txn_id}")
             stage_dir.rename(txn_dir)
             published = True
-            journal_path = txn_dir / "journal.json"
-            backups_dir = txn_dir / "backups"
+            journal_path = self._txn_journal_path(txn_dir)
+            self._txn_backups_dir(txn_dir)
 
             journal["status"] = "replacing"
             atomic_write_json(journal_path, journal)
 
             for entry in staged_files:
-                staged_path = txn_dir / entry["name"]
+                staged_path = self._txn_staged_path(txn_dir, entry["name"])
                 if entry["kind"] == "review":
                     reviews_dir = self.reviews_dir(validated_run_id)
                     reviews_dir.mkdir(parents=True, exist_ok=True)
@@ -708,7 +752,7 @@ class FileRunStore:
                     dest = run_dir / entry["name"]
                 self._assert_run_contained(run_dir, dest)
                 if dest.exists():
-                    backup_path = backups_dir / entry["name"]
+                    backup_path = self._txn_backup_path(txn_dir, entry["name"])
                     shutil.copy2(dest, backup_path)
                     journal["backups"].append(entry["name"])
                     atomic_write_json(journal_path, journal)
@@ -896,15 +940,14 @@ class FileRunStore:
 
     def load_capability(self, run_id: str, capability_id: str) -> dict[str, Any]:
         validated_run_id = self._require_existing_run(run_id)
-        validated_id = validate_store_id(capability_id, label="capability_id")
-        path = self.capabilities_dir(validated_run_id) / f"{validated_id}.json"
+        path = self._capability_record_path(validated_run_id, capability_id)
         if not path.exists():
             raise RunNotFoundError(
                 validated_run_id,
-                f"capability {validated_id} missing",
+                f"capability {capability_id} missing",
                 runs_root=self._root,
             )
-        return self._read_json_object(path, label=f"capability {validated_id}")
+        return self._read_json_object(path, label=f"capability {capability_id}")
 
     def list_capabilities(self, run_id: str) -> list[dict[str, Any]]:
         validated_run_id = self._require_existing_run(run_id)
@@ -913,7 +956,10 @@ class FileRunStore:
             return []
         records: list[dict[str, Any]] = []
         for path in sorted(capabilities_dir.glob("*.json")):
-            records.append(self._read_json_object(path, label=f"capability {path.stem}"))
+            record_path = self._capability_record_path(validated_run_id, path.stem)
+            records.append(
+                self._read_json_object(record_path, label=f"capability {path.stem}")
+            )
         return records
 
     def revoke_capability(self, run_id: str, capability_id: str) -> None:
@@ -922,7 +968,7 @@ class FileRunStore:
         record["revoked"] = True
         validated_id = validate_store_id(capability_id, label="capability_id")
         atomic_write_json(
-            self.capabilities_dir(validated_run_id) / f"{validated_id}.json",
+            self._capability_record_path(validated_run_id, validated_id),
             record,
         )
 
@@ -999,11 +1045,7 @@ class FileRunStore:
     def load_review(self, run_id: str, review_id: str) -> dict[str, Any]:
         validated_review_id = validate_store_id(review_id, label="review_id")
         with self._with_recovered_run(run_id) as validated_run_id:
-            run_dir = self.run_dir(validated_run_id)
-            path = lexical_run_owned_path(
-                run_dir,
-                run_dir / "reviews" / f"{validated_review_id}.json",
-            )
+            path = self._review_record_path(validated_run_id, validated_review_id)
             if not path.exists():
                 raise RunNotFoundError(
                     validated_run_id,
@@ -1022,10 +1064,11 @@ class FileRunStore:
                 return []
             reviews: list[dict[str, Any]] = []
             for path in sorted(reviews_dir.glob("*.json")):
+                review_path = self._review_record_path(validated_run_id, path.stem)
                 reviews.append(
                     canonicalize_persisted_review(
                         path.stem,
-                        self._read_json_object(path, label=f"review {path.stem}"),
+                        self._read_json_object(review_path, label=f"review {path.stem}"),
                     )
                 )
             return reviews
@@ -1071,7 +1114,7 @@ class FileRunStore:
                 txn_id="unknown",
             )
 
-        journal_path = txn_dir / "journal.json"
+        journal_path = self._txn_journal_path(txn_dir)
         if not journal_path.is_file():
             raise TransactionRecoveryError(
                 "transaction journal missing",
@@ -1090,11 +1133,15 @@ class FileRunStore:
             )
         staged_files = [journal_file_entry_as_dict(entry) for entry in parsed.files]
         journal_events = parsed.events
-        backups_dir = txn_dir / "backups"
+        for entry in staged_files:
+            name = str(entry.get("name") or "")
+            if name:
+                self._txn_staged_path(txn_dir, name)
+        self._txn_backups_dir(txn_dir)
         replaced = parsed.replaced
 
         for name in parsed.backups:
-            backup_path = backups_dir / name
+            backup_path = self._txn_backup_path(txn_dir, name)
             if not backup_path.is_file():
                 raise TransactionRecoveryError(
                     f"transaction journal backup missing on disk: {name}",
@@ -1135,7 +1182,7 @@ class FileRunStore:
                     staged_files,
                     replaced,
                 ),
-                backups_dir,
+                txn_dir,
             )
             self._retire_transaction_dir(run_dir, txn_dir)
             return
@@ -1504,7 +1551,7 @@ class FileRunStore:
         run_dir: Path,
         staged_files: list[dict[str, Any]],
         replaced: list[str],
-        backups_dir: Path,
+        txn_dir: Path,
     ) -> None:
         entry_by_name = {str(entry.get("name") or ""): entry for entry in staged_files}
         for name in replaced:
@@ -1512,7 +1559,7 @@ class FileRunStore:
             if entry is None:
                 continue
             dest = self._destination_for_staged_entry(run_dir, entry)
-            backup_path = backups_dir / name
+            backup_path = self._txn_backup_path(txn_dir, name)
             if backup_path.is_file():
                 shutil.copy2(backup_path, dest)
             elif dest.exists():
@@ -1673,11 +1720,7 @@ class FileRunStore:
         return validate_persisted_production(payload)
 
     def _read_review_revision(self, run_id: str, review_id: str) -> int:
-        run_dir = self.run_dir(run_id)
-        path = lexical_run_owned_path(
-            run_dir,
-            run_dir / "reviews" / f"{review_id}.json",
-        )
+        path = self._review_record_path(run_id, review_id)
         if not path.exists():
             return 0
         payload = self._read_json_object(path, label=f"review {review_id}")

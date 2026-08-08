@@ -850,7 +850,7 @@ def test_whole_output_package_uses_current_digest_for_family_view_when_run_diges
     current_digest = mandatory_output_digest(store, run_id)
     run = store.load_run(run_id)
     digests = dict(run.get("digests") or {})
-    digests["output"] = "stale-output-digest-00000000"
+    digests["output"] = "0" * 64
     run = dict(run)
     run["digests"] = digests
     atomic_write_json(store.run_dir(run_id) / "run.json", run)

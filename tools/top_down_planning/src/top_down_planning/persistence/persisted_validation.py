@@ -10,6 +10,8 @@ from core_tools.persistence import PersistenceError, parse_revision_value
 from top_down_planning.config.binding_validation import validate_context_snapshot_binding
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.production import (
+    BatchResult,
+    Contribution,
     ItemDispositionRecord,
     OutputEvidence,
     ProductionBatch,
@@ -119,20 +121,120 @@ def _parse_persisted_output_evidence(entry: dict[str, Any]) -> OutputEvidence:
     )
 
 
+def _parse_persisted_contribution(entry: dict[str, Any]) -> Contribution:
+    item_id = _require_strict_non_empty_str(entry.get("item_id"), "item_id")
+    output_refs_raw = entry.get("output_refs")
+    if output_refs_raw is None:
+        output_refs_raw = []
+    if not isinstance(output_refs_raw, list):
+        raise ValueError("output_refs must be a list")
+    output_refs = [
+        _require_strict_non_empty_str(ref, "output_ref") for ref in output_refs_raw
+    ]
+    summary = entry.get("summary")
+    if summary is not None and not isinstance(summary, str):
+        raise ValueError("summary must be a string")
+    return Contribution(
+        item_id=item_id,
+        output_refs=output_refs,
+        summary=str(summary or ""),
+    )
+
+
+def _parse_persisted_batch_result(result: dict[str, Any]) -> BatchResult:
+    outputs_raw = result.get("outputs")
+    if outputs_raw is None:
+        outputs_raw = []
+    if not isinstance(outputs_raw, list):
+        raise ValueError("result.outputs must be a list")
+    outputs = []
+    for index, entry in enumerate(outputs_raw):
+        if not isinstance(entry, dict):
+            raise ValueError(f"result.outputs[{index}] must be an object")
+        outputs.append(_parse_persisted_output_evidence(entry))
+
+    contributions_raw = result.get("contributions")
+    if contributions_raw is None:
+        contributions_raw = []
+    if not isinstance(contributions_raw, list):
+        raise ValueError("result.contributions must be a list")
+    contributions = []
+    for index, entry in enumerate(contributions_raw):
+        if not isinstance(entry, dict):
+            raise ValueError(f"result.contributions[{index}] must be an object")
+        contributions.append(_parse_persisted_contribution(entry))
+
+    dispositions_raw = result.get("dispositions")
+    if dispositions_raw is None:
+        dispositions_raw = {}
+    if not isinstance(dispositions_raw, dict):
+        raise ValueError("result.dispositions must be an object")
+    dispositions: dict[str, ItemDispositionRecord] = {}
+    for item_id, value in dispositions_raw.items():
+        if not isinstance(value, dict):
+            raise ValueError(f"result.dispositions[{item_id!r}] must be an object")
+        dispositions[str(item_id)] = ItemDispositionRecord.from_dict(value)
+
+    summary = result.get("summary")
+    if summary is not None and not isinstance(summary, str):
+        raise ValueError("result.summary must be a string")
+    empty_output = result.get("empty_output", False)
+    if not isinstance(empty_output, bool):
+        raise ValueError("result.empty_output must be a boolean")
+    empty_output_reason = result.get("empty_output_reason")
+    if empty_output_reason is not None and not isinstance(empty_output_reason, str):
+        raise ValueError("result.empty_output_reason must be a string or null")
+    goal_assessment = result.get("goal_assessment")
+    if goal_assessment is not None and not isinstance(goal_assessment, str):
+        raise ValueError("result.goal_assessment must be a string")
+
+    return BatchResult(
+        outputs=outputs,
+        contributions=contributions,
+        dispositions=dispositions,
+        summary=str(summary or ""),
+        empty_output=empty_output,
+        empty_output_reason=empty_output_reason,
+        goal_assessment=str(goal_assessment or ""),
+    )
+
+
 def _parse_persisted_batch(batch: dict[str, Any]) -> ProductionBatch:
+    batch_id = _require_strict_non_empty_str(batch.get("id"), "id")
     if "status" not in batch:
         raise ValueError("batch status is required")
     status = _require_strict_non_empty_str(batch.get("status"), "status")
     if status not in _VALID_BATCH_STATUSES:
         raise ValueError(f"invalid batch status: {status!r}")
+    plan_items_raw = batch.get("plan_items")
+    if plan_items_raw is None:
+        plan_items_raw = []
+    if not isinstance(plan_items_raw, list):
+        raise ValueError("plan_items must be a list")
+    plan_items = [
+        _require_strict_non_empty_str(item_id, "plan_item") for item_id in plan_items_raw
+    ]
     agent_turns = batch.get("agent_turns", 0)
     if agent_turns is None:
         agent_turns = 0
     agent_turns = _require_strict_non_negative_int(agent_turns, "agent_turns")
-    normalized = dict(batch)
-    normalized["status"] = status
-    normalized["agent_turns"] = agent_turns
-    return ProductionBatch.from_dict(normalized)
+    intent = batch.get("intent")
+    if intent is not None and not isinstance(intent, str):
+        raise ValueError("intent must be a string or null")
+    result_payload = batch.get("result")
+    result = None
+    if result_payload is not None:
+        if not isinstance(result_payload, dict):
+            raise ValueError("batch result must be an object")
+        result = _parse_persisted_batch_result(result_payload)
+    return ProductionBatch(
+        id=batch_id,
+        plan_items=plan_items,
+        status=status,
+        agent_turns=agent_turns,
+        intent=intent,
+        result=result,
+    )
 
 
 def reject_protected_run_extras_keys(run_extras: dict[str, Any]) -> None:
@@ -217,6 +319,15 @@ def _validate_required_run_digests(payload: dict[str, Any]) -> None:
         value = digests.get(key)
         if not value or not str(value).strip():
             raise PersistenceError(f"digests.{key} is required on schema v3 run records")
+        _require_sha256_digest_field(str(value), field_name=f"digests.{key}")
+    output_digest = str(digests.get("output") or "").strip()
+    if output_digest:
+        _require_sha256_digest_field(output_digest, field_name="digests.output")
+
+
+def _require_sha256_digest_field(value: str, *, field_name: str) -> None:
+    if not _SHA256_PATTERN.fullmatch(value):
+        raise PersistenceError(f"{field_name} must be a 64-character lowercase hex digest")
 
 
 def validate_canonical_run(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:

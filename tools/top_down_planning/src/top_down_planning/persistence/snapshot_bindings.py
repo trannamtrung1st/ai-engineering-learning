@@ -188,3 +188,57 @@ def validate_create_run_context_binding(
         raise PersistenceError(
             "context_snapshot_binding does not match resolved config and workspace"
         )
+
+
+def validate_context_snapshot_transition(
+    current_run: dict[str, Any],
+    prospective_run: dict[str, Any],
+    current_config: dict[str, Any],
+    prospective_config: dict[str, Any],
+    *,
+    workspace: Path,
+) -> None:
+    """Require authentic context snapshot transitions when binding metadata changes."""
+
+    from top_down_planning.config.context_digests import (
+        context_spec_diff_is_model_only,
+        recompute_context_snapshot_binding,
+    )
+
+    current_binding = current_run.get("context_snapshot_binding")
+    current_digests = current_run.get("digests") or {}
+    current_digest = str(current_digests.get("context_snapshot") or "")
+    new_binding = prospective_run.get("context_snapshot_binding")
+    new_digests = prospective_run.get("digests") or {}
+    new_digest = str(new_digests.get("context_snapshot") or "")
+
+    binding_changed = new_binding != current_binding
+    digest_changed = new_digest != current_digest
+    structural_config_changed = not context_spec_diff_is_model_only(
+        current_config,
+        prospective_config,
+        workspace=workspace,
+    )
+
+    if structural_config_changed and not binding_changed and not digest_changed:
+        raise PersistenceError(
+            "resolved-config structural context change requires explicit "
+            "context_snapshot_binding transition"
+        )
+
+    if not binding_changed and not digest_changed:
+        return
+
+    if binding_changed != digest_changed:
+        raise PersistenceError(
+            "context_snapshot_binding and digests.context_snapshot must change together"
+        )
+
+    expected_binding, expected_digest = recompute_context_snapshot_binding(
+        prospective_config,
+        workspace=workspace,
+    )
+    if new_binding != expected_binding or new_digest != expected_digest:
+        raise PersistenceError(
+            "context_snapshot_binding transition is not authentic for config and workspace"
+        )
