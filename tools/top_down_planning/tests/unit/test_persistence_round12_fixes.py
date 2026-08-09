@@ -210,29 +210,11 @@ def test_save_production_accepts_valid_terminal_dispositions(
     production = dict(production)
     production["revision"] = expected + 1
     production["dispositions"] = {"item-root": disposition}
-    if disposition == "not_applicable":
-        production["dispositions"] = {
-            "item-root": {"disposition": disposition, "reason": "out of scope"},
-        }
-    elif disposition == "superseded":
-        production["dispositions"] = {
-            "item-root": {
-                "disposition": disposition,
-                "replacement_ref": "item-other",
-            },
-        }
-    elif disposition == "blocked":
-        production["dispositions"] = {
-            "item-root": {"disposition": disposition, "evidence": "blocked"},
-        }
 
     store.save_production(run_id, production, expected)
     loaded = store.load_production(run_id)
     value = loaded["dispositions"]["item-root"]
-    if isinstance(value, dict):
-        assert value["disposition"] == disposition
-    else:
-        assert value == disposition
+    assert value == disposition
 
 
 def test_unknown_flat_disposition_blocks_load_before_readiness(tmp_path: Path) -> None:
@@ -282,9 +264,20 @@ def test_load_production_rejects_numeric_disposition_evidence(tmp_path: Path) ->
     run_id = _new_run_id("31")
     _create_run(store, run_id)
     production = store.load_production(run_id)
-    production["dispositions"] = {
-        "item-root": {"disposition": "blocked", "evidence": 42},
-    }
+    production["batches"] = [
+        {
+            "id": "batch-1",
+            "plan_items": ["item-root"],
+            "status": "completed",
+            "result": {
+                "outputs": [],
+                "contributions": [],
+                "dispositions": {
+                    "item-root": {"disposition": "blocked", "evidence": 42},
+                },
+            },
+        }
+    ]
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     with pytest.raises(PersistenceError, match="evidence must be a string"):
@@ -296,9 +289,20 @@ def test_load_production_rejects_numeric_not_applicable_reason(tmp_path: Path) -
     run_id = _new_run_id("32")
     _create_run(store, run_id)
     production = store.load_production(run_id)
-    production["dispositions"] = {
-        "item-root": {"disposition": "not_applicable", "reason": 1},
-    }
+    production["batches"] = [
+        {
+            "id": "batch-1",
+            "plan_items": ["item-root"],
+            "status": "completed",
+            "result": {
+                "outputs": [],
+                "contributions": [],
+                "dispositions": {
+                    "item-root": {"disposition": "not_applicable", "reason": 1},
+                },
+            },
+        }
+    ]
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     with pytest.raises(PersistenceError, match="reason must be a string"):

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core_tools.persistence import atomic_write_json
+from core_tools.persistence import PersistenceError, atomic_write_json
 from core_tools.provider import StubProvider
 from top_down_planning.agent_tool import RequestError, ReviewAgentService
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
@@ -468,26 +468,17 @@ def test_whole_output_owner_revision_closes_on_completion_claim_while_stream_sta
 def test_missing_goal_assessment_blocks_acceptance(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     provider = StubProvider()
-    _create_run_at_whole_output_review(
-        store,
-        provider=provider,
-        goal_assessment="",
-    )
+    _create_run_at_whole_output_review(store, provider=provider)
 
     run_id = "run-20260101T000801-000801"
-    script_mandatory_clear_approval(
-        provider,
-        store,
-        run_id,
-        loop_id="review-whole-output-01",
-        phase=WHOLE_OUTPUT_REVIEW,
-        target_revision=1,
-    )
+    production = store.load_production(run_id)
+    claim = dict(production.get("completion_claim") or {})
+    claim["goal_assessment"] = ""
+    production["completion_claim"] = claim
+    atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
-    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
-    assert result.outcome == "blocked"
-    assert result.reason is not None
-    assert "validation" in result.reason
+    with pytest.raises(PersistenceError, match="goal_assessment must be a non-empty string"):
+        store.load_production(run_id)
 
 
 def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None:
