@@ -32,6 +32,8 @@ from top_down_planning.domain.run_ownership import (
     run_ownership,
     _FLOCK_REGISTRY,
     _PROCESS_REGISTRY,
+    _clear_owner_metadata,
+    _release_flock_fd,
 )
 
 
@@ -322,3 +324,73 @@ def test_simultaneous_first_acquire_exactly_one_succeeds(tmp_path: Path) -> None
     release_path.write_text("release", encoding="utf-8")
     assert child_a.wait(timeout=10) == 0
     assert child_b.wait(timeout=10) == 0
+
+
+def test_owner_lock_inode_stable_across_acquire_release(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    inode_acquired = owner_flock_path(run_dir).stat().st_ino
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+    assert owner_flock_path(run_dir).is_file()
+    inode_released = owner_flock_path(run_dir).stat().st_ino
+    assert inode_acquired == inode_released
+    token2 = acquire_run_ownership("run-1", run_dir=run_dir)
+    inode_second = owner_flock_path(run_dir).stat().st_ino
+    assert inode_second == inode_acquired
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token2)
+
+
+def test_stale_cleanup_preserves_owner_lock_inode(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    resume_lock_dir(run_dir).mkdir(parents=True)
+    flock_path = owner_flock_path(run_dir)
+    fd = os.open(flock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    os.close(fd)
+    inode_before = flock_path.stat().st_ino
+    stale = ResumeLockRecord(
+        run_id="run-1",
+        pid=999999,
+        owner_token="stale-token",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    )
+    resume_lock_metadata_path(run_dir).write_text(
+        __import__("json").dumps(stale.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    assert clear_stale_resume_lock(run_dir) is True
+    assert flock_path.stat().st_ino == inode_before
+    assert read_resume_lock(run_dir) is None
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    assert flock_path.stat().st_ino == inode_before
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_release_clears_metadata_before_unlock(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    token_a = acquire_run_ownership("run-1", run_dir=run_dir)
+    flock_fd = _FLOCK_REGISTRY.pop("run-1")
+    _PROCESS_REGISTRY.pop("run-1")
+    _clear_owner_metadata(run_dir)
+    assert read_resume_lock(run_dir) is None
+    with pytest.raises(RunOwnershipError, match="owned"):
+        acquire_run_ownership("run-1", run_dir=run_dir)
+    _release_flock_fd(flock_fd)
+    token_b = acquire_run_ownership("run-1", run_dir=run_dir)
+    assert read_resume_lock(run_dir) is not None
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token_b)
+
+
+def test_flock_oserror_does_not_leak_fd_or_registry(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    with patch("fcntl.flock", side_effect=OSError("flock unsupported")):
+        with pytest.raises(OSError, match="flock unsupported"):
+            acquire_run_ownership("run-1", run_dir=run_dir)
+    assert "run-1" not in _PROCESS_REGISTRY
+    assert "run-1" not in _FLOCK_REGISTRY
+    assert not holds_run_ownership("run-1")
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
