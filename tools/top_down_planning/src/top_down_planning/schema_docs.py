@@ -1195,7 +1195,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         "type": "object",
                         "properties": {
                             "max_loops": {"type": "integer"},
-                            "max_revision_cycles_per_loop": {"type": "integer"},
+                            "max_revision_cycles_per_loop": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum owner revision attempts per focused "
+                                    "plan review loop (exact N semantics; same as "
+                                    "limits.whole_plan_review.max_revision_cycles)."
+                                ),
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -1205,8 +1212,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                             "max_revision_cycles": {
                                 "type": "integer",
                                 "description": (
-                                    "Maximum verification/revision cycles per "
-                                    "finding set for mandatory whole-plan review."
+                                    "Maximum owner revision attempts per mandatory "
+                                    "whole-plan review loop (exact N: limit 1 allows "
+                                    "one owner revision; the next revision trigger "
+                                    "pauses with limit_exhausted)."
                                 ),
                             },
                             "max_scope_review_rounds": {
@@ -1227,7 +1236,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         "type": "object",
                         "properties": {
                             "max_batches": {"type": "integer"},
-                            "max_agent_turns_per_batch": {"type": "integer"},
+                            "max_agent_turns_per_batch": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum unfinished producer turns per batch "
+                                    "(exact N: turn N+1 is not started when count "
+                                    "reaches this limit)."
+                                ),
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -1235,7 +1251,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         "type": "object",
                         "properties": {
                             "max_loops": {"type": "integer"},
-                            "max_revision_cycles_per_loop": {"type": "integer"},
+                            "max_revision_cycles_per_loop": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum owner revision attempts per focused "
+                                    "output review loop (exact N semantics; same as "
+                                    "limits.whole_output_review.max_revision_cycles)."
+                                ),
+                            },
                         },
                         "additionalProperties": False,
                     },
@@ -1245,8 +1268,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                             "max_revision_cycles": {
                                 "type": "integer",
                                 "description": (
-                                    "Maximum verification/revision cycles per "
-                                    "finding set for mandatory whole-output review."
+                                    "Maximum owner revision attempts per mandatory "
+                                    "whole-output review loop (exact N: limit 1 allows "
+                                    "one owner revision; the next revision trigger "
+                                    "pauses with limit_exhausted)."
                                 ),
                             },
                             "max_scope_review_rounds": {
@@ -1267,7 +1292,13 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         "type": "object",
                         "properties": {
                             "max_requests": {"type": "integer"},
-                            "max_revision_cycles_per_request": {"type": "integer"},
+                            "max_revision_cycles_per_request": {
+                                "type": "integer",
+                                "description": (
+                                    "Maximum planner turns per plan-amendment "
+                                    "request (exact N: pause before turn N+1)."
+                                ),
+                            },
                         },
                         "additionalProperties": False,
                     },

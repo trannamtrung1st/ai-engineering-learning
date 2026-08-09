@@ -283,6 +283,35 @@ def test_engine_keyboard_interrupt_terminates_provider_sessions(tmp_path: Path) 
     )
 
 
+def test_engine_keyboard_interrupt_persists_cancel_when_teardown_raises(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    provider = StubProvider()
+
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: provider,
+    )
+
+    with patch.object(
+        PlanningPhaseOrchestrator,
+        "run",
+        side_effect=KeyboardInterrupt,
+    ):
+        with patch(
+            "top_down_planning.orchestrator.engine.teardown_provider_sessions",
+            side_effect=RuntimeError("teardown exploded"),
+        ):
+            result = engine.continue_run("run-20260101T001701-001701", single_step=True)
+
+    assert result.cancelled is True
+    run = store.load_run("run-20260101T001701-001701")
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "user_cancelled"
+
+
 def test_engine_emits_session_end_before_terminate(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store, phase=PLANNING)

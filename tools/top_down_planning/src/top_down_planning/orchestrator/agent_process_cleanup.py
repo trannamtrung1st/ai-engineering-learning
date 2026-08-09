@@ -285,7 +285,7 @@ def workspace_has_orphan_agents(
     list_live_pids: ListLivePids | None = None,
     read_pid_environ: ReadPidEnviron | None = None,
 ) -> list[tuple[str, int]]:
-    """Return (run_id, pid) pairs for orphan agents in paused or stale runs."""
+    """Return (run_id, pid) pairs for orphan agents on paused, terminal, or stale runs."""
 
     orphans: list[tuple[str, int]] = []
     root = getattr(store, "root", None)
@@ -304,7 +304,7 @@ def workspace_has_orphan_agents(
         except Exception:
             continue
         status = str(run.get("status") or "")
-        if status == "paused":
+        if status in {"paused", "completed", "failed"}:
             scan = True
         elif status == "running":
             scan = not is_run_orchestrator_alive(run_dir)

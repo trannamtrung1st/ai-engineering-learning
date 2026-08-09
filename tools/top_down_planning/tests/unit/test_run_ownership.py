@@ -93,6 +93,23 @@ def test_run_ownership_context_manager_releases_on_exit(tmp_path: Path) -> None:
     assert read_resume_lock(run_dir) is None
 
 
+def test_acquire_blocked_by_existing_live_on_disk_lock(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    live = ResumeLockRecord(
+        run_id="run-1",
+        pid=os.getpid(),
+        owner_token="foreign-token",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    )
+    resume_lock_path(run_dir).write_text(
+        __import__("json").dumps(live.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RunOwnershipError, match="owned by live process"):
+        acquire_run_ownership("run-1", run_dir=run_dir)
+
+
 def test_nested_run_ownership_reuses_outer_lock(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()

@@ -255,6 +255,80 @@ def test_non_planner_apply_during_planning_is_rejected(tmp_path: Path) -> None:
         )
 
 
+def test_planning_candidate_ready_over_item_cap_terminates_limit(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, limits={"max_items_added": 1})
+    provider = StubProvider()
+    provider.script_turn(
+        done_events(signal="candidate_plan_ready", text="planning turn"),
+        mutate_store=apply_plan(
+            store,
+            "run-20260101T000101-000101",
+            base_revision=0,
+            operations=with_root_contract(
+                [
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-a",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {"kind": "work", "title": "A"},
+                    },
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-b",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {"kind": "work", "title": "B"},
+                    },
+                ]
+            ),
+        ),
+    )
+
+    result = PlanningPhaseOrchestrator(store, "run-20260101T000101-000101", provider).run()
+
+    assert result.ok is False
+    assert "max_items_added" in (result.reason or "")
+
+    run = store.load_run("run-20260101T000101-000101")
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "limit_exhausted"
+    assert run["phase"] == PLANNING
+
+
+def test_planning_at_item_cap_without_candidate_continues(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, limits={"max_items_added": 1})
+    provider = StubProvider()
+    provider.script_turn(
+        done_events(signal="continue", text="planning turn"),
+        mutate_store=apply_plan(
+            store,
+            "run-20260101T000101-000101",
+            base_revision=0,
+            operations=with_root_contract(
+                [
+                    {
+                        "op": "add_item",
+                        "temp_id": "item-a",
+                        "parent_id": "item-root",
+                        "placement": {"last_child": True},
+                        "item": {"kind": "work", "title": "A"},
+                    }
+                ]
+            ),
+        ),
+    )
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="planning turn"))
+
+    result = PlanningPhaseOrchestrator(store, "run-20260101T000101-000101", provider).run()
+
+    assert result.ok is True
+    assert result.phase == WHOLE_PLAN_REVIEW
+    assert result.items_added == 1
+
+
 def test_orchestrator_uses_plan_applied_before_candidate_ready(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store)

@@ -179,6 +179,15 @@ def assert_no_live_process_owns_run(
         )
 
 
+def _write_resume_lock_atomic(path: Path, record: ResumeLockRecord) -> None:
+    payload = json.dumps(record.to_dict(), sort_keys=True) + "\n"
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    try:
+        os.write(fd, payload.encode("utf-8"))
+    finally:
+        os.close(fd)
+
+
 def acquire_run_ownership(
     run_id: str,
     *,
@@ -196,10 +205,28 @@ def acquire_run_ownership(
     )
     path = resume_lock_path(run_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(record.to_dict(), sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        _write_resume_lock_atomic(path, record)
+    except FileExistsError:
+        clear_stale_resume_lock(run_dir)
+        lock = read_resume_lock(run_dir)
+        if lock is not None and is_pid_alive(lock.pid):
+            raise RunOwnershipError(
+                f"run {run_id} is owned by live process pid={lock.pid}",
+                code="run_owned_by_live_process",
+            )
+        if lock is not None:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        try:
+            _write_resume_lock_atomic(path, record)
+        except FileExistsError:
+            raise RunOwnershipError(
+                f"run {run_id} ownership acquisition conflict",
+                code="run_ownership_conflict",
+            ) from None
     _PROCESS_REGISTRY[run_id] = owner_token
     return owner_token
 

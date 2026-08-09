@@ -253,6 +253,15 @@ class PlanningPhaseOrchestrator:
                         model=role_context.model,
                     )
                     continue
+                if metrics["items_added"] > loop_limits["max_items_added"]:
+                    return self._terminate_for_limit(
+                        session_id,
+                        limit="max_items_added",
+                        message=(
+                            "planning exceeded max_items_added "
+                            f"({loop_limits['max_items_added']})"
+                        ),
+                    )
                 plan = self._store.load_plan_model(self._run_id)
                 return self._complete_planning(
                     session_id,
@@ -270,7 +279,7 @@ class PlanningPhaseOrchestrator:
                     ),
                 )
 
-            if metrics["items_added"] >= loop_limits["max_items_added"]:
+            if metrics["items_added"] > loop_limits["max_items_added"]:
                 return self._terminate_for_limit(
                     session_id,
                     limit="max_items_added",

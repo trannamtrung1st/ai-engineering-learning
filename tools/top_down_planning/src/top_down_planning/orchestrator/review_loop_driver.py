@@ -526,7 +526,7 @@ class ReviewLoopDriver:
                 if self.profile.is_mandatory_gate
                 else int(limits)
             )
-            if revision_cycles >= max_cycles:
+            if revision_cycles > max_cycles:
                 if self.profile.is_mandatory_gate:
                     loop = self._persist_loop(
                         mark_limit_reached_loop(
@@ -658,7 +658,7 @@ class ReviewLoopDriver:
             exhausted_budget=exhausted,
         )
         run = self._store.load_run(self._run_id)
-        return self.result_from_run(run, ok=False, reason=message)
+        return self.result_from_run(run, ok=False, loop=loop, reason=message)
 
     def terminate(
         self,
@@ -688,7 +688,7 @@ class ReviewLoopDriver:
             lifecycle_status=loop.lifecycle_status if loop is not None else None,
         )
         run = self._store.load_run(self._run_id)
-        return self.result_from_run(run, ok=False, reason=message)
+        return self.result_from_run(run, ok=False, loop=loop, reason=message)
 
     def _normalize_loop_for_resume(self, loop: ReviewLoop) -> tuple[ReviewLoop, bool]:
         if loop.lifecycle_status == "limit_reached":
@@ -1033,8 +1033,8 @@ class ReviewLoopDriver:
                     package,
                 ),
             )
-        except SessionRecoveryPaused as exc:
-            raise ProviderRunError(str(exc)) from exc
+        except SessionRecoveryPaused:
+            raise
         session_id = turn_outcome.session_id
         if turn_outcome.replaced:
             self._capability_token = adopt_replacement_capability(
@@ -1190,8 +1190,8 @@ class ReviewLoopDriver:
                     allowed_signals=NO_COMPLETION_SIGNALS,
                     recovery=recovery,
                 )
-        except SessionRecoveryPaused as exc:
-            raise ProviderRunError(str(exc)) from exc
+        except SessionRecoveryPaused:
+            raise
 
     def _prepare_recheck(self, loop: ReviewLoop) -> ReviewLoop:
         loop = self._reload_loop(loop.id)

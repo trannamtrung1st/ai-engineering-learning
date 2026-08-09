@@ -10,6 +10,12 @@ from top_down_planning.orchestrator.capability import revoke_capabilities_for_ph
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
 
+_TERMINAL_STATUSES = frozenset({"completed", "failed"})
+
+
+def _run_status(run: dict[str, Any]) -> str:
+    return str(run.get("status") or "")
+
 
 def generate_phase_action_id() -> str:
     return f"action-{uuid.uuid4().hex[:12]}"
@@ -25,6 +31,11 @@ def pause_run(
     **event_fields: Any,
 ) -> dict[str, Any]:
     run = store.load_run(run_id)
+    status = _run_status(run)
+    if status in _TERMINAL_STATUSES:
+        return run
+    if status == "paused":
+        return run
     if revoke_phase is not None:
         revoke_capabilities_for_phase(store, run_id, revoke_phase)
 
@@ -62,6 +73,8 @@ def fail_run(
 ) -> dict[str, Any]:
     run = store.load_run(run_id)
     if str(run.get("status") or "") in {"completed", "failed"}:
+        return run
+    if str(run.get("status") or "") == "paused":
         return run
 
     if revoke_phase is not None:
@@ -101,6 +114,15 @@ def complete_run_with_outcome(
     **event_fields: Any,
 ) -> dict[str, Any]:
     run = store.load_run(run_id)
+    status = _run_status(run)
+    if status == "completed":
+        if run.get("outcome") == outcome:
+            return run
+        return run
+    if status == "failed":
+        return run
+    if status == "paused":
+        return run
     if revoke_phase is not None:
         revoke_capabilities_for_phase(store, run_id, revoke_phase)
 

@@ -67,7 +67,9 @@ from top_down_planning.orchestrator.provider_turns import (
 )
 from top_down_planning.workspace import run_workspace
 from top_down_planning.persistence.digests import compute_config_contract_digest, compute_plan_digest
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.review_commit import review_record_revision
 from core_tools.provider import Provider
 
 WholePlanReviewResult = MandatoryWholeReviewResult
@@ -232,11 +234,11 @@ class PlanWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
                 loop=loop,
             )
 
-        loop = self._driver_host.persist_loop(mark_mandatory_approved(loop))
+        approved_loop = mark_mandatory_approved(loop)
 
         review_state, digest_bundle = build_plan_approval_validation_context(
             plan=plan,
-            approval=loop.to_dict(),
+            approval=approved_loop.to_dict(),
             actual_plan_digest=compute_plan_digest(plan),
             actual_config_contract_digest=compute_config_contract_digest(config),
             actual_input_digest=compute_input_digest(
@@ -263,21 +265,35 @@ class PlanWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
                 "deterministic plan validation failed after whole-plan approval",
             )
 
+        stored_loop = self._store.load_review(self._run_id, loop.id)
+        stored_revision = review_record_revision(stored_loop)
         expected_revision = int(run["revision"])
         revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
         revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_PLAN_REVIEW)
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["phase"] = PLAN_VALIDATED
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._driver_host.append_event(
-            "whole_plan_review_approved",
-            loop_id=loop.id,
-            target_revision=plan.revision,
-            reviewer_session_id=reviewer_loop_provider_session_id(loop),
+        updated_run = dict(run)
+        updated_run["revision"] = expected_revision + 1
+        updated_run["phase"] = PLAN_VALIDATED
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                run=updated_run,
+                run_expected_revision=expected_revision,
+                reviews=[approved_loop.to_dict()],
+                review_expected_revisions={loop.id: stored_revision},
+                events=[
+                    {
+                        "type": "whole_plan_review_approved",
+                        "run_id": self._run_id,
+                        "loop_id": loop.id,
+                        "target_revision": plan.revision,
+                        "reviewer_session_id": reviewer_loop_provider_session_id(loop),
+                    }
+                ],
+            ),
         )
         run = self._store.load_run(self._run_id)
-        return self._driver_host.result_from_run(run, ok=True, loop=loop)
+        approved_loop = self._driver_host.reload_loop(loop.id)
+        return self._driver_host.result_from_run(run, ok=True, loop=approved_loop)
 
 
 class WholePlanReviewOrchestrator:

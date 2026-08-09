@@ -317,6 +317,10 @@ def validate_stop_for_resume_apply(
         return None
     if code == "orchestrator_interrupted":
         return None
+    if code == "prepared_plan_amendment_required":
+        raise ResumeStopValidationError(
+            "prepared_plan_amendment_required cannot be resumed; re-run tdp prepare"
+        )
     if code == "sub_tdps_awaiting_children":
         validate_sub_tdps_awaiting_children_stop(store, run_id, run)
         return None

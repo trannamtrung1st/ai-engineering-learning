@@ -28,6 +28,7 @@ from tests.helpers import (
     mandatory_scope_review_respond_request,
     mandatory_initial_respond_request,
     mandatory_plan_digest,
+    mandatory_verification_needs_revision_request,
     mandatory_verification_respond_request,
     respond_review,
     script_mandatory_clear_approval,
@@ -344,7 +345,7 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
                         "id": "finding-01",
                         "severity": "blocker",
                         "category": "correctness",
-                        "target_refs": ["item-api"],
+                        "target_refs": ["item-root"],
                         "issue": "Needs work.",
                         "recommended_change": "Improve acceptance.",
                         "status": "unresolved",
@@ -364,45 +365,43 @@ def test_revision_cycle_limit_does_not_accept_plan(tmp_path: Path) -> None:
             operations=[
                 {
                     "op": "update_item",
-                    "item_id": "item-api",
-                    "patch": {
-                        "acceptance": [
-                            "API behavior is verifiable.",
-                            "Health check exists.",
-                        ]
-                    },
+                    "item_id": "item-root",
+                    "patch": {"outcome": "Improved outcome."},
                 }
             ],
             phase=WHOLE_PLAN_REVIEW,
         ),
     )
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
+
+    def _needs_revision_respond() -> None:
+        loop = store.load_review(run_id, loop_id)
+        finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
+        respond_review(
             store,
             run_id,
-            mandatory_initial_respond_request(
+            mandatory_verification_needs_revision_request(
                 store,
                 run_id,
                 loop_id=loop_id,
                 target_revision=1,
                 review_type="whole_plan",
-                decision="changes_requested",
-                findings=[
+                finding_set_id=finding_set_id,
+                finding_results=[
                     {
-                        "id": "finding-02",
-                        "severity": "blocker",
-                        "category": "correctness",
-                        "target_refs": ["item-api"],
-                        "issue": "Still needs work.",
-                        "recommended_change": "Improve acceptance.",
-                        "status": "unresolved",
+                        "finding_id": "finding-01",
+                        "disposition": "unresolved",
+                        "evidence": ["still insufficient"],
+                        "direct_side_effects": [],
                     }
                 ],
             ),
             phase=WHOLE_PLAN_REVIEW,
             loop_id=loop_id,
-        ),
+        )()
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=_needs_revision_respond,
     )
 
     result = ReviewLoopDriver(store, run_id, provider, adapter).run()

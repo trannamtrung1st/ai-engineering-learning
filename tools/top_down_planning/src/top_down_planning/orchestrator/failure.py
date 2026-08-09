@@ -11,6 +11,7 @@ from top_down_planning.orchestrator.run_transitions import fail_run, pause_run
 from top_down_planning.persistence.interface import RunStore
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed"})
+_PAUSED_STATUS = "paused"
 _MAX_FAILURE_MESSAGE_LENGTH = 500
 _PATH_PATTERN = re.compile(r"(?:/[\w.\-]+)+")
 
@@ -38,6 +39,9 @@ def mark_run_failed(
         return
 
     if str(run.get("status") or "") in _TERMINAL_STATUSES:
+        return
+
+    if str(run.get("status") or "") == _PAUSED_STATUS:
         return
 
     phase = str(run.get("phase") or "")
@@ -72,8 +76,8 @@ def apply_review_incomplete_run_transition(
     phase = str(run.get("phase") or "")
     outcome = run.get("outcome")
     status = str(run.get("status") or "")
-    if status == "completed":
-        raise ValueError("cannot apply review_incomplete to a completed run")
+    if status in {"completed", "failed"}:
+        raise ValueError(f"cannot apply review_incomplete to a {status} run")
     if outcome is not None:
         raise ValueError(
             "review_incomplete is an operational failure and cannot override a "

@@ -108,6 +108,44 @@ def apply_resume_plan_atomically(
     except RunOwnershipError as exc:
         raise ApplyResumeError(str(exc), code=exc.code) from exc
 
+    actual_status = str(run.get("status") or "")
+    if actual_status in {"completed", "failed"}:
+        raise ApplyResumeError(
+            f"cannot resume run in terminal status {actual_status!r}",
+            code="resume_apply_blocked",
+        )
+    transition = resume_plan.state_transition
+    if transition is None:
+        if actual_status == "paused":
+            raise ApplyResumeError(
+                "paused resume requires state_transition on resume plan",
+                code="resume_apply_blocked",
+            )
+    else:
+        if actual_status != transition.from_status:
+            raise ApplyResumeError(
+                f"resume plan from_status {transition.from_status!r} does not match "
+                f"actual status {actual_status!r}",
+                code="resume_apply_blocked",
+            )
+        if transition.to_status != "running":
+            raise ApplyResumeError(
+                f"unsupported resume destination status {transition.to_status!r}",
+                code="resume_apply_blocked",
+            )
+        if transition.prior_stop_code is not None:
+            prior_stop_record = run.get("stop")
+            if not isinstance(prior_stop_record, dict):
+                raise ApplyResumeError(
+                    "resume plan requires prior stop on paused run",
+                    code="resume_apply_blocked",
+                )
+            if str(prior_stop_record.get("code") or "") != transition.prior_stop_code:
+                raise ApplyResumeError(
+                    "resume plan prior_stop_code does not match actual stop",
+                    code="resume_apply_blocked",
+                )
+
     prior_status = str(run.get("status") or "running")
     prior_stop = run.get("stop")
     prior_phase = str(run.get("phase") or "")

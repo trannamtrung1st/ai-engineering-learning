@@ -121,10 +121,18 @@ def continue_child_sub_tdp(
         )
     if not result.ok and str(child_run.get("status") or "") == "paused":
         reason = getattr(result, "reason", None)
+        stop = child_run.get("stop")
+        child_cancelled = (
+            cancelled
+            or (
+                isinstance(stop, dict)
+                and str(stop.get("code") or "") == "user_cancelled"
+            )
+        )
         return PreparedChildResult.from_run(
             child_run,
             ok=False,
-            cancelled=False,
+            cancelled=child_cancelled,
             reason=reason if isinstance(reason, str) else None,
         )
     if str(child_run.get("phase") or "") == OUTPUT_VALIDATED:

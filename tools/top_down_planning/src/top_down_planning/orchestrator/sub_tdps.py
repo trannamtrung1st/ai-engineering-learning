@@ -429,29 +429,34 @@ class SubTdpsPhaseOrchestrator:
                 state["active_unit_id"] = None
                 production = self._store.load_production(self._run_id)
                 self._commit_production_state(production, state)
-                stop = StopRecord(
-                    code="sub_tdp_child_failed",
-                    category="operational",
-                    phase=SUB_TDPS,
-                    message=(
-                        child_result.reason
-                        or f"child Sub-TDP failed for unit {plan_item_id}"
-                    ),
+                reason = (
+                    child_result.reason
+                    or f"child Sub-TDP failed for unit {plan_item_id}"
                 )
-                pause_run(
+                stop = StopRecord(
+                    code="sub_tdp_unit_permanently_failed",
+                    category="invariant",
+                    phase=SUB_TDPS,
+                    message=reason,
+                    details={
+                        "unit_id": plan_item_id,
+                        "child_run_id": str(child_run.get("id") or ""),
+                    },
+                )
+                fail_run(
                     self._store,
                     self._run_id,
                     stop=stop,
                     revoke_phase=SUB_TDPS,
-                    event_type="run_paused",
                     plan_item_id=plan_item_id,
                     child_run_id=child_run.get("id"),
+                    unit_id=plan_item_id,
                 )
                 return self._result_from_run(
                     self._store.load_run(self._run_id),
                     ok=False,
                     units_completed=units_completed,
-                    reason=stop.message,
+                    reason=reason,
                 )
 
             if mapped_status != UNIT_STATUS_COMPLETED:

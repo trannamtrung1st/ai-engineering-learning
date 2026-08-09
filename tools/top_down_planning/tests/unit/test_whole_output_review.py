@@ -31,6 +31,7 @@ from tests.helpers import (
     mandatory_initial_respond_request,
     mandatory_output_digest,
     mandatory_scope_review_respond_request,
+    mandatory_verification_needs_revision_request,
     mandatory_verification_respond_request,
     plan_root_item,
     record_finding_actions,
@@ -513,30 +514,38 @@ def test_revision_cycle_limit_yields_paused_not_accepted(tmp_path: Path) -> None
         ),
     )
     provider.script_turn(done_events(text="turn complete"))
-    provider.script_turn(
-        done_events(text="turn complete"),
-        mutate_store=respond_review(
+
+    loop_id = "review-whole-output-01"
+
+    def _needs_revision_respond() -> None:
+        loop = store.load_review(run_id, loop_id)
+        finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
+        respond_review(
             store,
             run_id,
-            _review_respond_request(
-                decision="changes_requested",
-                findings=[
+            mandatory_verification_needs_revision_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=1,
+                review_type="whole_output",
+                finding_set_id=finding_set_id,
+                finding_results=[
                     {
-                        "id": "finding-02",
-                        "severity": "blocker",
-                        "category": "correctness",
-                        "target_refs": ["item-leaf"],
-                        "issue": "Still needs work.",
-                        "recommended_change": "Improve again.",
-                        "status": "unresolved",
+                        "finding_id": "finding-01",
+                        "disposition": "unresolved",
+                        "evidence": ["still insufficient"],
+                        "direct_side_effects": [],
                     }
                 ],
-                store=store,
-                run_id=run_id,
             ),
             phase=WHOLE_OUTPUT_REVIEW,
-            loop_id="review-whole-output-01",
-        ),
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=_needs_revision_respond,
     )
 
     result = WholeOutputReviewOrchestrator(store, run_id, provider).run()

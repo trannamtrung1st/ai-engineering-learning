@@ -255,6 +255,18 @@ class ProductionPhaseOrchestrator:
                 current_token=self._capability_token,
             )
 
+            if batch_agent_turns >= loop_limits["max_agent_turns_per_batch"]:
+                return self._pause_for_limit(
+                    limit="max_agent_turns_per_batch",
+                    message=(
+                        "production exceeded max_agent_turns_per_batch "
+                        f"({loop_limits['max_agent_turns_per_batch']})"
+                    ),
+                    consumed=batch_agent_turns,
+                    configured=int(loop_limits["max_agent_turns_per_batch"]),
+                    session_id=session_id,
+                )
+
             try:
                 turn_outcome = consume_producer_provider_turn_with_session_recovery(
                     self._store,
@@ -318,18 +330,6 @@ class ProductionPhaseOrchestrator:
 
             if self._has_completion_claim():
                 continue
-
-            if batch_agent_turns > loop_limits["max_agent_turns_per_batch"]:
-                return self._pause_for_limit(
-                    limit="max_agent_turns_per_batch",
-                    message=(
-                        "production exceeded max_agent_turns_per_batch "
-                        f"({loop_limits['max_agent_turns_per_batch']})"
-                    ),
-                    consumed=batch_agent_turns,
-                    configured=int(loop_limits["max_agent_turns_per_batch"]),
-                    session_id=session_id,
-                )
 
             self._resume_producer_turn(session_id, role_context)
 

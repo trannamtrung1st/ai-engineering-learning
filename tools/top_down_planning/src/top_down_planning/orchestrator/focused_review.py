@@ -126,6 +126,20 @@ class FocusedReviewAdapter:
     def preflight(self, loop: ReviewLoop | None) -> None:
         if loop is not None and loop.type not in {"focused_plan", "focused_output"}:
             raise ProviderRunError(f"review loop {loop.id} is not a focused review loop")
+        run = self._store.load_run(self._run_id)
+        status = str(run.get("status") or "")
+        if status != "running":
+            raise ProviderRunError(
+                f"focused review requires status running, got {status!r}"
+            )
+        if loop is not None:
+            expected_phase = PLANNING if loop.type == "focused_plan" else PRODUCTION
+            phase = str(run.get("phase") or "")
+            if phase != expected_phase:
+                raise ProviderRunError(
+                    f"focused {loop.type} requires phase {expected_phase!r}, "
+                    f"got {phase!r}"
+                )
 
     def current_artifact_binding(self) -> tuple[int, str]:
         loop = self._require_loop()

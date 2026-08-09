@@ -561,7 +561,7 @@ def test_resume_planning_item_limit_exhausted_increased_and_resumed(
 
     config_path = write_e2e_config(
         tmp_path / "run.yaml",
-        limits={"planning": {"max_items_added": 1, "max_agent_turns": 5}},
+        limits={"planning": {"max_items_added": 0, "max_agent_turns": 5}},
     )
     runs_dir = tmp_path / "runs"
     store = FileRunStore(runs_dir)

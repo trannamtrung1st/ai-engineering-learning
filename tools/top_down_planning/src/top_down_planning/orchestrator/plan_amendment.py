@@ -294,11 +294,30 @@ class PlanAmendmentOrchestrator:
         """Resume active amendment orchestration after recording amendment_pending pause."""
 
         run = self._store.load_run(self._run_id)
-        if str(run.get("status") or "") == "running" and run.get("stop") is None:
+        status = str(run.get("status") or "")
+        if status == "running" and run.get("stop") is None:
             return run
-        expected_revision = int(run["revision"])
-        prior_status = str(run.get("status") or "running")
+        if status in {"completed", "failed"}:
+            raise ProviderRunError(f"cannot activate amendment from {status} run")
+
+        production = self._store.load_production(self._run_id)
+        pending_id = str(production.get("pending_amendment_id") or "").strip()
         prior_stop = run.get("stop")
+        if status != "paused" or not isinstance(prior_stop, dict):
+            raise ProviderRunError("run is not paused for plan amendment")
+        stop_code = str(prior_stop.get("code") or "")
+        if stop_code != "amendment_pending":
+            raise ProviderRunError(
+                f"cannot activate amendment from stop code {stop_code!r}"
+            )
+        details = prior_stop.get("details") or {}
+        if str(details.get("pending_amendment_id") or "") != pending_id:
+            raise ProviderRunError(
+                "amendment_pending stop does not match production pending amendment"
+            )
+
+        expected_revision = int(run["revision"])
+        prior_status = status
         prior_phase = str(run.get("phase") or "")
         for record in self._store.list_capabilities(self._run_id):
             if record.get("revoked") is True:
@@ -493,8 +512,8 @@ class PlanAmendmentOrchestrator:
                     activity="plan_amendment",
                 ),
             )
-        except SessionRecoveryPaused as exc:
-            raise ProviderRunError(str(exc)) from exc
+        except SessionRecoveryPaused:
+            raise
         if turn_outcome.replaced:
             self._capability_token = adopt_replacement_capability(
                 self._store,

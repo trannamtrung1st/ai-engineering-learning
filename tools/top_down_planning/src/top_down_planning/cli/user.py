@@ -379,7 +379,7 @@ def handle_run_command(args: Namespace) -> None:
     if continuation.cancelled:
         _exit_for_cancel(run_id=run_id, store=store, stream_json=args.stream_json)
 
-    if until and continuation.ok and continuation.status == "running":
+    if until and continuation.target_reached and continuation.status == "running":
         notify_run_outcome(
             "target_reached",
             run_id=run_id,
@@ -392,6 +392,7 @@ def handle_run_command(args: Namespace) -> None:
     last_step = continuation.steps[-1].details if continuation.steps else {}
     payload = {
         "ok": continuation.ok,
+        "target_reached": continuation.target_reached,
         "run_id": run_id,
         "revision": run_record["revision"],
         "phase": continuation.phase,
@@ -684,7 +685,7 @@ def handle_resume_command(args: Namespace) -> None:
     if continuation.cancelled:
         _exit_for_cancel(run_id=args.run, store=store, stream_json=args.stream_json)
 
-    if until and continuation.ok and continuation.status == "running":
+    if until and continuation.target_reached and continuation.status == "running":
         notify_run_outcome(
             "target_reached",
             run_id=args.run,
@@ -696,6 +697,7 @@ def handle_resume_command(args: Namespace) -> None:
     run = store.load_run(args.run)
     payload = {
         "ok": continuation.ok,
+        "target_reached": continuation.target_reached,
         "run_id": args.run,
         "phase": continuation.phase,
         "status": continuation.status,

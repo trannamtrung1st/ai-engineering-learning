@@ -87,7 +87,9 @@ from top_down_planning.persistence.digests import (
     compute_output_digest,
     compute_plan_digest,
 )
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
+from top_down_planning.persistence.review_commit import review_record_revision
 from top_down_planning.persistence.sub_tdp_state import load_sub_tdp_state
 from core_tools.provider import Provider
 
@@ -276,9 +278,17 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
                 loop=loop,
             )
 
-        loop = self._driver_host.persist_loop(mark_mandatory_approved(loop))
+        approved_loop = mark_mandatory_approved(loop)
 
-        reviews = self._store.list_reviews(self._run_id)
+        stored_reviews = self._store.list_reviews(self._run_id)
+        reviews = [
+            approved_loop.to_dict()
+            if str(record.get("id") or "") == loop.id
+            else record
+            for record in stored_reviews
+        ]
+        if not any(str(record.get("id") or "") == loop.id for record in reviews):
+            reviews.append(approved_loop.to_dict())
 
         plan_approval, output_approval = load_approvals_for_acceptance(
             reviews,
@@ -345,14 +355,16 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
 
         from top_down_planning.package.builder import digest_review_record
 
+        stored_loop = self._store.load_review(self._run_id, loop.id)
+        stored_revision = review_record_revision(stored_loop)
         expected_revision = int(run["revision"])
         revoke_capabilities_for_loop(self._store, self._run_id, loop.id)
         revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_OUTPUT_REVIEW)
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["phase"] = OUTPUT_VALIDATED
-        run["status"] = "completed"
-        run["outcome"] = outcome
+        updated_run = dict(run)
+        updated_run["revision"] = expected_revision + 1
+        updated_run["phase"] = OUTPUT_VALIDATED
+        updated_run["status"] = "completed"
+        updated_run["outcome"] = outcome
         binding = dict(run.get("package_binding") or {})
         if isinstance(binding, dict) and binding:
             review_id = str(output_approval.get("id") or "").strip()
@@ -363,22 +375,35 @@ class OutputWholeReviewAdapter(MandatoryReviewLoopAdapterMixin):
                 )
             binding["whole_output_review_id"] = review_id
             binding["whole_output_review_digest"] = digest_review_record(output_approval)
-            run["package_binding"] = binding
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._driver_host.append_event(
-            "whole_output_review_approved",
-            loop_id=loop.id,
-            target_revision=int(production["output_revision"]),
-            reviewer_session_id=reviewer_loop_provider_session_id(loop),
-            outcome=outcome,
-        )
-        self._driver_host.append_event(
-            "outcome_resolved",
-            outcome=outcome,
-            acceptance_invariant=invariant.to_dict(),
+            updated_run["package_binding"] = binding
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                run=updated_run,
+                run_expected_revision=expected_revision,
+                reviews=[approved_loop.to_dict()],
+                review_expected_revisions={loop.id: stored_revision},
+                events=[
+                    {
+                        "type": "whole_output_review_approved",
+                        "run_id": self._run_id,
+                        "loop_id": loop.id,
+                        "target_revision": int(production["output_revision"]),
+                        "reviewer_session_id": reviewer_loop_provider_session_id(loop),
+                        "outcome": outcome,
+                    },
+                    {
+                        "type": "outcome_resolved",
+                        "run_id": self._run_id,
+                        "outcome": outcome,
+                        "acceptance_invariant": invariant.to_dict(),
+                    },
+                ],
+            ),
         )
         run = self._store.load_run(self._run_id)
-        return self._driver_host.result_from_run(run, ok=True, loop=loop)
+        approved_loop = self._driver_host.reload_loop(loop.id)
+        return self._driver_host.result_from_run(run, ok=True, loop=approved_loop)
 
     def _sync_owner_revision_digests(self) -> None:
         from top_down_planning.config.context_digests import sync_run_production_digests

@@ -406,9 +406,8 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
     )
     store.save_run("run-20260101T000401-000401", run, expected_revision)
 
-    provider.script_turn(
-        done_events(text="reviewer turn"),
-        mutate_store=respond_review(
+    def _changes_requested_with_plan_revision() -> None:
+        respond_review(
             store,
             "run-20260101T000401-000401",
             _review_respond_request(
@@ -430,12 +429,8 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
             ),
             phase=PLANNING,
             loop_id=loop_id,
-        ),
-    )
-    provider.script_session_turn(
-        planner_session_id,
-        done_events(text="planner revision"),
-        mutate_store=apply_plan(
+        )()
+        apply_plan(
             store,
             "run-20260101T000401-000401",
             base_revision=0,
@@ -446,11 +441,20 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
                     "patch": {"outcome": "REST API endpoints exist."},
                 }
             ],
-        ),
-    )
+        )()
+
     provider.script_turn(
-        done_events(text="reviewer verify"),
-        mutate_store=lambda: respond_review(
+        done_events(text="reviewer turn"),
+        mutate_store=_changes_requested_with_plan_revision,
+    )
+    provider.script_session_turn(
+        planner_session_id,
+        done_events(text="planner revision"),
+    )
+    provider.script_turn(done_events(text="recheck delivery without respond"))
+
+    def _verify_needs_revision() -> None:
+        respond_review(
             store,
             "run-20260101T000401-000401",
             _focused_verification_respond_request(
@@ -470,7 +474,11 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
             ),
             phase=PLANNING,
             loop_id=loop_id,
-        ),
+        )()
+
+    provider.script_turn(
+        done_events(text="reviewer verify"),
+        mutate_store=_verify_needs_revision,
     )
 
     result = FocusedReviewOrchestrator(store, "run-20260101T000401-000401", provider).run(loop_id)
@@ -480,6 +488,34 @@ def test_focused_plan_revision_cycle_limit_does_not_accept_loop(tmp_path: Path) 
     assert review["status"] == "blocked"
     run = store.load_run("run-20260101T000401-000401")
     assert run["phase"] == PLANNING
+
+
+def test_focused_plan_review_rejects_paused_run_without_provider(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_planning_run(store)
+    run_id = "run-20260101T000401-000401"
+    created = ReviewAgentService(store, run_id).request(
+        _focused_plan_request(["item-api"]),
+        capability_token=grant_capability(store, run_id, role="planner", phase=PLANNING),
+    )
+    loop_id = created["loop_id"]
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "paused"
+    run["stop"] = {
+        "code": "limit_exhausted",
+        "category": "operational",
+        "phase": PLANNING,
+        "message": "limit",
+        "details": {},
+    }
+    store.save_run(run_id, run, expected_revision)
+
+    provider = StubProvider()
+    with pytest.raises(ProviderRunError, match="requires status running"):
+        FocusedReviewOrchestrator(store, run_id, provider).run(loop_id)
 
 
 def _create_production_run(

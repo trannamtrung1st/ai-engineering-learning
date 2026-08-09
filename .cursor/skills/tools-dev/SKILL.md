@@ -169,7 +169,16 @@ Configured limits are **maximum allowed attempts** (exact N, not N+1):
 | `limits.whole_plan_review.max_revision_cycles` / `limits.whole_output_review.max_revision_cycles` | exactly N owner revision attempts (mandatory review) | limit 1 → one revision; limit 2 → two; third → limit pause |
 | `limits.focused_plan_review.max_revision_cycles_per_loop` / `limits.focused_output_review.max_revision_cycles_per_loop` | same semantics for focused review | same boundary tests |
 | `limits.production.max_agent_turns_per_batch` | N unfinished turns, never start turn N+1 | limit 1 → one turn, no second started |
+| `limits.amendment.max_revision_cycles_per_request` | exactly N planner turns per amendment request | limit 1 → one turn; pause before turn N+1 (`revision_cycles >= max` after each turn) |
 | `limits.planning.max_items_added` | hard cap on plan item count | candidate-ready at cap allowed; one over cap is `limit_exhausted` even on candidate-ready signal |
+
+Enforcement patterns (do not mix):
+
+- **Review driver** (`review_loop_driver.py`): increment revision counter on `changes_requested` / `needs_revision`, then block with `revision_cycles > max_cycles` before the next owner revision.
+- **Production batch** (`production.py`): block before starting a turn when `batch_agent_turns >= max_agent_turns_per_batch`.
+- **Amendment planner** (`plan_amendment.py`): increment after each planner turn, block with `revision_cycles >= max_revision_cycles_per_request` before the next turn.
+- **Planning items** (`planning.py`): block continuation when `items_added > max_items_added`; on `candidate_plan_ready`, terminate for limit instead of completing when over cap.
+- **Budget exhausted checks** (`verification_revision_budget_exhausted`, `scope_review_budget_exhausted` in `domain/reviews.py`): use `>=` to mean “limit already consumed” on resume/retry — not the pre-increment gate above.
 
 Assert the **provider turn is not started** when over budget (completion-claim and session-recovery replacement paths too).
 
@@ -185,9 +194,9 @@ failed / paused → ok=False
 
 Repeated `continue_run()` on terminal runs returns the **same** semantic success/failure.
 
-For `until`: evaluate lifecycle stop (`paused`, `failed`, `completed`) **before** `_target_reached()`. Do not return `ok=True` on a paused/failed run because a historical phase predicate matches. When `until` is set, expose whether the phase target was reached separately from `ok` (CLI notifications already use a `target_reached` outcome kind — engine result must stay consistent).
+For `until`: evaluate lifecycle stop (`paused`, `failed`, `completed`) **before** `_target_reached()` on each `continue_run` iteration. Do not return `ok=True` on a paused/failed run because a historical phase predicate matches. `ok` on a **running** run that satisfies `until` remains `True` (target met while still running). `RunContinuationResult.target_reached` mirrors `_target_reached(run, until)` at return time and is independent of `ok`.
 
-`RunContinuationResult.cancelled` must be `True` when durable stop is `user_cancelled`, including Sub-TDP child Ctrl-C propagation. Durable `user_cancelled` with `cancelled=False` is a defect.
+`RunContinuationResult.cancelled` must be `True` when durable stop is `user_cancelled`, including Sub-TDP child Ctrl-C propagation and early `continue_run` returns on an already-paused run. Durable `user_cancelled` with `cancelled=False` is a defect.
 
 Review limit/termination paths call `ReviewLoopDriver.result_from_run(run, ..., loop=loop)` (via orchestrator `_driver_host()` or direct driver use) so returned `loop_id`, `reviewer_session_id`, and `revision_cycles` match persisted state.
 
@@ -203,11 +212,11 @@ Before `create_provider`:
 - wrap phase entry (config load, workspace, provider factory, phase execution) in one orchestration boundary with classified failure;
 - continuation preflight (session policy, orphan cleanup, capability revocation) is lifecycle work — partial mutation plus a raw exception is a defect.
 
-Cancellation durability: durable `paused` / `user_cancelled` must persist even when `teardown_provider_sessions()`, audit append, or orphan scan raise. Test with `KeyboardInterrupt` and patched teardown failures (`top_down_planning/tests/unit/test_operational_failures.py`).
+Cancellation durability: durable `paused` / `user_cancelled` must persist even when `teardown_provider_sessions()`, audit append, or orphan scan raise. `finalize_user_cancel` runs after teardown in `finally`; teardown errors are swallowed when `cancelled` is set. Happy-path and teardown-fault Ctrl-C are covered in `test_operational_failures.py`.
 
 #### Ownership and orphans
 
-Cross-process ownership acquisition uses atomic lock creation (`O_CREAT|O_EXCL`, exclusive lock directory, or advisory lock). Test with two real processes (subprocess exception to the unit-test no-subprocess rule). Live owner PID must not lose exclusivity from age alone without an explicit lease/heartbeat contract.
+Cross-process ownership acquisition uses atomic lock creation (`O_CREAT|O_EXCL` on `.resume.lock`). Test with two real processes (subprocess exception to the unit-test no-subprocess rule). Live owner PID must not lose exclusivity from age alone without an explicit lease/heartbeat contract.
 
 Orphan detection includes **completed** and **failed** runs — any tagged live provider on a terminal run is an orphan. Keep autouse `stub_orphan_agent_scan` in orchestration tests; exercise scan logic in `top_down_planning/tests/unit/test_agent_process_cleanup.py` with injected PIDs.
 
@@ -409,5 +418,5 @@ Do not implement orchestration/CLI logic first and then write assertions that mi
 - [ ] Lifecycle transition + required audit event in one `CommitSpec`; no new split lifecycle writes
 - [ ] Limit tests use exact-N semantics and correct `limits.*` paths; `ok`/`cancelled` match durable outcome
 - [ ] Orchestration tests assert canonical run matches returned result; repeated terminal `continue_run` idempotent
-- [ ] `until`: lifecycle stop evaluated before target predicate; `target_reached` not conflated with `ok`
+- [ ] `until`: lifecycle stop evaluated before target predicate on reload; `target_reached` not conflated with `ok`
 - [ ] Cross-process ownership tests use real subprocesses; orphan scan tests cover terminal runs

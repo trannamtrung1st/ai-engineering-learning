@@ -138,7 +138,7 @@ def test_child_pause_pauses_parent_with_valid_stop(tmp_path: Path) -> None:
     validate_stop_record(parent["stop"], expected_category="operational")
 
 
-def test_child_failure_pauses_parent_with_valid_stop(tmp_path: Path) -> None:
+def test_child_failure_fails_parent_permanently(tmp_path: Path) -> None:
     store, package, parent_id, config = _setup_parent_execution(tmp_path)
 
     def _stub_continue_child(
@@ -182,9 +182,9 @@ def test_child_failure_pauses_parent_with_valid_stop(tmp_path: Path) -> None:
 
     assert result.ok is False
     parent = store.load_run(parent_id)
-    assert parent["status"] == "paused"
-    assert parent["stop"]["code"] == "sub_tdp_child_failed"
-    validate_stop_record(parent["stop"], expected_category="operational")
+    assert parent["status"] == "failed"
+    assert parent["stop"]["code"] == "sub_tdp_unit_permanently_failed"
+    validate_stop_record(parent["stop"], expected_category="invariant")
 
 
 def test_resume_after_failed_child_terminates_parent_not_running_dead_end(
