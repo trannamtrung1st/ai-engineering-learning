@@ -129,6 +129,41 @@ def _exit_for_cancel(
     raise SystemExit(_CANCEL_EXIT_CODE) from None
 
 
+def _exit_for_command_interrupt(
+    *,
+    run_id: str,
+    store: FileRunStore,
+    stream_json: bool,
+) -> None:
+    """Exit with SIGINT convention when the command was interrupted without cancelling the run."""
+
+    run = store.load_run(run_id)
+    if stream_json:
+        emit_payload(
+            {
+                "ok": False,
+                "cancelled": False,
+                "command_interrupted": True,
+                "run_id": run_id,
+                "phase": run.get("phase"),
+                "status": run.get("status"),
+                "reason": "command interrupted by user",
+            },
+            exit_code=_CANCEL_EXIT_CODE,
+        )
+    sys.stdout.write("Command interrupted.\n")
+    raise SystemExit(_CANCEL_EXIT_CODE) from None
+
+
+def _run_is_user_cancelled(run: dict[str, Any]) -> bool:
+    if str(run.get("status") or "") != "paused":
+        return False
+    stop = run.get("stop")
+    if not isinstance(stop, dict):
+        return False
+    return str(stop.get("code") or "") == "user_cancelled"
+
+
 def _handle_blocking_run_interrupt(
     *,
     run_id: str,
@@ -149,20 +184,28 @@ def _handle_blocking_run_interrupt(
             exclude_pids=frozenset({os.getpid()}),
         )
         run = store.load_run(run_id)
-    if notifications is not None:
-        notify_run_outcome(
-            "cancelled",
-            run_id=run_id,
-            run=run,
-            options=notifications.options,
+
+    if _run_is_user_cancelled(run):
+        if notifications is not None:
+            notify_run_outcome(
+                "cancelled",
+                run_id=run_id,
+                run=run,
+                options=notifications.options,
+            )
+        observability.emit(
+            cancel_console_event(
+                run_id=run_id,
+                phase=str(run.get("phase") or "unknown"),
+            )
         )
-    observability.emit(
-        cancel_console_event(
-            run_id=run_id,
-            phase=str(run.get("phase") or "unknown"),
-        )
+        _exit_for_cancel(run_id=run_id, store=store, stream_json=stream_json)
+
+    _exit_for_command_interrupt(
+        run_id=run_id,
+        store=store,
+        stream_json=stream_json,
     )
-    _exit_for_cancel(run_id=run_id, store=store, stream_json=stream_json)
 
 
 def _open_run_store_for_command(
@@ -491,7 +534,7 @@ def handle_resume_command(args: Namespace) -> None:
                 f"run already terminated "
                 f"(status={snapshot.status}, outcome={snapshot.outcome})"
             )
-        ok = continuation_ok_from_run(run)
+        ok = continuation_ok_from_run(store.load_run(args.run))
         payload = {
             "ok": ok,
             "run_id": args.run,

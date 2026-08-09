@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextvars
+import fcntl
 import json
 import os
 import re
@@ -24,7 +25,9 @@ _LOCK_WAIT_INTERVAL_SECONDS = 0.025
 _RESUME_LOCK_FILENAME = ".resume.lock"
 _RESUME_LOCK_DIRNAME = ".resume.lock.d"
 _LOCK_METADATA_FILENAME = "owner.json"
+_OWNER_FLOCK_FILENAME = ".owner.lock"
 _PROCESS_REGISTRY: dict[str, str] = {}
+_FLOCK_REGISTRY: dict[str, int] = {}
 _NESTED_OWNERSHIP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_NESTED_OWNERSHIP",
     default=None,
@@ -83,6 +86,10 @@ def resume_lock_dir(run_dir: Path) -> Path:
 
 def resume_lock_metadata_path(run_dir: Path) -> Path:
     return resume_lock_dir(run_dir) / _LOCK_METADATA_FILENAME
+
+
+def owner_flock_path(run_dir: Path) -> Path:
+    return resume_lock_dir(run_dir) / _OWNER_FLOCK_FILENAME
 
 
 def holds_run_ownership(run_id: str) -> bool:
@@ -179,6 +186,11 @@ def _clear_legacy_lock_file(run_dir: Path) -> bool:
 
 def _clear_lock_storage(run_dir: Path) -> bool:
     cleared = False
+    flock_path = owner_flock_path(run_dir)
+    try:
+        flock_path.unlink(missing_ok=True)
+    except OSError:
+        pass
     lock_dir = resume_lock_dir(run_dir)
     if lock_dir.is_dir():
         try:
@@ -219,34 +231,103 @@ def _metadata_holder_alive(metadata_path: Path) -> bool:
     return _is_lock_holder_alive(probe)
 
 
-def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
-    metadata_path = resume_lock_metadata_path(run_dir)
-    lock_dir = resume_lock_dir(run_dir)
-
-    if metadata_path.is_file():
-        lock = _read_lock_metadata(metadata_path)
-        if lock is not None:
-            if _is_lock_holder_alive(lock):
-                return False
-            _PROCESS_REGISTRY.pop(lock.run_id, None)
-            return _clear_lock_storage(run_dir)
-        if _metadata_holder_alive(metadata_path):
-            return False
-        return _clear_lock_storage(run_dir)
-
-    if lock_dir.is_dir():
-        return _clear_lock_storage(run_dir)
-
-    legacy_path = resume_lock_path(run_dir)
-    if not legacy_path.is_file():
-        return False
+def _try_acquire_flock_nonblocking(run_dir: Path) -> int | None:
+    flock_path = owner_flock_path(run_dir)
+    flock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(flock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        content = legacy_path.read_text(encoding="utf-8").strip()
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fd
+    except BlockingIOError:
+        os.close(fd)
+        return None
+
+
+def _release_flock_fd(fd: int) -> None:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
     except OSError:
-        return False
-    if not content:
-        return _clear_legacy_lock_file(run_dir)
+        pass
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+
+
+def _is_owner_flock_held(run_dir: Path) -> bool:
+    fd = _try_acquire_flock_nonblocking(run_dir)
+    if fd is None:
+        return True
+    _release_flock_fd(fd)
     return False
+
+
+def _write_lock_metadata(path: Path, record: ResumeLockRecord) -> None:
+    payload = json.dumps(record.to_dict(), sort_keys=True) + "\n"
+    encoded = payload.encode("utf-8")
+    fd = os.open(path, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o644)
+    try:
+        written = 0
+        while written < len(encoded):
+            nbytes = os.write(fd, encoded[written:])
+            if nbytes <= 0:
+                raise OSError("failed to write complete ownership metadata")
+            written += nbytes
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
+    legacy_path = resume_lock_path(run_dir)
+    if legacy_path.is_file():
+        try:
+            legacy_content = legacy_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return False
+        if legacy_content and read_resume_lock(run_dir) is None:
+            return False
+
+    flock_fd = _try_acquire_flock_nonblocking(run_dir)
+    if flock_fd is None:
+        return False
+
+    try:
+        metadata_path = resume_lock_metadata_path(run_dir)
+        lock_dir = resume_lock_dir(run_dir)
+
+        if metadata_path.is_file():
+            lock = _read_lock_metadata(metadata_path)
+            if lock is not None:
+                if _is_lock_holder_alive(lock):
+                    return False
+                _PROCESS_REGISTRY.pop(lock.run_id, None)
+                return _clear_lock_storage(run_dir)
+            if _metadata_holder_alive(metadata_path):
+                return False
+            return _clear_lock_storage(run_dir)
+
+        if legacy_path.is_file():
+            lock = read_resume_lock(run_dir)
+            if lock is not None:
+                if _is_lock_holder_alive(lock):
+                    return False
+                _PROCESS_REGISTRY.pop(lock.run_id, None)
+                return _clear_lock_storage(run_dir)
+            try:
+                content = legacy_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                return False
+            if not content:
+                return _clear_lock_storage(run_dir)
+            return False
+
+        if lock_dir.is_dir():
+            return _clear_lock_storage(run_dir)
+
+        return False
+    finally:
+        _release_flock_fd(flock_fd)
 
 
 def clear_orphan_resume_lock(run_dir: Path) -> bool:
@@ -268,7 +349,7 @@ def clear_stale_resume_lock(
     if not is_resume_lock_stale(lock, stale_after_seconds=stale_after_seconds):
         return False
     _PROCESS_REGISTRY.pop(lock.run_id, None)
-    return _clear_lock_storage(run_dir)
+    return _clear_abandoned_lock_claim(run_dir)
 
 
 def assert_expected_run_revision(
@@ -301,6 +382,18 @@ def assert_no_live_process_owns_run(
     if run_dir is None:
         return
 
+    if _is_owner_flock_held(run_dir):
+        lock = read_resume_lock(run_dir)
+        if lock is not None and lock.run_id == run_id and _is_lock_holder_alive(lock):
+            raise RunOwnershipError(
+                f"run {run_id} is owned by live process pid={lock.pid}",
+                code="run_owned_by_live_process",
+            )
+        raise RunOwnershipError(
+            f"run {run_id} is owned by a live continuation",
+            code="run_owned_by_live_process",
+        )
+
     clear_stale_resume_lock(run_dir)
     lock = read_resume_lock(run_dir)
     if lock is None:
@@ -317,16 +410,6 @@ def assert_no_live_process_owns_run(
         )
 
 
-def _atomic_write_lock_metadata(path: Path, record: ResumeLockRecord) -> None:
-    payload = json.dumps(record.to_dict(), sort_keys=True) + "\n"
-    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-    try:
-        os.write(fd, payload.encode("utf-8"))
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-
-
 def _raise_if_live_lock(run_id: str, lock: ResumeLockRecord) -> None:
     if lock.run_id != run_id:
         raise RunOwnershipError(
@@ -339,32 +422,12 @@ def _raise_if_live_lock(run_id: str, lock: ResumeLockRecord) -> None:
     )
 
 
-def _wait_and_retry_lock_acquire(
-    run_id: str,
-    run_dir: Path,
-    record: ResumeLockRecord,
-) -> None:
-    metadata_path = resume_lock_metadata_path(run_dir)
-    for _ in range(_LOCK_WAIT_ATTEMPTS):
-        _clear_abandoned_lock_claim(run_dir)
-        clear_stale_resume_lock(run_dir)
-        lock = read_resume_lock(run_dir)
-        if lock is not None and _is_lock_holder_alive(lock):
-            _raise_if_live_lock(run_id, lock)
-        try:
-            metadata_path.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write_lock_metadata(metadata_path, record)
-            return
-        except FileExistsError:
-            time.sleep(_LOCK_WAIT_INTERVAL_SECONDS)
-
-    lock = read_resume_lock(run_dir)
-    if lock is not None and _is_lock_holder_alive(lock):
-        _raise_if_live_lock(run_id, lock)
-    raise RunOwnershipError(
-        f"run {run_id} ownership acquisition conflict",
-        code="run_ownership_conflict",
-    )
+def _acquire_owner_flock(run_dir: Path) -> int:
+    flock_path = owner_flock_path(run_dir)
+    flock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(flock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
 
 
 def acquire_run_ownership(
@@ -385,13 +448,11 @@ def acquire_run_ownership(
     )
     run_dir.mkdir(parents=True, exist_ok=True)
     _clear_abandoned_lock_claim(run_dir)
+    flock_fd = _acquire_owner_flock(run_dir)
     metadata_path = resume_lock_metadata_path(run_dir)
-    metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        _atomic_write_lock_metadata(metadata_path, record)
-    except FileExistsError:
-        _wait_and_retry_lock_acquire(run_id, run_dir, record)
+    _write_lock_metadata(metadata_path, record)
     _PROCESS_REGISTRY[run_id] = owner_token
+    _FLOCK_REGISTRY[run_id] = flock_fd
     return owner_token
 
 
@@ -405,6 +466,10 @@ def release_run_ownership(
 
     if _PROCESS_REGISTRY.get(run_id) == owner_token:
         _PROCESS_REGISTRY.pop(run_id, None)
+
+    flock_fd = _FLOCK_REGISTRY.pop(run_id, None)
+    if flock_fd is not None:
+        _release_flock_fd(flock_fd)
 
     lock = read_resume_lock(run_dir)
     if lock is None:
@@ -448,6 +513,11 @@ def resolve_run_dir(store: Any, run_id: str) -> Path | None:
 def is_run_orchestrator_alive(run_dir: Path) -> bool:
     """Return True when a live process holds the run resume lock."""
 
+    if _is_owner_flock_held(run_dir):
+        lock = read_resume_lock(run_dir)
+        if lock is None:
+            return True
+        return _is_lock_holder_alive(lock)
     clear_stale_resume_lock(run_dir)
     lock = read_resume_lock(run_dir)
     if lock is None:

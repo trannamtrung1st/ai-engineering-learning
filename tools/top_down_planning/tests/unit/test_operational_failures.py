@@ -380,6 +380,36 @@ def test_resume_keyboard_interrupt_exits_without_marking_failed(tmp_path: Path) 
     assert run.get("stop") is None
 
 
+def test_resume_keyboard_interrupt_persists_cancel_during_preflight(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run(store, phase=PLANNING)
+    _set_planner_session_for_resume(store, "run-20260101T001701-001701")
+    run = store.load_run("run-20260101T001701-001701")
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "running"
+    run["stop"] = None
+    store.save_run("run-20260101T001701-001701", run, expected_revision)
+
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+    )
+
+    with patch(
+        "top_down_planning.orchestrator.engine.execute_session_policy",
+        side_effect=KeyboardInterrupt,
+    ):
+        result = engine.continue_run("run-20260101T001701-001701")
+
+    assert result.cancelled is True
+    assert result.ok is False
+    paused = store.load_run("run-20260101T001701-001701")
+    assert paused["status"] == "paused"
+    assert paused["stop"]["code"] == "user_cancelled"
+
+
 def test_resume_keyboard_interrupt_stream_json_payload(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     _create_run(store, phase=PLANNING)
@@ -406,8 +436,9 @@ def test_resume_keyboard_interrupt_stream_json_payload(tmp_path: Path) -> None:
             assert exit_info.value.code == 130
             payload = emit_payload.call_args.args[0]
 
-    assert payload["cancelled"] is True
-    assert payload["reason"] == "cancelled by user"
+    assert payload["cancelled"] is False
+    assert payload["command_interrupted"] is True
+    assert payload["reason"] == "command interrupted by user"
     assert payload["run_id"] == "run-20260101T001701-001701"
 
 

@@ -260,13 +260,36 @@ class RunEngine:
             run_dir = resolve_run_dir(self._store, run_id)
             if run_dir is not None:
                 with run_ownership(run_id, run_dir=run_dir):
-                    return self._continue_run_unlocked(
-                        run_id,
-                        until=until,
-                        single_step=single_step,
-                        session_policy=session_policy,
-                        started_at=started_at,
-                    )
+                    try:
+                        return self._continue_run_unlocked(
+                            run_id,
+                            until=until,
+                            single_step=single_step,
+                            session_policy=session_policy,
+                            started_at=started_at,
+                        )
+                    except KeyboardInterrupt:
+                        run = self._store.load_run(run_id)
+                        if str(run.get("status") or "") == "running":
+                            cancel_phase = str(run.get("phase") or "")
+                            finalize_user_cancel(
+                                self._store,
+                                run_id,
+                                phase=cancel_phase,
+                                exclude_pids=frozenset({os.getpid()}),
+                            )
+                        run = self._store.load_run(run_id)
+                        result = _continuation_result_from_run(
+                            run,
+                            run_id,
+                            until=until,
+                            steps=[],
+                            ok=False,
+                            reason="cancelled by user",
+                            cancelled=True,
+                        )
+                        self._emit_done(result, started_at=started_at)
+                        return result
             return self._continue_run_unlocked(
                 run_id,
                 until=until,
@@ -317,6 +340,8 @@ class RunEngine:
                     run_id,
                     exclude_pids=frozenset({os.getpid()}),
                 )
+            except KeyboardInterrupt:
+                raise
             except Exception as exc:
                 message = sanitize_operational_error(exc)
                 run_before = self._store.load_run(run_id)

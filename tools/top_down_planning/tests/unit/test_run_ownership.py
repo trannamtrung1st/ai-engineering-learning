@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+import fcntl
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from top_down_planning.domain.run_ownership import (
     resume_lock_dir,
     resume_lock_metadata_path,
     resume_lock_path,
+    owner_flock_path,
     run_ownership,
 )
 
@@ -222,3 +224,16 @@ def test_acquire_recovers_corrupt_metadata_from_dead_pid(tmp_path: Path) -> None
     )
     token = acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_orphan_lock_not_cleared_while_owner_flock_held(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    resume_lock_dir(run_dir).mkdir()
+    owner_flock_path(run_dir).touch()
+    flock_fd = os.open(owner_flock_path(run_dir), os.O_RDWR)
+    fcntl.flock(flock_fd, fcntl.LOCK_EX)
+    resume_lock_metadata_path(run_dir).write_text("", encoding="utf-8")
+    assert clear_orphan_resume_lock(run_dir) is False
+    fcntl.flock(flock_fd, fcntl.LOCK_UN)
+    os.close(flock_fd)
