@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -86,10 +87,10 @@ def _cursor_provider(
         if not streams:
             return
         stream = streams[min(index, len(streams) - 1)]
-        for line in stream:
+        for line_index, line in enumerate(stream):
             yield line
-        if hook is not None:
-            hook()
+            if line_index == 0 and hook is not None:
+                threading.Thread(target=hook, daemon=True).start()
 
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
