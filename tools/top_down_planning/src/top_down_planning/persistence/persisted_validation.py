@@ -19,6 +19,8 @@ from top_down_planning.domain.production import (
     SUB_TDP_INTEGRATION_BATCH_INTENT,
     all_applicable_items_processed,
     derive_live_disposition_map,
+    flattened_live_nested_output_ids,
+    flattened_live_output_evidence_ids,
     is_live_completed_batch,
 )
 from top_down_planning.domain.reviews import ReviewLoop
@@ -1023,6 +1025,13 @@ def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
             batch_id=batch_id,
             plan_items=plan_items,
             result=result,
+        )
+
+    nested_sequence = flattened_live_nested_output_ids(payload)
+    top_level_sequence = flattened_live_output_evidence_ids(payload)
+    if nested_sequence != top_level_sequence:
+        raise ValueError(
+            "output_evidence id sequence must mirror live batch result.outputs order"
         )
 
     flat_dispositions = payload.get("dispositions")

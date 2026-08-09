@@ -774,6 +774,42 @@ def live_output_evidence_entries(production: dict[str, Any]) -> list[dict[str, A
     ]
 
 
+def flattened_live_nested_output_ids(production: dict[str, Any]) -> list[str]:
+    """Evidence ids from live completed batches in batch-list and nested-output order."""
+
+    ids: list[str] = []
+    for batch in production.get("batches") or []:
+        if not isinstance(batch, dict) or not is_live_completed_batch(batch):
+            continue
+        result = batch.get("result")
+        if not isinstance(result, dict):
+            continue
+        for output in result.get("outputs") or []:
+            if not isinstance(output, dict):
+                continue
+            output_id = str(output.get("id") or "").strip()
+            if output_id:
+                ids.append(output_id)
+    return ids
+
+
+def flattened_live_output_evidence_ids(production: dict[str, Any]) -> list[str]:
+    """Evidence ids from top-level output_evidence in persisted list order."""
+
+    live_ids = live_batch_ids(production)
+    ids: list[str] = []
+    for entry in production.get("output_evidence") or []:
+        if not isinstance(entry, dict):
+            continue
+        batch_id = str(entry.get("batch_id") or "")
+        if batch_id not in live_ids:
+            continue
+        evidence_id = str(entry.get("id") or "").strip()
+        if evidence_id:
+            ids.append(evidence_id)
+    return ids
+
+
 def extract_accepted_delivery(
     production: dict[str, Any],
     *,

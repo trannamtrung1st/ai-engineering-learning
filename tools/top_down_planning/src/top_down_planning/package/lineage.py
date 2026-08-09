@@ -404,7 +404,10 @@ def accepted_result_record(
             if item.get("id")
         ]
         evidence_digest = digest_canonical_payload({"evidence_ids": evidence_ids})
-    output_refs = list(delivery.outputs)
+    output_refs = [
+        {key: value for key, value in entry.items() if key != "batch_id"}
+        for entry in live_output_evidence
+    ]
     contributions = list(delivery.contributions)
     workspace_changes = workspace_changes_from_output_evidence(live_output_evidence)
     claim = child_production.get("completion_claim")
