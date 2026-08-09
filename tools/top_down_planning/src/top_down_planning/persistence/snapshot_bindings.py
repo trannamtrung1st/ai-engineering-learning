@@ -197,13 +197,22 @@ def validate_context_snapshot_transition(
     prospective_config: dict[str, Any],
     *,
     workspace: Path,
+    production: dict[str, Any],
 ) -> None:
-    """Require authentic context snapshot transitions when binding metadata changes."""
+    """Require authentic, production-authorized context snapshot transitions."""
 
     from top_down_planning.config.context_digests import (
+        InvalidProductionEvidenceError,
+        UnauthorizedContextMutationError,
         context_spec_diff_is_model_only,
         recompute_context_snapshot_binding,
+        validate_production_snapshot_rebase,
     )
+
+    current_workspace = Path(str(current_run.get("workspace") or "")).resolve()
+    prospective_workspace = Path(str(prospective_run.get("workspace") or "")).resolve()
+    if prospective_workspace != current_workspace:
+        raise PersistenceError("run.workspace is immutable")
 
     current_binding = current_run.get("context_snapshot_binding")
     current_digests = current_run.get("digests") or {}
@@ -217,7 +226,7 @@ def validate_context_snapshot_transition(
     structural_config_changed = not context_spec_diff_is_model_only(
         current_config,
         prospective_config,
-        workspace=workspace,
+        workspace=prospective_workspace,
     )
 
     if structural_config_changed and not binding_changed and not digest_changed:
@@ -236,9 +245,22 @@ def validate_context_snapshot_transition(
 
     expected_binding, expected_digest = recompute_context_snapshot_binding(
         prospective_config,
-        workspace=workspace,
+        workspace=prospective_workspace,
     )
     if new_binding != expected_binding or new_digest != expected_digest:
         raise PersistenceError(
             "context_snapshot_binding transition is not authentic for config and workspace"
         )
+
+    if not isinstance(current_binding, dict) or not isinstance(new_binding, dict):
+        raise PersistenceError("context_snapshot_binding is required on schema v3 run records")
+
+    try:
+        validate_production_snapshot_rebase(
+            current_binding,
+            new_binding,
+            production,
+            workspace=prospective_workspace,
+        )
+    except (UnauthorizedContextMutationError, InvalidProductionEvidenceError) as exc:
+        raise PersistenceError(str(exc)) from exc

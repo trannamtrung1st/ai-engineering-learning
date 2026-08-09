@@ -592,6 +592,7 @@ class FileRunStore:
                 self._read_resolved_config(validated_run_id),
                 prospective_config,
                 workspace=workspace,
+                production=prospective_production,
             )
             validate_snapshot_digest_bindings(
                 prospective_run,

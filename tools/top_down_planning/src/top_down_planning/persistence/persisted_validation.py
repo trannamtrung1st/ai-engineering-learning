@@ -8,6 +8,7 @@ from typing import Any
 from core_tools.persistence import PersistenceError, parse_revision_value
 
 from top_down_planning.config.binding_validation import validate_context_snapshot_binding
+from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS
 from top_down_planning.domain.models import Plan
 from top_down_planning.domain.production import (
     BatchResult,
@@ -16,6 +17,7 @@ from top_down_planning.domain.production import (
     OutputEvidence,
     ProductionBatch,
 )
+from top_down_planning.domain.reconciliation import ReconciliationReport
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.run_lifecycle import (
     RunLifecycleError,
@@ -31,6 +33,17 @@ from top_down_planning.domain.session_bindings import (
 from top_down_planning.persistence.run_schema import (
     validate_run_digests,
     validate_run_schema_version,
+)
+from top_down_planning.persistence.sub_tdp_state import (
+    ORCHESTRATION_STATUS_COMPLETED,
+    ORCHESTRATION_STATUS_FAILED,
+    ORCHESTRATION_STATUS_PREPARING,
+    ORCHESTRATION_STATUS_RUNNING,
+    UNIT_STATUS_COMPLETED,
+    UNIT_STATUS_FAILED,
+    UNIT_STATUS_PAUSED,
+    UNIT_STATUS_PENDING,
+    UNIT_STATUS_RUNNING,
 )
 from top_down_planning.domain.session_recovery_state import validate_session_recovery_fields
 
@@ -76,6 +89,23 @@ _SLOT_ROLE_KIND: dict[str, tuple[str, str]] = {
 
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 _VALID_BATCH_STATUSES = frozenset({"started", "completed", "failed", "aborted"})
+_VALID_ORCHESTRATION_STATUSES = frozenset(
+    {
+        ORCHESTRATION_STATUS_PREPARING,
+        ORCHESTRATION_STATUS_RUNNING,
+        ORCHESTRATION_STATUS_COMPLETED,
+        ORCHESTRATION_STATUS_FAILED,
+    }
+)
+_VALID_UNIT_STATUSES = frozenset(
+    {
+        UNIT_STATUS_PENDING,
+        UNIT_STATUS_RUNNING,
+        UNIT_STATUS_PAUSED,
+        UNIT_STATUS_COMPLETED,
+        UNIT_STATUS_FAILED,
+    }
+)
 
 
 def _require_strict_non_empty_str(value: Any, field_name: str) -> str:
@@ -90,6 +120,160 @@ def _require_strict_non_negative_int(value: Any, field_name: str) -> int:
     if value < 0:
         raise ValueError(f"{field_name} must be a non-negative integer")
     return value
+
+
+def _require_optional_string(value: Any, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string or null")
+    text = value.strip()
+    return text or None
+
+
+def _require_persisted_sha256_digest(value: Any, *, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise PersistenceError(f"{field_name} must be a string")
+    if not value.strip():
+        raise PersistenceError(f"{field_name} is required on schema v3 run records")
+    if not _SHA256_PATTERN.fullmatch(value):
+        raise PersistenceError(f"{field_name} must be a 64-character lowercase hex digest")
+    return value
+
+
+def _parse_persisted_disposition_record(value: dict[str, Any]) -> ItemDispositionRecord:
+    disposition = value.get("disposition")
+    if not isinstance(disposition, str) or disposition not in TERMINAL_DISPOSITIONS:
+        raise ValueError(
+            f"disposition must be one of: {', '.join(sorted(TERMINAL_DISPOSITIONS))}"
+        )
+    return ItemDispositionRecord(
+        disposition=disposition,  # type: ignore[arg-type]
+        reason=_require_optional_string(value.get("reason"), "reason"),
+        replacement_ref=_require_optional_string(
+            value.get("replacement_ref"),
+            "replacement_ref",
+        ),
+        evidence=_require_optional_string(value.get("evidence"), "evidence"),
+    )
+
+
+def _validate_persisted_flat_disposition_value(
+    item_id: str,
+    value: Any,
+) -> None:
+    if isinstance(value, str):
+        if not value.strip():
+            raise PersistenceError(
+                f"production.dispositions[{item_id!r}] must be a non-empty string"
+            )
+        if value not in TERMINAL_DISPOSITIONS:
+            raise PersistenceError(
+                f"production.dispositions[{item_id!r}] must be a terminal disposition"
+            )
+        return
+    if not isinstance(value, dict):
+        raise PersistenceError(
+            f"production.dispositions[{item_id!r}] must be a string or object"
+        )
+    try:
+        _parse_persisted_disposition_record(value)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PersistenceError(
+            f"production.dispositions[{item_id!r}] is invalid: {exc}"
+        ) from exc
+
+
+def _parse_persisted_completion_claim(value: dict[str, Any]) -> None:
+    goal_met = value.get("goal_met")
+    if goal_met is not None and not isinstance(goal_met, bool):
+        raise ValueError("goal_met must be a boolean")
+    goal_assessment = value.get("goal_assessment")
+    if goal_assessment is not None and not isinstance(goal_assessment, str):
+        raise ValueError("goal_assessment must be a string")
+    status = value.get("status")
+    if status is not None and not isinstance(status, str):
+        raise ValueError("status must be a string")
+
+
+def _parse_persisted_amendment_request(value: dict[str, Any]) -> None:
+    _require_strict_non_empty_str(value.get("id"), "id")
+    _require_strict_non_empty_str(value.get("status"), "status")
+    _require_strict_non_empty_str(value.get("evidence"), "evidence")
+    affected_refs = value.get("affected_refs")
+    if affected_refs is None:
+        affected_refs = []
+    if not isinstance(affected_refs, list):
+        raise ValueError("affected_refs must be a list")
+    for index, ref in enumerate(affected_refs):
+        _require_strict_non_empty_str(ref, f"affected_refs[{index}]")
+
+
+def _parse_persisted_reconciliation_report(value: dict[str, Any]) -> None:
+    ReconciliationReport.from_dict(value)
+
+
+def _parse_persisted_blocker_report(value: dict[str, Any]) -> None:
+    _require_strict_non_empty_str(value.get("evidence"), "evidence")
+    affected_refs = value.get("affected_refs")
+    if affected_refs is None:
+        affected_refs = []
+    if not isinstance(affected_refs, list):
+        raise ValueError("affected_refs must be a list")
+    for index, ref in enumerate(affected_refs):
+        _require_strict_non_empty_str(ref, f"affected_refs[{index}]")
+    summary = value.get("summary")
+    if summary is not None and not isinstance(summary, str):
+        raise ValueError("summary must be a string")
+    if "plan_revision" in value:
+        _require_strict_non_negative_int(value.get("plan_revision"), "plan_revision")
+    if "output_revision" in value:
+        _require_strict_non_negative_int(value.get("output_revision"), "output_revision")
+
+
+def _parse_persisted_sub_tdp_unit(value: dict[str, Any], *, label: str) -> None:
+    _require_strict_non_empty_str(value.get("id"), f"{label}.id")
+    _require_strict_non_empty_str(value.get("plan_item_id"), f"{label}.plan_item_id")
+    status = value.get("status")
+    if status is None:
+        status = UNIT_STATUS_PENDING
+    if not isinstance(status, str) or status not in _VALID_UNIT_STATUSES:
+        raise ValueError(f"{label}.status must be a valid unit status")
+    title = value.get("title")
+    if title is not None and not isinstance(title, str):
+        raise ValueError(f"{label}.title must be a string")
+    directory = value.get("directory")
+    if directory is not None and not isinstance(directory, str):
+        raise ValueError(f"{label}.directory must be a string")
+    child_run_id = value.get("child_run_id")
+    if child_run_id is not None and not isinstance(child_run_id, str):
+        raise ValueError(f"{label}.child_run_id must be a string or null")
+    notes = value.get("notes")
+    if notes is None:
+        notes = []
+    if not isinstance(notes, list):
+        raise ValueError(f"{label}.notes must be a list")
+
+
+def _parse_persisted_sub_tdps(value: dict[str, Any]) -> None:
+    version = value.get("version")
+    if version is not None:
+        _require_strict_non_negative_int(version, "sub_tdps.version")
+    status = value.get("status")
+    if not isinstance(status, str) or status not in _VALID_ORCHESTRATION_STATUSES:
+        raise ValueError("sub_tdps.status must be a valid orchestration status")
+    active_unit_id = value.get("active_unit_id")
+    if active_unit_id is not None and not isinstance(active_unit_id, str):
+        raise ValueError("sub_tdps.active_unit_id must be a string or null")
+    units = value.get("units")
+    if units is None:
+        units = []
+    if not isinstance(units, list):
+        raise ValueError("sub_tdps.units must be a list")
+    for index, unit in enumerate(units):
+        if not isinstance(unit, dict):
+            raise ValueError(f"sub_tdps.units[{index}] must be an object")
+        _parse_persisted_sub_tdp_unit(unit, label=f"sub_tdps.units[{index}]")
 
 
 def _parse_persisted_output_evidence(entry: dict[str, Any]) -> OutputEvidence:
@@ -173,7 +357,7 @@ def _parse_persisted_batch_result(result: dict[str, Any]) -> BatchResult:
     for item_id, value in dispositions_raw.items():
         if not isinstance(value, dict):
             raise ValueError(f"result.dispositions[{item_id!r}] must be an object")
-        dispositions[str(item_id)] = ItemDispositionRecord.from_dict(value)
+        dispositions[str(item_id)] = _parse_persisted_disposition_record(value)
 
     summary = result.get("summary")
     if summary is not None and not isinstance(summary, str):
@@ -316,13 +500,13 @@ def _validate_required_run_digests(payload: dict[str, Any]) -> None:
     if not isinstance(digests, dict):
         raise PersistenceError("digests must be an object on schema v3 run records")
     for key in _REQUIRED_V3_DIGEST_KEYS:
-        value = digests.get(key)
-        if not value or not str(value).strip():
-            raise PersistenceError(f"digests.{key} is required on schema v3 run records")
-        _require_sha256_digest_field(str(value), field_name=f"digests.{key}")
-    output_digest = str(digests.get("output") or "").strip()
-    if output_digest:
-        _require_sha256_digest_field(output_digest, field_name="digests.output")
+        _require_persisted_sha256_digest(
+            digests.get(key),
+            field_name=f"digests.{key}",
+        )
+    output_digest = digests.get("output")
+    if output_digest is not None and str(output_digest).strip():
+        _require_persisted_sha256_digest(output_digest, field_name="digests.output")
 
 
 def _require_sha256_digest_field(value: str, *, field_name: str) -> None:
@@ -391,22 +575,7 @@ def validate_persisted_production(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(dispositions, dict):
         raise PersistenceError("production.dispositions must be an object")
     for item_id, value in dispositions.items():
-        if isinstance(value, str):
-            if not str(value).strip():
-                raise PersistenceError(
-                    f"production.dispositions[{item_id!r}] must be a non-empty string"
-                )
-            continue
-        if not isinstance(value, dict):
-            raise PersistenceError(
-                f"production.dispositions[{item_id!r}] must be a string or object"
-            )
-        try:
-            ItemDispositionRecord.from_dict(value)
-        except (KeyError, TypeError, ValueError) as exc:
-            raise PersistenceError(
-                f"production.dispositions[{item_id!r}] is invalid: {exc}"
-            ) from exc
+        _validate_persisted_flat_disposition_value(str(item_id), value)
     output_evidence = payload.get("output_evidence")
     if output_evidence is None:
         output_evidence = []
@@ -422,20 +591,47 @@ def validate_persisted_production(payload: dict[str, Any]) -> dict[str, Any]:
                 f"production.output_evidence[{index}] is invalid: {exc}"
             ) from exc
     completion_claim = payload.get("completion_claim")
-    if completion_claim is not None and not isinstance(completion_claim, dict):
-        raise PersistenceError("production.completion_claim must be an object or null")
+    if completion_claim is not None:
+        if not isinstance(completion_claim, dict):
+            raise PersistenceError("production.completion_claim must be an object or null")
+        try:
+            _parse_persisted_completion_claim(completion_claim)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersistenceError(f"production.completion_claim is invalid: {exc}") from exc
     for field_name in ("amendment_requests", "reconciliation_reports"):
         value = payload.get(field_name)
         if value is None:
             continue
         if not isinstance(value, list):
             raise PersistenceError(f"production.{field_name} must be a list")
+        for index, entry in enumerate(value):
+            if not isinstance(entry, dict):
+                raise PersistenceError(f"production.{field_name}[{index}] must be an object")
+            try:
+                if field_name == "amendment_requests":
+                    _parse_persisted_amendment_request(entry)
+                else:
+                    _parse_persisted_reconciliation_report(entry)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PersistenceError(
+                    f"production.{field_name}[{index}] is invalid: {exc}"
+                ) from exc
     blocker_report = payload.get("blocker_report")
-    if blocker_report is not None and not isinstance(blocker_report, dict):
-        raise PersistenceError("production.blocker_report must be an object or null")
+    if blocker_report is not None:
+        if not isinstance(blocker_report, dict):
+            raise PersistenceError("production.blocker_report must be an object or null")
+        try:
+            _parse_persisted_blocker_report(blocker_report)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersistenceError(f"production.blocker_report is invalid: {exc}") from exc
     sub_tdps = payload.get("sub_tdps")
-    if sub_tdps is not None and not isinstance(sub_tdps, dict):
-        raise PersistenceError("production.sub_tdps must be an object or null")
+    if sub_tdps is not None:
+        if not isinstance(sub_tdps, dict):
+            raise PersistenceError("production.sub_tdps must be an object or null")
+        try:
+            _parse_persisted_sub_tdps(sub_tdps)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersistenceError(f"production.sub_tdps is invalid: {exc}") from exc
     return dict(payload)
 
 
