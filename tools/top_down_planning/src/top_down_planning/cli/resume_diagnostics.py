@@ -14,6 +14,7 @@ from top_down_planning.config.resume_policy import (
     validate_resume_config_comparison,
 )
 from top_down_planning.domain.resume_limits import consumed_limits_from_run
+from top_down_planning.domain.run_lifecycle import continuation_ok_from_run
 from top_down_planning.domain.resume_plan import ResumePlan
 from top_down_planning.orchestrator.resume import RunResumeSnapshot
 
@@ -156,7 +157,7 @@ def build_resume_plan_summary(
         transition = resume_plan.state_transition.to_dict()
 
     return {
-        "ok": not resume_plan.already_completed,
+        "ok": continuation_ok_from_run(run) if resume_plan.already_completed else True,
         "run_id": resume_plan.run_id,
         "check_only": True,
         "already_completed": resume_plan.already_completed,

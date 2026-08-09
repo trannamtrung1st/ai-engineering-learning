@@ -14,6 +14,7 @@ from top_down_planning.domain.run_ownership import (
     RunOwnershipError,
     acquire_run_ownership,
     assert_expected_run_revision,
+    clear_orphan_resume_lock,
     clear_stale_resume_lock,
     is_resume_lock_stale,
     read_resume_lock,
@@ -64,10 +65,11 @@ def test_stale_lock_from_dead_pid_is_cleared(tmp_path: Path) -> None:
     )
     assert clear_stale_resume_lock(run_dir) is True
     assert read_resume_lock(run_dir) is None
-    acquire_run_ownership("run-1", run_dir=run_dir)
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
 
 
-def test_stale_lock_by_timestamp_is_cleared(tmp_path: Path) -> None:
+def test_stale_lock_by_timestamp_is_not_stale_when_pid_alive(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
     old_time = (datetime.now(UTC) - timedelta(hours=5)).replace(microsecond=0)
@@ -81,8 +83,18 @@ def test_stale_lock_by_timestamp_is_cleared(tmp_path: Path) -> None:
         __import__("json").dumps(stale.to_dict()) + "\n",
         encoding="utf-8",
     )
-    assert is_resume_lock_stale(stale, stale_after_seconds=60) is True
-    assert clear_stale_resume_lock(run_dir, stale_after_seconds=60) is True
+    assert is_resume_lock_stale(stale, stale_after_seconds=60) is False
+    assert clear_stale_resume_lock(run_dir, stale_after_seconds=60) is False
+
+
+def test_malformed_resume_lock_is_cleared(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-2"
+    run_dir.mkdir()
+    resume_lock_path(run_dir).write_text("{not-json", encoding="utf-8")
+    assert clear_orphan_resume_lock(run_dir) is True
+    assert read_resume_lock(run_dir) is None
+    token = acquire_run_ownership("run-2", run_dir=run_dir)
+    release_run_ownership("run-2", run_dir=run_dir, owner_token=token)
 
 
 def test_run_ownership_context_manager_releases_on_exit(tmp_path: Path) -> None:

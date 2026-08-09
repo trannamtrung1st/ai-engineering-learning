@@ -21,6 +21,7 @@ from top_down_planning.domain.run_kind import (
 from top_down_planning.config.context import compute_context_spec_digest_from_config
 from top_down_planning.domain.resume_limits import consumed_limits_from_run
 from top_down_planning.domain.resume_plan import ResumePlan
+from top_down_planning.domain.run_lifecycle import continuation_ok_from_run
 from top_down_planning.domain.reviews import (
     ReviewLoop,
     prepare_limit_reached_retry,
@@ -89,8 +90,9 @@ def apply_resume_plan_atomically(
     """Apply a prepared resume plan in one journaled commit."""
 
     if resume_plan.already_completed:
+        run = store.load_run(resume_plan.run_id)
         return {
-            "ok": True,
+            "ok": continuation_ok_from_run(run),
             "already_completed": True,
             "run_id": resume_plan.run_id,
             "message": resume_plan.message,
@@ -133,7 +135,24 @@ def apply_resume_plan_atomically(
                 f"unsupported resume destination status {transition.to_status!r}",
                 code="resume_apply_blocked",
             )
-        if transition.prior_stop_code is not None:
+        if transition.from_status == "paused":
+            if transition.prior_stop_code is None:
+                raise ApplyResumeError(
+                    "paused resume requires prior_stop_code on state_transition",
+                    code="resume_apply_blocked",
+                )
+            prior_stop_record = run.get("stop")
+            if not isinstance(prior_stop_record, dict):
+                raise ApplyResumeError(
+                    "resume plan requires prior stop on paused run",
+                    code="resume_apply_blocked",
+                )
+            if str(prior_stop_record.get("code") or "") != transition.prior_stop_code:
+                raise ApplyResumeError(
+                    "resume plan prior_stop_code does not match actual stop",
+                    code="resume_apply_blocked",
+                )
+        elif transition.prior_stop_code is not None:
             prior_stop_record = run.get("stop")
             if not isinstance(prior_stop_record, dict):
                 raise ApplyResumeError(

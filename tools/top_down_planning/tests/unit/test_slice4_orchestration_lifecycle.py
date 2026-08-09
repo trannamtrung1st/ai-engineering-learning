@@ -8,9 +8,9 @@ import pytest
 
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.resume_plan import ResumePlan, ResumePlanValidation, ResumeStateTransition
-from top_down_planning.domain.run_lifecycle import StopRecord
+from top_down_planning.domain.run_lifecycle import StopRecord, continuation_ok_from_run
 from top_down_planning.orchestrator.apply_resume import ApplyResumeError, apply_resume_plan_atomically
-from top_down_planning.orchestrator.engine import RunEngine, _continuation_ok_from_run
+from top_down_planning.orchestrator.engine import RunEngine
 from top_down_planning.orchestrator.failure import mark_run_failed
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.run_transitions import (
@@ -137,9 +137,9 @@ def test_mark_run_failed_preserves_operational_paused_run(tmp_path: Path) -> Non
 
 
 def test_continuation_ok_from_run_blocked_completed_is_false() -> None:
-    assert _continuation_ok_from_run({"status": "completed", "outcome": "accepted"}) is True
-    assert _continuation_ok_from_run({"status": "completed", "outcome": "blocked"}) is False
-    assert _continuation_ok_from_run({"status": "paused", "outcome": None}) is False
+    assert continuation_ok_from_run({"status": "completed", "outcome": "accepted"}) is True
+    assert continuation_ok_from_run({"status": "completed", "outcome": "blocked"}) is False
+    assert continuation_ok_from_run({"status": "paused", "outcome": None}) is False
 
 
 def test_continue_run_on_blocked_completed_reports_ok_false_twice(tmp_path: Path) -> None:
@@ -414,3 +414,110 @@ def test_prepared_parent_pending_amendment_pauses_with_registered_stop(tmp_path:
     run = store.load_run(run_id)
     assert run["status"] == "paused"
     assert run["stop"]["code"] == "prepared_plan_amendment_required"
+
+
+def test_apply_resume_paused_requires_prior_stop_code(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    pause_run(
+        store,
+        run_id,
+        stop=StopRecord(
+            code="limit_exhausted",
+            category="operational",
+            phase=PLANNING,
+            message="limit",
+            details={"limit": "limits.planning.max_agent_turns", "consumed": 1, "configured": 1},
+        ),
+    )
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    plan = ResumePlan(
+        run_id=run_id,
+        expected_run_revision=int(run["revision"]),
+        state_transition=ResumeStateTransition(
+            from_status="paused",
+            to_status="running",
+            prior_stop_code=None,
+        ),
+        config_changes={},
+        session_policy={},
+        validation=ResumePlanValidation(
+            contract_digest_valid=True,
+            plan_binding_valid=True,
+            approval_binding_valid=True,
+            evidence_binding_valid=True,
+            context_binding_valid=True,
+        ),
+        effective_config=config,
+    )
+    with pytest.raises(ApplyResumeError, match="prior_stop_code"):
+        apply_resume_plan_atomically(store, plan, resolved_config=config)
+
+
+def test_apply_resume_already_completed_blocked_is_not_ok(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "completed"
+    run["outcome"] = "blocked"
+    run["stop"] = None
+    store.save_run(run_id, run, expected_revision)
+    plan = ResumePlan(
+        run_id=run_id,
+        expected_run_revision=int(run["revision"]),
+        state_transition=None,
+        config_changes={},
+        session_policy={},
+        validation=ResumePlanValidation(
+            contract_digest_valid=True,
+            plan_binding_valid=True,
+            approval_binding_valid=True,
+            evidence_binding_valid=True,
+            context_binding_valid=True,
+        ),
+        already_completed=True,
+        message="run already completed",
+    )
+    result = apply_resume_plan_atomically(store, plan, resolved_config=store.load_resolved_config(run_id))
+    assert result["ok"] is False
+    assert result["already_completed"] is True
+
+
+def test_invalid_phase_with_pending_amendment_does_not_create_provider(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T010003-010003"
+    config = minimal_resolved_config()
+    store.create_run(
+        run_id,
+        plan=_sample_plan(),
+        phase="invalid_phase",
+        **create_run_kwargs(store.root, resolved_config=config),
+    )
+    production = store.load_production(run_id)
+    expected = int(production["revision"])
+    production = dict(production)
+    production["revision"] = expected + 1
+    amendment_id = "amend-01"
+    production["pending_amendment_id"] = amendment_id
+    production["amendment_requests"] = [
+        {
+            "id": amendment_id,
+            "status": "pending",
+            "evidence": "needs change",
+            "affected_refs": ["item-root"],
+        }
+    ]
+    store.save_production(run_id, production, expected)
+
+    def _forbidden_factory(_config: object, _workspace: object) -> StubProvider:
+        raise AssertionError("create_provider must not run for invalid phase")
+
+    engine = RunEngine(store, create_provider=_forbidden_factory)
+    result = engine.continue_run(run_id, single_step=True)
+
+    assert result.ok is False
+    assert "unsupported phase" in (result.reason or "")

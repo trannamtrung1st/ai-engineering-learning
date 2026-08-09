@@ -105,11 +105,45 @@ def is_resume_lock_stale(
 ) -> bool:
     if not is_pid_alive(lock.pid):
         return True
+    return False
+
+
+def _clear_resume_lock_file(run_dir: Path) -> bool:
+    path = resume_lock_path(run_dir)
     try:
-        acquired_at = _parse_timestamp(lock.acquired_at)
-    except ValueError:
-        return True
-    return datetime.now(UTC) - acquired_at > timedelta(seconds=stale_after_seconds)
+        path.unlink(missing_ok=True)
+    except OSError:
+        return False
+    return True
+
+
+def clear_orphan_resume_lock(run_dir: Path) -> bool:
+    """Remove malformed or abandoned lock files that block ``O_EXCL`` acquisition."""
+
+    path = resume_lock_path(run_dir)
+    if not path.is_file():
+        return False
+    lock = read_resume_lock(run_dir)
+    if lock is not None:
+        if is_pid_alive(lock.pid):
+            return False
+        _PROCESS_REGISTRY.pop(lock.run_id, None)
+        return _clear_resume_lock_file(run_dir)
+    try:
+        content = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    if not content:
+        return _clear_resume_lock_file(run_dir)
+    try:
+        payload = json.loads(content)
+        if isinstance(payload, dict) and "pid" in payload:
+            pid = int(payload["pid"])
+            if is_pid_alive(pid):
+                return False
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        pass
+    return _clear_resume_lock_file(run_dir)
 
 
 def clear_stale_resume_lock(
@@ -119,18 +153,15 @@ def clear_stale_resume_lock(
 ) -> bool:
     """Remove a stale on-disk lock. Returns True when a stale lock was cleared."""
 
+    if clear_orphan_resume_lock(run_dir):
+        return True
     lock = read_resume_lock(run_dir)
     if lock is None:
         return False
     if not is_resume_lock_stale(lock, stale_after_seconds=stale_after_seconds):
         return False
     _PROCESS_REGISTRY.pop(lock.run_id, None)
-    path = resume_lock_path(run_dir)
-    try:
-        path.unlink(missing_ok=True)
-    except OSError:
-        return False
-    return True
+    return _clear_resume_lock_file(run_dir)
 
 
 def assert_expected_run_revision(
@@ -209,17 +240,15 @@ def acquire_run_ownership(
         _write_resume_lock_atomic(path, record)
     except FileExistsError:
         clear_stale_resume_lock(run_dir)
+        clear_orphan_resume_lock(run_dir)
         lock = read_resume_lock(run_dir)
         if lock is not None and is_pid_alive(lock.pid):
             raise RunOwnershipError(
                 f"run {run_id} is owned by live process pid={lock.pid}",
                 code="run_owned_by_live_process",
             )
-        if lock is not None:
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
+        if resume_lock_path(run_dir).is_file():
+            clear_orphan_resume_lock(run_dir)
         try:
             _write_resume_lock_atomic(path, record)
         except FileExistsError:

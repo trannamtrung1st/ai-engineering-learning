@@ -516,17 +516,12 @@ class ReviewLoopDriver:
                         finding_count=len(loop.findings),
                     )
 
-            revision_cycles = loop.revision_cycles + 1
-            loop = self._persist_loop(
-                self._adapter.enter_revision_cycle(loop, revision_cycles)
-            )
-
             max_cycles = (
                 limits.max_revision_cycles
                 if self.profile.is_mandatory_gate
                 else int(limits)
             )
-            if revision_cycles > max_cycles:
+            if loop.revision_cycles >= max_cycles:
                 if self.profile.is_mandatory_gate:
                     loop = self._persist_loop(
                         mark_limit_reached_loop(
@@ -545,7 +540,15 @@ class ReviewLoopDriver:
                         exhausted="verification_revision",
                         limits=limits,
                     )
-                return self._focused_adapter().handle_limit_exhausted(loop, revision_cycles)
+                return self._focused_adapter().handle_limit_exhausted(
+                    loop,
+                    loop.revision_cycles,
+                )
+
+            revision_cycles = loop.revision_cycles + 1
+            loop = self._persist_loop(
+                self._adapter.enter_revision_cycle(loop, revision_cycles)
+            )
 
             self._resume_owner_with_findings(loop)
             loop = self._prepare_recheck(loop)

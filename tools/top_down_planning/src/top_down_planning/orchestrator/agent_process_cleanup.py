@@ -242,18 +242,9 @@ def finalize_user_cancel(
     provider_terminated_pids: list[int] | None = None,
     exclude_pids: frozenset[int] | None = None,
 ) -> list[int]:
-    """Terminate orphan agents, persist ``user_cancelled``, and return all stopped pids."""
+    """Persist ``user_cancelled`` then best-effort orphan cleanup."""
 
     with defer_run_interrupt_signals():
-        orphan_pids = kill_orphan_agents(
-            store,
-            run_id,
-            exclude_pids=exclude_pids,
-        )
-        all_terminated_pids = sorted(
-            {int(pid) for pid in (provider_terminated_pids or [])}
-            | {int(pid) for pid in orphan_pids}
-        )
         pause_run(
             store,
             run_id,
@@ -262,9 +253,34 @@ def finalize_user_cancel(
                 category="operational",
                 phase=phase,
                 message="cancelled by user",
-                details={"terminated_pids": all_terminated_pids},
+                details={"terminated_pids": list(provider_terminated_pids or [])},
             ),
         )
+        orphan_pids: list[int] = []
+        try:
+            orphan_pids = kill_orphan_agents(
+                store,
+                run_id,
+                exclude_pids=exclude_pids,
+            )
+        except BaseException:
+            orphan_pids = []
+        all_terminated_pids = sorted(
+            {int(pid) for pid in (provider_terminated_pids or [])}
+            | {int(pid) for pid in orphan_pids}
+        )
+        if all_terminated_pids:
+            try:
+                store.append_event(
+                    run_id,
+                    {
+                        "type": "user_cancel_cleanup",
+                        "run_id": run_id,
+                        "terminated_pids": all_terminated_pids,
+                    },
+                )
+            except BaseException:
+                pass
     return all_terminated_pids
 
 

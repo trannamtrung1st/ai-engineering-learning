@@ -196,7 +196,9 @@ Repeated `continue_run()` on terminal runs returns the **same** semantic success
 
 For `until`: evaluate lifecycle stop (`paused`, `failed`, `completed`) **before** `_target_reached()` on each `continue_run` iteration. Do not return `ok=True` on a paused/failed run because a historical phase predicate matches. `ok` on a **running** run that satisfies `until` remains `True` (target met while still running). `RunContinuationResult.target_reached` mirrors `_target_reached(run, until)` at return time and is independent of `ok`.
 
-`RunContinuationResult.cancelled` must be `True` when durable stop is `user_cancelled`, including Sub-TDP child Ctrl-C propagation and early `continue_run` returns on an already-paused run. Durable `user_cancelled` with `cancelled=False` is a defect.
+`RunContinuationResult.cancelled` must be `True` when durable stop is `user_cancelled`, including Sub-TDP child Ctrl-C propagation and early `continue_run` returns on an already-paused run. Durable `user_cancelled` with `cancelled=False` is a defect. `finalize_user_cancel` persists `user_cancelled` before orphan cleanup; cleanup failures must not skip cancellation.
+
+Use `continuation_ok_from_run()` from `domain/run_lifecycle.py` for engine, `apply_resume`, and CLI resume — `completed + accepted` only is success.
 
 Review limit/termination paths call `ReviewLoopDriver.result_from_run(run, ..., loop=loop)` (via orchestrator `_driver_host()` or direct driver use) so returned `loop_id`, `reviewer_session_id`, and `revision_cycles` match persisted state.
 
@@ -216,7 +218,7 @@ Cancellation durability: durable `paused` / `user_cancelled` must persist even w
 
 #### Ownership and orphans
 
-Cross-process ownership acquisition uses atomic lock creation (`O_CREAT|O_EXCL` on `.resume.lock`). Test with two real processes (subprocess exception to the unit-test no-subprocess rule). Live owner PID must not lose exclusivity from age alone without an explicit lease/heartbeat contract.
+Cross-process ownership acquisition uses atomic lock creation (`O_CREAT|O_EXCL` on `.resume.lock`). Live PID locks are never stale by age alone — only dead/malformed locks are cleared (`clear_orphan_resume_lock`). Test with two real processes (subprocess exception to the unit-test no-subprocess rule).
 
 Orphan detection includes **completed** and **failed** runs — any tagged live provider on a terminal run is an orphan. Keep autouse `stub_orphan_agent_scan` in orchestration tests; exercise scan logic in `top_down_planning/tests/unit/test_agent_process_cleanup.py` with injected PIDs.
 

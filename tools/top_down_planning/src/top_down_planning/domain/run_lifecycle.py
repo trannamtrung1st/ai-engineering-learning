@@ -189,6 +189,17 @@ def validate_run_lifecycle_invariants(run: dict[str, Any]) -> None:
         return
 
 
+def continuation_ok_from_run(run: dict[str, Any]) -> bool:
+    """Map durable run state to continuation/resume success semantics."""
+
+    status = str(run.get("status") or "")
+    if status == "completed":
+        return str(run.get("outcome") or "") == "accepted"
+    if status in {"failed", "paused"}:
+        return False
+    return True
+
+
 __all__ = [
     "FAILED_STOP_CODES",
     "PAUSED_STOP_CODES",
@@ -200,6 +211,7 @@ __all__ = [
     "StopCategory",
     "StopCode",
     "StopRecord",
+    "continuation_ok_from_run",
     "validate_phase_action_id",
     "validate_run_lifecycle_invariants",
     "validate_stop_record",

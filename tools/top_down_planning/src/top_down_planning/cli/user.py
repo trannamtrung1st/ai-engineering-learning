@@ -34,6 +34,7 @@ from top_down_planning.config import (
     resolve_workspace,
 )
 from top_down_planning.domain.models import Plan, PlanItem
+from top_down_planning.domain.run_lifecycle import continuation_ok_from_run
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID, seed_plan_root_item
 from top_down_planning.agent_tool.validation_context import (
     compute_plan_approval_actual_digests,
@@ -582,8 +583,10 @@ def handle_resume_command(args: Namespace) -> None:
 
     if resume_plan.already_completed:
         message = resume_plan.message or "run already completed"
+        run_record = store.load_run(args.run)
+        ok = continuation_ok_from_run(run_record)
         payload = {
-            "ok": True,
+            "ok": ok,
             "run_id": args.run,
             "phase": phase,
             "status": snapshot.status,
@@ -593,9 +596,11 @@ def handle_resume_command(args: Namespace) -> None:
             "resume_plan": plan_summary,
         }
         if args.stream_json:
-            emit_payload(payload)
+            emit_payload(payload, exit_code=0 if ok else 1)
         else:
             emit_message(f"Run {args.run}: {message}")
+        if not ok:
+            sys.exit(1)
         return
 
     if check_only:

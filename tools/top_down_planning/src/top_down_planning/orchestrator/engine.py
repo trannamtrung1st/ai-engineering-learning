@@ -13,7 +13,7 @@ from top_down_planning.observability import (
     ObservabilityContext,
     cancel_console_event,
 )
-from top_down_planning.domain.run_lifecycle import StopRecord
+from top_down_planning.domain.run_lifecycle import StopRecord, continuation_ok_from_run
 from top_down_planning.domain.run_ownership import resolve_run_dir, run_ownership
 from top_down_planning.orchestrator.agent_process_cleanup import (
     finalize_user_cancel,
@@ -111,12 +111,7 @@ def _target_reached(run: dict[str, Any], until: str) -> bool:
 
 
 def _continuation_ok_from_run(run: dict[str, Any]) -> bool:
-    status = str(run.get("status") or "")
-    if status == "completed":
-        return str(run.get("outcome") or "") == "accepted"
-    if status in {"failed", "paused"}:
-        return False
-    return True
+    return continuation_ok_from_run(run)
 
 
 def _continuation_cancelled_from_run(run: dict[str, Any]) -> bool:
@@ -158,10 +153,22 @@ def _continuation_result_from_run(
     )
 
 
+_AMENDMENT_SOURCE_PHASES = frozenset(
+    {
+        PLANNING,
+        WHOLE_PLAN_REVIEW,
+        WHOLE_OUTPUT_REVIEW,
+        PLAN_VALIDATED,
+        PLAN_AMENDMENT,
+        SUB_TDPS,
+    }
+)
+
+
 def _is_continuable_phase(run: dict[str, Any], production: dict[str, Any]) -> bool:
     phase = str(run.get("phase") or "")
     if has_pending_amendment(production) and phase != PRODUCTION:
-        return True
+        return phase in _AMENDMENT_SOURCE_PHASES
     return phase in {
         PLANNING,
         WHOLE_PLAN_REVIEW,
@@ -220,23 +227,41 @@ class RunEngine:
         single_step: bool = False,
         session_policy: dict[str, Any] | None = None,
     ) -> RunContinuationResult:
-        if session_policy is not None:
-            execute_session_policy_if_registered(
-                self._store,
-                run_id,
-                session_policy,
-            )
-        else:
-            run = self._store.load_run(run_id)
-            derived_policy = derive_session_policy(run, self._store.list_reviews(run_id))
-            execute_session_policy(self._store, run_id, derived_policy)
-        kill_orphan_agents(
-            self._store,
-            run_id,
-            exclude_pids=frozenset({os.getpid()}),
-        )
         started_at = time.monotonic()
         steps: list[RunStepResult] = []
+        try:
+            if session_policy is not None:
+                execute_session_policy_if_registered(
+                    self._store,
+                    run_id,
+                    session_policy,
+                )
+            else:
+                run = self._store.load_run(run_id)
+                derived_policy = derive_session_policy(run, self._store.list_reviews(run_id))
+                execute_session_policy(self._store, run_id, derived_policy)
+            kill_orphan_agents(
+                self._store,
+                run_id,
+                exclude_pids=frozenset({os.getpid()}),
+            )
+        except Exception as exc:
+            message = sanitize_operational_error(exc)
+            run_before = self._store.load_run(run_id)
+            if str(run_before.get("status") or "") == "running":
+                mark_run_failed(self._store, run_id, message=message)
+            run = self._store.load_run(run_id)
+            result = _continuation_result_from_run(
+                run,
+                run_id,
+                until=until,
+                steps=steps,
+                ok=False,
+                reason=message,
+            )
+            self._emit_done(result, started_at=started_at)
+            return result
+
         while True:
             run = self._store.load_run(run_id)
             status = str(run.get("status") or "")
@@ -297,26 +322,28 @@ class RunEngine:
                 phase=phase_for_entry,
             )
 
-            production = self._store.load_production(run_id)
-            phase = phase_for_entry
-            if not _is_continuable_phase(run, production):
-                result = _continuation_result_from_run(
-                    run,
-                    run_id,
-                    until=until,
-                    steps=steps,
-                    ok=False,
-                    reason=f"cannot continue unsupported phase: {phase!r}",
-                )
-                self._emit_done(result, started_at=started_at)
-                return result
-
-            config = self._store.load_resolved_config(run_id)
-            workspace = run_workspace(run)
-            provider = self._create_provider(config, workspace)
+            provider: Provider | None = None
             cancelled = False
+            phase = phase_for_entry
 
             try:
+                production = self._store.load_production(run_id)
+                if not _is_continuable_phase(run, production):
+                    result = _continuation_result_from_run(
+                        run,
+                        run_id,
+                        until=until,
+                        steps=steps,
+                        ok=False,
+                        reason=f"cannot continue unsupported phase: {phase!r}",
+                    )
+                    self._emit_done(result, started_at=started_at)
+                    return result
+
+                config = self._store.load_resolved_config(run_id)
+                workspace = run_workspace(run)
+                provider = self._create_provider(config, workspace)
+
                 if has_pending_amendment(production) and phase != PRODUCTION:
                     kind = resolve_run_kind(run)
                     if kind in {RUN_KIND_PARENT_EXECUTION, RUN_KIND_SUB_TDP_EXECUTION}:
@@ -534,35 +561,35 @@ class RunEngine:
                 self._emit_done(result, started_at=started_at)
                 return result
             finally:
-                def append_event(event_type: str, **fields: Any) -> None:
-                    self._store.append_event(
-                        run_id,
-                        {"type": event_type, **fields},
-                    )
+                if provider is not None:
+                    def append_event(event_type: str, **fields: Any) -> None:
+                        self._store.append_event(
+                            run_id,
+                            {"type": event_type, **fields},
+                        )
 
-                terminated_pids: list[int] = []
-                try:
-                    terminated_pids = teardown_provider_sessions(
-                        provider,
-                        run_id=run_id,
-                        phase=phase,
-                        append_event=append_event,
-                        emit_console=self._emit,
-                        audit_cancel=cancelled,
-                    )
-                except BaseException:
-                    if not cancelled:
-                        raise
-                if cancelled:
-                    run = self._store.load_run(run_id)
-                    cancel_phase = str(run.get("phase") or phase)
-                    finalize_user_cancel(
-                        self._store,
-                        run_id,
-                        phase=cancel_phase,
-                        provider_terminated_pids=terminated_pids,
-                        exclude_pids=frozenset({os.getpid()}),
-                    )
+                    terminated_pids: list[int] = []
+                    try:
+                        terminated_pids = teardown_provider_sessions(
+                            provider,
+                            run_id=run_id,
+                            phase=phase,
+                            append_event=append_event,
+                            emit_console=self._emit,
+                            audit_cancel=cancelled,
+                        )
+                    except BaseException:
+                        pass
+                    if cancelled:
+                        run = self._store.load_run(run_id)
+                        cancel_phase = str(run.get("phase") or phase)
+                        finalize_user_cancel(
+                            self._store,
+                            run_id,
+                            phase=cancel_phase,
+                            provider_terminated_pids=terminated_pids,
+                            exclude_pids=frozenset({os.getpid()}),
+                        )
 
             if cancelled:
                 run = self._store.load_run(run_id)

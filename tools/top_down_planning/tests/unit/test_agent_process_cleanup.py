@@ -494,3 +494,48 @@ def test_workspace_has_orphan_agents_scans_completed_runs(tmp_path: Path) -> Non
         orphans = workspace_has_orphan_agents(store)
 
     assert orphans == [(run_id, 8888)]
+
+
+def test_workspace_has_orphan_agents_scans_failed_runs(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T001908-001908"
+    config = minimal_resolved_config()
+    store.create_run(
+        run_id,
+        plan=Plan(
+            id=f"plan-{run_id}",
+            revision=0,
+            output_goal="Goal.",
+            items={
+                "item-root": PlanItem(
+                    id="item-root",
+                    parent_id=None,
+                    order_key="0000000000",
+                    title="Root",
+                    kind="aggregate",
+                )
+            },
+        ),
+        phase="production",
+        **create_run_kwargs(store.root, resolved_config=config),
+    )
+    run = store.load_run(run_id)
+    expected = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected + 1
+    run["status"] = "failed"
+    run["stop"] = {
+        "code": "orchestrator_invariant_failure",
+        "category": "invariant",
+        "phase": "production",
+        "message": "failed",
+    }
+    store.save_run(run_id, run, expected)
+
+    with patch(
+        "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
+        return_value=[9999],
+    ):
+        orphans = workspace_has_orphan_agents(store)
+
+    assert orphans == [(run_id, 9999)]
