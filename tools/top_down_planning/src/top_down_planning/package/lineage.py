@@ -270,6 +270,75 @@ def workspace_changes_from_output_evidence(
     return changes
 
 
+def validate_accepted_result_workspace_changes(
+    output_refs: list[Any],
+    workspace_changes: Any,
+    *,
+    label: str = "accepted_result",
+) -> None:
+    """Require workspace_changes to match canonical latest-write bindings per path."""
+
+    if not isinstance(workspace_changes, dict):
+        raise ValueError(f"{label}.workspace_changes must be an object")
+    output_records = [
+        output for output in (output_refs or []) if isinstance(output, dict)
+    ]
+    try:
+        canonical = workspace_changes_from_output_evidence(output_records)
+    except ValueError as exc:
+        raise ValueError(f"{label}.output_refs: {exc}") from exc
+    extra_paths = set(workspace_changes.keys()) - set(canonical.keys())
+    if extra_paths:
+        extra = sorted(extra_paths)[0]
+        raise ValueError(
+            f"{label}.workspace_changes[{extra!r}] "
+            "is not authorized by accepted output_refs"
+        )
+    for path in sorted(canonical.keys()):
+        if path not in workspace_changes:
+            raise ValueError(
+                f"{label} output_refs path {path!r} missing from workspace_changes"
+            )
+        change = workspace_changes[path]
+        if not isinstance(change, dict):
+            raise ValueError(f"{label}.workspace_changes[{path!r}] must be an object")
+        operation = str(change.get("operation") or "").strip()
+        if operation == "delete":
+            raise ValueError(
+                f"{label}.workspace_changes delete operation is not supported "
+                "until production can capture delete tombstones"
+            )
+        if operation != "write":
+            raise ValueError(
+                f"{label}.workspace_changes[{path!r}] has invalid operation"
+            )
+        expected = canonical[path]
+        actual_sha = str(change.get("sha256") or "").strip()
+        if not actual_sha:
+            raise ValueError(f"{label}.workspace_changes[{path!r}] missing sha256")
+        if actual_sha != expected["sha256"]:
+            raise ValueError(
+                f"{label}.workspace_changes[{path!r}].sha256 does not match "
+                "latest accepted output for that path"
+            )
+        actual_size = change.get("size")
+        if not isinstance(actual_size, int) or isinstance(actual_size, bool):
+            raise ValueError(
+                f"{label}.workspace_changes[{path!r}].size must be a non-negative integer"
+            )
+        if actual_size != expected["size"]:
+            raise ValueError(
+                f"{label}.workspace_changes[{path!r}].size does not match "
+                "latest accepted output for that path"
+            )
+        actual_snapshot = str(change.get("snapshot_ref") or "").strip()
+        if actual_snapshot != expected["snapshot_ref"]:
+            raise ValueError(
+                f"{label}.workspace_changes[{path!r}].snapshot_ref does not match "
+                "latest accepted output for that path"
+            )
+
+
 def accepted_result_record(
     *,
     child_run: dict[str, Any],
@@ -516,41 +585,10 @@ def verify_accepted_result_attestation(unit_record: dict[str, Any]) -> None:
         ref = str(output.get("ref") or "").strip()
         if not ref:
             raise ValueError("accepted_result output_refs entry missing ref")
-        if ref not in workspace_changes:
-            raise ValueError(
-                f"accepted_result output_refs path {ref!r} missing from workspace_changes"
-            )
-    for path, change in workspace_changes.items():
-        if not isinstance(change, dict):
-            raise ValueError(
-                f"accepted_result workspace_changes[{path!r}] must be an object"
-            )
-        operation = str(change.get("operation") or "").strip()
-        if operation == "delete":
-            raise ValueError(
-                "accepted_result workspace_changes delete operation is not supported "
-                "until production can capture delete tombstones"
-            )
-        if operation != "write":
-            raise ValueError(
-                f"accepted_result workspace_changes[{path!r}] has invalid operation"
-            )
-        if not str(change.get("sha256") or "").strip():
-            raise ValueError(
-                f"accepted_result workspace_changes[{path!r}] missing sha256"
-            )
-    output_paths = {
-        str(output.get("ref") or "").strip()
-        for output in (accepted.get("output_refs") or [])
-        if isinstance(output, dict) and str(output.get("ref") or "").strip()
-    }
-    extra_paths = set(workspace_changes.keys()) - output_paths
-    if extra_paths:
-        extra = sorted(extra_paths)[0]
-        raise ValueError(
-            f"accepted_result workspace_changes[{extra!r}] "
-            "is not authorized by accepted output_refs"
-        )
+    validate_accepted_result_workspace_changes(
+        accepted.get("output_refs") or [],
+        workspace_changes,
+    )
     if "baseline_context_snapshot_digest" not in accepted:
         raise ValueError("accepted_result missing baseline_context_snapshot_digest")
     if not str(accepted.get("baseline_context_snapshot_digest") or "").strip():

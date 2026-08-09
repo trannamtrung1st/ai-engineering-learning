@@ -62,7 +62,20 @@ def _minimal_accepted_result(*, ref: str = "src/a.py", sha256: str = "1" * 64) -
             }
         ],
         "contributions": [],
-        "workspace_changes": {ref: {"operation": "write", "sha256": sha256}},
+        "workspace_changes": workspace_changes_from_output_evidence(
+            [
+                {
+                    "id": "out-1",
+                    "type": "artifact",
+                    "ref": ref,
+                    "sha256": sha256,
+                    "size": 1,
+                    "media_type": "text/plain",
+                    "captured_at": "2026-01-01T00:00:00Z",
+                    "snapshot_ref": "artifacts/test/out.py",
+                }
+            ]
+        ),
         "baseline_context_snapshot_digest": "2" * 64,
         "final_context_snapshot_digest": "3" * 64,
         "baseline_accepted_result_digests": [],
@@ -222,7 +235,12 @@ def test_canonical_accepted_result_with_one_output_path_round_trips(tmp_path: Pa
     store.save_production(run_id, production, expected)
     reloaded = store.load_production(run_id)
     assert reloaded["sub_tdps"]["units"][0]["accepted_result"]["workspace_changes"] == {
-        "src/a.py": {"operation": "write", "sha256": "1" * 64}
+        "src/a.py": {
+            "operation": "write",
+            "sha256": "1" * 64,
+            "size": 1,
+            "snapshot_ref": "artifacts/test/out.py",
+        }
     }
 
 

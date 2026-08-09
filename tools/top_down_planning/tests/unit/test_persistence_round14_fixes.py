@@ -13,7 +13,10 @@ from top_down_planning.domain.production import (
     completion_claim_asserts_goal_met,
     live_output_evidence_entries,
 )
-from top_down_planning.package.lineage import accepted_result_digest
+from top_down_planning.package.lineage import (
+    accepted_result_digest,
+    workspace_changes_from_output_evidence,
+)
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import bind_evidence_snapshot
 from tests.unit.test_commit_crash_recovery import _create_run
@@ -126,7 +129,20 @@ def _minimal_accepted_result(
             }
         ],
         "contributions": [],
-        "workspace_changes": {ref: {"operation": "write", "sha256": "1" * 64}},
+        "workspace_changes": workspace_changes_from_output_evidence(
+            [
+                {
+                    "id": "out-1",
+                    "type": "artifact",
+                    "ref": ref,
+                    "sha256": "1" * 64,
+                    "size": 1,
+                    "media_type": "text/plain",
+                    "captured_at": "2026-01-01T00:00:00Z",
+                    "snapshot_ref": "artifacts/test/out.py",
+                }
+            ]
+        ),
         "baseline_context_snapshot_digest": "2" * 64,
         "final_context_snapshot_digest": "3" * 64,
         "baseline_accepted_result_digests": [],

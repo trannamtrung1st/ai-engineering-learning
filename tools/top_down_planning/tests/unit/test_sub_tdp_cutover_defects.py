@@ -125,6 +125,7 @@ def test_attestation_rejects_string_output_refs() -> None:
             "contributions": [],
             "workspace_changes": {},
             "baseline_context_snapshot_digest": "b" * 64,
+            "baseline_accepted_result_digests": [],
             "final_context_snapshot_digest": "f" * 64,
             "completion_assessment": "done",
         },
@@ -155,12 +156,24 @@ def test_attestation_rejects_delete_operation_until_capture_exists() -> None:
             "whole_output_review_digest": "r" * 64,
             "outcome": "accepted",
             "evidence_digest": "e" * 64,
-            "output_refs": [],
+            "output_refs": [
+                {
+                    "id": "out-gone",
+                    "type": "artifact",
+                    "ref": "gone.json",
+                    "sha256": "a" * 64,
+                    "size": 1,
+                    "media_type": "application/json",
+                    "captured_at": "2026-01-01T00:00:00Z",
+                    "snapshot_ref": "artifacts/gone.json",
+                }
+            ],
             "contributions": [],
             "workspace_changes": {
                 "gone.json": {"operation": "delete", "prior_sha256": "a" * 64}
             },
             "baseline_context_snapshot_digest": "b" * 64,
+            "baseline_accepted_result_digests": [],
             "final_context_snapshot_digest": "f" * 64,
             "completion_assessment": "done",
         },

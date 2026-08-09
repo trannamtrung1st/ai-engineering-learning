@@ -37,7 +37,10 @@ from top_down_planning.persistence.run_schema import (
     validate_run_digests,
     validate_run_schema_version,
 )
-from top_down_planning.package.lineage import verify_accepted_result_attestation
+from top_down_planning.package.lineage import (
+    validate_accepted_result_workspace_changes,
+    verify_accepted_result_attestation,
+)
 from top_down_planning.persistence.sub_tdp_state import (
     ORCHESTRATION_STATUS_COMPLETED,
     ORCHESTRATION_STATUS_FAILED,
@@ -430,48 +433,11 @@ def _validate_accepted_result_schema(accepted: dict[str, Any], *, label: str) ->
                     f"{label}.accepted_result.contributions[{index}].output_refs[{ref_index}] "
                     f"references unknown output id {ref_id!r}"
                 )
-    output_paths: set[str] = set()
-    for index, output in enumerate(output_refs):
-        if not isinstance(output, dict):
-            continue
-        ref_path = str(output.get("ref") or "").strip()
-        if ref_path:
-            output_paths.add(ref_path)
-    workspace_changes = accepted.get("workspace_changes")
-    if not isinstance(workspace_changes, dict):
-        raise ValueError(f"{label}.accepted_result.workspace_changes must be an object")
-    for path, change in workspace_changes.items():
-        if not isinstance(change, dict):
-            raise ValueError(
-                f"{label}.accepted_result.workspace_changes[{path!r}] must be an object"
-            )
-        operation = str(change.get("operation") or "").strip()
-        if operation == "delete":
-            raise ValueError(
-                f"{label}.accepted_result.workspace_changes delete operation is not supported "
-                "until production can capture delete tombstones"
-            )
-        if operation != "write":
-            raise ValueError(
-                f"{label}.accepted_result.workspace_changes[{path!r}] has invalid operation"
-            )
-        _require_strict_sha256_digest(
-            change.get("sha256"),
-            f"{label}.accepted_result.workspace_changes[{path!r}].sha256",
-        )
-    extra_paths = set(workspace_changes.keys()) - output_paths
-    if extra_paths:
-        extra = sorted(extra_paths)[0]
-        raise ValueError(
-            f"{label}.accepted_result.workspace_changes[{extra!r}] "
-            "is not authorized by accepted output_refs"
-        )
-    for path in sorted(output_paths):
-        if path not in workspace_changes:
-            raise ValueError(
-                f"{label}.accepted_result output_refs path {path!r} "
-                "missing from workspace_changes"
-            )
+    validate_accepted_result_workspace_changes(
+        output_refs,
+        accepted.get("workspace_changes"),
+        label=f"{label}.accepted_result",
+    )
 
 
 def _parse_persisted_amendment_request(value: dict[str, Any]) -> None:
