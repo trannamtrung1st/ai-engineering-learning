@@ -541,6 +541,40 @@ def ready_item_ids_for_plan(
     )
 
 
+def derive_live_disposition_map(production: dict[str, Any]) -> dict[str, str]:
+    """Derive canonical flat dispositions from live completed batch results."""
+
+    derived: dict[str, str] = {}
+    for batch_payload in production.get("batches") or []:
+        if not isinstance(batch_payload, dict):
+            continue
+        if batch_payload.get("evidence_status") == "invalidated_by_reconciliation":
+            continue
+        if str(batch_payload.get("status") or "") != "completed":
+            continue
+        result_payload = batch_payload.get("result")
+        if not isinstance(result_payload, dict):
+            continue
+        records = result_payload.get("dispositions") or {}
+        if not isinstance(records, dict):
+            continue
+        for item_id, record in records.items():
+            if not isinstance(record, dict):
+                continue
+            disposition = str(record.get("disposition") or "")
+            if not disposition:
+                continue
+            item_s = str(item_id)
+            prior = derived.get(item_s)
+            if prior is not None and prior != disposition:
+                raise ValueError(
+                    f"conflicting live disposition for {item_s!r}: "
+                    f"{prior!r} vs {disposition!r}"
+                )
+            derived[item_s] = disposition
+    return derived
+
+
 def collect_batch_disposition_records(
     production: dict[str, Any],
 ) -> dict[str, ItemDispositionRecord]:

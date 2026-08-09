@@ -62,13 +62,25 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551")
         "item-first": "completed",
         "item-second": "completed",
     }
+    output_evidence = {
+        "id": "output-first",
+        "type": "artifact",
+        "ref": "first.txt",
+        "sha256": "a" * 64,
+        "size": 1,
+        "media_type": "text/plain",
+        "captured_at": "2026-01-01T00:00:00Z",
+        "batch_id": "batch-01",
+        "snapshot_ref": "artifacts/u1/first.txt",
+    }
+    nested_output = {key: value for key, value in output_evidence.items() if key != "batch_id"}
     production["batches"] = [
         {
             "id": "batch-01",
             "plan_items": ["item-first", "item-second"],
             "status": "completed",
             "result": {
-                "outputs": [],
+                "outputs": [nested_output],
                 "contributions": [
                     {
                         "item_id": "item-first",
@@ -77,26 +89,14 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551")
                     }
                 ],
                 "dispositions": {
-                    "item-first": {"disposition": "completed"},
-                    "item-second": {"disposition": "completed"},
+                    "item-first": {"disposition": "completed", "evidence": "initial"},
+                    "item-second": {"disposition": "completed", "evidence": "initial"},
                 },
                 "summary": "initial",
             },
         }
     ]
-    production["output_evidence"] = [
-        {
-            "id": "output-first",
-            "type": "artifact",
-            "ref": "first.txt",
-            "sha256": "a" * 64,
-            "size": 1,
-            "media_type": "text/plain",
-            "captured_at": "2026-01-01T00:00:00Z",
-            "batch_id": "batch-01",
-            "snapshot_ref": "artifacts/u1/first.txt",
-        }
-    ]
+    production["output_evidence"] = [output_evidence]
     production["completion_claim"] = {
         "goal_assessment": "done",
         "goal_met": True,

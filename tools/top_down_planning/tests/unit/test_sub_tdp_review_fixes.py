@@ -91,12 +91,6 @@ def test_production_does_not_complete_on_integration_pending_claim(
         "status": "integration_pending",
         "goal_assessment": "Children collected; integration pending.",
     }
-    plan = store.load_plan_model(parent_id)
-    production["dispositions"] = {
-        item_id: "completed"
-        for item_id, item in plan.items.items()
-        if item.kind == "work"
-    }
     store.save_production(parent_id, production, expected)
 
     run = store.load_run(parent_id)
@@ -117,6 +111,9 @@ def test_production_does_not_complete_on_integration_pending_claim(
     production["completion_claim"] = {
         "goal_met": True,
         "goal_assessment": "Integrated and goal met.",
+        "plan_revision": int(store.load_plan_model(parent_id).revision),
+        "output_revision": int(production["output_revision"]),
+        "all_applicable_items_processed": True,
     }
     store.save_production(parent_id, production, expected)
     assert orch._has_completion_claim() is True

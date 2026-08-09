@@ -30,7 +30,13 @@ from top_down_planning.package.lineage import accepted_result_digest
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.sub_tdp_state import load_sub_tdp_state
 from tests.conftest import run_cli
-from tests.helpers import accept_child_run, create_run_kwargs, whole_plan_approval_record
+from tests.helpers import (
+    accept_child_run,
+    create_run_kwargs,
+    decorate_sub_tdp_v2_package,
+    goal_met_completion_claim,
+    whole_plan_approval_record,
+)
 from tests.unit.test_prepared_runs import _built_package
 from tests.unit.test_sub_tdp_attach_cli import _parent_with_orchestration
 from tests.unit.test_sub_tdp_orchestrator import _setup_parent_execution
@@ -387,16 +393,14 @@ def test_wor_fails_closed_when_unit_not_completed(tmp_path: Path) -> None:
     production = store.load_production(parent_id)
     state = load_sub_tdp_state(production)
     assert state is not None
+    decorate_sub_tdp_v2_package(state)
     state["units"][0]["status"] = "paused"
     state["units"][0]["child_run_id"] = "run-placeholder"
     expected_prod = int(production["revision"])
     production = dict(production)
     production["revision"] = expected_prod + 1
     production["sub_tdps"] = state
-    production["completion_claim"] = {
-        "goal_met": True,
-        "goal_assessment": "done",
-    }
+    production["completion_claim"] = goal_met_completion_claim(production)
     store.save_production(parent_id, production, expected_prod)
 
     run = store.load_run(parent_id)

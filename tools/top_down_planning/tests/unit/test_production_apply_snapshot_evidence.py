@@ -383,6 +383,19 @@ def test_invalidated_batch_evidence_does_not_authorize_apply_drift(tmp_path: Pat
         },
         capability_token=token,
     )
+    service.apply(
+        {
+            **_batch_apply_request(
+                plan_items=["item-second"],
+                dispositions={"item-second": {"disposition": "completed"}},
+                production_revision=1,
+            ),
+            "outputs": [],
+            "empty_output": True,
+            "empty_output_reason": "no files touched",
+        },
+        capability_token=token,
+    )
 
     production = dict(store.load_production(run_id))
     expected_revision = int(production["revision"])
@@ -392,9 +405,15 @@ def test_invalidated_batch_evidence_does_not_authorize_apply_drift(tmp_path: Pat
             **dict(production["batches"][0]),
             "evidence_status": "invalidated_by_reconciliation",
             "invalidated_item_ids": ["item-first"],
-        }
+        },
+        dict(production["batches"][1]),
     ]
-    production["output_evidence"] = []
+    production["output_evidence"] = [
+        entry
+        for entry in production["output_evidence"]
+        if str(entry.get("batch_id") or "") != str(production["batches"][0]["id"])
+    ]
+    production["dispositions"] = {"item-second": "completed"}
     store.save_production(run_id, production, expected_revision=expected_revision)
 
     feature.write_text("v3\n", encoding="utf-8")
@@ -403,9 +422,9 @@ def test_invalidated_batch_evidence_does_not_authorize_apply_drift(tmp_path: Pat
         service.apply(
             {
                 **_batch_apply_request(
-                    plan_items=["item-second"],
-                    dispositions={"item-second": {"disposition": "completed"}},
-                    production_revision=2,
+                    plan_items=["item-first"],
+                    dispositions={"item-first": {"disposition": "completed"}},
+                    production_revision=3,
                 ),
                 "outputs": [],
                 "empty_output": True,
@@ -419,36 +438,29 @@ def test_invalid_evidence_refs_fail_at_apply_time(tmp_path: Path) -> None:
     store, run_id = _production_run_with_src_binding(tmp_path)
     workspace = Path(store.load_run(run_id)["workspace"])
     (workspace / "src" / "feature.py").write_text("v2\n", encoding="utf-8")
-    production = dict(store.load_production(run_id))
-    expected_revision = int(production["revision"])
-    production["revision"] = expected_revision + 1
-    production["batches"] = [
-        {"id": "batch-1", "status": "completed", "plan_items": ["item-first"]},
-    ]
-    production["output_evidence"] = [
-        {
-            "id": "out-bad",
-            "type": "artifact",
-            "ref": "/etc/passwd",
-            "sha256": "0" * 64,
-            "size": 0,
-            "media_type": "application/octet-stream",
-            "captured_at": "2026-01-01T00:00:00Z",
-            "batch_id": "batch-1",
-        }
-    ]
-    store.save_production(run_id, production, expected_revision=expected_revision)
 
     service = ProductionAgentService(store, run_id)
     token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
 
-    with pytest.raises(RequestError, match="invalid evidence refs"):
+    with pytest.raises(RequestError, match="workspace-relative|invalid evidence refs"):
         service.apply(
-            _batch_apply_request(
-                plan_items=["item-first"],
-                dispositions={"item-first": {"disposition": "completed"}},
-                production_revision=1,
-            ),
+            {
+                **_batch_apply_request(
+                    plan_items=["item-first"],
+                    dispositions={"item-first": {"disposition": "completed"}},
+                ),
+                "outputs": [
+                    {
+                        "id": "out-bad",
+                        "type": "artifact",
+                        "ref": "/etc/passwd",
+                        "sha256": "0" * 64,
+                        "size": 0,
+                        "media_type": "application/octet-stream",
+                        "captured_at": "2026-01-01T00:00:00Z",
+                    }
+                ],
+            },
             capability_token=token,
         )
 

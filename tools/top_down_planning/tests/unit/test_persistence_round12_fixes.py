@@ -13,7 +13,13 @@ from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import apply_production, create_run_kwargs, whole_plan_approval_record, write_config
+from tests.helpers import (
+    apply_production,
+    create_run_kwargs,
+    mirrored_production_batch,
+    whole_plan_approval_record,
+    write_config,
+)
 from tests.unit.test_commit_crash_recovery import _create_run
 
 
@@ -209,6 +215,13 @@ def test_save_production_accepts_valid_terminal_dispositions(
     expected = int(production["revision"])
     production = dict(production)
     production["revision"] = expected + 1
+    batch, evidence = mirrored_production_batch(
+        item_id="item-root",
+        disposition=disposition,
+        evidence_id=f"out-{disposition}",
+    )
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence]
     production["dispositions"] = {"item-root": disposition}
 
     store.save_production(run_id, production, expected)
@@ -345,6 +358,9 @@ def test_load_production_rejects_malformed_sub_tdp_unit_record(tmp_path: Path) -
         "version": 2,
         "status": "preparing",
         "active_unit_id": None,
+        "package_id": "pkg-01",
+        "package_digest": "a" * 64,
+        "manifest_path": "execution/manifest.json",
         "units": [{"id": 1, "plan_item_id": "item-work", "status": "pending"}],
     }
     atomic_write_json(store.run_dir(run_id) / "production.json", production)

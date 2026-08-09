@@ -25,7 +25,7 @@ from top_down_planning.package.loader import ExecutionPackageError, ExecutionPac
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.sub_tdp_state import unit_status_from_child_run
-from tests.helpers import create_run_kwargs, whole_plan_approval_record
+from tests.helpers import create_run_kwargs, goal_met_completion_claim, mirrored_production_batch, whole_plan_approval_record
 
 
 def _item(item_id: str, *, parent_id: str | None, order_key: str, title: str, **kwargs):
@@ -188,11 +188,7 @@ def test_attach_rejects_missing_output_digest(tmp_path: Path) -> None:
         invocation={"command": "execute"},
     )
     production = store.load_production(child_id)
-    production["completion_claim"] = {
-        "goal_met": True,
-        "status": "accepted",
-        "goal_assessment": "done",
-    }
+    production["completion_claim"] = goal_met_completion_claim(production, goal_assessment="done")
     _save_production(store, child_id, production)
     _force_run_fields(
         store,
@@ -252,11 +248,10 @@ def test_child_run_binds_upstream_accepted_results(tmp_path: Path) -> None:
         invocation={"command": "execute"},
     )
     production = store.load_production(dep_id)
-    production["completion_claim"] = {
-        "goal_met": True,
-        "status": "accepted",
-        "goal_assessment": "A done",
-    }
+    production["completion_claim"] = goal_met_completion_claim(
+        production,
+        goal_assessment="A done",
+    )
     production["output_revision"] = max(1, int(production.get("output_revision") or 0))
     _save_production(store, dep_id, production)
     approval = whole_output_approval_record(store, dep_id)
@@ -480,24 +475,19 @@ def test_attach_compares_live_output_digest_when_present(tmp_path: Path) -> None
         invocation={"command": "execute"},
     )
     production = dict(store.load_production(child_id))
-    production["completion_claim"] = {
-        "goal_met": True,
-        "status": "accepted",
-        "goal_assessment": "done",
-    }
-    production["batches"] = [{"id": "b1", "status": "completed", "plan_items": ["item-a"]}]
-    production["output_evidence"] = [
-        {
-            "id": "ev-1",
-            "type": "artifact",
-            "ref": "out.txt",
-            "sha256": "a" * 64,
-            "size": 4,
-            "media_type": "text/plain",
-            "captured_at": "2026-01-01T00:00:00Z",
-            "batch_id": "b1",
-        }
-    ]
+    batch, evidence = mirrored_production_batch(
+        item_id="item-a",
+        batch_id="b1",
+        evidence_id="ev-1",
+        ref="out.txt",
+    )
+    production["completion_claim"] = goal_met_completion_claim(
+        production,
+        goal_assessment="done",
+    )
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence]
+    production["dispositions"] = {"item-a": "completed"}
     expected = int(production["revision"])
     production["revision"] = expected + 1
     store.save_production(child_id, production, expected)

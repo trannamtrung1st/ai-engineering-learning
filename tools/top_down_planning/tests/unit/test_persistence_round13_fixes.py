@@ -11,6 +11,7 @@ from top_down_planning.domain.dispositions import TERMINAL_DISPOSITIONS
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.readiness import resolve_satisfaction
 from top_down_planning.persistence import FileRunStore
+from tests.helpers import create_run_kwargs, mirrored_production_batch, minimal_resolved_config
 from tests.unit.test_commit_crash_recovery import _create_run
 
 
@@ -41,8 +42,6 @@ def _create_work_plan_run(store: FileRunStore, run_id: str) -> None:
             ),
         },
     )
-    from tests.helpers import create_run_kwargs, minimal_resolved_config
-
     store.create_run(
         run_id,
         plan=plan,
@@ -63,6 +62,13 @@ def test_flat_disposition_string_round_trip_matches_readiness(
     expected = int(production["revision"])
     production = dict(production)
     production["revision"] = expected + 1
+    batch, evidence = mirrored_production_batch(
+        item_id="item-work",
+        disposition=disposition,
+        evidence_id=f"out-{disposition}",
+    )
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence]
     production["dispositions"] = {"item-work": disposition}
 
     store.save_production(run_id, production, expected)
@@ -272,6 +278,9 @@ def test_load_production_rejects_sub_tdps_active_unit_not_in_units(tmp_path: Pat
         "version": 2,
         "status": "running",
         "active_unit_id": "missing-unit",
+        "package_id": "pkg-01",
+        "package_digest": "a" * 64,
+        "manifest_path": "execution/manifest.json",
         "units": [
             {
                 "id": "item-work",
@@ -281,6 +290,9 @@ def test_load_production_rejects_sub_tdps_active_unit_not_in_units(tmp_path: Pat
                 "ordinal": 1,
                 "status": "pending",
                 "child_run_id": None,
+                "unit_plan_digest": "b" * 64,
+                "assigned_subtree_digest": "c" * 64,
+                "depends_on": [],
                 "notes": [],
             }
         ],

@@ -16,6 +16,7 @@ from top_down_planning.domain.production import (
     ItemDispositionRecord,
     OutputEvidence,
     ProductionBatch,
+    derive_live_disposition_map,
 )
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.run_lifecycle import (
@@ -89,6 +90,27 @@ _SLOT_ROLE_KIND: dict[str, tuple[str, str]] = {
 
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 _VALID_BATCH_STATUSES = frozenset({"started", "completed", "failed", "aborted"})
+_COMPLETED_BATCH_STATUS = "completed"
+_OUTPUT_MIRROR_FIELDS = (
+    "id",
+    "type",
+    "ref",
+    "sha256",
+    "size",
+    "media_type",
+    "captured_at",
+    "snapshot_ref",
+)
+_ACCEPTED_RESULT_DIGEST_FIELDS = (
+    "package_digest",
+    "unit_plan_digest",
+    "assigned_subtree_digest",
+    "output_digest",
+    "whole_output_review_digest",
+    "evidence_digest",
+    "baseline_context_snapshot_digest",
+    "final_context_snapshot_digest",
+)
 _VALID_AMENDMENT_STATUSES = frozenset({"pending", "completed"})
 _VALID_BATCH_EVIDENCE_STATUSES = frozenset({"invalidated_by_reconciliation"})
 _SUPPORTED_SUB_TDP_VERSIONS = frozenset({1, 2})
@@ -211,24 +233,19 @@ def _parse_persisted_completion_claim(value: dict[str, Any]) -> None:
     if goal_met is True:
         if not isinstance(goal_assessment, str) or not goal_assessment.strip():
             raise ValueError("goal_assessment must be a non-empty string")
-        full_fields = ("plan_revision", "output_revision", "all_applicable_items_processed")
-        if all(key in value for key in full_fields):
-            _require_strict_non_negative_int(value.get("plan_revision"), "plan_revision")
-            _require_strict_non_negative_int(value.get("output_revision"), "output_revision")
-            if value.get("all_applicable_items_processed") is not True:
-                raise ValueError("all_applicable_items_processed must be true")
+        _require_strict_non_negative_int(value.get("plan_revision"), "plan_revision")
+        _require_strict_non_negative_int(value.get("output_revision"), "output_revision")
+        if value.get("all_applicable_items_processed") is not True:
+            raise ValueError("all_applicable_items_processed must be true")
         return
 
-    if status == "integration_pending":
-        if not isinstance(goal_assessment, str) or not goal_assessment.strip():
-            raise ValueError("goal_assessment must be a non-empty string")
-        submitted_at = value.get("submitted_at")
-        if submitted_at is not None and not isinstance(submitted_at, str):
-            raise ValueError("submitted_at must be a string")
-        return
-
-    if goal_assessment is None:
-        raise ValueError("goal_assessment must be a string")
+    if status != "integration_pending":
+        raise ValueError("status must be integration_pending when goal_met is false")
+    if not isinstance(goal_assessment, str) or not goal_assessment.strip():
+        raise ValueError("goal_assessment must be a non-empty string")
+    submitted_at = value.get("submitted_at")
+    if submitted_at is not None and not isinstance(submitted_at, str):
+        raise ValueError("submitted_at must be a string")
 
 
 def _parse_persisted_amendment_request(value: dict[str, Any]) -> None:
@@ -348,7 +365,99 @@ def _parse_persisted_blocker_report(value: dict[str, Any]) -> None:
         _require_strict_non_negative_int(value.get("output_revision"), "output_revision")
 
 
-def _parse_persisted_sub_tdp_unit(value: dict[str, Any], *, label: str) -> None:
+def _normalized_output_mirror(entry: dict[str, Any]) -> dict[str, Any]:
+    size = entry.get("size")
+    normalized_size = size
+    if isinstance(size, bool) or not isinstance(size, int):
+        normalized_size = size
+    return {
+        "id": str(entry.get("id") or ""),
+        "type": str(entry.get("type", "artifact") or "artifact"),
+        "ref": str(entry.get("ref") or ""),
+        "sha256": str(entry.get("sha256") or ""),
+        "size": normalized_size,
+        "media_type": str(entry.get("media_type") or ""),
+        "captured_at": str(entry.get("captured_at") or ""),
+        "snapshot_ref": entry.get("snapshot_ref"),
+    }
+
+
+def _output_mirrors_match(nested: dict[str, Any], top_level: dict[str, Any]) -> bool:
+    return _normalized_output_mirror(nested) == _normalized_output_mirror(top_level)
+
+
+def _require_accepted_result_digest_field(
+    value: Any,
+    *,
+    field_name: str,
+    label: str,
+) -> str:
+    if not isinstance(value, str) or not _SHA256_PATTERN.fullmatch(value):
+        raise ValueError(
+            f"{label}.accepted_result.{field_name} must be a 64-character lowercase hex digest"
+        )
+    return value
+
+
+def _verify_persisted_completed_unit_identity(
+    unit: dict[str, Any],
+    *,
+    label: str,
+    package_id: str,
+    package_digest: str,
+) -> None:
+    accepted = unit.get("accepted_result")
+    if not isinstance(accepted, dict):
+        raise ValueError(f"{label}.accepted_result attestation is missing")
+    for field_name in _ACCEPTED_RESULT_DIGEST_FIELDS:
+        _require_accepted_result_digest_field(
+            accepted.get(field_name),
+            field_name=field_name,
+            label=label,
+        )
+    baseline_digests = accepted.get("baseline_accepted_result_digests")
+    if not isinstance(baseline_digests, list):
+        raise ValueError(f"{label}.accepted_result.baseline_accepted_result_digests must be a list")
+    for index, digest in enumerate(baseline_digests):
+        if not isinstance(digest, str) or not _SHA256_PATTERN.fullmatch(digest):
+            raise ValueError(
+                f"{label}.accepted_result.baseline_accepted_result_digests[{index}] "
+                "must be a 64-character lowercase hex digest"
+            )
+    workspace_changes = accepted.get("workspace_changes")
+    if not isinstance(workspace_changes, dict):
+        raise ValueError(f"{label}.accepted_result.workspace_changes must be an object")
+    for path, change in workspace_changes.items():
+        if not isinstance(change, dict):
+            raise ValueError(
+                f"{label}.accepted_result.workspace_changes[{path!r}] must be an object"
+            )
+        _require_accepted_result_digest_field(
+            change.get("sha256"),
+            field_name=f"workspace_changes[{path!r}].sha256",
+            label=label,
+        )
+    if str(accepted.get("package_id") or "") != package_id:
+        raise ValueError(f"{label}.accepted_result.package_id does not match sub_tdps.package_id")
+    if str(accepted.get("package_digest") or "") != package_digest:
+        raise ValueError(
+            f"{label}.accepted_result.package_digest does not match sub_tdps.package_digest"
+        )
+    unit_subtree = str(unit.get("assigned_subtree_digest") or "")
+    if str(accepted.get("assigned_subtree_digest") or "") != unit_subtree:
+        raise ValueError(
+            f"{label}.accepted_result.assigned_subtree_digest does not match unit record"
+        )
+
+
+def _parse_persisted_sub_tdp_unit(
+    value: dict[str, Any],
+    *,
+    label: str,
+    version: int,
+    package_id: str | None = None,
+    package_digest: str | None = None,
+) -> None:
     unit_id = _require_strict_non_empty_str(value.get("id"), f"{label}.id")
     plan_item_id = _require_strict_non_empty_str(
         value.get("plan_item_id"),
@@ -380,13 +489,27 @@ def _parse_persisted_sub_tdp_unit(value: dict[str, Any], *, label: str) -> None:
         if not isinstance(note, str):
             raise ValueError(f"{label}.notes[{index}] must be a string")
     unit_plan_digest = value.get("unit_plan_digest")
-    if unit_plan_digest is not None:
+    if version == 2:
+        if not isinstance(unit_plan_digest, str) or not _SHA256_PATTERN.fullmatch(
+            unit_plan_digest
+        ):
+            raise ValueError(
+                f"{label}.unit_plan_digest must be a 64-character lowercase hex digest"
+            )
+    elif unit_plan_digest is not None:
         if not isinstance(unit_plan_digest, str) or not _SHA256_PATTERN.fullmatch(
             unit_plan_digest
         ):
             raise ValueError(f"{label}.unit_plan_digest must be a 64-character lowercase hex digest")
     assigned_subtree_digest = value.get("assigned_subtree_digest")
-    if assigned_subtree_digest is not None:
+    if version == 2:
+        if not isinstance(assigned_subtree_digest, str) or not _SHA256_PATTERN.fullmatch(
+            assigned_subtree_digest
+        ):
+            raise ValueError(
+                f"{label}.assigned_subtree_digest must be a 64-character lowercase hex digest"
+            )
+    elif assigned_subtree_digest is not None:
         if not isinstance(assigned_subtree_digest, str) or not _SHA256_PATTERN.fullmatch(
             assigned_subtree_digest
         ):
@@ -394,7 +517,11 @@ def _parse_persisted_sub_tdp_unit(value: dict[str, Any], *, label: str) -> None:
                 f"{label}.assigned_subtree_digest must be a 64-character lowercase hex digest"
             )
     depends_on = value.get("depends_on")
-    if depends_on is not None:
+    if version == 2:
+        if depends_on is None:
+            raise ValueError(f"{label}.depends_on is required for sub_tdps version 2")
+        _require_strict_string_list(depends_on, f"{label}.depends_on")
+    elif depends_on is not None:
         _require_strict_string_list(depends_on, f"{label}.depends_on")
     if unit_id != plan_item_id:
         raise ValueError(f"{label}.id must match plan_item_id")
@@ -408,6 +535,15 @@ def _parse_persisted_sub_tdp_unit(value: dict[str, Any], *, label: str) -> None:
             verify_accepted_result_attestation(value)
         except ValueError as exc:
             raise ValueError(f"{label} completed unit attestation is invalid: {exc}") from exc
+        if version == 2:
+            if not package_id or not package_digest:
+                raise ValueError("sub_tdps package identity is required for version 2")
+            _verify_persisted_completed_unit_identity(
+                value,
+                label=label,
+                package_id=package_id,
+                package_digest=package_digest,
+            )
 
 
 def _parse_persisted_sub_tdps(value: dict[str, Any]) -> None:
@@ -424,14 +560,26 @@ def _parse_persisted_sub_tdps(value: dict[str, Any]) -> None:
     if active_unit_id is not None and not isinstance(active_unit_id, str):
         raise ValueError("sub_tdps.active_unit_id must be a string or null")
     package_id = value.get("package_id")
-    if package_id is not None and not isinstance(package_id, str):
-        raise ValueError("sub_tdps.package_id must be a string")
-    package_digest = value.get("package_digest")
-    if package_digest is not None:
+    package_digest: str | None = None
+    if version == 2:
+        package_id = _require_strict_non_empty_str(package_id, "sub_tdps.package_id")
+        package_digest = value.get("package_digest")
         if not isinstance(package_digest, str) or not _SHA256_PATTERN.fullmatch(package_digest):
             raise ValueError(
                 "sub_tdps.package_digest must be a 64-character lowercase hex digest"
             )
+        _require_strict_non_empty_str(value.get("manifest_path"), "sub_tdps.manifest_path")
+    elif package_id is not None and not isinstance(package_id, str):
+        raise ValueError("sub_tdps.package_id must be a string")
+    if version != 2:
+        package_digest_value = value.get("package_digest")
+        if package_digest_value is not None:
+            if not isinstance(package_digest_value, str) or not _SHA256_PATTERN.fullmatch(
+                package_digest_value
+            ):
+                raise ValueError(
+                    "sub_tdps.package_digest must be a 64-character lowercase hex digest"
+                )
     manifest_path = value.get("manifest_path")
     if manifest_path is not None and not isinstance(manifest_path, str):
         raise ValueError("sub_tdps.manifest_path must be a string")
@@ -446,7 +594,13 @@ def _parse_persisted_sub_tdps(value: dict[str, Any]) -> None:
         if not isinstance(unit, dict):
             raise ValueError(f"sub_tdps.units[{index}] must be an object")
         label = f"sub_tdps.units[{index}]"
-        _parse_persisted_sub_tdp_unit(unit, label=label)
+        _parse_persisted_sub_tdp_unit(
+            unit,
+            label=label,
+            version=version,
+            package_id=package_id if version == 2 else None,
+            package_digest=package_digest if version == 2 else None,
+        )
         unit_id = str(unit.get("id") or "")
         plan_item_id = str(unit.get("plan_item_id") or "")
         if unit_id in unit_ids:
@@ -478,7 +632,8 @@ def _parse_persisted_sub_tdps(value: dict[str, Any]) -> None:
 def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
     batches = payload.get("batches") or []
     batch_ids_seen: set[str] = set()
-    live_batch_ids_set: set[str] = set()
+    completed_live_batch_ids: set[str] = set()
+    batch_plan_items: dict[str, set[str]] = {}
 
     for batch in batches:
         if not isinstance(batch, dict):
@@ -490,11 +645,14 @@ def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
 
         plan_items = batch.get("plan_items") or []
         seen_plan_items: set[str] = set()
+        plan_item_set: set[str] = set()
         for item_id in plan_items:
             item_s = str(item_id)
             if item_s in seen_plan_items:
                 raise ValueError(f"duplicate plan_item {item_s!r} in batch {batch_id!r}")
             seen_plan_items.add(item_s)
+            plan_item_set.add(item_s)
+        batch_plan_items[batch_id] = plan_item_set
 
         evidence_status = batch.get("evidence_status")
         invalidated_item_ids = batch.get("invalidated_item_ids")
@@ -509,18 +667,23 @@ def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
                     "invalidated_item_ids is required when evidence_status is "
                     "invalidated_by_reconciliation"
                 )
-            plan_item_set = {str(item_id) for item_id in plan_items}
             for item_id in invalidated_item_ids:
                 if str(item_id) not in plan_item_set:
                     raise ValueError(
                         f"invalidated_item_ids entry {item_id!r} must be in batch plan_items"
                     )
-        else:
-            live_batch_ids_set.add(batch_id)
+            continue
+
+        status = str(batch.get("status") or "")
+        if status == _COMPLETED_BATCH_STATUS:
+            result = batch.get("result")
+            if not isinstance(result, dict):
+                raise ValueError(f"completed batch {batch_id!r} requires a result")
+            completed_live_batch_ids.add(batch_id)
 
     output_evidence = payload.get("output_evidence") or []
     evidence_ids_seen: set[str] = set()
-    live_evidence_ids: set[str] = set()
+    top_level_by_batch: dict[str, dict[str, dict[str, Any]]] = {}
     for entry in output_evidence:
         if not isinstance(entry, dict):
             continue
@@ -534,28 +697,103 @@ def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
             raise ValueError("output_evidence batch_id must be a non-empty string")
         if batch_id not in batch_ids_seen:
             raise ValueError(f"output_evidence references unknown batch {batch_id!r}")
-        if batch_id in live_batch_ids_set:
-            live_evidence_ids.add(evidence_id)
+        if batch_id not in completed_live_batch_ids:
+            raise ValueError(
+                f"output_evidence batch {batch_id!r} must reference a completed live batch"
+            )
+        top_level_by_batch.setdefault(batch_id, {})[evidence_id] = entry
 
+    batch_owned_evidence: dict[str, set[str]] = {}
     for batch in batches:
         if not isinstance(batch, dict):
             continue
         batch_id = str(batch.get("id") or "")
-        if batch_id not in live_batch_ids_set:
+        if batch_id not in completed_live_batch_ids:
             continue
         result = batch.get("result")
         if not isinstance(result, dict):
             continue
+        nested_outputs = result.get("outputs") or []
+        if not isinstance(nested_outputs, list):
+            raise ValueError(f"batch {batch_id!r} result.outputs must be a list")
+        nested_by_id: dict[str, dict[str, Any]] = {}
+        for index, nested in enumerate(nested_outputs):
+            if not isinstance(nested, dict):
+                raise ValueError(f"batch {batch_id!r} result.outputs[{index}] must be an object")
+            nested_id = str(nested.get("id") or "")
+            if not nested_id:
+                raise ValueError(f"batch {batch_id!r} result.outputs[{index}].id is required")
+            if nested_id in nested_by_id:
+                raise ValueError(
+                    f"duplicate output id {nested_id!r} in batch {batch_id!r} result.outputs"
+                )
+            nested_by_id[nested_id] = nested
+
+        top_for_batch = top_level_by_batch.get(batch_id, {})
+        for evidence_id, top_entry in top_for_batch.items():
+            nested = nested_by_id.get(evidence_id)
+            if nested is None:
+                raise ValueError(
+                    f"output_evidence {evidence_id!r} missing from batch {batch_id!r} result.outputs"
+                )
+            if not _output_mirrors_match(nested, top_entry):
+                raise ValueError(
+                    f"output_evidence {evidence_id!r} does not mirror batch {batch_id!r} result.outputs"
+                )
+        for evidence_id in nested_by_id:
+            if evidence_id not in top_for_batch:
+                raise ValueError(
+                    f"batch {batch_id!r} result.outputs[{evidence_id!r}] missing top-level "
+                    "output_evidence"
+                )
+        batch_owned_evidence[batch_id] = set(nested_by_id)
+
+        plan_items = batch_plan_items.get(batch_id, set())
         for contrib in result.get("contributions") or []:
             if not isinstance(contrib, dict):
                 continue
+            item_id = str(contrib.get("item_id") or "")
+            if item_id and item_id not in plan_items:
+                raise ValueError(
+                    f"contribution item_id {item_id!r} must be in batch {batch_id!r} plan_items"
+                )
+            owned_ids = batch_owned_evidence.get(batch_id, set())
             for ref in contrib.get("output_refs") or []:
                 ref_s = str(ref)
-                if ref_s and ref_s not in live_evidence_ids:
+                if ref_s and ref_s not in owned_ids:
                     raise ValueError(
-                        f"contribution output_ref {ref_s!r} does not reference live "
-                        "output_evidence"
+                        f"contribution output_ref {ref_s!r} must reference output owned by "
+                        f"batch {batch_id!r}"
                     )
+
+    flat_dispositions = payload.get("dispositions")
+    if flat_dispositions is None:
+        raise ValueError("production.dispositions is required")
+    if not isinstance(flat_dispositions, dict):
+        raise ValueError("production.dispositions must be an object")
+    try:
+        derived_dispositions = derive_live_disposition_map(payload)
+    except ValueError as exc:
+        raise ValueError(f"dispositions: {exc}") from exc
+    flat_normalized = {str(item_id): str(value) for item_id, value in flat_dispositions.items()}
+    if flat_normalized != derived_dispositions:
+        orphan_items = sorted(set(flat_normalized) - set(derived_dispositions))
+        if orphan_items:
+            raise ValueError(
+                "dispositions contains orphan terminal value(s) for "
+                f"{orphan_items[0]!r}"
+            )
+        missing_items = sorted(set(derived_dispositions) - set(flat_normalized))
+        if missing_items:
+            raise ValueError(
+                "dispositions missing live batch disposition for "
+                f"{missing_items[0]!r}"
+            )
+        for item_id in set(flat_normalized) & set(derived_dispositions):
+            if flat_normalized[item_id] != derived_dispositions[item_id]:
+                raise ValueError(
+                    f"dispositions[{item_id!r}] conflicts with live batch disposition record"
+                )
 
 
 def _parse_persisted_output_evidence(entry: dict[str, Any]) -> OutputEvidence:

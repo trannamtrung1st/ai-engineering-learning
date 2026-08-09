@@ -47,11 +47,43 @@ def _minimal_batch(
 ) -> dict:
     batch = {
         "id": batch_id,
-        "status": "completed",
+        "status": "started",
         "plan_items": plan_items or ["item-work"],
     }
     batch.update(extra)
     return batch
+
+
+def _mirrored_completed_batch(
+    *,
+    batch_id: str = "batch-01",
+    plan_items: list[str] | None = None,
+    evidence_id: str = "out-1",
+    disposition: str = "completed",
+) -> tuple[dict, dict]:
+    plan_items = plan_items or ["item-work"]
+    evidence = _minimal_evidence(evidence_id=evidence_id, batch_id=batch_id)
+    nested = {key: value for key, value in evidence.items() if key != "batch_id"}
+    batch = {
+        "id": batch_id,
+        "status": "completed",
+        "plan_items": plan_items,
+        "result": {
+            "outputs": [nested],
+            "contributions": [
+                {
+                    "item_id": plan_items[0],
+                    "output_refs": [evidence_id],
+                    "summary": "done",
+                }
+            ],
+            "dispositions": {
+                item_id: {"disposition": disposition, "evidence": "done"}
+                for item_id in plan_items
+            },
+        },
+    }
+    return batch, evidence
 
 
 def _minimal_accepted_result(
@@ -97,12 +129,28 @@ def _completed_sub_tdp_unit(**extra: object) -> dict:
         "child_run_id": "child-1",
         "unit_plan_digest": accepted["unit_plan_digest"],
         "assigned_subtree_digest": accepted["assigned_subtree_digest"],
+        "depends_on": [],
         "notes": [],
         "accepted_result": accepted,
         "accepted_result_digest": accepted_result_digest(accepted),
     }
     unit.update(extra)
     return unit
+
+
+def _version2_sub_tdps_shell(*, units: list[dict], **extra: object) -> dict:
+    accepted = _minimal_accepted_result()
+    state = {
+        "version": 2,
+        "status": "running",
+        "active_unit_id": None,
+        "package_id": accepted["package_id"],
+        "package_digest": accepted["package_digest"],
+        "manifest_path": "execution/manifest.json",
+        "units": units,
+    }
+    state.update(extra)
+    return state
 
 
 def test_save_production_rejects_duplicate_live_batch_ids(tmp_path: Path) -> None:
@@ -133,18 +181,18 @@ def test_load_production_rejects_invalidated_and_live_batch_share_id(tmp_path: P
     production["batches"] = [
         {
             "id": "batch-01",
-            "status": "completed",
+            "status": "started",
             "plan_items": ["item-old"],
             "evidence_status": "invalidated_by_reconciliation",
             "invalidated_item_ids": ["item-old"],
         },
         {
             "id": "batch-01",
-            "status": "completed",
+            "status": "started",
             "plan_items": ["item-current"],
         },
     ]
-    production["output_evidence"] = [_minimal_evidence(evidence_id="out-old", batch_id="batch-01")]
+    production["output_evidence"] = []
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     with pytest.raises(PersistenceError, match="duplicate batch id"):
@@ -157,6 +205,11 @@ def test_invalidated_batch_evidence_excluded_from_live_output_evidence_entries(
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("03")
     _create_run(store, run_id)
+    live_batch, live_evidence = _mirrored_completed_batch(
+        batch_id="batch-live",
+        plan_items=["item-current"],
+        evidence_id="out-live",
+    )
     production = store.load_production(run_id)
     production["batches"] = [
         {
@@ -165,18 +218,29 @@ def test_invalidated_batch_evidence_excluded_from_live_output_evidence_entries(
             "plan_items": ["item-old"],
             "evidence_status": "invalidated_by_reconciliation",
             "invalidated_item_ids": ["item-old"],
+            "result": {
+                "outputs": [_nested_output_from_evidence(
+                    _minimal_evidence(evidence_id="out-old", batch_id="batch-invalid")
+                )],
+                "contributions": [],
+                "dispositions": {
+                    "item-old": {"disposition": "completed", "evidence": "done"},
+                },
+            },
         },
-        _minimal_batch(batch_id="batch-live", plan_items=["item-current"]),
+        live_batch,
     ]
-    production["output_evidence"] = [
-        _minimal_evidence(evidence_id="out-old", batch_id="batch-invalid"),
-        _minimal_evidence(evidence_id="out-live", batch_id="batch-live"),
-    ]
+    production["output_evidence"] = [live_evidence]
+    production["dispositions"] = {"item-current": "completed"}
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     loaded = store.load_production(run_id)
     live_ids = {entry["id"] for entry in live_output_evidence_entries(loaded)}
     assert live_ids == {"out-live"}
+
+
+def _nested_output_from_evidence(evidence: dict) -> dict:
+    return {key: value for key, value in evidence.items() if key != "batch_id"}
 
 
 def test_save_production_rejects_duplicate_output_evidence_ids(tmp_path: Path) -> None:
@@ -187,11 +251,10 @@ def test_save_production_rejects_duplicate_output_evidence_ids(tmp_path: Path) -
     expected = int(production["revision"])
     production = dict(production)
     production["revision"] = expected + 1
-    production["batches"] = [_minimal_batch()]
-    production["output_evidence"] = [
-        _minimal_evidence(evidence_id="out-dup"),
-        _minimal_evidence(evidence_id="out-dup"),
-    ]
+    batch, evidence = _mirrored_completed_batch()
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence, dict(evidence)]
+    production["dispositions"] = {"item-work": "completed"}
 
     with pytest.raises(PersistenceError, match="duplicate output evidence id"):
         store.save_production(run_id, production, expected)
@@ -231,23 +294,18 @@ def test_load_production_rejects_contribution_missing_evidence_ref(tmp_path: Pat
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("07")
     _create_run(store, run_id)
-    production = store.load_production(run_id)
-    production["batches"] = [
-        _minimal_batch(
-            result={
-                "outputs": [],
-                "contributions": [
-                    {
-                        "item_id": "item-work",
-                        "output_refs": ["missing-evidence"],
-                        "summary": "",
-                    }
-                ],
-                "dispositions": {},
-            }
-        )
+    batch, evidence = _mirrored_completed_batch()
+    batch["result"]["contributions"] = [
+        {
+            "item_id": "item-work",
+            "output_refs": ["missing-evidence"],
+            "summary": "",
+        }
     ]
-    production["output_evidence"] = [_minimal_evidence()]
+    production = store.load_production(run_id)
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence]
+    production["dispositions"] = {"item-work": "completed"}
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     with pytest.raises(PersistenceError, match="output_ref"):
@@ -258,26 +316,11 @@ def test_duplicate_output_evidence_ids_cannot_load_for_traceability(tmp_path: Pa
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("08")
     _create_run(store, run_id)
+    batch, evidence = _mirrored_completed_batch(evidence_id="out-dup")
     production = store.load_production(run_id)
-    production["batches"] = [
-        _minimal_batch(
-            result={
-                "outputs": [],
-                "contributions": [
-                    {
-                        "item_id": "item-work",
-                        "output_refs": ["out-dup"],
-                        "summary": "",
-                    }
-                ],
-                "dispositions": {},
-            }
-        )
-    ]
-    production["output_evidence"] = [
-        {**_minimal_evidence(evidence_id="out-dup"), "ref": "src/a.py"},
-        {**_minimal_evidence(evidence_id="out-dup"), "ref": "src/b.py"},
-    ]
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence, dict(evidence)]
+    production["dispositions"] = {"item-work": "completed"}
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     with pytest.raises(PersistenceError, match="duplicate output evidence id"):
@@ -343,20 +386,20 @@ def test_load_production_rejects_completed_unit_missing_accepted_result(tmp_path
     run_id = _new_run_id("21")
     _create_run(store, run_id)
     production = store.load_production(run_id)
-    production["sub_tdps"] = {
-        "version": 2,
-        "status": "running",
-        "active_unit_id": None,
-        "units": [
+    production["sub_tdps"] = _version2_sub_tdps_shell(
+        units=[
             {
                 "id": "item-work",
                 "plan_item_id": "item-work",
                 "status": "completed",
                 "child_run_id": "child-1",
+                "unit_plan_digest": "b" * 64,
+                "assigned_subtree_digest": "c" * 64,
+                "depends_on": [],
                 "notes": [],
             }
         ],
-    }
+    )
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     with pytest.raises(PersistenceError, match="accepted_result"):
@@ -370,12 +413,10 @@ def test_load_production_rejects_completed_unit_digest_mismatch(tmp_path: Path) 
     production = store.load_production(run_id)
     unit = _completed_sub_tdp_unit()
     unit["accepted_result_digest"] = "0" * 64
-    production["sub_tdps"] = {
-        "version": 2,
-        "status": "completed",
-        "active_unit_id": None,
-        "units": [unit],
-    }
+    production["sub_tdps"] = _version2_sub_tdps_shell(
+        status="completed",
+        units=[unit],
+    )
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     with pytest.raises(PersistenceError, match="accepted_result_digest"):
@@ -387,12 +428,11 @@ def test_load_production_rejects_completed_orchestration_with_active_unit(tmp_pa
     run_id = _new_run_id("23")
     _create_run(store, run_id)
     production = store.load_production(run_id)
-    production["sub_tdps"] = {
-        "version": 2,
-        "status": "completed",
-        "active_unit_id": "item-work",
-        "units": [_completed_sub_tdp_unit()],
-    }
+    production["sub_tdps"] = _version2_sub_tdps_shell(
+        status="completed",
+        active_unit_id="item-work",
+        units=[_completed_sub_tdp_unit()],
+    )
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     with pytest.raises(PersistenceError, match="active_unit_id"):
@@ -404,12 +444,10 @@ def test_load_production_rejects_active_unit_that_is_completed(tmp_path: Path) -
     run_id = _new_run_id("24")
     _create_run(store, run_id)
     production = store.load_production(run_id)
-    production["sub_tdps"] = {
-        "version": 2,
-        "status": "running",
-        "active_unit_id": "item-work",
-        "units": [_completed_sub_tdp_unit()],
-    }
+    production["sub_tdps"] = _version2_sub_tdps_shell(
+        active_unit_id="item-work",
+        units=[_completed_sub_tdp_unit()],
+    )
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     with pytest.raises(PersistenceError, match="active_unit_id"):
@@ -420,13 +458,20 @@ def test_load_production_accepts_valid_completed_sub_tdp_state(tmp_path: Path) -
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("25")
     _create_run(store, run_id)
-    production = store.load_production(run_id)
+    accepted = _minimal_accepted_result()
+    unit = _completed_sub_tdp_unit()
+    unit["accepted_result"] = accepted
+    unit["accepted_result_digest"] = accepted_result_digest(accepted)
     sub_tdps = {
         "version": 2,
         "status": "completed",
         "active_unit_id": None,
-        "units": [_completed_sub_tdp_unit()],
+        "package_id": accepted["package_id"],
+        "package_digest": accepted["package_digest"],
+        "manifest_path": "execution/manifest.json",
+        "units": [unit],
     }
+    production = store.load_production(run_id)
     production["sub_tdps"] = sub_tdps
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
@@ -544,23 +589,11 @@ def test_valid_production_graph_builds_traceability(tmp_path: Path) -> None:
             ),
         },
     )
+    batch, evidence = _mirrored_completed_batch()
     production = store.load_production(run_id)
-    production["batches"] = [
-        _minimal_batch(
-            result={
-                "outputs": [],
-                "contributions": [
-                    {
-                        "item_id": "item-work",
-                        "output_refs": ["out-1"],
-                        "summary": "done",
-                    }
-                ],
-                "dispositions": {},
-            }
-        )
-    ]
-    production["output_evidence"] = [_minimal_evidence()]
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence]
+    production["dispositions"] = {"item-work": "completed"}
     atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
     loaded = store.load_production(run_id)

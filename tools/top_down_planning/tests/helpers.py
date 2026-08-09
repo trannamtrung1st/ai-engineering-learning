@@ -1989,6 +1989,95 @@ def respond_review(
     return mutate
 
 
+def mirrored_production_batch(
+    *,
+    item_id: str = "item-work",
+    batch_id: str = "batch-01",
+    disposition: str = "completed",
+    evidence_id: str = "out-1",
+    ref: str = "src/file.py",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Completed batch + top-level evidence mirror for flat disposition graph tests."""
+
+    evidence = {
+        "id": evidence_id,
+        "type": "artifact",
+        "ref": ref,
+        "sha256": "a" * 64,
+        "size": 10,
+        "media_type": "text/plain",
+        "captured_at": "2026-01-01T00:00:00Z",
+        "batch_id": batch_id,
+    }
+    nested = {key: value for key, value in evidence.items() if key != "batch_id"}
+    disposition_record: dict[str, Any] = {"disposition": disposition}
+    if disposition == "blocked":
+        disposition_record["evidence"] = "blocked"
+    elif disposition == "not_applicable":
+        disposition_record["reason"] = "n/a"
+    elif disposition == "superseded":
+        disposition_record["replacement_ref"] = "item-replacement"
+    else:
+        disposition_record["evidence"] = "done"
+    batch = {
+        "id": batch_id,
+        "status": "completed",
+        "plan_items": [item_id],
+        "result": {
+            "outputs": [nested],
+            "contributions": [
+                {
+                    "item_id": item_id,
+                    "output_refs": [evidence_id],
+                    "summary": "done",
+                }
+            ],
+            "dispositions": {item_id: disposition_record},
+        },
+    }
+    return batch, evidence
+
+
+def goal_met_completion_claim(
+    production: dict[str, Any] | None = None,
+    *,
+    goal_assessment: str = "done",
+    plan_revision: int = 0,
+) -> dict[str, Any]:
+    output_revision = 0
+    if production is not None:
+        output_revision = int(production.get("output_revision") or 0)
+    return {
+        "goal_met": True,
+        "goal_assessment": goal_assessment,
+        "plan_revision": plan_revision,
+        "output_revision": output_revision,
+        "all_applicable_items_processed": True,
+    }
+
+
+def decorate_sub_tdp_v2_package(
+    state: dict[str, Any],
+    *,
+    package_id: str = "pkg",
+    package_digest: str | None = None,
+    manifest_path: str = "execution/manifest.json",
+    unit_plan_digest: str | None = None,
+    assigned_subtree_digest: str | None = None,
+) -> dict[str, Any]:
+    digest = package_digest or ("a" * 64)
+    plan_digest = unit_plan_digest or ("b" * 64)
+    subtree_digest = assigned_subtree_digest or ("c" * 64)
+    state["package_id"] = package_id
+    state["package_digest"] = digest
+    state["manifest_path"] = manifest_path
+    for unit in state.get("units") or []:
+        unit.setdefault("unit_plan_digest", plan_digest)
+        unit.setdefault("assigned_subtree_digest", subtree_digest)
+        unit.setdefault("depends_on", [])
+    return state
+
+
 def apply_production(
     store: Any,
     run_id: str,

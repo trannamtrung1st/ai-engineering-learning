@@ -29,7 +29,7 @@ from top_down_planning.persistence.sub_tdp_state import (
     initial_sub_tdp_state_from_package,
     merge_sub_tdp_state_into_production,
 )
-from tests.helpers import accept_child_run, create_run_kwargs, whole_plan_approval_record
+from tests.helpers import accept_child_run, create_run_kwargs, goal_met_completion_claim, whole_plan_approval_record
 from tests.unit.test_production_auth_alignment import write_config
 from tests.unit.test_sub_tdp_defect_pass import _item
 
@@ -780,10 +780,10 @@ def test_composite_baseline_ab_then_c_parent_resume_and_closure(tmp_path: Path) 
     production = store.load_production(parent_id)
     expected_prod = int(production["revision"])
     production = dict(production)
-    production["completion_claim"] = {
-        "goal_met": True,
-        "goal_assessment": "Parent composite baseline validated; goal met.",
-    }
+    production["completion_claim"] = goal_met_completion_claim(
+        production,
+        goal_assessment="Parent composite baseline validated; goal met.",
+    )
     production["revision"] = expected_prod + 1
     store.save_production(parent_id, production, expected_prod)
 

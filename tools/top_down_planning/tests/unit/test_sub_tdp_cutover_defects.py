@@ -452,8 +452,27 @@ def test_accepted_child_two_batches_same_file_records_final_hash(tmp_path: Path)
             "batch_id": batch_id,
         }
     )
+    nested_v3 = {
+        key: value
+        for key, value in evidence[-1].items()
+        if key != "batch_id"
+    }
+    batches = [dict(batch) for batch in production.get("batches") or []]
+    if batches:
+        result = dict(batches[0].get("result") or {})
+        result["outputs"] = list(result.get("outputs") or []) + [nested_v3]
+        contributions = list(result.get("contributions") or [])
+        if contributions:
+            contrib = dict(contributions[0])
+            contrib["output_refs"] = list(contrib.get("output_refs") or []) + [
+                "out-a-v3"
+            ]
+            contributions[0] = contrib
+        result["contributions"] = contributions
+        batches[0]["result"] = result
     expected_prod = int(production["revision"])
     production = dict(production)
+    production["batches"] = batches
     production["output_evidence"] = evidence
     production["output_revision"] = int(production.get("output_revision") or 0) + 1
     production["revision"] = expected_prod + 1

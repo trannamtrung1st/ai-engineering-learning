@@ -504,7 +504,7 @@ def test_producer_replacement_blocked_by_evidence_mismatch(tmp_path: Path) -> No
     _create_planning_run(store, run_id)
     artifact = store.root / "artifact.txt"
     artifact.write_text("original\n", encoding="utf-8")
-    evidence = capture_output_artifact(
+    captured = capture_output_artifact(
         store,
         run_id,
         workspace=store.root,
@@ -514,12 +514,30 @@ def test_producer_replacement_blocked_by_evidence_mismatch(tmp_path: Path) -> No
     expected_production_revision = int(production["revision"])
     production = dict(production)
     production["revision"] = expected_production_revision + 1
+    evidence = {**captured, "id": "out-artifact", "batch_id": "batch-1"}
+    nested = {key: value for key, value in evidence.items() if key != "batch_id"}
     production["batches"] = [
-        {"id": "batch-1", "status": "completed", "plan_items": ["item-root"]},
+        {
+            "id": "batch-1",
+            "status": "completed",
+            "plan_items": ["item-root"],
+            "result": {
+                "outputs": [nested],
+                "contributions": [
+                    {
+                        "item_id": "item-root",
+                        "output_refs": ["out-artifact"],
+                        "summary": "captured",
+                    }
+                ],
+                "dispositions": {
+                    "item-root": {"disposition": "completed", "evidence": "captured"},
+                },
+            },
+        }
     ]
-    production["output_evidence"] = [
-        {**evidence, "id": "out-artifact", "batch_id": "batch-1"},
-    ]
+    production["output_evidence"] = [evidence]
+    production["dispositions"] = {"item-root": "completed"}
     store.save_production(
         run_id,
         production,
@@ -528,7 +546,7 @@ def test_producer_replacement_blocked_by_evidence_mismatch(tmp_path: Path) -> No
 
     artifact.write_text("mutated\n", encoding="utf-8")
     stored_production = store.load_production(run_id)
-    snapshot_ref = str(evidence["snapshot_ref"])
+    snapshot_ref = str(captured["snapshot_ref"])
     _prefix, snapshot_id, filename = Path(snapshot_ref).parts
     artifact_path = store.artifact_path(run_id, snapshot_id, filename)
     artifact_path.write_bytes(b"corrupted snapshot bytes\n")

@@ -15,10 +15,13 @@ from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.persistence import FileRunStore
 from tests.conftest import run_cli
 from tests.helpers import (
-    make_review_loop,
-    save_review_payload,
     create_run_kwargs,
+    decorate_sub_tdp_v2_package,
+    goal_met_completion_claim,
     grant_capability,
+    make_review_loop,
+    mirrored_production_batch,
+    save_review_payload,
     set_capability_token_file,
     write_agent_request_file,
     whole_plan_approval_record,
@@ -805,6 +808,13 @@ def test_apply_returns_post_mutation_validation_issues_for_pre_existing_errors(
         output_goal="Deliver the output.",
         items={"item-gate": gate, "item-worker": worker},
     )
+    gate_batch, gate_evidence = mirrored_production_batch(
+        item_id="item-gate",
+        batch_id="batch-gate",
+        disposition="blocked",
+        evidence_id="ev-gate",
+        ref="blocked.txt",
+    )
     store.create_run(
         "run-20260101T000001-000001",
         plan=plan,
@@ -817,7 +827,8 @@ def test_apply_returns_post_mutation_validation_issues_for_pre_existing_errors(
         ),
         production={
             "dispositions": {"item-gate": "blocked"},
-            "batches": [],
+            "batches": [gate_batch],
+            "output_evidence": [gate_evidence],
             "revision": 0,
             "output_revision": 0,
         },
@@ -891,6 +902,13 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
         output_goal="Deliver the output.",
         items={"item-gate": gate, "item-worker": worker},
     )
+    gate_batch, gate_evidence = mirrored_production_batch(
+        item_id="item-gate",
+        batch_id="batch-gate",
+        disposition="blocked",
+        evidence_id="ev-gate",
+        ref="blocked.txt",
+    )
     store.create_run(
         "run-20260101T000001-000001",
         plan=plan,
@@ -903,7 +921,8 @@ def test_cli_plan_apply_exits_nonzero_when_validation_fails(
         ),
         production={
             "dispositions": {"item-gate": "blocked"},
-            "batches": [],
+            "batches": [gate_batch],
+            "output_evidence": [gate_evidence],
             "revision": 0,
             "output_revision": 0,
         },

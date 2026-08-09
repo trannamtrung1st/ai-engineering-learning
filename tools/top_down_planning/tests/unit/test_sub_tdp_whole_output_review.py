@@ -23,7 +23,13 @@ from top_down_planning.package.lineage import (
 )
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.sub_tdp_state import initial_sub_tdp_state
-from tests.helpers import accept_child_run, create_run_kwargs, whole_plan_approval_record
+from tests.helpers import (
+    accept_child_run,
+    create_run_kwargs,
+    decorate_sub_tdp_v2_package,
+    goal_met_completion_claim,
+    whole_plan_approval_record,
+)
 from tests.unit.test_prepared_runs import _built_package
 import pytest
 
@@ -84,7 +90,14 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
         for u in sorted(package.units.values(), key=lambda item: item.ordinal)
     ]
     production = store.load_production(parent_id)
-    production["sub_tdps"] = initial_sub_tdp_state(units)
+    foundation = package.units["item-foundation"]
+    production["sub_tdps"] = decorate_sub_tdp_v2_package(
+        initial_sub_tdp_state(units),
+        package_id=str(package.manifest.get("package_id") or ""),
+        package_digest=str(package.manifest.get("package_digest") or ""),
+        unit_plan_digest=foundation.plan_digest,
+        assigned_subtree_digest=foundation.assigned_subtree_digest,
+    )
     unit_record = production["sub_tdps"]["units"][0]
     accepted = accepted_result_record(
         child_run=store.load_run(child_id),
@@ -108,10 +121,10 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
         child_runs=[(unit_record, child_run, child_production)],
         parent_output_goal="Ship the product.",
     )
-    synthesized["completion_claim"] = {
-        "goal_met": True,
-        "goal_assessment": "Parent integration validated; goal met.",
-    }
+    synthesized["completion_claim"] = goal_met_completion_claim(
+        synthesized,
+        goal_assessment="Parent integration validated; goal met.",
+    )
     store.save_production(parent_id, synthesized, int(production["revision"]))
 
     run = store.load_run(parent_id)
@@ -168,22 +181,22 @@ def test_sub_tdp_whole_output_review_fails_when_child_run_missing(
     expected_prod = int(production["revision"])
     production = dict(production)
     production["revision"] = expected_prod + 1
-    production["sub_tdps"] = initial_sub_tdp_state(units)
+    production["sub_tdps"] = decorate_sub_tdp_v2_package(initial_sub_tdp_state(units))
     unit_record = production["sub_tdps"]["units"][0]
     unit_record["child_run_id"] = "run-20260101T000911-000911"
     unit_record["status"] = "completed"
     unit_record["accepted_result"] = {
         "schema_version": 1,
         "package_id": "pkg",
-        "package_digest": "p" * 64,
+        "package_digest": "a" * 64,
         "unit_id": "item-a",
-        "unit_plan_digest": "p" * 64,
-        "assigned_subtree_digest": "s" * 64,
+        "unit_plan_digest": "b" * 64,
+        "assigned_subtree_digest": "c" * 64,
         "child_run_id": "run-20260101T000911-000911",
         "output_revision": 1,
         "output_digest": "a" * 64,
         "whole_output_review_id": "review-whole-output-1",
-        "whole_output_review_digest": "r" * 64,
+        "whole_output_review_digest": "d" * 64,
         "outcome": "accepted",
         "evidence_digest": "e" * 64,
         "output_refs": [],
@@ -197,10 +210,7 @@ def test_sub_tdp_whole_output_review_fails_when_child_run_missing(
     unit_record["accepted_result_digest"] = accepted_result_digest(
         unit_record["accepted_result"]
     )
-    production["completion_claim"] = {
-        "goal_met": True,
-        "goal_assessment": "done",
-    }
+    production["completion_claim"] = goal_met_completion_claim(production)
     store.save_production(run_id, production, expected_prod)
     run = store.load_run(run_id)
     expected = int(run["revision"])
@@ -249,7 +259,7 @@ def test_whole_output_review_orchestrator_uses_sub_tdp_adapter(tmp_path: Path) -
     expected_prod = int(production["revision"])
     production = dict(production)
     production["revision"] = expected_prod + 1
-    production["sub_tdps"] = initial_sub_tdp_state(units)
+    production["sub_tdps"] = decorate_sub_tdp_v2_package(initial_sub_tdp_state(units))
     store.save_production(run_id, production, expected_prod)
     run = store.load_run(run_id)
     expected = int(run["revision"])
