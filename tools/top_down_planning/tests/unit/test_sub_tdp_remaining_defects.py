@@ -20,7 +20,7 @@ from top_down_planning.package.lineage import (
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_plan_digest, digest_canonical_payload
-from tests.helpers import create_run_kwargs, goal_met_completion_claim
+from tests.helpers import complete_child_production, create_run_kwargs
 from tests.unit.test_prepared_runs import _built_package
 
 
@@ -97,16 +97,13 @@ def test_accepted_result_requires_whole_output_review_id(tmp_path: Path) -> None
         resolved_config=config,
         invocation={"command": "execute", "observability": {}},
     )
-    production = store.load_production(child_id)
-    expected_prod = int(production["revision"])
-    production = dict(production)
-    production["revision"] = expected_prod + 1
-    production["output_revision"] = 1
-    production["completion_claim"] = goal_met_completion_claim(
-        production,
+    complete_child_production(
+        store,
+        child_id,
+        item_id=unit.unit_id,
         goal_assessment="done",
+        ref="temp/out.md",
     )
-    store.save_production(child_id, production, expected_prod)
     production = store.load_production(child_id)
 
     run = store.load_run(child_id)

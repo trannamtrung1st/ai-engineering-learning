@@ -17,6 +17,7 @@ from top_down_planning.domain.production import (
     all_applicable_items_processed,
     build_compact_approved_plan,
     completion_claim_asserts_goal_met,
+    completion_claim_is_current,
     has_pending_amendment,
     latest_reconciliation_report,
 )
@@ -367,8 +368,11 @@ class ProductionPhaseOrchestrator:
     def _has_completion_claim(self) -> bool:
         production = self._store.load_production(self._run_id)
         claim = production.get("completion_claim")
-        return completion_claim_asserts_goal_met(
-            claim if isinstance(claim, dict) else None
+        plan = self._store.load_plan_model(self._run_id)
+        return completion_claim_is_current(
+            claim if isinstance(claim, dict) else None,
+            production=production,
+            plan=plan,
         )
 
     def _has_pending_amendment(self) -> bool:
@@ -424,6 +428,15 @@ class ProductionPhaseOrchestrator:
         old_snapshot_digest = str(digests.get("context_snapshot") or "")
 
         try:
+            from top_down_planning.persistence.evidence_integrity import (
+                verify_persisted_production_evidence_snapshots,
+            )
+
+            verify_persisted_production_evidence_snapshots(
+                self._store,
+                self._run_id,
+                production,
+            )
             new_binding, new_snapshot_digest, diagnostics = (
                 recompute_context_snapshot_binding_with_diagnostics(
                     config,

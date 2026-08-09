@@ -10,7 +10,7 @@ from top_down_planning.agent_tool import ProductionAgentService, RequestError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.phases import PRODUCTION
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, grant_capability, whole_plan_approval_record, save_review_payload
+from tests.helpers import bind_evidence_snapshot, create_run_kwargs, grant_capability, whole_plan_approval_record, save_review_payload
 
 
 def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551") -> None:
@@ -53,6 +53,9 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551")
         phase=PRODUCTION,
     )
     save_review_payload(store, run_id, whole_plan_approval_record(store, run_id))
+    run = store.load_run(run_id)
+    workspace = Path(str(run["workspace"]))
+    (workspace / "first.txt").write_text("1\n", encoding="utf-8")
     production = store.load_production(run_id)
     expected = int(production["revision"])
     production = dict(production)
@@ -62,18 +65,19 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551")
         "item-first": "completed",
         "item-second": "completed",
     }
-    output_evidence = {
-        "id": "output-first",
-        "type": "artifact",
-        "ref": "first.txt",
-        "sha256": "a" * 64,
-        "size": 1,
-        "media_type": "text/plain",
-        "captured_at": "2026-01-01T00:00:00Z",
-        "batch_id": "batch-01",
-        "snapshot_ref": "artifacts/u1/first.txt",
-    }
-    nested_output = {key: value for key, value in output_evidence.items() if key != "batch_id"}
+    output_evidence, nested_output = bind_evidence_snapshot(
+        store,
+        run_id,
+        {
+            "id": "output-first",
+            "type": "artifact",
+            "ref": "first.txt",
+            "media_type": "text/plain",
+            "captured_at": "2026-01-01T00:00:00Z",
+            "batch_id": "batch-01",
+        },
+        content=(workspace / "first.txt").read_bytes(),
+    )
     production["batches"] = [
         {
             "id": "batch-01",

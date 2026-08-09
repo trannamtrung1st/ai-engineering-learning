@@ -20,7 +20,7 @@ from top_down_planning.package.lineage import (
 )
 from top_down_planning.package.loader import ExecutionPackageError
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import accept_child_run
+from tests.helpers import accept_child_run, bind_evidence_snapshot
 from tests.unit.test_sub_tdp_content_bound_baseline import (
     _accepted_wrapper_for_shared,
     _build_package,
@@ -784,50 +784,47 @@ def test_parent_integration_overlay_supersedes_child_workspace_hash(
     shared.write_text('{"version": 99}\n', encoding="utf-8")
     production = store.load_production(parent_id)
     batch_id = "batch-parent-overlay"
+    overlay_evidence, nested_overlay = bind_evidence_snapshot(
+        store,
+        parent_id,
+        {
+            "id": "out-parent-overlay",
+            "type": "artifact",
+            "ref": "shared/state.json",
+            "media_type": "application/json",
+            "captured_at": "2026-01-01T00:00:00Z",
+            "batch_id": batch_id,
+        },
+        content=shared.read_bytes(),
+    )
     batches = list(production.get("batches") or [])
     batches.append(
         {
             "id": batch_id,
-            "plan_items": ["item-root"],
+            "plan_items": ["item-a"],
             "status": "completed",
             "result": {
-                "outputs": [
-                    {
-                        "id": "out-parent-overlay",
-                        "type": "artifact",
-                        "ref": "shared/state.json",
-                        "sha256": digest_file(shared),
-                        "size": shared.stat().st_size,
-                        "media_type": "application/json",
-                        "captured_at": "2026-01-01T00:00:00Z",
-                        "batch_id": batch_id,
-                        "snapshot_ref": "artifacts/parent-overlay",
-                    }
-                ],
+                "outputs": [nested_overlay],
                 "contributions": [],
-                "dispositions": {},
+                "dispositions": {
+                    "item-a": {
+                        "disposition": "completed",
+                        "evidence": "parent overlay",
+                    }
+                },
                 "summary": "parent overlay",
             },
         }
     )
     evidence = list(production.get("output_evidence") or [])
-    evidence.append(
-        {
-            "id": "out-parent-overlay",
-            "type": "artifact",
-            "ref": "shared/state.json",
-            "sha256": digest_file(shared),
-            "size": shared.stat().st_size,
-            "media_type": "application/json",
-            "captured_at": "2026-01-01T00:00:00Z",
-            "snapshot_ref": "artifacts/parent-overlay",
-            "batch_id": batch_id,
-        }
-    )
+    evidence.append(overlay_evidence)
+    dispositions = dict(production.get("dispositions") or {})
+    dispositions["item-a"] = "completed"
     expected_prod = int(production["revision"])
     production = dict(production)
     production["batches"] = batches
     production["output_evidence"] = evidence
+    production["dispositions"] = dispositions
     production["output_revision"] = int(production.get("output_revision") or 0) + 1
     production["revision"] = expected_prod + 1
     store.save_production(parent_id, production, expected_prod)

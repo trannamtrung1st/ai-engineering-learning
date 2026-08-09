@@ -16,7 +16,7 @@ from top_down_planning.package.lineage import accepted_result_digest
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.persistence.sub_tdp_state import initial_sub_tdp_state_from_package
-from tests.helpers import apply_production, create_run_kwargs, grant_capability, whole_plan_approval_record, write_config
+from tests.helpers import apply_production, bind_evidence_snapshot, create_run_kwargs, grant_capability, whole_plan_approval_record, write_config
 from tests.unit.test_commit_crash_recovery import _create_run
 from tests.unit.test_persistence_round12_fixes import (
     _create_resource_run,
@@ -58,6 +58,8 @@ def _mirrored_completed_batch(
     plan_items: list[str] | None = None,
     evidence_id: str = "out-1",
     disposition: str = "completed",
+    store: FileRunStore | None = None,
+    run_id: str | None = None,
 ) -> tuple[dict, dict]:
     plan_items = plan_items or ["item-work"]
     evidence = _minimal_evidence(evidence_id=evidence_id, batch_id=batch_id)
@@ -81,6 +83,9 @@ def _mirrored_completed_batch(
             },
         },
     }
+    if store is not None and run_id is not None:
+        evidence, nested = bind_evidence_snapshot(store, run_id, evidence)
+        batch["result"]["outputs"] = [nested]
     return batch, evidence
 
 
@@ -112,7 +117,7 @@ def test_load_production_rejects_top_level_evidence_missing_from_batch_outputs(
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("01")
     _create_run(store, run_id)
-    batch, evidence = _mirrored_completed_batch()
+    batch, evidence = _mirrored_completed_batch(store=store, run_id=run_id)
     batch["result"]["outputs"] = []
     production = store.load_production(run_id)
     production["batches"] = [batch]
@@ -136,7 +141,7 @@ def test_load_production_rejects_evidence_on_non_completed_batch(
     store = FileRunStore(tmp_path)
     run_id = _new_run_id(run_suffix)
     _create_run(store, run_id)
-    batch, evidence = _mirrored_completed_batch()
+    batch, evidence = _mirrored_completed_batch(store=store, run_id=run_id)
     batch["status"] = batch_status
     production = store.load_production(run_id)
     production["batches"] = [batch]
@@ -152,7 +157,7 @@ def test_load_production_rejects_mismatched_evidence_mirror_metadata(tmp_path: P
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("03")
     _create_run(store, run_id)
-    batch, evidence = _mirrored_completed_batch()
+    batch, evidence = _mirrored_completed_batch(store=store, run_id=run_id)
     batch["result"]["outputs"][0]["ref"] = "src/other.py"
     production = store.load_production(run_id)
     production["batches"] = [batch]
@@ -168,7 +173,7 @@ def test_load_production_rejects_nested_output_without_top_level_evidence(tmp_pa
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("04")
     _create_run(store, run_id)
-    batch, _evidence = _mirrored_completed_batch()
+    batch, _evidence = _mirrored_completed_batch(store=store, run_id=run_id)
     production = store.load_production(run_id)
     production["batches"] = [batch]
     production["output_evidence"] = []
@@ -183,11 +188,18 @@ def test_load_production_rejects_cross_batch_contribution_output_ref(tmp_path: P
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("05")
     _create_run(store, run_id)
-    batch_a, evidence_a = _mirrored_completed_batch(batch_id="batch-a", evidence_id="out-a")
+    batch_a, evidence_a = _mirrored_completed_batch(
+        batch_id="batch-a",
+        evidence_id="out-a",
+        store=store,
+        run_id=run_id,
+    )
     batch_b, evidence_b = _mirrored_completed_batch(
         batch_id="batch-b",
         plan_items=["item-other"],
         evidence_id="out-b",
+        store=store,
+        run_id=run_id,
     )
     batch_b["result"]["contributions"] = [
         {
@@ -213,7 +225,7 @@ def test_load_production_rejects_contribution_item_outside_batch_plan_items(
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("06")
     _create_run(store, run_id)
-    batch, evidence = _mirrored_completed_batch()
+    batch, evidence = _mirrored_completed_batch(store=store, run_id=run_id)
     batch["result"]["contributions"] = [
         {
             "item_id": "item-missing",
@@ -308,7 +320,11 @@ def test_forged_top_level_evidence_cannot_authorize_context_snapshot_rebase(
     _create_resource_run(store, run_id, workspace)
 
     production = dict(store.load_production(run_id))
-    batch, evidence = _mirrored_completed_batch(batch_id="batch-01")
+    batch, evidence = _mirrored_completed_batch(
+        batch_id="batch-01",
+        store=store,
+        run_id=run_id,
+    )
     production["batches"] = [batch]
     production["output_evidence"] = [evidence]
     production["dispositions"] = {"item-work": "completed"}
@@ -369,7 +385,11 @@ def test_load_production_rejects_flat_disposition_conflicting_with_batch_record(
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("22")
     _create_run(store, run_id)
-    batch, evidence = _mirrored_completed_batch(disposition="blocked")
+    batch, evidence = _mirrored_completed_batch(
+        disposition="blocked",
+        store=store,
+        run_id=run_id,
+    )
     production = store.load_production(run_id)
     production["batches"] = [batch]
     production["output_evidence"] = [evidence]
@@ -384,11 +404,17 @@ def test_derive_live_disposition_map_ignores_invalidated_batch(tmp_path: Path) -
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("23")
     _create_run(store, run_id)
-    live_batch, live_evidence = _mirrored_completed_batch(batch_id="batch-live")
+    live_batch, live_evidence = _mirrored_completed_batch(
+        batch_id="batch-live",
+        store=store,
+        run_id=run_id,
+    )
     invalidated_batch, _ = _mirrored_completed_batch(
         batch_id="batch-old",
         plan_items=["item-old"],
         evidence_id="out-old",
+        store=store,
+        run_id=run_id,
     )
     invalidated_batch["evidence_status"] = "invalidated_by_reconciliation"
     invalidated_batch["invalidated_item_ids"] = ["item-old"]
@@ -410,11 +436,15 @@ def test_save_production_rejects_conflicting_live_batch_dispositions(tmp_path: P
         batch_id="batch-a",
         evidence_id="out-a",
         disposition="completed",
+        store=store,
+        run_id=run_id,
     )
     batch_b, evidence_b = _mirrored_completed_batch(
         batch_id="batch-b",
         evidence_id="out-b",
         disposition="blocked",
+        store=store,
+        run_id=run_id,
     )
     production = store.load_production(run_id)
     expected = int(production["revision"])

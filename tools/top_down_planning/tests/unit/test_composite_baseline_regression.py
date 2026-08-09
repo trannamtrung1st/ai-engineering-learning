@@ -22,6 +22,8 @@ from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitEx
 from top_down_planning.orchestrator.whole_output_review import (
     SubTdpWholeOutputReviewAdapter,
 )
+from top_down_planning.domain.sub_tdp_synthesis import synthesize_parent_production
+from top_down_planning.orchestrator.evidence_promotion import promote_child_evidence_to_parent
 from top_down_planning.package.lineage import accepted_result_digest, accepted_result_record
 from top_down_planning.package.loader import ExecutionPackageError, ExecutionPackageLoader
 from top_down_planning.persistence import FileRunStore
@@ -769,13 +771,37 @@ def test_composite_baseline_ab_then_c_parent_resume_and_closure(tmp_path: Path) 
         contributions=[{"item_id": "item-d", "output_refs": ["out-d"], "summary": "D"}],
     )
     _attach_completed_unit(store, package, state, child_id=child_d, unit_id="item-d")
-    merged = merge_sub_tdp_state_into_production(
+    child_runs = []
+    for unit_record in state.get("units") or []:
+        if str(unit_record.get("status") or "") != "completed":
+            continue
+        unit_child_id = str(unit_record.get("child_run_id") or "")
+        if not unit_child_id:
+            continue
+        child_runs.append(
+            (
+                unit_record,
+                store.load_run(unit_child_id),
+                store.load_production(unit_child_id),
+            )
+        )
+    synthesized = synthesize_parent_production(
+        store.load_plan_model(parent_id),
         store.load_production(parent_id),
-        state,
+        child_runs=child_runs,
+        parent_output_goal=str(store.load_plan(parent_id).get("output_goal") or ""),
+        promote_evidence=lambda evidence, child_run_id: promote_child_evidence_to_parent(
+            evidence,
+            child_store=store,
+            child_run_id=child_run_id,
+            parent_store=store,
+            parent_run_id=parent_id,
+        ),
     )
+    synthesized["sub_tdps"] = state
     expected_revision = int(store.load_production(parent_id)["revision"])
-    merged["revision"] = expected_revision + 1
-    store.save_production(parent_id, merged, expected_revision)
+    synthesized["revision"] = expected_revision + 1
+    store.save_production(parent_id, synthesized, expected_revision)
 
     production = store.load_production(parent_id)
     expected_prod = int(production["revision"])

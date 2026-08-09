@@ -1989,6 +1989,31 @@ def respond_review(
     return mutate
 
 
+def bind_evidence_snapshot(
+    store: Any,
+    run_id: str,
+    evidence: dict[str, Any],
+    *,
+    content: bytes = b"test content\n",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Persist snapshot bytes and return top-level + nested mirror evidence rows."""
+
+    import hashlib
+
+    bound = dict(evidence)
+    snapshot_ref = store.write_artifact_bytes(
+        run_id,
+        bound["id"],
+        "capture.bin",
+        content,
+    )
+    bound["snapshot_ref"] = snapshot_ref
+    bound["sha256"] = hashlib.sha256(content).hexdigest()
+    bound["size"] = len(content)
+    nested = {key: value for key, value in bound.items() if key != "batch_id"}
+    return bound, nested
+
+
 def mirrored_production_batch(
     *,
     item_id: str = "item-work",
@@ -1996,6 +2021,9 @@ def mirrored_production_batch(
     disposition: str = "completed",
     evidence_id: str = "out-1",
     ref: str = "src/file.py",
+    store: Any | None = None,
+    run_id: str | None = None,
+    snapshot_content: bytes = b"test content\n",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Completed batch + top-level evidence mirror for flat disposition graph tests."""
 
@@ -2035,7 +2063,80 @@ def mirrored_production_batch(
             "dispositions": {item_id: disposition_record},
         },
     }
+    if store is not None and run_id is not None:
+        evidence, nested = bind_evidence_snapshot(
+            store,
+            run_id,
+            evidence,
+            content=snapshot_content,
+        )
+        batch["result"]["outputs"] = [nested]
     return batch, evidence
+
+
+def complete_child_production(
+    store: Any,
+    child_id: str,
+    *,
+    item_id: str | None = None,
+    goal_assessment: str = "done",
+    ref: str = "out.txt",
+) -> dict[str, Any]:
+    """Persist snapshot-backed child production suitable for strict load validation."""
+
+    from top_down_planning.workspace import run_workspace
+
+    plan = store.load_plan_model(child_id)
+    work_item_ids = [
+        plan_item_id
+        for plan_item_id, item in plan.items.items()
+        if item.kind == "work"
+    ]
+    if not work_item_ids:
+        if item_id is None:
+            raise ValueError("child plan has no work items")
+        work_item_ids = [item_id]
+    primary_item_id = item_id or work_item_ids[0]
+    if primary_item_id not in work_item_ids:
+        work_item_ids = [primary_item_id, *work_item_ids]
+
+    workspace = run_workspace(store.load_run(child_id))
+    artifact_path = workspace / ref
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    if not artifact_path.is_file():
+        artifact_path.write_text("child output\n", encoding="utf-8")
+    production = dict(store.load_production(child_id))
+    batch, evidence = mirrored_production_batch(
+        item_id=primary_item_id,
+        batch_id="b1",
+        evidence_id="ev-1",
+        ref=ref,
+        store=store,
+        run_id=child_id,
+        snapshot_content=artifact_path.read_bytes(),
+    )
+    batch["plan_items"] = work_item_ids
+    for plan_item_id in work_item_ids:
+        if plan_item_id == primary_item_id:
+            continue
+        batch["result"]["dispositions"][plan_item_id] = {
+            "disposition": "completed",
+            "evidence": "done",
+        }
+    production["output_revision"] = max(1, int(production.get("output_revision") or 0))
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence]
+    production["dispositions"] = {plan_item_id: "completed" for plan_item_id in work_item_ids}
+    plan_revision = int(store.load_plan(child_id).get("revision") or 0)
+    production["completion_claim"] = goal_met_completion_claim(
+        production,
+        goal_assessment=goal_assessment,
+        plan_revision=plan_revision,
+    )
+    expected = int(production["revision"])
+    production["revision"] = expected + 1
+    store.save_production(child_id, production, expected)
+    return store.load_production(child_id)
 
 
 def goal_met_completion_claim(

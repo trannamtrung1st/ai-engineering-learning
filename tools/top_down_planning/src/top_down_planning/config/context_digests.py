@@ -198,6 +198,8 @@ def latest_output_evidence_by_path(
         ref_text = str(entry.get("ref") or "").strip()
         if not ref_text:
             continue
+        if not str(entry.get("snapshot_ref") or "").strip():
+            continue
         try:
             canonical = canonicalize_evidence_ref(ref_text, workspace=workspace)
         except CanonicalPathError:

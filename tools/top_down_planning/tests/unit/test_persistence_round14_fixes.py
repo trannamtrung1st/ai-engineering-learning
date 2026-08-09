@@ -15,6 +15,7 @@ from top_down_planning.domain.production import (
 )
 from top_down_planning.package.lineage import accepted_result_digest
 from top_down_planning.persistence import FileRunStore
+from tests.helpers import bind_evidence_snapshot
 from tests.unit.test_commit_crash_recovery import _create_run
 
 
@@ -60,6 +61,8 @@ def _mirrored_completed_batch(
     plan_items: list[str] | None = None,
     evidence_id: str = "out-1",
     disposition: str = "completed",
+    store: FileRunStore | None = None,
+    run_id: str | None = None,
 ) -> tuple[dict, dict]:
     plan_items = plan_items or ["item-work"]
     evidence = _minimal_evidence(evidence_id=evidence_id, batch_id=batch_id)
@@ -83,6 +86,9 @@ def _mirrored_completed_batch(
             },
         },
     }
+    if store is not None and run_id is not None:
+        evidence, nested = bind_evidence_snapshot(store, run_id, evidence)
+        batch["result"]["outputs"] = [nested]
     return batch, evidence
 
 
@@ -209,6 +215,8 @@ def test_invalidated_batch_evidence_excluded_from_live_output_evidence_entries(
         batch_id="batch-live",
         plan_items=["item-current"],
         evidence_id="out-live",
+        store=store,
+        run_id=run_id,
     )
     production = store.load_production(run_id)
     production["batches"] = [
@@ -251,7 +259,7 @@ def test_save_production_rejects_duplicate_output_evidence_ids(tmp_path: Path) -
     expected = int(production["revision"])
     production = dict(production)
     production["revision"] = expected + 1
-    batch, evidence = _mirrored_completed_batch()
+    batch, evidence = _mirrored_completed_batch(store=store, run_id=run_id)
     production["batches"] = [batch]
     production["output_evidence"] = [evidence, dict(evidence)]
     production["dispositions"] = {"item-work": "completed"}
@@ -294,7 +302,7 @@ def test_load_production_rejects_contribution_missing_evidence_ref(tmp_path: Pat
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("07")
     _create_run(store, run_id)
-    batch, evidence = _mirrored_completed_batch()
+    batch, evidence = _mirrored_completed_batch(store=store, run_id=run_id)
     batch["result"]["contributions"] = [
         {
             "item_id": "item-work",
@@ -316,7 +324,7 @@ def test_duplicate_output_evidence_ids_cannot_load_for_traceability(tmp_path: Pa
     store = FileRunStore(tmp_path)
     run_id = _new_run_id("08")
     _create_run(store, run_id)
-    batch, evidence = _mirrored_completed_batch(evidence_id="out-dup")
+    batch, evidence = _mirrored_completed_batch(evidence_id="out-dup", store=store, run_id=run_id)
     production = store.load_production(run_id)
     production["batches"] = [batch]
     production["output_evidence"] = [evidence, dict(evidence)]
@@ -589,7 +597,7 @@ def test_valid_production_graph_builds_traceability(tmp_path: Path) -> None:
             ),
         },
     )
-    batch, evidence = _mirrored_completed_batch()
+    batch, evidence = _mirrored_completed_batch(store=store, run_id=run_id)
     production = store.load_production(run_id)
     production["batches"] = [batch]
     production["output_evidence"] = [evidence]

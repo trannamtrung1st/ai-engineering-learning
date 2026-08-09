@@ -25,6 +25,7 @@ from tests.unit.test_sub_tdp_content_bound_baseline import (
     _build_package,
     _create_and_accept_shared_writer,
 )
+from tests.helpers import goal_met_completion_claim
 
 
 def test_merge_workspace_changes_rejects_delete_operation() -> None:
@@ -430,7 +431,7 @@ def test_accepted_child_two_batches_same_file_records_final_hash(tmp_path: Path)
         store, package, unit_id="item-a", content='{"version": 2}\n'
     )
     shared.write_text('{"version": 3}\n', encoding="utf-8")
-    capture_output_artifact(
+    captured = capture_output_artifact(
         store,
         child_id,
         workspace=Path(package.workspace_path),
@@ -443,13 +444,8 @@ def test_accepted_child_two_batches_same_file_records_final_hash(tmp_path: Path)
         {
             "id": "out-a-v3",
             "type": "artifact",
-            "ref": "shared/state.json",
-            "sha256": digest_file(shared),
-            "size": shared.stat().st_size,
-            "media_type": "application/json",
-            "captured_at": "2026-01-01T00:00:00Z",
-            "snapshot_ref": "artifacts/manual-v3",
             "batch_id": batch_id,
+            **captured,
         }
     )
     nested_v3 = {
@@ -476,6 +472,7 @@ def test_accepted_child_two_batches_same_file_records_final_hash(tmp_path: Path)
     production["output_evidence"] = evidence
     production["output_revision"] = int(production.get("output_revision") or 0) + 1
     production["revision"] = expected_prod + 1
+    production["completion_claim"] = goal_met_completion_claim(production)
     store.save_production(child_id, production, expected_prod)
 
     run = store.load_run(child_id)

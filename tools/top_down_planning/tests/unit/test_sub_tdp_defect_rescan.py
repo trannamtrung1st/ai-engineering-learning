@@ -35,6 +35,7 @@ from tests.helpers import (
     create_run_kwargs,
     decorate_sub_tdp_v2_package,
     goal_met_completion_claim,
+    mirrored_production_batch,
     whole_plan_approval_record,
 )
 from tests.unit.test_prepared_runs import _built_package
@@ -396,11 +397,35 @@ def test_wor_fails_closed_when_unit_not_completed(tmp_path: Path) -> None:
     decorate_sub_tdp_v2_package(state)
     state["units"][0]["status"] = "paused"
     state["units"][0]["child_run_id"] = "run-placeholder"
+    plan_model = store.load_plan_model(parent_id)
+    work_item_ids = [
+        item_id for item_id, item in plan_model.items.items() if item.kind == "work"
+    ]
+    batch, evidence = mirrored_production_batch(
+        item_id=work_item_ids[0],
+        batch_id="batch-wor-gate",
+        store=store,
+        run_id=parent_id,
+    )
+    batch["plan_items"] = work_item_ids
+    for item_id in work_item_ids[1:]:
+        batch["result"]["dispositions"][item_id] = {
+            "disposition": "completed",
+            "evidence": "done",
+        }
     expected_prod = int(production["revision"])
     production = dict(production)
     production["revision"] = expected_prod + 1
     production["sub_tdps"] = state
-    production["completion_claim"] = goal_met_completion_claim(production)
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence]
+    production["dispositions"] = {item_id: "completed" for item_id in work_item_ids}
+    production["output_revision"] = int(production.get("output_revision") or 0) + 1
+    production["completion_claim"] = goal_met_completion_claim(
+        production,
+        goal_assessment="Integrated; goal met.",
+        plan_revision=int(plan_model.revision),
+    )
     store.save_production(parent_id, production, expected_prod)
 
     run = store.load_run(parent_id)

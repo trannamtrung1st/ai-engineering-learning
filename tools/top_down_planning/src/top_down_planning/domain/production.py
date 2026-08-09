@@ -17,6 +17,8 @@ from top_down_planning.domain.reviews import (
 
 PRODUCTION_PHASE = "production"
 WHOLE_OUTPUT_REVIEW_PHASE = "whole_output_review"
+COMPLETED_BATCH_STATUS = "completed"
+SUB_TDP_INTEGRATION_BATCH_INTENT = "sub_tdp_integration"
 
 
 @dataclass(frozen=True)
@@ -227,16 +229,55 @@ def completion_claim_asserts_goal_met(claim: dict[str, Any] | None) -> bool:
     return bool(str(claim.get("goal_assessment") or "").strip())
 
 
+def is_live_completed_batch(batch: dict[str, Any]) -> bool:
+    """Return whether a batch is authoritative for live evidence and dispositions."""
+
+    if not isinstance(batch, dict):
+        return False
+    if batch.get("evidence_status") == "invalidated_by_reconciliation":
+        return False
+    return str(batch.get("status") or "") == COMPLETED_BATCH_STATUS
+
+
+def completion_claim_is_current(
+    claim: dict[str, Any] | None,
+    *,
+    production: dict[str, Any],
+    plan: Plan,
+) -> bool:
+    """Return whether a goal_met claim is bound to the current plan/output snapshot."""
+
+    if not completion_claim_asserts_goal_met(claim):
+        return False
+    assert isinstance(claim, dict)
+    if claim.get("status") is not None:
+        return False
+    try:
+        claim_output_revision = int(claim["output_revision"])
+        claim_plan_revision = int(claim["plan_revision"])
+        production_output_revision = int(production["output_revision"])
+        plan_revision = int(plan.revision)
+    except (KeyError, TypeError, ValueError):
+        return False
+    if claim_output_revision != production_output_revision:
+        return False
+    if claim_plan_revision != plan_revision:
+        return False
+    if claim.get("all_applicable_items_processed") is not True:
+        return False
+    dispositions = dict(production.get("dispositions") or {})
+    return all_applicable_items_processed(plan, dispositions)
+
+
 def build_production_review_snapshot(production: dict[str, Any]) -> dict[str, Any]:
     """Bounded production artifact for reviewer packages (proposal §5.3, §16)."""
 
     batches = [
         batch
         for batch in (production.get("batches") or [])
-        if isinstance(batch, dict)
-        and batch.get("evidence_status") != "invalidated_by_reconciliation"
+        if isinstance(batch, dict) and is_live_completed_batch(batch)
     ]
-    live_batch_ids = {
+    live_ids = {
         str(batch.get("id") or "")
         for batch in batches
         if batch.get("id")
@@ -245,7 +286,7 @@ def build_production_review_snapshot(production: dict[str, Any]) -> dict[str, An
         entry
         for entry in (production.get("output_evidence") or [])
         if isinstance(entry, dict)
-        and str(entry.get("batch_id") or "") in live_batch_ids
+        and str(entry.get("batch_id") or "") in live_ids
     ]
 
     snapshot: dict[str, Any] = {
@@ -548,9 +589,7 @@ def derive_live_disposition_map(production: dict[str, Any]) -> dict[str, str]:
     for batch_payload in production.get("batches") or []:
         if not isinstance(batch_payload, dict):
             continue
-        if batch_payload.get("evidence_status") == "invalidated_by_reconciliation":
-            continue
-        if str(batch_payload.get("status") or "") != "completed":
+        if not is_live_completed_batch(batch_payload):
             continue
         result_payload = batch_payload.get("result")
         if not isinstance(result_payload, dict):
@@ -581,6 +620,8 @@ def collect_batch_disposition_records(
     records: dict[str, ItemDispositionRecord] = {}
     for batch_payload in production.get("batches") or []:
         if not isinstance(batch_payload, dict):
+            continue
+        if not is_live_completed_batch(batch_payload):
             continue
         result_payload = batch_payload.get("result")
         if not isinstance(result_payload, dict):
@@ -714,7 +755,7 @@ def live_batch_ids(production: dict[str, Any]) -> set[str]:
     for batch in production.get("batches") or []:
         if not isinstance(batch, dict):
             continue
-        if batch.get("evidence_status") == "invalidated_by_reconciliation":
+        if not is_live_completed_batch(batch):
             continue
         batch_id = str(batch.get("id") or "").strip()
         if batch_id:
@@ -743,8 +784,7 @@ def extract_accepted_delivery(
     live_batches = [
         batch
         for batch in (production.get("batches") or [])
-        if isinstance(batch, dict)
-        and batch.get("evidence_status") != "invalidated_by_reconciliation"
+        if isinstance(batch, dict) and is_live_completed_batch(batch)
     ]
     live_ids = live_batch_ids(production)
     output_evidence = [

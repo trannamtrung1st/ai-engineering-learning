@@ -30,7 +30,7 @@ from top_down_planning.package.lineage import (
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_config_execution_digest
 from top_down_planning.persistence.sub_tdp_state import load_sub_tdp_state
-from tests.helpers import accept_child_run, apply_production
+from tests.helpers import accept_child_run, mirrored_production_batch, apply_production
 from tests.unit.test_prepared_runs import _built_package
 from tests.unit.test_sub_tdp_orchestrator import _setup_parent_execution
 
@@ -105,13 +105,33 @@ def test_production_does_not_complete_on_integration_pending_claim(
 
     # goal_met claim should complete the production gate
     production = store.load_production(parent_id)
+    plan_model = store.load_plan_model(parent_id)
+    work_item_ids = [
+        item_id for item_id, item in plan_model.items.items() if item.kind == "work"
+    ]
+    batch, evidence = mirrored_production_batch(
+        item_id=work_item_ids[0],
+        batch_id="batch-goal-met",
+        store=store,
+        run_id=parent_id,
+    )
+    batch["plan_items"] = work_item_ids
+    for item_id in work_item_ids[1:]:
+        batch["result"]["dispositions"][item_id] = {
+            "disposition": "completed",
+            "evidence": "done",
+        }
     expected = int(production["revision"])
     production = dict(production)
     production["revision"] = expected + 1
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence]
+    production["dispositions"] = {item_id: "completed" for item_id in work_item_ids}
+    production["output_revision"] = int(production.get("output_revision") or 0) + 1
     production["completion_claim"] = {
         "goal_met": True,
         "goal_assessment": "Integrated and goal met.",
-        "plan_revision": int(store.load_plan_model(parent_id).revision),
+        "plan_revision": int(plan_model.revision),
         "output_revision": int(production["output_revision"]),
         "all_applicable_items_processed": True,
     }

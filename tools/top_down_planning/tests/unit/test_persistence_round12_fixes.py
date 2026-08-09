@@ -219,6 +219,8 @@ def test_save_production_accepts_valid_terminal_dispositions(
         item_id="item-root",
         disposition=disposition,
         evidence_id=f"out-{disposition}",
+        store=store,
+        run_id=run_id,
     )
     production["batches"] = [batch]
     production["output_evidence"] = [evidence]

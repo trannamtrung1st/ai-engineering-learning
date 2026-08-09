@@ -66,6 +66,8 @@ def test_flat_disposition_string_round_trip_matches_readiness(
         item_id="item-work",
         disposition=disposition,
         evidence_id=f"out-{disposition}",
+        store=store,
+        run_id=run_id,
     )
     production["batches"] = [batch]
     production["output_evidence"] = [evidence]

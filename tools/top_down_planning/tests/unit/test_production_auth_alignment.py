@@ -34,6 +34,10 @@ def _evidence_for_path(workspace: Path, ref: str, *, evidence_id: str = "o1") ->
         "ref": ref,
         "sha256": digest_file(target),
         "size": target.stat().st_size,
+        "type": "artifact",
+        "media_type": "text/plain",
+        "captured_at": "2026-01-01T00:00:00Z",
+        "snapshot_ref": f"artifacts/{evidence_id}/capture.bin",
     }
 
 
@@ -41,24 +45,38 @@ def _production_with_live_evidence(
     entries: list[dict[str, object]],
     *,
     batch_id: str = "batch-1",
+    item_id: str = "item-work",
 ) -> dict[str, object]:
-    """Production snapshot with evidence rows tied to a live batch."""
+    """Production snapshot with evidence rows tied to a live completed batch."""
 
     live_entries: list[dict[str, object]] = []
-    outputs: list[dict[str, str]] = []
+    nested_outputs: list[dict[str, object]] = []
     for entry in entries:
         ev = dict(entry)
         ev.setdefault("batch_id", batch_id)
+        ev.setdefault("type", "artifact")
+        ev.setdefault("media_type", "text/plain")
+        ev.setdefault("captured_at", "2026-01-01T00:00:00Z")
+        ev.setdefault("snapshot_ref", f"artifacts/{ev.get('id')}/capture.bin")
         live_entries.append(ev)
-        outputs.append(
-            {
-                "id": str(ev.get("id") or ""),
-                "ref": str(ev.get("ref") or ""),
-            }
-        )
+        nested_outputs.append({key: value for key, value in ev.items() if key != "batch_id"})
     return {
-        "batches": [{"id": batch_id, "result": {"outputs": outputs}}],
+        "batches": [
+            {
+                "id": batch_id,
+                "status": "completed",
+                "plan_items": [item_id],
+                "result": {
+                    "outputs": nested_outputs,
+                    "contributions": [],
+                    "dispositions": {
+                        item_id: {"disposition": "completed", "evidence": "done"},
+                    },
+                },
+            }
+        ],
         "output_evidence": live_entries,
+        "dispositions": {item_id: "completed"},
     }
 
 

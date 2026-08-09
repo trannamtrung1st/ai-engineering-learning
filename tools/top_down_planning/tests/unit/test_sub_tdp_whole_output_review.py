@@ -7,6 +7,7 @@ from pathlib import Path
 from top_down_planning.domain.models import Plan, PlanItem, Scope
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID
 from top_down_planning.domain.sub_tdp_synthesis import synthesize_parent_production
+from top_down_planning.orchestrator.evidence_promotion import promote_child_evidence_to_parent
 from top_down_planning.domain.sub_tdp_units import SubTdpUnit
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, WHOLE_OUTPUT_REVIEW
 from core_tools.provider import StubProvider
@@ -28,6 +29,7 @@ from tests.helpers import (
     create_run_kwargs,
     decorate_sub_tdp_v2_package,
     goal_met_completion_claim,
+    mirrored_production_batch,
     whole_plan_approval_record,
 )
 from tests.unit.test_prepared_runs import _built_package
@@ -120,6 +122,13 @@ def test_sub_tdp_whole_output_review_package_includes_child_evidence(tmp_path: P
         production,
         child_runs=[(unit_record, child_run, child_production)],
         parent_output_goal="Ship the product.",
+        promote_evidence=lambda evidence, child_run_id: promote_child_evidence_to_parent(
+            evidence,
+            child_store=store,
+            child_run_id=child_run_id,
+            parent_store=store,
+            parent_run_id=parent_id,
+        ),
     )
     synthesized["completion_claim"] = goal_met_completion_claim(
         synthesized,
@@ -210,7 +219,21 @@ def test_sub_tdp_whole_output_review_fails_when_child_run_missing(
     unit_record["accepted_result_digest"] = accepted_result_digest(
         unit_record["accepted_result"]
     )
-    production["completion_claim"] = goal_met_completion_claim(production)
+    batch, evidence = mirrored_production_batch(
+        item_id="item-a",
+        batch_id="batch-integration",
+        store=store,
+        run_id=run_id,
+    )
+    production["batches"] = [batch]
+    production["output_evidence"] = [evidence]
+    production["dispositions"] = {"item-a": "completed"}
+    production["output_revision"] = 1
+    production["completion_claim"] = goal_met_completion_claim(
+        production,
+        goal_assessment="Integrated; goal met.",
+        plan_revision=0,
+    )
     store.save_production(run_id, production, expected_prod)
     run = store.load_run(run_id)
     expected = int(run["revision"])

@@ -312,7 +312,10 @@ class FileRunStore:
             production_payload = (
                 production if production is not None else dict(_EMPTY_PRODUCTION)
             )
-            production_payload = validate_persisted_production(production_payload)
+            production_payload = validate_persisted_production(
+                production_payload,
+                plan=plan_payload,
+            )
             workspace_path = Path(str(workspace)).resolve()
             from top_down_planning.persistence.snapshot_bindings import (
                 validate_create_run_context_binding,
@@ -465,7 +468,20 @@ class FileRunStore:
             assert_next_revision(expected, next_revision)
             production_payload = dict(spec.production)
             production_payload["revision"] = next_revision
-            production_payload = validate_persisted_production(production_payload)
+            plan_payload_for_validation = self._read_plan(validated_run_id)
+            production_payload = validate_persisted_production(
+                production_payload,
+                plan=plan_payload_for_validation,
+            )
+            from top_down_planning.persistence.evidence_integrity import (
+                verify_persisted_production_evidence_snapshots,
+            )
+
+            verify_persisted_production_evidence_snapshots(
+                self,
+                validated_run_id,
+                production_payload,
+            )
         else:
             production_payload = None
 
@@ -607,7 +623,24 @@ class FileRunStore:
         if plan_payload is not None:
             plan_payload = canonicalize_persisted_plan(plan_payload)
         if production_payload is not None:
-            production_payload = validate_persisted_production(production_payload)
+            plan_for_validation = (
+                plan_payload
+                if plan_payload is not None
+                else self._read_plan(validated_run_id)
+            )
+            production_payload = validate_persisted_production(
+                production_payload,
+                plan=plan_for_validation,
+            )
+            from top_down_planning.persistence.evidence_integrity import (
+                verify_persisted_production_evidence_snapshots,
+            )
+
+            verify_persisted_production_evidence_snapshots(
+                self,
+                validated_run_id,
+                production_payload,
+            )
 
         txn_id = uuid.uuid4().hex
         journal_events = self._normalize_journal_events(
@@ -1718,7 +1751,7 @@ class FileRunStore:
             self._production_path(run_id),
             label="production.json",
         )
-        return validate_persisted_production(payload)
+        return validate_persisted_production(payload, plan=self._read_plan(run_id))
 
     def _read_review_revision(self, run_id: str, review_id: str) -> int:
         path = self._review_record_path(run_id, review_id)

@@ -221,11 +221,7 @@ def synthesize_parent_production(
     }
     batch = {
         "id": batch_id,
-        "plan_items": [
-            item_id
-            for item_id, record in disposition_records.items()
-            if record.get("disposition") == "completed"
-        ],
+        "plan_items": list(disposition_records.keys()),
         "status": "completed",
         "agent_turns": 0,
         "intent": "sub_tdp_integration",

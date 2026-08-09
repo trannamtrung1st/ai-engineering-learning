@@ -16,7 +16,10 @@ from top_down_planning.domain.production import (
     ItemDispositionRecord,
     OutputEvidence,
     ProductionBatch,
+    SUB_TDP_INTEGRATION_BATCH_INTENT,
+    all_applicable_items_processed,
     derive_live_disposition_map,
+    is_live_completed_batch,
 )
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.run_lifecycle import (
@@ -231,6 +234,8 @@ def _parse_persisted_completion_claim(value: dict[str, Any]) -> None:
         raise ValueError("goal_met must be a boolean")
 
     if goal_met is True:
+        if status is not None:
+            raise ValueError("status is not allowed when goal_met is true")
         if not isinstance(goal_assessment, str) or not goal_assessment.strip():
             raise ValueError("goal_assessment must be a non-empty string")
         _require_strict_non_negative_int(value.get("plan_revision"), "plan_revision")
@@ -241,11 +246,115 @@ def _parse_persisted_completion_claim(value: dict[str, Any]) -> None:
 
     if status != "integration_pending":
         raise ValueError("status must be integration_pending when goal_met is false")
+    for forbidden in ("plan_revision", "output_revision", "all_applicable_items_processed"):
+        if forbidden in value:
+            raise ValueError(f"{forbidden} is not allowed when goal_met is false")
     if not isinstance(goal_assessment, str) or not goal_assessment.strip():
         raise ValueError("goal_assessment must be a non-empty string")
     submitted_at = value.get("submitted_at")
     if submitted_at is not None and not isinstance(submitted_at, str):
         raise ValueError("submitted_at must be a string")
+
+
+def _validate_completion_claim_bindings(
+    payload: dict[str, Any],
+    plan: dict[str, Any] | None,
+) -> None:
+    claim = payload.get("completion_claim")
+    if not isinstance(claim, dict):
+        return
+    if claim.get("goal_met") is not True:
+        return
+    claim_output_revision = _require_strict_non_negative_int(
+        claim.get("output_revision"),
+        "completion_claim.output_revision",
+    )
+    production_output_revision = _require_strict_non_negative_int(
+        payload.get("output_revision"),
+        "production.output_revision",
+    )
+    if claim_output_revision != production_output_revision:
+        raise ValueError(
+            "completion_claim.output_revision must match production.output_revision"
+        )
+    if plan is None:
+        raise ValueError("completion_claim requires current plan revision binding")
+    plan_revision = _require_strict_non_negative_int(plan.get("revision"), "plan.revision")
+    claim_plan_revision = _require_strict_non_negative_int(
+        claim.get("plan_revision"),
+        "completion_claim.plan_revision",
+    )
+    if claim_plan_revision != plan_revision:
+        raise ValueError("completion_claim.plan_revision must match plan.revision")
+    dispositions = payload.get("dispositions") or {}
+    if not isinstance(dispositions, dict):
+        raise ValueError("production.dispositions must be an object")
+    plan_model = Plan.from_dict(dict(plan))
+    if not all_applicable_items_processed(plan_model, dispositions):
+        raise ValueError(
+            "completion_claim.all_applicable_items_processed is false for current plan"
+        )
+
+
+def _validate_accepted_result_schema(accepted: dict[str, Any], *, label: str) -> None:
+    schema_version = accepted.get("schema_version")
+    if not isinstance(schema_version, int) or isinstance(schema_version, bool):
+        raise ValueError(f"{label}.accepted_result.schema_version must be an integer")
+    if schema_version != 1:
+        raise ValueError(f"{label}.accepted_result.schema_version must be 1")
+    _require_strict_non_negative_int(
+        accepted.get("output_revision"),
+        f"{label}.accepted_result.output_revision",
+    )
+    assessment = accepted.get("completion_assessment")
+    if not isinstance(assessment, str) or not assessment.strip():
+        raise ValueError(
+            f"{label}.accepted_result.completion_assessment must be a non-empty string"
+        )
+    output_refs = accepted.get("output_refs")
+    if not isinstance(output_refs, list):
+        raise ValueError(f"{label}.accepted_result.output_refs must be a list")
+    for index, output in enumerate(output_refs):
+        if not isinstance(output, dict):
+            raise ValueError(
+                f"{label}.accepted_result.output_refs[{index}] must be an object"
+            )
+        _require_strict_non_empty_str(
+            output.get("id"),
+            f"{label}.accepted_result.output_refs[{index}].id",
+        )
+        _require_strict_non_empty_str(
+            output.get("type"),
+            f"{label}.accepted_result.output_refs[{index}].type",
+        )
+        _require_strict_non_empty_str(
+            output.get("ref"),
+            f"{label}.accepted_result.output_refs[{index}].ref",
+        )
+    contributions = accepted.get("contributions")
+    if not isinstance(contributions, list):
+        raise ValueError(f"{label}.accepted_result.contributions must be a list")
+    for index, contribution in enumerate(contributions):
+        if not isinstance(contribution, dict):
+            raise ValueError(
+                f"{label}.accepted_result.contributions[{index}] must be an object"
+            )
+        _require_strict_non_empty_str(
+            contribution.get("item_id"),
+            f"{label}.accepted_result.contributions[{index}].item_id",
+        )
+        output_refs_raw = contribution.get("output_refs")
+        if output_refs_raw is None:
+            output_refs_raw = []
+        if not isinstance(output_refs_raw, list):
+            raise ValueError(
+                f"{label}.accepted_result.contributions[{index}].output_refs must be a list"
+            )
+        for ref_index, ref in enumerate(output_refs_raw):
+            _require_strict_non_empty_str(
+                ref,
+                f"{label}.accepted_result.contributions[{index}].output_refs[{ref_index}]",
+            )
 
 
 def _parse_persisted_amendment_request(value: dict[str, Any]) -> None:
@@ -531,6 +640,9 @@ def _parse_persisted_sub_tdp_unit(
             raise ValueError(
                 f"{label}.accepted_result_digest must be a 64-character lowercase hex digest"
             )
+        accepted = value.get("accepted_result")
+        if isinstance(accepted, dict):
+            _validate_accepted_result_schema(accepted, label=label)
         try:
             verify_accepted_result_attestation(value)
         except ValueError as exc:
@@ -627,6 +739,43 @@ def _parse_persisted_sub_tdps(value: dict[str, Any]) -> None:
             raise ValueError(
                 "sub_tdps.active_unit_id must not reference a completed or failed unit"
             )
+    if status == ORCHESTRATION_STATUS_COMPLETED:
+        for index, unit in enumerate(units):
+            if not isinstance(unit, dict):
+                continue
+            unit_status = str(unit.get("status") or UNIT_STATUS_PENDING)
+            if unit_status != UNIT_STATUS_COMPLETED:
+                raise ValueError(
+                    f"sub_tdps.status completed requires units[{index}] completed"
+                )
+
+
+def _validate_batch_disposition_scope(
+    batch: dict[str, Any],
+    *,
+    batch_id: str,
+    plan_items: set[str],
+    result: dict[str, Any],
+) -> None:
+    disposition_records = result.get("dispositions") or {}
+    if not isinstance(disposition_records, dict):
+        raise ValueError(f"batch {batch_id!r} result.dispositions must be an object")
+    disposition_keys = {
+        str(item_id)
+        for item_id, record in disposition_records.items()
+        if isinstance(record, dict) and str(record.get("disposition") or "").strip()
+    }
+    intent = str(batch.get("intent") or "")
+    if not plan_items:
+        raise ValueError(f"completed batch {batch_id!r} requires non-empty plan_items")
+    if disposition_keys != plan_items:
+        raise ValueError(
+            f"batch {batch_id!r} result.dispositions must match plan_items exactly"
+        )
+    if intent == SUB_TDP_INTEGRATION_BATCH_INTENT and not disposition_keys:
+        raise ValueError(
+            f"batch {batch_id!r} sub_tdp_integration requires disposition records"
+        )
 
 
 def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
@@ -675,7 +824,7 @@ def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
             continue
 
         status = str(batch.get("status") or "")
-        if status == _COMPLETED_BATCH_STATUS:
+        if is_live_completed_batch(batch):
             result = batch.get("result")
             if not isinstance(result, dict):
                 raise ValueError(f"completed batch {batch_id!r} requires a result")
@@ -740,6 +889,16 @@ def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
                 raise ValueError(
                     f"output_evidence {evidence_id!r} does not mirror batch {batch_id!r} result.outputs"
                 )
+            snapshot_ref = str(top_entry.get("snapshot_ref") or "").strip()
+            if not snapshot_ref:
+                raise ValueError(
+                    f"output_evidence {evidence_id!r} requires snapshot_ref"
+                )
+            nested_snapshot_ref = str(nested.get("snapshot_ref") or "").strip()
+            if nested_snapshot_ref != snapshot_ref:
+                raise ValueError(
+                    f"output_evidence {evidence_id!r} snapshot_ref must mirror nested output"
+                )
         for evidence_id in nested_by_id:
             if evidence_id not in top_for_batch:
                 raise ValueError(
@@ -765,6 +924,14 @@ def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
                         f"contribution output_ref {ref_s!r} must reference output owned by "
                         f"batch {batch_id!r}"
                     )
+
+        plan_items = batch_plan_items.get(batch_id, set())
+        _validate_batch_disposition_scope(
+            batch,
+            batch_id=batch_id,
+            plan_items=plan_items,
+            result=result,
+        )
 
     flat_dispositions = payload.get("dispositions")
     if flat_dispositions is None:
@@ -1080,7 +1247,11 @@ def canonicalize_persisted_plan(payload: dict[str, Any]) -> dict[str, Any]:
     return Plan.from_dict(dict(payload)).to_dict()
 
 
-def validate_persisted_production(payload: dict[str, Any]) -> dict[str, Any]:
+def validate_persisted_production(
+    payload: dict[str, Any],
+    *,
+    plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise PersistenceError("production.json must contain a JSON object")
     parse_revision_value(payload.get("revision"), "production")
@@ -1126,6 +1297,10 @@ def validate_persisted_production(payload: dict[str, Any]) -> dict[str, Any]:
             raise PersistenceError("production.completion_claim must be an object or null")
         try:
             _parse_persisted_completion_claim(completion_claim)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersistenceError(f"production.completion_claim is invalid: {exc}") from exc
+        try:
+            _validate_completion_claim_bindings(payload, plan)
         except (KeyError, TypeError, ValueError) as exc:
             raise PersistenceError(f"production.completion_claim is invalid: {exc}") from exc
     for field_name in ("amendment_requests", "reconciliation_reports"):

@@ -25,7 +25,7 @@ from top_down_planning.package.loader import ExecutionPackageError, ExecutionPac
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.sub_tdp_state import unit_status_from_child_run
-from tests.helpers import create_run_kwargs, goal_met_completion_claim, mirrored_production_batch, whole_plan_approval_record
+from tests.helpers import create_run_kwargs, complete_child_production, goal_met_completion_claim, mirrored_production_batch, whole_plan_approval_record
 
 
 def _item(item_id: str, *, parent_id: str | None, order_key: str, title: str, **kwargs):
@@ -95,10 +95,6 @@ def _force_run_fields(store: FileRunStore, run_id: str, **fields) -> None:
             binding["whole_output_review_digest"] = "r" * 64
             run["package_binding"] = binding
     atomic_write_json(store.run_dir(run_id) / "run.json", run)
-
-
-def _save_production(store: FileRunStore, run_id: str, production: dict) -> None:
-    atomic_write_json(store.run_dir(run_id) / "production.json", production)
 
 
 def test_all_units_completed_requires_accepted_digest() -> None:
@@ -187,9 +183,7 @@ def test_attach_rejects_missing_output_digest(tmp_path: Path) -> None:
         resolved_config=package.resolved_config,
         invocation={"command": "execute"},
     )
-    production = store.load_production(child_id)
-    production["completion_claim"] = goal_met_completion_claim(production, goal_assessment="done")
-    _save_production(store, child_id, production)
+    complete_child_production(store, child_id, goal_assessment="done")
     _force_run_fields(
         store,
         child_id,
@@ -247,13 +241,7 @@ def test_child_run_binds_upstream_accepted_results(tmp_path: Path) -> None:
         resolved_config=package.resolved_config,
         invocation={"command": "execute"},
     )
-    production = store.load_production(dep_id)
-    production["completion_claim"] = goal_met_completion_claim(
-        production,
-        goal_assessment="A done",
-    )
-    production["output_revision"] = max(1, int(production.get("output_revision") or 0))
-    _save_production(store, dep_id, production)
+    complete_child_production(store, dep_id, item_id="item-a", goal_assessment="A done", ref="temp/out.md")
     approval = whole_output_approval_record(store, dep_id)
     store.save_review(dep_id, approval)
     review_id = str(approval.get("id") or "")
@@ -480,6 +468,8 @@ def test_attach_compares_live_output_digest_when_present(tmp_path: Path) -> None
         batch_id="b1",
         evidence_id="ev-1",
         ref="out.txt",
+        store=store,
+        run_id=child_id,
     )
     production["completion_claim"] = goal_met_completion_claim(
         production,

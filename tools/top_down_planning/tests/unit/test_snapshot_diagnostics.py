@@ -116,15 +116,40 @@ agent_context:
             old_binding,
             new_binding,
             {
-                "batches": [{"id": "batch-1", "result": {"outputs": [{"ref": "src/feature.py"}]}}],
+                "batches": [
+                    {
+                        "id": "batch-1",
+                        "status": "completed",
+                        "plan_items": ["item-work"],
+                        "result": {
+                            "outputs": [
+                                {
+                                    "id": "o1",
+                                    "ref": "src/feature.py",
+                                    "sha256": digest_file(module),
+                                    "batch_id": "batch-1",
+                                    "snapshot_ref": "artifacts/test/capture.bin",
+                                }
+                            ],
+                            "dispositions": {
+                                "item-work": {
+                                    "disposition": "completed",
+                                    "evidence": "authorized",
+                                }
+                            },
+                        },
+                    }
+                ],
                 "output_evidence": [
                     {
                         "id": "o1",
                         "ref": "src/feature.py",
                         "sha256": digest_file(module),
                         "batch_id": "batch-1",
+                        "snapshot_ref": "artifacts/test/capture.bin",
                     }
                 ],
+                "dispositions": {"item-work": "completed"},
             },
             workspace=workspace,
         )

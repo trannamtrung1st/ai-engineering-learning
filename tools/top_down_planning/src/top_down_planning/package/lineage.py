@@ -1001,6 +1001,19 @@ def validate_accepted_child_delivery(
     claim = production.get("completion_claim")
     if not isinstance(claim, dict) or claim.get("goal_met") is not True:
         raise ValueError("child completion claim must assert goal_met=true")
+    claim_output_revision = claim.get("output_revision")
+    if claim_output_revision is not None:
+        try:
+            if int(claim_output_revision) != int(production.get("output_revision") or 0):
+                raise ValueError(
+                    "child completion claim output_revision does not match production"
+                )
+        except (TypeError, ValueError) as exc:
+            if "does not match" in str(exc):
+                raise
+            raise ValueError(
+                "child completion claim output_revision is invalid"
+            ) from exc
 
     live_output_digest = compute_output_digest(production)
     run_output_digest = str((run.get("digests") or {}).get("output") or "").strip()
@@ -1025,8 +1038,8 @@ def validate_accepted_child_delivery(
     for entry in production.get("output_evidence") or []:
         if not isinstance(entry, dict):
             raise ValueError("child output_evidence entry is invalid")
-        if not entry.get("snapshot_ref"):
-            continue
+        if not str(entry.get("snapshot_ref") or "").strip():
+            raise ValueError("child output_evidence requires snapshot_ref")
         verify_evidence_snapshot(store, child_run_id, entry)
 
 
