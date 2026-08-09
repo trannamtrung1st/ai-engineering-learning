@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-import threading
-import time
-from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -15,11 +12,9 @@ from core_tools.provider.cursor import CursorProvider
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.domain.session_bindings import (
     binding_provider_session_id,
-    is_transient_provider_session_id,
     new_session_binding,
 )
 from top_down_planning.domain.session_lineage import SESSION_PROVIDER_ID_BOUND
-from top_down_planning.orchestrator import ProviderRunError, WholePlanReviewOrchestrator
 from top_down_planning.orchestrator.phases import WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.provider_turns import (
     build_reviewer_turn_recovery,
@@ -32,6 +27,7 @@ from top_down_planning.orchestrator.reviewer_session import (
 from top_down_planning.orchestrator.session_events import sync_reviewer_loop_session_id
 from top_down_planning.persistence import FileRunStore
 from tests.helpers import (
+    apply_plan,
     make_review_loop,
     mandatory_initial_respond_request,
     respond_review,
@@ -74,23 +70,16 @@ def _cursor_stream(*, session_id: str, text: str) -> list[str]:
 def _cursor_provider(
     tmp_path: Path,
     streams: list[list[str]],
-    *,
-    on_turn_start: list[Callable[[], None] | None] | None = None,
 ) -> CursorProvider:
     call_index = {"value": 0}
-    hooks = on_turn_start or []
 
     def fake_runner(argv: list[str], cwd: Path):
         index = call_index["value"]
         call_index["value"] = index + 1
-        hook = hooks[index] if index < len(hooks) else None
         if not streams:
             return
         stream = streams[min(index, len(streams) - 1)]
-        for line_index, line in enumerate(stream):
-            yield line
-            if line_index == 0 and hook is not None:
-                threading.Thread(target=hook, daemon=True).start()
+        yield from stream
 
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
@@ -155,8 +144,8 @@ def test_whole_plan_recheck_binds_cursor_reviewer_session_after_initial_review(
 ) -> None:
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T010002-010002"
-    _create_run_at_whole_plan_review(store, run_id=run_id)
     loop_id = "review-whole-plan-01"
+    _create_run_at_whole_plan_review(store, run_id=run_id)
     respond_request = mandatory_initial_respond_request(
         store,
         run_id,
@@ -176,48 +165,94 @@ def test_whole_plan_recheck_binds_cursor_reviewer_session_after_initial_review(
         ],
     )
 
-    def respond_after_reviewer_bound() -> None:
-        deadline = time.monotonic() + 2.0
-        bound_session_id: str | None = None
-        while time.monotonic() < deadline:
-            review = store.load_review(run_id, loop_id)
-            session_id = binding_provider_session_id(review.get("reviewer_binding"))
-            if session_id and not is_transient_provider_session_id(session_id):
-                bound_session_id = session_id
-                break
-            time.sleep(0.01)
-        assert bound_session_id is not None
-        respond_review(
-            store,
-            run_id,
-            respond_request,
-            phase=WHOLE_PLAN_REVIEW,
-            loop_id=loop_id,
-            session_id=bound_session_id,
-        )()
-
     provider = _cursor_provider(
         tmp_path,
         streams=[
             _cursor_stream(session_id="chat-reviewer-1", text="initial review"),
-            _cursor_stream(session_id="chat-planner-1", text="planner revises"),
             _cursor_stream(session_id="chat-reviewer-1", text="verification recheck"),
         ],
-        on_turn_start=[respond_after_reviewer_bound, None, None],
+    )
+    session_id = provider.start_reviewer_session({"loop_id": loop_id})
+    consume_reviewer_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        session_id,
+        loop_id=loop_id,
+        recovery=build_reviewer_turn_recovery(
+            store,
+            run_id,
+            loop_id=loop_id,
+            phase=WHOLE_PLAN_REVIEW,
+            expected_next_action="continue review",
+            append_event=MagicMock(),
+            model=None,
+            review_package={"loop_id": loop_id},
+        ),
     )
 
-    orchestrator = WholePlanReviewOrchestrator(store, run_id, provider)
-    orchestrator._append_event = MagicMock()  # type: ignore[method-assign]
-
-    try:
-        orchestrator.run()
-    except ProviderRunError as exc:
-        assert "reviewer session is missing for recheck" not in str(exc)
-
-    review = store.load_review(run_id, "review-whole-plan-01")
+    review = store.load_review(run_id, loop_id)
     binding = review["reviewer_binding"]
     assert binding["state"] == "bound"
     assert binding_provider_session_id(binding) == "chat-reviewer-1"
+
+    respond_review(
+        store,
+        run_id,
+        respond_request,
+        phase=WHOLE_PLAN_REVIEW,
+        loop_id=loop_id,
+        session_id="chat-reviewer-1",
+    )()
+    apply_plan(
+        store,
+        run_id,
+        base_revision=0,
+        operations=[
+            {
+                "op": "update_item",
+                "item_id": "item-root",
+                "patch": {
+                    "acceptance": [
+                        "API behavior is verifiable.",
+                        "Health check exists.",
+                    ]
+                },
+            }
+        ],
+        phase=WHOLE_PLAN_REVIEW,
+    )()
+
+    loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    plan_revision = int(store.load_plan_model(run_id).revision)
+    assert (
+        resolve_reviewer_session_for_recheck(
+            loop,
+            target_revision=0,
+            current_revision=plan_revision,
+        )
+        == "chat-reviewer-1"
+    )
+
+    recheck_outcome = consume_reviewer_provider_turn_with_session_recovery(
+        store,
+        run_id,
+        provider,
+        "chat-reviewer-1",
+        loop_id=loop_id,
+        recovery=build_reviewer_turn_recovery(
+            store,
+            run_id,
+            loop_id=loop_id,
+            phase=WHOLE_PLAN_REVIEW,
+            expected_next_action="continue review",
+            append_event=MagicMock(),
+            model=None,
+            review_package={"loop_id": loop_id},
+        ),
+    )
+    assert recheck_outcome.session_id == "chat-reviewer-1"
+
     bound_events = [
         event
         for event in store.load_events(run_id)
