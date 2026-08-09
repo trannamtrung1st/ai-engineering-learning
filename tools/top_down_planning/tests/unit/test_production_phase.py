@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -12,6 +13,7 @@ from top_down_planning.agent_tool import ProductionAgentService, RequestError
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import ProductionPhaseOrchestrator, ProviderRunError
+from top_down_planning.orchestrator.production import ProductionPhaseResult
 from top_down_planning.orchestrator.phases import PLAN_VALIDATED, PRODUCTION, WHOLE_OUTPUT_REVIEW
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
@@ -694,6 +696,58 @@ def test_resume_preserves_batch_agent_turn_budget(tmp_path: Path) -> None:
     run = store.load_run("run-20260101T000201-000201")
     assert run["status"] == "paused"
     assert run["stop"]["code"] == "limit_exhausted"
+
+
+def test_batch_complete_at_turn_limit_resets_budget(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    _create_run_at_plan_validated(store, limits={"max_agent_turns_per_batch": 1})
+    run_id = "run-20260101T000201-000201"
+    provider = StubProvider()
+    provider.script_turn(done_events(text="producer session start"))
+    paused_for_turn_limit: list[bool] = []
+    consume_calls = 0
+    original_pause = ProductionPhaseOrchestrator._pause_for_limit
+
+    def track_pause(self, **kwargs: object) -> ProductionPhaseResult:
+        if kwargs.get("limit") == "max_agent_turns_per_batch":
+            paused_for_turn_limit.append(True)
+        return original_pause(self, **kwargs)
+
+    from top_down_planning.orchestrator.provider_turns import ProviderTurnOutcome
+
+    def limited_consume(
+        store: FileRunStore,
+        run_id_arg: str,
+        provider_arg: StubProvider,
+        session_id: str,
+        recovery: object = None,
+    ) -> ProviderTurnOutcome:
+        nonlocal consume_calls
+        consume_calls += 1
+        if consume_calls > 1:
+            raise ProviderRunError("stop after first producer turn")
+        return ProviderTurnOutcome(
+            signal="batch_complete",
+            session_id=session_id,
+            domain_budget_committed=True,
+        )
+
+    with patch.object(ProductionPhaseOrchestrator, "_resume_producer_turn"):
+        with patch.object(
+            ProductionPhaseOrchestrator,
+            "_pause_for_limit",
+            track_pause,
+        ):
+            with patch(
+                "top_down_planning.orchestrator.production.consume_producer_provider_turn_with_session_recovery",
+                limited_consume,
+            ):
+                with pytest.raises(ProviderRunError, match="stop after first producer turn"):
+                    ProductionPhaseOrchestrator(store, run_id, provider).run()
+
+    assert paused_for_turn_limit == []
+    run = store.load_run(run_id)
+    assert run["production_loop"]["current_batch_agent_turns"] == 0
 
 
 def test_producer_turn_closes_when_batch_recorded_while_stream_stalls(

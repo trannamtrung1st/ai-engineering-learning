@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -12,6 +13,7 @@ from top_down_planning.domain.run_lifecycle import StopRecord, continuation_ok_f
 from top_down_planning.orchestrator.apply_resume import ApplyResumeError, apply_resume_plan_atomically
 from top_down_planning.orchestrator.engine import RunEngine
 from top_down_planning.orchestrator.failure import mark_run_failed
+from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.phases import PLANNING, PRODUCTION, WHOLE_PLAN_REVIEW
 from top_down_planning.orchestrator.run_transitions import (
     complete_run_with_outcome,
@@ -521,3 +523,68 @@ def test_invalid_phase_with_pending_amendment_does_not_create_provider(tmp_path:
 
     assert result.ok is False
     assert "unsupported phase" in (result.reason or "")
+
+
+def test_completed_continue_run_ok_skips_preflight(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    complete_run_with_outcome(store, run_id, "accepted")
+
+    with patch(
+        "top_down_planning.orchestrator.engine.kill_orphan_agents",
+        side_effect=RuntimeError("orphan scan failed"),
+    ):
+        result = RunEngine(
+            store,
+            create_provider=lambda _config, _workspace: StubProvider(),
+        ).continue_run(run_id)
+
+    assert result.ok is True
+    assert continuation_ok_from_run(store.load_run(run_id))
+
+
+def test_interrupt_after_run_completed_does_not_report_cancelled(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+
+    def complete_then_interrupt(self: PlanningPhaseOrchestrator) -> None:
+        complete_run_with_outcome(store, run_id, "accepted")
+        raise KeyboardInterrupt
+
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+    )
+    with patch.object(PlanningPhaseOrchestrator, "run", complete_then_interrupt):
+        result = engine.continue_run(run_id, single_step=True)
+
+    assert result.cancelled is False
+    assert result.ok is True
+    run = store.load_run(run_id)
+    assert run["status"] == "completed"
+    assert run["outcome"] == "accepted"
+
+
+def test_apply_resume_already_completed_rejects_running_run(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    run = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    plan = ResumePlan(
+        run_id=run_id,
+        expected_run_revision=int(run["revision"]),
+        state_transition=None,
+        config_changes={},
+        session_policy={},
+        validation=ResumePlanValidation(
+            contract_digest_valid=True,
+            plan_binding_valid=True,
+            approval_binding_valid=True,
+            evidence_binding_valid=True,
+            context_binding_valid=True,
+        ),
+        already_completed=True,
+        message="run already completed",
+    )
+    with pytest.raises(ApplyResumeError, match="does not match actual status"):
+        apply_resume_plan_atomically(store, plan, resolved_config=config)

@@ -104,7 +104,7 @@ Extend helpers when the same stub setup repeats across tests.
 
 ### Orchestration lifecycle
 
-When fixing or extending code under `orchestrator/`, **canonical persisted run state** is authoritative. Returned `RunContinuationResult`, phase results, and CLI outcomes must match it. Outer layers must not overwrite a lower layer's durable lifecycle decision. Finding IDs and audit history: `temp/tdp-slice4-orchestration-review.md`.
+When fixing or extending code under `orchestrator/`, **canonical persisted run state** is authoritative. Returned `RunContinuationResult`, phase results, and CLI outcomes must match it. Outer layers must not overwrite a lower layer's durable lifecycle decision. Finding IDs and audit history live in the orchestration review ledger (Slice 4 freeze evidence).
 
 #### Canonical state authority
 

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -87,10 +90,18 @@ def test_stale_lock_by_timestamp_is_not_stale_when_pid_alive(tmp_path: Path) -> 
     assert clear_stale_resume_lock(run_dir, stale_after_seconds=60) is False
 
 
-def test_malformed_resume_lock_is_cleared(tmp_path: Path) -> None:
+def test_malformed_resume_lock_is_not_cleared(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-2"
     run_dir.mkdir()
     resume_lock_path(run_dir).write_text("{not-json", encoding="utf-8")
+    assert clear_orphan_resume_lock(run_dir) is False
+    assert resume_lock_path(run_dir).is_file()
+
+
+def test_empty_legacy_resume_lock_is_cleared(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-2"
+    run_dir.mkdir()
+    resume_lock_path(run_dir).write_text("", encoding="utf-8")
     assert clear_orphan_resume_lock(run_dir) is True
     assert read_resume_lock(run_dir) is None
     token = acquire_run_ownership("run-2", run_dir=run_dir)
@@ -154,3 +165,38 @@ def test_nested_run_ownership_blocks_other_context(tmp_path: Path) -> None:
         thread.join()
     assert len(error) == 1
     assert isinstance(error[0], RunOwnershipError)
+
+
+def test_cross_process_acquire_blocks_while_peer_holds_lock(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    holding_path = run_dir / ".child_holding"
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import time; from pathlib import Path; "
+                "from top_down_planning.domain.run_ownership import "
+                "acquire_run_ownership, release_run_ownership; "
+                f"run_dir = Path('{run_dir_arg}'); "
+                "holding = run_dir / '.child_holding'; "
+                "token = acquire_run_ownership('run-1', run_dir=run_dir); "
+                "holding.write_text('1', encoding='utf-8'); "
+                "time.sleep(0.4); "
+                "holding.unlink(missing_ok=True); "
+                "release_run_ownership('run-1', run_dir=run_dir, owner_token=token)"
+            ),
+        ],
+    )
+    for _ in range(100):
+        if holding_path.is_file():
+            break
+        time.sleep(0.02)
+    assert holding_path.is_file()
+    with pytest.raises(RunOwnershipError, match="owned by live process"):
+        acquire_run_ownership("run-1", run_dir=run_dir)
+    assert child.wait(timeout=5) == 0
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)

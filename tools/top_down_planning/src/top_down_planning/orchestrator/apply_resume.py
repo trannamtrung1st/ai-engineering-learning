@@ -91,6 +91,13 @@ def apply_resume_plan_atomically(
 
     if resume_plan.already_completed:
         run = store.load_run(resume_plan.run_id)
+        actual_status = str(run.get("status") or "")
+        if actual_status != "completed":
+            raise ApplyResumeError(
+                f"already_completed resume plan does not match actual status "
+                f"{actual_status!r}",
+                code="resume_apply_blocked",
+            )
         return {
             "ok": continuation_ok_from_run(run),
             "already_completed": True,

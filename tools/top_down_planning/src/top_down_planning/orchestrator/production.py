@@ -318,6 +318,16 @@ class ProductionPhaseOrchestrator:
             batch_agent_turns += agent_turns
             _persist_batch_agent_turns(self._store, self._run_id, batch_agent_turns)
 
+            if turn_signal == PRODUCER_BATCH_COMPLETE_SIGNAL:
+                batch_agent_turns = 0
+                _persist_batch_agent_turns(self._store, self._run_id, 0)
+                if (
+                    not self._has_completion_claim()
+                    and self._batch_count() < loop_limits["max_batches"]
+                ):
+                    self._resume_producer_turn(session_id, role_context)
+                continue
+
             if batch_agent_turns >= loop_limits["max_agent_turns_per_batch"]:
                 return self._pause_for_limit(
                     limit="max_agent_turns_per_batch",
@@ -329,16 +339,6 @@ class ProductionPhaseOrchestrator:
                     configured=int(loop_limits["max_agent_turns_per_batch"]),
                     session_id=session_id,
                 )
-
-            if turn_signal == PRODUCER_BATCH_COMPLETE_SIGNAL:
-                batch_agent_turns = 0
-                _persist_batch_agent_turns(self._store, self._run_id, 0)
-                if (
-                    not self._has_completion_claim()
-                    and self._batch_count() < loop_limits["max_batches"]
-                ):
-                    self._resume_producer_turn(session_id, role_context)
-                continue
 
             if self._has_completion_claim():
                 continue

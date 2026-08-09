@@ -123,6 +123,55 @@ def _continuation_cancelled_from_run(run: dict[str, Any]) -> bool:
     return str(stop.get("code") or "") == "user_cancelled"
 
 
+def _maybe_early_continuation_result(
+    run: dict[str, Any],
+    run_id: str,
+    *,
+    until: str,
+    steps: list[RunStepResult],
+    single_step: bool,
+) -> RunContinuationResult | None:
+    status = str(run.get("status") or "")
+    if status == "completed":
+        return _continuation_result_from_run(
+            run,
+            run_id,
+            until=until,
+            steps=steps,
+            reason="run already terminated",
+        )
+    if status == "failed":
+        return _continuation_result_from_run(
+            run,
+            run_id,
+            until=until,
+            steps=steps,
+            ok=False,
+            reason="failed runs cannot be resumed",
+        )
+    if status == "paused":
+        stop = run.get("stop")
+        stop_code = stop.get("code") if isinstance(stop, dict) else None
+        return _continuation_result_from_run(
+            run,
+            run_id,
+            until=until,
+            steps=steps,
+            ok=False,
+            reason=f"run is paused ({stop_code or 'unknown'})",
+        )
+    if not single_step and status == "running" and _target_reached(run, until):
+        return _continuation_result_from_run(
+            run,
+            run_id,
+            until=until,
+            steps=steps,
+            ok=True,
+            target_reached=True,
+        )
+    return None
+
+
 def _continuation_result_from_run(
     run: dict[str, Any],
     run_id: str,
@@ -229,104 +278,89 @@ class RunEngine:
     ) -> RunContinuationResult:
         started_at = time.monotonic()
         steps: list[RunStepResult] = []
-        try:
-            if session_policy is not None:
-                execute_session_policy_if_registered(
+        run = self._store.load_run(run_id)
+        early = _maybe_early_continuation_result(
+            run,
+            run_id,
+            until=until,
+            steps=steps,
+            single_step=single_step,
+        )
+        if early is not None:
+            self._emit_done(early, started_at=started_at)
+            return early
+
+        if str(run.get("status") or "") == "running":
+            try:
+                if session_policy is not None:
+                    execute_session_policy_if_registered(
+                        self._store,
+                        run_id,
+                        session_policy,
+                    )
+                else:
+                    derived_policy = derive_session_policy(
+                        run,
+                        self._store.list_reviews(run_id),
+                    )
+                    execute_session_policy(self._store, run_id, derived_policy)
+                kill_orphan_agents(
                     self._store,
                     run_id,
-                    session_policy,
+                    exclude_pids=frozenset({os.getpid()}),
                 )
-            else:
+            except Exception as exc:
+                message = sanitize_operational_error(exc)
+                run_before = self._store.load_run(run_id)
+                if str(run_before.get("status") or "") == "running":
+                    mark_run_failed(self._store, run_id, message=message)
                 run = self._store.load_run(run_id)
-                derived_policy = derive_session_policy(run, self._store.list_reviews(run_id))
-                execute_session_policy(self._store, run_id, derived_policy)
-            kill_orphan_agents(
-                self._store,
-                run_id,
-                exclude_pids=frozenset({os.getpid()}),
-            )
-        except Exception as exc:
-            message = sanitize_operational_error(exc)
-            run_before = self._store.load_run(run_id)
-            if str(run_before.get("status") or "") == "running":
-                mark_run_failed(self._store, run_id, message=message)
+                early = _maybe_early_continuation_result(
+                    run,
+                    run_id,
+                    until=until,
+                    steps=steps,
+                    single_step=single_step,
+                )
+                if early is not None and str(run.get("status") or "") != "running":
+                    result = early
+                else:
+                    result = _continuation_result_from_run(
+                        run,
+                        run_id,
+                        until=until,
+                        steps=steps,
+                        ok=False,
+                        reason=message,
+                    )
+                self._emit_done(result, started_at=started_at)
+                return result
+
+        while True:
             run = self._store.load_run(run_id)
-            result = _continuation_result_from_run(
+            early = _maybe_early_continuation_result(
                 run,
                 run_id,
                 until=until,
                 steps=steps,
-                ok=False,
-                reason=message,
+                single_step=single_step,
             )
-            self._emit_done(result, started_at=started_at)
-            return result
-
-        while True:
-            run = self._store.load_run(run_id)
-            status = str(run.get("status") or "")
-
-            if status == "completed":
-                result = _continuation_result_from_run(
-                    run,
-                    run_id,
-                    until=until,
-                    steps=steps,
-                    reason="run already terminated",
-                )
-                self._emit_done(result, started_at=started_at)
-                return result
-
-            if status == "failed":
-                result = _continuation_result_from_run(
-                    run,
-                    run_id,
-                    until=until,
-                    steps=steps,
-                    ok=False,
-                    reason="failed runs cannot be resumed",
-                )
-                self._emit_done(result, started_at=started_at)
-                return result
-
-            if status == "paused":
-                stop = run.get("stop")
-                stop_code = stop.get("code") if isinstance(stop, dict) else None
-                result = _continuation_result_from_run(
-                    run,
-                    run_id,
-                    until=until,
-                    steps=steps,
-                    ok=False,
-                    reason=f"run is paused ({stop_code or 'unknown'})",
-                )
-                self._emit_done(result, started_at=started_at)
-                return result
-
-            if not single_step and _target_reached(run, until):
-                result = _continuation_result_from_run(
-                    run,
-                    run_id,
-                    until=until,
-                    steps=steps,
-                    ok=True,
-                    target_reached=True,
-                )
-                self._emit_done(result, started_at=started_at)
-                return result
+            if early is not None:
+                self._emit_done(early, started_at=started_at)
+                return early
 
             phase_for_entry = str(run.get("phase") or "")
-            self._append_phase_entry_event(
-                run_id,
-                "phase_entry_attempted",
-                phase=phase_for_entry,
-            )
 
             provider: Provider | None = None
             cancelled = False
             phase = phase_for_entry
 
             try:
+                self._append_phase_entry_event(
+                    run_id,
+                    "phase_entry_attempted",
+                    phase=phase_for_entry,
+                )
                 production = self._store.load_production(run_id)
                 if not _is_continuable_phase(run, production):
                     result = _continuation_result_from_run(
@@ -578,8 +612,17 @@ class RunEngine:
                             emit_console=self._emit,
                             audit_cancel=cancelled,
                         )
-                    except BaseException:
-                        pass
+                    except KeyboardInterrupt:
+                        cancelled = True
+                    except Exception as exc:
+                        try:
+                            append_event(
+                                "provider_teardown_failed",
+                                phase=phase,
+                                message=sanitize_operational_error(exc),
+                            )
+                        except Exception:
+                            pass
                     if cancelled:
                         run = self._store.load_run(run_id)
                         cancel_phase = str(run.get("phase") or phase)
@@ -593,15 +636,18 @@ class RunEngine:
 
             if cancelled:
                 run = self._store.load_run(run_id)
-                cancel_phase = str(run.get("phase") or phase)
+                user_cancelled = _continuation_cancelled_from_run(run)
                 return _continuation_result_from_run(
                     run,
                     run_id,
                     until=until,
                     steps=steps,
-                    ok=False,
-                    reason="cancelled by user",
-                    cancelled=True,
+                    reason=(
+                        "cancelled by user"
+                        if user_cancelled
+                        else "interrupt during continuation"
+                    ),
+                    cancelled=user_cancelled,
                 )
 
             steps.append(step)
