@@ -95,7 +95,10 @@ def _verify_production_evidence(
     run_id: str,
     production: dict[str, Any],
 ) -> str | None:
-    from top_down_planning.domain.production import live_output_evidence_entries
+    from top_down_planning.domain.production import (
+        is_live_completed_batch,
+        live_output_evidence_entries,
+    )
 
     for entry in live_output_evidence_entries(production):
         try:
@@ -105,7 +108,7 @@ def _verify_production_evidence(
     for batch in production.get("batches") or []:
         if not isinstance(batch, dict):
             continue
-        if batch.get("evidence_status") == "invalidated_by_reconciliation":
+        if not is_live_completed_batch(batch):
             continue
         result = batch.get("result")
         if not isinstance(result, dict):

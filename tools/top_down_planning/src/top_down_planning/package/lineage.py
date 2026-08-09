@@ -539,6 +539,18 @@ def verify_accepted_result_attestation(unit_record: dict[str, Any]) -> None:
             raise ValueError(
                 f"accepted_result workspace_changes[{path!r}] missing sha256"
             )
+    output_paths = {
+        str(output.get("ref") or "").strip()
+        for output in (accepted.get("output_refs") or [])
+        if isinstance(output, dict) and str(output.get("ref") or "").strip()
+    }
+    extra_paths = set(workspace_changes.keys()) - output_paths
+    if extra_paths:
+        extra = sorted(extra_paths)[0]
+        raise ValueError(
+            f"accepted_result workspace_changes[{extra!r}] "
+            "is not authorized by accepted output_refs"
+        )
     if "baseline_context_snapshot_digest" not in accepted:
         raise ValueError("accepted_result missing baseline_context_snapshot_digest")
     if not str(accepted.get("baseline_context_snapshot_digest") or "").strip():
