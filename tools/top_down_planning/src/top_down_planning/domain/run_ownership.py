@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextvars
-import fcntl
 import json
 import os
 import re
@@ -15,6 +14,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl
+except ImportError as exc:
+    raise ImportError(
+        "top_down_planning run ownership requires POSIX (fcntl). "
+        "Cross-process resume locking is not supported on this platform."
+    ) from exc
 
 from top_down_planning.domain.errors import DomainError
 
@@ -426,8 +433,25 @@ def _acquire_owner_flock(run_dir: Path) -> int:
     flock_path = owner_flock_path(run_dir)
     flock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(flock_path, os.O_CREAT | os.O_RDWR, 0o644)
-    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        raise RunOwnershipError(
+            "run is owned by a live continuation",
+            code="run_owned_by_live_process",
+        )
     return fd
+
+
+def _cleanup_failed_acquire(run_dir: Path) -> None:
+    """Remove partial ownership metadata after a failed acquire attempt."""
+
+    metadata_path = resume_lock_metadata_path(run_dir)
+    try:
+        metadata_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def acquire_run_ownership(
@@ -448,12 +472,20 @@ def acquire_run_ownership(
     )
     run_dir.mkdir(parents=True, exist_ok=True)
     _clear_abandoned_lock_claim(run_dir)
-    flock_fd = _acquire_owner_flock(run_dir)
-    metadata_path = resume_lock_metadata_path(run_dir)
-    _write_lock_metadata(metadata_path, record)
-    _PROCESS_REGISTRY[run_id] = owner_token
-    _FLOCK_REGISTRY[run_id] = flock_fd
-    return owner_token
+    flock_fd: int | None = None
+    try:
+        flock_fd = _acquire_owner_flock(run_dir)
+        metadata_path = resume_lock_metadata_path(run_dir)
+        _write_lock_metadata(metadata_path, record)
+        _PROCESS_REGISTRY[run_id] = owner_token
+        _FLOCK_REGISTRY[run_id] = flock_fd
+        flock_fd = None
+        return owner_token
+    except BaseException:
+        if flock_fd is not None:
+            _cleanup_failed_acquire(run_dir)
+            _release_flock_fd(flock_fd)
+        raise
 
 
 def release_run_ownership(

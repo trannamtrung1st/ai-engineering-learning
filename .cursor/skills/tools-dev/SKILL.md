@@ -218,7 +218,7 @@ Cancellation durability: durable `paused` / `user_cancelled` must persist even w
 
 #### Ownership and orphans
 
-Cross-process ownership acquisition uses an advisory flock on `.resume.lock.d/.owner.lock` held for the full ownership duration, with atomic `owner.json` metadata written while the flock is held. Legacy `.resume.lock` files are still read for stale detection; dead/malformed locks are cleared via `clear_orphan_resume_lock` — live PID locks are never stale by age alone. Test with two real processes (subprocess exception to the unit-test no-subprocess rule).
+Cross-process ownership acquisition uses an advisory flock on `.resume.lock.d/.owner.lock` held for the full ownership duration; final acquisition is nonblocking (`LOCK_NB`) so competing live continuations receive `run_owned_by_live_process` instead of blocking until release. Atomic `owner.json` metadata is written while the flock is held; failed metadata writes must release the flock and allow retry.
 
 Orphan detection includes **completed** and **failed** runs — any tagged live provider on a terminal run is an orphan. Keep autouse `stub_orphan_agent_scan` in orchestration tests; exercise scan logic in `top_down_planning/tests/unit/test_agent_process_cleanup.py` with injected PIDs.
 

@@ -10,6 +10,7 @@ import time
 import fcntl
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -20,6 +21,7 @@ from top_down_planning.domain.run_ownership import (
     assert_expected_run_revision,
     clear_orphan_resume_lock,
     clear_stale_resume_lock,
+    holds_run_ownership,
     is_resume_lock_stale,
     read_resume_lock,
     release_run_ownership,
@@ -28,7 +30,17 @@ from top_down_planning.domain.run_ownership import (
     resume_lock_path,
     owner_flock_path,
     run_ownership,
+    _FLOCK_REGISTRY,
+    _PROCESS_REGISTRY,
 )
+
+
+def _subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    src = Path(__file__).resolve().parents[2] / "src"
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(src) + (os.pathsep + existing if existing else "")
+    return env
 
 
 def test_assert_expected_run_revision_rejects_stale_revision() -> None:
@@ -193,6 +205,7 @@ def test_cross_process_acquire_blocks_while_peer_holds_lock(tmp_path: Path) -> N
                 "release_run_ownership('run-1', run_dir=run_dir, owner_token=token)"
             ),
         ],
+        env=_subprocess_env(),
     )
     for _ in range(100):
         if holding_path.is_file():
@@ -237,3 +250,75 @@ def test_orphan_lock_not_cleared_while_owner_flock_held(tmp_path: Path) -> None:
     assert clear_orphan_resume_lock(run_dir) is False
     fcntl.flock(flock_fd, fcntl.LOCK_UN)
     os.close(flock_fd)
+
+
+def test_acquire_releases_flock_on_metadata_write_failure(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    with patch("top_down_planning.domain.run_ownership.os.write", side_effect=OSError("disk full")):
+        with pytest.raises(OSError, match="disk full"):
+            acquire_run_ownership("run-1", run_dir=run_dir)
+    assert "run-1" not in _PROCESS_REGISTRY
+    assert "run-1" not in _FLOCK_REGISTRY
+    assert not holds_run_ownership("run-1")
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_acquire_releases_flock_on_metadata_fsync_failure(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    with patch("top_down_planning.domain.run_ownership.os.fsync", side_effect=OSError("fsync failed")):
+        with pytest.raises(OSError, match="fsync failed"):
+            acquire_run_ownership("run-1", run_dir=run_dir)
+    assert "run-1" not in _PROCESS_REGISTRY
+    assert "run-1" not in _FLOCK_REGISTRY
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_simultaneous_first_acquire_exactly_one_succeeds(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    signal_path = run_dir / ".go"
+    release_path = run_dir / ".release"
+    child_script = (
+        "import sys, time\n"
+        "from pathlib import Path\n"
+        "from top_down_planning.domain.run_ownership import "
+        "acquire_run_ownership, release_run_ownership, RunOwnershipError\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "role = sys.argv[1]\n"
+        "signal = run_dir / '.go'\n"
+        "release_signal = run_dir / '.release'\n"
+        "while not signal.is_file():\n"
+        "    time.sleep(0.001)\n"
+        "try:\n"
+        "    token = acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "    (run_dir / f'success_{role}').write_text(token, encoding='utf-8')\n"
+        "    (run_dir / f'done_{role}').write_text('1', encoding='utf-8')\n"
+        "    while not release_signal.is_file():\n"
+        "        time.sleep(0.001)\n"
+        "    release_run_ownership('run-1', run_dir=run_dir, owner_token=token)\n"
+        "except RunOwnershipError:\n"
+        "    (run_dir / f'conflict_{role}').write_text('1', encoding='utf-8')\n"
+        "    (run_dir / f'done_{role}').write_text('1', encoding='utf-8')\n"
+    )
+    child_a = subprocess.Popen([sys.executable, "-c", child_script, "a"], env=_subprocess_env())
+    child_b = subprocess.Popen([sys.executable, "-c", child_script, "b"], env=_subprocess_env())
+    time.sleep(0.05)
+    signal_path.write_text("go", encoding="utf-8")
+    for _ in range(200):
+        if (run_dir / "done_a").is_file() and (run_dir / "done_b").is_file():
+            break
+        time.sleep(0.01)
+    assert (run_dir / "done_a").is_file()
+    assert (run_dir / "done_b").is_file()
+    successes = [run_dir / "success_a", run_dir / "success_b"]
+    conflicts = [run_dir / "conflict_a", run_dir / "conflict_b"]
+    assert sum(path.is_file() for path in successes) == 1
+    assert sum(path.is_file() for path in conflicts) == 1
+    release_path.write_text("release", encoding="utf-8")
+    assert child_a.wait(timeout=10) == 0
+    assert child_b.wait(timeout=10) == 0

@@ -279,14 +279,18 @@ class RunEngine:
                                 exclude_pids=frozenset({os.getpid()}),
                             )
                         run = self._store.load_run(run_id)
+                        user_cancelled = _continuation_cancelled_from_run(run)
                         result = _continuation_result_from_run(
                             run,
                             run_id,
                             until=until,
                             steps=[],
-                            ok=False,
-                            reason="cancelled by user",
-                            cancelled=True,
+                            reason=(
+                                "cancelled by user"
+                                if user_cancelled
+                                else "interrupt during continuation"
+                            ),
+                            cancelled=user_cancelled,
                         )
                         self._emit_done(result, started_at=started_at)
                         return result

@@ -573,6 +573,34 @@ def test_interrupt_after_run_completed_does_not_report_cancelled(tmp_path: Path)
     assert run["outcome"] == "accepted"
 
 
+def test_owned_scope_interrupt_after_completed_matches_canonical_state(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+    )
+
+    def complete_then_interrupt(
+        self: RunEngine,
+        run_id: str,
+        **kwargs: object,
+    ) -> object:
+        complete_run_with_outcome(store, run_id, "accepted")
+        raise KeyboardInterrupt
+
+    with patch.object(RunEngine, "_continue_run_unlocked", complete_then_interrupt):
+        result = engine.continue_run(run_id)
+
+    assert result.cancelled is False
+    assert result.ok is True
+    assert result.status == "completed"
+    assert result.outcome == "accepted"
+    run = store.load_run(run_id)
+    assert run["status"] == "completed"
+    assert run["outcome"] == "accepted"
+
+
 def test_apply_resume_already_completed_rejects_running_run(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = _create_running_run(store)

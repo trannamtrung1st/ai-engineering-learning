@@ -111,11 +111,19 @@ Agent session lifecycle: `[session:start]` on `planner_session_started` / `produ
 
 `events.jsonl` remains a concise orchestration audit log (no agent prose). Capability tokens and secrets are redacted at every log level. Console message and tool-summary truncation are unlimited by default; set `observability.max_message_length` and/or `observability.max_tool_summary_length` (or the matching CLI flags) to cap stderr output length.
 
-`tdp run` and `tdp resume` trap SIGINT/SIGTERM during the engine loop: tracked agent subprocesses are terminated, orphan agents are cleaned up, `[session:cancel]` is emitted on stderr, durable cancel audit events (`agent_terminated`, `*_session_ended`) are recorded, console `[session:end]` lines are emitted for each active session, the run pauses with `stop.code: user_cancelled` and `stop.details.terminated_pids`, and the CLI exits with code 130. With `--stream-json`, stdout carries `{"cancelled": true, "reason": "cancelled by user", ...}`. Each `RunEngine.continue_run` scans for and kills orphan agents for the run before spawning provider sessions (including every `tdp resume` step and each `--until` continuation on `tdp run`). `CursorProvider` does not retry turns after cancel teardown.
+`tdp run` and `tdp resume` trap SIGINT/SIGTERM during the engine loop: tracked agent subprocesses are terminated, orphan agents are cleaned up, `[session:cancel]` is emitted on stderr, durable cancel audit events (`agent_terminated`, `*_session_ended`) are recorded, console `[session:end]` lines are emitted for each active session, the run pauses with `stop.code: user_cancelled` and `stop.details.terminated_pids`, and the CLI exits with code 130 when the run is durably cancelled.
+
+**Owned run interruption** (this process holds continuation ownership): Ctrl+C persists `paused` / `user_cancelled`, emits cancel observability, sends a desktop **run cancelled** notification when notifications are enabled, and exits 130. With `--stream-json`, stdout carries `{"cancelled": true, "reason": "cancelled by user", ...}` matching canonical state.
+
+**Command interrupted without ownership** (interrupt before ownership is acquired, or after ownership was released without cancelling the run): the run record is unchanged, no run-cancel notification is sent, and `--stream-json` reports `{"cancelled": false, "command_interrupted": true, "reason": "command interrupted by user", ...}` with exit 130.
+
+Cross-process resume ownership uses POSIX `fcntl` flock on `.resume.lock.d/.owner.lock`. Windows Python is not supported for multi-process resume locking.
+
+Each `RunEngine.continue_run` scans for and kills orphan agents for the run before spawning provider sessions (including every `tdp resume` step and each `--until` continuation on `tdp run`). `CursorProvider` does not retry turns after cancel teardown.
 
 ## Desktop notifications
 
-Blocking `tdp run` and `tdp resume` can send optional desktop alerts when a run reaches a milestone or needs attention. Notifications are driven by existing `events.jsonl` audit records (no orchestrator changes) plus one CLI-only outcome: partial `--until` milestones on blocking `tdp run` / `tdp resume --until …` (`target_reached`). Ctrl+C is surfaced as **TDP run cancelled** via the engine’s `run_paused` audit event (`stop.code: user_cancelled`); if the interrupt escapes the engine loop, the CLI still pauses the run, kills orphan agents, and sends the cancelled alert before exit 130. Default single-step `tdp resume` (no `--until`) does not emit `target_reached`.
+Blocking `tdp run` and `tdp resume` can send optional desktop alerts when a run reaches a milestone or needs attention. Notifications are driven by existing `events.jsonl` audit records (no orchestrator changes) plus one CLI-only outcome: partial `--until` milestones on blocking `tdp run` / `tdp resume --until …` (`target_reached`). Durable owned Ctrl+C (`user_cancelled`) surfaces as **TDP run cancelled** via the engine’s `run_paused` audit event; command-only interruption (no durable cancel) does not send a run-cancel notification. Default single-step `tdp resume` (no `--until`) does not emit `target_reached`.
 
 Install the optional transport after editable `core_tools` is installed (see [Development](#development)):
 
