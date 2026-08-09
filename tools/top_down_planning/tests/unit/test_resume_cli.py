@@ -407,3 +407,41 @@ def test_resume_check_with_allow_config_drift_shows_ignored_changes(
     assert "Ignored changes" in output
     assert "run.output_goal" in output
     assert "will not take effect" in output
+
+
+def test_resume_completed_blocked_reports_not_ok(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T002301-002301"
+    config = minimal_resolved_config()
+    store.create_run(
+        run_id,
+        plan=_sample_plan(),
+        phase=PRODUCTION,
+        **create_run_kwargs(store.root, resolved_config=config),
+    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["status"] = "completed"
+    run["outcome"] = "blocked"
+    run["stop"] = None
+    store.save_run(run_id, run, expected_revision)
+
+    with pytest.raises(SystemExit) as exc_info:
+        handle_resume_command(
+            Namespace(
+                run=run_id,
+                runs_dir=str(store.root),
+                stream_json=False,
+                check=False,
+                set=[],
+                config=None,
+                command="resume",
+                allow_config_drift=False,
+            )
+        )
+    assert exc_info.value.code == 1
+    output = capsys.readouterr().out
+    assert "already terminated" in output

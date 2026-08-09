@@ -35,6 +35,7 @@ from top_down_planning.config import (
 )
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.run_lifecycle import continuation_ok_from_run
+from top_down_planning.domain.run_ownership import holds_run_ownership
 from top_down_planning.domain.plan_tree import PLAN_ROOT_ITEM_ID, seed_plan_root_item
 from top_down_planning.agent_tool.validation_context import (
     compute_plan_approval_actual_digests,
@@ -139,7 +140,7 @@ def _handle_blocking_run_interrupt(
     """Emit cancel observability and exit when Ctrl+C escapes the engine loop."""
 
     run = store.load_run(run_id)
-    if str(run.get("status") or "") == "running":
+    if str(run.get("status") or "") == "running" and holds_run_ownership(run_id):
         phase = str(run.get("phase") or "unknown")
         finalize_user_cancel(
             store,
@@ -490,18 +491,21 @@ def handle_resume_command(args: Namespace) -> None:
                 f"run already terminated "
                 f"(status={snapshot.status}, outcome={snapshot.outcome})"
             )
+        ok = continuation_ok_from_run(run)
         payload = {
-            "ok": True,
+            "ok": ok,
             "run_id": args.run,
             "phase": phase,
             "status": snapshot.status,
             "outcome": snapshot.outcome,
             "message": message,
         }
+        exit_code = 0 if ok else 1
         if args.stream_json:
-            emit_payload(payload)
+            emit_payload(payload, exit_code=exit_code)
         emit_message(
             f"Run {args.run}: {message}",
+            exit_code=exit_code,
         )
         return
 

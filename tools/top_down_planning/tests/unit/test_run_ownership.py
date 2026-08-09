@@ -22,6 +22,8 @@ from top_down_planning.domain.run_ownership import (
     is_resume_lock_stale,
     read_resume_lock,
     release_run_ownership,
+    resume_lock_dir,
+    resume_lock_metadata_path,
     resume_lock_path,
     run_ownership,
 )
@@ -198,5 +200,25 @@ def test_cross_process_acquire_blocks_while_peer_holds_lock(tmp_path: Path) -> N
     with pytest.raises(RunOwnershipError, match="owned by live process"):
         acquire_run_ownership("run-1", run_dir=run_dir)
     assert child.wait(timeout=5) == 0
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_acquire_recovers_abandoned_empty_lock_dir(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    resume_lock_dir(run_dir).mkdir()
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_acquire_recovers_corrupt_metadata_from_dead_pid(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    resume_lock_dir(run_dir).mkdir()
+    resume_lock_metadata_path(run_dir).write_text(
+        '{"pid": 999999, "process_identity": "999999:0", "owner',
+        encoding="utf-8",
+    )
     token = acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)

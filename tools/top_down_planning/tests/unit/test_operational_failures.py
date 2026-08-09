@@ -376,9 +376,8 @@ def test_resume_keyboard_interrupt_exits_without_marking_failed(tmp_path: Path) 
             assert exit_info.value.code == 130
 
     run = store.load_run("run-20260101T001701-001701")
-    assert run["status"] != "failed"
-    assert run["status"] == "paused"
-    assert run["stop"]["code"] == "user_cancelled"
+    assert run["status"] == "running"
+    assert run.get("stop") is None
 
 
 def test_resume_keyboard_interrupt_stream_json_payload(tmp_path: Path) -> None:

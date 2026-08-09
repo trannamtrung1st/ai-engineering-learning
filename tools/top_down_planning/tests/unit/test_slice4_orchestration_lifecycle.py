@@ -10,6 +10,10 @@ import pytest
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.resume_plan import ResumePlan, ResumePlanValidation, ResumeStateTransition
 from top_down_planning.domain.run_lifecycle import StopRecord, continuation_ok_from_run
+from top_down_planning.domain.run_ownership import (
+    resume_lock_dir,
+    resume_lock_metadata_path,
+)
 from top_down_planning.orchestrator.apply_resume import ApplyResumeError, apply_resume_plan_atomically
 from top_down_planning.orchestrator.engine import RunEngine
 from top_down_planning.orchestrator.failure import mark_run_failed
@@ -22,7 +26,11 @@ from top_down_planning.orchestrator.run_transitions import (
 )
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.helpers import (
+    create_run_kwargs,
+    minimal_resolved_config,
+    whole_plan_approval_record,
+)
 
 
 def _sample_plan() -> Plan:
@@ -588,3 +596,62 @@ def test_apply_resume_already_completed_rejects_running_run(tmp_path: Path) -> N
     )
     with pytest.raises(ApplyResumeError, match="does not match actual status"):
         apply_resume_plan_atomically(store, plan, resolved_config=config)
+
+
+def test_terminal_continue_run_ok_without_ownership_acquisition(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    complete_run_with_outcome(store, run_id, "accepted")
+    run_dir = Path(store.run_dir(run_id))
+    run_dir.mkdir(parents=True, exist_ok=True)
+    resume_lock_dir(run_dir).mkdir()
+    resume_lock_metadata_path(run_dir).write_text(
+        __import__("json").dumps(
+            {
+                "run_id": run_id,
+                "pid": 999999,
+                "owner_token": "foreign-token",
+                "acquired_at": "2026-01-01T00:00:00Z",
+                "process_identity": "999999:0",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+    ).continue_run(run_id)
+
+    assert result.ok is True
+    assert store.load_run(run_id)["outcome"] == "accepted"
+
+
+def test_running_target_reached_runs_preflight_before_return(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T010010-010010"
+    config = minimal_resolved_config()
+    store.create_run(
+        run_id,
+        plan=_sample_plan(),
+        phase=PRODUCTION,
+        **create_run_kwargs(store.root, resolved_config=config),
+    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+
+    with patch(
+        "top_down_planning.orchestrator.engine.execute_session_policy_if_registered",
+    ) as policy_mock:
+        with patch(
+            "top_down_planning.orchestrator.engine.kill_orphan_agents",
+        ) as orphan_mock:
+            result = RunEngine(
+                store,
+                create_provider=lambda _config, _workspace: StubProvider(),
+            ).continue_run(run_id, until="plan", session_policy={})
+
+    policy_mock.assert_called_once()
+    orphan_mock.assert_called_once()
+    assert result.ok is True
+    assert result.target_reached is True

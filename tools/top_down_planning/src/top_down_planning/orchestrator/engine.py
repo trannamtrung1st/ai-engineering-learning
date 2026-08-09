@@ -14,7 +14,10 @@ from top_down_planning.observability import (
     cancel_console_event,
 )
 from top_down_planning.domain.run_lifecycle import StopRecord, continuation_ok_from_run
-from top_down_planning.domain.run_ownership import resolve_run_dir, run_ownership
+from top_down_planning.domain.run_ownership import (
+    resolve_run_dir,
+    run_ownership,
+)
 from top_down_planning.orchestrator.agent_process_cleanup import (
     finalize_user_cancel,
     kill_orphan_agents,
@@ -123,13 +126,12 @@ def _continuation_cancelled_from_run(run: dict[str, Any]) -> bool:
     return str(stop.get("code") or "") == "user_cancelled"
 
 
-def _maybe_early_continuation_result(
+def _maybe_stopped_continuation_result(
     run: dict[str, Any],
     run_id: str,
     *,
     until: str,
     steps: list[RunStepResult],
-    single_step: bool,
 ) -> RunContinuationResult | None:
     status = str(run.get("status") or "")
     if status == "completed":
@@ -159,15 +161,6 @@ def _maybe_early_continuation_result(
             steps=steps,
             ok=False,
             reason=f"run is paused ({stop_code or 'unknown'})",
-        )
-    if not single_step and status == "running" and _target_reached(run, until):
-        return _continuation_result_from_run(
-            run,
-            run_id,
-            until=until,
-            steps=steps,
-            ok=True,
-            target_reached=True,
         )
     return None
 
@@ -251,8 +244,20 @@ class RunEngine:
         single_step: bool = False,
         session_policy: dict[str, Any] | None = None,
     ) -> RunContinuationResult:
-        run_dir = resolve_run_dir(self._store, run_id)
+        started_at = time.monotonic()
         with trap_run_interrupt_signals():
+            run = self._store.load_run(run_id)
+            terminal = _maybe_stopped_continuation_result(
+                run,
+                run_id,
+                until=until,
+                steps=[],
+            )
+            if terminal is not None:
+                self._emit_done(terminal, started_at=started_at)
+                return terminal
+
+            run_dir = resolve_run_dir(self._store, run_id)
             if run_dir is not None:
                 with run_ownership(run_id, run_dir=run_dir):
                     return self._continue_run_unlocked(
@@ -260,12 +265,14 @@ class RunEngine:
                         until=until,
                         single_step=single_step,
                         session_policy=session_policy,
+                        started_at=started_at,
                     )
             return self._continue_run_unlocked(
                 run_id,
                 until=until,
                 single_step=single_step,
                 session_policy=session_policy,
+                started_at=started_at,
             )
 
     def _continue_run_unlocked(
@@ -275,20 +282,21 @@ class RunEngine:
         until: str = "plan",
         single_step: bool = False,
         session_policy: dict[str, Any] | None = None,
+        started_at: float | None = None,
     ) -> RunContinuationResult:
-        started_at = time.monotonic()
+        if started_at is None:
+            started_at = time.monotonic()
         steps: list[RunStepResult] = []
         run = self._store.load_run(run_id)
-        early = _maybe_early_continuation_result(
+        stopped = _maybe_stopped_continuation_result(
             run,
             run_id,
             until=until,
             steps=steps,
-            single_step=single_step,
         )
-        if early is not None:
-            self._emit_done(early, started_at=started_at)
-            return early
+        if stopped is not None:
+            self._emit_done(stopped, started_at=started_at)
+            return stopped
 
         if str(run.get("status") or "") == "running":
             try:
@@ -315,15 +323,14 @@ class RunEngine:
                 if str(run_before.get("status") or "") == "running":
                     mark_run_failed(self._store, run_id, message=message)
                 run = self._store.load_run(run_id)
-                early = _maybe_early_continuation_result(
+                stopped = _maybe_stopped_continuation_result(
                     run,
                     run_id,
                     until=until,
                     steps=steps,
-                    single_step=single_step,
                 )
-                if early is not None and str(run.get("status") or "") != "running":
-                    result = early
+                if stopped is not None and str(run.get("status") or "") != "running":
+                    result = stopped
                 else:
                     result = _continuation_result_from_run(
                         run,
@@ -336,18 +343,45 @@ class RunEngine:
                 self._emit_done(result, started_at=started_at)
                 return result
 
+        if not single_step:
+            run = self._store.load_run(run_id)
+            if str(run.get("status") or "") == "running" and _target_reached(run, until):
+                result = _continuation_result_from_run(
+                    run,
+                    run_id,
+                    until=until,
+                    steps=steps,
+                    ok=True,
+                    target_reached=True,
+                )
+                self._emit_done(result, started_at=started_at)
+                return result
+
         while True:
             run = self._store.load_run(run_id)
-            early = _maybe_early_continuation_result(
+            stopped = _maybe_stopped_continuation_result(
                 run,
                 run_id,
                 until=until,
                 steps=steps,
-                single_step=single_step,
             )
-            if early is not None:
-                self._emit_done(early, started_at=started_at)
-                return early
+            if stopped is not None:
+                self._emit_done(stopped, started_at=started_at)
+                return stopped
+
+            if not single_step and str(run.get("status") or "") == "running" and _target_reached(
+                run, until
+            ):
+                result = _continuation_result_from_run(
+                    run,
+                    run_id,
+                    until=until,
+                    steps=steps,
+                    ok=True,
+                    target_reached=True,
+                )
+                self._emit_done(result, started_at=started_at)
+                return result
 
             phase_for_entry = str(run.get("phase") or "")
 

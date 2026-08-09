@@ -465,8 +465,8 @@ def test_resume_completed_rejected_whole_plan_review_does_not_restart(
     result = run_cli(["resume", "--run", run_id, "--runs-dir", str(tmp_path), "--stream-json"])
     payload = result.json()
 
-    assert result.exit_code == 0
-    assert payload["ok"] is True
+    assert result.exit_code == 1
+    assert payload["ok"] is False
     assert payload["phase"] == WHOLE_PLAN_REVIEW
     assert payload["outcome"] == "rejected"
     assert "already terminated" in payload["message"]

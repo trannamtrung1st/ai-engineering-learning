@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextvars
 import json
 import os
+import re
 import time
 import uuid
 from contextlib import contextmanager
@@ -82,6 +83,15 @@ def resume_lock_dir(run_dir: Path) -> Path:
 
 def resume_lock_metadata_path(run_dir: Path) -> Path:
     return resume_lock_dir(run_dir) / _LOCK_METADATA_FILENAME
+
+
+def holds_run_ownership(run_id: str) -> bool:
+    """Return True when this process holds in-process continuation ownership."""
+
+    nested = _NESTED_OWNERSHIP.get()
+    if nested is not None and run_id in nested:
+        return True
+    return run_id in _PROCESS_REGISTRY
 
 
 def _utc_now() -> str:
@@ -184,18 +194,48 @@ def _clear_lock_storage(run_dir: Path) -> bool:
     return cleared
 
 
-def clear_orphan_resume_lock(run_dir: Path) -> bool:
-    """Remove abandoned lock storage. Never delete in-progress lock claims."""
-
-    lock = read_resume_lock(run_dir)
+def _metadata_holder_alive(metadata_path: Path) -> bool:
+    lock = _read_lock_metadata(metadata_path)
     if lock is not None:
-        if _is_lock_holder_alive(lock):
+        return _is_lock_holder_alive(lock)
+    try:
+        content = metadata_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    pid_match = re.search(r'"pid"\s*:\s*(\d+)', content)
+    if pid_match is None:
+        return False
+    pid = int(pid_match.group(1))
+    identity_match = re.search(r'"process_identity"\s*:\s*"([^"]+)"', content)
+    if identity_match is None:
+        return is_pid_alive(pid)
+    probe = ResumeLockRecord(
+        run_id="unknown",
+        pid=pid,
+        owner_token="unknown",
+        acquired_at=_utc_now(),
+        process_identity=identity_match.group(1),
+    )
+    return _is_lock_holder_alive(probe)
+
+
+def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
+    metadata_path = resume_lock_metadata_path(run_dir)
+    lock_dir = resume_lock_dir(run_dir)
+
+    if metadata_path.is_file():
+        lock = _read_lock_metadata(metadata_path)
+        if lock is not None:
+            if _is_lock_holder_alive(lock):
+                return False
+            _PROCESS_REGISTRY.pop(lock.run_id, None)
+            return _clear_lock_storage(run_dir)
+        if _metadata_holder_alive(metadata_path):
             return False
-        _PROCESS_REGISTRY.pop(lock.run_id, None)
         return _clear_lock_storage(run_dir)
 
-    if resume_lock_dir(run_dir).is_dir():
-        return False
+    if lock_dir.is_dir():
+        return _clear_lock_storage(run_dir)
 
     legacy_path = resume_lock_path(run_dir)
     if not legacy_path.is_file():
@@ -209,6 +249,12 @@ def clear_orphan_resume_lock(run_dir: Path) -> bool:
     return False
 
 
+def clear_orphan_resume_lock(run_dir: Path) -> bool:
+    """Remove abandoned lock storage."""
+
+    return _clear_abandoned_lock_claim(run_dir)
+
+
 def clear_stale_resume_lock(
     run_dir: Path,
     *,
@@ -218,7 +264,7 @@ def clear_stale_resume_lock(
 
     lock = read_resume_lock(run_dir)
     if lock is None:
-        return clear_orphan_resume_lock(run_dir)
+        return _clear_abandoned_lock_claim(run_dir)
     if not is_resume_lock_stale(lock, stale_after_seconds=stale_after_seconds):
         return False
     _PROCESS_REGISTRY.pop(lock.run_id, None)
@@ -271,16 +317,14 @@ def assert_no_live_process_owns_run(
         )
 
 
-def _write_lock_metadata(run_dir: Path, record: ResumeLockRecord) -> None:
-    metadata_path = resume_lock_metadata_path(run_dir)
+def _atomic_write_lock_metadata(path: Path, record: ResumeLockRecord) -> None:
     payload = json.dumps(record.to_dict(), sort_keys=True) + "\n"
-    metadata_path.write_text(payload, encoding="utf-8")
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
     try:
-        fd = os.open(metadata_path, os.O_RDONLY)
+        os.write(fd, payload.encode("utf-8"))
         os.fsync(fd)
+    finally:
         os.close(fd)
-    except OSError:
-        pass
 
 
 def _raise_if_live_lock(run_id: str, lock: ResumeLockRecord) -> None:
@@ -295,36 +339,24 @@ def _raise_if_live_lock(run_id: str, lock: ResumeLockRecord) -> None:
     )
 
 
-def _acquire_lock_dir(run_id: str, run_dir: Path) -> None:
-    lock_dir = resume_lock_dir(run_dir)
-    try:
-        lock_dir.mkdir(mode=0o700)
-        return
-    except FileExistsError:
-        clear_stale_resume_lock(run_dir)
-        lock = read_resume_lock(run_dir)
-        if lock is not None and _is_lock_holder_alive(lock):
-            _raise_if_live_lock(run_id, lock)
-
+def _wait_and_retry_lock_acquire(
+    run_id: str,
+    run_dir: Path,
+    record: ResumeLockRecord,
+) -> None:
+    metadata_path = resume_lock_metadata_path(run_dir)
     for _ in range(_LOCK_WAIT_ATTEMPTS):
-        time.sleep(_LOCK_WAIT_INTERVAL_SECONDS)
+        _clear_abandoned_lock_claim(run_dir)
         clear_stale_resume_lock(run_dir)
         lock = read_resume_lock(run_dir)
         if lock is not None and _is_lock_holder_alive(lock):
             _raise_if_live_lock(run_id, lock)
-        if not lock_dir.is_dir():
-            try:
-                lock_dir.mkdir(mode=0o700)
-                return
-            except FileExistsError:
-                continue
-        if lock is not None and not _is_lock_holder_alive(lock):
-            _clear_lock_storage(run_dir)
-            try:
-                lock_dir.mkdir(mode=0o700)
-                return
-            except FileExistsError:
-                continue
+        try:
+            metadata_path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write_lock_metadata(metadata_path, record)
+            return
+        except FileExistsError:
+            time.sleep(_LOCK_WAIT_INTERVAL_SECONDS)
 
     lock = read_resume_lock(run_dir)
     if lock is not None and _is_lock_holder_alive(lock):
@@ -352,8 +384,13 @@ def acquire_run_ownership(
         process_identity=process_identity_for_pid(os.getpid()),
     )
     run_dir.mkdir(parents=True, exist_ok=True)
-    _acquire_lock_dir(run_id, run_dir)
-    _write_lock_metadata(run_dir, record)
+    _clear_abandoned_lock_claim(run_dir)
+    metadata_path = resume_lock_metadata_path(run_dir)
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _atomic_write_lock_metadata(metadata_path, record)
+    except FileExistsError:
+        _wait_and_retry_lock_acquire(run_id, run_dir, record)
     _PROCESS_REGISTRY[run_id] = owner_token
     return owner_token
 
