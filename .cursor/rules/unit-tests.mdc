@@ -17,7 +17,11 @@ When adding or changing behavior covered by these tests:
 
 Do not implement first and adjust assertions to match what was built. See `.cursor/skills/tdd/SKILL.md`.
 
-For tests under `tools/**`, also follow `.cursor/skills/tools-dev/SKILL.md` for fakes, stubs, and helpers.
+For tests under `tools/**`, also follow `.cursor/skills/tools-dev/SKILL.md` for fakes, stubs, helpers, and orchestration lifecycle contracts.
+
+## Orchestration lifecycle tests (`top_down_planning`)
+
+Follow the **Orchestration lifecycle** section in `.cursor/skills/tools-dev/SKILL.md`. Assert durable run state (status, stop code, revision, events) and returned `RunContinuationResult` / phase results together. Use `CommitSpec` fault-injection patterns and exact-N limit boundaries — not status-only assertions or off-by-one limit checks.
 
 ## Performance
 
@@ -29,7 +33,7 @@ Unit tests must be fast. Prefer fakes, stubs, and mocks over live implementation
 - **Provider adapter tests**: inject a `fake_runner` into `CursorProvider` — never spawn a real agent binary.
 - **Config** (`top_down_planning`): `minimal_resolved_config()` / `create_run_kwargs()` default `provider.name` to `stub`.
 - **I/O boundaries**: `unittest.mock.patch` or inject fakes (`tmp_path`, in-memory stores).
-- **Network / subprocess**: no live services or child processes unless process lifecycle is the behavior under test.
+- **Network / subprocess**: no live services or child processes unless process lifecycle or cross-process ownership acquisition is the behavior under test.
 
 ## Avoid live implementations
 
@@ -40,7 +44,7 @@ Unit tests must be fast. Prefer fakes, stubs, and mocks over live implementation
 | Long `time.sleep` / `asyncio.sleep` | `mutate_store` callbacks, scripted events, or injected fakes |
 | CLI subprocess (`subprocess.run(["tdp", ...])`) | in-process `run_cli()` (`top_down_planning`) or direct function calls |
 | Real desktop notifications (notify-py) | autouse `suppress_desktop_notifications` in `tests/conftest.py`; per-test `bridge_send_mock` / `outcome_send_mock` when asserting sends |
-| Full-system orphan-agent PID scans (`ps` / `/proc`) | autouse `stub_orphan_agent_scan` in `tests/conftest.py`; override with `patch(..., return_value=[...])` in `test_agent_process_cleanup.py` only |
+| Full-system orphan-agent PID scans (`ps` / `/proc`) | autouse `stub_orphan_agent_scan` in `tests/conftest.py`; override with `patch(..., return_value=[...])` in `top_down_planning/tests/unit/test_agent_process_cleanup.py` only |
 
 Using `provider="cursor"` or session ids like `cursor-abc` as **metadata strings** is fine — that is not invoking the live provider.
 

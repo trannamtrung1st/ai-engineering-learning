@@ -5,7 +5,9 @@ description: >-
   YAML + --set path=value for CLI config; avoid redundant dedicated flags. Use TDD
   red-green-refactor: tests from expected outcomes first, then minimal implementation.
   Generate fast unit tests using fakes, stubs, and mocks instead of live I/O,
-  providers, or long sleeps. Required for any work under tools/ (see
+  providers, or long sleeps. Orchestration lifecycle: canonical persisted state is
+  authoritative, transition monotonicity, CommitSpec state+event atomicity, and
+  exact limit boundaries. Required for any work under tools/ (see
   .cursor/rules/tools-dev.mdc). Also use when writing pytest files under tools/
   or when the user asks for unit test coverage.
 ---
@@ -20,9 +22,9 @@ After writing the failing test (TDD red), pick the lightest fake for dependencie
 
 1. **Direct call** — test with plain inputs; no provider or filesystem needed.
 2. **Stub/fake** — `StubProvider`, in-memory stores, `tmp_path`, injected `fake_runner`.
-3. **Mock/patch** — `unittest.mock.patch` at I/O boundaries (CLI emit, atomic writes, `create_provider`).
+3. **Mock/patch** — `unittest.mock.patch` at I/O boundaries (CLI emit, atomic writes, `create_provider`, event append, `Path.replace` mid-commit).
 4. **Short sleep** — only when timing/process lifecycle is the behavior under test; keep ≤100ms.
-5. **Live implementation** — rare; integration tests only, and still prefer `stub` provider.
+5. **Live implementation** — rare; integration tests only, and still prefer `stub` provider. Cross-process ownership acquisition is the other exception (two real processes).
 
 ## `top_down_planning` conventions
 
@@ -64,9 +66,9 @@ Prefer **YAML + `--set path=value`**. Do not add dedicated `--param` flags that 
 | **Semantic** (`planning.*`, `limits.*`, `agent_context.*`, `run.*`, …) | defaults → YAML → `--set` only |
 | **Presentation** (`observability.*`, `notifications.*`, `runtime.runs_dir`) | defaults → YAML → `--set` → explicit dedicated flag |
 
-`--set` is on `tdp run` and `tdp resume` only. Dedicated flags are for command routing (`--run`, `--until`, `--check`, `--allow-config-drift`), store bootstrap (`--runs-dir`), output mode (`--stream-json`), presentation toggles in `invocation.py` (`--log-level`, `--no-color`, `--no-notify`), or agent per-request args (`tdp agent … --depth`). Omitted presentation flags must not override YAML/`--set`.
+`--set` is on `tdp run` and `tdp resume` only. Dedicated flags are for command routing (`--run`, `--until`, `--check`, `--allow-config-drift`), store bootstrap (`--runs-dir`), output mode (`--stream-json`), presentation toggles wired through `invocation.py` (`--log-level`, `--no-color`, `--no-notify`, `--agent-text`, …; see `cli/main.py` `_add_operational_flags`), or agent per-request args (`tdp agent … --depth`). Omitted presentation flags must not override YAML/`--set`.
 
-New config paths: `ALLOWED_OVERRIDE_PATHS`, `defaults.py`, `schema_docs.py`. Presentation paths under `observability.*` auto-join `RESUME_PRESENTATION_ALLOWLIST`; add `notifications.*` (and any other new presentation section) in `resume_policy.py`.
+New config paths: `config/defaults.py` (`ALLOWED_OVERRIDE_PATHS`), `schema_docs.py`. Presentation paths under `observability.*` auto-join `RESUME_PRESENTATION_ALLOWLIST`; add `notifications.*` (and any other new presentation section) in `config/resume_policy.py`.
 
 ```bash
 tdp run --config cfg.yaml --set planning.max_depth=5
@@ -93,20 +95,149 @@ result = run_cli(["run", "--config", str(config_path), "--set", "limits.planning
 Read `tests/helpers.py` first. Common utilities:
 
 - `done_events()`, `respond_review()`, `apply_plan()`, `apply_production()`
+- `events_append_boundary()`, `recovery_journal_events()` — persistence fault-injection / journal recovery
 - `set_capability_token_file()` for CLI tests that exercise mutating `tdp agent` commands
 - `mandatory_initial_respond_request()`
 - `ensure_input_ref_files()` for config input refs on `tmp_path`
 
 Extend helpers when the same stub setup repeats across tests.
 
+### Orchestration lifecycle
+
+When fixing or extending code under `orchestrator/`, **canonical persisted run state** is authoritative. Returned `RunContinuationResult`, phase results, and CLI outcomes must match it. Outer layers must not overwrite a lower layer's durable lifecycle decision. Finding IDs and audit history: `temp/tdp-slice4-orchestration-review.md`.
+
+#### Canonical state authority
+
+Once a layer durably moves a run out of `running` (`paused`, `failed`, `completed`), outer error handling must **preserve** that decision:
+
+1. Reload canonical run before applying a generic failure/pause transition.
+2. If status already changed from entry state, report the secondary error separately — do not apply another lifecycle transition.
+3. `SessionRecoveryPaused` means the pause is **already persisted** (e.g. `provider_unavailable`). Return current run state or propagate distinctly; never map it to `ProviderRunError` and re-pause as `provider_turn_failed`.
+
+Test matrix: provider replacement failure in whole-plan reviewer, whole-output reviewer, owner revision, focused review, amendment planner — exactly one pause, final `stop.code` unchanged, revision count reflects only the intended mutation.
+
+#### Transition monotonicity
+
+Enforce allowed source→destination matrices centrally in `run_transitions.py` (`pause_run`, `fail_run`, `complete_run_with_outcome`) and in `failure.py` (`mark_run_failed`). Engine generic handlers must reload before calling `mark_run_failed` so an operational `paused` run is not escalated to `orchestrator_invariant_failure`. Do not rely on callers to guard source state.
+
+```text
+running → paused | failed | completed
+paused  → running (validated resume only) | failed (explicit escalation)
+completed / failed → no lifecycle mutation
+```
+
+Regression assertions for refused transitions:
+
+- no status/stop/outcome mutation;
+- run revision unchanged;
+- no extra lifecycle event.
+
+#### Stop codes and resume
+
+Every emitted `stop.code` must exist in the lifecycle model (`domain/run_lifecycle.py`: `PausedStopCode`, `PAUSED_STOP_CODES`; `orchestrator/resume_stop_validators.py`: `validate_stop_for_resume_apply`; resume validators; CLI/status docs) **before** orchestration emits it. Register new operational stops (e.g. `prepared_plan_amendment_required`) through the full schema path — not ad-hoc strings in engine/production.
+
+`apply_resume_plan_atomically()` in `orchestrator/apply_resume.py` revalidates at apply time — never trust prepare-time checks across the prepare/apply boundary:
+
+- actual `status` equals `state_transition.from_status`;
+- prior stop matches `state_transition.prior_stop_code` when relevant;
+- terminal runs (`failed`, `completed`) cannot become `running`.
+
+Craft invalid `ResumePlan` instances directly in tests.
+
+#### State + event atomicity
+
+Every lifecycle transition and its required audit event share one `CommitSpec` commit. Do not add new split `save_run` + `append_event` lifecycle sequences — migrate existing split paths to `CommitSpec`.
+
+Fault-injection helpers (persistence layer):
+
+- `events_append_boundary(events_path)` — journal byte state before txn append;
+- `recovery_journal_events(txn_id, events)` — normalized recovery metadata;
+- `top_down_planning/tests/unit/test_commit_crash_recovery.py` — `patch(Path.replace, …)` mid-commit patterns.
+
+Orchestration fault injection — `patch` at I/O boundaries:
+
+- post-pause semantic event append fails → original stop survives, status stays `paused`, no `orchestrator_invariant_failure` overwrite;
+- crash after phase save but before required event → fault test proves migration to `CommitSpec` or deterministic restart handling;
+- capability revocation fails before run CAS → retry reconstructs capability state.
+
+#### Limits — exact boundary semantics
+
+Configured limits are **maximum allowed attempts** (exact N, not N+1):
+
+| Config path | Meaning | Test |
+| --- | --- | --- |
+| `limits.whole_plan_review.max_revision_cycles` / `limits.whole_output_review.max_revision_cycles` | exactly N owner revision attempts (mandatory review) | limit 1 → one revision; limit 2 → two; third → limit pause |
+| `limits.focused_plan_review.max_revision_cycles_per_loop` / `limits.focused_output_review.max_revision_cycles_per_loop` | same semantics for focused review | same boundary tests |
+| `limits.production.max_agent_turns_per_batch` | N unfinished turns, never start turn N+1 | limit 1 → one turn, no second started |
+| `limits.planning.max_items_added` | hard cap on plan item count | candidate-ready at cap allowed; one over cap is `limit_exhausted` even on candidate-ready signal |
+
+Assert the **provider turn is not started** when over budget (completion-claim and session-recovery replacement paths too).
+
+#### Terminal and continuation result semantics
+
+`RunContinuationResult.ok` derives from durable outcome, not `status == completed` alone:
+
+```text
+completed + accepted → ok=True
+completed + blocked/rejected → ok=False
+failed / paused → ok=False
+```
+
+Repeated `continue_run()` on terminal runs returns the **same** semantic success/failure.
+
+For `until`: evaluate lifecycle stop (`paused`, `failed`, `completed`) **before** `_target_reached()`. Do not return `ok=True` on a paused/failed run because a historical phase predicate matches. When `until` is set, expose whether the phase target was reached separately from `ok` (CLI notifications already use a `target_reached` outcome kind — engine result must stay consistent).
+
+`RunContinuationResult.cancelled` must be `True` when durable stop is `user_cancelled`, including Sub-TDP child Ctrl-C propagation. Durable `user_cancelled` with `cancelled=False` is a defect.
+
+Review limit/termination paths call `ReviewLoopDriver.result_from_run(run, ..., loop=loop)` (via orchestrator `_driver_host()` or direct driver use) so returned `loop_id`, `reviewer_session_id`, and `revision_cycles` match persisted state.
+
+**Sub-TDP child failure**: permanent child failure must `fail` the parent immediately with `sub_tdp_unit_permanently_failed` — do not pause with resumable `sub_tdp_child_failed`. Implement a resumable `sub_tdp_child_failed` pause only when `prepare resume → apply resume → continue` executes a defined repair action (retry, replace, or reset the unit); resume alone must not convert the pause into permanent failure.
+
+**Amendment activation** (`plan_amendment.py`): only idempotent `running`/no-stop, or `paused` with exact `amendment_pending` whose amendment ID matches production state. Reject failed/completed/unrelated pauses via the same transition validator as resume.
+
+#### Engine boundary and preflight
+
+Before `create_provider`:
+
+- validate phase/state matrix (focused review: `running` + correct phase; unsupported phase → no provider side effects);
+- wrap phase entry (config load, workspace, provider factory, phase execution) in one orchestration boundary with classified failure;
+- continuation preflight (session policy, orphan cleanup, capability revocation) is lifecycle work — partial mutation plus a raw exception is a defect.
+
+Cancellation durability: durable `paused` / `user_cancelled` must persist even when `teardown_provider_sessions()`, audit append, or orphan scan raise. Test with `KeyboardInterrupt` and patched teardown failures (`top_down_planning/tests/unit/test_operational_failures.py`).
+
+#### Ownership and orphans
+
+Cross-process ownership acquisition uses atomic lock creation (`O_CREAT|O_EXCL`, exclusive lock directory, or advisory lock). Test with two real processes (subprocess exception to the unit-test no-subprocess rule). Live owner PID must not lose exclusivity from age alone without an explicit lease/heartbeat contract.
+
+Orphan detection includes **completed** and **failed** runs — any tagged live provider on a terminal run is an orphan. Keep autouse `stub_orphan_agent_scan` in orchestration tests; exercise scan logic in `top_down_planning/tests/unit/test_agent_process_cleanup.py` with injected PIDs.
+
+#### Mandatory review crash idempotency
+
+Review approval, run phase transition, and required approval event share one `CommitSpec` commit — not separate loop save + phase save + event append. Crash after loop approval without phase advance must not spawn a second mandatory loop or duplicate reviewer session.
+
+#### Orchestration change requirements
+
+Every orchestration lifecycle change ships:
+
+1. implementation;
+2. targeted regression test (expected outcome from spec, not current code);
+3. fault/crash injection test when persistence ordering matters;
+4. proof canonical run state matches returned API/CLI result;
+5. proof repeated invocation is idempotent where applicable;
+6. proof required lifecycle event exists exactly once or is explicitly idempotent;
+7. no new orphan provider/session/capability state;
+8. no weakening of revision CAS or lineage validation.
+
 ## `core_tools` conventions
 
 - **Provider adapter**: test `CursorProvider` with an injected `fake_runner` and `skip_probe=True` — never a live agent binary.
 - **Idle stream timeout**: use short `limits.provider.turn_idle_timeout_seconds` (≤0.1s) with a blocking `fake_runner`; orchestration stall recovery uses `StubProvider.mark_session_stalled()`.
 - **Orchestration-free logic**: call functions directly; no provider needed.
-- **Process lifecycle** (`test_process_cleanup.py`): subprocess + `time.sleep(0.1)` is acceptable when termination is the behavior under test.
+- **Process lifecycle** (`core_tools/tests/unit/test_process_cleanup.py`): subprocess + `time.sleep(0.1)` is acceptable when termination is the behavior under test.
 
 ```python
+from core_tools.provider import CursorProvider
+
 def fake_runner(argv: list[str], cwd: Path):
     for line in scripted_lines:
         yield line
@@ -135,13 +266,15 @@ def test_resume_after_mandatory_review_clears_sets_planning(tmp_path):
 ```
 
 ```python
-# BAD — live provider in orchestration test
-config = minimal_resolved_config(provider={"name": "cursor"})
-engine.run(...)  # would spawn real agent
+# BAD — live Cursor via default create_provider (config provider.name=cursor)
+from core_tools.provider import create_provider
+RunEngine(store, create_provider=create_provider).continue_run(run_id)
 
-# GOOD — stub provider with scripted turns
+# GOOD — inject StubProvider (direct engine test or CLI patch)
 provider = StubProvider()
 provider.script_turn(done_events(signal="candidate_plan_ready"))
+RunEngine(store, create_provider=lambda _cfg, _ws: provider).continue_run(run_id)
+# CLI tests: patch("top_down_planning.cli.user.create_provider", return_value=provider)
 ```
 
 ```python
@@ -169,7 +302,8 @@ result = run_cli(["run", "--config", str(config_path)])
 # BAD — real desktop notifications during pytest (macOS notify-py popups)
 run_cli(["run", "--config", str(config_path)])  # completes run, fires OS notification
 
-# GOOD — autouse stub in tests/conftest.py; assert sends via bridge_send_mock fixture
+# GOOD — autouse suppress_desktop_notifications in tests/conftest.py;
+# per-test bridge_send_mock / outcome_send_mock when asserting sends
 def test_progress_notification(bridge_send_mock, tmp_path):
     ...
     assert "Planning candidate ready" in [c.args[0] for c in bridge_send_mock.call_args_list]
@@ -181,6 +315,67 @@ engine.continue_run(run_id, single_step=True)
 
 # GOOD — autouse stub_orphan_agent_scan in tests/conftest.py; test scan logic via direct
 # import + injected list_live_pids/read_pid_environ in test_agent_process_cleanup.py
+```
+
+```python
+# BAD — SessionRecoveryPaused becomes ProviderRunError → engine re-pauses as provider_turn_failed
+except SessionRecoveryPaused:
+    raise ProviderRunError(...)
+
+# GOOD — recovery pause already persisted (planning/production pattern)
+except SessionRecoveryPaused as exc:
+    return self._result_from_run(
+        self._store.load_run(self._run_id),
+        ok=False,
+        reason=str(exc),
+    )
+```
+
+```python
+# BAD — assert only status after orchestration (misses stop overwrite / revision drift)
+engine.continue_run(run_id)
+assert store.get_run(run_id)["status"] == "paused"
+
+# GOOD — assert full durable contract from spec
+run = store.get_run(run_id)
+assert run["status"] == "paused"
+assert run["stop"]["code"] == "limit_exhausted"
+assert run["revision"] == revision_before + 1
+result = engine.continue_run(run_id)  # repeat call
+assert result.ok is False  # same semantic outcome as first terminal call
+```
+
+```python
+# BAD — limit test allows N+1 attempts
+assert revision_cycles >= max_cycles  # checks after increment → off-by-one
+
+# GOOD — limits.whole_plan_review.max_revision_cycles=1 allows exactly one owner revision
+# script: changes_requested → owner revision → changes_requested again → limit pause
+```
+
+```python
+# BAD — emit stop code not registered in PausedStopCode / resume validators
+from top_down_planning.domain.run_lifecycle import StopRecord
+pause_run(store, run_id, stop=StopRecord(code="prepared_plan_amendment_required", ...))
+
+# GOOD — register in domain/run_lifecycle.py + resume_stop_validators.py first, then emit
+```
+
+```python
+# BAD — split state save and required event (do not add new lifecycle paths like this)
+store.save_run(...)
+store.append_event(...)
+
+# GOOD — one commit (pause_run / run_transitions already use this pattern)
+from top_down_planning.persistence.commit import CommitSpec
+store.commit(
+    run_id,
+    CommitSpec(
+        run=updated,
+        run_expected_revision=expected_revision,
+        events=[{"type": "run_paused", "run_id": run_id, ...}],
+    ),
+)
 ```
 
 ## Workflow (TDD + fakes)
@@ -201,10 +396,18 @@ Do not implement orchestration/CLI logic first and then write assertions that mi
 
 - [ ] Failing test written from expected outcomes before production code (TDD)
 - [ ] Semantic config via YAML + `--set` only; no mirrored `--param` flags
-- [ ] New paths in `ALLOWED_OVERRIDE_PATHS`, `defaults.py`, `schema_docs.py`
-- [ ] Presentation fields wired through `invocation.py` if dedicated flags added
+- [ ] New paths in `config/defaults.py` (`ALLOWED_OVERRIDE_PATHS`), `schema_docs.py`
+- [ ] Presentation fields wired through `invocation.py` (package root, not under `cli/`) if dedicated flags added
 - [ ] No live Cursor CLI, agent subprocess, network, desktop notifications, or full-system PID scans in unit tests
 - [ ] Provider orchestration uses `StubProvider.script_turn()` (or `fake_runner` for adapter tests)
 - [ ] Reused package test helpers where applicable
 - [ ] No sleep unless timing/process lifecycle is under test, and ≤100ms
 - [ ] Test name describes behavior, not implementation
+- [ ] Lifecycle: central transition guards; terminal states not rewritten; refused transitions leave revision/events unchanged
+- [ ] Lifecycle: lower-level persisted stop preserved — reload before outer generic failure; `SessionRecoveryPaused` not re-paused; `mark_run_failed` does not escalate operational `paused`
+- [ ] New `stop.code` registered in lifecycle/resume schema before orchestration emits it
+- [ ] Lifecycle transition + required audit event in one `CommitSpec`; no new split lifecycle writes
+- [ ] Limit tests use exact-N semantics and correct `limits.*` paths; `ok`/`cancelled` match durable outcome
+- [ ] Orchestration tests assert canonical run matches returned result; repeated terminal `continue_run` idempotent
+- [ ] `until`: lifecycle stop evaluated before target predicate; `target_reached` not conflated with `ok`
+- [ ] Cross-process ownership tests use real subprocesses; orphan scan tests cover terminal runs

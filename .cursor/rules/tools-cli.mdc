@@ -15,7 +15,7 @@ Packages under `tools/` share a config-first CLI model (`core_tools.config.apply
 | Tier | Examples | Override surface |
 | --- | --- | --- |
 | **Semantic** (orchestration) | `planning.*`, `limits.*`, `agent_context.*`, `run.*`, `provider.*` | YAML + `--set` **only** — no mirrored `--param` flags |
-| **Presentation** (invocation) | `observability.*`, `runtime.runs_dir` | YAML + `--set`; optional dedicated flags/env for frequent toggles |
+| **Presentation** (invocation) | `observability.*`, `notifications.*`, `runtime.runs_dir` | YAML + `--set`; optional dedicated flags/env for frequent toggles |
 
 Precedence:
 
@@ -43,7 +43,7 @@ When adding a configurable field:
 - Add defaults in `config/defaults.py`
 - Register the dotted path in `ALLOWED_OVERRIDE_PATHS`
 - Extend `schema_docs.py` / README; reject unknown keys
-- **Presentation** paths under `observability.*` are auto-included in `RESUME_PRESENTATION_ALLOWLIST`; new presentation sections need an update in `config/resume_policy.py`
+- **Presentation** paths under `observability.*` are auto-included in `RESUME_PRESENTATION_ALLOWLIST`; add `notifications.*` (and other new presentation sections) in `config/resume_policy.py`
 - **Semantic** limit paths under `limits.*` map to `RESUME_EXECUTION_POLICY_ALLOWLIST` (also derived)
 - TDD: write failing CLI test from expected exit/output first (`.cursor/skills/tdd/SKILL.md`), then implement; use in-process `run_cli([..., "--set", "path=value"])`
 
@@ -56,7 +56,7 @@ Add a separate argparse flag only when `--set` is insufficient or the knob is no
 | Command routing | `--run`, `--config`, `--check`, `--view`, `--until` | Selects behavior/target, not config values |
 | Store bootstrap | `--runs-dir` | Resolved with env/config before store open (`TDP_RUNS_DIR`) |
 | Output mode | `--stream-json` | Invocation transport, stored in `invocation.json`, not semantic config |
-| Presentation toggles | `--log-level`, `--no-color`, `--no-agent-text` | Ergonomic overrides; wire in `invocation.py`, `default=None` |
+| Presentation toggles | `--log-level`, `--no-color`, `--no-notify`, `--agent-text`, … (`cli/main.py`) | Ergonomic overrides; wire in `invocation.py`, `default=None` |
 | Agent operation args | `tdp agent plan snapshot --depth N` | Per-request API parameters, not resolved-config overrides |
 
 Do not pass semantic config through argparse into `resolve_config` — use YAML or `--set`.
