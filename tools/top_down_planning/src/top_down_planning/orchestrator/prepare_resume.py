@@ -95,9 +95,9 @@ def _verify_production_evidence(
     run_id: str,
     production: dict[str, Any],
 ) -> str | None:
-    for entry in production.get("output_evidence") or []:
-        if not isinstance(entry, dict):
-            return "production output_evidence entry is invalid"
+    from top_down_planning.domain.production import live_output_evidence_entries
+
+    for entry in live_output_evidence_entries(production):
         try:
             verify_evidence_snapshot(store, run_id, entry)
         except Exception as exc:

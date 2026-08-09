@@ -190,6 +190,22 @@ def validate_create_run_context_binding(
         )
 
 
+def context_snapshot_will_change(
+    current_run: dict[str, Any],
+    prospective_run: dict[str, Any],
+) -> bool:
+    """Return whether the run record will publish a new context snapshot binding."""
+
+    current_digests = current_run.get("digests") or {}
+    prospective_digests = prospective_run.get("digests") or {}
+    return (
+        prospective_run.get("context_snapshot_binding")
+        != current_run.get("context_snapshot_binding")
+        or str(prospective_digests.get("context_snapshot") or "")
+        != str(current_digests.get("context_snapshot") or "")
+    )
+
+
 def validate_context_snapshot_transition(
     current_run: dict[str, Any],
     prospective_run: dict[str, Any],

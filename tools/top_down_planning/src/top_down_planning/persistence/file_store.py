@@ -312,6 +312,13 @@ class FileRunStore:
             production_payload = (
                 production if production is not None else dict(_EMPTY_PRODUCTION)
             )
+            from top_down_planning.domain.production import live_output_evidence_entries
+
+            if live_output_evidence_entries(production_payload):
+                raise PersistenceError(
+                    "create_run cannot persist live output evidence; "
+                    "production must start without captured snapshots"
+                )
             production_payload = validate_persisted_production(
                 production_payload,
                 plan=plan_payload,
@@ -468,20 +475,6 @@ class FileRunStore:
             assert_next_revision(expected, next_revision)
             production_payload = dict(spec.production)
             production_payload["revision"] = next_revision
-            plan_payload_for_validation = self._read_plan(validated_run_id)
-            production_payload = validate_persisted_production(
-                production_payload,
-                plan=plan_payload_for_validation,
-            )
-            from top_down_planning.persistence.evidence_integrity import (
-                verify_persisted_production_evidence_snapshots,
-            )
-
-            verify_persisted_production_evidence_snapshots(
-                self,
-                validated_run_id,
-                production_payload,
-            )
         else:
             production_payload = None
 
@@ -602,6 +595,31 @@ class FileRunStore:
             or resolved_config_payload is not None
         ):
             workspace = Path(str(prospective_run.get("workspace") or "")).resolve()
+            from top_down_planning.persistence.evidence_integrity import (
+                verify_persisted_production_evidence_snapshots,
+            )
+            from top_down_planning.persistence.snapshot_bindings import (
+                context_snapshot_will_change,
+            )
+
+            try:
+                prospective_production = validate_persisted_production(
+                    prospective_production,
+                    plan=prospective_plan,
+                )
+            except ValueError as exc:
+                raise PersistenceError(f"production payload is invalid: {exc}") from exc
+            if production_payload is not None:
+                production_payload = prospective_production
+            if (
+                production_payload is not None
+                or context_snapshot_will_change(current_run, prospective_run)
+            ):
+                verify_persisted_production_evidence_snapshots(
+                    self,
+                    validated_run_id,
+                    prospective_production,
+                )
             validate_context_snapshot_transition(
                 current_run,
                 prospective_run,
@@ -622,25 +640,6 @@ class FileRunStore:
             run_payload = validate_canonical_run(validated_run_id, run_payload)
         if plan_payload is not None:
             plan_payload = canonicalize_persisted_plan(plan_payload)
-        if production_payload is not None:
-            plan_for_validation = (
-                plan_payload
-                if plan_payload is not None
-                else self._read_plan(validated_run_id)
-            )
-            production_payload = validate_persisted_production(
-                production_payload,
-                plan=plan_for_validation,
-            )
-            from top_down_planning.persistence.evidence_integrity import (
-                verify_persisted_production_evidence_snapshots,
-            )
-
-            verify_persisted_production_evidence_snapshots(
-                self,
-                validated_run_id,
-                production_payload,
-            )
 
         txn_id = uuid.uuid4().hex
         journal_events = self._normalize_journal_events(

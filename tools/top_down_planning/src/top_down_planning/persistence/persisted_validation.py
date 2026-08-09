@@ -150,6 +150,13 @@ def _require_strict_non_negative_int(value: Any, field_name: str) -> int:
     return value
 
 
+def _require_strict_sha256_digest(value: Any, field_name: str) -> str:
+    digest = _require_strict_non_empty_str(value, field_name)
+    if not _SHA256_PATTERN.fullmatch(digest):
+        raise ValueError(f"{field_name} must be a 64-character lowercase hex digest")
+    return digest
+
+
 def _require_optional_string(value: Any, field_name: str) -> str | None:
     if value is None:
         return None
@@ -302,6 +309,38 @@ def _validate_accepted_result_schema(accepted: dict[str, Any], *, label: str) ->
         raise ValueError(f"{label}.accepted_result.schema_version must be an integer")
     if schema_version != 1:
         raise ValueError(f"{label}.accepted_result.schema_version must be 1")
+    _require_strict_non_empty_str(
+        accepted.get("package_id"),
+        f"{label}.accepted_result.package_id",
+    )
+    _require_strict_sha256_digest(
+        accepted.get("package_digest"),
+        f"{label}.accepted_result.package_digest",
+    )
+    _require_strict_non_empty_str(
+        accepted.get("unit_id"),
+        f"{label}.accepted_result.unit_id",
+    )
+    _require_strict_sha256_digest(
+        accepted.get("unit_plan_digest"),
+        f"{label}.accepted_result.unit_plan_digest",
+    )
+    _require_strict_sha256_digest(
+        accepted.get("assigned_subtree_digest"),
+        f"{label}.accepted_result.assigned_subtree_digest",
+    )
+    _require_strict_non_empty_str(
+        accepted.get("child_run_id"),
+        f"{label}.accepted_result.child_run_id",
+    )
+    _require_strict_non_empty_str(
+        accepted.get("whole_output_review_id"),
+        f"{label}.accepted_result.whole_output_review_id",
+    )
+    _require_strict_sha256_digest(
+        accepted.get("whole_output_review_digest"),
+        f"{label}.accepted_result.whole_output_review_digest",
+    )
     _require_strict_non_negative_int(
         accepted.get("output_revision"),
         f"{label}.accepted_result.output_revision",
@@ -314,15 +353,21 @@ def _validate_accepted_result_schema(accepted: dict[str, Any], *, label: str) ->
     output_refs = accepted.get("output_refs")
     if not isinstance(output_refs, list):
         raise ValueError(f"{label}.accepted_result.output_refs must be a list")
+    output_ids: set[str] = set()
     for index, output in enumerate(output_refs):
         if not isinstance(output, dict):
             raise ValueError(
                 f"{label}.accepted_result.output_refs[{index}] must be an object"
             )
-        _require_strict_non_empty_str(
+        output_id = _require_strict_non_empty_str(
             output.get("id"),
             f"{label}.accepted_result.output_refs[{index}].id",
         )
+        if output_id in output_ids:
+            raise ValueError(
+                f"{label}.accepted_result.output_refs contains duplicate id {output_id!r}"
+            )
+        output_ids.add(output_id)
         _require_strict_non_empty_str(
             output.get("type"),
             f"{label}.accepted_result.output_refs[{index}].type",
@@ -330,6 +375,26 @@ def _validate_accepted_result_schema(accepted: dict[str, Any], *, label: str) ->
         _require_strict_non_empty_str(
             output.get("ref"),
             f"{label}.accepted_result.output_refs[{index}].ref",
+        )
+        _require_strict_sha256_digest(
+            output.get("sha256"),
+            f"{label}.accepted_result.output_refs[{index}].sha256",
+        )
+        _require_strict_non_negative_int(
+            output.get("size"),
+            f"{label}.accepted_result.output_refs[{index}].size",
+        )
+        _require_strict_non_empty_str(
+            output.get("media_type"),
+            f"{label}.accepted_result.output_refs[{index}].media_type",
+        )
+        _require_strict_non_empty_str(
+            output.get("captured_at"),
+            f"{label}.accepted_result.output_refs[{index}].captured_at",
+        )
+        _require_strict_non_empty_str(
+            output.get("snapshot_ref"),
+            f"{label}.accepted_result.output_refs[{index}].snapshot_ref",
         )
     contributions = accepted.get("contributions")
     if not isinstance(contributions, list):
@@ -343,6 +408,11 @@ def _validate_accepted_result_schema(accepted: dict[str, Any], *, label: str) ->
             contribution.get("item_id"),
             f"{label}.accepted_result.contributions[{index}].item_id",
         )
+        summary = contribution.get("summary")
+        if summary is not None and not isinstance(summary, str):
+            raise ValueError(
+                f"{label}.accepted_result.contributions[{index}].summary must be a string"
+            )
         output_refs_raw = contribution.get("output_refs")
         if output_refs_raw is None:
             output_refs_raw = []
@@ -351,10 +421,15 @@ def _validate_accepted_result_schema(accepted: dict[str, Any], *, label: str) ->
                 f"{label}.accepted_result.contributions[{index}].output_refs must be a list"
             )
         for ref_index, ref in enumerate(output_refs_raw):
-            _require_strict_non_empty_str(
+            ref_id = _require_strict_non_empty_str(
                 ref,
                 f"{label}.accepted_result.contributions[{index}].output_refs[{ref_index}]",
             )
+            if ref_id not in output_ids:
+                raise ValueError(
+                    f"{label}.accepted_result.contributions[{index}].output_refs[{ref_index}] "
+                    f"references unknown output id {ref_id!r}"
+                )
 
 
 def _parse_persisted_amendment_request(value: dict[str, Any]) -> None:
@@ -748,6 +823,15 @@ def _parse_persisted_sub_tdps(value: dict[str, Any]) -> None:
                 raise ValueError(
                     f"sub_tdps.status completed requires units[{index}] completed"
                 )
+    if status == ORCHESTRATION_STATUS_FAILED:
+        if not any(
+            isinstance(unit, dict)
+            and str(unit.get("status") or UNIT_STATUS_PENDING) == UNIT_STATUS_FAILED
+            for unit in units
+        ):
+            raise ValueError(
+                "sub_tdps.status failed requires at least one unit with status failed"
+            )
 
 
 def _validate_batch_disposition_scope(

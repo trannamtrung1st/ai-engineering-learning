@@ -1035,7 +1035,9 @@ def validate_accepted_child_delivery(
         )
     if not verify_evidence:
         return
-    for entry in production.get("output_evidence") or []:
+    from top_down_planning.domain.production import live_output_evidence_entries
+
+    for entry in live_output_evidence_entries(production):
         if not isinstance(entry, dict):
             raise ValueError("child output_evidence entry is invalid")
         if not str(entry.get("snapshot_ref") or "").strip():

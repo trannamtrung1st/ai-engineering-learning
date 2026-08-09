@@ -113,7 +113,18 @@ def _minimal_accepted_result(
         "whole_output_review_digest": "e" * 64,
         "outcome": "accepted",
         "evidence_digest": "f" * 64,
-        "output_refs": [{"id": "out-1", "type": "artifact", "ref": ref}],
+        "output_refs": [
+            {
+                "id": "out-1",
+                "type": "artifact",
+                "ref": ref,
+                "sha256": "1" * 64,
+                "size": 1,
+                "media_type": "text/plain",
+                "captured_at": "2026-01-01T00:00:00Z",
+                "snapshot_ref": "artifacts/test/out.py",
+            }
+        ],
         "contributions": [],
         "workspace_changes": {ref: {"operation": "write", "sha256": "1" * 64}},
         "baseline_context_snapshot_digest": "2" * 64,
