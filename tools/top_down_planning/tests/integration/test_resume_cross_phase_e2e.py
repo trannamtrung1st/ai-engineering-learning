@@ -31,6 +31,7 @@ from tests.helpers import (
     mandatory_verification_respond_request,
     prepare_loop_for_scope_review_respond,
     respond_review,
+    save_review_payload,
     whole_output_approval_record,
     whole_plan_approval_record,
     with_root_contract,
@@ -331,8 +332,9 @@ def _pause_whole_output_revision_limit(
         run_id,
         keys=OUTPUT_APPROVAL_DIGEST_KEYS,
     )
-    store.save_review(run_id, plan_approval)
-    store.save_review(
+    save_review_payload(store, run_id, plan_approval)
+    save_review_payload(
+        store,
         run_id,
         whole_output_approval_record(
             store,
