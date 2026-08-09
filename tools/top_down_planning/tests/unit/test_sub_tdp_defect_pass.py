@@ -485,6 +485,7 @@ def test_attach_compares_live_output_digest_when_present(tmp_path: Path) -> None
         "status": "accepted",
         "goal_assessment": "done",
     }
+    production["batches"] = [{"id": "b1", "status": "completed", "plan_items": ["item-a"]}]
     production["output_evidence"] = [
         {
             "id": "ev-1",

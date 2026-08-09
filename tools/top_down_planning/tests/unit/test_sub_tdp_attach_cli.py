@@ -13,6 +13,7 @@ from top_down_planning.persistence.sub_tdp_state import (
     load_sub_tdp_state,
     merge_sub_tdp_state_into_production,
 )
+from top_down_planning.package.lineage import accepted_result_digest, accepted_result_record
 from tests.conftest import run_cli
 from tests.helpers import accept_child_run, create_run_kwargs
 from tests.unit.test_prepared_runs import _built_package
@@ -199,8 +200,20 @@ def test_sub_tdp_attach_rejects_conflicting_completed_child(tmp_path: Path) -> N
     production = store.load_production(parent_id)
     state = load_sub_tdp_state(production)
     assert state is not None
-    state["units"][0]["child_run_id"] = first_child_id
-    state["units"][0]["status"] = "completed"
+    unit = state["units"][0]
+    accepted = accepted_result_record(
+        child_run=store.load_run(first_child_id),
+        child_production=store.load_production(first_child_id),
+        unit_id=unit["plan_item_id"],
+        unit_plan_digest=str(package.units["item-foundation"].plan_digest),
+        package_id=str(package.manifest.get("package_id") or ""),
+        package_digest=str(package.manifest.get("package_digest") or ""),
+        assigned_subtree_digest=package.units["item-foundation"].assigned_subtree_digest,
+    )
+    unit["child_run_id"] = first_child_id
+    unit["status"] = "completed"
+    unit["accepted_result"] = accepted
+    unit["accepted_result_digest"] = accepted_result_digest(accepted)
     merged = merge_sub_tdp_state_into_production(production, state)
     expected_revision = int(production["revision"])
     merged["revision"] = expected_revision + 1

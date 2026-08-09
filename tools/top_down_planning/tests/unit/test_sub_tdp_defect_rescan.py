@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core_tools.persistence import PersistenceError
 from core_tools.provider import StubProvider
 from top_down_planning.domain.run_kind import RUN_KIND_PARENT_EXECUTION
 from top_down_planning.domain.run_lifecycle import (
@@ -15,10 +16,6 @@ from top_down_planning.domain.run_lifecycle import (
 )
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.phases import SUB_TDPS, WHOLE_OUTPUT_REVIEW
-from top_down_planning.orchestrator.prepare_resume import (
-    PrepareResumeBlockedError,
-    prepare_resume,
-)
 from top_down_planning.orchestrator.prepared_unit_executor import PreparedUnitExecutor
 from top_down_planning.orchestrator.resume_stop_validators import (
     validate_stop_for_resume_apply,
@@ -204,7 +201,7 @@ def test_resume_after_failed_child_terminates_parent_not_running_dead_end(
     unit["status"] = UNIT_STATUS_FAILED
     unit["child_run_id"] = "child-failed-1"
     state["status"] = "failed"
-    state["active_unit_id"] = unit["plan_item_id"]
+    state["active_unit_id"] = None
     merged = merge_sub_tdp_state_into_production(production, state)
     expected = int(production["revision"])
     merged["revision"] = expected + 1
@@ -436,26 +433,8 @@ def test_prepare_resume_rejects_completed_unit_missing_accepted_result(
     production = dict(production)
     production["revision"] = expected_prod + 1
     production["sub_tdps"] = state
-    store.save_production(parent_id, production, expected_prod)
-
-    run = store.load_run(parent_id)
-    expected = int(run["revision"])
-    run = dict(run)
-    run["status"] = "paused"
-    run["phase"] = SUB_TDPS
-    run["stop"] = {
-        "code": "sub_tdps_awaiting_children",
-        "category": "operational",
-        "phase": SUB_TDPS,
-        "message": "waiting",
-        "role": None,
-        "details": {},
-    }
-    run["revision"] = expected + 1
-    store.save_run(parent_id, run, expected)
-
-    with pytest.raises(PrepareResumeBlockedError, match="accepted_result"):
-        prepare_resume(store, parent_id, store.load_resolved_config(parent_id))
+    with pytest.raises(PersistenceError, match="accepted_result"):
+        store.save_production(parent_id, production, expected_prod)
 
 
 def test_synthesis_fails_when_completed_unit_missing_child_run_id(

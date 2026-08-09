@@ -33,6 +33,7 @@ from top_down_planning.persistence.run_schema import (
     validate_run_digests,
     validate_run_schema_version,
 )
+from top_down_planning.package.lineage import verify_accepted_result_attestation
 from top_down_planning.persistence.sub_tdp_state import (
     ORCHESTRATION_STATUS_COMPLETED,
     ORCHESTRATION_STATUS_FAILED,
@@ -204,18 +205,6 @@ def _parse_persisted_completion_claim(value: dict[str, Any]) -> None:
         raise ValueError("summary must be a string")
 
     goal_met = value.get("goal_met")
-    if goal_met is None:
-        if status == "integration_pending":
-            goal_met = False
-        elif all(
-            key in value
-            for key in ("plan_revision", "output_revision", "all_applicable_items_processed")
-        ):
-            goal_met = True
-        elif goal_assessment is not None:
-            goal_met = True
-        else:
-            raise ValueError("goal_met must be a boolean")
     if not isinstance(goal_met, bool):
         raise ValueError("goal_met must be a boolean")
 
@@ -262,22 +251,32 @@ def _parse_persisted_amendment_request(value: dict[str, Any]) -> None:
 
 def _parse_persisted_reconciliation_report(value: dict[str, Any]) -> None:
     _require_strict_non_empty_str(value.get("amendment_id"), "amendment_id")
-    _require_strict_non_negative_int(
+    prior_plan_revision = _require_strict_non_negative_int(
         value.get("prior_plan_revision"),
         "prior_plan_revision",
     )
-    _require_strict_non_negative_int(
+    new_plan_revision = _require_strict_non_negative_int(
         value.get("new_plan_revision"),
         "new_plan_revision",
     )
+    if new_plan_revision < prior_plan_revision:
+        raise ValueError("new_plan_revision must be >= prior_plan_revision")
     _require_strict_string_list(value.get("unchanged"), "unchanged")
-    _require_strict_string_list(value.get("changed"), "changed")
-    _require_strict_string_list(value.get("removed"), "removed")
+    changed = _require_strict_string_list(value.get("changed"), "changed")
+    removed = _require_strict_string_list(value.get("removed"), "removed")
     _require_strict_string_list(value.get("newly_added"), "newly_added")
     _require_strict_string_list(value.get("evidence_preserved"), "evidence_preserved")
+    expected_invalidated = sorted(set(changed) | set(removed))
     invalidated_item_ids = value.get("invalidated_item_ids")
     if invalidated_item_ids is not None:
-        _require_strict_string_list(invalidated_item_ids, "invalidated_item_ids")
+        actual_invalidated = _require_strict_string_list(
+            invalidated_item_ids,
+            "invalidated_item_ids",
+        )
+        if sorted(actual_invalidated) != expected_invalidated:
+            raise ValueError("invalidated_item_ids must match changed and removed items")
+    elif expected_invalidated:
+        raise ValueError("invalidated_item_ids is required when changed or removed items exist")
 
 
 def _validate_persisted_amendment_state(payload: dict[str, Any]) -> None:
@@ -399,6 +398,16 @@ def _parse_persisted_sub_tdp_unit(value: dict[str, Any], *, label: str) -> None:
         _require_strict_string_list(depends_on, f"{label}.depends_on")
     if unit_id != plan_item_id:
         raise ValueError(f"{label}.id must match plan_item_id")
+    if status == UNIT_STATUS_COMPLETED:
+        digest = value.get("accepted_result_digest")
+        if not isinstance(digest, str) or not _SHA256_PATTERN.fullmatch(digest):
+            raise ValueError(
+                f"{label}.accepted_result_digest must be a 64-character lowercase hex digest"
+            )
+        try:
+            verify_accepted_result_attestation(value)
+        except ValueError as exc:
+            raise ValueError(f"{label} completed unit attestation is invalid: {exc}") from exc
 
 
 def _parse_persisted_sub_tdps(value: dict[str, Any]) -> None:
@@ -448,6 +457,105 @@ def _parse_persisted_sub_tdps(value: dict[str, Any]) -> None:
         plan_item_ids.add(plan_item_id)
     if active_unit_id is not None and active_unit_id not in unit_ids:
         raise ValueError("sub_tdps.active_unit_id must reference a persisted unit id")
+    if status in (ORCHESTRATION_STATUS_COMPLETED, ORCHESTRATION_STATUS_FAILED):
+        if active_unit_id:
+            raise ValueError(
+                "sub_tdps.active_unit_id must be null when orchestration is terminal"
+            )
+    if active_unit_id:
+        active_unit = next(
+            unit
+            for unit in units
+            if isinstance(unit, dict) and str(unit.get("id") or "") == active_unit_id
+        )
+        active_status = str(active_unit.get("status") or UNIT_STATUS_PENDING)
+        if active_status in (UNIT_STATUS_COMPLETED, UNIT_STATUS_FAILED):
+            raise ValueError(
+                "sub_tdps.active_unit_id must not reference a completed or failed unit"
+            )
+
+
+def _validate_persisted_production_graph(payload: dict[str, Any]) -> None:
+    batches = payload.get("batches") or []
+    batch_ids_seen: set[str] = set()
+    live_batch_ids_set: set[str] = set()
+
+    for batch in batches:
+        if not isinstance(batch, dict):
+            continue
+        batch_id = str(batch.get("id") or "")
+        if batch_id in batch_ids_seen:
+            raise ValueError(f"duplicate batch id {batch_id!r}")
+        batch_ids_seen.add(batch_id)
+
+        plan_items = batch.get("plan_items") or []
+        seen_plan_items: set[str] = set()
+        for item_id in plan_items:
+            item_s = str(item_id)
+            if item_s in seen_plan_items:
+                raise ValueError(f"duplicate plan_item {item_s!r} in batch {batch_id!r}")
+            seen_plan_items.add(item_s)
+
+        evidence_status = batch.get("evidence_status")
+        invalidated_item_ids = batch.get("invalidated_item_ids")
+        if invalidated_item_ids is not None and evidence_status != "invalidated_by_reconciliation":
+            raise ValueError(
+                "invalidated_item_ids is only valid when evidence_status is "
+                "invalidated_by_reconciliation"
+            )
+        if evidence_status == "invalidated_by_reconciliation":
+            if not invalidated_item_ids:
+                raise ValueError(
+                    "invalidated_item_ids is required when evidence_status is "
+                    "invalidated_by_reconciliation"
+                )
+            plan_item_set = {str(item_id) for item_id in plan_items}
+            for item_id in invalidated_item_ids:
+                if str(item_id) not in plan_item_set:
+                    raise ValueError(
+                        f"invalidated_item_ids entry {item_id!r} must be in batch plan_items"
+                    )
+        else:
+            live_batch_ids_set.add(batch_id)
+
+    output_evidence = payload.get("output_evidence") or []
+    evidence_ids_seen: set[str] = set()
+    live_evidence_ids: set[str] = set()
+    for entry in output_evidence:
+        if not isinstance(entry, dict):
+            continue
+        evidence_id = str(entry.get("id") or "")
+        if evidence_id in evidence_ids_seen:
+            raise ValueError(f"duplicate output evidence id {evidence_id!r}")
+        evidence_ids_seen.add(evidence_id)
+
+        batch_id = entry.get("batch_id")
+        if not isinstance(batch_id, str) or not batch_id.strip():
+            raise ValueError("output_evidence batch_id must be a non-empty string")
+        if batch_id not in batch_ids_seen:
+            raise ValueError(f"output_evidence references unknown batch {batch_id!r}")
+        if batch_id in live_batch_ids_set:
+            live_evidence_ids.add(evidence_id)
+
+    for batch in batches:
+        if not isinstance(batch, dict):
+            continue
+        batch_id = str(batch.get("id") or "")
+        if batch_id not in live_batch_ids_set:
+            continue
+        result = batch.get("result")
+        if not isinstance(result, dict):
+            continue
+        for contrib in result.get("contributions") or []:
+            if not isinstance(contrib, dict):
+                continue
+            for ref in contrib.get("output_refs") or []:
+                ref_s = str(ref)
+                if ref_s and ref_s not in live_evidence_ids:
+                    raise ValueError(
+                        f"contribution output_ref {ref_s!r} does not reference live "
+                        "output_evidence"
+                    )
 
 
 def _parse_persisted_output_evidence(entry: dict[str, Any]) -> OutputEvidence:
@@ -822,6 +930,10 @@ def validate_persisted_production(payload: dict[str, Any]) -> dict[str, Any]:
             _parse_persisted_sub_tdps(sub_tdps)
         except (KeyError, TypeError, ValueError) as exc:
             raise PersistenceError(f"production.sub_tdps is invalid: {exc}") from exc
+    try:
+        _validate_persisted_production_graph(payload)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PersistenceError(f"production graph is invalid: {exc}") from exc
     return dict(payload)
 
 

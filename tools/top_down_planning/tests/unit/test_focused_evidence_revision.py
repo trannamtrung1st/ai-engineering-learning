@@ -99,6 +99,7 @@ def _create_run(store: FileRunStore, run_id: str = "run-20260101T000551-000551")
     ]
     production["completion_claim"] = {
         "goal_assessment": "done",
+        "goal_met": True,
         "summary": "",
         "plan_revision": 0,
         "output_revision": 1,

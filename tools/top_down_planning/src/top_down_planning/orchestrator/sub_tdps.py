@@ -426,7 +426,7 @@ class SubTdpsPhaseOrchestrator:
 
             if mapped_status == UNIT_STATUS_FAILED:
                 state["status"] = ORCHESTRATION_STATUS_FAILED
-                state["active_unit_id"] = plan_item_id
+                state["active_unit_id"] = None
                 production = self._store.load_production(self._run_id)
                 self._commit_production_state(production, state)
                 stop = StopRecord(

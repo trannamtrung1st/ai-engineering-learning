@@ -391,6 +391,7 @@ def test_invalidated_batch_evidence_does_not_authorize_apply_drift(tmp_path: Pat
         {
             **dict(production["batches"][0]),
             "evidence_status": "invalidated_by_reconciliation",
+            "invalidated_item_ids": ["item-first"],
         }
     ]
     production["output_evidence"] = []
@@ -421,6 +422,9 @@ def test_invalid_evidence_refs_fail_at_apply_time(tmp_path: Path) -> None:
     production = dict(store.load_production(run_id))
     expected_revision = int(production["revision"])
     production["revision"] = expected_revision + 1
+    production["batches"] = [
+        {"id": "batch-1", "status": "completed", "plan_items": ["item-first"]},
+    ]
     production["output_evidence"] = [
         {
             "id": "out-bad",
@@ -430,6 +434,7 @@ def test_invalid_evidence_refs_fail_at_apply_time(tmp_path: Path) -> None:
             "size": 0,
             "media_type": "application/octet-stream",
             "captured_at": "2026-01-01T00:00:00Z",
+            "batch_id": "batch-1",
         }
     ]
     store.save_production(run_id, production, expected_revision=expected_revision)

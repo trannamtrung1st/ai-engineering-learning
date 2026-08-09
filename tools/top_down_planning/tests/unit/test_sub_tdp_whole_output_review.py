@@ -177,7 +177,7 @@ def test_sub_tdp_whole_output_review_fails_when_child_run_missing(
         "package_id": "pkg",
         "package_digest": "p" * 64,
         "unit_id": "item-a",
-        "unit_plan_digest": "plan-digest-a",
+        "unit_plan_digest": "p" * 64,
         "assigned_subtree_digest": "s" * 64,
         "child_run_id": "run-20260101T000911-000911",
         "output_revision": 1,
@@ -190,6 +190,7 @@ def test_sub_tdp_whole_output_review_fails_when_child_run_missing(
         "contributions": [],
         "workspace_changes": {},
         "baseline_context_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "baseline_accepted_result_digests": [],
         "final_context_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "completion_assessment": "Child goal met.",
     }
