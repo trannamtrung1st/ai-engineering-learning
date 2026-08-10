@@ -37,7 +37,10 @@ _LOCK_METADATA_FILENAME = "owner.json"
 _OWNER_FLOCK_FILENAME = ".owner.lock"
 _OWNERSHIP_REGISTRY: dict[str, dict[str, Any]] = {}
 _OWNERSHIP_CLEANUP_FAILURES: list[dict[str, Any]] = []
+_OWNERSHIP_CLEANUP_DROPPED: dict[str, int] = {}
 _OWNERSHIP_CLEANUP_LOCK = threading.Lock()
+_MAX_CLEANUP_FAILURES_PER_RUN = 16
+_MAX_CLEANUP_FAILURES_GLOBAL = 128
 _ACQUIRE_LOCK = threading.Lock()
 _NESTED_OWNERSHIP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_NESTED_OWNERSHIP",
@@ -119,6 +122,51 @@ def ownership_cleanup_failures() -> list[dict[str, Any]]:
         return list(_OWNERSHIP_CLEANUP_FAILURES)
 
 
+def ownership_cleanup_dropped_counts() -> dict[str, int]:
+    """Return dropped ownership cleanup diagnostic counts keyed by run_id."""
+
+    with _OWNERSHIP_CLEANUP_LOCK:
+        return dict(_OWNERSHIP_CLEANUP_DROPPED)
+
+
+def pop_ownership_cleanup_dropped_count(run_id: str | None = None) -> int:
+    """Return and clear dropped diagnostic count for a run (or global overflow)."""
+
+    key = str(run_id or "").strip() or "__global__"
+    with _OWNERSHIP_CLEANUP_LOCK:
+        return int(_OWNERSHIP_CLEANUP_DROPPED.pop(key, 0))
+
+
+def _enqueue_ownership_cleanup_failure_locked(record: dict[str, Any]) -> None:
+    payload = dict(record)
+    run_id = str(payload.get("run_id") or "").strip()
+    if not run_id:
+        raise ValueError("ownership cleanup failure requires a non-empty run_id")
+    payload["run_id"] = run_id
+
+    same_run = sum(
+        1 for failure in _OWNERSHIP_CLEANUP_FAILURES if failure.get("run_id") == run_id
+    )
+    if same_run >= _MAX_CLEANUP_FAILURES_PER_RUN:
+        _OWNERSHIP_CLEANUP_DROPPED[run_id] = _OWNERSHIP_CLEANUP_DROPPED.get(run_id, 0) + 1
+        return
+
+    if len(_OWNERSHIP_CLEANUP_FAILURES) >= _MAX_CLEANUP_FAILURES_GLOBAL:
+        for index, failure in enumerate(_OWNERSHIP_CLEANUP_FAILURES):
+            if failure.get("run_id") == run_id:
+                del _OWNERSHIP_CLEANUP_FAILURES[index]
+                _OWNERSHIP_CLEANUP_DROPPED[run_id] = _OWNERSHIP_CLEANUP_DROPPED.get(run_id, 0) + 1
+                break
+        else:
+            if _OWNERSHIP_CLEANUP_FAILURES:
+                del _OWNERSHIP_CLEANUP_FAILURES[0]
+            _OWNERSHIP_CLEANUP_DROPPED["__global__"] = (
+                _OWNERSHIP_CLEANUP_DROPPED.get("__global__", 0) + 1
+            )
+
+    _OWNERSHIP_CLEANUP_FAILURES.append(payload)
+
+
 def drain_ownership_cleanup_failures(run_id: str | None = None) -> list[dict[str, Any]]:
     """Return and clear recorded ownership cleanup failures for this process."""
 
@@ -146,7 +194,8 @@ def requeue_ownership_cleanup_failures(failures: list[dict[str, Any]]) -> None:
     if not failures:
         return
     with _OWNERSHIP_CLEANUP_LOCK:
-        _OWNERSHIP_CLEANUP_FAILURES.extend(failures)
+        for failure in failures:
+            _enqueue_ownership_cleanup_failure_locked(failure)
 
 
 def _utc_now() -> str:
@@ -584,11 +633,14 @@ def _record_ownership_cleanup_failure(
     run_id: str | None,
     exc: OSError,
 ) -> None:
+    normalized_run_id = str(run_id or "").strip()
+    if not normalized_run_id:
+        return
     with _OWNERSHIP_CLEANUP_LOCK:
-        _OWNERSHIP_CLEANUP_FAILURES.append(
+        _enqueue_ownership_cleanup_failure_locked(
             {
                 "type": "ownership_cleanup_failed",
-                "run_id": run_id,
+                "run_id": normalized_run_id,
                 "path": str(resume_lock_metadata_path(run_dir)),
                 "error_class": type(exc).__name__,
                 "message": str(exc),

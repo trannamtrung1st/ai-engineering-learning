@@ -21,14 +21,47 @@ def generate_phase_action_id() -> str:
     return f"action-{uuid.uuid4().hex[:12]}"
 
 
-def _reconcile_phase_capability_revocation(
+def _pending_capability_revoke_phase(run: dict[str, Any]) -> str | None:
+    raw = run.get("pending_capability_revoke_phase")
+    if raw is None:
+        return None
+    phase = str(raw).strip()
+    return phase or None
+
+
+def _phase_has_live_capabilities(store: RunStore, run_id: str, phase: str) -> bool:
+    for record in store.list_capabilities(run_id):
+        if record.get("revoked") is True:
+            continue
+        if str(record.get("phase") or "") == str(phase):
+            return True
+    return False
+
+
+def _attempt_phase_capability_revocation(
     store: RunStore,
     run_id: str,
     revoke_phase: str,
 ) -> None:
-    """Idempotently revoke phase capabilities for an already-transitioned run."""
-
+    if not _phase_has_live_capabilities(store, run_id, revoke_phase):
+        return
     revoke_capabilities_for_phase(store, run_id, revoke_phase)
+
+
+def reconcile_pending_capability_revocation(
+    store: RunStore,
+    run_id: str,
+    *,
+    revoke_phase: str | None = None,
+) -> dict[str, Any]:
+    """Revoke capabilities for a durable post-transition marker when still live."""
+
+    run = store.load_run(run_id)
+    phase = revoke_phase or _pending_capability_revoke_phase(run)
+    if phase is None:
+        return run
+    _attempt_phase_capability_revocation(store, run_id, phase)
+    return store.load_run(run_id)
 
 
 def pause_run(
@@ -45,8 +78,9 @@ def pause_run(
     if status in _TERMINAL_STATUSES:
         return run
     if status == "paused":
-        if revoke_phase is not None:
-            _reconcile_phase_capability_revocation(store, run_id, revoke_phase)
+        phase = revoke_phase or _pending_capability_revoke_phase(run)
+        if phase is not None:
+            _attempt_phase_capability_revocation(store, run_id, phase)
         return run
 
     expected_revision = int(run["revision"])
@@ -55,6 +89,8 @@ def pause_run(
     updated["status"] = "paused"
     updated["outcome"] = None
     updated["stop"] = stop.to_dict()
+    if revoke_phase is not None:
+        updated["pending_capability_revoke_phase"] = revoke_phase
     store.commit(
         run_id,
         CommitSpec(
@@ -71,7 +107,7 @@ def pause_run(
         ),
     )
     if revoke_phase is not None:
-        revoke_capabilities_for_phase(store, run_id, revoke_phase)
+        _attempt_phase_capability_revocation(store, run_id, revoke_phase)
     return store.load_run(run_id)
 
 
@@ -86,8 +122,10 @@ def fail_run(
     run = store.load_run(run_id)
     status = _run_status(run)
     if status in {"completed", "failed"}:
-        if revoke_phase is not None and status == "failed":
-            _reconcile_phase_capability_revocation(store, run_id, revoke_phase)
+        if status == "failed":
+            phase = revoke_phase or _pending_capability_revoke_phase(run)
+            if phase is not None:
+                _attempt_phase_capability_revocation(store, run_id, phase)
         return run
     if status == "paused":
         return run
@@ -98,6 +136,8 @@ def fail_run(
     updated["status"] = "failed"
     updated["outcome"] = None
     updated["stop"] = stop.to_dict()
+    if revoke_phase is not None:
+        updated["pending_capability_revoke_phase"] = revoke_phase
     store.commit(
         run_id,
         CommitSpec(
@@ -114,7 +154,7 @@ def fail_run(
         ),
     )
     if revoke_phase is not None:
-        revoke_capabilities_for_phase(store, run_id, revoke_phase)
+        _attempt_phase_capability_revocation(store, run_id, revoke_phase)
     return store.load_run(run_id)
 
 
@@ -131,9 +171,9 @@ def complete_run_with_outcome(
     status = _run_status(run)
     if status == "completed":
         if run.get("outcome") == outcome:
-            if revoke_phase is not None:
-                _reconcile_phase_capability_revocation(store, run_id, revoke_phase)
-            return run
+            phase = revoke_phase or _pending_capability_revoke_phase(run)
+            if phase is not None:
+                _attempt_phase_capability_revocation(store, run_id, phase)
         return run
     if status == "failed":
         return run
@@ -146,6 +186,8 @@ def complete_run_with_outcome(
     updated["status"] = "completed"
     updated["outcome"] = outcome
     updated["stop"] = None
+    if revoke_phase is not None:
+        updated["pending_capability_revoke_phase"] = revoke_phase
     store.commit(
         run_id,
         CommitSpec(
@@ -162,7 +204,7 @@ def complete_run_with_outcome(
         ),
     )
     if revoke_phase is not None:
-        revoke_capabilities_for_phase(store, run_id, revoke_phase)
+        _attempt_phase_capability_revocation(store, run_id, revoke_phase)
     return store.load_run(run_id)
 
 
@@ -221,4 +263,5 @@ __all__ = [
     "generate_phase_action_id",
     "pause_for_limit_exhausted",
     "pause_run",
+    "reconcile_pending_capability_revocation",
 ]

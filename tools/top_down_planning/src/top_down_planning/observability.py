@@ -551,23 +551,44 @@ def report_ownership_cleanup_diagnostics(
 
     from top_down_planning.domain.run_ownership import (
         drain_ownership_cleanup_failures,
+        pop_ownership_cleanup_dropped_count,
         requeue_ownership_cleanup_failures,
     )
 
     failures = drain_ownership_cleanup_failures(run_id=run_id)
+    dropped = pop_ownership_cleanup_dropped_count(run_id)
+    if dropped > 0:
+        failures.append(
+            {
+                "type": "ownership_cleanup_dropped",
+                "run_id": str(run_id or ""),
+                "dropped_count": dropped,
+                "error_class": "Overflow",
+            }
+        )
     if not failures:
         return failures
     unemitted: list[dict[str, Any]] = []
     for failure in failures:
         try:
             if context is not None:
+                category = (
+                    "ownership:cleanup_dropped"
+                    if failure.get("type") == "ownership_cleanup_dropped"
+                    else "ownership:cleanup_failed"
+                )
+                message = (
+                    f"ownership cleanup diagnostics dropped: {failure.get('dropped_count', 0)}"
+                    if category == "ownership:cleanup_dropped"
+                    else (
+                        "ownership metadata cleanup failed: "
+                        f"{failure.get('error_class', 'OSError')}"
+                    )
+                )
                 context.emit(
                     ConsoleEvent(
-                        category="ownership:cleanup_failed",
-                        message=(
-                            "ownership metadata cleanup failed: "
-                            f"{failure.get('error_class', 'OSError')}"
-                        ),
+                        category=category,
+                        message=message,
                         fields={
                             key: value
                             for key, value in failure.items()
@@ -582,7 +603,8 @@ def report_ownership_cleanup_diagnostics(
             try:
                 _emit_cleanup_fallback_stderr(failure)
             except Exception:
-                unemitted.append(failure)
+                if failure.get("type") != "ownership_cleanup_dropped":
+                    unemitted.append(failure)
     if unemitted:
         requeue_ownership_cleanup_failures(unemitted)
     return failures

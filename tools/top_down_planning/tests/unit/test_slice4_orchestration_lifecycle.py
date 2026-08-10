@@ -840,3 +840,233 @@ def test_drain_ownership_cleanup_failures_is_run_scoped() -> None:
     assert len(remaining) == 1
     assert remaining[0]["run_id"] == "run-b"
     _OWNERSHIP_CLEANUP_FAILURES.clear()
+
+
+def _fail_stop(phase: str = PLANNING) -> StopRecord:
+    return StopRecord(
+        code="orchestrator_invariant_failure",
+        category="invariant",
+        phase=phase,
+        message="failed",
+    )
+
+
+def test_continue_run_reconciles_pause_revoke_after_engine_restart(tmp_path: Path) -> None:
+    from tests.helpers import grant_capability
+    from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+
+    attempts = 0
+
+    def revoke_side_effect(store_arg: FileRunStore, run_id_arg: str, phase: str) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("revoke failed")
+        revoke_capabilities_for_phase(store_arg, run_id_arg, phase)
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=revoke_side_effect,
+    ):
+        with pytest.raises(OSError, match="revoke failed"):
+            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+
+    revision_before = int(store.load_run(run_id)["revision"])
+    events_before = len(store.load_events(run_id))
+    paused = store.load_run(run_id)
+    assert paused["status"] == "paused"
+    assert paused["pending_capability_revoke_phase"] == PLANNING
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+    result = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+    ).continue_run(run_id, until="plan")
+
+    assert result.ok is False
+    assert int(store.load_run(run_id)["revision"]) == revision_before
+    assert store.load_capability(run_id, token_id)["revoked"] is True
+    assert len(store.load_events(run_id)) == events_before
+
+    repeat = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+    ).continue_run(run_id, until="plan")
+    assert repeat.ok is False
+    assert store.load_capability(run_id, token_id)["revoked"] is True
+
+
+def test_continue_run_reconciles_fail_revoke_after_engine_restart(tmp_path: Path) -> None:
+    from tests.helpers import grant_capability
+    from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+
+    attempts = 0
+
+    def revoke_side_effect(store_arg: FileRunStore, run_id_arg: str, phase: str) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("revoke failed")
+        revoke_capabilities_for_phase(store_arg, run_id_arg, phase)
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=revoke_side_effect,
+    ):
+        with pytest.raises(OSError, match="revoke failed"):
+            fail_run(store, run_id, stop=_fail_stop(), revoke_phase=PLANNING)
+
+    revision_before = int(store.load_run(run_id)["revision"])
+    events_before = len(store.load_events(run_id))
+    failed = store.load_run(run_id)
+    assert failed["status"] == "failed"
+    assert failed["pending_capability_revoke_phase"] == PLANNING
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+    result = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+    ).continue_run(run_id, until="plan")
+
+    assert result.ok is False
+    assert int(store.load_run(run_id)["revision"]) == revision_before
+    assert store.load_capability(run_id, token_id)["revoked"] is True
+    assert len(store.load_events(run_id)) == events_before
+
+
+def test_continue_run_reconciles_complete_revoke_after_engine_restart(tmp_path: Path) -> None:
+    from tests.helpers import grant_capability
+    from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+
+    attempts = 0
+
+    def revoke_side_effect(store_arg: FileRunStore, run_id_arg: str, phase: str) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("revoke failed")
+        revoke_capabilities_for_phase(store_arg, run_id_arg, phase)
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=revoke_side_effect,
+    ):
+        with pytest.raises(OSError, match="revoke failed"):
+            complete_run_with_outcome(
+                store,
+                run_id,
+                "accepted",
+                revoke_phase=PLANNING,
+            )
+
+    revision_before = int(store.load_run(run_id)["revision"])
+    events_before = len(store.load_events(run_id))
+    completed = store.load_run(run_id)
+    assert completed["status"] == "completed"
+    assert completed["outcome"] == "accepted"
+    assert completed["pending_capability_revoke_phase"] == PLANNING
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+    result = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+    ).continue_run(run_id, until="plan")
+
+    assert result.ok is True
+    assert int(store.load_run(run_id)["revision"]) == revision_before
+    assert store.load_capability(run_id, token_id)["revoked"] is True
+    assert len(store.load_events(run_id)) == events_before
+
+
+def test_terminal_continue_run_retries_requeued_cleanup_diagnostic(tmp_path: Path) -> None:
+    from top_down_planning.domain.run_ownership import (
+        _OWNERSHIP_CLEANUP_FAILURES,
+        ownership_cleanup_failures,
+    )
+    from top_down_planning.observability import ObservabilityContext, report_ownership_cleanup_diagnostics
+    from core_tools.observability import NullSink
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    pause_run(store, run_id, stop=_pause_stop())
+
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
+    _OWNERSHIP_CLEANUP_FAILURES.append(
+        {
+            "type": "ownership_cleanup_failed",
+            "run_id": run_id,
+            "path": str(tmp_path / "owner.json"),
+            "error_class": "OSError",
+            "message": "unlink failed",
+            "safe_to_retry": True,
+        }
+    )
+    observability = ObservabilityContext(sink=NullSink(), run_id=run_id)
+
+    def fail_emit(_event: Any) -> None:
+        raise OSError("sink failed")
+
+    observability.emit = fail_emit  # type: ignore[method-assign]
+    with patch(
+        "top_down_planning.observability._emit_cleanup_fallback_stderr",
+        side_effect=OSError("stderr failed"),
+    ):
+        report_ownership_cleanup_diagnostics(observability, run_id=run_id)
+    assert len(ownership_cleanup_failures()) == 1
+
+    emitted: list[Any] = []
+    observability.emit = lambda event: emitted.append(event)  # type: ignore[method-assign]
+    RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+        observability=observability,
+    ).continue_run(run_id, until="plan")
+
+    assert len(emitted) == 2
+    cleanup_events = [event for event in emitted if event.category == "ownership:cleanup_failed"]
+    assert len(cleanup_events) == 1
+    assert ownership_cleanup_failures() == []
+
+
+def test_ownership_cleanup_failure_queue_is_bounded_per_run() -> None:
+    from top_down_planning.domain.run_ownership import (
+        _MAX_CLEANUP_FAILURES_PER_RUN,
+        _OWNERSHIP_CLEANUP_FAILURES,
+        ownership_cleanup_dropped_counts,
+        ownership_cleanup_failures,
+        requeue_ownership_cleanup_failures,
+    )
+
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
+    overflow = 5
+    for index in range(_MAX_CLEANUP_FAILURES_PER_RUN + overflow):
+        requeue_ownership_cleanup_failures(
+            [
+                {
+                    "type": "ownership_cleanup_failed",
+                    "run_id": "run-1",
+                    "error_class": "OSError",
+                    "message": f"failure-{index}",
+                    "safe_to_retry": True,
+                }
+            ]
+        )
+
+    assert len(ownership_cleanup_failures()) == _MAX_CLEANUP_FAILURES_PER_RUN
+    assert ownership_cleanup_dropped_counts().get("run-1") == overflow
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
