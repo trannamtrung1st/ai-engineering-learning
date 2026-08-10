@@ -261,41 +261,54 @@ class RunEngine:
             run_dir = resolve_run_dir(self._store, run_id)
             if run_dir is not None:
                 ownership_result: RunContinuationResult | None = None
-                with run_ownership(run_id, run_dir=run_dir):
-                    try:
-                        ownership_result = self._continue_run_unlocked(
-                            run_id,
-                            until=until,
-                            single_step=single_step,
-                            session_policy=session_policy,
-                            started_at=started_at,
-                        )
-                    except KeyboardInterrupt:
-                        run = self._store.load_run(run_id)
-                        if str(run.get("status") or "") == "running":
-                            cancel_phase = str(run.get("phase") or "")
-                            finalize_user_cancel(
-                                self._store,
+                continuation_error: BaseException | None = None
+                try:
+                    with run_ownership(run_id, run_dir=run_dir):
+                        try:
+                            ownership_result = self._continue_run_unlocked(
                                 run_id,
-                                phase=cancel_phase,
-                                exclude_pids=frozenset({os.getpid()}),
+                                until=until,
+                                single_step=single_step,
+                                session_policy=session_policy,
+                                started_at=started_at,
                             )
-                        run = self._store.load_run(run_id)
-                        user_cancelled = _continuation_cancelled_from_run(run)
-                        ownership_result = _continuation_result_from_run(
-                            run,
-                            run_id,
-                            until=until,
-                            steps=[],
-                            reason=(
-                                "cancelled by user"
-                                if user_cancelled
-                                else "interrupt during continuation"
-                            ),
-                            cancelled=user_cancelled,
+                        except KeyboardInterrupt:
+                            run = self._store.load_run(run_id)
+                            if str(run.get("status") or "") == "running":
+                                cancel_phase = str(run.get("phase") or "")
+                                finalize_user_cancel(
+                                    self._store,
+                                    run_id,
+                                    phase=cancel_phase,
+                                    exclude_pids=frozenset({os.getpid()}),
+                                )
+                            run = self._store.load_run(run_id)
+                            user_cancelled = _continuation_cancelled_from_run(run)
+                            ownership_result = _continuation_result_from_run(
+                                run,
+                                run_id,
+                                until=until,
+                                steps=[],
+                                reason=(
+                                    "cancelled by user"
+                                    if user_cancelled
+                                    else "interrupt during continuation"
+                                ),
+                                cancelled=user_cancelled,
+                            )
+                            self._emit_done(ownership_result, started_at=started_at)
+                except BaseException as exc:
+                    continuation_error = exc
+                finally:
+                    try:
+                        report_ownership_cleanup_diagnostics(
+                            self._observability,
+                            run_id=run_id,
                         )
-                        self._emit_done(ownership_result, started_at=started_at)
-                report_ownership_cleanup_diagnostics(self._observability, run_id=run_id)
+                    except Exception:
+                        pass
+                if continuation_error is not None:
+                    raise continuation_error
                 if ownership_result is not None:
                     return ownership_result
             return self._continue_run_unlocked(

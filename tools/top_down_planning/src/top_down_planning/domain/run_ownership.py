@@ -37,6 +37,7 @@ _LOCK_METADATA_FILENAME = "owner.json"
 _OWNER_FLOCK_FILENAME = ".owner.lock"
 _OWNERSHIP_REGISTRY: dict[str, dict[str, Any]] = {}
 _OWNERSHIP_CLEANUP_FAILURES: list[dict[str, Any]] = []
+_OWNERSHIP_CLEANUP_LOCK = threading.Lock()
 _ACQUIRE_LOCK = threading.Lock()
 _NESTED_OWNERSHIP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_NESTED_OWNERSHIP",
@@ -114,15 +115,38 @@ def holds_run_ownership(run_id: str) -> bool:
 def ownership_cleanup_failures() -> list[dict[str, Any]]:
     """Return secondary ownership metadata cleanup failures recorded this process."""
 
-    return list(_OWNERSHIP_CLEANUP_FAILURES)
+    with _OWNERSHIP_CLEANUP_LOCK:
+        return list(_OWNERSHIP_CLEANUP_FAILURES)
 
 
-def drain_ownership_cleanup_failures() -> list[dict[str, Any]]:
+def drain_ownership_cleanup_failures(run_id: str | None = None) -> list[dict[str, Any]]:
     """Return and clear recorded ownership cleanup failures for this process."""
 
-    drained = list(_OWNERSHIP_CLEANUP_FAILURES)
-    _OWNERSHIP_CLEANUP_FAILURES.clear()
-    return drained
+    with _OWNERSHIP_CLEANUP_LOCK:
+        if run_id is None:
+            drained = list(_OWNERSHIP_CLEANUP_FAILURES)
+            _OWNERSHIP_CLEANUP_FAILURES.clear()
+            return drained
+        matching = [
+            failure
+            for failure in _OWNERSHIP_CLEANUP_FAILURES
+            if failure.get("run_id") == run_id
+        ]
+        _OWNERSHIP_CLEANUP_FAILURES[:] = [
+            failure
+            for failure in _OWNERSHIP_CLEANUP_FAILURES
+            if failure.get("run_id") != run_id
+        ]
+        return matching
+
+
+def requeue_ownership_cleanup_failures(failures: list[dict[str, Any]]) -> None:
+    """Re-queue ownership cleanup failures that could not be emitted."""
+
+    if not failures:
+        return
+    with _OWNERSHIP_CLEANUP_LOCK:
+        _OWNERSHIP_CLEANUP_FAILURES.extend(failures)
 
 
 def _utc_now() -> str:
@@ -560,16 +584,17 @@ def _record_ownership_cleanup_failure(
     run_id: str | None,
     exc: OSError,
 ) -> None:
-    _OWNERSHIP_CLEANUP_FAILURES.append(
-        {
-            "type": "ownership_cleanup_failed",
-            "run_id": run_id,
-            "path": str(resume_lock_metadata_path(run_dir)),
-            "error_class": type(exc).__name__,
-            "message": str(exc),
-            "safe_to_retry": True,
-        }
-    )
+    with _OWNERSHIP_CLEANUP_LOCK:
+        _OWNERSHIP_CLEANUP_FAILURES.append(
+            {
+                "type": "ownership_cleanup_failed",
+                "run_id": run_id,
+                "path": str(resume_lock_metadata_path(run_dir)),
+                "error_class": type(exc).__name__,
+                "message": str(exc),
+                "safe_to_retry": True,
+            }
+        )
 
 
 def _clear_owner_metadata_best_effort(

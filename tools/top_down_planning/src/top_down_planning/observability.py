@@ -533,6 +533,15 @@ class ObservingRunStore:
             )
 
 
+def _emit_cleanup_fallback_stderr(failure: dict[str, Any]) -> None:
+    run_id = str(failure.get("run_id") or "")
+    error_class = str(failure.get("error_class") or "OSError")
+    print(
+        f"[ownership:cleanup_failed] run_id={run_id} error={error_class}",
+        file=sys.stderr,
+    )
+
+
 def report_ownership_cleanup_diagnostics(
     context: ObservabilityContext | None,
     *,
@@ -540,27 +549,42 @@ def report_ownership_cleanup_diagnostics(
 ) -> list[dict[str, Any]]:
     """Emit ownership cleanup failures without masking canonical lifecycle results."""
 
-    from top_down_planning.domain.run_ownership import drain_ownership_cleanup_failures
+    from top_down_planning.domain.run_ownership import (
+        drain_ownership_cleanup_failures,
+        requeue_ownership_cleanup_failures,
+    )
 
-    failures = drain_ownership_cleanup_failures()
-    if context is None:
+    failures = drain_ownership_cleanup_failures(run_id=run_id)
+    if not failures:
         return failures
+    unemitted: list[dict[str, Any]] = []
     for failure in failures:
-        context.emit(
-            ConsoleEvent(
-                category="ownership:cleanup_failed",
-                message=(
-                    "ownership metadata cleanup failed: "
-                    f"{failure.get('error_class', 'OSError')}"
-                ),
-                fields={
-                    key: value
-                    for key, value in failure.items()
-                    if key != "type" and value is not None
-                },
-                run_id=str(failure.get("run_id") or run_id or ""),
-            )
-        )
+        try:
+            if context is not None:
+                context.emit(
+                    ConsoleEvent(
+                        category="ownership:cleanup_failed",
+                        message=(
+                            "ownership metadata cleanup failed: "
+                            f"{failure.get('error_class', 'OSError')}"
+                        ),
+                        fields={
+                            key: value
+                            for key, value in failure.items()
+                            if key != "type" and value is not None
+                        },
+                        run_id=str(failure.get("run_id") or run_id or ""),
+                    )
+                )
+            else:
+                _emit_cleanup_fallback_stderr(failure)
+        except Exception:
+            try:
+                _emit_cleanup_fallback_stderr(failure)
+            except Exception:
+                unemitted.append(failure)
+    if unemitted:
+        requeue_ownership_cleanup_failures(unemitted)
     return failures
 
 

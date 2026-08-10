@@ -731,6 +731,7 @@ def test_report_ownership_cleanup_diagnostics_emits_observability_event(tmp_path
     from top_down_planning.observability import ObservabilityContext, report_ownership_cleanup_diagnostics
     from core_tools.observability import NullSink
 
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
     _OWNERSHIP_CLEANUP_FAILURES.append(
         {
             "type": "ownership_cleanup_failed",
@@ -752,3 +753,90 @@ def test_report_ownership_cleanup_diagnostics_emits_observability_event(tmp_path
     assert emitted[0].category == "ownership:cleanup_failed"
     assert emitted[0].fields["run_id"] == "run-1"
     assert ownership_cleanup_failures() == []
+
+
+def test_pause_run_reconciles_capabilities_after_post_commit_revoke_failure(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import grant_capability
+    from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+    events_before = len(store.load_events(run_id))
+
+    attempts = 0
+
+    def revoke_side_effect(store_arg: FileRunStore, run_id_arg: str, phase: str) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("revoke failed")
+        revoke_capabilities_for_phase(store_arg, run_id_arg, phase)
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=revoke_side_effect,
+    ) as revoke_mock:
+        with pytest.raises(OSError, match="revoke failed"):
+            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+
+        pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+        assert revoke_mock.call_count == 2
+
+    assert store.load_run(run_id)["status"] == "paused"
+    assert store.load_capability(run_id, token_id)["revoked"] is True
+    assert len(store.load_events(run_id)) == events_before + 1
+
+
+def test_report_ownership_cleanup_diagnostics_emit_failure_does_not_raise(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.domain.run_ownership import _OWNERSHIP_CLEANUP_FAILURES
+    from top_down_planning.observability import ObservabilityContext, report_ownership_cleanup_diagnostics
+    from core_tools.observability import NullSink
+
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
+    _OWNERSHIP_CLEANUP_FAILURES.append(
+        {
+            "type": "ownership_cleanup_failed",
+            "run_id": "run-1",
+            "path": str(tmp_path / "owner.json"),
+            "error_class": "OSError",
+            "message": "unlink failed",
+            "safe_to_retry": True,
+        }
+    )
+    observability = ObservabilityContext(sink=NullSink(), run_id="run-1")
+
+    def fail_emit(_event: Any) -> None:
+        raise OSError("sink failed")
+
+    observability.emit = fail_emit  # type: ignore[method-assign]
+
+    report_ownership_cleanup_diagnostics(observability, run_id="run-1")
+
+
+def test_drain_ownership_cleanup_failures_is_run_scoped() -> None:
+    from top_down_planning.domain.run_ownership import (
+        _OWNERSHIP_CLEANUP_FAILURES,
+        drain_ownership_cleanup_failures,
+        ownership_cleanup_failures,
+    )
+
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
+    _OWNERSHIP_CLEANUP_FAILURES.extend(
+        [
+            {"type": "ownership_cleanup_failed", "run_id": "run-a", "error_class": "OSError"},
+            {"type": "ownership_cleanup_failed", "run_id": "run-b", "error_class": "OSError"},
+        ]
+    )
+    drained_a = drain_ownership_cleanup_failures(run_id="run-a")
+    assert len(drained_a) == 1
+    assert drained_a[0]["run_id"] == "run-a"
+    remaining = ownership_cleanup_failures()
+    assert len(remaining) == 1
+    assert remaining[0]["run_id"] == "run-b"
+    _OWNERSHIP_CLEANUP_FAILURES.clear()

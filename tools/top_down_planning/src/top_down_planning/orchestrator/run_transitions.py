@@ -21,6 +21,16 @@ def generate_phase_action_id() -> str:
     return f"action-{uuid.uuid4().hex[:12]}"
 
 
+def _reconcile_phase_capability_revocation(
+    store: RunStore,
+    run_id: str,
+    revoke_phase: str,
+) -> None:
+    """Idempotently revoke phase capabilities for an already-transitioned run."""
+
+    revoke_capabilities_for_phase(store, run_id, revoke_phase)
+
+
 def pause_run(
     store: RunStore,
     run_id: str,
@@ -35,6 +45,8 @@ def pause_run(
     if status in _TERMINAL_STATUSES:
         return run
     if status == "paused":
+        if revoke_phase is not None:
+            _reconcile_phase_capability_revocation(store, run_id, revoke_phase)
         return run
 
     expected_revision = int(run["revision"])
@@ -72,9 +84,12 @@ def fail_run(
     **event_fields: Any,
 ) -> dict[str, Any]:
     run = store.load_run(run_id)
-    if str(run.get("status") or "") in {"completed", "failed"}:
+    status = _run_status(run)
+    if status in {"completed", "failed"}:
+        if revoke_phase is not None and status == "failed":
+            _reconcile_phase_capability_revocation(store, run_id, revoke_phase)
         return run
-    if str(run.get("status") or "") == "paused":
+    if status == "paused":
         return run
 
     expected_revision = int(run["revision"])
@@ -116,6 +131,8 @@ def complete_run_with_outcome(
     status = _run_status(run)
     if status == "completed":
         if run.get("outcome") == outcome:
+            if revoke_phase is not None:
+                _reconcile_phase_capability_revocation(store, run_id, revoke_phase)
             return run
         return run
     if status == "failed":
