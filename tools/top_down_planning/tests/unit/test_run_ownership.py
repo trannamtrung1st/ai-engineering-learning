@@ -624,18 +624,22 @@ def test_rollback_cleanup_blocks_external_acquire_until_unlock(tmp_path: Path) -
     from top_down_planning.domain import run_ownership as ownership_module
 
     real_publish = ownership_module._publish_run_ownership
+    real_cleanup = ownership_module._cleanup_failed_acquire
     cleanup_started = threading.Event()
     cleanup_continue = threading.Event()
+    cleanup_invocations = 0
 
     def publish_and_fail(run_id: str, owner_token: str, flock_fd: int) -> None:
         real_publish(run_id, owner_token, flock_fd)
         raise RuntimeError("after publish")
 
     def gated_cleanup(run_dir_arg: Path) -> None:
+        nonlocal cleanup_invocations
         cleanup_started.set()
         if not cleanup_continue.wait(timeout=5):
             raise RuntimeError("cleanup gate timeout")
-        ownership_module._cleanup_failed_acquire(run_dir_arg)
+        cleanup_invocations += 1
+        real_cleanup(run_dir_arg)
 
     child_script = (
         "import time\n"
@@ -685,10 +689,15 @@ def test_rollback_cleanup_blocks_external_acquire_until_unlock(tmp_path: Path) -
             rollback_thread.join(timeout=5)
             assert not rollback_thread.is_alive()
             assert len(rollback_error) == 1
-            assert isinstance(rollback_error[0], RuntimeError)
+            assert type(rollback_error[0]) is RuntimeError
+            assert str(rollback_error[0]) == "after publish"
+            assert cleanup_invocations == 1
+            assert "run-1" not in _OWNERSHIP_REGISTRY
 
     peer_token = acquire_run_ownership("run-1", run_dir=run_dir)
-    assert read_resume_lock(run_dir) is not None
+    lock = read_resume_lock(run_dir)
+    assert lock is not None
+    assert lock.owner_token == peer_token
     release_run_ownership("run-1", run_dir=run_dir, owner_token=peer_token)
 
 
