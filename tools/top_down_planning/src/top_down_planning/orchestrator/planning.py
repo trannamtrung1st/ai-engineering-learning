@@ -39,6 +39,7 @@ from top_down_planning.orchestrator.session_context import ensure_primary_sessio
 from top_down_planning.orchestrator.session_events import (
     resume_primary_session_with_audit,
 )
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_plan_digest
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.session_bindings import primary_provider_session_id
@@ -338,19 +339,32 @@ class PlanningPhaseOrchestrator:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
         revoke_capabilities_for_phase(self._store, self._run_id, PLANNING)
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["phase"] = WHOLE_PLAN_REVIEW
-        self._store.save_run(self._run_id, run, expected_revision)
+        plan_revision = int(self._store.load_plan(self._run_id)["revision"])
         event_fields: dict[str, Any] = {
             "session_id": session_id,
             "agent_turns": metrics["agent_turns"],
             "items_added": metrics["items_added"],
-            "plan_revision": self._store.load_plan(self._run_id)["revision"],
+            "plan_revision": plan_revision,
         }
         if advisory_warnings:
             event_fields["warnings"] = list(advisory_warnings)
-        self._append_event("planning_candidate_ready", **event_fields)
+        run_payload = dict(run)
+        run_payload["revision"] = expected_revision + 1
+        run_payload["phase"] = WHOLE_PLAN_REVIEW
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                run=run_payload,
+                run_expected_revision=expected_revision,
+                events=[
+                    {
+                        "type": "planning_candidate_ready",
+                        "run_id": self._run_id,
+                        **event_fields,
+                    }
+                ],
+            ),
+        )
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, session_id=session_id)
 
@@ -382,12 +396,14 @@ class PlanningPhaseOrchestrator:
             role="planner",
             revoke_phase=PLANNING,
             session_id=session_id,
-        )
-        self._append_event(
-            "planning_limit_exceeded",
-            session_id=session_id,
-            limit=limit,
-            message=message,
+            additional_events=[
+                {
+                    "type": "planning_limit_exceeded",
+                    "session_id": session_id,
+                    "limit": limit,
+                    "message": message,
+                }
+            ],
         )
         run = self._store.load_run(self._run_id)
         return self._result_from_run(

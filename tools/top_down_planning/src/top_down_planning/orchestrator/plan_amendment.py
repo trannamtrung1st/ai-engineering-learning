@@ -24,6 +24,7 @@ from top_down_planning.orchestrator.run_transitions import (
     complete_run_with_outcome,
     pause_for_limit_exhausted,
 )
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryPaused
 from top_down_planning.orchestrator.phases import (
     PLAN_AMENDMENT,
@@ -248,7 +249,7 @@ class PlanAmendmentOrchestrator:
 
     def _enter_plan_amendment_phase(self, amendment_id: str, prior_plan: Any) -> dict[str, Any]:
         production = self._store.load_production(self._run_id)
-        expected_revision = int(production["revision"])
+        production_expected = int(production["revision"])
         requests = list(production.get("amendment_requests") or [])
         updated_requests: list[dict[str, Any]] = []
         for request in requests:
@@ -260,17 +261,13 @@ class PlanAmendmentOrchestrator:
             patched = dict(request)
             patched["prior_plan_snapshot"] = prior_plan.to_dict()
             updated_requests.append(patched)
-        production = dict(production)
-        production["revision"] = expected_revision + 1
-        production["amendment_requests"] = updated_requests
-        self._store.save_production(self._run_id, production, expected_revision)
+        production_payload = dict(production)
+        production_payload["revision"] = production_expected + 1
+        production_payload["amendment_requests"] = updated_requests
 
         run = self._store.load_run(self._run_id)
-        expected_revision = int(run["revision"])
+        run_expected = int(run["revision"])
         revoke_capabilities_for_phase(self._store, self._run_id, str(run.get("phase") or ""))
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["phase"] = PLAN_AMENDMENT
         stop = StopRecord(
             code="amendment_pending",
             category="operational",
@@ -278,16 +275,34 @@ class PlanAmendmentOrchestrator:
             message="plan amendment requested",
             details={"pending_amendment_id": amendment_id},
         )
-        run["status"] = "paused"
-        run["outcome"] = None
-        run["stop"] = stop.to_dict()
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event(
-            "run_paused",
-            amendment_id=amendment_id,
-            stop=stop.to_dict(),
+        run_payload = dict(run)
+        run_payload["revision"] = run_expected + 1
+        run_payload["phase"] = PLAN_AMENDMENT
+        run_payload["status"] = "paused"
+        run_payload["outcome"] = None
+        run_payload["stop"] = stop.to_dict()
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                run=run_payload,
+                run_expected_revision=run_expected,
+                production=production_payload,
+                production_expected_revision=production_expected,
+                events=[
+                    {
+                        "type": "run_paused",
+                        "run_id": self._run_id,
+                        "amendment_id": amendment_id,
+                        "stop": stop.to_dict(),
+                    },
+                    {
+                        "type": "plan_amendment_started",
+                        "run_id": self._run_id,
+                        "amendment_id": amendment_id,
+                    },
+                ],
+            ),
         )
-        self._append_event("plan_amendment_started", amendment_id=amendment_id)
         return self._store.load_run(self._run_id)
 
     def _activate_amendment_execution(self) -> dict[str, Any]:
@@ -328,38 +343,58 @@ class PlanAmendmentOrchestrator:
         from top_down_planning.persistence.capabilities import clear_capability_token_file
 
         clear_capability_token_file(self._store, self._run_id)
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["status"] = "running"
-        run["outcome"] = None
-        run["stop"] = None
-        self._store.save_run(self._run_id, run, expected_revision)
+        run_payload = dict(run)
+        run_payload["revision"] = expected_revision + 1
+        run_payload["status"] = "running"
+        run_payload["outcome"] = None
+        run_payload["stop"] = None
+        events: list[dict[str, Any]] = []
         if prior_status == "paused" and isinstance(prior_stop, dict):
-            self._append_event(
-                "amendment_execution_resumed",
-                expected_revision=expected_revision,
-                resulting_revision=expected_revision + 1,
-                phase=prior_phase,
-                prior_status=prior_status,
-                prior_stop=prior_stop,
+            events.append(
+                {
+                    "type": "amendment_execution_resumed",
+                    "run_id": self._run_id,
+                    "expected_revision": expected_revision,
+                    "resulting_revision": expected_revision + 1,
+                    "phase": prior_phase,
+                    "prior_status": prior_status,
+                    "prior_stop": prior_stop,
+                }
             )
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                run=run_payload,
+                run_expected_revision=expected_revision,
+                events=events,
+            ),
+        )
         return self._store.load_run(self._run_id)
 
     def _transition_to_whole_plan_review(self) -> dict[str, Any]:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
         revoke_capabilities_for_phase(self._store, self._run_id, PLAN_AMENDMENT)
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["phase"] = WHOLE_PLAN_REVIEW
         plan = self._store.load_plan(self._run_id)
-        digests = dict(run.get("digests") or {})
+        run_payload = dict(run)
+        run_payload["revision"] = expected_revision + 1
+        run_payload["phase"] = WHOLE_PLAN_REVIEW
+        digests = dict(run_payload.get("digests") or {})
         digests["plan"] = compute_plan_digest(plan)
-        run["digests"] = digests
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event(
-            "plan_amendment_revision_ready",
-            plan_revision=int(plan["revision"]),
+        run_payload["digests"] = digests
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                run=run_payload,
+                run_expected_revision=expected_revision,
+                events=[
+                    {
+                        "type": "plan_amendment_revision_ready",
+                        "run_id": self._run_id,
+                        "plan_revision": int(plan["revision"]),
+                    }
+                ],
+            ),
         )
         return self._store.load_run(self._run_id)
 
@@ -367,19 +402,28 @@ class PlanAmendmentOrchestrator:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
         revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_PLAN_REVIEW)
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["phase"] = PRODUCTION
-        run["status"] = "running"
-        run["stop"] = None
-        digests = dict(run.get("digests") or {})
         plan = self._store.load_plan(self._run_id)
+        run_payload = dict(run)
+        run_payload["revision"] = expected_revision + 1
+        run_payload["phase"] = PRODUCTION
+        run_payload["status"] = "running"
+        run_payload["stop"] = None
+        digests = dict(run_payload.get("digests") or {})
         digests["plan"] = compute_plan_digest(plan)
-        run["digests"] = digests
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event(
-            "plan_amendment_production_resumed",
-            approved_plan_revision=plan_revision,
+        run_payload["digests"] = digests
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                run=run_payload,
+                run_expected_revision=expected_revision,
+                events=[
+                    {
+                        "type": "plan_amendment_production_resumed",
+                        "run_id": self._run_id,
+                        "approved_plan_revision": plan_revision,
+                    }
+                ],
+            ),
         )
         rebind_primary_session_capability(
             self._store,
@@ -575,12 +619,14 @@ class PlanAmendmentOrchestrator:
             role="planner",
             revoke_phase=PLAN_AMENDMENT,
             amendment_id=amendment_id,
-        )
-        self._append_event(
-            "plan_amendment_limit_exceeded",
-            amendment_id=amendment_id,
-            limit=limit,
-            message=message,
+            additional_events=[
+                {
+                    "type": "plan_amendment_limit_exceeded",
+                    "amendment_id": amendment_id,
+                    "limit": limit,
+                    "message": message,
+                }
+            ],
         )
         run = self._store.load_run(self._run_id)
         return PlanAmendmentResult(

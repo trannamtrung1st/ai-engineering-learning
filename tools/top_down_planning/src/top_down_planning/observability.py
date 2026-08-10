@@ -21,6 +21,7 @@ from core_tools.observability import (
     truncate_text,
 )
 from core_tools.provider.events import is_tool_call_end, is_tool_call_start
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
 
 
@@ -519,6 +520,15 @@ class ObservingRunStore:
 
     def append_event(self, run_id: str, event: dict[str, Any]) -> None:
         self._store.append_event(run_id, event)
+        self._emit_audit_event(run_id, event)
+
+    def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
+        result = self._store.commit(run_id, spec)
+        for event in spec.events:
+            self._emit_audit_event(run_id, event)
+        return result
+
+    def _emit_audit_event(self, run_id: str, event: dict[str, Any]) -> None:
         mapped = map_audit_event(event)
         if mapped is not None:
             self._context.emit(

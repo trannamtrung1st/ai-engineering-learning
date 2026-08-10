@@ -146,7 +146,7 @@ Craft invalid `ResumePlan` instances directly in tests.
 
 #### State + event atomicity
 
-Every lifecycle transition and its required audit event share one `CommitSpec` commit. Do not add new split `save_run` + `append_event` lifecycle sequences — migrate existing split paths to `CommitSpec`.
+Every lifecycle transition and its required audit event share one `CommitSpec` commit. Do not add new split `save_run` + `append_event` lifecycle sequences — migrate existing split paths to `CommitSpec`. Planning completion, production phase entry/completion, amendment transitions, and limit semantic events are committed atomically with their run/production state; store decorators mirror `CommitSpec.events` to observability and notifications the same as `append_event`.
 
 Fault-injection helpers (persistence layer):
 

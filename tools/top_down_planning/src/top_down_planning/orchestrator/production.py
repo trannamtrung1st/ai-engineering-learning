@@ -72,6 +72,7 @@ from top_down_planning.orchestrator.session_context import ensure_primary_sessio
 from top_down_planning.orchestrator.session_events import (
     resume_primary_session_with_audit,
 )
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.digests import compute_output_digest
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.session_bindings import primary_provider_session_id
@@ -420,11 +421,22 @@ class ProductionPhaseOrchestrator:
     def _enter_production_phase(self) -> dict[str, Any]:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["phase"] = PRODUCTION
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event("production_phase_started")
+        run_payload = dict(run)
+        run_payload["revision"] = expected_revision + 1
+        run_payload["phase"] = PRODUCTION
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                run=run_payload,
+                run_expected_revision=expected_revision,
+                events=[
+                    {
+                        "type": "production_phase_started",
+                        "run_id": self._run_id,
+                    }
+                ],
+            ),
+        )
         return self._store.load_run(self._run_id)
 
     def _complete_production(self, session_id: str) -> ProductionPhaseResult:
@@ -510,37 +522,53 @@ class ProductionPhaseOrchestrator:
             )
 
         snapshot_rebased = new_snapshot_digest != old_snapshot_digest
-        run = dict(run)
-        run["revision"] = expected_revision + 1
-        run["phase"] = WHOLE_OUTPUT_REVIEW
+        run_payload = dict(run)
+        run_payload["revision"] = expected_revision + 1
+        run_payload["phase"] = WHOLE_OUTPUT_REVIEW
         digests["output"] = compute_output_digest(production)
         if snapshot_rebased:
             digests["context_snapshot"] = new_snapshot_digest
-            run["context_snapshot_binding"] = new_binding
-        run["digests"] = digests
-        self._store.save_run(self._run_id, run, expected_revision)
-        self._append_event(
-            "context_snapshot_collected",
-            session_id=session_id,
-            **diagnostics.to_event_fields(),
-        )
-        if snapshot_rebased:
-            self._append_event(
-                "context_snapshot_rebased",
-                session_id=session_id,
-                phase_transition=f"{PRODUCTION}->{WHOLE_OUTPUT_REVIEW}",
-                prior_snapshot_digest=short_digest_for_observability(old_snapshot_digest),
-                new_snapshot_digest=short_digest_for_observability(new_snapshot_digest),
-                changed_path_count=len(changed_paths),
-                changed_paths=[
-                    short_path_for_observability(path) for path in changed_paths[:10]
-                ],
+            run_payload["context_snapshot_binding"] = new_binding
+        run_payload["digests"] = digests
+        events: list[dict[str, Any]] = [
+            {
+                "type": "context_snapshot_collected",
+                "run_id": self._run_id,
+                "session_id": session_id,
                 **diagnostics.to_event_fields(),
+            }
+        ]
+        if snapshot_rebased:
+            events.append(
+                {
+                    "type": "context_snapshot_rebased",
+                    "run_id": self._run_id,
+                    "session_id": session_id,
+                    "phase_transition": f"{PRODUCTION}->{WHOLE_OUTPUT_REVIEW}",
+                    "prior_snapshot_digest": short_digest_for_observability(old_snapshot_digest),
+                    "new_snapshot_digest": short_digest_for_observability(new_snapshot_digest),
+                    "changed_path_count": len(changed_paths),
+                    "changed_paths": [
+                        short_path_for_observability(path) for path in changed_paths[:10]
+                    ],
+                    **diagnostics.to_event_fields(),
+                }
             )
-        self._append_event(
-            "production_completed",
-            session_id=session_id,
-            batch_count=self._batch_count(),
+        events.append(
+            {
+                "type": "production_completed",
+                "run_id": self._run_id,
+                "session_id": session_id,
+                "batch_count": self._batch_count(),
+            }
+        )
+        self._store.commit(
+            self._run_id,
+            CommitSpec(
+                run=run_payload,
+                run_expected_revision=expected_revision,
+                events=events,
+            ),
         )
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, session_id=session_id)
@@ -565,12 +593,14 @@ class ProductionPhaseOrchestrator:
             role="producer",
             revoke_phase=PRODUCTION,
             session_id=session_id,
-        )
-        self._append_event(
-            "production_limit_exceeded",
-            limit=limit,
-            message=message,
-            session_id=session_id,
+            additional_events=[
+                {
+                    "type": "production_limit_exceeded",
+                    "limit": limit,
+                    "message": message,
+                    "session_id": session_id,
+                }
+            ],
         )
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=False, session_id=session_id, reason=message)

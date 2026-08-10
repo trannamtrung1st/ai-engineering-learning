@@ -116,6 +116,7 @@ def pause_run(
     stop: StopRecord,
     revoke_phase: str | None = None,
     event_type: str = "run_paused",
+    additional_events: list[dict[str, Any]] | None = None,
     **event_fields: Any,
 ) -> dict[str, Any]:
     run = store.load_run(run_id)
@@ -136,19 +137,24 @@ def pause_run(
     updated["stop"] = stop.to_dict()
     if revoke_phase is not None:
         updated["pending_capability_revoke_phase"] = revoke_phase
+    primary_event: dict[str, Any] = {
+        "type": event_type,
+        "run_id": run_id,
+        "stop": stop.to_dict(),
+        **event_fields,
+    }
+    events: list[dict[str, Any]] = [primary_event]
+    if additional_events:
+        for extra in additional_events:
+            payload = dict(extra)
+            payload.setdefault("run_id", run_id)
+            events.append(payload)
     store.commit(
         run_id,
         CommitSpec(
             run=updated,
             run_expected_revision=expected_revision,
-            events=[
-                {
-                    "type": event_type,
-                    "run_id": run_id,
-                    "stop": stop.to_dict(),
-                    **event_fields,
-                }
-            ],
+            events=events,
         ),
     )
     if revoke_phase is not None:
@@ -264,6 +270,7 @@ def pause_for_limit_exhausted(
     configured: int,
     role: str | None = None,
     revoke_phase: str | None = None,
+    additional_events: list[dict[str, Any]] | None = None,
     **event_fields: Any,
 ) -> dict[str, Any]:
     limit_path = str(limit).strip()
@@ -298,6 +305,7 @@ def pause_for_limit_exhausted(
         limit=limit_path,
         consumed=consumed,
         configured=configured,
+        additional_events=additional_events,
         **event_fields,
     )
 

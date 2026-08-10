@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
 
 from top_down_planning.notifications.bridge import NotificationDedupeState, handle_audit_event
@@ -41,6 +42,15 @@ class NotifyingRunStore:
 
     def append_event(self, run_id: str, event: dict[str, Any]) -> None:
         self._store.append_event(run_id, event)
+        self._notify_event(run_id, event)
+
+    def commit(self, run_id: str, spec: CommitSpec) -> dict[str, Any]:
+        result = self._store.commit(run_id, spec)
+        for event in spec.events:
+            self._notify_event(run_id, event)
+        return result
+
+    def _notify_event(self, run_id: str, event: dict[str, Any]) -> None:
         if not self._context.enabled:
             return
         try:
