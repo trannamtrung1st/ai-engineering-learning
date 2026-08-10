@@ -3,16 +3,29 @@
 from __future__ import annotations
 
 import multiprocessing
+import threading
+import time
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from top_down_planning.domain.models import Plan, PlanItem
-from top_down_planning.domain.run_ownership import acquire_run_ownership, run_ownership
+from top_down_planning.domain.resume_plan import ResumePlan, ResumePlanValidation, ResumeStateTransition
+from top_down_planning.domain.run_lifecycle import StopRecord
+from top_down_planning.domain.run_ownership import (
+    RunOwnershipError,
+    acquire_run_ownership,
+    run_ownership,
+)
+from top_down_planning.orchestrator.apply_resume import ApplyResumeError, apply_resume_plan_atomically
+from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.resume import (
     assert_resume_apply_preconditions,
     assert_running_continuation_preconditions,
 )
+from top_down_planning.orchestrator.run_transitions import pause_run, reconcile_pending_capability_revocation
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.config_commit import (
     ResumeConfigCommitError,
@@ -52,6 +65,55 @@ def _create_running_run(store: FileRunStore) -> str:
     run["revision"] = 1
     store.save_run(run_id, run, expected_revision=0)
     return run_id
+
+
+def _pause_stop() -> StopRecord:
+    return StopRecord(
+        code="user_cancelled",
+        category="operational",
+        phase=PLANNING,
+        message="cancelled",
+    )
+
+
+def _create_paused_planning_run(store: FileRunStore) -> str:
+    run_id = "run-20260101T001301-001301"
+    config = minimal_resolved_config()
+    store.create_run(
+        run_id,
+        plan=_sample_plan(),
+        phase=PLANNING,
+        **create_run_kwargs(store.root, resolved_config=config),
+    )
+    pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+    return run_id
+
+
+def _paused_resume_plan(
+    store: FileRunStore,
+    run_id: str,
+) -> ResumePlan:
+    paused = store.load_run(run_id)
+    config = store.load_resolved_config(run_id)
+    return ResumePlan(
+        run_id=run_id,
+        expected_run_revision=int(paused["revision"]),
+        state_transition=ResumeStateTransition(
+            from_status="paused",
+            to_status="running",
+            prior_stop_code="user_cancelled",
+        ),
+        config_changes={},
+        session_policy={},
+        validation=ResumePlanValidation(
+            contract_digest_valid=True,
+            plan_binding_valid=True,
+            approval_binding_valid=True,
+            evidence_binding_valid=True,
+            context_binding_valid=True,
+        ),
+        effective_config=config,
+    )
 
 
 def test_concurrent_resume_apply_blocked_while_engine_owns_run(tmp_path: Path) -> None:
@@ -103,6 +165,160 @@ def test_concurrent_resume_apply_blocked_while_engine_owns_run(tmp_path: Path) -
         invocation=invocation,
         run_expected_revision=1,
     )
+
+
+def test_apply_resume_plan_blocked_while_other_process_holds_ownership(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_paused_planning_run(store)
+    run_dir = store.run_dir(run_id)
+    plan = _paused_resume_plan(store, run_id)
+    config = store.load_resolved_config(run_id)
+    revision_before = int(store.load_run(run_id)["revision"])
+
+    barrier = threading.Barrier(2)
+    apply_errors: list[ApplyResumeError] = []
+
+    def holder() -> None:
+        with run_ownership(run_id, run_dir=run_dir):
+            barrier.wait()
+            time.sleep(0.3)
+
+    def contender() -> None:
+        try:
+            barrier.wait()
+            apply_resume_plan_atomically(store, plan, resolved_config=config)
+        except ApplyResumeError as exc:
+            apply_errors.append(exc)
+
+    holder_thread = threading.Thread(target=holder)
+    contender_thread = threading.Thread(target=contender)
+    holder_thread.start()
+    contender_thread.start()
+    holder_thread.join(timeout=5)
+    contender_thread.join(timeout=5)
+    assert not holder_thread.is_alive()
+    assert not contender_thread.is_alive()
+
+    assert len(apply_errors) == 1
+    assert apply_errors[0].code == "run_owned_by_live_process"
+    paused = store.load_run(run_id)
+    assert paused["status"] == "paused"
+    assert int(paused["revision"]) == revision_before
+
+
+def test_apply_resume_holds_ownership_until_commit(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_paused_planning_run(store)
+    plan = _paused_resume_plan(store, run_id)
+    config = store.load_resolved_config(run_id)
+    revision_before = int(store.load_run(run_id)["revision"])
+    run_dir = store.run_dir(run_id)
+
+    commit_barrier = threading.Barrier(2)
+    ownership_errors: list[RunOwnershipError] = []
+    original_commit = store.commit
+
+    def slow_commit(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        commit_barrier.wait()
+        time.sleep(0.2)
+        return original_commit(*args, **kwargs)
+
+    def apply_worker() -> None:
+        with patch.object(store, "commit", side_effect=slow_commit):
+            apply_resume_plan_atomically(store, plan, resolved_config=config)
+
+    def contender() -> None:
+        try:
+            commit_barrier.wait()
+            acquire_run_ownership(run_id, run_dir=run_dir)
+        except RunOwnershipError as exc:
+            ownership_errors.append(exc)
+
+    apply_thread = threading.Thread(target=apply_worker)
+    contender_thread = threading.Thread(target=contender)
+    apply_thread.start()
+    contender_thread.start()
+    apply_thread.join(timeout=10)
+    contender_thread.join(timeout=10)
+    assert not apply_thread.is_alive()
+    assert not contender_thread.is_alive()
+
+    assert len(ownership_errors) == 1
+    assert ownership_errors[0].code == "run_owned_by_live_process"
+    resumed = store.load_run(run_id)
+    assert resumed["status"] == "running"
+    assert int(resumed["revision"]) == revision_before + 1
+
+
+def test_apply_resume_contender_cannot_acquire_during_reconcile_stale_plan(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    from tests.helpers import grant_capability
+
+    grant_capability(store, run_id, role="planner", phase=PLANNING)
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=OSError("revoke failed"),
+    ):
+        with pytest.raises(OSError, match="revoke failed"):
+            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+
+    revision_after_pause = int(store.load_run(run_id)["revision"])
+    plan = _paused_resume_plan(store, run_id)
+    config = store.load_resolved_config(run_id)
+    run_dir = store.run_dir(run_id)
+
+    reconcile_barrier = threading.Barrier(2)
+    ownership_errors: list[RunOwnershipError] = []
+
+    original_reconcile = reconcile_pending_capability_revocation
+
+    def reconcile_and_hold(*args: Any, **kwargs: Any) -> None:
+        original_reconcile(*args, **kwargs)
+        reconcile_barrier.wait()
+        time.sleep(0.2)
+
+    apply_errors: list[ApplyResumeError] = []
+
+    def apply_worker() -> None:
+        with patch(
+            "top_down_planning.orchestrator.apply_resume.reconcile_pending_capability_revocation",
+            side_effect=reconcile_and_hold,
+        ):
+            try:
+                apply_resume_plan_atomically(store, plan, resolved_config=config)
+            except ApplyResumeError as exc:
+                apply_errors.append(exc)
+
+    def contender() -> None:
+        reconcile_barrier.wait()
+        try:
+            acquire_run_ownership(run_id, run_dir=run_dir)
+        except RunOwnershipError as exc:
+            ownership_errors.append(exc)
+
+    apply_thread = threading.Thread(target=apply_worker)
+    contender_thread = threading.Thread(target=contender)
+    apply_thread.start()
+    contender_thread.start()
+    apply_thread.join(timeout=10)
+    contender_thread.join(timeout=10)
+    assert not apply_thread.is_alive()
+    assert not contender_thread.is_alive()
+
+    assert len(ownership_errors) == 1
+    assert ownership_errors[0].code == "run_owned_by_live_process"
+    assert len(apply_errors) == 1
+    assert apply_errors[0].code == "resume_apply_blocked"
+    assert "stale after capability reconciliation" in str(apply_errors[0])
+    paused = store.load_run(run_id)
+    assert paused["status"] == "paused"
+    assert int(paused["revision"]) == revision_after_pause + 1
 
 
 def test_running_continuation_preconditions_without_config_mutation(tmp_path: Path) -> None:

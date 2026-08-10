@@ -30,7 +30,6 @@ from top_down_planning.domain.reviews import (
 from top_down_planning.domain.run_ownership import (
     RunOwnershipError,
     assert_expected_run_revision,
-    assert_no_live_process_owns_run,
     resolve_run_dir,
     run_ownership,
 )
@@ -88,18 +87,12 @@ def _limit_extended_paths(config_changes: dict[str, dict[str, Any]]) -> list[str
 def _reconcile_pending_capability_for_resume_apply(
     store: FileRunStore,
     run_id: str,
-    *,
-    run_dir: Path | None,
 ) -> None:
     run = store.load_run(run_id)
     if pending_capability_revoke_phase(run) is None:
         return
     try:
-        if run_dir is not None:
-            with run_ownership(run_id, run_dir=run_dir):
-                reconcile_pending_capability_revocation(store, run_id)
-        else:
-            reconcile_pending_capability_revocation(store, run_id)
+        reconcile_pending_capability_revocation(store, run_id)
     except OSError as exc:
         raise ApplyResumeError(
             f"pending capability revocation failed: {exc}",
@@ -112,7 +105,7 @@ def _reconcile_pending_capability_for_resume_apply(
         )
 
 
-def apply_resume_plan_atomically(
+def _apply_resume_plan_under_ownership(
     store: FileRunStore,
     resume_plan: ResumePlan,
     *,
@@ -120,41 +113,13 @@ def apply_resume_plan_atomically(
     invocation: dict[str, Any] | None = None,
     consumed_limits: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    """Apply a prepared resume plan in one journaled commit."""
-
-    if resume_plan.already_completed:
-        run = store.load_run(resume_plan.run_id)
-        actual_status = str(run.get("status") or "")
-        if actual_status != "completed":
-            raise ApplyResumeError(
-                f"already_completed resume plan does not match actual status "
-                f"{actual_status!r}",
-                code="resume_apply_blocked",
-            )
-        return {
-            "ok": continuation_ok_from_run(run),
-            "already_completed": True,
-            "run_id": resume_plan.run_id,
-            "message": resume_plan.message,
-        }
-
     run_id = resume_plan.run_id
     run = store.load_run(run_id)
     expected_revision = resume_plan.expected_run_revision
 
-    try:
-        assert_expected_run_revision(run, expected_revision)
-        run_dir = resolve_run_dir(store, run_id)
-        if run_dir is not None:
-            assert_no_live_process_owns_run(run_id, run_dir=run_dir)
-    except RunOwnershipError as exc:
-        raise ApplyResumeError(str(exc), code=exc.code) from exc
+    assert_expected_run_revision(run, expected_revision)
 
-    _reconcile_pending_capability_for_resume_apply(
-        store,
-        run_id,
-        run_dir=run_dir if run_dir is not None else None,
-    )
+    _reconcile_pending_capability_for_resume_apply(store, run_id)
     run = store.load_run(run_id)
     try:
         assert_expected_run_revision(run, expected_revision)
@@ -487,6 +452,55 @@ def apply_resume_plan_atomically(
         "contract_digest_may_change": resume_plan.contract_digest_may_change,
         "context_spec_may_change": resume_plan.context_spec_may_change,
     }
+
+
+def apply_resume_plan_atomically(
+    store: FileRunStore,
+    resume_plan: ResumePlan,
+    *,
+    resolved_config: dict[str, Any],
+    invocation: dict[str, Any] | None = None,
+    consumed_limits: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Apply a prepared resume plan in one journaled commit."""
+
+    if resume_plan.already_completed:
+        run = store.load_run(resume_plan.run_id)
+        actual_status = str(run.get("status") or "")
+        if actual_status != "completed":
+            raise ApplyResumeError(
+                f"already_completed resume plan does not match actual status "
+                f"{actual_status!r}",
+                code="resume_apply_blocked",
+            )
+        return {
+            "ok": continuation_ok_from_run(run),
+            "already_completed": True,
+            "run_id": resume_plan.run_id,
+            "message": resume_plan.message,
+        }
+
+    run_id = resume_plan.run_id
+    run_dir = resolve_run_dir(store, run_id)
+    try:
+        if run_dir is not None:
+            with run_ownership(run_id, run_dir=run_dir):
+                return _apply_resume_plan_under_ownership(
+                    store,
+                    resume_plan,
+                    resolved_config=resolved_config,
+                    invocation=invocation,
+                    consumed_limits=consumed_limits,
+                )
+        return _apply_resume_plan_under_ownership(
+            store,
+            resume_plan,
+            resolved_config=resolved_config,
+            invocation=invocation,
+            consumed_limits=consumed_limits,
+        )
+    except RunOwnershipError as exc:
+        raise ApplyResumeError(str(exc), code=exc.code) from exc
 
 
 __all__ = ["ApplyResumeError", "apply_resume_plan_atomically"]
