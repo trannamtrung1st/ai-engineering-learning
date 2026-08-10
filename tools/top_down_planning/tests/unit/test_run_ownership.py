@@ -35,6 +35,7 @@ from top_down_planning.domain.run_ownership import (
     ownership_cleanup_failures,
     _OWNERSHIP_REGISTRY,
     _OWNERSHIP_CLEANUP_FAILURES,
+    _rollback_failed_acquire,
     _clear_owner_metadata,
     _release_flock_fd,
 )
@@ -46,6 +47,12 @@ def _subprocess_env() -> dict[str, str]:
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = str(src) + (os.pathsep + existing if existing else "")
     return env
+
+
+@pytest.fixture(autouse=True)
+def _reset_ownership_registry() -> None:
+    yield
+    _OWNERSHIP_REGISTRY.clear()
 
 
 def test_assert_expected_run_revision_rejects_stale_revision() -> None:
@@ -164,6 +171,86 @@ def test_nested_run_ownership_reuses_outer_lock(tmp_path: Path) -> None:
             assert read_resume_lock(run_dir) is not None
         assert read_resume_lock(run_dir) is not None
     assert read_resume_lock(run_dir) is None
+
+
+def test_rollback_mismatched_token_preserves_winner_registry(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    winner_token = acquire_run_ownership("run-1", run_dir=run_dir)
+    winner_entry = dict(_OWNERSHIP_REGISTRY["run-1"])
+    loser_token = "loser-token"
+    _rollback_failed_acquire("run-1", run_dir, loser_token, None)
+    assert _OWNERSHIP_REGISTRY["run-1"] == winner_entry
+    assert holds_run_ownership("run-1")
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=winner_token)
+
+
+def test_same_process_concurrent_first_acquire_one_winner(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    barrier = threading.Barrier(2)
+    results: list[tuple[str, str | BaseException]] = []
+
+    def contender(label: str) -> None:
+        try:
+            barrier.wait()
+            token = acquire_run_ownership("run-1", run_dir=run_dir)
+            results.append((label, token))
+        except BaseException as exc:
+            results.append((label, exc))
+
+    threads = [
+        threading.Thread(target=contender, args=("a",)),
+        threading.Thread(target=contender, args=("b",)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    winners = [item for item in results if not isinstance(item[1], BaseException)]
+    losers = [item for item in results if isinstance(item[1], BaseException)]
+    assert len(winners) == 1
+    assert len(losers) == 1
+    loser_exc = losers[0][1]
+    assert isinstance(loser_exc, RunOwnershipError)
+    assert loser_exc.code == "run_owned_by_live_process"
+
+    winner_token = winners[0][1]
+    assert isinstance(winner_token, str)
+    assert holds_run_ownership("run-1")
+    assert _OWNERSHIP_REGISTRY["run-1"]["owner_token"] == winner_token
+
+    run_dir_arg = str(run_dir)
+    holding_path = run_dir / ".peer_holding"
+    child_script = (
+        "from pathlib import Path\n"
+        "from top_down_planning.domain.run_ownership import "
+        "acquire_run_ownership, RunOwnershipError\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "holding = run_dir / '.peer_holding'\n"
+        "try:\n"
+        "    acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "except RunOwnershipError:\n"
+        "    holding.write_text('blocked', encoding='utf-8')\n"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", child_script],
+        env=_subprocess_env(),
+    )
+    for _ in range(100):
+        if holding_path.is_file():
+            break
+        time.sleep(0.02)
+    assert child.wait(timeout=5) == 0
+    assert holding_path.read_text(encoding="utf-8") == "blocked"
+
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=winner_token)
+    assert not holds_run_ownership("run-1")
+
+    peer_token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=peer_token)
 
 
 def test_nested_run_ownership_blocks_other_context(tmp_path: Path) -> None:

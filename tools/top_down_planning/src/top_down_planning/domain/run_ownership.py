@@ -7,6 +7,7 @@ import json
 import os
 import re
 import signal
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -36,6 +37,7 @@ _LOCK_METADATA_FILENAME = "owner.json"
 _OWNER_FLOCK_FILENAME = ".owner.lock"
 _OWNERSHIP_REGISTRY: dict[str, dict[str, Any]] = {}
 _OWNERSHIP_CLEANUP_FAILURES: list[dict[str, Any]] = []
+_ACQUIRE_LOCK = threading.Lock()
 _NESTED_OWNERSHIP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_NESTED_OWNERSHIP",
     default=None,
@@ -523,16 +525,19 @@ def _publish_run_ownership(run_id: str, owner_token: str, flock_fd: int) -> None
 def _rollback_failed_acquire(
     run_id: str,
     run_dir: Path,
+    owner_token: str,
     flock_fd: int | None,
 ) -> None:
     with _defer_interrupt_signals():
-        entry = _OWNERSHIP_REGISTRY.pop(run_id, None)
-        fd_to_release = int(entry["fd"]) if entry is not None else flock_fd
-        if fd_to_release is None:
-            return
-        if entry is None:
+        entry = _OWNERSHIP_REGISTRY.get(run_id)
+        if entry is not None and entry.get("owner_token") == owner_token:
+            _OWNERSHIP_REGISTRY.pop(run_id, None)
+            _release_flock_fd(int(entry["fd"]))
             _cleanup_failed_acquire(run_dir)
-        _release_flock_fd(fd_to_release)
+            return
+        if flock_fd is not None:
+            _cleanup_failed_acquire(run_dir)
+            _release_flock_fd(flock_fd)
 
 
 def _record_ownership_cleanup_failure(
@@ -570,7 +575,6 @@ def acquire_run_ownership(
 ) -> str:
     """Acquire in-process and on-disk ownership for a run continuation or apply."""
 
-    assert_no_live_process_owns_run(run_id, run_dir=run_dir)
     owner_token = uuid.uuid4().hex
     record = ResumeLockRecord(
         run_id=run_id,
@@ -579,20 +583,22 @@ def acquire_run_ownership(
         acquired_at=_utc_now(),
         process_identity=process_identity_for_pid(os.getpid()),
     )
-    run_dir.mkdir(parents=True, exist_ok=True)
-    _clear_abandoned_lock_claim(run_dir)
-    flock_fd: int | None = None
-    try:
-        flock_fd = _acquire_owner_flock(run_dir)
-        _clear_owner_metadata(run_dir)
-        metadata_path = resume_lock_metadata_path(run_dir)
-        _write_lock_metadata(metadata_path, record)
-        _publish_run_ownership(run_id, owner_token, flock_fd)
-        flock_fd = None
-        return owner_token
-    except BaseException:
-        _rollback_failed_acquire(run_id, run_dir, flock_fd)
-        raise
+    with _ACQUIRE_LOCK:
+        assert_no_live_process_owns_run(run_id, run_dir=run_dir)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        _clear_abandoned_lock_claim(run_dir)
+        flock_fd: int | None = None
+        try:
+            flock_fd = _acquire_owner_flock(run_dir)
+            _clear_owner_metadata(run_dir)
+            metadata_path = resume_lock_metadata_path(run_dir)
+            _write_lock_metadata(metadata_path, record)
+            _publish_run_ownership(run_id, owner_token, flock_fd)
+            flock_fd = None
+            return owner_token
+        except BaseException:
+            _rollback_failed_acquire(run_id, run_dir, owner_token, flock_fd)
+            raise
 
 
 def release_run_ownership(
