@@ -15,8 +15,8 @@ from top_down_planning.config.resume_policy import (
 from top_down_planning.domain.run_ownership import (
     RunOwnershipError,
     assert_expected_run_revision,
-    assert_no_live_process_owns_run,
     resolve_run_dir,
+    run_ownership,
 )
 from top_down_planning.invocation import (
     merge_invocation_metadata,
@@ -137,7 +137,7 @@ def build_resume_config_commit_spec(
     )
 
 
-def apply_resume_config_atomic(
+def _apply_resume_config_under_ownership(
     store: FileRunStore,
     run_id: str,
     *,
@@ -145,17 +145,9 @@ def apply_resume_config_atomic(
     invocation: dict[str, Any],
     run_expected_revision: int,
 ) -> dict[str, Any]:
-    """Persist accepted resume config, execution digest, and invocation atomically."""
-
     expected = parse_revision_value(run_expected_revision, "run")
     run = store.load_run(run_id)
-    try:
-        assert_expected_run_revision(run, expected)
-        run_dir = resolve_run_dir(store, run_id)
-        if run_dir is not None:
-            assert_no_live_process_owns_run(run_id, run_dir=run_dir)
-    except RunOwnershipError as exc:
-        raise ResumeConfigCommitError(str(exc)) from exc
+    assert_expected_run_revision(run, expected)
 
     spec = build_resume_config_commit_spec(
         run=run,
@@ -176,3 +168,35 @@ def apply_resume_config_atomic(
         "config_contract_digest": compute_config_contract_digest(resolved_config),
         "config_execution_digest": compute_config_execution_digest(resolved_config),
     }
+
+
+def apply_resume_config_atomic(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    resolved_config: dict[str, Any],
+    invocation: dict[str, Any],
+    run_expected_revision: int,
+) -> dict[str, Any]:
+    """Persist accepted resume config, execution digest, and invocation atomically."""
+
+    run_dir = resolve_run_dir(store, run_id)
+    try:
+        if run_dir is not None:
+            with run_ownership(run_id, run_dir=run_dir):
+                return _apply_resume_config_under_ownership(
+                    store,
+                    run_id,
+                    resolved_config=resolved_config,
+                    invocation=invocation,
+                    run_expected_revision=run_expected_revision,
+                )
+        return _apply_resume_config_under_ownership(
+            store,
+            run_id,
+            resolved_config=resolved_config,
+            invocation=invocation,
+            run_expected_revision=run_expected_revision,
+        )
+    except RunOwnershipError as exc:
+        raise ResumeConfigCommitError(str(exc)) from exc

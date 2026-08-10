@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import multiprocessing
 import threading
 import time
@@ -343,19 +344,130 @@ def test_resume_apply_preconditions_reject_stale_revision(tmp_path: Path) -> Non
         assert_resume_apply_preconditions(store, run_id, expected_run_revision=99)
 
 
-def test_resume_apply_blocked_when_continue_run_holds_ownership(tmp_path: Path) -> None:
+def test_apply_resume_config_reuses_nested_run_ownership(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = _create_running_run(store)
     run_dir = store.run_dir(run_id)
-    candidate_config = store.load_resolved_config(run_id)
+    stored_config = store.load_resolved_config(run_id)
+    candidate_config = _with_limit_override(stored_config, "limits.production.max_batches", 99)
     invocation = store.load_invocation(run_id)
 
     with run_ownership(run_id, run_dir=run_dir):
-        with pytest.raises(ResumeConfigCommitError, match="owned"):
+        result = apply_resume_config_atomic(
+            store,
+            run_id,
+            resolved_config=candidate_config,
+            invocation=invocation,
+            run_expected_revision=1,
+        )
+
+    assert result["run_revision"] == 2
+    assert store.load_resolved_config(run_id) == candidate_config
+
+
+def _with_limit_override(config: dict, path: str, value: int) -> dict:
+    updated = copy.deepcopy(config)
+    parts = path.split(".")
+    current = updated
+    for part in parts[:-1]:
+        current = current.setdefault(part, {})
+    current[parts[-1]] = value
+    return updated
+
+
+def test_apply_resume_config_blocked_while_other_process_holds_ownership(
+    tmp_path: Path,
+) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    run_dir = store.run_dir(run_id)
+    stored_config = store.load_resolved_config(run_id)
+    candidate_config = _with_limit_override(stored_config, "limits.production.max_batches", 99)
+    invocation = store.load_invocation(run_id)
+    revision_before = int(store.load_run(run_id)["revision"])
+
+    barrier = threading.Barrier(2)
+    config_errors: list[ResumeConfigCommitError] = []
+
+    def holder() -> None:
+        with run_ownership(run_id, run_dir=run_dir):
+            barrier.wait()
+            time.sleep(0.3)
+
+    def contender() -> None:
+        try:
+            barrier.wait()
             apply_resume_config_atomic(
                 store,
                 run_id,
                 resolved_config=candidate_config,
                 invocation=invocation,
-                run_expected_revision=1,
+                run_expected_revision=revision_before,
             )
+        except ResumeConfigCommitError as exc:
+            config_errors.append(exc)
+
+    holder_thread = threading.Thread(target=holder)
+    contender_thread = threading.Thread(target=contender)
+    holder_thread.start()
+    contender_thread.start()
+    holder_thread.join(timeout=5)
+    contender_thread.join(timeout=5)
+    assert not holder_thread.is_alive()
+    assert not contender_thread.is_alive()
+
+    assert len(config_errors) == 1
+    assert "owned" in str(config_errors[0]).lower()
+    assert store.load_resolved_config(run_id) == stored_config
+    assert store.load_invocation(run_id) == invocation
+    assert int(store.load_run(run_id)["revision"]) == revision_before
+
+
+def test_apply_resume_config_holds_ownership_until_commit(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    run_dir = store.run_dir(run_id)
+    stored_config = store.load_resolved_config(run_id)
+    candidate_config = _with_limit_override(stored_config, "limits.production.max_batches", 99)
+    invocation = store.load_invocation(run_id)
+    revision_before = int(store.load_run(run_id)["revision"])
+
+    commit_barrier = threading.Barrier(2)
+    ownership_errors: list[RunOwnershipError] = []
+    original_commit = store.commit
+
+    def slow_commit(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        commit_barrier.wait()
+        time.sleep(0.2)
+        return original_commit(*args, **kwargs)
+
+    def config_worker() -> None:
+        with patch.object(store, "commit", side_effect=slow_commit):
+            apply_resume_config_atomic(
+                store,
+                run_id,
+                resolved_config=candidate_config,
+                invocation=invocation,
+                run_expected_revision=revision_before,
+            )
+
+    def contender() -> None:
+        try:
+            commit_barrier.wait()
+            acquire_run_ownership(run_id, run_dir=run_dir)
+        except RunOwnershipError as exc:
+            ownership_errors.append(exc)
+
+    config_thread = threading.Thread(target=config_worker)
+    contender_thread = threading.Thread(target=contender)
+    config_thread.start()
+    contender_thread.start()
+    config_thread.join(timeout=10)
+    contender_thread.join(timeout=10)
+    assert not config_thread.is_alive()
+    assert not contender_thread.is_alive()
+
+    assert len(ownership_errors) == 1
+    assert ownership_errors[0].code == "run_owned_by_live_process"
+    assert store.load_resolved_config(run_id) == candidate_config
+    assert int(store.load_run(run_id)["revision"]) == revision_before + 1
