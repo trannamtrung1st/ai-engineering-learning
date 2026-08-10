@@ -9,14 +9,15 @@ from typing import Any, Callable
 
 from core_tools.observability import ConsoleEvent
 from top_down_planning.domain.production import has_pending_amendment
-from top_down_planning.observability import (
-    ObservabilityContext,
-    cancel_console_event,
-)
 from top_down_planning.domain.run_lifecycle import StopRecord, continuation_ok_from_run
 from top_down_planning.domain.run_ownership import (
     resolve_run_dir,
     run_ownership,
+)
+from top_down_planning.observability import (
+    ObservabilityContext,
+    cancel_console_event,
+    report_ownership_cleanup_diagnostics,
 )
 from top_down_planning.orchestrator.agent_process_cleanup import (
     finalize_user_cancel,
@@ -259,9 +260,10 @@ class RunEngine:
 
             run_dir = resolve_run_dir(self._store, run_id)
             if run_dir is not None:
+                ownership_result: RunContinuationResult | None = None
                 with run_ownership(run_id, run_dir=run_dir):
                     try:
-                        return self._continue_run_unlocked(
+                        ownership_result = self._continue_run_unlocked(
                             run_id,
                             until=until,
                             single_step=single_step,
@@ -280,7 +282,7 @@ class RunEngine:
                             )
                         run = self._store.load_run(run_id)
                         user_cancelled = _continuation_cancelled_from_run(run)
-                        result = _continuation_result_from_run(
+                        ownership_result = _continuation_result_from_run(
                             run,
                             run_id,
                             until=until,
@@ -292,8 +294,10 @@ class RunEngine:
                             ),
                             cancelled=user_cancelled,
                         )
-                        self._emit_done(result, started_at=started_at)
-                        return result
+                        self._emit_done(ownership_result, started_at=started_at)
+                report_ownership_cleanup_diagnostics(self._observability, run_id=run_id)
+                if ownership_result is not None:
+                    return ownership_result
             return self._continue_run_unlocked(
                 run_id,
                 until=until,

@@ -533,6 +533,37 @@ class ObservingRunStore:
             )
 
 
+def report_ownership_cleanup_diagnostics(
+    context: ObservabilityContext | None,
+    *,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Emit ownership cleanup failures without masking canonical lifecycle results."""
+
+    from top_down_planning.domain.run_ownership import drain_ownership_cleanup_failures
+
+    failures = drain_ownership_cleanup_failures()
+    if context is None:
+        return failures
+    for failure in failures:
+        context.emit(
+            ConsoleEvent(
+                category="ownership:cleanup_failed",
+                message=(
+                    "ownership metadata cleanup failed: "
+                    f"{failure.get('error_class', 'OSError')}"
+                ),
+                fields={
+                    key: value
+                    for key, value in failure.items()
+                    if key != "type" and value is not None
+                },
+                run_id=str(failure.get("run_id") or run_id or ""),
+            )
+        )
+    return failures
+
+
 def emit_resume_plan_diagnostics(
     context: ObservabilityContext | None,
     *,

@@ -117,6 +117,14 @@ def ownership_cleanup_failures() -> list[dict[str, Any]]:
     return list(_OWNERSHIP_CLEANUP_FAILURES)
 
 
+def drain_ownership_cleanup_failures() -> list[dict[str, Any]]:
+    """Return and clear recorded ownership cleanup failures for this process."""
+
+    drained = list(_OWNERSHIP_CLEANUP_FAILURES)
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
+    return drained
+
+
 def _utc_now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -356,7 +364,7 @@ def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
         and not legacy_path.is_file()
         and not flock_path.is_file()
     ):
-        return True
+        return False
 
     create_sentinel = metadata_path.is_file() or legacy_path.is_file() or flock_path.is_file()
     flock_fd = _try_acquire_flock_nonblocking(run_dir, create_sentinel=create_sentinel)
@@ -397,7 +405,7 @@ def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
 
 
 def clear_orphan_resume_lock(run_dir: Path) -> bool:
-    """Remove abandoned lock storage."""
+    """Remove abandoned lock storage. Returns True when artifacts were removed."""
 
     return _clear_abandoned_lock_claim(run_dir)
 
@@ -407,7 +415,7 @@ def clear_stale_resume_lock(
     *,
     stale_after_seconds: float = DEFAULT_OWNERSHIP_STALE_SECONDS,
 ) -> bool:
-    """Remove a stale on-disk lock. Returns True when a stale lock was cleared."""
+    """Remove stale on-disk ownership artifacts. Returns True when something was removed."""
 
     lock = read_resume_lock(run_dir)
     if lock is None:

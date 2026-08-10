@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -11,6 +12,8 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.resume_plan import ResumePlan, ResumePlanValidation, ResumeStateTransition
 from top_down_planning.domain.run_lifecycle import StopRecord, continuation_ok_from_run
 from top_down_planning.domain.run_ownership import (
+    clear_orphan_resume_lock,
+    ownership_cleanup_failures,
     resume_lock_dir,
     resume_lock_metadata_path,
 )
@@ -683,3 +686,69 @@ def test_running_target_reached_runs_preflight_before_return(tmp_path: Path) -> 
     orphan_mock.assert_called_once()
     assert result.ok is True
     assert result.target_reached is True
+
+
+def test_empty_lock_dir_without_artifacts_reports_no_cleanup(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    resume_lock_dir(run_dir).mkdir()
+    assert clear_orphan_resume_lock(run_dir) is False
+
+
+def test_pause_run_revokes_capabilities_only_after_durable_commit(tmp_path: Path) -> None:
+    from tests.helpers import grant_capability
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+
+    pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+    assert store.load_capability(run_id, token_id)["revoked"] is True
+
+
+def test_pause_run_preserves_capabilities_when_lifecycle_commit_fails(tmp_path: Path) -> None:
+    from tests.helpers import grant_capability
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+
+    with patch.object(store, "commit", side_effect=OSError("lifecycle cas failed")):
+        with pytest.raises(OSError, match="lifecycle cas failed"):
+            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+
+    assert store.load_run(run_id)["status"] == "running"
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+
+def test_report_ownership_cleanup_diagnostics_emits_observability_event(tmp_path: Path) -> None:
+    from top_down_planning.domain.run_ownership import (
+        _OWNERSHIP_CLEANUP_FAILURES,
+        ownership_cleanup_failures,
+    )
+    from top_down_planning.observability import ObservabilityContext, report_ownership_cleanup_diagnostics
+    from core_tools.observability import NullSink
+
+    _OWNERSHIP_CLEANUP_FAILURES.append(
+        {
+            "type": "ownership_cleanup_failed",
+            "run_id": "run-1",
+            "path": str(tmp_path / "owner.json"),
+            "error_class": "OSError",
+            "message": "unlink failed",
+            "safe_to_retry": True,
+        }
+    )
+    emitted: list[Any] = []
+    observability = ObservabilityContext(sink=NullSink(), run_id="run-1")
+    observability.emit = lambda event: emitted.append(event)  # type: ignore[method-assign]
+
+    drained = report_ownership_cleanup_diagnostics(observability, run_id="run-1")
+    assert len(drained) == 1
+    assert drained[0]["error_class"] == "OSError"
+    assert len(emitted) == 1
+    assert emitted[0].category == "ownership:cleanup_failed"
+    assert emitted[0].fields["run_id"] == "run-1"
+    assert ownership_cleanup_failures() == []

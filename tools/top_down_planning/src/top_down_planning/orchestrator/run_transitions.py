@@ -36,8 +36,6 @@ def pause_run(
         return run
     if status == "paused":
         return run
-    if revoke_phase is not None:
-        revoke_capabilities_for_phase(store, run_id, revoke_phase)
 
     expected_revision = int(run["revision"])
     updated = dict(run)
@@ -60,6 +58,8 @@ def pause_run(
             ],
         ),
     )
+    if revoke_phase is not None:
+        revoke_capabilities_for_phase(store, run_id, revoke_phase)
     return store.load_run(run_id)
 
 
@@ -76,9 +76,6 @@ def fail_run(
         return run
     if str(run.get("status") or "") == "paused":
         return run
-
-    if revoke_phase is not None:
-        revoke_capabilities_for_phase(store, run_id, revoke_phase)
 
     expected_revision = int(run["revision"])
     updated = dict(run)
@@ -101,6 +98,8 @@ def fail_run(
             ],
         ),
     )
+    if revoke_phase is not None:
+        revoke_capabilities_for_phase(store, run_id, revoke_phase)
     return store.load_run(run_id)
 
 
@@ -123,8 +122,6 @@ def complete_run_with_outcome(
         return run
     if status == "paused":
         return run
-    if revoke_phase is not None:
-        revoke_capabilities_for_phase(store, run_id, revoke_phase)
 
     expected_revision = int(run["revision"])
     updated = dict(run)
@@ -147,6 +144,8 @@ def complete_run_with_outcome(
             ],
         ),
     )
+    if revoke_phase is not None:
+        revoke_capabilities_for_phase(store, run_id, revoke_phase)
     return store.load_run(run_id)
 
 
