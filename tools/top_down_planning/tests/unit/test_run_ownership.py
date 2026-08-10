@@ -49,10 +49,23 @@ def _subprocess_env() -> dict[str, str]:
     return env
 
 
-@pytest.fixture(autouse=True)
-def _reset_ownership_registry() -> None:
-    yield
+def _assert_no_ownership_registry_leak() -> None:
+    if not _OWNERSHIP_REGISTRY:
+        return
+    leaked = {run_id: dict(entry) for run_id, entry in _OWNERSHIP_REGISTRY.items()}
+    for entry in leaked.values():
+        try:
+            _release_flock_fd(int(entry["fd"]))
+        except (OSError, ValueError, TypeError):
+            pass
     _OWNERSHIP_REGISTRY.clear()
+    pytest.fail(f"ownership registry leak: {leaked}")
+
+
+@pytest.fixture(autouse=True)
+def _assert_no_ownership_leak() -> None:
+    yield
+    _assert_no_ownership_registry_leak()
 
 
 def test_assert_expected_run_revision_rejects_stale_revision() -> None:
@@ -562,6 +575,121 @@ def test_acquire_interrupt_during_metadata_write_rolls_back(tmp_path: Path) -> N
     assert "run-1" not in _OWNERSHIP_REGISTRY
     token = acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_registry_leak_helper_reports_failure(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    acquire_run_ownership("run-1", run_dir=run_dir)
+    with pytest.raises(pytest.fail.Exception, match="ownership registry leak"):
+        _assert_no_ownership_registry_leak()
+    assert not _OWNERSHIP_REGISTRY
+
+
+def test_rollback_cleans_metadata_before_unlock(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    from top_down_planning.domain import run_ownership as ownership_module
+
+    real_publish = ownership_module._publish_run_ownership
+    real_cleanup = ownership_module._cleanup_failed_acquire
+    real_release = ownership_module._release_flock_fd
+    order: list[str] = []
+
+    def publish_and_fail(run_id: str, owner_token: str, flock_fd: int) -> None:
+        real_publish(run_id, owner_token, flock_fd)
+        raise RuntimeError("after publish")
+
+    def record_cleanup(run_dir_arg: Path) -> None:
+        order.append("cleanup")
+        real_cleanup(run_dir_arg)
+
+    def record_release(fd: int) -> None:
+        order.append("unlock")
+        real_release(fd)
+
+    with patch.object(ownership_module, "_publish_run_ownership", publish_and_fail):
+        with patch.object(ownership_module, "_cleanup_failed_acquire", record_cleanup):
+            with patch.object(ownership_module, "_release_flock_fd", record_release):
+                with pytest.raises(RuntimeError, match="after publish"):
+                    acquire_run_ownership("run-1", run_dir=run_dir)
+    assert order == ["cleanup", "unlock"]
+    assert "run-1" not in _OWNERSHIP_REGISTRY
+
+
+def test_rollback_cleanup_blocks_external_acquire_until_unlock(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    from top_down_planning.domain import run_ownership as ownership_module
+
+    real_publish = ownership_module._publish_run_ownership
+    cleanup_started = threading.Event()
+    cleanup_continue = threading.Event()
+
+    def publish_and_fail(run_id: str, owner_token: str, flock_fd: int) -> None:
+        real_publish(run_id, owner_token, flock_fd)
+        raise RuntimeError("after publish")
+
+    def gated_cleanup(run_dir_arg: Path) -> None:
+        cleanup_started.set()
+        if not cleanup_continue.wait(timeout=5):
+            raise RuntimeError("cleanup gate timeout")
+        ownership_module._cleanup_failed_acquire(run_dir_arg)
+
+    child_script = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from top_down_planning.domain.run_ownership import "
+        "acquire_run_ownership, RunOwnershipError\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "signal = run_dir / '.peer_try'\n"
+        "while not signal.is_file():\n"
+        "    time.sleep(0.001)\n"
+        "try:\n"
+        "    acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "    (run_dir / '.peer_success').write_text('1', encoding='utf-8')\n"
+        "except RunOwnershipError:\n"
+        "    (run_dir / '.peer_blocked').write_text('1', encoding='utf-8')\n"
+    )
+
+    with patch.object(ownership_module, "_publish_run_ownership", publish_and_fail):
+        with patch.object(ownership_module, "_cleanup_failed_acquire", gated_cleanup):
+            rollback_error: list[BaseException] = []
+
+            def failing_acquire() -> None:
+                try:
+                    acquire_run_ownership("run-1", run_dir=run_dir)
+                except BaseException as exc:
+                    rollback_error.append(exc)
+
+            rollback_thread = threading.Thread(target=failing_acquire)
+            rollback_thread.start()
+            assert cleanup_started.wait(timeout=5)
+
+            peer_try = run_dir / ".peer_try"
+            peer_try.write_text("1", encoding="utf-8")
+            child = subprocess.Popen(
+                [sys.executable, "-c", child_script],
+                env=_subprocess_env(),
+            )
+            for _ in range(100):
+                if (run_dir / ".peer_blocked").is_file() or (run_dir / ".peer_success").is_file():
+                    break
+                time.sleep(0.02)
+            assert child.wait(timeout=5) == 0
+            assert (run_dir / ".peer_blocked").is_file()
+            assert not (run_dir / ".peer_success").is_file()
+
+            cleanup_continue.set()
+            rollback_thread.join(timeout=5)
+            assert not rollback_thread.is_alive()
+            assert len(rollback_error) == 1
+            assert isinstance(rollback_error[0], RuntimeError)
+
+    peer_token = acquire_run_ownership("run-1", run_dir=run_dir)
+    assert read_resume_lock(run_dir) is not None
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=peer_token)
 
 
 def test_acquire_interrupt_after_publication_rolls_back(tmp_path: Path) -> None:

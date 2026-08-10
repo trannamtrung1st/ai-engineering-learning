@@ -531,13 +531,20 @@ def _rollback_failed_acquire(
     with _defer_interrupt_signals():
         entry = _OWNERSHIP_REGISTRY.get(run_id)
         if entry is not None and entry.get("owner_token") == owner_token:
-            _OWNERSHIP_REGISTRY.pop(run_id, None)
-            _release_flock_fd(int(entry["fd"]))
-            _cleanup_failed_acquire(run_dir)
+            entry_fd = int(entry["fd"])
+            try:
+                _cleanup_failed_acquire(run_dir)
+            finally:
+                try:
+                    _release_flock_fd(entry_fd)
+                finally:
+                    _OWNERSHIP_REGISTRY.pop(run_id, None)
             return
         if flock_fd is not None:
-            _cleanup_failed_acquire(run_dir)
-            _release_flock_fd(flock_fd)
+            try:
+                _cleanup_failed_acquire(run_dir)
+            finally:
+                _release_flock_fd(flock_fd)
 
 
 def _record_ownership_cleanup_failure(
