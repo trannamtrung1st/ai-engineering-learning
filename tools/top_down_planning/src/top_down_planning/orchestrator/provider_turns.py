@@ -41,6 +41,7 @@ from top_down_planning.orchestrator.reviewer_session import (
     reviewer_loop_provider_session_id,
 )
 from top_down_planning.orchestrator.run_transitions import generate_phase_action_id
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.orchestrator.session_lineage import emit_session_replacement_failed
 from top_down_planning.orchestrator.session_events import (
     sync_persisted_session_id,
@@ -157,14 +158,19 @@ def ensure_phase_action_id(store: RunStore, run_id: str) -> str:
     updated = dict(run)
     updated["revision"] = expected_revision + 1
     updated["phase_action_id"] = action_id
-    store.save_run(run_id, updated, expected_revision)
-    store.append_event(
+    store.commit(
         run_id,
-        {
-            "type": "phase_action_assigned",
-            "run_id": run_id,
-            "phase_action_id": action_id,
-        },
+        CommitSpec(
+            run=updated,
+            run_expected_revision=expected_revision,
+            events=[
+                {
+                    "type": "phase_action_assigned",
+                    "run_id": run_id,
+                    "phase_action_id": action_id,
+                }
+            ],
+        ),
     )
     return action_id
 
