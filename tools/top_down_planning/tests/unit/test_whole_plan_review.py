@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from top_down_planning.persistence.session_bindings import update_primary_binding
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+
+from top_down_planning.persistence.session_bindings import update_primary_binding
 
 from top_down_planning.agent_tool import RequestError, ReviewAgentService
 from top_down_planning.agent_tool.errors import CapabilityDeniedError
@@ -902,6 +904,83 @@ def test_whole_plan_package_includes_dependency_cycle_issues(tmp_path: Path) -> 
         issue.get("code") == "dependency_cycle"
         for issue in package["analysis_context"]["preflight_candidates"]
     )
+
+
+def test_whole_plan_restart_after_approval_persisted_completes_phase_once(
+    tmp_path: Path,
+) -> None:
+    """ORCH-010: approved loop without phase advance must not spawn a second mandatory loop."""
+
+    from tests.helpers import whole_plan_approval_record
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000301-000301"
+    _create_run_at_whole_plan_review(store, run_id=run_id)
+    save_review_payload(store, run_id, whole_plan_approval_record(store, run_id))
+    revision_before = int(store.load_run(run_id)["revision"])
+    provider = StubProvider()
+
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
+    assert result.ok is True
+    assert store.load_run(run_id)["phase"] == PLAN_VALIDATED
+    assert int(store.load_run(run_id)["revision"]) == revision_before + 1
+
+    whole_plan_loops = [
+        payload for payload in store.list_reviews(run_id) if payload.get("type") == "whole_plan"
+    ]
+    assert len(whole_plan_loops) == 1
+    approved_events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "whole_plan_review_approved"
+    ]
+    assert len(approved_events) == 1
+
+    repeat = WholePlanReviewOrchestrator(store, run_id, provider).run()
+    assert repeat.ok is True
+    assert len(
+        [
+            event
+            for event in store.load_events(run_id)
+            if event.get("type") == "whole_plan_review_approved"
+        ]
+    ) == 1
+
+
+def test_whole_plan_approval_commit_crash_retries_phase_transition_once(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import whole_plan_approval_record
+    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000302-000302"
+    _create_run_at_whole_plan_review(store, run_id=run_id)
+    save_review_payload(store, run_id, whole_plan_approval_record(store, run_id))
+    provider = StubProvider()
+
+    with patch.object(Path, "replace", _crash_after_dest_replace_count(1)):
+        with pytest.raises(OSError, match="simulated crash"):
+            WholePlanReviewOrchestrator(store, run_id, provider).run()
+
+    assert store.load_run(run_id)["phase"] == WHOLE_PLAN_REVIEW
+    approved_events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "whole_plan_review_approved"
+    ]
+    assert approved_events == []
+
+    result = WholePlanReviewOrchestrator(store, run_id, provider).run()
+    assert result.ok is True
+    assert store.load_run(run_id)["phase"] == PLAN_VALIDATED
+    assert len(
+        [
+            event
+            for event in store.load_events(run_id)
+            if event.get("type") == "whole_plan_review_approved"
+        ]
+    ) == 1
 
 
 def test_whole_plan_package_preserves_custom_rubric(tmp_path: Path) -> None:

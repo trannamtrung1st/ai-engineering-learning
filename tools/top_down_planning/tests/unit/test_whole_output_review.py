@@ -42,6 +42,7 @@ from tests.helpers import (
     sessions_with_primary_session,
     StallingAfterEventsProvider,
     whole_plan_approval_record,
+    whole_output_approval_record,
 )
 
 
@@ -1358,3 +1359,77 @@ def test_persist_loop_rejects_stale_loop_revision_after_store_advanced(
 
     with pytest.raises(StoreRevisionConflictError):
         driver._persist_loop(stale_transition)
+
+
+def test_whole_output_restart_after_approval_persisted_completes_phase_once(
+    tmp_path: Path,
+) -> None:
+    """ORCH-010: approved whole-output loop must complete phase transition without a new loop."""
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000802-000802"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    save_review_payload(store, run_id, whole_output_approval_record(store, run_id))
+    revision_before = int(store.load_run(run_id)["revision"])
+    provider = StubProvider()
+
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
+    assert result.ok is True
+    assert store.load_run(run_id)["phase"] == OUTPUT_VALIDATED
+    assert int(store.load_run(run_id)["revision"]) > revision_before
+
+    whole_output_loops = [
+        payload for payload in store.list_reviews(run_id) if payload.get("type") == "whole_output"
+    ]
+    assert len(whole_output_loops) == 1
+    approved_events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "whole_output_review_approved"
+    ]
+    assert len(approved_events) == 1
+
+    repeat = WholeOutputReviewOrchestrator(store, run_id, provider).run()
+    assert repeat.ok is True
+    assert len(
+        [
+            event
+            for event in store.load_events(run_id)
+            if event.get("type") == "whole_output_review_approved"
+        ]
+    ) == 1
+
+
+def test_whole_output_approval_commit_crash_retries_phase_transition_once(
+    tmp_path: Path,
+) -> None:
+    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T000803-000803"
+    _create_run_at_whole_output_review(store, run_id=run_id)
+    save_review_payload(store, run_id, whole_output_approval_record(store, run_id))
+    provider = StubProvider()
+
+    with patch.object(Path, "replace", _crash_after_dest_replace_count(1)):
+        with pytest.raises(OSError, match="simulated crash"):
+            WholeOutputReviewOrchestrator(store, run_id, provider).run()
+
+    assert store.load_run(run_id)["phase"] == WHOLE_OUTPUT_REVIEW
+    approved_events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "whole_output_review_approved"
+    ]
+    assert approved_events == []
+
+    result = WholeOutputReviewOrchestrator(store, run_id, provider).run()
+    assert result.ok is True
+    assert store.load_run(run_id)["phase"] == OUTPUT_VALIDATED
+    assert len(
+        [
+            event
+            for event in store.load_events(run_id)
+            if event.get("type") == "whole_output_review_approved"
+        ]
+    ) == 1

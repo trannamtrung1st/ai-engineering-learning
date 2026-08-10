@@ -14,10 +14,12 @@ from top_down_planning.domain.reviews import (
     finding_actions_for_active_set,
     focused_review_revision_limit_from_config,
     increment_gate_agent_turns,
+    is_mandatory_review_loop,
     is_revision_requested_status,
     is_terminal_review_loop,
     loop_revise_at,
     mandatory_review_limits_from_config,
+    mandatory_approval_allowed,
     mark_advisory_handoff_completed,
     needs_advisory_handoff,
     build_primary_owner_finding_guidance,
@@ -249,6 +251,23 @@ class ReviewLoopDriver:
             return self.result_from_run(run, ok=True)
         if phase != spec.phase:
             raise ProviderRunError(f"run is not in {spec.review_label} phase: {phase}")
+
+        pending_approval = self._approved_loop_pending_phase_transition()
+        if pending_approval is not None:
+            artifact_revision, artifact_digest = self._adapter.current_artifact_binding()
+            config = self._store.load_resolved_config(self._run_id)
+            limits = mandatory_review_limits_from_config(config, spec.limits_key)
+            if (
+                int(pending_approval.target_revision) == int(artifact_revision)
+                and mandatory_approval_allowed(
+                    pending_approval,
+                    current_artifact_digest=artifact_digest,
+                    limits=limits,
+                )
+            ):
+                self._adapter.preflight(pending_approval)
+                reject_mandatory_contract_v1_loop(pending_approval)
+                return self._adapter.complete_approval(pending_approval)
 
         self._adapter.preflight(None)
         config = self._store.load_resolved_config(self._run_id)
@@ -728,6 +747,27 @@ class ReviewLoopDriver:
             return loop, False
 
         return self._prepare_recheck(loop), True
+
+    def _approved_loop_pending_phase_transition(self) -> ReviewLoop | None:
+        """Return a persisted mandatory approval that outlived its phase transition."""
+
+        spec = self.spec
+        run = self._store.load_run(self._run_id)
+        phase = str(run.get("phase") or "")
+        if phase != spec.phase:
+            return None
+        for payload in reversed(self._store.list_reviews(self._run_id)):
+            if payload.get("type") != spec.review_type:
+                continue
+            loop = ReviewLoop.from_dict(payload)
+            if not is_mandatory_review_loop(loop):
+                continue
+            if loop.lifecycle_status == "limit_reached":
+                return None
+            if loop.lifecycle_status == "approved":
+                return loop
+            return None
+        return None
 
     def _get_or_create_active_loop(self) -> ReviewLoop:
         spec = self.spec

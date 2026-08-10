@@ -282,3 +282,121 @@ def test_reconcile_pending_revoke_failure_preserves_marker_and_capabilities(
     reconcile_pending_capability_revocation(store, run_id)
     assert pending_capability_revoke_phase(store.load_run(run_id)) is None
     assert store.load_capability(run_id, token_id)["revoked"] is True
+
+
+def _production_store_at_plan_validated(tmp_path: Path) -> tuple[FileRunStore, str]:
+    from tests.helpers import whole_plan_approval_record
+
+    store = FileRunStore(tmp_path)
+    run_id = "run-20260101T020003-020003"
+    root = plan_root_item(title="Deliver", outcome="Deliver.")
+    first = PlanItem(
+        id="item-first",
+        parent_id="item-root",
+        order_key="0000000000",
+        title="First",
+        outcome="First.",
+        kind="work",
+    )
+    plan = Plan(
+        id=f"plan-{run_id}",
+        revision=0,
+        output_goal="Deliver.",
+        items={"item-root": root, "item-first": first},
+    )
+    config = minimal_resolved_config()
+    config["limits"]["production"] = {"max_batches": 10, "max_agent_turns_per_batch": 5}
+    store.create_run(
+        run_id,
+        plan=plan,
+        phase=PLAN_VALIDATED,
+        **create_run_kwargs(store.root, resolved_config=config),
+    )
+    store.save_review(run_id, whole_plan_approval_record(store, run_id))
+    return store, run_id
+
+
+def test_production_entry_crash_during_replace_restores_prior_phase(tmp_path: Path) -> None:
+    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+
+    store, run_id = _production_store_at_plan_validated(tmp_path)
+    revision_before = int(store.load_run(run_id)["revision"])
+    orch = ProductionPhaseOrchestrator(store, run_id, StubProvider())
+
+    with patch.object(Path, "replace", _crash_after_dest_replace_count(1)):
+        with pytest.raises(OSError, match="simulated crash"):
+            orch._enter_production_phase()
+
+    run_after = store.load_run(run_id)
+    assert run_after["phase"] == PLAN_VALIDATED
+    assert int(run_after["revision"]) == revision_before
+    started = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "production_phase_started"
+    ]
+    assert started == []
+
+
+def test_production_completion_crash_during_replace_restores_prior_phase(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import goal_met_completion_claim
+    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+
+    store, run_id = _production_store_at_plan_validated(tmp_path)
+    orch = ProductionPhaseOrchestrator(store, run_id, StubProvider())
+    orch._enter_production_phase()
+
+    production = store.load_production(run_id)
+    production["dispositions"] = {"item-first": "completed"}
+    production["batches"] = [
+        {
+            "id": "batch-01",
+            "plan_items": ["item-first"],
+            "status": "completed",
+            "result": {
+                "outputs": [],
+                "contributions": [],
+                "dispositions": {"item-first": {"disposition": "completed"}},
+                "summary": "done",
+                "empty_output": False,
+            },
+        }
+    ]
+    production["output_revision"] = 1
+    production["completion_claim"] = goal_met_completion_claim(
+        production,
+        goal_assessment="Output goal met.",
+        plan_revision=0,
+    )
+    expected_production_revision = int(production["revision"])
+    production["revision"] = expected_production_revision + 1
+    store.save_production(run_id, production, expected_production_revision)
+
+    revision_before = int(store.load_run(run_id)["revision"])
+
+    with patch.object(Path, "replace", _crash_after_dest_replace_count(1)):
+        with pytest.raises(OSError, match="simulated crash"):
+            orch._complete_production("stub-producer-session")
+
+    run_after = store.load_run(run_id)
+    assert run_after["phase"] == PRODUCTION
+    assert int(run_after["revision"]) == revision_before
+    completed_events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "production_completed"
+    ]
+    assert completed_events == []
+
+    result = orch._complete_production("stub-producer-session")
+    assert result.ok is True
+    assert store.load_run(run_id)["phase"] == WHOLE_OUTPUT_REVIEW
+    assert len(
+        [
+            event
+            for event in store.load_events(run_id)
+            if event.get("type") == "production_completed"
+        ]
+    ) == 1
