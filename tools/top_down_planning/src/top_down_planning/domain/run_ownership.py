@@ -137,6 +137,41 @@ def pop_ownership_cleanup_dropped_count(run_id: str | None = None) -> int:
         return int(_OWNERSHIP_CLEANUP_DROPPED.pop(key, 0))
 
 
+def pop_ownership_cleanup_dropped_counts_for_report(
+    run_id: str | None = None,
+) -> dict[str, int]:
+    """Return and clear per-run and global dropped diagnostic counts for reporting."""
+
+    run_key = str(run_id or "").strip()
+    with _OWNERSHIP_CLEANUP_LOCK:
+        counts: dict[str, int] = {}
+        if run_key:
+            run_dropped = int(_OWNERSHIP_CLEANUP_DROPPED.pop(run_key, 0))
+            if run_dropped:
+                counts[run_key] = run_dropped
+        global_dropped = int(_OWNERSHIP_CLEANUP_DROPPED.pop("__global__", 0))
+        if global_dropped:
+            counts["__global__"] = global_dropped
+        return counts
+
+
+def requeue_ownership_cleanup_dropped_count(
+    run_id: str,
+    dropped_count: int,
+    *,
+    scope: str = "run",
+) -> None:
+    """Re-queue dropped diagnostic evidence that could not be emitted."""
+
+    if dropped_count <= 0:
+        return
+    key = "__global__" if scope == "global" else str(run_id or "").strip()
+    if not key:
+        key = "__global__"
+    with _OWNERSHIP_CLEANUP_LOCK:
+        _OWNERSHIP_CLEANUP_DROPPED[key] = _OWNERSHIP_CLEANUP_DROPPED.get(key, 0) + dropped_count
+
+
 def _enqueue_ownership_cleanup_failure_locked(record: dict[str, Any]) -> None:
     payload = dict(record)
     run_id = str(payload.get("run_id") or "").strip()

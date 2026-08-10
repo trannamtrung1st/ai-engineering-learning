@@ -535,6 +535,13 @@ class ObservingRunStore:
 
 def _emit_cleanup_fallback_stderr(failure: dict[str, Any]) -> None:
     run_id = str(failure.get("run_id") or "")
+    if failure.get("type") == "ownership_cleanup_dropped":
+        dropped_count = int(failure.get("dropped_count") or 0)
+        print(
+            f"[ownership:cleanup_dropped] run_id={run_id} dropped_count={dropped_count}",
+            file=sys.stderr,
+        )
+        return
     error_class = str(failure.get("error_class") or "OSError")
     print(
         f"[ownership:cleanup_failed] run_id={run_id} error={error_class}",
@@ -551,19 +558,25 @@ def report_ownership_cleanup_diagnostics(
 
     from top_down_planning.domain.run_ownership import (
         drain_ownership_cleanup_failures,
-        pop_ownership_cleanup_dropped_count,
+        pop_ownership_cleanup_dropped_counts_for_report,
+        requeue_ownership_cleanup_dropped_count,
         requeue_ownership_cleanup_failures,
     )
 
     failures = drain_ownership_cleanup_failures(run_id=run_id)
-    dropped = pop_ownership_cleanup_dropped_count(run_id)
-    if dropped > 0:
+    dropped_counts = pop_ownership_cleanup_dropped_counts_for_report(run_id)
+    for dropped_key, dropped_count in dropped_counts.items():
         failures.append(
             {
                 "type": "ownership_cleanup_dropped",
-                "run_id": str(run_id or ""),
-                "dropped_count": dropped,
+                "run_id": (
+                    str(run_id or "")
+                    if dropped_key == "__global__"
+                    else dropped_key
+                ),
+                "dropped_count": dropped_count,
                 "error_class": "Overflow",
+                "scope": "global" if dropped_key == "__global__" else "run",
             }
         )
     if not failures:
@@ -603,7 +616,13 @@ def report_ownership_cleanup_diagnostics(
             try:
                 _emit_cleanup_fallback_stderr(failure)
             except Exception:
-                if failure.get("type") != "ownership_cleanup_dropped":
+                if failure.get("type") == "ownership_cleanup_dropped":
+                    requeue_ownership_cleanup_dropped_count(
+                        str(failure.get("run_id") or run_id or ""),
+                        int(failure.get("dropped_count") or 0),
+                        scope=str(failure.get("scope") or "run"),
+                    )
+                else:
                     unemitted.append(failure)
     if unemitted:
         requeue_ownership_cleanup_failures(unemitted)

@@ -37,6 +37,7 @@ from top_down_planning.orchestrator.provider_teardown import teardown_provider_s
 from top_down_planning.orchestrator.run_signals import trap_run_interrupt_signals
 from top_down_planning.orchestrator.run_transitions import (
     pause_run,
+    pending_capability_revoke_phase,
     reconcile_pending_capability_revocation,
 )
 from top_down_planning.orchestrator.session_policy import execute_session_policy_if_registered
@@ -253,24 +254,40 @@ class RunEngine:
         result: RunContinuationResult | None = None
         with trap_run_interrupt_signals():
             try:
-                reconcile_pending_capability_revocation(self._store, run_id)
                 run = self._store.load_run(run_id)
-                terminal = _maybe_stopped_continuation_result(
+                run_dir = resolve_run_dir(self._store, run_id)
+                pending_revoke = pending_capability_revoke_phase(run) is not None
+                terminal_precheck = _maybe_stopped_continuation_result(
                     run,
                     run_id,
                     until=until,
                     steps=[],
                 )
-                if terminal is not None:
-                    self._emit_done(terminal, started_at=started_at)
-                    result = terminal
-                else:
-                    run_dir = resolve_run_dir(self._store, run_id)
-                    if run_dir is not None:
+
+                if run_dir is not None:
+                    if terminal_precheck is not None and not pending_revoke:
+                        self._emit_done(terminal_precheck, started_at=started_at)
+                        result = terminal_precheck
+                    else:
                         ownership_result: RunContinuationResult | None = None
-                        ownership_error: BaseException | None = None
-                        try:
-                            with run_ownership(run_id, run_dir=run_dir):
+                        with run_ownership(run_id, run_dir=run_dir):
+                            run = self._store.load_run(run_id)
+                            if pending_capability_revoke_phase(run) is not None:
+                                reconcile_pending_capability_revocation(
+                                    self._store,
+                                    run_id,
+                                )
+                                run = self._store.load_run(run_id)
+                            terminal = _maybe_stopped_continuation_result(
+                                run,
+                                run_id,
+                                until=until,
+                                steps=[],
+                            )
+                            if terminal is not None:
+                                self._emit_done(terminal, started_at=started_at)
+                                ownership_result = terminal
+                            else:
                                 try:
                                     ownership_result = self._continue_run_unlocked(
                                         run_id,
@@ -303,13 +320,25 @@ class RunEngine:
                                         ),
                                         cancelled=user_cancelled,
                                     )
-                                    self._emit_done(ownership_result, started_at=started_at)
-                        except BaseException as exc:
-                            ownership_error = exc
-                        if ownership_error is not None:
-                            raise ownership_error
+                                    self._emit_done(
+                                        ownership_result,
+                                        started_at=started_at,
+                                    )
                         if ownership_result is not None:
                             result = ownership_result
+                else:
+                    if pending_revoke:
+                        reconcile_pending_capability_revocation(self._store, run_id)
+                        run = self._store.load_run(run_id)
+                    terminal = _maybe_stopped_continuation_result(
+                        run,
+                        run_id,
+                        until=until,
+                        steps=[],
+                    )
+                    if terminal is not None:
+                        self._emit_done(terminal, started_at=started_at)
+                        result = terminal
                     else:
                         result = self._continue_run_unlocked(
                             run_id,

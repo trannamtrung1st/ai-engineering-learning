@@ -323,6 +323,7 @@ def apply_resume_plan_atomically(
     run_payload = dict(run)
     run_payload["status"] = "running"
     run_payload["stop"] = None
+    run_payload.pop("pending_capability_revoke_phase", None)
     next_digests = dict(digests)
     next_digests["config_execution"] = config_update.config_execution_digest
     if resume_plan.contract_digest_may_change or resume_plan.context_spec_may_change:

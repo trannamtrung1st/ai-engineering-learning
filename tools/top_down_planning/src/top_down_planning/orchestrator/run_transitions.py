@@ -21,7 +21,7 @@ def generate_phase_action_id() -> str:
     return f"action-{uuid.uuid4().hex[:12]}"
 
 
-def _pending_capability_revoke_phase(run: dict[str, Any]) -> str | None:
+def pending_capability_revoke_phase(run: dict[str, Any]) -> str | None:
     raw = run.get("pending_capability_revoke_phase")
     if raw is None:
         return None
@@ -38,14 +38,42 @@ def _phase_has_live_capabilities(store: RunStore, run_id: str, phase: str) -> bo
     return False
 
 
+def _try_clear_pending_capability_revoke_marker(
+    store: RunStore,
+    run_id: str,
+    expected_phase: str,
+) -> dict[str, Any]:
+    run = store.load_run(run_id)
+    pending = pending_capability_revoke_phase(run)
+    if pending is None:
+        return run
+    if pending != str(expected_phase):
+        return run
+    if _phase_has_live_capabilities(store, run_id, expected_phase):
+        return run
+
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated.pop("pending_capability_revoke_phase", None)
+    store.commit(
+        run_id,
+        CommitSpec(run=updated, run_expected_revision=expected_revision),
+    )
+    return store.load_run(run_id)
+
+
 def _attempt_phase_capability_revocation(
     store: RunStore,
     run_id: str,
     revoke_phase: str,
 ) -> None:
     if not _phase_has_live_capabilities(store, run_id, revoke_phase):
+        _try_clear_pending_capability_revoke_marker(store, run_id, revoke_phase)
         return
     revoke_capabilities_for_phase(store, run_id, revoke_phase)
+    if not _phase_has_live_capabilities(store, run_id, revoke_phase):
+        _try_clear_pending_capability_revoke_marker(store, run_id, revoke_phase)
 
 
 def reconcile_pending_capability_revocation(
@@ -57,7 +85,7 @@ def reconcile_pending_capability_revocation(
     """Revoke capabilities for a durable post-transition marker when still live."""
 
     run = store.load_run(run_id)
-    phase = revoke_phase or _pending_capability_revoke_phase(run)
+    phase = revoke_phase or pending_capability_revoke_phase(run)
     if phase is None:
         return run
     _attempt_phase_capability_revocation(store, run_id, phase)
@@ -78,10 +106,10 @@ def pause_run(
     if status in _TERMINAL_STATUSES:
         return run
     if status == "paused":
-        phase = revoke_phase or _pending_capability_revoke_phase(run)
+        phase = revoke_phase or pending_capability_revoke_phase(run)
         if phase is not None:
             _attempt_phase_capability_revocation(store, run_id, phase)
-        return run
+        return store.load_run(run_id)
 
     expected_revision = int(run["revision"])
     updated = dict(run)
@@ -123,10 +151,10 @@ def fail_run(
     status = _run_status(run)
     if status in {"completed", "failed"}:
         if status == "failed":
-            phase = revoke_phase or _pending_capability_revoke_phase(run)
+            phase = revoke_phase or pending_capability_revoke_phase(run)
             if phase is not None:
                 _attempt_phase_capability_revocation(store, run_id, phase)
-        return run
+        return store.load_run(run_id)
     if status == "paused":
         return run
 
@@ -171,10 +199,10 @@ def complete_run_with_outcome(
     status = _run_status(run)
     if status == "completed":
         if run.get("outcome") == outcome:
-            phase = revoke_phase or _pending_capability_revoke_phase(run)
+            phase = revoke_phase or pending_capability_revoke_phase(run)
             if phase is not None:
                 _attempt_phase_capability_revocation(store, run_id, phase)
-        return run
+        return store.load_run(run_id)
     if status == "failed":
         return run
     if status == "paused":
@@ -263,5 +291,6 @@ __all__ = [
     "generate_phase_action_id",
     "pause_for_limit_exhausted",
     "pause_run",
+    "pending_capability_revoke_phase",
     "reconcile_pending_capability_revocation",
 ]

@@ -14,6 +14,7 @@ from top_down_planning.domain.run_lifecycle import StopRecord, continuation_ok_f
 from top_down_planning.domain.run_ownership import (
     clear_orphan_resume_lock,
     ownership_cleanup_failures,
+    resolve_run_dir,
     resume_lock_dir,
     resume_lock_metadata_path,
 )
@@ -26,6 +27,7 @@ from top_down_planning.orchestrator.run_transitions import (
     complete_run_with_outcome,
     fail_run,
     pause_run,
+    pending_capability_revoke_phase,
 )
 from top_down_planning.persistence import FileRunStore
 from core_tools.provider import StubProvider
@@ -705,6 +707,7 @@ def test_pause_run_revokes_capabilities_only_after_durable_commit(tmp_path: Path
 
     pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
     assert store.load_capability(run_id, token_id)["revoked"] is True
+    assert pending_capability_revoke_phase(store.load_run(run_id)) is None
 
 
 def test_pause_run_preserves_capabilities_when_lifecycle_commit_fails(tmp_path: Path) -> None:
@@ -889,8 +892,9 @@ def test_continue_run_reconciles_pause_revoke_after_engine_restart(tmp_path: Pat
     ).continue_run(run_id, until="plan")
 
     assert result.ok is False
-    assert int(store.load_run(run_id)["revision"]) == revision_before
+    assert int(store.load_run(run_id)["revision"]) == revision_before + 1
     assert store.load_capability(run_id, token_id)["revoked"] is True
+    assert pending_capability_revoke_phase(store.load_run(run_id)) is None
     assert len(store.load_events(run_id)) == events_before
 
     repeat = RunEngine(
@@ -939,8 +943,9 @@ def test_continue_run_reconciles_fail_revoke_after_engine_restart(tmp_path: Path
     ).continue_run(run_id, until="plan")
 
     assert result.ok is False
-    assert int(store.load_run(run_id)["revision"]) == revision_before
+    assert int(store.load_run(run_id)["revision"]) == revision_before + 1
     assert store.load_capability(run_id, token_id)["revoked"] is True
+    assert pending_capability_revoke_phase(store.load_run(run_id)) is None
     assert len(store.load_events(run_id)) == events_before
 
 
@@ -988,8 +993,9 @@ def test_continue_run_reconciles_complete_revoke_after_engine_restart(tmp_path: 
     ).continue_run(run_id, until="plan")
 
     assert result.ok is True
-    assert int(store.load_run(run_id)["revision"]) == revision_before
+    assert int(store.load_run(run_id)["revision"]) == revision_before + 1
     assert store.load_capability(run_id, token_id)["revoked"] is True
+    assert pending_capability_revoke_phase(store.load_run(run_id)) is None
     assert len(store.load_events(run_id)) == events_before
 
 
@@ -1070,3 +1076,194 @@ def test_ownership_cleanup_failure_queue_is_bounded_per_run() -> None:
     assert len(ownership_cleanup_failures()) == _MAX_CLEANUP_FAILURES_PER_RUN
     assert ownership_cleanup_dropped_counts().get("run-1") == overflow
     _OWNERSHIP_CLEANUP_FAILURES.clear()
+
+
+def test_continue_run_does_not_reconcile_capabilities_before_ownership(tmp_path: Path) -> None:
+    import threading
+    import time
+
+    from tests.helpers import grant_capability
+    from top_down_planning.domain.run_ownership import RunOwnershipError, run_ownership
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated["pending_capability_revoke_phase"] = PLANNING
+    store.save_run(run_id, updated, expected_revision)
+    run_dir = resolve_run_dir(store, run_id)
+    assert run_dir is not None
+
+    revoke_calls: list[bool] = []
+    barrier = threading.Barrier(2)
+    ownership_errors: list[RunOwnershipError] = []
+
+    def track_revoke(*_args: Any, **_kwargs: Any) -> None:
+        revoke_calls.append(True)
+
+    def holder() -> None:
+        with run_ownership(run_id, run_dir=run_dir):
+            barrier.wait()
+            time.sleep(0.3)
+
+    def contender() -> None:
+        try:
+            barrier.wait()
+            with patch(
+                "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+                side_effect=track_revoke,
+            ):
+                RunEngine(
+                    store,
+                    create_provider=lambda _config, _workspace: StubProvider(),
+                ).continue_run(run_id, until="plan")
+        except RunOwnershipError as exc:
+            ownership_errors.append(exc)
+
+    holder_thread = threading.Thread(target=holder)
+    contender_thread = threading.Thread(target=contender)
+    holder_thread.start()
+    contender_thread.start()
+    holder_thread.join(timeout=5)
+    contender_thread.join(timeout=5)
+    assert not holder_thread.is_alive()
+    assert not contender_thread.is_alive()
+
+    assert revoke_calls == []
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+    assert len(ownership_errors) == 1
+    assert ownership_errors[0].code == "run_owned_by_live_process"
+
+
+def test_resume_apply_removes_pending_capability_revoke_marker(tmp_path: Path) -> None:
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+    assert pending_capability_revoke_phase(store.load_run(run_id)) is None
+
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    run = dict(run)
+    run["revision"] = expected_revision + 1
+    run["pending_capability_revoke_phase"] = PLANNING
+    store.save_run(run_id, run, expected_revision)
+
+    config = store.load_resolved_config(run_id)
+    plan = ResumePlan(
+        run_id=run_id,
+        expected_run_revision=int(store.load_run(run_id)["revision"]),
+        state_transition=ResumeStateTransition(
+            from_status="paused",
+            to_status="running",
+            prior_stop_code="user_cancelled",
+        ),
+        config_changes={},
+        session_policy={},
+        validation=ResumePlanValidation(
+            contract_digest_valid=True,
+            plan_binding_valid=True,
+            approval_binding_valid=True,
+            evidence_binding_valid=True,
+            context_binding_valid=True,
+        ),
+        effective_config=config,
+    )
+    apply_resume_plan_atomically(store, plan, resolved_config=config)
+    resumed = store.load_run(run_id)
+    assert resumed["status"] == "running"
+    assert pending_capability_revoke_phase(resumed) is None
+
+
+def test_global_cleanup_dropped_count_is_reported_on_continue_run(tmp_path: Path) -> None:
+    from top_down_planning.domain.run_ownership import (
+        _MAX_CLEANUP_FAILURES_GLOBAL,
+        _MAX_CLEANUP_FAILURES_PER_RUN,
+        _OWNERSHIP_CLEANUP_FAILURES,
+        ownership_cleanup_dropped_counts,
+        requeue_ownership_cleanup_failures,
+    )
+    from top_down_planning.observability import ObservabilityContext
+    from core_tools.observability import NullSink
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    pause_run(store, run_id, stop=_pause_stop())
+
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
+    for run_index in range(8):
+        for failure_index in range(_MAX_CLEANUP_FAILURES_PER_RUN):
+            requeue_ownership_cleanup_failures(
+                [
+                    {
+                        "type": "ownership_cleanup_failed",
+                        "run_id": f"other-run-{run_index}",
+                        "error_class": "OSError",
+                        "message": f"{run_index}-{failure_index}",
+                        "safe_to_retry": True,
+                    }
+                ]
+            )
+    requeue_ownership_cleanup_failures(
+        [
+            {
+                "type": "ownership_cleanup_failed",
+                "run_id": run_id,
+                "error_class": "OSError",
+                "message": "overflow",
+                "safe_to_retry": True,
+            }
+        ]
+    )
+    assert ownership_cleanup_dropped_counts().get("__global__", 0) >= 1
+
+    emitted: list[Any] = []
+    observability = ObservabilityContext(sink=NullSink(), run_id=run_id)
+    observability.emit = lambda event: emitted.append(event)  # type: ignore[method-assign]
+    RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: StubProvider(),
+        observability=observability,
+    ).continue_run(run_id, until="plan")
+
+    dropped_events = [event for event in emitted if event.category == "ownership:cleanup_dropped"]
+    assert dropped_events
+    assert ownership_cleanup_dropped_counts().get("__global__", 0) == 0
+
+
+def test_dropped_cleanup_count_stderr_fallback_and_retry() -> None:
+    from top_down_planning.domain.run_ownership import (
+        _OWNERSHIP_CLEANUP_DROPPED,
+        _OWNERSHIP_CLEANUP_FAILURES,
+        ownership_cleanup_dropped_counts,
+        requeue_ownership_cleanup_dropped_count,
+    )
+    from top_down_planning.observability import ObservabilityContext, report_ownership_cleanup_diagnostics
+    from core_tools.observability import NullSink
+
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
+    _OWNERSHIP_CLEANUP_DROPPED.clear()
+    requeue_ownership_cleanup_dropped_count("run-1", 3)
+    observability = ObservabilityContext(sink=NullSink(), run_id="run-1")
+
+    def fail_emit(_event: Any) -> None:
+        raise OSError("sink failed")
+
+    observability.emit = fail_emit  # type: ignore[method-assign]
+    with patch(
+        "top_down_planning.observability._emit_cleanup_fallback_stderr",
+        side_effect=OSError("stderr failed"),
+    ):
+        report_ownership_cleanup_diagnostics(observability, run_id="run-1")
+    assert ownership_cleanup_dropped_counts().get("run-1") == 3
+
+    emitted: list[Any] = []
+    observability.emit = lambda event: emitted.append(event)  # type: ignore[method-assign]
+    report_ownership_cleanup_diagnostics(observability, run_id="run-1")
+    assert len(emitted) == 1
+    assert emitted[0].category == "ownership:cleanup_dropped"
+    assert emitted[0].fields["dropped_count"] == 3
+    assert ownership_cleanup_dropped_counts().get("run-1", 0) == 0
