@@ -218,7 +218,7 @@ Cancellation durability: durable `paused` / `user_cancelled` must persist even w
 
 #### Ownership and orphans
 
-Cross-process ownership acquisition uses an advisory flock on a **persistent** `.resume.lock.d/.owner.lock` sentinel inode (never unlinked during release or cleanup); final acquisition is nonblocking (`LOCK_NB`). Ephemeral `owner.json` metadata is cleared only while the flock is held, before unlock. Failed metadata writes must release the flock and allow retry.
+Cross-process ownership acquisition uses an advisory flock on a **persistent** `.resume.lock.d/.owner.lock` sentinel inode (never unlinked during release or cleanup); the flock is the authoritative live-owner primitive — free flock means no live owner, and stale `owner.json` cannot block acquisition. Final acquisition is nonblocking (`LOCK_NB`). Ephemeral `owner.json` is cleared only while the flock is held, before unlock; only the matching owner token can release the bound flock FD.
 
 Orphan detection includes **completed** and **failed** runs — any tagged live provider on a terminal run is an orphan. Keep autouse `stub_orphan_agent_scan` in orchestration tests; exercise scan logic in `top_down_planning/tests/unit/test_agent_process_cleanup.py` with injected PIDs.
 

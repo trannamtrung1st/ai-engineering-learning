@@ -34,7 +34,7 @@ _RESUME_LOCK_DIRNAME = ".resume.lock.d"
 _LOCK_METADATA_FILENAME = "owner.json"
 _OWNER_FLOCK_FILENAME = ".owner.lock"
 _PROCESS_REGISTRY: dict[str, str] = {}
-_FLOCK_REGISTRY: dict[str, int] = {}
+_FLOCK_REGISTRY: dict[str, dict[str, Any]] = {}
 _NESTED_OWNERSHIP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_NESTED_OWNERSHIP",
     default=None,
@@ -182,29 +182,30 @@ def is_resume_lock_stale(
     return not _is_lock_holder_alive(lock)
 
 
-def _clear_legacy_lock_file(run_dir: Path) -> bool:
-    path = resume_lock_path(run_dir)
-    try:
-        path.unlink(missing_ok=True)
-    except OSError:
+def _unlink_if_present(path: Path) -> bool:
+    if not path.is_file():
         return False
+    path.unlink()
     return True
+
+
+def _clear_legacy_lock_file(run_dir: Path) -> bool:
+    return _unlink_if_present(resume_lock_path(run_dir))
 
 
 def _clear_owner_metadata(run_dir: Path) -> bool:
     """Remove ephemeral ownership metadata without touching the flock sentinel."""
 
     cleared = False
-    metadata_path = resume_lock_metadata_path(run_dir)
-    try:
-        if metadata_path.is_file():
-            metadata_path.unlink()
-            cleared = True
-    except OSError:
-        pass
+    if _unlink_if_present(resume_lock_metadata_path(run_dir)):
+        cleared = True
     if _clear_legacy_lock_file(run_dir):
         cleared = True
     return cleared
+
+
+def _has_flock_sentinel(run_dir: Path) -> bool:
+    return owner_flock_path(run_dir).is_file()
 
 
 def _ensure_lock_infrastructure(run_dir: Path) -> None:
@@ -357,7 +358,7 @@ def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
             return False
 
         if lock_dir.is_dir():
-            return _clear_owner_metadata(run_dir) or True
+            return _clear_owner_metadata(run_dir)
 
         return False
     finally:
@@ -427,6 +428,9 @@ def assert_no_live_process_owns_run(
             f"run {run_id} is owned by a live continuation",
             code="run_owned_by_live_process",
         )
+
+    if _has_flock_sentinel(run_dir):
+        return
 
     clear_stale_resume_lock(run_dir)
     lock = read_resume_lock(run_dir)
@@ -505,10 +509,11 @@ def acquire_run_ownership(
     flock_fd: int | None = None
     try:
         flock_fd = _acquire_owner_flock(run_dir)
+        _clear_owner_metadata(run_dir)
         metadata_path = resume_lock_metadata_path(run_dir)
         _write_lock_metadata(metadata_path, record)
         _PROCESS_REGISTRY[run_id] = owner_token
-        _FLOCK_REGISTRY[run_id] = flock_fd
+        _FLOCK_REGISTRY[run_id] = {"owner_token": owner_token, "fd": flock_fd}
         flock_fd = None
         return owner_token
     except BaseException:
@@ -526,27 +531,24 @@ def release_run_ownership(
 ) -> None:
     """Release ownership acquired by ``acquire_run_ownership``."""
 
-    in_registry = _PROCESS_REGISTRY.get(run_id) == owner_token
-    flock_fd = _FLOCK_REGISTRY.pop(run_id, None)
-
-    if flock_fd is not None:
-        try:
-            lock = read_resume_lock(run_dir)
-            if lock is not None and lock.owner_token == owner_token:
-                _clear_owner_metadata(run_dir)
-            elif lock is None and in_registry:
-                _clear_owner_metadata(run_dir)
-        finally:
-            if in_registry:
-                _PROCESS_REGISTRY.pop(run_id, None)
-            _release_flock_fd(flock_fd)
+    if _PROCESS_REGISTRY.get(run_id) != owner_token:
         return
 
-    if in_registry:
+    flock_entry = _FLOCK_REGISTRY.get(run_id)
+    if flock_entry is None:
         _PROCESS_REGISTRY.pop(run_id, None)
-    lock = read_resume_lock(run_dir)
-    if lock is not None and lock.owner_token == owner_token:
+        lock = read_resume_lock(run_dir)
+        if lock is not None and lock.owner_token == owner_token:
+            _clear_owner_metadata(run_dir)
+        return
+
+    flock_fd = int(flock_entry["fd"])
+    try:
         _clear_owner_metadata(run_dir)
+    finally:
+        _PROCESS_REGISTRY.pop(run_id, None)
+        _FLOCK_REGISTRY.pop(run_id, None)
+        _release_flock_fd(flock_fd)
 
 
 @contextmanager
@@ -588,6 +590,8 @@ def is_run_orchestrator_alive(run_dir: Path) -> bool:
         if lock is None:
             return True
         return _is_lock_holder_alive(lock)
+    if _has_flock_sentinel(run_dir):
+        return False
     clear_stale_resume_lock(run_dir)
     lock = read_resume_lock(run_dir)
     if lock is None:

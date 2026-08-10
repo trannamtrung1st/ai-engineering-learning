@@ -23,6 +23,7 @@ from top_down_planning.domain.run_ownership import (
     clear_stale_resume_lock,
     holds_run_ownership,
     is_resume_lock_stale,
+    process_identity_for_pid,
     read_resume_lock,
     release_run_ownership,
     resume_lock_dir,
@@ -367,19 +368,86 @@ def test_stale_cleanup_preserves_owner_lock_inode(tmp_path: Path) -> None:
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
 
 
-def test_release_clears_metadata_before_unlock(tmp_path: Path) -> None:
+def test_release_run_ownership_clears_metadata_before_unlock(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
     token_a = acquire_run_ownership("run-1", run_dir=run_dir)
-    flock_fd = _FLOCK_REGISTRY.pop("run-1")
-    _PROCESS_REGISTRY.pop("run-1")
-    _clear_owner_metadata(run_dir)
-    assert read_resume_lock(run_dir) is None
-    with pytest.raises(RunOwnershipError, match="owned"):
-        acquire_run_ownership("run-1", run_dir=run_dir)
-    _release_flock_fd(flock_fd)
+    metadata_cleared = threading.Event()
+    release_gate = threading.Event()
+
+    def clear_and_signal(run_dir_arg: Path) -> bool:
+        result = _clear_owner_metadata(run_dir_arg)
+        metadata_cleared.set()
+        return result
+
+    def gated_release(fd: int) -> None:
+        release_gate.wait(timeout=5)
+        _release_flock_fd(fd)
+
+    with patch(
+        "top_down_planning.domain.run_ownership._clear_owner_metadata",
+        side_effect=clear_and_signal,
+    ):
+        with patch(
+            "top_down_planning.domain.run_ownership._release_flock_fd",
+            side_effect=gated_release,
+        ):
+            releaser = threading.Thread(
+                target=release_run_ownership,
+                args=("run-1",),
+                kwargs={"run_dir": run_dir, "owner_token": token_a},
+            )
+            releaser.start()
+            assert metadata_cleared.wait(timeout=5)
+            with pytest.raises(RunOwnershipError, match="owned"):
+                acquire_run_ownership("run-1", run_dir=run_dir)
+            release_gate.set()
+            releaser.join(timeout=5)
+            assert not releaser.is_alive()
+
     token_b = acquire_run_ownership("run-1", run_dir=run_dir)
     assert read_resume_lock(run_dir) is not None
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token_b)
+
+
+def test_acquire_succeeds_when_flock_free_and_stale_live_pid_metadata(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    resume_lock_dir(run_dir).mkdir(parents=True)
+    flock_path = owner_flock_path(run_dir)
+    fd = os.open(flock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    os.close(fd)
+    live = ResumeLockRecord(
+        run_id="run-1",
+        pid=os.getpid(),
+        owner_token="stale-token",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        process_identity=process_identity_for_pid(os.getpid()),
+    )
+    resume_lock_metadata_path(run_dir).write_text(
+        __import__("json").dumps(live.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    lock = read_resume_lock(run_dir)
+    assert lock is not None
+    assert lock.owner_token == token
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_wrong_token_release_does_not_unlock_flock(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    token_a = acquire_run_ownership("run-1", run_dir=run_dir)
+    flock_entry = _FLOCK_REGISTRY["run-1"]
+    token_b = "replacement-token"
+    _PROCESS_REGISTRY["run-1"] = token_b
+    _FLOCK_REGISTRY["run-1"] = {"owner_token": token_b, "fd": flock_entry["fd"]}
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token_a)
+    assert _PROCESS_REGISTRY["run-1"] == token_b
+    assert "run-1" in _FLOCK_REGISTRY
+    with pytest.raises(RunOwnershipError, match="owned"):
+        acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token_b)
 
 
