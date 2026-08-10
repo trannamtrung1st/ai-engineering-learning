@@ -23,6 +23,7 @@ from top_down_planning.domain.run_ownership import (
     clear_stale_resume_lock,
     holds_run_ownership,
     is_resume_lock_stale,
+    is_run_orchestrator_alive,
     process_identity_for_pid,
     read_resume_lock,
     release_run_ownership,
@@ -31,8 +32,7 @@ from top_down_planning.domain.run_ownership import (
     resume_lock_path,
     owner_flock_path,
     run_ownership,
-    _FLOCK_REGISTRY,
-    _PROCESS_REGISTRY,
+    _OWNERSHIP_REGISTRY,
     _clear_owner_metadata,
     _release_flock_fd,
 )
@@ -261,8 +261,7 @@ def test_acquire_releases_flock_on_metadata_write_failure(tmp_path: Path) -> Non
     with patch("top_down_planning.domain.run_ownership.os.write", side_effect=OSError("disk full")):
         with pytest.raises(OSError, match="disk full"):
             acquire_run_ownership("run-1", run_dir=run_dir)
-    assert "run-1" not in _PROCESS_REGISTRY
-    assert "run-1" not in _FLOCK_REGISTRY
+    assert "run-1" not in _OWNERSHIP_REGISTRY
     assert not holds_run_ownership("run-1")
     token = acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
@@ -274,8 +273,7 @@ def test_acquire_releases_flock_on_metadata_fsync_failure(tmp_path: Path) -> Non
     with patch("top_down_planning.domain.run_ownership.os.fsync", side_effect=OSError("fsync failed")):
         with pytest.raises(OSError, match="fsync failed"):
             acquire_run_ownership("run-1", run_dir=run_dir)
-    assert "run-1" not in _PROCESS_REGISTRY
-    assert "run-1" not in _FLOCK_REGISTRY
+    assert "run-1" not in _OWNERSHIP_REGISTRY
     token = acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
 
@@ -439,13 +437,12 @@ def test_wrong_token_release_does_not_unlock_flock(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
     token_a = acquire_run_ownership("run-1", run_dir=run_dir)
-    flock_entry = _FLOCK_REGISTRY["run-1"]
+    entry = _OWNERSHIP_REGISTRY["run-1"]
     token_b = "replacement-token"
-    _PROCESS_REGISTRY["run-1"] = token_b
-    _FLOCK_REGISTRY["run-1"] = {"owner_token": token_b, "fd": flock_entry["fd"]}
+    _OWNERSHIP_REGISTRY["run-1"] = {"owner_token": token_b, "fd": entry["fd"]}
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token_a)
-    assert _PROCESS_REGISTRY["run-1"] == token_b
-    assert "run-1" in _FLOCK_REGISTRY
+    assert _OWNERSHIP_REGISTRY["run-1"]["owner_token"] == token_b
+    assert "run-1" in _OWNERSHIP_REGISTRY
     with pytest.raises(RunOwnershipError, match="owned"):
         acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token_b)
@@ -457,8 +454,80 @@ def test_flock_oserror_does_not_leak_fd_or_registry(tmp_path: Path) -> None:
     with patch("fcntl.flock", side_effect=OSError("flock unsupported")):
         with pytest.raises(OSError, match="flock unsupported"):
             acquire_run_ownership("run-1", run_dir=run_dir)
-    assert "run-1" not in _PROCESS_REGISTRY
-    assert "run-1" not in _FLOCK_REGISTRY
+    assert "run-1" not in _OWNERSHIP_REGISTRY
     assert not holds_run_ownership("run-1")
     token = acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_acquire_interrupt_during_metadata_write_rolls_back(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    with patch(
+        "top_down_planning.domain.run_ownership._write_lock_metadata",
+        side_effect=KeyboardInterrupt,
+    ):
+        with pytest.raises(KeyboardInterrupt):
+            acquire_run_ownership("run-1", run_dir=run_dir)
+    assert not holds_run_ownership("run-1")
+    assert "run-1" not in _OWNERSHIP_REGISTRY
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_acquire_interrupt_after_publication_rolls_back(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    from top_down_planning.domain import run_ownership as ownership_module
+
+    real_publish = ownership_module._publish_run_ownership
+
+    def publish_and_interrupt(run_id: str, owner_token: str, flock_fd: int) -> None:
+        real_publish(run_id, owner_token, flock_fd)
+        raise KeyboardInterrupt
+
+    with patch.object(ownership_module, "_publish_run_ownership", publish_and_interrupt):
+        with pytest.raises(KeyboardInterrupt):
+            acquire_run_ownership("run-1", run_dir=run_dir)
+    assert not holds_run_ownership("run-1")
+    assert "run-1" not in _OWNERSHIP_REGISTRY
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_run_ownership_context_survives_metadata_cleanup_failure(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    with patch(
+        "top_down_planning.domain.run_ownership._clear_owner_metadata",
+        side_effect=OSError("unlink failed"),
+    ):
+        release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+    assert not holds_run_ownership("run-1")
+    token2 = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token2)
+
+
+def test_is_run_orchestrator_alive_true_when_flock_held_with_dead_metadata(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    resume_lock_dir(run_dir).mkdir(parents=True)
+    flock_path = owner_flock_path(run_dir)
+    flock_fd = os.open(flock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    fcntl.flock(flock_fd, fcntl.LOCK_EX)
+    stale = ResumeLockRecord(
+        run_id="run-1",
+        pid=999999,
+        owner_token="stale-token",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    )
+    resume_lock_metadata_path(run_dir).write_text(
+        __import__("json").dumps(stale.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    assert is_run_orchestrator_alive(run_dir) is True
+    fcntl.flock(flock_fd, fcntl.LOCK_UN)
+    os.close(flock_fd)

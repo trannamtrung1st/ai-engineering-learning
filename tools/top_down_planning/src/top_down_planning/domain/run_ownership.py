@@ -33,8 +33,7 @@ _RESUME_LOCK_FILENAME = ".resume.lock"
 _RESUME_LOCK_DIRNAME = ".resume.lock.d"
 _LOCK_METADATA_FILENAME = "owner.json"
 _OWNER_FLOCK_FILENAME = ".owner.lock"
-_PROCESS_REGISTRY: dict[str, str] = {}
-_FLOCK_REGISTRY: dict[str, dict[str, Any]] = {}
+_OWNERSHIP_REGISTRY: dict[str, dict[str, Any]] = {}
 _NESTED_OWNERSHIP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_NESTED_OWNERSHIP",
     default=None,
@@ -105,7 +104,7 @@ def holds_run_ownership(run_id: str) -> bool:
     nested = _NESTED_OWNERSHIP.get()
     if nested is not None and run_id in nested:
         return True
-    return run_id in _PROCESS_REGISTRY
+    return run_id in _OWNERSHIP_REGISTRY
 
 
 def _utc_now() -> str:
@@ -336,7 +335,7 @@ def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
             if lock is not None:
                 if _is_lock_holder_alive(lock):
                     return False
-                _PROCESS_REGISTRY.pop(lock.run_id, None)
+                _OWNERSHIP_REGISTRY.pop(lock.run_id, None)
                 return _clear_owner_metadata(run_dir)
             if _metadata_holder_alive(metadata_path):
                 return False
@@ -347,7 +346,7 @@ def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
             if lock is not None:
                 if _is_lock_holder_alive(lock):
                     return False
-                _PROCESS_REGISTRY.pop(lock.run_id, None)
+                _OWNERSHIP_REGISTRY.pop(lock.run_id, None)
                 return _clear_owner_metadata(run_dir)
             try:
                 content = legacy_path.read_text(encoding="utf-8").strip()
@@ -383,7 +382,7 @@ def clear_stale_resume_lock(
         return _clear_abandoned_lock_claim(run_dir)
     if not is_resume_lock_stale(lock, stale_after_seconds=stale_after_seconds):
         return False
-    _PROCESS_REGISTRY.pop(lock.run_id, None)
+    _OWNERSHIP_REGISTRY.pop(lock.run_id, None)
     return _clear_abandoned_lock_claim(run_dir)
 
 
@@ -407,8 +406,8 @@ def assert_no_live_process_owns_run(
 ) -> None:
     """Refuse resume mutation when another live process owns the run."""
 
-    active_token = _PROCESS_REGISTRY.get(run_id)
-    if active_token is not None:
+    entry = _OWNERSHIP_REGISTRY.get(run_id)
+    if entry is not None:
         raise RunOwnershipError(
             f"run {run_id} is owned by a live in-process continuation",
             code="run_owned_by_live_process",
@@ -488,6 +487,31 @@ def _cleanup_failed_acquire(run_dir: Path) -> None:
         pass
 
 
+def _publish_run_ownership(run_id: str, owner_token: str, flock_fd: int) -> None:
+    _OWNERSHIP_REGISTRY[run_id] = {"owner_token": owner_token, "fd": flock_fd}
+
+
+def _rollback_failed_acquire(
+    run_id: str,
+    run_dir: Path,
+    flock_fd: int | None,
+) -> None:
+    entry = _OWNERSHIP_REGISTRY.pop(run_id, None)
+    if entry is not None:
+        _release_flock_fd(int(entry["fd"]))
+        return
+    if flock_fd is not None:
+        _cleanup_failed_acquire(run_dir)
+        _release_flock_fd(flock_fd)
+
+
+def _clear_owner_metadata_best_effort(run_dir: Path) -> None:
+    try:
+        _clear_owner_metadata(run_dir)
+    except OSError:
+        pass
+
+
 def acquire_run_ownership(
     run_id: str,
     *,
@@ -512,14 +536,11 @@ def acquire_run_ownership(
         _clear_owner_metadata(run_dir)
         metadata_path = resume_lock_metadata_path(run_dir)
         _write_lock_metadata(metadata_path, record)
-        _PROCESS_REGISTRY[run_id] = owner_token
-        _FLOCK_REGISTRY[run_id] = {"owner_token": owner_token, "fd": flock_fd}
+        _publish_run_ownership(run_id, owner_token, flock_fd)
         flock_fd = None
         return owner_token
     except BaseException:
-        if flock_fd is not None:
-            _cleanup_failed_acquire(run_dir)
-            _release_flock_fd(flock_fd)
+        _rollback_failed_acquire(run_id, run_dir, flock_fd)
         raise
 
 
@@ -531,23 +552,15 @@ def release_run_ownership(
 ) -> None:
     """Release ownership acquired by ``acquire_run_ownership``."""
 
-    if _PROCESS_REGISTRY.get(run_id) != owner_token:
+    entry = _OWNERSHIP_REGISTRY.get(run_id)
+    if entry is None or entry.get("owner_token") != owner_token:
         return
 
-    flock_entry = _FLOCK_REGISTRY.get(run_id)
-    if flock_entry is None:
-        _PROCESS_REGISTRY.pop(run_id, None)
-        lock = read_resume_lock(run_dir)
-        if lock is not None and lock.owner_token == owner_token:
-            _clear_owner_metadata(run_dir)
-        return
-
-    flock_fd = int(flock_entry["fd"])
+    flock_fd = int(entry["fd"])
     try:
-        _clear_owner_metadata(run_dir)
+        _clear_owner_metadata_best_effort(run_dir)
     finally:
-        _PROCESS_REGISTRY.pop(run_id, None)
-        _FLOCK_REGISTRY.pop(run_id, None)
+        _OWNERSHIP_REGISTRY.pop(run_id, None)
         _release_flock_fd(flock_fd)
 
 
@@ -586,10 +599,7 @@ def is_run_orchestrator_alive(run_dir: Path) -> bool:
     """Return True when a live process holds the run resume lock."""
 
     if _is_owner_flock_held(run_dir):
-        lock = read_resume_lock(run_dir)
-        if lock is None:
-            return True
-        return _is_lock_holder_alive(lock)
+        return True
     if _has_flock_sentinel(run_dir):
         return False
     clear_stale_resume_lock(run_dir)
