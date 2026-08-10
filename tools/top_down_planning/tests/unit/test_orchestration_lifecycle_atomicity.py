@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import PlanningPhaseOrchestrator, ProductionPhaseOrchestrator
@@ -13,6 +16,7 @@ from tests.helpers import (
     apply_plan,
     create_run_kwargs,
     done_events,
+    grant_capability,
     minimal_resolved_config,
     plan_root_item,
     with_root_contract,
@@ -159,3 +163,64 @@ def test_production_phase_entry_event_shares_commit_txn(tmp_path: Path) -> None:
     ]
     assert len(started) == 1
     assert started[0].get("txn_id")
+
+
+def test_planning_completion_preserves_capabilities_when_commit_fails(tmp_path: Path) -> None:
+    store, run_id = _planning_store(tmp_path)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+    provider = StubProvider()
+    provider.script_turn(done_events(text="planner session start"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="done"))
+
+    with patch.object(store, "commit", side_effect=OSError("lifecycle cas failed")):
+        with pytest.raises(OSError, match="lifecycle cas failed"):
+            PlanningPhaseOrchestrator(store, run_id, provider).run()
+
+    assert store.load_run(run_id)["phase"] == PLANNING
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+
+def test_planning_completion_crash_during_replace_restores_prior_phase(tmp_path: Path) -> None:
+    from tests.unit.test_commit_crash_recovery import _crash_after_dest_replace_count
+
+    store, run_id = _planning_store(tmp_path)
+    revision_before = int(store.load_run(run_id)["revision"])
+    provider = StubProvider()
+    provider.script_turn(done_events(text="planner session start"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="done"))
+
+    with patch.object(Path, "replace", _crash_after_dest_replace_count(1)):
+        with pytest.raises(OSError, match="simulated crash"):
+            PlanningPhaseOrchestrator(store, run_id, provider).run()
+
+    run_after = store.load_run(run_id)
+    assert run_after["phase"] == PLANNING
+    assert int(run_after["revision"]) == revision_before
+    ready_events = [
+        event
+        for event in store.load_events(run_id)
+        if event.get("type") == "planning_candidate_ready"
+    ]
+    assert ready_events == []
+
+
+def test_observing_store_commit_swallows_observability_emit_failure(tmp_path: Path) -> None:
+    from core_tools.observability import NullSink
+    from top_down_planning.observability import ObservabilityContext, wrap_store_with_observability
+
+    raw_store, run_id = _planning_store(tmp_path)
+    observability = ObservabilityContext(sink=NullSink(), run_id=run_id)
+
+    def fail_emit(_event: object) -> None:
+        raise RuntimeError("emit failed")
+
+    observability.emit = fail_emit  # type: ignore[method-assign]
+    store = wrap_store_with_observability(raw_store, observability)
+    provider = StubProvider()
+    provider.script_turn(done_events(text="planner session start"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="done"))
+
+    result = PlanningPhaseOrchestrator(store, run_id, provider).run()
+    assert result.ok is True
+    assert raw_store.load_run(run_id)["phase"] == WHOLE_PLAN_REVIEW

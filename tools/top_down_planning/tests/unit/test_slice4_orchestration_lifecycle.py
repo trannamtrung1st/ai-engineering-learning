@@ -726,6 +726,46 @@ def test_pause_run_preserves_capabilities_when_lifecycle_commit_fails(tmp_path: 
     assert store.load_capability(run_id, token_id)["revoked"] is False
 
 
+def test_continue_run_preserves_planning_completion_when_observability_emit_fails(
+    tmp_path: Path,
+) -> None:
+    from core_tools.observability import NullSink
+    from tests.helpers import done_events
+    from top_down_planning.observability import ObservabilityContext, wrap_store_with_observability
+
+    raw_store = FileRunStore(tmp_path)
+    run_id = _create_running_run(raw_store)
+    observability = ObservabilityContext(sink=NullSink(), run_id=run_id)
+
+    def fail_planning_candidate_emit(event: object) -> None:
+        category = getattr(event, "category", None)
+        message = getattr(event, "message", "")
+        if category == "state" and message == "planning candidate ready":
+            raise RuntimeError("emit failed")
+
+    observability.emit = fail_planning_candidate_emit  # type: ignore[method-assign]
+    store = wrap_store_with_observability(raw_store, observability)
+    provider = StubProvider()
+    provider.script_turn(done_events(text="planner session start"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="done"))
+
+    result = RunEngine(
+        store,
+        create_provider=lambda _c, _w: provider,
+        observability=observability,
+    ).continue_run(run_id, until="plan")
+
+    run = raw_store.load_run(run_id)
+    assert run["status"] == "running"
+    assert run["phase"] == WHOLE_PLAN_REVIEW
+    assert result.ok is True
+    assert result.target_reached is True
+    assert any(
+        event.get("type") == "planning_candidate_ready"
+        for event in raw_store.load_events(run_id)
+    )
+
+
 def test_report_ownership_cleanup_diagnostics_emits_observability_event(tmp_path: Path) -> None:
     from top_down_planning.domain.run_ownership import (
         _OWNERSHIP_CLEANUP_FAILURES,

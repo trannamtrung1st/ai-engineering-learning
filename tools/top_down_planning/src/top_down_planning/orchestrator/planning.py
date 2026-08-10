@@ -13,7 +13,6 @@ from top_down_planning.orchestrator.capability import (
     adopt_replacement_capability,
     bind_provider_capability,
     issue_session_capability,
-    revoke_capabilities_for_phase,
     rotate_session_capability,
 )
 from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryExhausted, SessionRecoveryPaused
@@ -22,7 +21,10 @@ from top_down_planning.orchestrator.agent_context import (
     resolve_activity_session_context,
 )
 from top_down_planning.orchestrator.phases import PLANNING, WHOLE_PLAN_REVIEW
-from top_down_planning.orchestrator.run_transitions import pause_for_limit_exhausted
+from top_down_planning.orchestrator.run_transitions import (
+    pause_for_limit_exhausted,
+    reconcile_pending_capability_revocation,
+)
 from top_down_planning.orchestrator.planner_session import (
     PLANNER_CANDIDATE_READY_SIGNAL,
     build_planner_protocol_instructions,
@@ -338,7 +340,6 @@ class PlanningPhaseOrchestrator:
     ) -> PlanningPhaseResult:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
-        revoke_capabilities_for_phase(self._store, self._run_id, PLANNING)
         plan_revision = int(self._store.load_plan(self._run_id)["revision"])
         event_fields: dict[str, Any] = {
             "session_id": session_id,
@@ -351,6 +352,7 @@ class PlanningPhaseOrchestrator:
         run_payload = dict(run)
         run_payload["revision"] = expected_revision + 1
         run_payload["phase"] = WHOLE_PLAN_REVIEW
+        run_payload["pending_capability_revoke_phase"] = PLANNING
         self._store.commit(
             self._run_id,
             CommitSpec(
@@ -365,6 +367,7 @@ class PlanningPhaseOrchestrator:
                 ],
             ),
         )
+        reconcile_pending_capability_revocation(self._store, self._run_id)
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, session_id=session_id)
 

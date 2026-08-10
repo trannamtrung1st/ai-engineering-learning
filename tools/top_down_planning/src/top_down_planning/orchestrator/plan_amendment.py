@@ -17,12 +17,12 @@ from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
     issue_session_capability,
     rebind_primary_session_capability,
-    revoke_capabilities_for_phase,
     rotate_session_capability,
 )
 from top_down_planning.orchestrator.run_transitions import (
     complete_run_with_outcome,
     pause_for_limit_exhausted,
+    reconcile_pending_capability_revocation,
 )
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryPaused
@@ -267,7 +267,7 @@ class PlanAmendmentOrchestrator:
 
         run = self._store.load_run(self._run_id)
         run_expected = int(run["revision"])
-        revoke_capabilities_for_phase(self._store, self._run_id, str(run.get("phase") or ""))
+        source_phase = str(run.get("phase") or "")
         stop = StopRecord(
             code="amendment_pending",
             category="operational",
@@ -281,6 +281,8 @@ class PlanAmendmentOrchestrator:
         run_payload["status"] = "paused"
         run_payload["outcome"] = None
         run_payload["stop"] = stop.to_dict()
+        if source_phase:
+            run_payload["pending_capability_revoke_phase"] = source_phase
         self._store.commit(
             self._run_id,
             CommitSpec(
@@ -303,6 +305,8 @@ class PlanAmendmentOrchestrator:
                 ],
             ),
         )
+        if source_phase:
+            reconcile_pending_capability_revocation(self._store, self._run_id)
         return self._store.load_run(self._run_id)
 
     def _activate_amendment_execution(self) -> dict[str, Any]:
@@ -334,15 +338,6 @@ class PlanAmendmentOrchestrator:
         expected_revision = int(run["revision"])
         prior_status = status
         prior_phase = str(run.get("phase") or "")
-        for record in self._store.list_capabilities(self._run_id):
-            if record.get("revoked") is True:
-                continue
-            capability_id = str(record.get("id") or "")
-            if capability_id:
-                self._store.revoke_capability(self._run_id, capability_id)
-        from top_down_planning.persistence.capabilities import clear_capability_token_file
-
-        clear_capability_token_file(self._store, self._run_id)
         run_payload = dict(run)
         run_payload["revision"] = expected_revision + 1
         run_payload["status"] = "running"
@@ -369,16 +364,25 @@ class PlanAmendmentOrchestrator:
                 events=events,
             ),
         )
+        for record in self._store.list_capabilities(self._run_id):
+            if record.get("revoked") is True:
+                continue
+            capability_id = str(record.get("id") or "")
+            if capability_id:
+                self._store.revoke_capability(self._run_id, capability_id)
+        from top_down_planning.persistence.capabilities import clear_capability_token_file
+
+        clear_capability_token_file(self._store, self._run_id)
         return self._store.load_run(self._run_id)
 
     def _transition_to_whole_plan_review(self) -> dict[str, Any]:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
-        revoke_capabilities_for_phase(self._store, self._run_id, PLAN_AMENDMENT)
         plan = self._store.load_plan(self._run_id)
         run_payload = dict(run)
         run_payload["revision"] = expected_revision + 1
         run_payload["phase"] = WHOLE_PLAN_REVIEW
+        run_payload["pending_capability_revoke_phase"] = PLAN_AMENDMENT
         digests = dict(run_payload.get("digests") or {})
         digests["plan"] = compute_plan_digest(plan)
         run_payload["digests"] = digests
@@ -396,18 +400,19 @@ class PlanAmendmentOrchestrator:
                 ],
             ),
         )
+        reconcile_pending_capability_revocation(self._store, self._run_id)
         return self._store.load_run(self._run_id)
 
     def _resume_production_phase(self, plan_revision: int) -> dict[str, Any]:
         run = self._store.load_run(self._run_id)
         expected_revision = int(run["revision"])
-        revoke_capabilities_for_phase(self._store, self._run_id, WHOLE_PLAN_REVIEW)
         plan = self._store.load_plan(self._run_id)
         run_payload = dict(run)
         run_payload["revision"] = expected_revision + 1
         run_payload["phase"] = PRODUCTION
         run_payload["status"] = "running"
         run_payload["stop"] = None
+        run_payload["pending_capability_revoke_phase"] = WHOLE_PLAN_REVIEW
         digests = dict(run_payload.get("digests") or {})
         digests["plan"] = compute_plan_digest(plan)
         run_payload["digests"] = digests
@@ -425,6 +430,7 @@ class PlanAmendmentOrchestrator:
                 ],
             ),
         )
+        reconcile_pending_capability_revocation(self._store, self._run_id)
         rebind_primary_session_capability(
             self._store,
             self._run_id,

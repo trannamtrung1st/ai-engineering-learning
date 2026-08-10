@@ -57,6 +57,7 @@ from top_down_planning.orchestrator.phases import (
 from top_down_planning.orchestrator.run_transitions import (
     complete_run_with_outcome,
     pause_for_limit_exhausted,
+    reconcile_pending_capability_revocation,
 )
 from top_down_planning.orchestrator.provider_turns import (
     build_producer_turn_recovery,
@@ -445,7 +446,6 @@ class ProductionPhaseOrchestrator:
         config = self._store.load_resolved_config(self._run_id)
         workspace = run_workspace(run)
         expected_revision = int(run["revision"])
-        revoke_capabilities_for_phase(self._store, self._run_id, PRODUCTION)
 
         digests = dict(run.get("digests") or {})
         old_binding = dict(run.get("context_snapshot_binding") or {})
@@ -530,6 +530,7 @@ class ProductionPhaseOrchestrator:
             digests["context_snapshot"] = new_snapshot_digest
             run_payload["context_snapshot_binding"] = new_binding
         run_payload["digests"] = digests
+        run_payload["pending_capability_revoke_phase"] = PRODUCTION
         events: list[dict[str, Any]] = [
             {
                 "type": "context_snapshot_collected",
@@ -570,6 +571,7 @@ class ProductionPhaseOrchestrator:
                 events=events,
             ),
         )
+        reconcile_pending_capability_revocation(self._store, self._run_id)
         run = self._store.load_run(self._run_id)
         return self._result_from_run(run, ok=True, session_id=session_id)
 

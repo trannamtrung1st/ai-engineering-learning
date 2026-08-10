@@ -529,18 +529,21 @@ class ObservingRunStore:
         return result
 
     def _emit_audit_event(self, run_id: str, event: dict[str, Any]) -> None:
-        mapped = map_audit_event(event)
-        if mapped is not None:
-            self._context.emit(
-                ConsoleEvent(
-                    category=mapped.category,
-                    message=mapped.message,
-                    fields=mapped.fields,
-                    level=mapped.level,
-                    run_id=run_id,
-                    session_id=mapped.session_id,
+        try:
+            mapped = map_audit_event(event)
+            if mapped is not None:
+                self._context.emit(
+                    ConsoleEvent(
+                        category=mapped.category,
+                        message=mapped.message,
+                        fields=mapped.fields,
+                        level=mapped.level,
+                        run_id=run_id,
+                        session_id=mapped.session_id,
+                    )
                 )
-            )
+        except Exception:
+            return
 
 
 def _emit_cleanup_fallback_stderr(failure: dict[str, Any]) -> None:
