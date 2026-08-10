@@ -183,10 +183,15 @@ def _continuation_blocked_by_capability_revocation(
     *,
     until: str,
     steps: list[RunStepResult],
+    single_step: bool = False,
 ) -> RunContinuationResult | None:
     if not pending_capability_revoke_unresolved(store, run_id, run):
         return None
-    if str(run.get("status") or "") == "running" and _target_reached(run, until):
+    if (
+        not single_step
+        and str(run.get("status") or "") == "running"
+        and _target_reached(run, until)
+    ):
         return None
     return _continuation_result_from_run(
         run,
@@ -275,6 +280,7 @@ class RunEngine:
         *,
         until: str,
         steps: list[RunStepResult],
+        single_step: bool = False,
     ) -> RunContinuationResult | None:
         run = self._store.load_run(run_id)
         if pending_capability_revocation_pending(run):
@@ -286,6 +292,7 @@ class RunEngine:
             run_id,
             until=until,
             steps=steps,
+            single_step=single_step,
         )
 
     def continue_run(
@@ -322,6 +329,7 @@ class RunEngine:
                                 run_id,
                                 until=until,
                                 steps=[],
+                                single_step=single_step,
                             )
                             if blocked is not None:
                                 self._emit_done(blocked, started_at=started_at)
@@ -381,6 +389,7 @@ class RunEngine:
                         run_id,
                         until=until,
                         steps=[],
+                        single_step=single_step,
                     )
                     if blocked is not None:
                         self._emit_done(blocked, started_at=started_at)
@@ -512,6 +521,7 @@ class RunEngine:
                 run_id,
                 until=until,
                 steps=steps,
+                single_step=single_step,
             )
             if blocked is not None:
                 self._emit_done(blocked, started_at=started_at)

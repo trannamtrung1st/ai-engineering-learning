@@ -990,6 +990,125 @@ def test_continue_run_proceeds_after_capability_revocation_converges(
     assert store.load_capability(run_id, token_id)["revoked"] is True
 
 
+def test_continue_run_single_step_blocks_when_pending_revoke_unresolved(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import grant_capability
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated["phase"] = WHOLE_PLAN_REVIEW
+    updated["pending_capability_revoke_phase"] = PLANNING
+    store.save_run(run_id, updated, expected_revision)
+
+    provider_calls = 0
+
+    def forbidden_factory(_config: dict, _workspace: object) -> StubProvider:
+        nonlocal provider_calls
+        provider_calls += 1
+        return StubProvider()
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=OSError("revoke failed"),
+    ):
+        result = RunEngine(
+            store,
+            create_provider=forbidden_factory,
+        ).continue_run(run_id, until="plan", single_step=True)
+
+    assert provider_calls == 0
+    assert result.ok is False
+    assert result.phase == WHOLE_PLAN_REVIEW
+    assert result.status == "running"
+    assert pending_capability_revoke_phase(store.load_run(run_id)) == PLANNING
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+
+def test_continue_run_single_step_blocks_amendment_when_revoke_all_unresolved(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import grant_capability
+    from top_down_planning.orchestrator.run_transitions import pending_capability_revoke_all
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+    token_id = token.split(".", 1)[0]
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated["phase"] = PLAN_AMENDMENT
+    updated["status"] = "running"
+    updated["pending_capability_revoke_all"] = True
+    store.save_run(run_id, updated, expected_revision)
+
+    provider_calls = 0
+
+    def forbidden_factory(_config: dict, _workspace: object) -> StubProvider:
+        nonlocal provider_calls
+        provider_calls += 1
+        return StubProvider()
+
+    with patch.object(store, "revoke_capability", side_effect=OSError("revoke failed")):
+        result = RunEngine(
+            store,
+            create_provider=forbidden_factory,
+        ).continue_run(run_id, until="plan", single_step=True)
+
+    assert provider_calls == 0
+    assert result.ok is False
+    run = store.load_run(run_id)
+    assert run["phase"] == PLAN_AMENDMENT
+    assert pending_capability_revoke_all(run) is True
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+
+def test_continue_run_allows_target_reached_when_pending_revoke_not_single_step(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import grant_capability
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    grant_capability(store, run_id, role="planner", phase=PLANNING)
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated["phase"] = WHOLE_PLAN_REVIEW
+    updated["pending_capability_revoke_phase"] = PLANNING
+    store.save_run(run_id, updated, expected_revision)
+
+    provider_calls = 0
+
+    def forbidden_factory(_config: dict, _workspace: object) -> StubProvider:
+        nonlocal provider_calls
+        provider_calls += 1
+        return StubProvider()
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=OSError("revoke failed"),
+    ):
+        result = RunEngine(
+            store,
+            create_provider=forbidden_factory,
+        ).continue_run(run_id, until="plan", single_step=False)
+
+    assert provider_calls == 0
+    assert result.ok is True
+    assert result.target_reached is True
+    assert pending_capability_revoke_phase(store.load_run(run_id)) == PLANNING
+
+
 def test_report_ownership_cleanup_diagnostics_emits_observability_event(tmp_path: Path) -> None:
     from top_down_planning.domain.run_ownership import (
         _OWNERSHIP_CLEANUP_FAILURES,
