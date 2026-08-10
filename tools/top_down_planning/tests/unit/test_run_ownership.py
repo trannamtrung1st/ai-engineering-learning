@@ -907,6 +907,82 @@ def test_child_sigint_during_release_attempt_allows_peer_acquire(tmp_path: Path)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
 
 
+def test_child_sigterm_during_release_attempt_allows_peer_acquire(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    child_script = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from top_down_planning.domain.run_ownership import "
+        "acquire_run_ownership, release_run_ownership\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "token = acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "(run_dir / '.acquired').write_text(token, encoding='utf-8')\n"
+        "while not (run_dir / '.go_release').is_file():\n"
+        "    time.sleep(0.01)\n"
+        "release_run_ownership('run-1', run_dir=run_dir, owner_token=token)\n"
+        "(run_dir / '.released').write_text('1', encoding='utf-8')\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", child_script], env=_subprocess_env())
+    acquired_marker = run_dir / ".acquired"
+    for _ in range(100):
+        if acquired_marker.is_file():
+            break
+        time.sleep(0.02)
+    assert acquired_marker.is_file()
+    (run_dir / ".go_release").write_text("1", encoding="utf-8")
+    os.kill(child.pid, signal.SIGTERM)
+    assert child.wait(timeout=5) != 0
+    assert not (run_dir / ".released").is_file()
+    token = _wait_for_peer_acquire(run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_process_identity_unknown_without_proc_filesystem() -> None:
+    pid = os.getpid()
+    with patch(
+        "top_down_planning.domain.run_ownership.os.stat",
+        side_effect=OSError("no proc"),
+    ):
+        assert process_identity_for_pid(pid) == f"{pid}:unknown"
+
+
+def test_mismatched_process_identity_treated_as_stale_holder(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    live = ResumeLockRecord(
+        run_id="run-1",
+        pid=os.getpid(),
+        owner_token="stale-identity-token",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        process_identity="999999:0",
+    )
+    resume_lock_metadata_path(run_dir).parent.mkdir(parents=True, exist_ok=True)
+    resume_lock_metadata_path(run_dir).write_text(
+        __import__("json").dumps(live.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    assert is_resume_lock_stale(live) is True
+    assert clear_stale_resume_lock(run_dir) is True
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_wrong_token_release_preserves_owner_metadata_on_disk(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    lock_before = read_resume_lock(run_dir)
+    assert lock_before is not None
+    release_run_ownership("run-1", run_dir=run_dir, owner_token="foreign-token")
+    lock_after = read_resume_lock(run_dir)
+    assert lock_after is not None
+    assert lock_after.owner_token == lock_before.owner_token
+    assert lock_after.pid == lock_before.pid
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
 def test_is_run_orchestrator_alive_true_when_flock_held_with_dead_metadata(
     tmp_path: Path,
 ) -> None:
