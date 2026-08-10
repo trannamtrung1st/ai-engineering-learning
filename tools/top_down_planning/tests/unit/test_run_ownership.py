@@ -32,7 +32,9 @@ from top_down_planning.domain.run_ownership import (
     resume_lock_path,
     owner_flock_path,
     run_ownership,
+    ownership_cleanup_failures,
     _OWNERSHIP_REGISTRY,
+    _OWNERSHIP_CLEANUP_FAILURES,
     _clear_owner_metadata,
     _release_flock_fd,
 )
@@ -498,12 +500,83 @@ def test_acquire_interrupt_after_publication_rolls_back(tmp_path: Path) -> None:
 def test_run_ownership_context_survives_metadata_cleanup_failure(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
     token = acquire_run_ownership("run-1", run_dir=run_dir)
     with patch(
         "top_down_planning.domain.run_ownership._clear_owner_metadata",
         side_effect=OSError("unlink failed"),
     ):
         release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+    assert not holds_run_ownership("run-1")
+    failures = ownership_cleanup_failures()
+    assert len(failures) == 1
+    assert failures[0]["type"] == "ownership_cleanup_failed"
+    assert failures[0]["run_id"] == "run-1"
+    assert failures[0]["error_class"] == "OSError"
+    token2 = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token2)
+
+
+def test_stale_cleanup_in_other_run_dir_does_not_clear_active_registry(tmp_path: Path) -> None:
+    run_dir_a = tmp_path / "run-a"
+    run_dir_b = tmp_path / "run-b"
+    run_dir_a.mkdir()
+    run_dir_b.mkdir()
+    token_b = acquire_run_ownership("run-b", run_dir=run_dir_b)
+    stale = ResumeLockRecord(
+        run_id="run-b",
+        pid=999999,
+        owner_token="stale-token",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    )
+    resume_lock_dir(run_dir_a).mkdir(parents=True)
+    resume_lock_metadata_path(run_dir_a).write_text(
+        __import__("json").dumps(stale.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    assert clear_stale_resume_lock(run_dir_a) is True
+    assert holds_run_ownership("run-b")
+    assert "run-b" in _OWNERSHIP_REGISTRY
+    release_run_ownership("run-b", run_dir=run_dir_b, owner_token=token_b)
+
+
+def test_stale_cleanup_while_holding_flock_preserves_registry(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    stale = ResumeLockRecord(
+        run_id="run-1",
+        pid=999999,
+        owner_token="stale-token",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    )
+    resume_lock_metadata_path(run_dir).write_text(
+        __import__("json").dumps(stale.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    assert clear_stale_resume_lock(run_dir) is False
+    assert holds_run_ownership("run-1")
+    assert "run-1" in _OWNERSHIP_REGISTRY
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_release_interrupt_during_flock_unlock_clears_registry_and_reacquires(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    original_flock = fcntl.flock
+
+    def flock_with_interrupt(fd: int, op: int) -> None:
+        if op == fcntl.LOCK_UN:
+            raise KeyboardInterrupt
+        original_flock(fd, op)
+
+    with patch("fcntl.flock", side_effect=flock_with_interrupt):
+        with pytest.raises(KeyboardInterrupt):
+            release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+    assert "run-1" not in _OWNERSHIP_REGISTRY
     assert not holds_run_ownership("run-1")
     token2 = acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token2)

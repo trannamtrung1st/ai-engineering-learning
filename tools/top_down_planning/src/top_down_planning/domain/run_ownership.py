@@ -6,6 +6,7 @@ import contextvars
 import json
 import os
 import re
+import signal
 import time
 import uuid
 from contextlib import contextmanager
@@ -34,6 +35,7 @@ _RESUME_LOCK_DIRNAME = ".resume.lock.d"
 _LOCK_METADATA_FILENAME = "owner.json"
 _OWNER_FLOCK_FILENAME = ".owner.lock"
 _OWNERSHIP_REGISTRY: dict[str, dict[str, Any]] = {}
+_OWNERSHIP_CLEANUP_FAILURES: list[dict[str, Any]] = []
 _NESTED_OWNERSHIP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_NESTED_OWNERSHIP",
     default=None,
@@ -105,6 +107,12 @@ def holds_run_ownership(run_id: str) -> bool:
     if nested is not None and run_id in nested:
         return True
     return run_id in _OWNERSHIP_REGISTRY
+
+
+def ownership_cleanup_failures() -> list[dict[str, Any]]:
+    """Return secondary ownership metadata cleanup failures recorded this process."""
+
+    return list(_OWNERSHIP_CLEANUP_FAILURES)
 
 
 def _utc_now() -> str:
@@ -264,15 +272,39 @@ def _try_acquire_flock_nonblocking(
     return fd
 
 
+@contextmanager
+def _defer_interrupt_signals() -> Iterator[None]:
+    previous: dict[int, Any] = {}
+
+    def _ignore_signal(_signum: int, _frame: object | None) -> None:
+        return None
+
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        try:
+            previous[signum] = signal.signal(signum, _ignore_signal)
+        except (OSError, ValueError):
+            continue
+    try:
+        yield
+    finally:
+        for signum, handler in previous.items():
+            try:
+                signal.signal(signum, handler)
+            except (OSError, ValueError):
+                pass
+
+
 def _release_flock_fd(fd: int) -> None:
     try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-    except OSError:
-        pass
-    try:
-        os.close(fd)
-    except OSError:
-        pass
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 
 def _is_owner_flock_held(run_dir: Path) -> bool:
@@ -335,7 +367,6 @@ def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
             if lock is not None:
                 if _is_lock_holder_alive(lock):
                     return False
-                _OWNERSHIP_REGISTRY.pop(lock.run_id, None)
                 return _clear_owner_metadata(run_dir)
             if _metadata_holder_alive(metadata_path):
                 return False
@@ -346,7 +377,6 @@ def _clear_abandoned_lock_claim(run_dir: Path) -> bool:
             if lock is not None:
                 if _is_lock_holder_alive(lock):
                     return False
-                _OWNERSHIP_REGISTRY.pop(lock.run_id, None)
                 return _clear_owner_metadata(run_dir)
             try:
                 content = legacy_path.read_text(encoding="utf-8").strip()
@@ -382,7 +412,6 @@ def clear_stale_resume_lock(
         return _clear_abandoned_lock_claim(run_dir)
     if not is_resume_lock_stale(lock, stale_after_seconds=stale_after_seconds):
         return False
-    _OWNERSHIP_REGISTRY.pop(lock.run_id, None)
     return _clear_abandoned_lock_claim(run_dir)
 
 
@@ -496,20 +525,42 @@ def _rollback_failed_acquire(
     run_dir: Path,
     flock_fd: int | None,
 ) -> None:
-    entry = _OWNERSHIP_REGISTRY.pop(run_id, None)
-    if entry is not None:
-        _release_flock_fd(int(entry["fd"]))
-        return
-    if flock_fd is not None:
-        _cleanup_failed_acquire(run_dir)
-        _release_flock_fd(flock_fd)
+    with _defer_interrupt_signals():
+        entry = _OWNERSHIP_REGISTRY.pop(run_id, None)
+        fd_to_release = int(entry["fd"]) if entry is not None else flock_fd
+        if fd_to_release is None:
+            return
+        if entry is None:
+            _cleanup_failed_acquire(run_dir)
+        _release_flock_fd(fd_to_release)
 
 
-def _clear_owner_metadata_best_effort(run_dir: Path) -> None:
+def _record_ownership_cleanup_failure(
+    run_dir: Path,
+    run_id: str | None,
+    exc: OSError,
+) -> None:
+    _OWNERSHIP_CLEANUP_FAILURES.append(
+        {
+            "type": "ownership_cleanup_failed",
+            "run_id": run_id,
+            "path": str(resume_lock_metadata_path(run_dir)),
+            "error_class": type(exc).__name__,
+            "message": str(exc),
+            "safe_to_retry": True,
+        }
+    )
+
+
+def _clear_owner_metadata_best_effort(
+    run_dir: Path,
+    *,
+    run_id: str | None = None,
+) -> None:
     try:
         _clear_owner_metadata(run_dir)
-    except OSError:
-        pass
+    except OSError as exc:
+        _record_ownership_cleanup_failure(run_dir, run_id, exc)
 
 
 def acquire_run_ownership(
@@ -557,11 +608,14 @@ def release_run_ownership(
         return
 
     flock_fd = int(entry["fd"])
-    try:
-        _clear_owner_metadata_best_effort(run_dir)
-    finally:
-        _OWNERSHIP_REGISTRY.pop(run_id, None)
-        _release_flock_fd(flock_fd)
+    with _defer_interrupt_signals():
+        try:
+            _clear_owner_metadata_best_effort(run_dir, run_id=run_id)
+        finally:
+            try:
+                _release_flock_fd(flock_fd)
+            finally:
+                _OWNERSHIP_REGISTRY.pop(run_id, None)
 
 
 @contextmanager
