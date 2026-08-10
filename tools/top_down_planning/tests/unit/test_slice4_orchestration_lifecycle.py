@@ -1143,19 +1143,13 @@ def test_resume_apply_removes_pending_capability_revoke_marker(tmp_path: Path) -
     store = FileRunStore(tmp_path)
     run_id = _create_running_run(store)
     pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
-    assert pending_capability_revoke_phase(store.load_run(run_id)) is None
-
-    run = store.load_run(run_id)
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    run["pending_capability_revoke_phase"] = PLANNING
-    store.save_run(run_id, run, expected_revision)
+    paused = store.load_run(run_id)
+    assert pending_capability_revoke_phase(paused) is None
 
     config = store.load_resolved_config(run_id)
     plan = ResumePlan(
         run_id=run_id,
-        expected_run_revision=int(store.load_run(run_id)["revision"]),
+        expected_run_revision=int(paused["revision"]),
         state_transition=ResumeStateTransition(
             from_status="paused",
             to_status="running",
@@ -1176,6 +1170,166 @@ def test_resume_apply_removes_pending_capability_revoke_marker(tmp_path: Path) -
     resumed = store.load_run(run_id)
     assert resumed["status"] == "running"
     assert pending_capability_revoke_phase(resumed) is None
+
+
+def test_resume_apply_reconciles_pending_revoke_after_pause_revoke_failure(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import grant_capability
+    from top_down_planning.domain.run_ownership import run_ownership
+    from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
+    from top_down_planning.orchestrator.run_transitions import (
+        reconcile_pending_capability_revocation,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+    run_dir = resolve_run_dir(store, run_id)
+    assert run_dir is not None
+
+    attempts = 0
+
+    def revoke_side_effect(store_arg: FileRunStore, run_id_arg: str, phase: str) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("revoke failed")
+        revoke_capabilities_for_phase(store_arg, run_id_arg, phase)
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=revoke_side_effect,
+    ):
+        with pytest.raises(OSError, match="revoke failed"):
+            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+
+    paused = store.load_run(run_id)
+    revision_after_pause = int(paused["revision"])
+    assert paused["pending_capability_revoke_phase"] == PLANNING
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+    with run_ownership(run_id, run_dir=run_dir):
+        reconcile_pending_capability_revocation(store, run_id)
+    revision_after_reconcile = int(store.load_run(run_id)["revision"])
+    assert pending_capability_revoke_phase(store.load_run(run_id)) is None
+    assert store.load_capability(run_id, token_id)["revoked"] is True
+
+    config = store.load_resolved_config(run_id)
+    plan = ResumePlan(
+        run_id=run_id,
+        expected_run_revision=revision_after_reconcile,
+        state_transition=ResumeStateTransition(
+            from_status="paused",
+            to_status="running",
+            prior_stop_code="user_cancelled",
+        ),
+        config_changes={},
+        session_policy={},
+        validation=ResumePlanValidation(
+            contract_digest_valid=True,
+            plan_binding_valid=True,
+            approval_binding_valid=True,
+            evidence_binding_valid=True,
+            context_binding_valid=True,
+        ),
+        effective_config=config,
+    )
+    apply_resume_plan_atomically(store, plan, resolved_config=config)
+
+    resumed = store.load_run(run_id)
+    assert resumed["status"] == "running"
+    assert pending_capability_revoke_phase(resumed) is None
+    assert store.load_capability(run_id, token_id)["revoked"] is True
+    assert int(resumed["revision"]) == revision_after_reconcile + 1
+
+
+def test_resume_apply_blocks_when_pending_revoke_cannot_converge(tmp_path: Path) -> None:
+    from tests.helpers import grant_capability
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=OSError("revoke failed"),
+    ):
+        with pytest.raises(OSError, match="revoke failed"):
+            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+
+        revision_after_pause = int(store.load_run(run_id)["revision"])
+        config = store.load_resolved_config(run_id)
+        plan = ResumePlan(
+            run_id=run_id,
+            expected_run_revision=revision_after_pause,
+            state_transition=ResumeStateTransition(
+                from_status="paused",
+                to_status="running",
+                prior_stop_code="user_cancelled",
+            ),
+            config_changes={},
+            session_policy={},
+            validation=ResumePlanValidation(
+                contract_digest_valid=True,
+                plan_binding_valid=True,
+                approval_binding_valid=True,
+                evidence_binding_valid=True,
+                context_binding_valid=True,
+            ),
+            effective_config=config,
+        )
+        with pytest.raises(ApplyResumeError, match="pending capability revocation failed"):
+            apply_resume_plan_atomically(store, plan, resolved_config=config)
+
+
+def test_resume_apply_rejects_stale_plan_after_capability_reconciliation(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import grant_capability
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=OSError("revoke failed"),
+    ):
+        with pytest.raises(OSError, match="revoke failed"):
+            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+
+    revision_after_pause = int(store.load_run(run_id)["revision"])
+    config = store.load_resolved_config(run_id)
+    plan = ResumePlan(
+        run_id=run_id,
+        expected_run_revision=revision_after_pause,
+        state_transition=ResumeStateTransition(
+            from_status="paused",
+            to_status="running",
+            prior_stop_code="user_cancelled",
+        ),
+        config_changes={},
+        session_policy={},
+        validation=ResumePlanValidation(
+            contract_digest_valid=True,
+            plan_binding_valid=True,
+            approval_binding_valid=True,
+            evidence_binding_valid=True,
+            context_binding_valid=True,
+        ),
+        effective_config=config,
+    )
+    with pytest.raises(ApplyResumeError, match="stale after capability reconciliation"):
+        apply_resume_plan_atomically(store, plan, resolved_config=config)
+
+    reconciled = store.load_run(run_id)
+    assert reconciled["status"] == "paused"
+    assert pending_capability_revoke_phase(reconciled) is None
+    assert store.load_capability(run_id, token_id)["revoked"] is True
 
 
 def test_global_cleanup_dropped_count_is_reported_on_continue_run(tmp_path: Path) -> None:
@@ -1267,3 +1421,23 @@ def test_dropped_cleanup_count_stderr_fallback_and_retry() -> None:
     assert emitted[0].category == "ownership:cleanup_dropped"
     assert emitted[0].fields["dropped_count"] == 3
     assert ownership_cleanup_dropped_counts().get("run-1", 0) == 0
+
+
+def test_dropped_cleanup_count_key_cardinality_is_bounded() -> None:
+    from top_down_planning.domain.run_ownership import (
+        _MAX_CLEANUP_DROPPED_RUN_KEYS,
+        _OWNERSHIP_CLEANUP_DROPPED,
+        ownership_cleanup_dropped_counts,
+        requeue_ownership_cleanup_dropped_count,
+    )
+
+    _OWNERSHIP_CLEANUP_DROPPED.clear()
+    overflow = 10
+    for index in range(_MAX_CLEANUP_DROPPED_RUN_KEYS + overflow):
+        requeue_ownership_cleanup_dropped_count(f"run-{index}", 1)
+
+    counts = ownership_cleanup_dropped_counts()
+    per_run_keys = [key for key in counts if key != "__global__"]
+    assert len(per_run_keys) <= _MAX_CLEANUP_DROPPED_RUN_KEYS
+    assert counts.get("__global__", 0) >= overflow
+    _OWNERSHIP_CLEANUP_DROPPED.clear()

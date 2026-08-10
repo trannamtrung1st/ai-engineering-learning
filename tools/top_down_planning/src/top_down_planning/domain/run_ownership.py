@@ -41,6 +41,7 @@ _OWNERSHIP_CLEANUP_DROPPED: dict[str, int] = {}
 _OWNERSHIP_CLEANUP_LOCK = threading.Lock()
 _MAX_CLEANUP_FAILURES_PER_RUN = 16
 _MAX_CLEANUP_FAILURES_GLOBAL = 128
+_MAX_CLEANUP_DROPPED_RUN_KEYS = 32
 _ACQUIRE_LOCK = threading.Lock()
 _NESTED_OWNERSHIP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_NESTED_OWNERSHIP",
@@ -169,7 +170,27 @@ def requeue_ownership_cleanup_dropped_count(
     if not key:
         key = "__global__"
     with _OWNERSHIP_CLEANUP_LOCK:
-        _OWNERSHIP_CLEANUP_DROPPED[key] = _OWNERSHIP_CLEANUP_DROPPED.get(key, 0) + dropped_count
+        _increment_dropped_count_locked(key, dropped_count)
+
+
+def _increment_dropped_count_locked(key: str, amount: int) -> None:
+    if amount <= 0:
+        return
+    if key == "__global__":
+        _OWNERSHIP_CLEANUP_DROPPED["__global__"] = (
+            int(_OWNERSHIP_CLEANUP_DROPPED.get("__global__", 0)) + amount
+        )
+        return
+    if key in _OWNERSHIP_CLEANUP_DROPPED:
+        _OWNERSHIP_CLEANUP_DROPPED[key] = int(_OWNERSHIP_CLEANUP_DROPPED[key]) + amount
+        return
+    per_run_keys = [entry for entry in _OWNERSHIP_CLEANUP_DROPPED if entry != "__global__"]
+    if len(per_run_keys) >= _MAX_CLEANUP_DROPPED_RUN_KEYS:
+        _OWNERSHIP_CLEANUP_DROPPED["__global__"] = (
+            int(_OWNERSHIP_CLEANUP_DROPPED.get("__global__", 0)) + amount
+        )
+        return
+    _OWNERSHIP_CLEANUP_DROPPED[key] = amount
 
 
 def _enqueue_ownership_cleanup_failure_locked(record: dict[str, Any]) -> None:
@@ -183,21 +204,19 @@ def _enqueue_ownership_cleanup_failure_locked(record: dict[str, Any]) -> None:
         1 for failure in _OWNERSHIP_CLEANUP_FAILURES if failure.get("run_id") == run_id
     )
     if same_run >= _MAX_CLEANUP_FAILURES_PER_RUN:
-        _OWNERSHIP_CLEANUP_DROPPED[run_id] = _OWNERSHIP_CLEANUP_DROPPED.get(run_id, 0) + 1
+        _increment_dropped_count_locked(run_id, 1)
         return
 
     if len(_OWNERSHIP_CLEANUP_FAILURES) >= _MAX_CLEANUP_FAILURES_GLOBAL:
         for index, failure in enumerate(_OWNERSHIP_CLEANUP_FAILURES):
             if failure.get("run_id") == run_id:
                 del _OWNERSHIP_CLEANUP_FAILURES[index]
-                _OWNERSHIP_CLEANUP_DROPPED[run_id] = _OWNERSHIP_CLEANUP_DROPPED.get(run_id, 0) + 1
+                _increment_dropped_count_locked(run_id, 1)
                 break
         else:
             if _OWNERSHIP_CLEANUP_FAILURES:
                 del _OWNERSHIP_CLEANUP_FAILURES[0]
-            _OWNERSHIP_CLEANUP_DROPPED["__global__"] = (
-                _OWNERSHIP_CLEANUP_DROPPED.get("__global__", 0) + 1
-            )
+            _increment_dropped_count_locked("__global__", 1)
 
     _OWNERSHIP_CLEANUP_FAILURES.append(payload)
 

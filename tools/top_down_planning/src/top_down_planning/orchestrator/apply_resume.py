@@ -32,6 +32,12 @@ from top_down_planning.domain.run_ownership import (
     assert_expected_run_revision,
     assert_no_live_process_owns_run,
     resolve_run_dir,
+    run_ownership,
+)
+from top_down_planning.orchestrator.run_transitions import (
+    pending_capability_revoke_phase,
+    pending_capability_revoke_unresolved,
+    reconcile_pending_capability_revocation,
 )
 from top_down_planning.orchestrator.errors import OrchestratorError
 from top_down_planning.orchestrator.phases import PRODUCTION
@@ -79,6 +85,33 @@ def _limit_extended_paths(config_changes: dict[str, dict[str, Any]]) -> list[str
     )
 
 
+def _reconcile_pending_capability_for_resume_apply(
+    store: FileRunStore,
+    run_id: str,
+    *,
+    run_dir: Path | None,
+) -> None:
+    run = store.load_run(run_id)
+    if pending_capability_revoke_phase(run) is None:
+        return
+    try:
+        if run_dir is not None:
+            with run_ownership(run_id, run_dir=run_dir):
+                reconcile_pending_capability_revocation(store, run_id)
+        else:
+            reconcile_pending_capability_revocation(store, run_id)
+    except OSError as exc:
+        raise ApplyResumeError(
+            f"pending capability revocation failed: {exc}",
+            code="resume_apply_blocked",
+        ) from exc
+    if pending_capability_revoke_unresolved(store, run_id):
+        raise ApplyResumeError(
+            "resume blocked until pending capability revocation converges",
+            code="resume_apply_blocked",
+        )
+
+
 def apply_resume_plan_atomically(
     store: FileRunStore,
     resume_plan: ResumePlan,
@@ -116,6 +149,20 @@ def apply_resume_plan_atomically(
             assert_no_live_process_owns_run(run_id, run_dir=run_dir)
     except RunOwnershipError as exc:
         raise ApplyResumeError(str(exc), code=exc.code) from exc
+
+    _reconcile_pending_capability_for_resume_apply(
+        store,
+        run_id,
+        run_dir=run_dir if run_dir is not None else None,
+    )
+    run = store.load_run(run_id)
+    try:
+        assert_expected_run_revision(run, expected_revision)
+    except RunOwnershipError as exc:
+        raise ApplyResumeError(
+            "resume plan is stale after capability reconciliation; regenerate resume plan",
+            code="resume_apply_blocked",
+        ) from exc
 
     actual_status = str(run.get("status") or "")
     if actual_status in {"completed", "failed"}:
@@ -323,7 +370,11 @@ def apply_resume_plan_atomically(
     run_payload = dict(run)
     run_payload["status"] = "running"
     run_payload["stop"] = None
-    run_payload.pop("pending_capability_revoke_phase", None)
+    if pending_capability_revoke_phase(run_payload) is not None:
+        raise ApplyResumeError(
+            "resume blocked until pending capability revocation converges",
+            code="resume_apply_blocked",
+        )
     next_digests = dict(digests)
     next_digests["config_execution"] = config_update.config_execution_digest
     if resume_plan.contract_digest_may_change or resume_plan.context_spec_may_change:

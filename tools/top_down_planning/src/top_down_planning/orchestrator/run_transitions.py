@@ -76,6 +76,23 @@ def _attempt_phase_capability_revocation(
         _try_clear_pending_capability_revoke_marker(store, run_id, revoke_phase)
 
 
+def pending_capability_revoke_unresolved(
+    store: RunStore,
+    run_id: str,
+    run: dict[str, Any] | None = None,
+) -> bool:
+    """Return True when a pending revoke marker still requires convergence."""
+
+    if run is None:
+        run = store.load_run(run_id)
+    phase = pending_capability_revoke_phase(run)
+    if phase is None:
+        return False
+    if _phase_has_live_capabilities(store, run_id, phase):
+        return True
+    return pending_capability_revoke_phase(store.load_run(run_id)) is not None
+
+
 def reconcile_pending_capability_revocation(
     store: RunStore,
     run_id: str,
@@ -292,5 +309,6 @@ __all__ = [
     "pause_for_limit_exhausted",
     "pause_run",
     "pending_capability_revoke_phase",
+    "pending_capability_revoke_unresolved",
     "reconcile_pending_capability_revocation",
 ]
