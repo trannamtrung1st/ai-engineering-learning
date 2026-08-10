@@ -532,3 +532,59 @@ def test_resume_amendment_requires_prior_plan_snapshot(tmp_path: Path) -> None:
 
     with pytest.raises(ProviderRunError, match="prior_plan_snapshot"):
         PlanAmendmentOrchestrator(store, "run-20260101T001901-001901", provider).run()
+
+
+def test_amendment_activation_persists_revoke_all_when_cleanup_fails(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from top_down_planning.orchestrator.run_transitions import (
+        pending_capability_revoke_all,
+        reconcile_pending_capability_revocation,
+    )
+
+    store = FileRunStore(tmp_path)
+    provider = StubProvider()
+    _create_run_in_production_with_sessions(store, provider)
+    run_id = "run-20260101T001901-001901"
+    token = grant_capability(store, run_id, role="producer", phase=PRODUCTION)
+    token_id = token.split(".", 1)[0]
+
+    service = ProductionAgentService(store, run_id)
+    service.request_amendment(
+        {
+            "evidence": "Missing branch.",
+            "affected_refs": ["item-root"],
+            "summary": "Need more plan detail.",
+        },
+        capability_token=token,
+    )
+
+    run = store.load_run(run_id)
+    production = store.load_production(run_id)
+    expected_revision = int(run["revision"])
+    paused = dict(run)
+    paused["revision"] = expected_revision + 1
+    paused["phase"] = PLAN_AMENDMENT
+    paused["status"] = "paused"
+    paused["stop"] = {
+        "code": "amendment_pending",
+        "category": "operational",
+        "phase": PLAN_AMENDMENT,
+        "message": "test fixture pause",
+        "details": {"pending_amendment_id": production.get("pending_amendment_id")},
+    }
+    store.save_run(run_id, paused, expected_revision)
+
+    orch = PlanAmendmentOrchestrator(store, run_id, provider)
+    with patch.object(store, "revoke_capability", side_effect=OSError("revoke failed")):
+        activated = orch._activate_amendment_execution()
+
+    assert activated["status"] == "running"
+    assert activated["phase"] == PLAN_AMENDMENT
+    assert pending_capability_revoke_all(activated) is True
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+    reconcile_pending_capability_revocation(store, run_id)
+    reconciled = store.load_run(run_id)
+    assert pending_capability_revoke_all(reconciled) is False
+    assert store.load_capability(run_id, token_id)["revoked"] is True

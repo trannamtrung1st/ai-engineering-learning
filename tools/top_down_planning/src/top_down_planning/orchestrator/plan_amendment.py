@@ -343,6 +343,7 @@ class PlanAmendmentOrchestrator:
         run_payload["status"] = "running"
         run_payload["outcome"] = None
         run_payload["stop"] = None
+        run_payload["pending_capability_revoke_all"] = True
         events: list[dict[str, Any]] = []
         if prior_status == "paused" and isinstance(prior_stop, dict):
             events.append(
@@ -364,15 +365,7 @@ class PlanAmendmentOrchestrator:
                 events=events,
             ),
         )
-        for record in self._store.list_capabilities(self._run_id):
-            if record.get("revoked") is True:
-                continue
-            capability_id = str(record.get("id") or "")
-            if capability_id:
-                self._store.revoke_capability(self._run_id, capability_id)
-        from top_down_planning.persistence.capabilities import clear_capability_token_file
-
-        clear_capability_token_file(self._store, self._run_id)
+        reconcile_pending_capability_revocation(self._store, self._run_id)
         return self._store.load_run(self._run_id)
 
     def _transition_to_whole_plan_review(self) -> dict[str, Any]:

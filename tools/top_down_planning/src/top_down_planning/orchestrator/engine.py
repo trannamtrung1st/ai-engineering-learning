@@ -37,7 +37,7 @@ from top_down_planning.orchestrator.provider_teardown import teardown_provider_s
 from top_down_planning.orchestrator.run_signals import trap_run_interrupt_signals
 from top_down_planning.orchestrator.run_transitions import (
     pause_run,
-    pending_capability_revoke_phase,
+    pending_capability_revocation_pending,
     reconcile_pending_capability_revocation,
 )
 from top_down_planning.orchestrator.session_policy import execute_session_policy_if_registered
@@ -256,7 +256,7 @@ class RunEngine:
             try:
                 run = self._store.load_run(run_id)
                 run_dir = resolve_run_dir(self._store, run_id)
-                pending_revoke = pending_capability_revoke_phase(run) is not None
+                pending_revoke = pending_capability_revocation_pending(run)
                 terminal_precheck = _maybe_stopped_continuation_result(
                     run,
                     run_id,
@@ -272,7 +272,7 @@ class RunEngine:
                         ownership_result: RunContinuationResult | None = None
                         with run_ownership(run_id, run_dir=run_dir):
                             run = self._store.load_run(run_id)
-                            if pending_capability_revoke_phase(run) is not None:
+                            if pending_capability_revocation_pending(run):
                                 reconcile_pending_capability_revocation(
                                     self._store,
                                     run_id,

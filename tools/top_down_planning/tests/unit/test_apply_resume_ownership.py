@@ -266,8 +266,7 @@ def test_apply_resume_contender_cannot_acquire_during_reconcile_stale_plan(
         "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
         side_effect=OSError("revoke failed"),
     ):
-        with pytest.raises(OSError, match="revoke failed"):
-            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+        pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
 
     revision_after_pause = int(store.load_run(run_id)["revision"])
     plan = _paused_resume_plan(store, run_id)

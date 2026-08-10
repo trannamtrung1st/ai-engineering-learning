@@ -35,6 +35,7 @@ from top_down_planning.domain.run_ownership import (
 )
 from top_down_planning.orchestrator.run_transitions import (
     pending_capability_revoke_phase,
+    pending_capability_revocation_pending,
     pending_capability_revoke_unresolved,
     reconcile_pending_capability_revocation,
 )
@@ -89,7 +90,7 @@ def _reconcile_pending_capability_for_resume_apply(
     run_id: str,
 ) -> None:
     run = store.load_run(run_id)
-    if pending_capability_revoke_phase(run) is None:
+    if not pending_capability_revocation_pending(run):
         return
     try:
         reconcile_pending_capability_revocation(store, run_id)
@@ -335,7 +336,7 @@ def _apply_resume_plan_under_ownership(
     run_payload = dict(run)
     run_payload["status"] = "running"
     run_payload["stop"] = None
-    if pending_capability_revoke_phase(run_payload) is not None:
+    if pending_capability_revocation_pending(run_payload):
         raise ApplyResumeError(
             "resume blocked until pending capability revocation converges",
             code="resume_apply_blocked",

@@ -766,6 +766,55 @@ def test_continue_run_preserves_planning_completion_when_observability_emit_fail
     )
 
 
+def test_continue_run_preserves_planning_when_post_commit_revoke_fails(
+    tmp_path: Path,
+) -> None:
+    from tests.helpers import done_events, grant_capability
+    from top_down_planning.orchestrator.run_transitions import (
+        pending_capability_revoke_phase,
+        reconcile_pending_capability_revocation,
+    )
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated["phase"] = WHOLE_PLAN_REVIEW
+    updated["pending_capability_revoke_phase"] = PLANNING
+    store.save_run(run_id, updated, expected_revision)
+    store.append_event(
+        run_id,
+        {"type": "planning_candidate_ready", "run_id": run_id, "plan_revision": 0},
+    )
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=OSError("revoke failed"),
+    ):
+        with patch("top_down_planning.orchestrator.engine.mark_run_failed") as mark_failed:
+            result = RunEngine(
+                store,
+                create_provider=lambda _c, _w: StubProvider(),
+            ).continue_run(run_id, until="plan")
+
+    mark_failed.assert_not_called()
+    run = store.load_run(run_id)
+    assert run["status"] == "running"
+    assert run["phase"] == WHOLE_PLAN_REVIEW
+    assert pending_capability_revoke_phase(run) == PLANNING
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+    assert result.ok is True
+    assert result.target_reached is True
+
+    reconcile_pending_capability_revocation(store, run_id)
+    assert pending_capability_revoke_phase(store.load_run(run_id)) is None
+    assert store.load_capability(run_id, token_id)["revoked"] is True
+
+
 def test_report_ownership_cleanup_diagnostics_emits_observability_event(tmp_path: Path) -> None:
     from top_down_planning.domain.run_ownership import (
         _OWNERSHIP_CLEANUP_FAILURES,
@@ -823,8 +872,11 @@ def test_pause_run_reconciles_capabilities_after_post_commit_revoke_failure(
         "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
         side_effect=revoke_side_effect,
     ) as revoke_mock:
-        with pytest.raises(OSError, match="revoke failed"):
-            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+        pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+        paused = store.load_run(run_id)
+        assert paused["status"] == "paused"
+        assert paused["pending_capability_revoke_phase"] == PLANNING
+        assert store.load_capability(run_id, token_id)["revoked"] is False
 
         pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
         assert revoke_mock.call_count == 2
@@ -916,8 +968,7 @@ def test_continue_run_reconciles_pause_revoke_after_engine_restart(tmp_path: Pat
         "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
         side_effect=revoke_side_effect,
     ):
-        with pytest.raises(OSError, match="revoke failed"):
-            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+        pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
 
     revision_before = int(store.load_run(run_id)["revision"])
     events_before = len(store.load_events(run_id))
@@ -967,8 +1018,7 @@ def test_continue_run_reconciles_fail_revoke_after_engine_restart(tmp_path: Path
         "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
         side_effect=revoke_side_effect,
     ):
-        with pytest.raises(OSError, match="revoke failed"):
-            fail_run(store, run_id, stop=_fail_stop(), revoke_phase=PLANNING)
+        fail_run(store, run_id, stop=_fail_stop(), revoke_phase=PLANNING)
 
     revision_before = int(store.load_run(run_id)["revision"])
     events_before = len(store.load_events(run_id))
@@ -1011,13 +1061,12 @@ def test_continue_run_reconciles_complete_revoke_after_engine_restart(tmp_path: 
         "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
         side_effect=revoke_side_effect,
     ):
-        with pytest.raises(OSError, match="revoke failed"):
-            complete_run_with_outcome(
-                store,
-                run_id,
-                "accepted",
-                revoke_phase=PLANNING,
-            )
+        complete_run_with_outcome(
+            store,
+            run_id,
+            "accepted",
+            revoke_phase=PLANNING,
+        )
 
     revision_before = int(store.load_run(run_id)["revision"])
     events_before = len(store.load_events(run_id))
@@ -1242,8 +1291,7 @@ def test_resume_apply_reconciles_pending_revoke_after_pause_revoke_failure(
         "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
         side_effect=revoke_side_effect,
     ):
-        with pytest.raises(OSError, match="revoke failed"):
-            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+        pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
 
     paused = store.load_run(run_id)
     revision_after_pause = int(paused["revision"])
@@ -1297,8 +1345,7 @@ def test_resume_apply_blocks_when_pending_revoke_cannot_converge(tmp_path: Path)
         "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
         side_effect=OSError("revoke failed"),
     ):
-        with pytest.raises(OSError, match="revoke failed"):
-            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+        pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
 
         revision_after_pause = int(store.load_run(run_id)["revision"])
         config = store.load_resolved_config(run_id)
@@ -1321,7 +1368,10 @@ def test_resume_apply_blocks_when_pending_revoke_cannot_converge(tmp_path: Path)
             ),
             effective_config=config,
         )
-        with pytest.raises(ApplyResumeError, match="pending capability revocation failed"):
+        with pytest.raises(
+            ApplyResumeError,
+            match="resume blocked until pending capability revocation converges",
+        ):
             apply_resume_plan_atomically(store, plan, resolved_config=config)
 
 
@@ -1329,42 +1379,51 @@ def test_resume_apply_rejects_stale_plan_after_capability_reconciliation(
     tmp_path: Path,
 ) -> None:
     from tests.helpers import grant_capability
+    from top_down_planning.orchestrator.capability import revoke_capabilities_for_phase
 
     store = FileRunStore(tmp_path)
     run_id = _create_running_run(store)
     token = grant_capability(store, run_id, role="planner", phase=PLANNING)
     token_id = token.split(".", 1)[0]
 
+    attempts = 0
+
+    def revoke_side_effect(store_arg: FileRunStore, run_id_arg: str, phase: str) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("revoke failed")
+        revoke_capabilities_for_phase(store_arg, run_id_arg, phase)
+
     with patch(
         "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
-        side_effect=OSError("revoke failed"),
+        side_effect=revoke_side_effect,
     ):
-        with pytest.raises(OSError, match="revoke failed"):
-            pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
+        pause_run(store, run_id, stop=_pause_stop(), revoke_phase=PLANNING)
 
-    revision_after_pause = int(store.load_run(run_id)["revision"])
-    config = store.load_resolved_config(run_id)
-    plan = ResumePlan(
-        run_id=run_id,
-        expected_run_revision=revision_after_pause,
-        state_transition=ResumeStateTransition(
-            from_status="paused",
-            to_status="running",
-            prior_stop_code="user_cancelled",
-        ),
-        config_changes={},
-        session_policy={},
-        validation=ResumePlanValidation(
-            contract_digest_valid=True,
-            plan_binding_valid=True,
-            approval_binding_valid=True,
-            evidence_binding_valid=True,
-            context_binding_valid=True,
-        ),
-        effective_config=config,
-    )
-    with pytest.raises(ApplyResumeError, match="stale after capability reconciliation"):
-        apply_resume_plan_atomically(store, plan, resolved_config=config)
+        revision_after_pause = int(store.load_run(run_id)["revision"])
+        config = store.load_resolved_config(run_id)
+        plan = ResumePlan(
+            run_id=run_id,
+            expected_run_revision=revision_after_pause,
+            state_transition=ResumeStateTransition(
+                from_status="paused",
+                to_status="running",
+                prior_stop_code="user_cancelled",
+            ),
+            config_changes={},
+            session_policy={},
+            validation=ResumePlanValidation(
+                contract_digest_valid=True,
+                plan_binding_valid=True,
+                approval_binding_valid=True,
+                evidence_binding_valid=True,
+                context_binding_valid=True,
+            ),
+            effective_config=config,
+        )
+        with pytest.raises(ApplyResumeError, match="stale after capability reconciliation"):
+            apply_resume_plan_atomically(store, plan, resolved_config=config)
 
     reconciled = store.load_run(run_id)
     assert reconciled["status"] == "paused"

@@ -29,6 +29,32 @@ def pending_capability_revoke_phase(run: dict[str, Any]) -> str | None:
     return phase or None
 
 
+def pending_capability_revoke_all(run: dict[str, Any]) -> bool:
+    return bool(run.get("pending_capability_revoke_all"))
+
+
+def pending_capability_revocation_pending(run: dict[str, Any]) -> bool:
+    return pending_capability_revoke_phase(run) is not None or pending_capability_revoke_all(run)
+
+
+def _active_capability_token_present(store: RunStore, run_id: str) -> bool:
+    from top_down_planning.persistence.capabilities import (
+        capability_token_file_path,
+        read_capability_token_file,
+    )
+
+    path = capability_token_file_path(store, run_id)
+    return read_capability_token_file(path) is not None
+
+
+def _run_has_live_capabilities(store: RunStore, run_id: str) -> bool:
+    for record in store.list_capabilities(run_id):
+        if record.get("revoked") is True:
+            continue
+        return True
+    return False
+
+
 def _phase_has_live_capabilities(store: RunStore, run_id: str, phase: str) -> bool:
     for record in store.list_capabilities(run_id):
         if record.get("revoked") is True:
@@ -56,11 +82,63 @@ def _try_clear_pending_capability_revoke_marker(
     updated = dict(run)
     updated["revision"] = expected_revision + 1
     updated.pop("pending_capability_revoke_phase", None)
-    store.commit(
-        run_id,
-        CommitSpec(run=updated, run_expected_revision=expected_revision),
-    )
+    try:
+        store.commit(
+            run_id,
+            CommitSpec(run=updated, run_expected_revision=expected_revision),
+        )
+    except Exception:
+        return store.load_run(run_id)
     return store.load_run(run_id)
+
+
+def _try_clear_pending_capability_revoke_all_marker(
+    store: RunStore,
+    run_id: str,
+) -> dict[str, Any]:
+    run = store.load_run(run_id)
+    if not pending_capability_revoke_all(run):
+        return run
+    if _run_has_live_capabilities(store, run_id):
+        return run
+    if _active_capability_token_present(store, run_id):
+        return run
+
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated.pop("pending_capability_revoke_all", None)
+    try:
+        store.commit(
+            run_id,
+            CommitSpec(run=updated, run_expected_revision=expected_revision),
+        )
+    except Exception:
+        return store.load_run(run_id)
+    return store.load_run(run_id)
+
+
+def _attempt_all_capability_revocation(store: RunStore, run_id: str) -> None:
+    from top_down_planning.persistence.capabilities import clear_capability_token_file
+
+    try:
+        if not _run_has_live_capabilities(store, run_id):
+            clear_capability_token_file(store, run_id)
+            _try_clear_pending_capability_revoke_all_marker(store, run_id)
+            return
+        for record in store.list_capabilities(run_id):
+            if record.get("revoked") is True:
+                continue
+            capability_id = str(record.get("id") or "")
+            if capability_id:
+                store.revoke_capability(run_id, capability_id)
+        clear_capability_token_file(store, run_id)
+        if not _run_has_live_capabilities(store, run_id) and not _active_capability_token_present(
+            store, run_id
+        ):
+            _try_clear_pending_capability_revoke_all_marker(store, run_id)
+    except Exception:
+        return
 
 
 def _attempt_phase_capability_revocation(
@@ -68,12 +146,15 @@ def _attempt_phase_capability_revocation(
     run_id: str,
     revoke_phase: str,
 ) -> None:
-    if not _phase_has_live_capabilities(store, run_id, revoke_phase):
-        _try_clear_pending_capability_revoke_marker(store, run_id, revoke_phase)
+    try:
+        if not _phase_has_live_capabilities(store, run_id, revoke_phase):
+            _try_clear_pending_capability_revoke_marker(store, run_id, revoke_phase)
+            return
+        revoke_capabilities_for_phase(store, run_id, revoke_phase)
+        if not _phase_has_live_capabilities(store, run_id, revoke_phase):
+            _try_clear_pending_capability_revoke_marker(store, run_id, revoke_phase)
+    except Exception:
         return
-    revoke_capabilities_for_phase(store, run_id, revoke_phase)
-    if not _phase_has_live_capabilities(store, run_id, revoke_phase):
-        _try_clear_pending_capability_revoke_marker(store, run_id, revoke_phase)
 
 
 def pending_capability_revoke_unresolved(
@@ -85,6 +166,12 @@ def pending_capability_revoke_unresolved(
 
     if run is None:
         run = store.load_run(run_id)
+    if pending_capability_revoke_all(run):
+        if _run_has_live_capabilities(store, run_id):
+            return True
+        if _active_capability_token_present(store, run_id):
+            return True
+        return pending_capability_revoke_all(store.load_run(run_id))
     phase = pending_capability_revoke_phase(run)
     if phase is None:
         return False
@@ -102,10 +189,12 @@ def reconcile_pending_capability_revocation(
     """Revoke capabilities for a durable post-transition marker when still live."""
 
     run = store.load_run(run_id)
+    if pending_capability_revoke_all(run):
+        _attempt_all_capability_revocation(store, run_id)
+        run = store.load_run(run_id)
     phase = revoke_phase or pending_capability_revoke_phase(run)
-    if phase is None:
-        return run
-    _attempt_phase_capability_revocation(store, run_id, phase)
+    if phase is not None:
+        _attempt_phase_capability_revocation(store, run_id, phase)
     return store.load_run(run_id)
 
 
@@ -316,7 +405,9 @@ __all__ = [
     "generate_phase_action_id",
     "pause_for_limit_exhausted",
     "pause_run",
+    "pending_capability_revoke_all",
     "pending_capability_revoke_phase",
+    "pending_capability_revocation_pending",
     "pending_capability_revoke_unresolved",
     "reconcile_pending_capability_revocation",
 ]

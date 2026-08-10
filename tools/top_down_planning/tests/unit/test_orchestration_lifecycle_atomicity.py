@@ -224,3 +224,61 @@ def test_observing_store_commit_swallows_observability_emit_failure(tmp_path: Pa
     result = PlanningPhaseOrchestrator(store, run_id, provider).run()
     assert result.ok is True
     assert raw_store.load_run(run_id)["phase"] == WHOLE_PLAN_REVIEW
+
+
+def test_planning_completion_ok_when_post_commit_revoke_fails(tmp_path: Path) -> None:
+    from top_down_planning.orchestrator.run_transitions import pending_capability_revoke_phase
+
+    store, run_id = _planning_store(tmp_path)
+    grant_capability(store, run_id, role="planner", phase=PLANNING)
+    provider = StubProvider()
+    provider.script_turn(done_events(text="planner session start"))
+    provider.script_turn(done_events(signal="candidate_plan_ready", text="done"))
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=OSError("revoke failed"),
+    ):
+        result = PlanningPhaseOrchestrator(store, run_id, provider).run()
+
+    assert result.ok is True
+    run = store.load_run(run_id)
+    assert run["status"] == "running"
+    assert run["phase"] == WHOLE_PLAN_REVIEW
+    assert pending_capability_revoke_phase(run) == PLANNING
+
+
+def test_reconcile_pending_revoke_failure_preserves_marker_and_capabilities(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.orchestrator.run_transitions import (
+        pending_capability_revoke_phase,
+        reconcile_pending_capability_revocation,
+    )
+
+    store, run_id = _planning_store(tmp_path)
+    token = grant_capability(store, run_id, role="planner", phase=PLANNING)
+    token_id = token.split(".", 1)[0]
+    run = store.load_run(run_id)
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated["phase"] = WHOLE_PLAN_REVIEW
+    updated["pending_capability_revoke_phase"] = PLANNING
+    store.save_run(run_id, updated, expected_revision)
+
+    with patch(
+        "top_down_planning.orchestrator.run_transitions.revoke_capabilities_for_phase",
+        side_effect=OSError("revoke failed"),
+    ):
+        reconcile_pending_capability_revocation(store, run_id)
+
+    run_after = store.load_run(run_id)
+    assert run_after["phase"] == WHOLE_PLAN_REVIEW
+    assert run_after["status"] == "running"
+    assert pending_capability_revoke_phase(run_after) == PLANNING
+    assert store.load_capability(run_id, token_id)["revoked"] is False
+
+    reconcile_pending_capability_revocation(store, run_id)
+    assert pending_capability_revoke_phase(store.load_run(run_id)) is None
+    assert store.load_capability(run_id, token_id)["revoked"] is True
