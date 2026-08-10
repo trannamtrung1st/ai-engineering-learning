@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -47,6 +48,16 @@ def _subprocess_env() -> dict[str, str]:
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = str(src) + (os.pathsep + existing if existing else "")
     return env
+
+
+def _wait_for_peer_acquire(run_dir: Path, *, attempts: int = 100, delay: float = 0.02) -> str:
+    for _ in range(attempts):
+        try:
+            token = acquire_run_ownership("run-1", run_dir=run_dir)
+            return token
+        except RunOwnershipError:
+            time.sleep(delay)
+    pytest.fail("peer could not acquire ownership after child exit")
 
 
 def _assert_no_ownership_registry_leak() -> None:
@@ -804,6 +815,96 @@ def test_release_interrupt_during_flock_unlock_clears_registry_and_reacquires(
     assert not holds_run_ownership("run-1")
     token2 = acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token2)
+
+
+def test_child_sigint_while_holding_ownership_allows_peer_acquire(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    child_script = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from top_down_planning.domain.run_ownership import acquire_run_ownership\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "token = acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "(run_dir / '.acquired').write_text(token, encoding='utf-8')\n"
+        "while True:\n"
+        "    time.sleep(0.05)\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", child_script], env=_subprocess_env())
+    acquired_marker = run_dir / ".acquired"
+    for _ in range(100):
+        if acquired_marker.is_file():
+            break
+        time.sleep(0.02)
+    assert acquired_marker.is_file()
+    with pytest.raises(RunOwnershipError):
+        acquire_run_ownership("run-1", run_dir=run_dir)
+    os.kill(child.pid, signal.SIGINT)
+    assert child.wait(timeout=5) != 0
+    token = _wait_for_peer_acquire(run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_child_sigterm_while_holding_ownership_allows_peer_acquire(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    child_script = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from top_down_planning.domain.run_ownership import acquire_run_ownership\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "token = acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "(run_dir / '.acquired').write_text(token, encoding='utf-8')\n"
+        "while True:\n"
+        "    time.sleep(0.05)\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", child_script], env=_subprocess_env())
+    acquired_marker = run_dir / ".acquired"
+    for _ in range(100):
+        if acquired_marker.is_file():
+            break
+        time.sleep(0.02)
+    assert acquired_marker.is_file()
+    with pytest.raises(RunOwnershipError):
+        acquire_run_ownership("run-1", run_dir=run_dir)
+    os.kill(child.pid, signal.SIGTERM)
+    assert child.wait(timeout=5) != 0
+    token = _wait_for_peer_acquire(run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_child_sigint_during_release_attempt_allows_peer_acquire(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    child_script = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from top_down_planning.domain.run_ownership import "
+        "acquire_run_ownership, release_run_ownership\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "token = acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "(run_dir / '.acquired').write_text(token, encoding='utf-8')\n"
+        "while not (run_dir / '.go_release').is_file():\n"
+        "    time.sleep(0.01)\n"
+        "release_run_ownership('run-1', run_dir=run_dir, owner_token=token)\n"
+        "(run_dir / '.released').write_text('1', encoding='utf-8')\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", child_script], env=_subprocess_env())
+    acquired_marker = run_dir / ".acquired"
+    for _ in range(100):
+        if acquired_marker.is_file():
+            break
+        time.sleep(0.02)
+    assert acquired_marker.is_file()
+    (run_dir / ".go_release").write_text("1", encoding="utf-8")
+    os.kill(child.pid, signal.SIGINT)
+    assert child.wait(timeout=5) != 0
+    assert not (run_dir / ".released").is_file()
+    token = _wait_for_peer_acquire(run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
 
 
 def test_is_run_orchestrator_alive_true_when_flock_held_with_dead_metadata(
