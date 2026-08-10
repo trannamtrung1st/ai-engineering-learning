@@ -38,6 +38,7 @@ from top_down_planning.orchestrator.run_signals import trap_run_interrupt_signal
 from top_down_planning.orchestrator.run_transitions import (
     pause_run,
     pending_capability_revocation_pending,
+    pending_capability_revoke_unresolved,
     reconcile_pending_capability_revocation,
 )
 from top_down_planning.orchestrator.session_policy import execute_session_policy_if_registered
@@ -170,6 +171,33 @@ def _maybe_stopped_continuation_result(
     return None
 
 
+_CAPABILITY_REVOCATION_BLOCKED_REASON = (
+    "continuation blocked until pending capability revocation converges"
+)
+
+
+def _continuation_blocked_by_capability_revocation(
+    store: RunStore,
+    run: dict[str, Any],
+    run_id: str,
+    *,
+    until: str,
+    steps: list[RunStepResult],
+) -> RunContinuationResult | None:
+    if not pending_capability_revoke_unresolved(store, run_id, run):
+        return None
+    if str(run.get("status") or "") == "running" and _target_reached(run, until):
+        return None
+    return _continuation_result_from_run(
+        run,
+        run_id,
+        until=until,
+        steps=steps,
+        ok=False,
+        reason=_CAPABILITY_REVOCATION_BLOCKED_REASON,
+    )
+
+
 def _continuation_result_from_run(
     run: dict[str, Any],
     run_id: str,
@@ -241,6 +269,25 @@ class RunEngine:
         self._create_provider = create_provider
         self._observability = observability
 
+    def _reconcile_capability_revocation_gate(
+        self,
+        run_id: str,
+        *,
+        until: str,
+        steps: list[RunStepResult],
+    ) -> RunContinuationResult | None:
+        run = self._store.load_run(run_id)
+        if pending_capability_revocation_pending(run):
+            reconcile_pending_capability_revocation(self._store, run_id)
+            run = self._store.load_run(run_id)
+        return _continuation_blocked_by_capability_revocation(
+            self._store,
+            run,
+            run_id,
+            until=until,
+            steps=steps,
+        )
+
     def continue_run(
         self,
         run_id: str,
@@ -271,82 +318,92 @@ class RunEngine:
                     else:
                         ownership_result: RunContinuationResult | None = None
                         with run_ownership(run_id, run_dir=run_dir):
-                            run = self._store.load_run(run_id)
-                            if pending_capability_revocation_pending(run):
-                                reconcile_pending_capability_revocation(
-                                    self._store,
-                                    run_id,
-                                )
-                                run = self._store.load_run(run_id)
-                            terminal = _maybe_stopped_continuation_result(
-                                run,
+                            blocked = self._reconcile_capability_revocation_gate(
                                 run_id,
                                 until=until,
                                 steps=[],
                             )
-                            if terminal is not None:
-                                self._emit_done(terminal, started_at=started_at)
-                                ownership_result = terminal
+                            if blocked is not None:
+                                self._emit_done(blocked, started_at=started_at)
+                                ownership_result = blocked
                             else:
-                                try:
-                                    ownership_result = self._continue_run_unlocked(
-                                        run_id,
-                                        until=until,
-                                        single_step=single_step,
-                                        session_policy=session_policy,
-                                        started_at=started_at,
-                                    )
-                                except KeyboardInterrupt:
-                                    run = self._store.load_run(run_id)
-                                    if str(run.get("status") or "") == "running":
-                                        cancel_phase = str(run.get("phase") or "")
-                                        finalize_user_cancel(
-                                            self._store,
+                                run = self._store.load_run(run_id)
+                                terminal = _maybe_stopped_continuation_result(
+                                    run,
+                                    run_id,
+                                    until=until,
+                                    steps=[],
+                                )
+                                if terminal is not None:
+                                    self._emit_done(terminal, started_at=started_at)
+                                    ownership_result = terminal
+                                else:
+                                    try:
+                                        ownership_result = self._continue_run_unlocked(
                                             run_id,
-                                            phase=cancel_phase,
-                                            exclude_pids=frozenset({os.getpid()}),
+                                            until=until,
+                                            single_step=single_step,
+                                            session_policy=session_policy,
+                                            started_at=started_at,
                                         )
-                                    run = self._store.load_run(run_id)
-                                    user_cancelled = _continuation_cancelled_from_run(run)
-                                    ownership_result = _continuation_result_from_run(
-                                        run,
-                                        run_id,
-                                        until=until,
-                                        steps=[],
-                                        reason=(
-                                            "cancelled by user"
-                                            if user_cancelled
-                                            else "interrupt during continuation"
-                                        ),
-                                        cancelled=user_cancelled,
-                                    )
-                                    self._emit_done(
-                                        ownership_result,
-                                        started_at=started_at,
-                                    )
+                                    except KeyboardInterrupt:
+                                        run = self._store.load_run(run_id)
+                                        if str(run.get("status") or "") == "running":
+                                            cancel_phase = str(run.get("phase") or "")
+                                            finalize_user_cancel(
+                                                self._store,
+                                                run_id,
+                                                phase=cancel_phase,
+                                                exclude_pids=frozenset({os.getpid()}),
+                                            )
+                                        run = self._store.load_run(run_id)
+                                        user_cancelled = _continuation_cancelled_from_run(run)
+                                        ownership_result = _continuation_result_from_run(
+                                            run,
+                                            run_id,
+                                            until=until,
+                                            steps=[],
+                                            reason=(
+                                                "cancelled by user"
+                                                if user_cancelled
+                                                else "interrupt during continuation"
+                                            ),
+                                            cancelled=user_cancelled,
+                                        )
+                                        self._emit_done(
+                                            ownership_result,
+                                            started_at=started_at,
+                                        )
                         if ownership_result is not None:
                             result = ownership_result
                 else:
-                    if pending_revoke:
-                        reconcile_pending_capability_revocation(self._store, run_id)
-                        run = self._store.load_run(run_id)
-                    terminal = _maybe_stopped_continuation_result(
-                        run,
+                    blocked = self._reconcile_capability_revocation_gate(
                         run_id,
                         until=until,
                         steps=[],
                     )
-                    if terminal is not None:
-                        self._emit_done(terminal, started_at=started_at)
-                        result = terminal
+                    if blocked is not None:
+                        self._emit_done(blocked, started_at=started_at)
+                        result = blocked
                     else:
-                        result = self._continue_run_unlocked(
+                        run = self._store.load_run(run_id)
+                        terminal = _maybe_stopped_continuation_result(
+                            run,
                             run_id,
                             until=until,
-                            single_step=single_step,
-                            session_policy=session_policy,
-                            started_at=started_at,
+                            steps=[],
                         )
+                        if terminal is not None:
+                            self._emit_done(terminal, started_at=started_at)
+                            result = terminal
+                        else:
+                            result = self._continue_run_unlocked(
+                                run_id,
+                                until=until,
+                                single_step=single_step,
+                                session_policy=session_policy,
+                                started_at=started_at,
+                            )
             except BaseException as exc:
                 continuation_error = exc
             finally:
@@ -451,6 +508,15 @@ class RunEngine:
 
         while True:
             run = self._store.load_run(run_id)
+            blocked = self._reconcile_capability_revocation_gate(
+                run_id,
+                until=until,
+                steps=steps,
+            )
+            if blocked is not None:
+                self._emit_done(blocked, started_at=started_at)
+                return blocked
+
             stopped = _maybe_stopped_continuation_result(
                 run,
                 run_id,
