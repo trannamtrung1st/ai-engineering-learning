@@ -35,7 +35,7 @@ def test_scan_orphan_agent_pids_uses_stop_details_and_env(tmp_path: Path) -> Non
         return [101, 202, 303]
 
     def fake_environ(pid: int) -> dict[str, str]:
-        if pid == 202:
+        if pid in {101, 202}:
             return {"TDP_RUN_ID": "run-orphan"}
         return {}
 
@@ -47,7 +47,7 @@ def test_scan_orphan_agent_pids_uses_stop_details_and_env(tmp_path: Path) -> Non
             "top_down_planning.orchestrator.agent_process_cleanup._read_pid_cmdline",
             side_effect=lambda pid: (
                 "agent --output-format stream-json --trust"
-                if pid == 202
+                if pid in {101, 202}
                 else ""
             ),
         ):

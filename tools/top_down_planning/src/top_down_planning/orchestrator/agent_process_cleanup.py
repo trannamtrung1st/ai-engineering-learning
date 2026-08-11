@@ -173,6 +173,24 @@ def _looks_like_agent_command(command: str) -> bool:
     return all(marker in command for marker in _AGENT_CMD_MARKERS)
 
 
+def _pid_matches_run_agent(
+    run_id: str,
+    pid: int,
+    *,
+    read_environ: ReadPidEnviron,
+) -> bool:
+    """Return whether *pid* is a live run-associated agent process."""
+
+    if not is_pid_alive(pid):
+        return False
+    environ = read_environ(pid)
+    env_run_id = str(environ.get(RUN_ID_ENV_VAR) or "").strip()
+    if env_run_id != run_id:
+        return False
+    command = _read_pid_cmdline(pid)
+    return _looks_like_agent_command(command)
+
+
 def scan_orphan_agent_pids(
     run_id: str,
     *,
@@ -193,23 +211,15 @@ def scan_orphan_agent_pids(
         if pid in seen:
             continue
         seen.add(pid)
-        if is_pid_alive(pid):
+        if _pid_matches_run_agent(run_id, pid, read_environ=read_environ):
             orphans.append(pid)
 
     for pid in list_pids():
         if pid in seen:
             continue
         seen.add(pid)
-        if not is_pid_alive(pid):
-            continue
-        environ = read_environ(pid)
-        env_run_id = str(environ.get(RUN_ID_ENV_VAR) or "").strip()
-        if env_run_id != run_id:
-            continue
-        command = _read_pid_cmdline(pid)
-        if not _looks_like_agent_command(command):
-            continue
-        orphans.append(pid)
+        if _pid_matches_run_agent(run_id, pid, read_environ=read_environ):
+            orphans.append(pid)
 
     return sorted(set(orphans))
 

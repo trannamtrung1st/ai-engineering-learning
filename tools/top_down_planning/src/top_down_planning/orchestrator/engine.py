@@ -20,6 +20,7 @@ from top_down_planning.observability import (
     report_ownership_cleanup_diagnostics,
 )
 from top_down_planning.orchestrator.agent_process_cleanup import (
+    CancelCleanupResult,
     finalize_user_cancel,
     kill_orphan_agents,
 )
@@ -30,7 +31,7 @@ from top_down_planning.orchestrator.errors import (
     ProviderRunError,
     ProviderTeardownError,
     SessionRecoveryPaused,
-    coerce_provider_teardown_error,
+    provider_teardown_error_with_final_survivors,
 )
 from top_down_planning.orchestrator.failure import (
     mark_run_failed,
@@ -40,7 +41,10 @@ from top_down_planning.orchestrator.provider_teardown import (
     teardown_provider_sessions,
     verify_run_agent_survivors,
 )
-from top_down_planning.orchestrator.run_signals import trap_run_interrupt_signals
+from top_down_planning.orchestrator.run_signals import (
+    defer_run_interrupt_signals,
+    trap_run_interrupt_signals,
+)
 from top_down_planning.orchestrator.run_transitions import (
     fail_run_after_provider_teardown_failure,
     pause_run,
@@ -137,6 +141,40 @@ def _continuation_cancelled_from_run(run: dict[str, Any]) -> bool:
     if not isinstance(stop, dict):
         return False
     return str(stop.get("code") or "") == "user_cancelled"
+
+
+def _user_cancel_continuation_reason(
+    *,
+    user_cancelled: bool,
+    cleanup_complete: bool,
+) -> str:
+    if not user_cancelled:
+        return "interrupt during continuation"
+    if cleanup_complete:
+        return "cancelled by user"
+    return "cancelled by user (agent cleanup incomplete)"
+
+
+def _persist_user_cancel_if_running(
+    store: RunStore,
+    run_id: str,
+    *,
+    phase: str,
+    provider_terminated_pids: list[int] | None = None,
+    known_surviving_pids: tuple[int, ...] = (),
+    exclude_pids: frozenset[int] | None = None,
+) -> CancelCleanupResult | None:
+    run = store.load_run(run_id)
+    if str(run.get("status") or "") != "running":
+        return None
+    return finalize_user_cancel(
+        store,
+        run_id,
+        phase=phase,
+        provider_terminated_pids=provider_terminated_pids,
+        known_surviving_pids=known_surviving_pids,
+        exclude_pids=exclude_pids,
+    )
 
 
 def _maybe_stopped_continuation_result(
@@ -401,25 +439,28 @@ class RunEngine:
                                         )
                                     except KeyboardInterrupt:
                                         run = self._store.load_run(run_id)
-                                        if str(run.get("status") or "") == "running":
-                                            cancel_phase = str(run.get("phase") or "")
-                                            finalize_user_cancel(
-                                                self._store,
-                                                run_id,
-                                                phase=cancel_phase,
-                                                exclude_pids=frozenset({os.getpid()}),
-                                            )
+                                        cancel_phase = str(run.get("phase") or "")
+                                        cancel_result = _persist_user_cancel_if_running(
+                                            self._store,
+                                            run_id,
+                                            phase=cancel_phase,
+                                            exclude_pids=frozenset({os.getpid()}),
+                                        )
                                         run = self._store.load_run(run_id)
                                         user_cancelled = _continuation_cancelled_from_run(run)
+                                        cleanup_complete = (
+                                            cancel_result.cleanup_complete
+                                            if cancel_result is not None
+                                            else True
+                                        )
                                         ownership_result = _continuation_result_from_run(
                                             run,
                                             run_id,
                                             until=until,
                                             steps=[],
-                                            reason=(
-                                                "cancelled by user"
-                                                if user_cancelled
-                                                else "interrupt during continuation"
+                                            reason=_user_cancel_continuation_reason(
+                                                user_cancelled=user_cancelled,
+                                                cleanup_complete=cleanup_complete,
                                             ),
                                             cancelled=user_cancelled,
                                         )
@@ -860,39 +901,41 @@ class RunEngine:
                         )
 
                     terminated_pids: list[int] = []
-                    try:
-                        terminated_pids = teardown_provider_sessions(
-                            provider,
-                            run_id=run_id,
-                            phase=phase,
-                            append_event=append_event,
-                            emit_console=self._emit,
-                            audit_cancel=cancelled,
-                            store=self._store,
-                            exclude_pids=frozenset({os.getpid()}),
-                        )
-                    except KeyboardInterrupt:
-                        cancelled = True
-                    except Exception as exc:
-                        survivors = verify_run_agent_survivors(
-                            self._store,
-                            run_id,
-                            terminated_pids=terminated_pids,
-                            exclude_pids=frozenset({os.getpid()}),
-                        )
-                        teardown_failed = coerce_provider_teardown_error(
-                            exc,
-                            surviving_pids=survivors,
-                        )
+                    with defer_run_interrupt_signals():
                         try:
-                            append_event(
-                                "provider_teardown_failed",
+                            terminated_pids = teardown_provider_sessions(
+                                provider,
+                                run_id=run_id,
                                 phase=phase,
-                                message=sanitize_operational_error(exc),
-                                surviving_pids=list(teardown_failed.surviving_pids),
+                                append_event=append_event,
+                                emit_console=self._emit,
+                                audit_cancel=cancelled,
+                                store=self._store,
+                                exclude_pids=frozenset({os.getpid()}),
                             )
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            verification = verify_run_agent_survivors(
+                                self._store,
+                                run_id,
+                                terminated_pids=terminated_pids,
+                                exclude_pids=frozenset({os.getpid()}),
+                            )
+                            terminated_pids = sorted(
+                                set(terminated_pids) | set(verification.terminated_pids)
+                            )
+                            teardown_failed = provider_teardown_error_with_final_survivors(
+                                exc,
+                                verification.surviving_pids,
+                            )
+                            try:
+                                append_event(
+                                    "provider_teardown_failed",
+                                    phase=phase,
+                                    message=sanitize_operational_error(exc),
+                                    surviving_pids=list(teardown_failed.surviving_pids),
+                                )
+                            except Exception:
+                                pass
                     if cancelled:
                         run = self._store.load_run(run_id)
                         if str(run.get("status") or "") == "running":
@@ -900,7 +943,7 @@ class RunEngine:
                             known_survivors = (
                                 teardown_failed.surviving_pids if teardown_failed else ()
                             )
-                            cancel_result = finalize_user_cancel(
+                            cancel_result = _persist_user_cancel_if_running(
                                 self._store,
                                 run_id,
                                 phase=cancel_phase,
@@ -908,20 +951,24 @@ class RunEngine:
                                 known_surviving_pids=known_survivors,
                                 exclude_pids=frozenset({os.getpid()}),
                             )
-                            if not cancel_result.cleanup_complete:
+                            if cancel_result is not None and not cancel_result.cleanup_complete:
                                 cancel_cleanup_failed = True
-                                teardown_failed = coerce_provider_teardown_error(
+                                teardown_failed = provider_teardown_error_with_final_survivors(
                                     ProviderTeardownError(
                                         "agent cleanup incomplete after cancellation",
                                         surviving_pids=cancel_result.surviving_pids,
                                     ),
-                                    surviving_pids=cancel_result.surviving_pids,
+                                    cancel_result.surviving_pids,
                                 )
 
             if cancelled:
                 run = self._store.load_run(run_id)
                 user_cancelled = _continuation_cancelled_from_run(run)
-                if not user_cancelled and str(run.get("status") or "") == "completed":
+                if (
+                    not user_cancelled
+                    and str(run.get("status") or "") == "completed"
+                    and teardown_failed is None
+                ):
                     result = _continuation_result_from_run(
                         run,
                         run_id,
@@ -930,14 +977,9 @@ class RunEngine:
                     )
                     self._emit_done(result, started_at=started_at)
                     return result
-                cancel_reason = (
-                    "cancelled by user"
-                    if user_cancelled and not cancel_cleanup_failed
-                    else (
-                        "cancelled by user (agent cleanup incomplete)"
-                        if user_cancelled
-                        else "interrupt during continuation"
-                    )
+                cancel_reason = _user_cancel_continuation_reason(
+                    user_cancelled=user_cancelled,
+                    cleanup_complete=not cancel_cleanup_failed,
                 )
                 return _continuation_result_from_run(
                     run,

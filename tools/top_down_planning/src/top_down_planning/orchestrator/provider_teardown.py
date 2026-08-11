@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from core_tools.observability import ConsoleEvent
@@ -18,6 +19,14 @@ AppendEvent = Callable[..., None]
 EmitConsole = Callable[[ConsoleEvent], None]
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
+
+
+@dataclass(frozen=True)
+class TeardownVerificationResult:
+    """Outcome of fallback orphan verification after provider teardown."""
+
+    terminated_pids: tuple[int, ...]
+    surviving_pids: tuple[int, ...]
 
 
 def _session_model_fields(session: dict[str, str]) -> dict[str, str]:
@@ -214,8 +223,8 @@ def verify_run_agent_survivors(
     terminated_pids: list[int],
     exclude_pids: frozenset[int] | None = None,
     known_surviving_pids: tuple[int, ...] = (),
-) -> tuple[int, ...]:
-    """Return surviving run-associated agent PIDs after fallback cleanup."""
+) -> TeardownVerificationResult:
+    """Verify run-associated agents after fallback cleanup."""
 
     cleanup = kill_orphan_agents(
         store,
@@ -246,7 +255,14 @@ def verify_run_agent_survivors(
     for pid in remaining:
         if is_pid_alive(pid) and pid not in survivors:
             survivors.append(pid)
-    return tuple(sorted(set(survivors)))
+    return TeardownVerificationResult(
+        terminated_pids=tuple(verified_terminated),
+        surviving_pids=tuple(sorted(set(survivors))),
+    )
 
 
-__all__ = ["teardown_provider_sessions", "verify_run_agent_survivors"]
+__all__ = [
+    "TeardownVerificationResult",
+    "teardown_provider_sessions",
+    "verify_run_agent_survivors",
+]

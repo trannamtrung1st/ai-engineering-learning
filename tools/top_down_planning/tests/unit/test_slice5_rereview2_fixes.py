@@ -104,7 +104,13 @@ def test_engine_teardown_runtime_error_does_not_proceed(tmp_path: Path) -> None:
     ):
         with patch(
             "top_down_planning.orchestrator.engine.verify_run_agent_survivors",
-            return_value=(8888,),
+            return_value=__import__(
+                "top_down_planning.orchestrator.provider_teardown",
+                fromlist=["TeardownVerificationResult"],
+            ).TeardownVerificationResult(
+                terminated_pids=(),
+                surviving_pids=(8888,),
+            ),
         ):
             result = RunEngine(
                 store,

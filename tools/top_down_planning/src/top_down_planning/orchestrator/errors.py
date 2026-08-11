@@ -80,3 +80,16 @@ def coerce_provider_teardown_error(
         return exc
     message = str(exc).strip() or exc.__class__.__name__
     return ProviderTeardownError(message, surviving_pids=surviving_pids)
+
+
+def provider_teardown_error_with_final_survivors(
+    exc: BaseException,
+    surviving_pids: tuple[int, ...],
+) -> ProviderTeardownError:
+    """Normalize teardown failures using the post-fallback survivor set."""
+
+    if isinstance(exc, ProviderTeardownError):
+        message = str(exc)
+    else:
+        message = str(exc).strip() or exc.__class__.__name__
+    return ProviderTeardownError(message, surviving_pids=surviving_pids)
