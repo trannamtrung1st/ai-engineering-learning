@@ -1,4 +1,16 @@
-"""Live-process run ownership and revision CAS helpers (proposal §18.1)."""
+"""Live-process run ownership and revision CAS helpers (proposal §18.1).
+
+Cross-process ownership authority is the advisory flock on a persistent
+``.owner.lock`` sentinel inode. A free flock means no live owner; stale
+``owner.json`` or legacy lock metadata cannot bypass a held flock or grant
+ownership while another process holds the flock.
+
+Legacy lock records (without a held flock) use ``process_identity`` to detect
+PID reuse. On platforms without ``/proc``, identity is ``{pid}:unknown``; two
+processes sharing the same PID cannot be distinguished, so a matching live PID
+with ``pid:unknown`` is treated conservatively as a live holder and blocks
+acquisition until the PID exits or identity diverges.
+"""
 
 from __future__ import annotations
 
@@ -267,6 +279,7 @@ def is_pid_alive(pid: int) -> bool:
 
 
 def process_identity_for_pid(pid: int) -> str:
+    """Return ``{pid}:{ctime_ns}`` from ``/proc``, or ``{pid}:unknown`` without it."""
     proc_path = Path(f"/proc/{pid}")
     try:
         stat = os.stat(proc_path)

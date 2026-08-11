@@ -1153,6 +1153,57 @@ def test_process_identity_unknown_without_proc_filesystem() -> None:
         assert process_identity_for_pid(pid) == f"{pid}:unknown"
 
 
+def test_legacy_unknown_identity_conservatively_blocks_acquire_without_flock(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    pid = os.getpid()
+    unknown = f"{pid}:unknown"
+    legacy = ResumeLockRecord(
+        run_id="run-1",
+        pid=pid,
+        owner_token="legacy-unknown",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        process_identity=unknown,
+    )
+    resume_lock_path(run_dir).write_text(
+        __import__("json").dumps(legacy.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    assert not owner_flock_path(run_dir).is_file()
+    with patch(
+        "top_down_planning.domain.run_ownership.process_identity_for_pid",
+        return_value=unknown,
+    ):
+        assert is_resume_lock_stale(legacy) is False
+        with pytest.raises(RunOwnershipError, match="owned"):
+            acquire_run_ownership("run-1", run_dir=run_dir)
+
+
+def test_legacy_unknown_identity_clears_when_pid_dead_allows_acquire(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    dead_pid = 999999991
+    unknown = f"{dead_pid}:unknown"
+    legacy = ResumeLockRecord(
+        run_id="run-1",
+        pid=dead_pid,
+        owner_token="legacy-dead-unknown",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        process_identity=unknown,
+    )
+    resume_lock_path(run_dir).write_text(
+        __import__("json").dumps(legacy.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    assert is_resume_lock_stale(legacy) is True
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
 def test_mismatched_process_identity_treated_as_stale_holder(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()

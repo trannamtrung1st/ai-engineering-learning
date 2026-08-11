@@ -8,8 +8,9 @@ version = "0.1.0"
 description = "Generic agent orchestration for top-down planning and production"
 readme = "README.md"
 requires-python = ">=3.11"
-# Cross-process run ownership uses POSIX flock; Windows is not supported for
-# multi-process resume locking (see README cancellation / platform notes).
+# Cross-process run ownership uses POSIX flock on a persistent sentinel inode;
+# Windows is not supported for multi-process resume locking. Without /proc,
+# legacy pid:unknown metadata is conservative-only (flock remains authoritative).
 dependencies = [
   "core-tools @ file:../core_tools",
   "jinja2>=3.1",
