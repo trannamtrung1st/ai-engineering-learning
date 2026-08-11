@@ -37,7 +37,7 @@ class Provider(Protocol):
         """Start a fresh reviewer session for a bounded review package."""
 
     def send(self, session_id: str, request: dict[str, Any], *, model: str | None = None) -> None:
-        """Deliver a request to an active session."""
+        """Deliver a follow-up request to an active reviewer session."""
 
     def stream_events(self, session_id: str) -> Iterator[dict[str, Any]]:
         """Yield normalized provider events for a session."""

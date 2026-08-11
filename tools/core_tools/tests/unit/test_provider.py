@@ -144,7 +144,11 @@ def test_stub_start_send_stream_round_trip() -> None:
             {"type": "done", "subtype": "success", "text": "revision applied", "is_error": False},
         ]
     )
-    provider.send(session_id, {"action": "revise", "note": "add tests"})
+    provider.resume_primary_session(
+        session_id,
+        {"action": "revise", "note": "add tests"},
+        role="planner",
+    )
     follow_up = list(provider.stream_events(session_id))
     assert follow_up[0]["text"] == "revision applied"
 
@@ -733,7 +737,11 @@ def test_cursor_provider_stores_model_and_reuses_on_resume(tmp_path: Path) -> No
     list(provider.stream_events(session_id))
     assert captured_argv[0][captured_argv[0].index("--model") + 1] == "planner-model"
 
-    provider.send(session_id, {"action": "continue"})
+    provider.resume_primary_session(
+        session_id,
+        {"action": "continue"},
+        role="planner",
+    )
     list(provider.stream_events(session_id))
     assert captured_argv[1][captured_argv[1].index("--model") + 1] == "planner-model"
 

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core_tools.provider.cursor import CursorProvider, _STDERR_TAIL_MAX_LINES
+from core_tools.provider.cursor import CursorProvider, _STDERR_TAIL_MAX_BYTES
 from core_tools.provider.errors import ProviderSessionError
 from core_tools.provider.stub import StubProvider
 from top_down_planning.config import resolve_effective_activity_context
@@ -324,17 +324,17 @@ def test_default_process_runner_bounds_retained_stderr(tmp_path: Path) -> None:
     script = tmp_path / "chatty_stderr_lines.py"
     script.write_text(
         "import json, sys\n"
-        f"for i in range({_STDERR_TAIL_MAX_LINES + 50}):\n"
-        "    sys.stderr.write(f'line-{i}\\n')\n"
+        "for i in range(5000):\n"
+        "    sys.stderr.write('x' * 20 + '\\n')\n"
         "sys.stderr.flush()\n"
         'print(json.dumps({"type": "assistant", "text": "ok"}))\n'
         'print(json.dumps({"type": "result", "subtype": "success", "text": "ok", "is_error": False}))\n',
         encoding="utf-8",
     )
-    argv = [sys.executable, str(script)]
+    argv = [__import__("sys").executable, str(script)]
     iterator = default_process_runner(argv, tmp_path)
     assert isinstance(iterator, _SubprocessStdoutIterator)
     lines = list(iterator)
     assert lines
     assert iterator._stderr_truncated is True
-    assert len(iterator._stderr_lines) <= _STDERR_TAIL_MAX_LINES
+    assert len(iterator._stderr_tail) <= _STDERR_TAIL_MAX_BYTES

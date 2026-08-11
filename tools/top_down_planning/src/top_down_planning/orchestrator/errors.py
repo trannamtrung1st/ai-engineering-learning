@@ -62,3 +62,21 @@ class OrphanCleanupBlocked(ProviderRunError):
         super().__init__(message)
         self.code = "orphan_cleanup_blocked"
         self.surviving_pids = surviving_pids
+
+
+def coerce_provider_teardown_error(
+    exc: BaseException,
+    *,
+    surviving_pids: tuple[int, ...] = (),
+) -> ProviderTeardownError:
+    """Normalize teardown failures into a typed provider teardown error."""
+
+    if isinstance(exc, ProviderTeardownError):
+        if surviving_pids and not exc.surviving_pids:
+            return ProviderTeardownError(str(exc), surviving_pids=surviving_pids)
+        if surviving_pids:
+            merged = tuple(sorted({*exc.surviving_pids, *surviving_pids}))
+            return ProviderTeardownError(str(exc), surviving_pids=merged)
+        return exc
+    message = str(exc).strip() or exc.__class__.__name__
+    return ProviderTeardownError(message, surviving_pids=surviving_pids)

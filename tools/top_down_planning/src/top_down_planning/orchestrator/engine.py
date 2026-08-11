@@ -30,14 +30,19 @@ from top_down_planning.orchestrator.errors import (
     ProviderRunError,
     ProviderTeardownError,
     SessionRecoveryPaused,
+    coerce_provider_teardown_error,
 )
 from top_down_planning.orchestrator.failure import (
     mark_run_failed,
     sanitize_operational_error,
 )
-from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
+from top_down_planning.orchestrator.provider_teardown import (
+    teardown_provider_sessions,
+    verify_run_agent_survivors,
+)
 from top_down_planning.orchestrator.run_signals import trap_run_interrupt_signals
 from top_down_planning.orchestrator.run_transitions import (
+    fail_run_after_provider_teardown_failure,
     pause_run,
     pending_capability_revocation_pending,
     pending_capability_revoke_unresolved,
@@ -176,6 +181,44 @@ def _maybe_stopped_continuation_result(
 _CAPABILITY_REVOCATION_BLOCKED_REASON = (
     "continuation blocked until pending capability revocation converges"
 )
+
+
+def _apply_provider_teardown_failure(
+    store: RunStore,
+    run_id: str,
+    *,
+    phase: str,
+    teardown_failed: ProviderTeardownError,
+) -> dict[str, Any]:
+    run = store.load_run(run_id)
+    status = str(run.get("status") or "")
+    details = {"surviving_pids": list(teardown_failed.surviving_pids)}
+    if status == "running":
+        pause_run(
+            store,
+            run_id,
+            stop=StopRecord(
+                code="provider_turn_failed",
+                category="operational",
+                phase=phase,
+                message=str(teardown_failed),
+                details=details,
+            ),
+        )
+    elif status == "completed":
+        fail_run_after_provider_teardown_failure(
+            store,
+            run_id,
+            stop=StopRecord(
+                code="orchestrator_invariant_failure",
+                category="invariant",
+                phase=phase,
+                message=str(teardown_failed),
+                details=details,
+            ),
+            message=str(teardown_failed),
+        )
+    return store.load_run(run_id)
 
 
 def _continuation_blocked_by_capability_revocation(
@@ -566,6 +609,7 @@ class RunEngine:
             provider: Provider | None = None
             cancelled = False
             teardown_failed: ProviderTeardownError | None = None
+            cancel_cleanup_failed = False
             phase = phase_for_entry
 
             try:
@@ -827,72 +871,91 @@ class RunEngine:
                             store=self._store,
                             exclude_pids=frozenset({os.getpid()}),
                         )
-                    except ProviderTeardownError as exc:
-                        teardown_failed = exc
-                        try:
-                            append_event(
-                                "provider_teardown_failed",
-                                phase=phase,
-                                message=str(exc),
-                                surviving_pids=list(exc.surviving_pids),
-                            )
-                        except Exception:
-                            pass
                     except KeyboardInterrupt:
                         cancelled = True
                     except Exception as exc:
+                        survivors = verify_run_agent_survivors(
+                            self._store,
+                            run_id,
+                            terminated_pids=terminated_pids,
+                            exclude_pids=frozenset({os.getpid()}),
+                        )
+                        teardown_failed = coerce_provider_teardown_error(
+                            exc,
+                            surviving_pids=survivors,
+                        )
                         try:
                             append_event(
                                 "provider_teardown_failed",
                                 phase=phase,
                                 message=sanitize_operational_error(exc),
+                                surviving_pids=list(teardown_failed.surviving_pids),
                             )
                         except Exception:
                             pass
                     if cancelled:
                         run = self._store.load_run(run_id)
-                        cancel_phase = str(run.get("phase") or phase)
-                        finalize_user_cancel(
-                            self._store,
-                            run_id,
-                            phase=cancel_phase,
-                            provider_terminated_pids=terminated_pids,
-                            exclude_pids=frozenset({os.getpid()}),
-                        )
+                        if str(run.get("status") or "") == "running":
+                            cancel_phase = str(run.get("phase") or phase)
+                            known_survivors = (
+                                teardown_failed.surviving_pids if teardown_failed else ()
+                            )
+                            cancel_result = finalize_user_cancel(
+                                self._store,
+                                run_id,
+                                phase=cancel_phase,
+                                provider_terminated_pids=terminated_pids,
+                                known_surviving_pids=known_survivors,
+                                exclude_pids=frozenset({os.getpid()}),
+                            )
+                            if not cancel_result.cleanup_complete:
+                                cancel_cleanup_failed = True
+                                teardown_failed = coerce_provider_teardown_error(
+                                    ProviderTeardownError(
+                                        "agent cleanup incomplete after cancellation",
+                                        surviving_pids=cancel_result.surviving_pids,
+                                    ),
+                                    surviving_pids=cancel_result.surviving_pids,
+                                )
 
             if cancelled:
                 run = self._store.load_run(run_id)
                 user_cancelled = _continuation_cancelled_from_run(run)
+                if not user_cancelled and str(run.get("status") or "") == "completed":
+                    result = _continuation_result_from_run(
+                        run,
+                        run_id,
+                        until=until,
+                        steps=steps,
+                    )
+                    self._emit_done(result, started_at=started_at)
+                    return result
+                cancel_reason = (
+                    "cancelled by user"
+                    if user_cancelled and not cancel_cleanup_failed
+                    else (
+                        "cancelled by user (agent cleanup incomplete)"
+                        if user_cancelled
+                        else "interrupt during continuation"
+                    )
+                )
                 return _continuation_result_from_run(
                     run,
                     run_id,
                     until=until,
                     steps=steps,
-                    reason=(
-                        "cancelled by user"
-                        if user_cancelled
-                        else "interrupt during continuation"
-                    ),
+                    ok=False,
+                    reason=cancel_reason,
                     cancelled=user_cancelled,
                 )
 
             if teardown_failed is not None:
-                run = self._store.load_run(run_id)
-                if str(run.get("status") or "") == "running":
-                    pause_run(
-                        self._store,
-                        run_id,
-                        stop=StopRecord(
-                            code="provider_turn_failed",
-                            category="operational",
-                            phase=phase,
-                            message=str(teardown_failed),
-                            details={
-                                "surviving_pids": list(teardown_failed.surviving_pids),
-                            },
-                        ),
-                    )
-                    run = self._store.load_run(run_id)
+                run = _apply_provider_teardown_failure(
+                    self._store,
+                    run_id,
+                    phase=phase,
+                    teardown_failed=teardown_failed,
+                )
                 result = _continuation_result_from_run(
                     run,
                     run_id,

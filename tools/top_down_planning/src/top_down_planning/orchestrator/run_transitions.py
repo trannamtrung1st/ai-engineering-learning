@@ -298,6 +298,51 @@ def fail_run(
     return store.load_run(run_id)
 
 
+def fail_run_after_provider_teardown_failure(
+    store: RunStore,
+    run_id: str,
+    *,
+    stop: StopRecord,
+    revoke_phase: str | None = None,
+    **event_fields: Any,
+) -> dict[str, Any]:
+    """Mark a run failed when provider teardown fails after terminal completion."""
+
+    run = store.load_run(run_id)
+    status = _run_status(run)
+    if status == "failed":
+        return run
+    if status not in {"running", "completed"}:
+        return run
+
+    expected_revision = int(run["revision"])
+    updated = dict(run)
+    updated["revision"] = expected_revision + 1
+    updated["status"] = "failed"
+    updated["outcome"] = None
+    updated["stop"] = stop.to_dict()
+    if revoke_phase is not None:
+        updated["pending_capability_revoke_phase"] = revoke_phase
+    store.commit(
+        run_id,
+        CommitSpec(
+            run=updated,
+            run_expected_revision=expected_revision,
+            events=[
+                {
+                    "type": "run_failed",
+                    "run_id": run_id,
+                    "stop": stop.to_dict(),
+                    **event_fields,
+                }
+            ],
+        ),
+    )
+    if revoke_phase is not None:
+        _attempt_phase_capability_revocation(store, run_id, revoke_phase)
+    return store.load_run(run_id)
+
+
 def complete_run_with_outcome(
     store: RunStore,
     run_id: str,
@@ -402,6 +447,7 @@ def pause_for_limit_exhausted(
 __all__ = [
     "complete_run_with_outcome",
     "fail_run",
+    "fail_run_after_provider_teardown_failure",
     "generate_phase_action_id",
     "pause_for_limit_exhausted",
     "pause_run",

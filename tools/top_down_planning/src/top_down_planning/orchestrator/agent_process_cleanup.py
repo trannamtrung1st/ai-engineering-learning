@@ -35,6 +35,15 @@ class OrphanCleanupResult:
     failed_pids: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class CancelCleanupResult:
+    """Outcome of cancellation orphan cleanup before persisting user_cancelled."""
+
+    terminated_pids: tuple[int, ...]
+    surviving_pids: tuple[int, ...]
+    cleanup_complete: bool
+
+
 def _default_list_live_pids() -> list[int]:
     if sys.platform == "win32":
         return []
@@ -210,13 +219,17 @@ def kill_orphan_agents(
     run_id: str,
     *,
     exclude_pids: frozenset[int] | None = None,
+    additional_terminated_pids: list[int] | None = None,
     list_live_pids: ListLivePids | None = None,
     read_pid_environ: ReadPidEnviron | None = None,
 ) -> OrphanCleanupResult:
     """Terminate orphan agents for *run_id* and append audit events."""
 
     run = store.load_run(run_id)
-    terminated_pids = terminated_pids_from_stop(run)
+    terminated_pids = [
+        *terminated_pids_from_stop(run),
+        *[int(pid) for pid in (additional_terminated_pids or [])],
+    ]
 
     orphan_pids = scan_orphan_agent_pids(
         run_id,
@@ -283,26 +296,48 @@ def finalize_user_cancel(
     *,
     phase: str,
     provider_terminated_pids: list[int] | None = None,
+    known_surviving_pids: tuple[int, ...] = (),
     exclude_pids: frozenset[int] | None = None,
-) -> list[int]:
-    """Persist ``user_cancelled`` then best-effort orphan cleanup."""
+) -> CancelCleanupResult:
+    """Persist ``user_cancelled`` after verified orphan cleanup."""
 
     with defer_run_interrupt_signals():
-        orphan_pids: list[int] = []
-        try:
-            orphan_pids = list(
-                _kill_orphan_agents_before_pause(
-                    store,
-                    run_id,
-                    provider_terminated_pids=provider_terminated_pids,
-                    exclude_pids=exclude_pids,
-                )
-            )
-        except Exception:
-            orphan_pids = []
-        all_terminated_pids = sorted(
+        cleanup = kill_orphan_agents(
+            store,
+            run_id,
+            exclude_pids=exclude_pids,
+            additional_terminated_pids=provider_terminated_pids,
+        )
+        verified_terminated = sorted(
             {int(pid) for pid in (provider_terminated_pids or [])}
-            | {int(pid) for pid in orphan_pids}
+            | {int(pid) for pid in cleanup.cleaned_pids}
+        )
+        surviving_pids = sorted(
+            {
+                int(pid)
+                for pid in cleanup.failed_pids
+                if is_pid_alive(pid)
+            }
+            | {
+                int(pid)
+                for pid in known_surviving_pids
+                if is_pid_alive(pid)
+            }
+        )
+        remaining = scan_orphan_agent_pids(
+            run_id,
+            exclude_pids=exclude_pids,
+            terminated_pids=verified_terminated,
+        )
+        for pid in remaining:
+            if is_pid_alive(pid) and pid not in surviving_pids:
+                surviving_pids.append(pid)
+        surviving_pids = sorted(set(surviving_pids))
+        cleanup_complete = not surviving_pids
+        message = (
+            "cancelled by user"
+            if cleanup_complete
+            else "cancelled by user (agent cleanup incomplete)"
         )
         pause_run(
             store,
@@ -311,62 +346,33 @@ def finalize_user_cancel(
                 code="user_cancelled",
                 category="operational",
                 phase=phase,
-                message="cancelled by user",
-                details={"terminated_pids": all_terminated_pids},
+                message=message,
+                details={
+                    "terminated_pids": verified_terminated,
+                    "cleanup_failed_pids": surviving_pids,
+                    "cleanup_complete": cleanup_complete,
+                },
             ),
         )
-        if all_terminated_pids:
+        if verified_terminated or surviving_pids:
             try:
                 store.append_event(
                     run_id,
                     {
                         "type": "user_cancel_cleanup",
                         "run_id": run_id,
-                        "terminated_pids": all_terminated_pids,
-                    },
-                )
-            except BaseException:
-                pass
-    return all_terminated_pids
-
-
-def _kill_orphan_agents_before_pause(
-    store: RunStore,
-    run_id: str,
-    *,
-    provider_terminated_pids: list[int] | None = None,
-    exclude_pids: frozenset[int] | None = None,
-    list_live_pids: ListLivePids | None = None,
-    read_pid_environ: ReadPidEnviron | None = None,
-) -> list[int]:
-    """Terminate orphan agents before the cancel pause record is persisted."""
-
-    orphan_pids = scan_orphan_agent_pids(
-        run_id,
-        exclude_pids=exclude_pids,
-        terminated_pids=provider_terminated_pids or [],
-        list_live_pids=list_live_pids,
-        read_pid_environ=read_pid_environ,
-    )
-    cleaned: list[int] = []
-    for pid in orphan_pids:
-        if not is_pid_alive(pid):
-            continue
-        if terminate_pid_tree(pid):
-            cleaned.append(pid)
-            try:
-                store.append_event(
-                    run_id,
-                    {
-                        "type": "agent_orphan_cleaned",
-                        "pid": pid,
-                        "run_id": run_id,
-                        "reason": "orphan",
+                        "terminated_pids": verified_terminated,
+                        "cleanup_failed_pids": surviving_pids,
+                        "cleanup_complete": cleanup_complete,
                     },
                 )
             except Exception:
                 pass
-    return cleaned
+    return CancelCleanupResult(
+        terminated_pids=tuple(verified_terminated),
+        surviving_pids=tuple(surviving_pids),
+        cleanup_complete=cleanup_complete,
+    )
 
 
 def terminated_pids_from_stop(run: dict[str, Any]) -> list[int]:
@@ -425,6 +431,7 @@ def workspace_has_orphan_agents(
 
 
 __all__ = [
+    "CancelCleanupResult",
     "OrphanCleanupResult",
     "default_read_pid_environ",
     "finalize_user_cancel",

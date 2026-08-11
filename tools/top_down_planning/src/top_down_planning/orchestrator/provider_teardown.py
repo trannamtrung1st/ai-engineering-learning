@@ -10,7 +10,7 @@ from core_tools.provider import Provider
 from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
 
 from top_down_planning.observability import session_lifecycle_event
-from top_down_planning.orchestrator.agent_process_cleanup import scan_orphan_agent_pids
+from top_down_planning.orchestrator.agent_process_cleanup import scan_orphan_agent_pids, kill_orphan_agents
 from top_down_planning.orchestrator.errors import ProviderTeardownError
 from top_down_planning.persistence.interface import RunStore
 
@@ -207,4 +207,46 @@ def teardown_provider_sessions(
     return verified_terminated
 
 
-__all__ = ["teardown_provider_sessions"]
+def verify_run_agent_survivors(
+    store: RunStore,
+    run_id: str,
+    *,
+    terminated_pids: list[int],
+    exclude_pids: frozenset[int] | None = None,
+    known_surviving_pids: tuple[int, ...] = (),
+) -> tuple[int, ...]:
+    """Return surviving run-associated agent PIDs after fallback cleanup."""
+
+    cleanup = kill_orphan_agents(
+        store,
+        run_id,
+        exclude_pids=exclude_pids,
+        additional_terminated_pids=terminated_pids,
+    )
+    verified_terminated = sorted(
+        {int(pid) for pid in terminated_pids} | {int(pid) for pid in cleanup.cleaned_pids}
+    )
+    survivors = sorted(
+        {
+            int(pid)
+            for pid in cleanup.failed_pids
+            if is_pid_alive(pid)
+        }
+        | {
+            int(pid)
+            for pid in known_surviving_pids
+            if is_pid_alive(pid)
+        }
+    )
+    remaining = scan_orphan_agent_pids(
+        run_id,
+        exclude_pids=exclude_pids,
+        terminated_pids=verified_terminated,
+    )
+    for pid in remaining:
+        if is_pid_alive(pid) and pid not in survivors:
+            survivors.append(pid)
+    return tuple(sorted(set(survivors)))
+
+
+__all__ = ["teardown_provider_sessions", "verify_run_agent_survivors"]

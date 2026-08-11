@@ -39,7 +39,7 @@ from core_tools.provider.process_cleanup import (
 )
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
-_STDERR_TAIL_MAX_LINES = 200
+_STDERR_TAIL_MAX_BYTES = 64 * 1024
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
 ProviderEventCallback = Callable[[dict[str, Any]], None]
@@ -81,25 +81,31 @@ class _SubprocessStdoutIterator(Iterator[str]):
             raise ProviderTurnError("Cursor CLI stdout pipe was not available")
 
         self._active_proc = active_proc
-        self._stderr_lines: deque[str] = deque(maxlen=_STDERR_TAIL_MAX_LINES)
+        self._stderr_tail = bytearray()
         self._stderr_truncated = False
         self._stderr_done = threading.Event()
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
         self._finished = False
 
+    def _append_stderr_bytes(self, chunk: bytes) -> None:
+        if not chunk:
+            return
+        self._stderr_tail.extend(chunk)
+        if len(self._stderr_tail) > _STDERR_TAIL_MAX_BYTES:
+            self._stderr_truncated = True
+            del self._stderr_tail[: len(self._stderr_tail) - _STDERR_TAIL_MAX_BYTES]
+
     def _drain_stderr(self) -> None:
         if self._proc.stderr is None:
             self._stderr_done.set()
             return
         try:
-            for line in self._proc.stderr:
-                if (
-                    self._stderr_lines.maxlen is not None
-                    and len(self._stderr_lines) == self._stderr_lines.maxlen
-                ):
-                    self._stderr_truncated = True
-                self._stderr_lines.append(line)
+            while True:
+                chunk = self._proc.stderr.buffer.read(8192)
+                if not chunk:
+                    break
+                self._append_stderr_bytes(chunk)
         finally:
             self._stderr_done.set()
 
@@ -134,10 +140,10 @@ class _SubprocessStdoutIterator(Iterator[str]):
             return
         self._finished = True
         self._stderr_done.wait(timeout=5)
-        stderr = "".join(self._stderr_lines)
+        stderr = self._stderr_tail.decode("utf-8", errors="replace")
         if self._stderr_truncated:
             stderr = (
-                f"[stderr truncated; showing last {_STDERR_TAIL_MAX_LINES} lines]\n"
+                f"[stderr truncated; showing last {_STDERR_TAIL_MAX_BYTES} bytes]\n"
                 f"{stderr}"
             )
         return_code = self._proc.wait()
@@ -367,14 +373,20 @@ class CursorProvider:
     def send(self, session_id: str, request: dict[str, Any], *, model: str | None = None) -> None:
         canonical_id = self.canonical_session_id(session_id)
         existing = self._sessions.get(canonical_id)
-        if existing is not None:
-            role, kind = existing.role, existing.kind
-        else:
-            role, kind = "reviewer", "reviewer"
+        if existing is not None and (
+            existing.kind != "reviewer" or existing.role != "reviewer"
+        ):
+            raise ProviderSessionError(
+                (
+                    f"send() is only supported for reviewer sessions; "
+                    f"session {canonical_id} is {existing.role}/{existing.kind}"
+                ),
+                session_id=canonical_id,
+            )
         canonical_id = self._ensure_durable_session(
             session_id,
-            role=role,
-            kind=kind,
+            role="reviewer",
+            kind="reviewer",
             model=model,
         )
         self._queue_turn(

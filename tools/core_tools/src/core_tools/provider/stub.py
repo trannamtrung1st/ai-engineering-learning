@@ -134,14 +134,20 @@ class StubProvider:
     def send(self, session_id: str, request: dict[str, Any], *, model: str | None = None) -> None:
         canonical_id = self.canonical_session_id(session_id)
         existing = self._sessions.get(canonical_id)
-        if existing is not None:
-            role, kind = existing.role, existing.kind
-        else:
-            role, kind = "reviewer", "reviewer"
+        if existing is not None and (
+            existing.kind != "reviewer" or existing.role != "reviewer"
+        ):
+            raise ProviderSessionError(
+                (
+                    f"send() is only supported for reviewer sessions; "
+                    f"session {canonical_id} is {existing.role}/{existing.kind}"
+                ),
+                session_id=canonical_id,
+            )
         self._ensure_durable_session(
             canonical_id,
-            role=role,
-            kind=kind,
+            role="reviewer",
+            kind="reviewer",
             model=model,
         )
         self._enqueue_turn(canonical_id, request)
