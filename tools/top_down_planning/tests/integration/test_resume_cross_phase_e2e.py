@@ -28,6 +28,7 @@ from tests.helpers import (
     enter_mandatory_verification_pending,
     mandatory_initial_respond_request,
     mandatory_scope_review_found_respond_request,
+    mandatory_verification_needs_revision_request,
     mandatory_verification_respond_request,
     prepare_loop_for_scope_review_respond,
     respond_review,
@@ -224,47 +225,106 @@ def _pause_whole_plan_revision_limit(
     run_id = "run-20260101T000301-000301"
     loop_id = "review-whole-plan-01"
     provider = StubProvider()
-    _create_driver_run(
+    planner_session_id, _ = _create_driver_run(
         store,
         run_id,
         provider=provider,
         limits={"max_revision_cycles": 1},
     )
-    save_review_payload(
-        store,
-        run_id,
-        whole_plan_approval_record(
+    adapter = _FakeAdapter(store, run_id, owner_session_id=planner_session_id)
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=respond_review(
             store,
             run_id,
-            status="blocked",
-            lifecycle_status="limit_reached",
-            revision_cycles=1,
-            exhausted_budget="verification_revision",
-            active_stage="finding_verification",
-            target_revision=1,
+            mandatory_initial_respond_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=0,
+                review_type="whole_plan",
+                decision="changes_requested",
+                findings=[
+                    {
+                        "id": "finding-01",
+                        "severity": "blocker",
+                        "category": "correctness",
+                        "target_refs": ["item-root"],
+                        "issue": "Needs work.",
+                        "recommended_change": "Improve acceptance.",
+                        "status": "unresolved",
+                    }
+                ],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
         ),
     )
-    review = store.load_review(run_id, loop_id)
-    revision_cycles = int(review.get("revision_cycles") or 1)
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=apply_plan(
+            store,
+            run_id,
+            base_revision=0,
+            operations=[
+                {
+                    "op": "update_item",
+                    "item_id": "item-root",
+                    "patch": {
+                        "acceptance": [
+                            "API behavior is verifiable.",
+                            "Health check exists.",
+                        ]
+                    },
+                }
+            ],
+            phase=WHOLE_PLAN_REVIEW,
+        ),
+    )
+
+    def _needs_revision_respond() -> None:
+        loop = store.load_review(run_id, loop_id)
+        finding_set_id = str(loop.get("finding_set_id") or f"{loop_id}-fs-01")
+        respond_review(
+            store,
+            run_id,
+            mandatory_verification_needs_revision_request(
+                store,
+                run_id,
+                loop_id=loop_id,
+                target_revision=1,
+                review_type="whole_plan",
+                finding_set_id=finding_set_id,
+                finding_results=[
+                    {
+                        "finding_id": "finding-01",
+                        "disposition": "unresolved",
+                        "evidence": ["still insufficient"],
+                        "direct_side_effects": [],
+                    }
+                ],
+            ),
+            phase=WHOLE_PLAN_REVIEW,
+            loop_id=loop_id,
+        )()
+
+    provider.script_turn(
+        done_events(text="turn complete"),
+        mutate_store=_needs_revision_respond,
+    )
+    result = ReviewLoopDriver(store, run_id, provider, adapter).run()
+    assert result.ok is False
+    assert result.status == "paused"
     run = store.load_run(run_id)
-    expected_revision = int(run["revision"])
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    run["status"] = "paused"
-    run["stop"] = {
-        "code": "limit_exhausted",
-        "category": "operational",
-        "phase": WHOLE_PLAN_REVIEW,
-        "message": "whole-plan review exceeded max_revision_cycles (1)",
-        "details": {
-            "limit": "limits.whole_plan_review.max_revision_cycles",
-            "consumed": revision_cycles,
-            "configured": 1,
-            "loop_id": loop_id,
-            "exhausted_budget": "verification_revision",
-        },
-    }
-    store.save_run(run_id, run, expected_revision)
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "limit_exhausted"
+    review = store.load_review(run_id, loop_id)
+    assert review.get("lifecycle_status") == "limit_reached"
+    events = store.load_events(run_id)
+    assert any(event.get("type") == "run_paused" for event in events)
+    assert any(
+        event.get("type") == "whole_plan_review_limit_exceeded" for event in events
+    )
     return run_id
 
 

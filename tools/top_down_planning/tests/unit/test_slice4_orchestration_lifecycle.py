@@ -1432,6 +1432,55 @@ def test_terminal_continue_run_retries_requeued_cleanup_diagnostic(tmp_path: Pat
     assert ownership_cleanup_failures() == []
 
 
+def test_keyboard_interrupt_teardown_and_cleanup_report_failures_preserve_cancel(
+    tmp_path: Path,
+) -> None:
+    from top_down_planning.domain.run_ownership import _OWNERSHIP_CLEANUP_FAILURES
+    from top_down_planning.observability import ObservabilityContext, report_ownership_cleanup_diagnostics
+    from core_tools.observability import NullSink
+
+    store = FileRunStore(tmp_path)
+    run_id = _create_running_run(store)
+    provider = StubProvider()
+    observability = ObservabilityContext(sink=NullSink(), run_id=run_id)
+    _OWNERSHIP_CLEANUP_FAILURES.clear()
+    _OWNERSHIP_CLEANUP_FAILURES.append(
+        {
+            "type": "ownership_cleanup_failed",
+            "run_id": run_id,
+            "path": str(tmp_path / "owner.json"),
+            "error_class": "OSError",
+            "message": "unlink failed",
+            "safe_to_retry": True,
+        }
+    )
+    engine = RunEngine(
+        store,
+        create_provider=lambda _config, _workspace: provider,
+        observability=observability,
+    )
+    with patch.object(
+        PlanningPhaseOrchestrator,
+        "run",
+        side_effect=KeyboardInterrupt,
+    ):
+        with patch(
+            "top_down_planning.orchestrator.engine.teardown_provider_sessions",
+            side_effect=RuntimeError("teardown exploded"),
+        ):
+            with patch(
+                "top_down_planning.observability.report_ownership_cleanup_diagnostics",
+                side_effect=OSError("emit exploded"),
+            ):
+                result = engine.continue_run(run_id, single_step=True)
+
+    assert result.cancelled is True
+    run = store.load_run(run_id)
+    assert run["status"] == "paused"
+    assert run["stop"]["code"] == "user_cancelled"
+    assert run.get("outcome") is None
+
+
 def test_ownership_cleanup_failure_queue_is_bounded_per_run() -> None:
     from top_down_planning.domain.run_ownership import (
         _MAX_CLEANUP_FAILURES_PER_RUN,

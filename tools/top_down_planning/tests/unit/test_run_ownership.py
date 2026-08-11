@@ -939,6 +939,211 @@ def test_child_sigterm_during_release_attempt_allows_peer_acquire(tmp_path: Path
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
 
 
+def test_child_sigint_during_gated_acquire_metadata_allows_peer_acquire(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    child_script = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from unittest.mock import patch\n"
+        "from top_down_planning.domain import run_ownership as ownership_module\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "real_write = ownership_module._write_lock_metadata\n"
+        "def gated(path, record):\n"
+        "    (run_dir / '.inside_acquire').write_text('1', encoding='utf-8')\n"
+        "    while not (run_dir / '.go').is_file():\n"
+        "        time.sleep(0.01)\n"
+        "    return real_write(path, record)\n"
+        "try:\n"
+        "    with patch.object(ownership_module, '_write_lock_metadata', gated):\n"
+        "        ownership_module.acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "except BaseException:\n"
+        "    pass\n"
+        "(run_dir / '.done').write_text('1', encoding='utf-8')\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", child_script], env=_subprocess_env())
+    inside = run_dir / ".inside_acquire"
+    for _ in range(100):
+        if inside.is_file():
+            break
+        time.sleep(0.02)
+    assert inside.is_file()
+    os.kill(child.pid, signal.SIGINT)
+    assert child.wait(timeout=5) == 0
+    assert "run-1" not in _OWNERSHIP_REGISTRY
+    token = _wait_for_peer_acquire(run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_child_sigterm_during_gated_release_unlock_allows_peer_acquire(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    child_script = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from unittest.mock import patch\n"
+        "from top_down_planning.domain import run_ownership as ownership_module\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "token = ownership_module.acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "(run_dir / '.acquired').write_text(token, encoding='utf-8')\n"
+        "while not (run_dir / '.go_release').is_file():\n"
+        "    time.sleep(0.01)\n"
+        "real_release = ownership_module._release_flock_fd\n"
+        "def gated(fd):\n"
+        "    (run_dir / '.inside_release').write_text('1', encoding='utf-8')\n"
+        "    while not (run_dir / '.go').is_file():\n"
+        "        time.sleep(0.01)\n"
+        "    return real_release(fd)\n"
+        "try:\n"
+        "    with patch.object(ownership_module, '_release_flock_fd', gated):\n"
+        "        ownership_module.release_run_ownership(\n"
+        "            'run-1', run_dir=run_dir, owner_token=token,\n"
+        "        )\n"
+        "except BaseException:\n"
+        "    pass\n"
+        "(run_dir / '.done').write_text('1', encoding='utf-8')\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", child_script], env=_subprocess_env())
+    acquired_marker = run_dir / ".acquired"
+    for _ in range(100):
+        if acquired_marker.is_file():
+            break
+        time.sleep(0.02)
+    assert acquired_marker.is_file()
+    (run_dir / ".go_release").write_text("1", encoding="utf-8")
+    inside = run_dir / ".inside_release"
+    for _ in range(100):
+        if inside.is_file():
+            break
+        time.sleep(0.02)
+    assert inside.is_file()
+    os.kill(child.pid, signal.SIGTERM)
+    (run_dir / ".go").write_text("1", encoding="utf-8")
+    assert child.wait(timeout=5) == 0
+    assert (run_dir / ".done").is_file()
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_double_sigint_during_gated_release_unlock_completes_and_peer_acquires(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    child_script = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from unittest.mock import patch\n"
+        "from top_down_planning.domain import run_ownership as ownership_module\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "token = ownership_module.acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "(run_dir / '.acquired').write_text(token, encoding='utf-8')\n"
+        "while not (run_dir / '.go_release').is_file():\n"
+        "    time.sleep(0.01)\n"
+        "real_release = ownership_module._release_flock_fd\n"
+        "def gated(fd):\n"
+        "    (run_dir / '.inside_release').write_text('1', encoding='utf-8')\n"
+        "    while not (run_dir / '.go').is_file():\n"
+        "        time.sleep(0.01)\n"
+        "    return real_release(fd)\n"
+        "with patch.object(ownership_module, '_release_flock_fd', gated):\n"
+        "    ownership_module.release_run_ownership(\n"
+        "        'run-1', run_dir=run_dir, owner_token=token,\n"
+        "    )\n"
+        "(run_dir / '.released').write_text('1', encoding='utf-8')\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", child_script], env=_subprocess_env())
+    acquired_marker = run_dir / ".acquired"
+    for _ in range(100):
+        if acquired_marker.is_file():
+            break
+        time.sleep(0.02)
+    (run_dir / ".go_release").write_text("1", encoding="utf-8")
+    inside = run_dir / ".inside_release"
+    for _ in range(100):
+        if inside.is_file():
+            break
+        time.sleep(0.02)
+    os.kill(child.pid, signal.SIGINT)
+    os.kill(child.pid, signal.SIGINT)
+    (run_dir / ".go").write_text("1", encoding="utf-8")
+    assert child.wait(timeout=5) == 0
+    assert (run_dir / ".released").is_file()
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
+def test_run_ownership_import_requires_posix_fcntl_subprocess() -> None:
+    child_script = (
+        "import builtins\n"
+        "_real_import = builtins.__import__\n"
+        "def _block_fcntl(name, globals=None, locals=None, fromlist=(), level=0):\n"
+        "    if name == 'fcntl':\n"
+        "        raise ImportError('no fcntl module')\n"
+        "    return _real_import(name, globals, locals, fromlist, level)\n"
+        "builtins.__import__ = _block_fcntl\n"
+        "try:\n"
+        "    import importlib\n"
+        "    import top_down_planning.domain.run_ownership as mod\n"
+        "    importlib.reload(mod)\n"
+        "except ImportError as exc:\n"
+        "    msg = str(exc)\n"
+        "    if 'POSIX' in msg or 'fcntl' in msg:\n"
+        "        raise SystemExit(0)\n"
+        "    raise\n"
+        "raise SystemExit(2)\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", child_script], env=_subprocess_env())
+    assert child.wait(timeout=10) == 0
+
+
+def test_flock_holder_blocks_peer_despite_stale_unknown_identity_metadata(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    run_dir_arg = str(run_dir)
+    child_script = (
+        "import time\n"
+        "from pathlib import Path\n"
+        "from top_down_planning.domain.run_ownership import acquire_run_ownership\n"
+        f"run_dir = Path('{run_dir_arg}')\n"
+        "token = acquire_run_ownership('run-1', run_dir=run_dir)\n"
+        "(run_dir / '.acquired').write_text(token, encoding='utf-8')\n"
+        "while True:\n"
+        "    time.sleep(0.05)\n"
+    )
+    child = subprocess.Popen([sys.executable, "-c", child_script], env=_subprocess_env())
+    acquired_marker = run_dir / ".acquired"
+    for _ in range(100):
+        if acquired_marker.is_file():
+            break
+        time.sleep(0.02)
+    stale = ResumeLockRecord(
+        run_id="run-1",
+        pid=999999,
+        owner_token="stale-unknown",
+        acquired_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        process_identity="999999:unknown",
+    )
+    resume_lock_metadata_path(run_dir).parent.mkdir(parents=True, exist_ok=True)
+    resume_lock_metadata_path(run_dir).write_text(
+        __import__("json").dumps(stale.to_dict()) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RunOwnershipError):
+        acquire_run_ownership("run-1", run_dir=run_dir)
+    os.kill(child.pid, signal.SIGTERM)
+    assert child.wait(timeout=5) != 0
+    token = _wait_for_peer_acquire(run_dir)
+    release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
+
+
 def test_process_identity_unknown_without_proc_filesystem() -> None:
     pid = os.getpid()
     with patch(
