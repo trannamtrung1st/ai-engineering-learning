@@ -111,9 +111,9 @@ def test_kill_orphan_agents_emits_audit_event(tmp_path: Path) -> None:
             with patch(
                 "top_down_planning.orchestrator.agent_process_cleanup.terminate_pid_tree"
             ) as terminate:
-                cleaned = kill_orphan_agents(store, "run-20260101T001901-001901")
+                cleanup = kill_orphan_agents(store, "run-20260101T001901-001901")
 
-    assert cleaned == [4242]
+    assert cleanup.cleaned_pids == (4242,)
     terminate.assert_called_once_with(4242)
     events = store.load_events("run-20260101T001901-001901")
     assert any(event.get("type") == "agent_orphan_cleaned" for event in events)

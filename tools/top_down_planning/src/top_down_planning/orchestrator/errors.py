@@ -44,3 +44,21 @@ class ProducerReplacementBlocked(ProviderRunError):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.code = "producer_replacement_blocked"
+
+
+class ProviderTeardownError(ProviderRunError):
+    """Provider or agent processes could not be torn down cleanly."""
+
+    def __init__(self, message: str, *, surviving_pids: tuple[int, ...] = ()) -> None:
+        super().__init__(message)
+        self.code = "provider_teardown_error"
+        self.surviving_pids = surviving_pids
+
+
+class OrphanCleanupBlocked(ProviderRunError):
+    """Pre-run orphan cleanup left surviving run-associated agent processes."""
+
+    def __init__(self, message: str, *, surviving_pids: tuple[int, ...] = ()) -> None:
+        super().__init__(message)
+        self.code = "orphan_cleanup_blocked"
+        self.surviving_pids = surviving_pids

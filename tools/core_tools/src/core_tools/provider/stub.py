@@ -132,8 +132,19 @@ class StubProvider:
         return session_id
 
     def send(self, session_id: str, request: dict[str, Any], *, model: str | None = None) -> None:
-        self._ensure_durable_session(session_id, role="reviewer", kind="reviewer", model=model)
-        self._enqueue_turn(session_id, request)
+        canonical_id = self.canonical_session_id(session_id)
+        existing = self._sessions.get(canonical_id)
+        if existing is not None:
+            role, kind = existing.role, existing.kind
+        else:
+            role, kind = "reviewer", "reviewer"
+        self._ensure_durable_session(
+            canonical_id,
+            role=role,
+            kind=kind,
+            model=model,
+        )
+        self._enqueue_turn(canonical_id, request)
 
     def canonical_session_id(self, session_id: str) -> str:
         return session_id
@@ -238,6 +249,16 @@ class StubProvider:
         model: str | None = None,
     ) -> None:
         if session_id in self._sessions:
+            existing = self._sessions[session_id]
+            if existing.role != role or existing.kind != kind:
+                raise ProviderSessionError(
+                    (
+                        f"durable session {session_id} role/kind mismatch: "
+                        f"existing role={existing.role!r} kind={existing.kind!r}, "
+                        f"requested role={role!r} kind={kind!r}"
+                    ),
+                    session_id=session_id,
+                )
             return
         self._sessions[session_id] = _StubSession(
             role=role,

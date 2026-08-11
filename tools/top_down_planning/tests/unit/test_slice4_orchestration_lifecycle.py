@@ -19,6 +19,7 @@ from top_down_planning.domain.run_ownership import (
     resume_lock_metadata_path,
 )
 from top_down_planning.orchestrator.apply_resume import ApplyResumeError, apply_resume_plan_atomically
+from top_down_planning.orchestrator.agent_process_cleanup import OrphanCleanupResult
 from top_down_planning.orchestrator.engine import RunEngine
 from top_down_planning.orchestrator.failure import mark_run_failed
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
@@ -678,6 +679,7 @@ def test_running_target_reached_runs_preflight_before_return(tmp_path: Path) -> 
     ) as policy_mock:
         with patch(
             "top_down_planning.orchestrator.engine.kill_orphan_agents",
+            return_value=OrphanCleanupResult(cleaned_pids=(), failed_pids=()),
         ) as orphan_mock:
             result = RunEngine(
                 store,

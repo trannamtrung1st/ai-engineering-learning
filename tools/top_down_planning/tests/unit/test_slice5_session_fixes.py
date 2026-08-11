@@ -18,6 +18,7 @@ from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.agent_process_cleanup import finalize_user_cancel
 from top_down_planning.orchestrator.phases import PLANNING, PLAN_AMENDMENT
 from top_down_planning.orchestrator.plan_amendment import PlanAmendmentOrchestrator
+from top_down_planning.orchestrator.errors import ProviderTeardownError
 from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
 from top_down_planning.orchestrator.session_context import rotate_primary_session
 from top_down_planning.orchestrator.session_events import (
@@ -632,16 +633,25 @@ def test_teardown_provider_sessions_emits_agent_termination_failed_not_terminate
         "core_tools.provider.cursor.terminate_pid_tree",
         return_value=False,
     ):
-        teardown_provider_sessions(
-            provider,
-            run_id="run-cancel",
-            phase=PLANNING,
-            append_event=lambda event_type, **fields: events.append(
-                {"type": event_type, **fields}
-            ),
-            emit_console=lambda _event: None,
-            audit_cancel=True,
-        )
+        with patch(
+            "top_down_planning.orchestrator.provider_teardown.terminate_pid_tree",
+            return_value=False,
+        ):
+            with patch(
+                "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
+                return_value=True,
+            ):
+                with pytest.raises(ProviderTeardownError):
+                    teardown_provider_sessions(
+                        provider,
+                        run_id="run-cancel",
+                        phase=PLANNING,
+                        append_event=lambda event_type, **fields: events.append(
+                            {"type": event_type, **fields}
+                        ),
+                        emit_console=lambda _event: None,
+                        audit_cancel=True,
+                    )
 
     proc.kill()
     proc.wait(timeout=1)

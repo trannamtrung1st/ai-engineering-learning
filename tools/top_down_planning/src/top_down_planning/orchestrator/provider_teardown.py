@@ -7,8 +7,12 @@ from typing import Any
 
 from core_tools.observability import ConsoleEvent
 from core_tools.provider import Provider
+from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
 
 from top_down_planning.observability import session_lifecycle_event
+from top_down_planning.orchestrator.agent_process_cleanup import scan_orphan_agent_pids
+from top_down_planning.orchestrator.errors import ProviderTeardownError
+from top_down_planning.persistence.interface import RunStore
 
 AppendEvent = Callable[..., None]
 EmitConsole = Callable[[ConsoleEvent], None]
@@ -23,6 +27,58 @@ def _session_model_fields(session: dict[str, str]) -> dict[str, str]:
     return {}
 
 
+def _emit_agent_termination_records(
+    append_event: AppendEvent,
+    *,
+    phase: str,
+    records: list[dict[str, Any]],
+    audit_cancel: bool,
+) -> tuple[list[int], list[int]]:
+    terminated_pids: list[int] = []
+    failed_pids: list[int] = []
+    for record in records:
+        pid = record.get("pid")
+        if not isinstance(pid, int):
+            continue
+        reason = str(record.get("reason") or "cancelled")
+        if reason == "termination_failed":
+            failed_pids.append(pid)
+            append_event(
+                "agent_termination_failed",
+                pid=pid,
+                role=str(record.get("role") or "unknown"),
+                session_id=record.get("session_id"),
+                phase=phase,
+                reason=reason,
+            )
+            continue
+        if reason == "terminated":
+            terminated_pids.append(pid)
+            if audit_cancel:
+                append_event(
+                    "agent_terminated",
+                    pid=pid,
+                    role=str(record.get("role") or "unknown"),
+                    session_id=record.get("session_id"),
+                    phase=phase,
+                    reason=reason,
+                )
+    return terminated_pids, failed_pids
+
+
+def _retry_terminate_pids(pids: list[int]) -> tuple[list[int], list[int]]:
+    terminated: list[int] = []
+    failed: list[int] = []
+    for pid in pids:
+        if not is_pid_alive(pid):
+            continue
+        if terminate_pid_tree(pid):
+            terminated.append(pid)
+        else:
+            failed.append(pid)
+    return terminated, failed
+
+
 def teardown_provider_sessions(
     provider: Provider,
     *,
@@ -31,6 +87,8 @@ def teardown_provider_sessions(
     append_event: AppendEvent,
     emit_console: EmitConsole,
     audit_cancel: bool = False,
+    store: RunStore | None = None,
+    exclude_pids: frozenset[int] | None = None,
 ) -> list[int]:
     """End active provider sessions and terminate subprocesses.
 
@@ -41,13 +99,11 @@ def teardown_provider_sessions(
     active_sessions = provider.list_active_sessions()
 
     terminated_agents = provider.terminate_all_sessions()
-    terminated_pids = sorted(
-        {
-            int(record["pid"])
-            for record in terminated_agents
-            if isinstance(record.get("pid"), int)
-            and str(record.get("reason") or "") == "terminated"
-        }
+    terminated_pids, failed_pids = _emit_agent_termination_records(
+        append_event,
+        phase=phase,
+        records=terminated_agents,
+        audit_cancel=audit_cancel,
     )
 
     if audit_cancel:
@@ -90,28 +146,37 @@ def teardown_provider_sessions(
                     **model_fields,
                 )
 
-        for record in terminated_agents:
-            pid = record.get("pid")
-            if not isinstance(pid, int):
-                continue
-            reason = str(record.get("reason") or "cancelled")
-            if reason == "termination_failed":
-                append_event(
-                    "agent_termination_failed",
-                    pid=pid,
-                    role=str(record.get("role") or "unknown"),
-                    session_id=record.get("session_id"),
-                    phase=phase,
-                    reason=reason,
-                )
-                continue
+    retried_terminated, retried_failed = _retry_terminate_pids(failed_pids)
+    terminated_pids.extend(retried_terminated)
+    failed_pids = retried_failed
+
+    verified_terminated = sorted(set(terminated_pids))
+    survivors = list(failed_pids)
+
+    if store is not None:
+        orphan_pids = scan_orphan_agent_pids(
+            run_id,
+            exclude_pids=exclude_pids,
+            terminated_pids=verified_terminated,
+        )
+        orphan_retry_terminated, orphan_retry_failed = _retry_terminate_pids(orphan_pids)
+        verified_terminated = sorted(set(verified_terminated) | set(orphan_retry_terminated))
+        survivors = sorted(set(survivors) | set(orphan_retry_failed))
+        remaining = scan_orphan_agent_pids(
+            run_id,
+            exclude_pids=exclude_pids,
+            terminated_pids=verified_terminated,
+        )
+        survivors = sorted(set(survivors) | set(remaining))
+
+    for pid in survivors:
+        if is_pid_alive(pid):
             append_event(
-                "agent_terminated",
+                "agent_orphan_cleanup_failed",
                 pid=pid,
-                role=str(record.get("role") or "unknown"),
-                session_id=record.get("session_id"),
+                run_id=run_id,
                 phase=phase,
-                reason=reason,
+                reason="surviving_after_teardown",
             )
 
     for session in active_sessions:
@@ -132,7 +197,14 @@ def teardown_provider_sessions(
             )
         )
 
-    return terminated_pids
+    alive_survivors = tuple(pid for pid in survivors if is_pid_alive(pid))
+    if alive_survivors:
+        raise ProviderTeardownError(
+            f"provider teardown left surviving agent processes: {list(alive_survivors)}",
+            surviving_pids=alive_survivors,
+        )
+
+    return verified_terminated
 
 
 __all__ = ["teardown_provider_sessions"]

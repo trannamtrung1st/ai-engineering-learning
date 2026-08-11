@@ -120,7 +120,7 @@ def test_end_reviewer_session_with_audit_terminates_and_records_event() -> None:
         review_type="whole_plan",
     )
 
-    assert canonical == session_id
+    assert canonical.session_id == session_id
     assert provider.list_active_sessions() == []
     assert len(events) == 1
     assert events[0]["type"] == "reviewer_session_ended"

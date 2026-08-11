@@ -39,6 +39,7 @@ from core_tools.provider.process_cleanup import (
 )
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
+_STDERR_TAIL_MAX_LINES = 200
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
 ProviderEventCallback = Callable[[dict[str, Any]], None]
@@ -80,7 +81,8 @@ class _SubprocessStdoutIterator(Iterator[str]):
             raise ProviderTurnError("Cursor CLI stdout pipe was not available")
 
         self._active_proc = active_proc
-        self._stderr_lines: list[str] = []
+        self._stderr_lines: deque[str] = deque(maxlen=_STDERR_TAIL_MAX_LINES)
+        self._stderr_truncated = False
         self._stderr_done = threading.Event()
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
@@ -92,6 +94,11 @@ class _SubprocessStdoutIterator(Iterator[str]):
             return
         try:
             for line in self._proc.stderr:
+                if (
+                    self._stderr_lines.maxlen is not None
+                    and len(self._stderr_lines) == self._stderr_lines.maxlen
+                ):
+                    self._stderr_truncated = True
                 self._stderr_lines.append(line)
         finally:
             self._stderr_done.set()
@@ -128,6 +135,11 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._finished = True
         self._stderr_done.wait(timeout=5)
         stderr = "".join(self._stderr_lines)
+        if self._stderr_truncated:
+            stderr = (
+                f"[stderr truncated; showing last {_STDERR_TAIL_MAX_LINES} lines]\n"
+                f"{stderr}"
+            )
         return_code = self._proc.wait()
         if return_code != 0:
             detail = stderr.strip() or f"exit code {return_code}"
@@ -353,10 +365,16 @@ class CursorProvider:
         )
 
     def send(self, session_id: str, request: dict[str, Any], *, model: str | None = None) -> None:
+        canonical_id = self.canonical_session_id(session_id)
+        existing = self._sessions.get(canonical_id)
+        if existing is not None:
+            role, kind = existing.role, existing.kind
+        else:
+            role, kind = "reviewer", "reviewer"
         canonical_id = self._ensure_durable_session(
             session_id,
-            role="reviewer",
-            kind="reviewer",
+            role=role,
+            kind=kind,
             model=model,
         )
         self._queue_turn(
@@ -599,6 +617,16 @@ class CursorProvider:
 
         canonical_id = self.canonical_session_id(session_id)
         if canonical_id in self._sessions:
+            existing = self._sessions[canonical_id]
+            if existing.role != role or existing.kind != kind:
+                raise ProviderSessionError(
+                    (
+                        f"durable session {session_id} role/kind mismatch: "
+                        f"existing role={existing.role!r} kind={existing.kind!r}, "
+                        f"requested role={role!r} kind={kind!r}"
+                    ),
+                    session_id=session_id,
+                )
             return canonical_id
         if canonical_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
             raise ProviderSessionError(

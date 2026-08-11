@@ -26,7 +26,9 @@ from top_down_planning.orchestrator.agent_process_cleanup import (
 from core_tools.provider.errors import ProviderTurnError
 from top_down_planning.orchestrator.errors import (
     OrchestratorInvariantError,
+    OrphanCleanupBlocked,
     ProviderRunError,
+    ProviderTeardownError,
     SessionRecoveryPaused,
 )
 from top_down_planning.orchestrator.failure import (
@@ -468,11 +470,19 @@ class RunEngine:
                         self._store.list_reviews(run_id),
                     )
                     execute_session_policy(self._store, run_id, derived_policy)
-                kill_orphan_agents(
+                cleanup = kill_orphan_agents(
                     self._store,
                     run_id,
                     exclude_pids=frozenset({os.getpid()}),
                 )
+                if cleanup.failed_pids:
+                    raise OrphanCleanupBlocked(
+                        (
+                            "pre-run orphan cleanup left surviving agent processes: "
+                            f"{list(cleanup.failed_pids)}"
+                        ),
+                        surviving_pids=cleanup.failed_pids,
+                    )
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
@@ -555,6 +565,7 @@ class RunEngine:
 
             provider: Provider | None = None
             cancelled = False
+            teardown_failed: ProviderTeardownError | None = None
             phase = phase_for_entry
 
             try:
@@ -813,7 +824,20 @@ class RunEngine:
                             append_event=append_event,
                             emit_console=self._emit,
                             audit_cancel=cancelled,
+                            store=self._store,
+                            exclude_pids=frozenset({os.getpid()}),
                         )
+                    except ProviderTeardownError as exc:
+                        teardown_failed = exc
+                        try:
+                            append_event(
+                                "provider_teardown_failed",
+                                phase=phase,
+                                message=str(exc),
+                                surviving_pids=list(exc.surviving_pids),
+                            )
+                        except Exception:
+                            pass
                     except KeyboardInterrupt:
                         cancelled = True
                     except Exception as exc:
@@ -851,6 +875,34 @@ class RunEngine:
                     ),
                     cancelled=user_cancelled,
                 )
+
+            if teardown_failed is not None:
+                run = self._store.load_run(run_id)
+                if str(run.get("status") or "") == "running":
+                    pause_run(
+                        self._store,
+                        run_id,
+                        stop=StopRecord(
+                            code="provider_turn_failed",
+                            category="operational",
+                            phase=phase,
+                            message=str(teardown_failed),
+                            details={
+                                "surviving_pids": list(teardown_failed.surviving_pids),
+                            },
+                        ),
+                    )
+                    run = self._store.load_run(run_id)
+                result = _continuation_result_from_run(
+                    run,
+                    run_id,
+                    until=until,
+                    steps=steps,
+                    ok=False,
+                    reason=str(teardown_failed),
+                )
+                self._emit_done(result, started_at=started_at)
+                return result
 
             steps.append(step)
             if not step.ok:

@@ -81,7 +81,7 @@ def test_cursor_provider_terminate_session_aborts_inflight_turn(tmp_path: Path) 
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
+    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="producer")
     stream = provider.stream_events(session_id)
 
     errors: list[BaseException] = []
@@ -124,7 +124,7 @@ def test_cursor_provider_abort_turn_keeps_session_for_follow_up(tmp_path: Path) 
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
+    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="producer")
     stream = provider.stream_events(session_id)
 
     def consume() -> None:
@@ -139,7 +139,7 @@ def test_cursor_provider_abort_turn_keeps_session_for_follow_up(tmp_path: Path) 
 
     assert not thread.is_alive()
     assert session_id in provider._sessions
-    provider.resume_primary_session(session_id, {"goal": "next batch"}, role="planner")
+    provider.resume_primary_session(session_id, {"goal": "next batch"}, role="producer")
     assert provider._sessions[session_id].pending_argv is not None
 
 
@@ -187,7 +187,7 @@ def test_cursor_provider_abort_turn_drops_buffered_events(tmp_path: Path) -> Non
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
+    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="producer")
     stream = provider.stream_events(session_id)
     events: list[dict] = []
 
@@ -226,7 +226,7 @@ def test_cursor_provider_abort_turn_before_durable_id_does_not_raise(tmp_path: P
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
+    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="producer")
     stream = provider.stream_events(session_id)
     errors: list[BaseException] = []
 
@@ -284,7 +284,7 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "turn-1"}, role="planner")
+    provider.resume_primary_session(session_id, {"goal": "turn-1"}, role="producer")
 
     errors: list[BaseException] = []
 
@@ -298,7 +298,7 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
     thread.start()
     _wait_for_runner_block(started)
     provider.abort_turn(session_id)
-    provider.resume_primary_session(session_id, {"goal": "turn-2"}, role="planner")
+    provider.resume_primary_session(session_id, {"goal": "turn-2"}, role="producer")
     release.set()
     thread.join(timeout=0.5)
 
@@ -344,7 +344,7 @@ def test_cursor_provider_wait_turn_settled_after_abort(tmp_path: Path) -> None:
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "turn-1"}, role="planner")
+    provider.resume_primary_session(session_id, {"goal": "turn-1"}, role="producer")
 
     def consume() -> None:
         list(provider.stream_events(session_id))

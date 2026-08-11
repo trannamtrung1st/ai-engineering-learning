@@ -88,8 +88,17 @@ def _release_replaced_provider_session(provider: Provider, provider_session_id: 
     canonical_id = provider.canonical_session_id(provider_session_id)
     try:
         provider.terminate_session(canonical_id)
-    except Exception:
-        return
+    except Exception as exc:
+        raise ProviderRunError(
+            f"cannot release replaced provider session {canonical_id}: {exc}"
+        ) from exc
+    active_ids = {
+        str(session["session_id"]) for session in provider.list_active_sessions()
+    }
+    if canonical_id in active_ids or provider_session_id in active_ids:
+        raise ProviderRunError(
+            f"cannot release replaced provider session {canonical_id}: still active"
+        )
 
 
 @dataclass(frozen=True)

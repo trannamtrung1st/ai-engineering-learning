@@ -10,6 +10,7 @@ from core_tools.provider import Provider
 from top_down_planning.config import EffectiveActivityContext
 from top_down_planning.domain.session_bindings import new_session_binding
 from top_down_planning.orchestrator.activity_context import session_continuation_decision
+from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.session_events import (
     commit_primary_provider_session_binding,
     emit_primary_session_started,
@@ -41,13 +42,17 @@ def rotate_primary_session(
 ) -> str:
     """Terminate the old primary session, bump binding generation, and start fresh."""
 
-    end_primary_session_with_audit(
+    termination = end_primary_session_with_audit(
         append_event,
         provider,
         role=role,
         phase=phase,
         session_id=old_provider_session_id,
     )
+    if not termination.ended:
+        raise ProviderRunError(
+            f"cannot rotate primary session {termination.session_id}: teardown failed"
+        )
 
     run = store.load_run(run_id)
     expected_revision = int(run["revision"])

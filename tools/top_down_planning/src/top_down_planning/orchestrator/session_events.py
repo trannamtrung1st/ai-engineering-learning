@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from top_down_planning.domain.reviews import ReviewLoop, is_mandatory_review_loop
@@ -27,6 +28,14 @@ from core_tools.persistence import RunNotFoundError
 from core_tools.provider import Provider
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
+
+
+@dataclass(frozen=True)
+class SessionTerminationResult:
+    """Outcome of terminating a provider session with audit."""
+
+    session_id: str
+    ended: bool
 
 
 def reviewer_session_audit_fields(loop: ReviewLoop) -> dict[str, Any]:
@@ -168,7 +177,7 @@ def end_primary_session_with_audit(
     phase: str,
     session_id: str,
     **fields: Any,
-) -> str:
+) -> SessionTerminationResult:
     """Terminate a primary session and record ``{role}_session_ended``.
 
     Idempotent when the session is already absent from the provider registry.
@@ -178,7 +187,7 @@ def end_primary_session_with_audit(
         raise ValueError(f"unsupported primary session role: {role}")
     canonical_session_id = provider.canonical_session_id(session_id)
     if not _primary_session_is_active(provider, session_id):
-        return canonical_session_id
+        return SessionTerminationResult(canonical_session_id, ended=True)
 
     model_fields = _session_model_fields(provider, canonical_session_id)
 
@@ -198,7 +207,7 @@ def end_primary_session_with_audit(
             **model_fields,
             **fields,
         )
-        return canonical_session_id
+        return SessionTerminationResult(canonical_session_id, ended=False)
 
     append_event(
         f"{role}_session_ended",
@@ -208,7 +217,7 @@ def end_primary_session_with_audit(
         **model_fields,
         **fields,
     )
-    return canonical_session_id
+    return SessionTerminationResult(canonical_session_id, ended=True)
 
 
 def end_reviewer_session_with_audit(
@@ -218,7 +227,7 @@ def end_reviewer_session_with_audit(
     phase: str,
     session_id: str,
     **fields: Any,
-) -> str:
+) -> SessionTerminationResult:
     """Terminate a bounded reviewer session and record reviewer_session_ended.
 
     Idempotent: when the session is already absent from the provider registry,
@@ -227,7 +236,7 @@ def end_reviewer_session_with_audit(
 
     canonical_session_id = provider.canonical_session_id(session_id)
     if not _reviewer_session_is_active(provider, session_id):
-        return canonical_session_id
+        return SessionTerminationResult(canonical_session_id, ended=True)
 
     model_fields = _session_model_fields(provider, canonical_session_id)
 
@@ -247,7 +256,7 @@ def end_reviewer_session_with_audit(
             **model_fields,
             **fields,
         )
-        return canonical_session_id
+        return SessionTerminationResult(canonical_session_id, ended=False)
 
     append_event(
         "reviewer_session_ended",
@@ -257,7 +266,7 @@ def end_reviewer_session_with_audit(
         **model_fields,
         **fields,
     )
-    return canonical_session_id
+    return SessionTerminationResult(canonical_session_id, ended=True)
 
 
 def resume_primary_session_with_audit(

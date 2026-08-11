@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,14 @@ ListLivePids = Callable[[], list[int]]
 
 _AGENT_CMD_MARKERS = ("--output-format", "stream-json")
 _RUN_ID_PATTERN = re.compile(rf"(?:^|\s){re.escape(RUN_ID_ENV_VAR)}=([^\s]+)")
+
+
+@dataclass(frozen=True)
+class OrphanCleanupResult:
+    """Outcome of terminating run-associated orphan agent processes."""
+
+    cleaned_pids: tuple[int, ...]
+    failed_pids: tuple[int, ...]
 
 
 def _default_list_live_pids() -> list[int]:
@@ -203,7 +212,7 @@ def kill_orphan_agents(
     exclude_pids: frozenset[int] | None = None,
     list_live_pids: ListLivePids | None = None,
     read_pid_environ: ReadPidEnviron | None = None,
-) -> list[int]:
+) -> OrphanCleanupResult:
     """Terminate orphan agents for *run_id* and append audit events."""
 
     run = store.load_run(run_id)
@@ -217,21 +226,55 @@ def kill_orphan_agents(
         read_pid_environ=read_pid_environ,
     )
     cleaned: list[int] = []
+    failed: list[int] = []
     for pid in orphan_pids:
         if not is_pid_alive(pid):
             continue
         if terminate_pid_tree(pid):
             cleaned.append(pid)
-            store.append_event(
-            run_id,
-            {
-                "type": "agent_orphan_cleaned",
-                "pid": pid,
-                "run_id": run_id,
-                "reason": "orphan",
-            },
-        )
-    return cleaned
+            try:
+                store.append_event(
+                    run_id,
+                    {
+                        "type": "agent_orphan_cleaned",
+                        "pid": pid,
+                        "run_id": run_id,
+                        "reason": "orphan",
+                    },
+                )
+            except Exception:
+                pass
+        else:
+            failed.append(pid)
+            try:
+                store.append_event(
+                    run_id,
+                    {
+                        "type": "agent_orphan_cleanup_failed",
+                        "pid": pid,
+                        "run_id": run_id,
+                        "reason": "termination_failed",
+                    },
+                )
+            except Exception:
+                pass
+
+    survivors = scan_orphan_agent_pids(
+        run_id,
+        exclude_pids=exclude_pids,
+        terminated_pids=[*terminated_pids, *cleaned],
+        list_live_pids=list_live_pids,
+        read_pid_environ=read_pid_environ,
+    )
+    for pid in survivors:
+        if pid in cleaned or pid in failed:
+            continue
+        if is_pid_alive(pid):
+            failed.append(pid)
+    return OrphanCleanupResult(
+        cleaned_pids=tuple(sorted(set(cleaned))),
+        failed_pids=tuple(sorted(set(failed))),
+    )
 
 
 def finalize_user_cancel(
@@ -247,13 +290,15 @@ def finalize_user_cancel(
     with defer_run_interrupt_signals():
         orphan_pids: list[int] = []
         try:
-            orphan_pids = _kill_orphan_agents_before_pause(
-                store,
-                run_id,
-                provider_terminated_pids=provider_terminated_pids,
-                exclude_pids=exclude_pids,
+            orphan_pids = list(
+                _kill_orphan_agents_before_pause(
+                    store,
+                    run_id,
+                    provider_terminated_pids=provider_terminated_pids,
+                    exclude_pids=exclude_pids,
+                )
             )
-        except BaseException:
+        except Exception:
             orphan_pids = []
         all_terminated_pids = sorted(
             {int(pid) for pid in (provider_terminated_pids or [])}
@@ -309,15 +354,18 @@ def _kill_orphan_agents_before_pause(
             continue
         if terminate_pid_tree(pid):
             cleaned.append(pid)
-            store.append_event(
-                run_id,
-                {
-                    "type": "agent_orphan_cleaned",
-                    "pid": pid,
-                    "run_id": run_id,
-                    "reason": "orphan",
-                },
-            )
+            try:
+                store.append_event(
+                    run_id,
+                    {
+                        "type": "agent_orphan_cleaned",
+                        "pid": pid,
+                        "run_id": run_id,
+                        "reason": "orphan",
+                    },
+                )
+            except Exception:
+                pass
     return cleaned
 
 
@@ -377,6 +425,7 @@ def workspace_has_orphan_agents(
 
 
 __all__ = [
+    "OrphanCleanupResult",
     "default_read_pid_environ",
     "finalize_user_cancel",
     "kill_orphan_agents",
