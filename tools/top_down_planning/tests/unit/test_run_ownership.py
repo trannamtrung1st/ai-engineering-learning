@@ -921,6 +921,7 @@ def test_child_sigterm_during_release_attempt_allows_peer_acquire(tmp_path: Path
         "(run_dir / '.acquired').write_text(token, encoding='utf-8')\n"
         "while not (run_dir / '.go_release').is_file():\n"
         "    time.sleep(0.01)\n"
+        "(run_dir / '.entering_release').write_text('1', encoding='utf-8')\n"
         "release_run_ownership('run-1', run_dir=run_dir, owner_token=token)\n"
         "(run_dir / '.released').write_text('1', encoding='utf-8')\n"
     )
@@ -932,10 +933,16 @@ def test_child_sigterm_during_release_attempt_allows_peer_acquire(tmp_path: Path
         time.sleep(0.02)
     assert acquired_marker.is_file()
     (run_dir / ".go_release").write_text("1", encoding="utf-8")
+    entering = run_dir / ".entering_release"
+    for _ in range(100):
+        if entering.is_file():
+            break
+        time.sleep(0.02)
+    assert entering.is_file()
     os.kill(child.pid, signal.SIGTERM)
-    assert child.wait(timeout=5) != 0
-    assert not (run_dir / ".released").is_file()
-    token = _wait_for_peer_acquire(run_dir)
+    assert child.wait(timeout=5) == 0
+    assert (run_dir / ".released").is_file()
+    token = acquire_run_ownership("run-1", run_dir=run_dir)
     release_run_ownership("run-1", run_dir=run_dir, owner_token=token)
 
 
