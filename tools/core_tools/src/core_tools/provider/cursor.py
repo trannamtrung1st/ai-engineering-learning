@@ -44,6 +44,98 @@ ProcessRunner = Callable[[list[str], Path], Iterator[str]]
 ProviderEventCallback = Callable[[dict[str, Any]], None]
 
 
+class _SubprocessStdoutIterator(Iterator[str]):
+    """Eager-start subprocess runner so callers can track PID before first stdout line."""
+
+    def __init__(
+        self,
+        argv: list[str],
+        cwd: Path,
+        *,
+        env: Mapping[str, str] | None = None,
+        active_proc: list[subprocess.Popen[str] | None] | None = None,
+    ) -> None:
+        popen_kwargs: dict[str, Any] = {
+            "cwd": str(cwd),
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+        }
+        if env is not None:
+            popen_kwargs["env"] = dict(env)
+        if sys.platform != "win32":
+            popen_kwargs["start_new_session"] = True
+
+        try:
+            self._proc = subprocess.Popen(argv, **popen_kwargs)
+        except OSError as exc:
+            raise ProviderTurnError(f"failed to start Cursor CLI: {exc}") from exc
+
+        if active_proc is not None:
+            active_proc[0] = self._proc
+
+        if self._proc.stdout is None:
+            if active_proc is not None:
+                active_proc[0] = None
+            raise ProviderTurnError("Cursor CLI stdout pipe was not available")
+
+        self._active_proc = active_proc
+        self._stderr_lines: list[str] = []
+        self._stderr_done = threading.Event()
+        self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stderr_thread.start()
+        self._finished = False
+
+    def _drain_stderr(self) -> None:
+        if self._proc.stderr is None:
+            self._stderr_done.set()
+            return
+        try:
+            for line in self._proc.stderr:
+                self._stderr_lines.append(line)
+        finally:
+            self._stderr_done.set()
+
+    def __iter__(self) -> _SubprocessStdoutIterator:
+        return self
+
+    def __next__(self) -> str:
+        if self._finished:
+            raise StopIteration
+        while True:
+            if self._proc.poll() is not None:
+                if self._proc.stdout is not None:
+                    for line in self._proc.stdout:
+                        stripped = line.strip()
+                        if stripped:
+                            return stripped
+                self._finalize()
+                raise StopIteration
+            if self._proc.stdout is None:
+                self._finalize()
+                raise StopIteration
+            line = self._proc.stdout.readline()
+            if not line:
+                self._finalize()
+                raise StopIteration
+            stripped = line.strip()
+            if stripped:
+                return stripped
+
+    def _finalize(self) -> None:
+        if self._finished:
+            return
+        self._finished = True
+        self._stderr_done.wait(timeout=5)
+        stderr = "".join(self._stderr_lines)
+        return_code = self._proc.wait()
+        if return_code != 0:
+            detail = stderr.strip() or f"exit code {return_code}"
+            raise ProviderTurnError(f"Cursor CLI failed: {detail}")
+        if self._active_proc is not None:
+            self._active_proc[0] = None
+
+
 def default_process_runner(
     argv: list[str],
     cwd: Path,
@@ -53,56 +145,12 @@ def default_process_runner(
 ) -> Iterator[str]:
     """Run the Cursor CLI and yield stdout lines."""
 
-    popen_kwargs: dict[str, Any] = {
-        "cwd": str(cwd),
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
-        "text": True,
-    }
-    if env is not None:
-        popen_kwargs["env"] = dict(env)
-    if sys.platform != "win32":
-        popen_kwargs["start_new_session"] = True
-
-    try:
-        proc = subprocess.Popen(argv, **popen_kwargs)
-    except OSError as exc:
-        raise ProviderTurnError(f"failed to start Cursor CLI: {exc}") from exc
-
-    if active_proc is not None:
-        active_proc[0] = proc
-
-    if proc.stdout is None:
-        if active_proc is not None:
-            active_proc[0] = None
-        raise ProviderTurnError("Cursor CLI stdout pipe was not available")
-
-    try:
-        while True:
-            if proc.poll() is not None:
-                if proc.stdout is not None:
-                    for line in proc.stdout:
-                        stripped = line.strip()
-                        if stripped:
-                            yield stripped
-                break
-            if proc.stdout is None:
-                break
-            line = proc.stdout.readline()
-            if not line:
-                break
-            stripped = line.strip()
-            if stripped:
-                yield stripped
-
-        stderr = proc.stderr.read() if proc.stderr is not None else ""
-        return_code = proc.wait()
-        if return_code != 0:
-            detail = stderr.strip() or f"exit code {return_code}"
-            raise ProviderTurnError(f"Cursor CLI failed: {detail}")
-    finally:
-        if active_proc is not None:
-            active_proc[0] = None
+    return _SubprocessStdoutIterator(
+        argv,
+        cwd,
+        env=env,
+        active_proc=active_proc,
+    )
 
 
 def resolve_agent_binary(configured: str | None) -> str:
@@ -271,11 +319,16 @@ class CursorProvider:
         )
 
     def resume_primary_session(
-        self, session_id: str, request: dict[str, Any], *, model: str | None = None
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        role: str,
+        model: str | None = None,
     ) -> None:
         canonical_id = self._ensure_durable_session(
             session_id,
-            role="primary",
+            role=role,
             kind="primary",
             model=model,
         )
@@ -439,15 +492,24 @@ class CursorProvider:
                 continue
             seen_pids.add(pid)
             if is_pid_alive(pid):
-                terminate_pid_tree(pid)
-                terminated.append(
-                    {
-                        "pid": pid,
-                        "role": role,
-                        "session_id": tracked_session_id,
-                        "reason": "terminated",
-                    }
-                )
+                if terminate_pid_tree(pid):
+                    terminated.append(
+                        {
+                            "pid": pid,
+                            "role": role,
+                            "session_id": tracked_session_id,
+                            "reason": "terminated",
+                        }
+                    )
+                else:
+                    terminated.append(
+                        {
+                            "pid": pid,
+                            "role": role,
+                            "session_id": tracked_session_id,
+                            "reason": "termination_failed",
+                        }
+                    )
         return terminated
 
     def _terminate_tracked_turn_procs_for_session(
@@ -755,6 +817,9 @@ class CursorProvider:
         argv: list[str],
     ) -> None:
         provider_session_id: str | None = None
+        expected_durable_id: str | None = None
+        if not session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+            expected_durable_id = session_id
         self._current_collect_context = (session_id, session.role)
         try:
             try:
@@ -796,9 +861,21 @@ class CursorProvider:
                         raise classified
                 if raw.get("session_id"):
                     event_session_id = str(raw["session_id"])
-                    session_id = self._maybe_migrate_session(session_id, event_session_id)
                     if not event_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
-                        provider_session_id = event_session_id
+                        if expected_durable_id is not None:
+                            if event_session_id != expected_durable_id:
+                                raise ProviderTurnError(
+                                    "Cursor CLI resume returned unexpected session id "
+                                    f"{event_session_id!r} (expected {expected_durable_id!r})",
+                                    session_id=session_id,
+                                )
+                            provider_session_id = event_session_id
+                        else:
+                            session_id = self._maybe_migrate_session(
+                                session_id,
+                                event_session_id,
+                            )
+                            provider_session_id = event_session_id
                 normalized = normalize_cursor_event(raw)
                 if normalized is not None:
                     enriched = enrich_provider_observability_event(
@@ -952,6 +1029,9 @@ class CursorProvider:
                         on_idle=on_idle,
                         session_id=stalled_session_id,
                     )
+
+                if active_proc[0] is not None:
+                    self._register_tracked_turn_proc(active_proc[0])
 
                 for line in stream:
                     if active_proc[0] is not None:

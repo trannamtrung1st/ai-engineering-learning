@@ -170,7 +170,7 @@ def test_stub_resume_primary_session_keeps_same_session_id() -> None:
             {"type": "done", "subtype": "success", "text": "resumed", "is_error": False},
         ]
     )
-    provider.resume_primary_session(session_id, {"action": "continue"})
+    provider.resume_primary_session(session_id, {"action": "continue"}, role="planner")
     events = list(provider.stream_events(session_id))
     assert events[0]["text"] == "resumed"
     assert provider.get_session_reference(session_id)["turn_count"] == 2
@@ -780,7 +780,11 @@ def test_cursor_resume_primary_session_restores_after_terminate(tmp_path: Path) 
     assert canonical_id == "chat-abc"
 
     provider.terminate_all_sessions()
-    provider.resume_primary_session(canonical_id, {"action": "address_review_findings"})
+    provider.resume_primary_session(
+        canonical_id,
+        {"action": "address_review_findings"},
+        role="producer",
+    )
     list(provider.stream_events(canonical_id))
 
     assert captured_argv[1][captured_argv[1].index("--resume") + 1] == "chat-abc"

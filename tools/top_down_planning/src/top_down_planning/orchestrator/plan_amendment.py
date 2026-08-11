@@ -494,7 +494,6 @@ class PlanAmendmentOrchestrator:
                 manifest=manifest,
                 append_event=self._append_event,
                 resume_request=amendment_request,
-                amendment_id=amendment.get("id"),
             )
 
         if (
@@ -525,7 +524,6 @@ class PlanAmendmentOrchestrator:
             manifest=manifest,
             append_event=self._append_event,
             resume_request=amendment_request,
-            amendment_id=amendment.get("id"),
         )
 
     def _consume_planner_turn(self, session_id: str) -> str | None:

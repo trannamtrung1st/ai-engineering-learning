@@ -265,9 +265,11 @@ def test_whole_plan_recheck_binds_cursor_reviewer_session_after_initial_review(
     )
 
 
-def test_sync_reviewer_loop_session_id_ignores_unrelated_durable_session_id(
+def test_sync_reviewer_loop_session_id_rejects_unrelated_durable_session_id(
     tmp_path: Path,
 ) -> None:
+    from core_tools.provider.errors import ProviderSessionError
+
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T010004-010004"
     _create_run_at_whole_plan_review(store, run_id=run_id)
@@ -298,13 +300,14 @@ def test_sync_reviewer_loop_session_id_ignores_unrelated_durable_session_id(
         def canonical_session_id(self, session_id: str) -> str:
             return session_id
 
-    sync_reviewer_loop_session_id(
-        _CanonicalProvider(),
-        store,
-        run_id,
-        "review-whole-plan-01",
-        "chat-planner-1",
-    )
+    with pytest.raises(ProviderSessionError, match="reviewer session id mismatch"):
+        sync_reviewer_loop_session_id(
+            _CanonicalProvider(),
+            store,
+            run_id,
+            "review-whole-plan-01",
+            "chat-planner-1",
+        )
 
     review = store.load_review(run_id, "review-whole-plan-01")
     assert binding_provider_session_id(review.get("reviewer_binding")) == "chat-reviewer-1"

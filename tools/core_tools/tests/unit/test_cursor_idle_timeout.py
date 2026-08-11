@@ -33,7 +33,7 @@ def test_cursor_provider_raises_when_stream_idle_exceeds_timeout(tmp_path: Path)
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"})
+    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
     stream = provider.stream_events(session_id)
 
     errors: list[BaseException] = []
@@ -80,7 +80,7 @@ def test_cursor_provider_does_not_retry_after_idle_timeout(tmp_path: Path) -> No
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"})
+    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
     stream = provider.stream_events(session_id)
 
     def consume() -> None:
@@ -117,7 +117,7 @@ def test_cursor_provider_idle_timeout_disabled_by_default(tmp_path: Path) -> Non
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"})
+    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
     stream = provider.stream_events(session_id)
 
     def consume() -> None:

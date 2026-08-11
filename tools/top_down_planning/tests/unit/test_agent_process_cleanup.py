@@ -148,14 +148,16 @@ def test_engine_keyboard_interrupt_persists_terminated_pids_and_audit(tmp_path: 
 
     class _TrackingProvider(StubProvider):
         def terminate_all_sessions(self) -> list[dict[str, object]]:
-            return [
+            records = [
                 {
                     "pid": 9999,
                     "role": "planner",
                     "session_id": "stub-session-1",
-                    "reason": "cancelled",
+                    "reason": "terminated",
                 }
             ]
+            super().terminate_all_sessions()
+            return records
 
     tracking = _TrackingProvider()
     tracking.script_turn([{"type": "done", "subtype": "success", "text": "ok"}])
@@ -341,7 +343,7 @@ def test_cursor_provider_terminate_all_sessions_unblocks_stream_events(
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"})
+    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
     stream = provider.stream_events(session_id)
 
     import threading

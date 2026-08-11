@@ -16,6 +16,7 @@ from core_tools.provider.errors import (
     ProviderSessionError,
     ProviderSessionNotFoundError,
     ProviderTurnError,
+    ProviderTurnStalledError,
 )
 from core_tools.provider.events import normalize_cursor_event
 from core_tools.provider.factory import create_provider

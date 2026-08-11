@@ -60,39 +60,23 @@ def rotate_primary_session(
     run["sessions"] = updated_sessions
     store.save_run(run_id, run, expected_revision)
 
-    if handoff_request is not None:
-        from top_down_planning.domain.session_bindings import new_session_instance_id
-
-        new_session_id = new_session_instance_id()
-        provider.resume_primary_session(
-            new_session_id,
-            handoff_request,
-            model=requested.model,
-        )
-        emit_primary_session_started(
-            append_event,
-            provider,
-            role=role,
-            phase=phase,
-            session_id=new_session_id,
-            activity=requested.activity,
-            context_digest=requested.context_digest,
-        )
-    else:
-        new_session_id = provider.start_primary_session(
-            role,
-            manifest,
-            model=requested.model,
-        )
-        emit_primary_session_started(
-            append_event,
-            provider,
-            role=role,
-            phase=phase,
-            session_id=new_session_id,
-            activity=requested.activity,
-            context_digest=requested.context_digest,
-        )
+    fresh_manifest = (
+        {**manifest, **handoff_request} if handoff_request is not None else manifest
+    )
+    new_session_id = provider.start_primary_session(
+        role,
+        fresh_manifest,
+        model=requested.model,
+    )
+    emit_primary_session_started(
+        append_event,
+        provider,
+        role=role,
+        phase=phase,
+        session_id=new_session_id,
+        activity=requested.activity,
+        context_digest=requested.context_digest,
+    )
 
     commit_primary_provider_session_binding(
         store,

@@ -40,6 +40,16 @@ def teardown_provider_sessions(
 
     active_sessions = provider.list_active_sessions()
 
+    terminated_agents = provider.terminate_all_sessions()
+    terminated_pids = sorted(
+        {
+            int(record["pid"])
+            for record in terminated_agents
+            if isinstance(record.get("pid"), int)
+            and str(record.get("reason") or "") == "terminated"
+        }
+    )
+
     if audit_cancel:
         for session in active_sessions:
             role = str(session.get("role") or "")
@@ -47,10 +57,26 @@ def teardown_provider_sessions(
             if not session_id:
                 continue
             model_fields = _session_model_fields(session)
+            canonical_session_id = provider.canonical_session_id(session_id)
+            still_active = any(
+                str(active.get("session_id") or "")
+                in {session_id, canonical_session_id}
+                for active in provider.list_active_sessions()
+            )
+            if still_active:
+                append_event(
+                    "provider_session_teardown_failed",
+                    session_id=canonical_session_id,
+                    role=role,
+                    phase=phase,
+                    message="session still active after terminate_all_sessions",
+                    **model_fields,
+                )
+                continue
             if role in _PRIMARY_ROLES:
                 append_event(
                     f"{role}_session_ended",
-                    session_id=session_id,
+                    session_id=canonical_session_id,
                     role=role,
                     phase=phase,
                     **model_fields,
@@ -58,25 +84,26 @@ def teardown_provider_sessions(
             elif role == "reviewer":
                 append_event(
                     "reviewer_session_ended",
-                    session_id=session_id,
+                    session_id=canonical_session_id,
                     role="reviewer",
                     phase=phase,
                     **model_fields,
                 )
 
-    terminated_agents = provider.terminate_all_sessions()
-    terminated_pids = sorted(
-        {
-            int(record["pid"])
-            for record in terminated_agents
-            if isinstance(record.get("pid"), int)
-        }
-    )
-
-    if audit_cancel:
         for record in terminated_agents:
             pid = record.get("pid")
             if not isinstance(pid, int):
+                continue
+            reason = str(record.get("reason") or "cancelled")
+            if reason == "termination_failed":
+                append_event(
+                    "agent_termination_failed",
+                    pid=pid,
+                    role=str(record.get("role") or "unknown"),
+                    session_id=record.get("session_id"),
+                    phase=phase,
+                    reason=reason,
+                )
                 continue
             append_event(
                 "agent_terminated",
@@ -84,7 +111,7 @@ def teardown_provider_sessions(
                 role=str(record.get("role") or "unknown"),
                 session_id=record.get("session_id"),
                 phase=phase,
-                reason=str(record.get("reason") or "cancelled"),
+                reason=reason,
             )
 
     for session in active_sessions:

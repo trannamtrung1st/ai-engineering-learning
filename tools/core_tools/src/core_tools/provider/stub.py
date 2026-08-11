@@ -104,9 +104,14 @@ class StubProvider:
         return session_id
 
     def resume_primary_session(
-        self, session_id: str, request: dict[str, Any], *, model: str | None = None
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        role: str,
+        model: str | None = None,
     ) -> None:
-        self._ensure_durable_session(session_id, role="primary", kind="primary", model=model)
+        self._ensure_durable_session(session_id, role=role, kind="primary", model=model)
         self._enqueue_turn(session_id, request)
 
     def start_reviewer_session(

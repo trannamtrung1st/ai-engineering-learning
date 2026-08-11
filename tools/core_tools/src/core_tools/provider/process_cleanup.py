@@ -19,25 +19,28 @@ def is_pid_alive(pid: int) -> bool:
     return True
 
 
-def terminate_pid_tree(pid: int) -> None:
-    """Terminate a process and any descendants started in its process group."""
+def terminate_pid_tree(pid: int) -> bool:
+    """Terminate a process and any descendants started in its process group.
+
+    Returns True when the PID is confirmed dead after termination attempts.
+    """
 
     if not is_pid_alive(pid):
-        return
+        return True
 
     if sys.platform == "win32":
         try:
             os.kill(pid, signal.SIGTERM)
         except OSError:
-            return
+            return not is_pid_alive(pid)
         _wait_pid(pid, timeout=5)
         if is_pid_alive(pid):
             try:
                 os.kill(pid, signal.SIGKILL)
             except OSError:
-                return
+                return not is_pid_alive(pid)
             _wait_pid(pid, timeout=5)
-        return
+        return not is_pid_alive(pid)
 
     try:
         os.killpg(os.getpgid(pid), signal.SIGTERM)
@@ -45,15 +48,15 @@ def terminate_pid_tree(pid: int) -> None:
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
-            return
+            return not is_pid_alive(pid)
     except PermissionError:
         try:
             os.kill(pid, signal.SIGTERM)
         except OSError:
-            return
+            return not is_pid_alive(pid)
 
     if _wait_pid(pid, timeout=5):
-        return
+        return True
 
     try:
         os.killpg(os.getpgid(pid), signal.SIGKILL)
@@ -61,14 +64,15 @@ def terminate_pid_tree(pid: int) -> None:
         try:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
-            return
+            return not is_pid_alive(pid)
     except PermissionError:
         try:
             os.kill(pid, signal.SIGKILL)
         except OSError:
-            return
+            return not is_pid_alive(pid)
 
     _wait_pid(pid, timeout=5)
+    return not is_pid_alive(pid)
 
 
 def _wait_pid(pid: int, *, timeout: float) -> bool:

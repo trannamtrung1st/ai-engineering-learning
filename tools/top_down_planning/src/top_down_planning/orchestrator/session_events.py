@@ -182,10 +182,23 @@ def end_primary_session_with_audit(
 
     model_fields = _session_model_fields(provider, canonical_session_id)
 
+    teardown_error: str | None = None
     try:
         provider.terminate_session(canonical_session_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        teardown_error = str(exc)
+
+    if _primary_session_is_active(provider, session_id):
+        append_event(
+            "provider_session_teardown_failed",
+            session_id=canonical_session_id,
+            role=role,
+            phase=phase,
+            message=teardown_error or "session still active after termination",
+            **model_fields,
+            **fields,
+        )
+        return canonical_session_id
 
     append_event(
         f"{role}_session_ended",
@@ -218,10 +231,23 @@ def end_reviewer_session_with_audit(
 
     model_fields = _session_model_fields(provider, canonical_session_id)
 
+    teardown_error: str | None = None
     try:
         provider.terminate_session(canonical_session_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        teardown_error = str(exc)
+
+    if _reviewer_session_is_active(provider, session_id):
+        append_event(
+            "provider_session_teardown_failed",
+            session_id=canonical_session_id,
+            role="reviewer",
+            phase=phase,
+            message=teardown_error or "session still active after termination",
+            **model_fields,
+            **fields,
+        )
+        return canonical_session_id
 
     append_event(
         "reviewer_session_ended",
@@ -245,7 +271,7 @@ def resume_primary_session_with_audit(
     model: str | None,
     **fields: Any,
 ) -> None:
-    provider.resume_primary_session(session_id, request, model=model)
+    provider.resume_primary_session(session_id, request, role=role, model=model)
     emit_primary_session_resumed(
         append_event,
         provider,
@@ -447,7 +473,13 @@ def sync_reviewer_loop_session_id(
         and not is_transient_provider_session_id(resolved)
         and resolved != prior_provider_id
     ):
-        return resolved
+        from core_tools.provider.errors import ProviderSessionError
+
+        raise ProviderSessionError(
+            "reviewer session id mismatch during resume: "
+            f"expected {prior_provider_id!r}, got {resolved!r}",
+            session_id=session_id,
+        )
 
     updated = loop.with_reviewer_provider_session_id(resolved, provider="cursor")
     save_review_with_expected_revision(

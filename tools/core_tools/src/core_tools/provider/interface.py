@@ -19,7 +19,12 @@ class Provider(Protocol):
         """Start a new primary session and return its provider session id."""
 
     def resume_primary_session(
-        self, session_id: str, request: dict[str, Any], *, model: str | None = None
+        self,
+        session_id: str,
+        request: dict[str, Any],
+        *,
+        role: str,
+        model: str | None = None,
     ) -> None:
         """Resume an existing primary session with a follow-up request."""
 

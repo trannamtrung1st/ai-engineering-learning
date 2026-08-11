@@ -220,9 +220,9 @@ def kill_orphan_agents(
     for pid in orphan_pids:
         if not is_pid_alive(pid):
             continue
-        terminate_pid_tree(pid)
-        cleaned.append(pid)
-        store.append_event(
+        if terminate_pid_tree(pid):
+            cleaned.append(pid)
+            store.append_event(
             run_id,
             {
                 "type": "agent_orphan_cleaned",
@@ -245,6 +245,20 @@ def finalize_user_cancel(
     """Persist ``user_cancelled`` then best-effort orphan cleanup."""
 
     with defer_run_interrupt_signals():
+        orphan_pids: list[int] = []
+        try:
+            orphan_pids = _kill_orphan_agents_before_pause(
+                store,
+                run_id,
+                provider_terminated_pids=provider_terminated_pids,
+                exclude_pids=exclude_pids,
+            )
+        except BaseException:
+            orphan_pids = []
+        all_terminated_pids = sorted(
+            {int(pid) for pid in (provider_terminated_pids or [])}
+            | {int(pid) for pid in orphan_pids}
+        )
         pause_run(
             store,
             run_id,
@@ -253,21 +267,8 @@ def finalize_user_cancel(
                 category="operational",
                 phase=phase,
                 message="cancelled by user",
-                details={"terminated_pids": list(provider_terminated_pids or [])},
+                details={"terminated_pids": all_terminated_pids},
             ),
-        )
-        orphan_pids: list[int] = []
-        try:
-            orphan_pids = kill_orphan_agents(
-                store,
-                run_id,
-                exclude_pids=exclude_pids,
-            )
-        except BaseException:
-            orphan_pids = []
-        all_terminated_pids = sorted(
-            {int(pid) for pid in (provider_terminated_pids or [])}
-            | {int(pid) for pid in orphan_pids}
         )
         if all_terminated_pids:
             try:
@@ -282,6 +283,42 @@ def finalize_user_cancel(
             except BaseException:
                 pass
     return all_terminated_pids
+
+
+def _kill_orphan_agents_before_pause(
+    store: RunStore,
+    run_id: str,
+    *,
+    provider_terminated_pids: list[int] | None = None,
+    exclude_pids: frozenset[int] | None = None,
+    list_live_pids: ListLivePids | None = None,
+    read_pid_environ: ReadPidEnviron | None = None,
+) -> list[int]:
+    """Terminate orphan agents before the cancel pause record is persisted."""
+
+    orphan_pids = scan_orphan_agent_pids(
+        run_id,
+        exclude_pids=exclude_pids,
+        terminated_pids=provider_terminated_pids or [],
+        list_live_pids=list_live_pids,
+        read_pid_environ=read_pid_environ,
+    )
+    cleaned: list[int] = []
+    for pid in orphan_pids:
+        if not is_pid_alive(pid):
+            continue
+        if terminate_pid_tree(pid):
+            cleaned.append(pid)
+            store.append_event(
+                run_id,
+                {
+                    "type": "agent_orphan_cleaned",
+                    "pid": pid,
+                    "run_id": run_id,
+                    "reason": "orphan",
+                },
+            )
+    return cleaned
 
 
 def terminated_pids_from_stop(run: dict[str, Any]) -> list[int]:

@@ -374,7 +374,7 @@ def test_stalling_after_events_provider_supports_multiple_stalled_turns(
 
     for turn in range(2):
         provider.script_turn([{"type": "assistant", "text": f"stall-{turn + 1}"}])
-        provider.resume_primary_session(session_id, {"goal": f"turn-{turn + 1}"})
+        provider.resume_primary_session(session_id, {"goal": f"turn-{turn + 1}"}, role="producer")
         stream = provider.stream_events(session_id)
 
         def consume() -> None:
@@ -860,7 +860,7 @@ def test_producer_turn_persists_durable_session_id_before_turn_completes(
     )
     session_id = provider.start_primary_session("producer", {"phase": PRODUCTION})
     assert session_id == "cursor-pending-1"
-    provider.resume_primary_session(session_id, {"action": "continue", "phase": PRODUCTION})
+    provider.resume_primary_session(session_id, {"action": "continue", "phase": PRODUCTION}, role="producer")
 
     bound_before_done = threading.Event()
 

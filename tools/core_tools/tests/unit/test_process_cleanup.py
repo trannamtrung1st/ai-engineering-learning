@@ -6,11 +6,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from core_tools.provider.cursor import CursorProvider
-from core_tools.provider.process_cleanup import terminate_process_tree
+from core_tools.provider.cursor import CursorProvider, default_process_runner
+from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree, terminate_process_tree
 from core_tools.provider.stub import StubProvider
 
 
@@ -89,3 +90,45 @@ def test_stub_provider_terminate_all_sessions_clears_sessions() -> None:
 
     with pytest.raises(Exception):
         provider.get_session_reference(session_id)
+
+
+def test_terminate_pid_tree_returns_true_when_process_dies() -> None:
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=sys.platform != "win32",
+    )
+    try:
+        assert terminate_pid_tree(proc.pid) is True
+        assert not is_pid_alive(proc.pid)
+    finally:
+        if is_pid_alive(proc.pid):
+            terminate_pid_tree(proc.pid)
+
+
+def test_terminate_pid_tree_returns_false_when_kill_fails() -> None:
+    with patch(
+        "core_tools.provider.process_cleanup.is_pid_alive",
+        side_effect=[True, True, True, True],
+    ):
+        with patch(
+            "core_tools.provider.process_cleanup._wait_pid",
+            return_value=False,
+        ):
+            assert terminate_pid_tree(424242) is False
+
+
+def test_default_process_runner_drains_large_stderr_without_deadlock(tmp_path: Path) -> None:
+    script = tmp_path / "chatty_stderr.py"
+    script.write_text(
+        "import json, sys\n"
+        "sys.stderr.write('x' * 100_000)\n"
+        "sys.stderr.flush()\n"
+        'print(json.dumps({"type": "assistant", "text": "ok"}))\n'
+        'print(json.dumps({"type": "result", "subtype": "success", "text": "ok", "is_error": False}))\n',
+        encoding="utf-8",
+    )
+    argv = [sys.executable, str(script)]
+    lines = list(default_process_runner(argv, tmp_path))
+    assert lines
