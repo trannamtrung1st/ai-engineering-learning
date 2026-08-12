@@ -15,6 +15,7 @@ from core_tools.provider.errors import (
     ProviderError,
     ProviderSessionError,
     ProviderSessionNotFoundError,
+    ProviderSessionTerminationError,
     ProviderTurnError,
     ProviderTurnStalledError,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "ProviderError",
     "ProviderSessionError",
     "ProviderSessionNotFoundError",
+    "ProviderSessionTerminationError",
     "ProviderTurnError",
     "ProviderTurnStalledError",
     "StubProvider",

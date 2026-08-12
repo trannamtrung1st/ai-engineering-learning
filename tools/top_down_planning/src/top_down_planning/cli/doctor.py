@@ -8,6 +8,7 @@ from typing import Any
 import os
 
 from top_down_planning.cli.common import emit_payload, open_run_store
+from top_down_planning.domain.run_ownership import is_run_orchestrator_alive, resolve_run_dir
 from top_down_planning.orchestrator.agent_process_cleanup import (
     kill_orphan_agents,
     scan_orphan_agent_pids,
@@ -18,6 +19,23 @@ from top_down_planning.orchestrator.run_lifecycle_reconciliation import (
     reconcile_stale_running_run,
     workspace_diagnostics,
 )
+
+
+def _destructive_fix_blocked(
+    store,
+    run_id: str,
+) -> str | None:
+    run = store.load_run(run_id)
+    if str(run.get("status") or "") != "running":
+        return None
+    run_dir = resolve_run_dir(store, run_id)
+    if run_dir is None:
+        return None
+    if is_run_orchestrator_alive(run_dir):
+        return (
+            "refusing destructive repair: a live orchestrator still owns this running run"
+        )
+    return None
 
 
 def handle_doctor_command(args: Namespace) -> None:
@@ -92,18 +110,21 @@ def handle_doctor_command(args: Namespace) -> None:
         return
 
     run_id = str(args.run)
+    repair_refused: str | None = None
     reconciled = False
     if fix:
-        kill_orphan_agents(
-            store,
-            run_id,
-            exclude_pids=frozenset({os.getpid()}),
-        )
-        reconciled = reconcile_stale_running_run(
-            store,
-            run_id,
-            require_orphan_agents=False,
-        )
+        repair_refused = _destructive_fix_blocked(store, run_id)
+        if repair_refused is None:
+            kill_orphan_agents(
+                store,
+                run_id,
+                exclude_pids=frozenset({os.getpid()}),
+            )
+            reconciled = reconcile_stale_running_run(
+                store,
+                run_id,
+                require_orphan_agents=False,
+            )
 
     run = store.load_run(run_id)
     orphan_pids = scan_orphan_agent_pids(
@@ -113,10 +134,11 @@ def handle_doctor_command(args: Namespace) -> None:
     )
 
     payload = {
-        "ok": True,
+        "ok": repair_refused is None,
         "run_id": run_id,
         "status": run.get("status"),
         "reconciled": reconciled,
+        "repair_refused": repair_refused,
         "orphan_agent_count": len(orphan_pids),
         "orphan_agent_pids": orphan_pids,
     }
@@ -125,6 +147,8 @@ def handle_doctor_command(args: Namespace) -> None:
         return
 
     lines = [f"run {run_id}: status={run.get('status')}"]
+    if repair_refused:
+        lines.append(f"  {repair_refused}")
     if reconciled:
         lines.append(
             "  reconciled stale running status to paused (orchestrator_interrupted)"

@@ -49,10 +49,17 @@ class ProducerReplacementBlocked(ProviderRunError):
 class ProviderTeardownError(ProviderRunError):
     """Provider or agent processes could not be torn down cleanly."""
 
-    def __init__(self, message: str, *, surviving_pids: tuple[int, ...] = ()) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        surviving_pids: tuple[int, ...] = (),
+        terminated_pids: tuple[int, ...] = (),
+    ) -> None:
         super().__init__(message)
         self.code = "provider_teardown_error"
         self.surviving_pids = surviving_pids
+        self.terminated_pids = terminated_pids
 
 
 class OrphanCleanupBlocked(ProviderRunError):
@@ -68,18 +75,30 @@ def coerce_provider_teardown_error(
     exc: BaseException,
     *,
     surviving_pids: tuple[int, ...] = (),
+    terminated_pids: tuple[int, ...] = (),
 ) -> ProviderTeardownError:
     """Normalize teardown failures into a typed provider teardown error."""
 
     if isinstance(exc, ProviderTeardownError):
-        if surviving_pids and not exc.surviving_pids:
-            return ProviderTeardownError(str(exc), surviving_pids=surviving_pids)
+        merged_survivors = exc.surviving_pids
         if surviving_pids:
-            merged = tuple(sorted({*exc.surviving_pids, *surviving_pids}))
-            return ProviderTeardownError(str(exc), surviving_pids=merged)
+            merged_survivors = tuple(sorted({*exc.surviving_pids, *surviving_pids}))
+        merged_terminated = exc.terminated_pids
+        if terminated_pids:
+            merged_terminated = tuple(sorted({*exc.terminated_pids, *terminated_pids}))
+        if merged_survivors != exc.surviving_pids or merged_terminated != exc.terminated_pids:
+            return ProviderTeardownError(
+                str(exc),
+                surviving_pids=merged_survivors,
+                terminated_pids=merged_terminated,
+            )
         return exc
     message = str(exc).strip() or exc.__class__.__name__
-    return ProviderTeardownError(message, surviving_pids=surviving_pids)
+    return ProviderTeardownError(
+        message,
+        surviving_pids=surviving_pids,
+        terminated_pids=terminated_pids,
+    )
 
 
 def provider_teardown_error_with_final_survivors(
@@ -90,6 +109,12 @@ def provider_teardown_error_with_final_survivors(
 
     if isinstance(exc, ProviderTeardownError):
         message = str(exc)
+        terminated_pids = exc.terminated_pids
     else:
         message = str(exc).strip() or exc.__class__.__name__
-    return ProviderTeardownError(message, surviving_pids=surviving_pids)
+        terminated_pids = ()
+    return ProviderTeardownError(
+        message,
+        surviving_pids=surviving_pids,
+        terminated_pids=terminated_pids,
+    )

@@ -16,7 +16,7 @@ from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
 from top_down_planning.cli.common import RUN_ID_ENV_VAR
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import is_run_orchestrator_alive
-from top_down_planning.orchestrator.run_signals import defer_run_interrupt_signals
+from top_down_planning.orchestrator.run_signals import ignore_repeated_run_interrupt_signals
 from top_down_planning.orchestrator.run_transitions import pause_run
 from top_down_planning.persistence.interface import RunStore
 
@@ -311,7 +311,7 @@ def finalize_user_cancel(
 ) -> CancelCleanupResult:
     """Persist ``user_cancelled`` after verified orphan cleanup."""
 
-    with defer_run_interrupt_signals():
+    with ignore_repeated_run_interrupt_signals():
         cleanup = kill_orphan_agents(
             store,
             run_id,

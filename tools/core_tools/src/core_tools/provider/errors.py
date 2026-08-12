@@ -19,6 +19,20 @@ class ProviderSessionError(ProviderError):
     """Session does not exist or is in an invalid state."""
 
 
+class ProviderSessionTerminationError(ProviderSessionError):
+    """Provider could not verify death of a session-associated agent process."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        session_id: str | None = None,
+        surviving_pids: tuple[int, ...] = (),
+    ) -> None:
+        super().__init__(message, session_id=session_id)
+        self.surviving_pids = surviving_pids
+
+
 class ProviderSessionNotFoundError(ProviderSessionError):
     """Provider reports a persisted remote session id no longer exists."""
 

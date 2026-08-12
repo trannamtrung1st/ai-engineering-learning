@@ -94,11 +94,11 @@ def _wait_pid(pid: int, *, timeout: float) -> bool:
     return not is_pid_alive(pid)
 
 
-def terminate_process_tree(proc: subprocess.Popen[Any]) -> None:
-    """Terminate a subprocess and any descendants started in its process group."""
+def terminate_process_tree(proc: subprocess.Popen[Any]) -> bool:
+    """Terminate a subprocess and return True when the PID is confirmed dead."""
 
     if proc.poll() is not None:
-        return
+        return True
 
     if sys.platform == "win32":
         proc.terminate()
@@ -107,7 +107,7 @@ def terminate_process_tree(proc: subprocess.Popen[Any]) -> None:
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=5)
-        return
+        return proc.poll() is not None
 
     pid = proc.pid
     try:
@@ -116,13 +116,13 @@ def terminate_process_tree(proc: subprocess.Popen[Any]) -> None:
         try:
             proc.terminate()
         except ProcessLookupError:
-            return
+            return not is_pid_alive(pid)
     except PermissionError:
         proc.terminate()
 
     try:
         proc.wait(timeout=5)
-        return
+        return True
     except subprocess.TimeoutExpired:
         pass
 
@@ -132,7 +132,7 @@ def terminate_process_tree(proc: subprocess.Popen[Any]) -> None:
         try:
             proc.kill()
         except ProcessLookupError:
-            return
+            return not is_pid_alive(pid)
     except PermissionError:
         proc.kill()
 
@@ -140,3 +140,4 @@ def terminate_process_tree(proc: subprocess.Popen[Any]) -> None:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         pass
+    return proc.poll() is not None and not is_pid_alive(pid)

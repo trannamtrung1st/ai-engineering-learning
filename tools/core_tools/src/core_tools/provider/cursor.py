@@ -24,6 +24,7 @@ from core_tools.provider.errors import (
     ProviderBinaryNotFoundError,
     ProviderSessionError,
     ProviderSessionNotFoundError,
+    ProviderSessionTerminationError,
     ProviderTurnError,
     ProviderTurnStalledError,
 )
@@ -460,10 +461,18 @@ class CursorProvider:
         canonical_id = self.canonical_session_id(session_id)
         self.abort_turn(canonical_id)
         self.wait_turn_settled(canonical_id)
-        self._sessions.pop(canonical_id, None)
-        for alias, target in list(self._session_aliases.items()):
-            if target == canonical_id or alias == canonical_id:
-                self._session_aliases.pop(alias, None)
+        records = self._terminate_tracked_turn_procs_for_session(canonical_id)
+        surviving_pids = self._surviving_pids_for_session(canonical_id, records)
+        if surviving_pids:
+            raise ProviderSessionTerminationError(
+                (
+                    f"failed to terminate provider session {canonical_id}: "
+                    f"surviving agent processes {list(surviving_pids)}"
+                ),
+                session_id=canonical_id,
+                surviving_pids=surviving_pids,
+            )
+        self._remove_session(canonical_id)
 
     def abort_turn(self, session_id: str) -> None:
         """End the current in-flight turn without dropping the durable session.
@@ -498,10 +507,10 @@ class CursorProvider:
 
         terminated.extend(self._terminate_tracked_turn_procs())
 
-        with self._turn_proc_lock:
-            self._tracked_turn_procs.clear()
-        self._sessions.clear()
-        self._session_aliases.clear()
+        for session_id in list(self._sessions.keys()):
+            if not self._session_has_surviving_pids(session_id):
+                self._remove_session(session_id)
+
         self._shutting_down = False
         return terminated
 
@@ -531,6 +540,7 @@ class CursorProvider:
                             "reason": "terminated",
                         }
                     )
+                    self._unregister_tracked_turn_proc_by_pid(pid)
                 else:
                     terminated.append(
                         {
@@ -540,6 +550,8 @@ class CursorProvider:
                             "reason": "termination_failed",
                         }
                     )
+            else:
+                self._unregister_tracked_turn_proc_by_pid(pid)
         return terminated
 
     def _terminate_tracked_turn_procs_for_session(
@@ -1036,8 +1048,41 @@ class CursorProvider:
     def _unregister_tracked_turn_proc(self, proc: subprocess.Popen[str] | None) -> None:
         if proc is None:
             return
+        self._unregister_tracked_turn_proc_by_pid(proc.pid)
+
+    def _unregister_tracked_turn_proc_by_pid(self, pid: int) -> None:
         with self._turn_proc_lock:
-            self._tracked_turn_procs.pop(proc.pid, None)
+            self._tracked_turn_procs.pop(pid, None)
+
+    def _session_has_surviving_pids(self, session_id: str) -> bool:
+        with self._turn_proc_lock:
+            return any(
+                tracked_session_id == session_id and is_pid_alive(pid)
+                for pid, (tracked_session_id, _role) in self._tracked_turn_procs.items()
+            )
+
+    def _surviving_pids_for_session(
+        self,
+        session_id: str,
+        records: list[dict[str, Any]],
+    ) -> tuple[int, ...]:
+        surviving = {
+            int(record["pid"])
+            for record in records
+            if record.get("reason") == "termination_failed"
+            and isinstance(record.get("pid"), int)
+        }
+        with self._turn_proc_lock:
+            for pid, (tracked_session_id, _role) in self._tracked_turn_procs.items():
+                if tracked_session_id == session_id and is_pid_alive(pid):
+                    surviving.add(pid)
+        return tuple(sorted(surviving))
+
+    def _remove_session(self, canonical_id: str) -> None:
+        self._sessions.pop(canonical_id, None)
+        for alias, target in list(self._session_aliases.items()):
+            if target == canonical_id or alias == canonical_id:
+                self._session_aliases.pop(alias, None)
 
     def _wrap_runner(self, runner: ProcessRunner) -> ProcessRunner:
         active_proc: list[subprocess.Popen[str] | None] = [None]
@@ -1079,8 +1124,10 @@ class CursorProvider:
                     yield line
             finally:
                 proc = active_proc[0]
-                self._unregister_tracked_turn_proc(proc)
-                if proc is not None and proc.poll() is None:
-                    terminate_process_tree(proc)
+                if proc is not None:
+                    if proc.poll() is None:
+                        terminate_process_tree(proc)
+                    if proc.poll() is not None or not is_pid_alive(proc.pid):
+                        self._unregister_tracked_turn_proc(proc)
 
         return wrapped

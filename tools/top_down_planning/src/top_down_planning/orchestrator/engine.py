@@ -914,6 +914,10 @@ class RunEngine:
                                 exclude_pids=frozenset({os.getpid()}),
                             )
                         except Exception as exc:
+                            if isinstance(exc, ProviderTeardownError) and exc.terminated_pids:
+                                terminated_pids = sorted(
+                                    set(terminated_pids) | set(exc.terminated_pids)
+                                )
                             verification = verify_run_agent_survivors(
                                 self._store,
                                 run_id,
