@@ -43,6 +43,7 @@ from top_down_planning.orchestrator.provider_teardown import (
 )
 from top_down_planning.orchestrator.run_signals import (
     defer_run_interrupt_signals,
+    ignore_repeated_run_interrupt_signals,
     trap_run_interrupt_signals,
 )
 from top_down_planning.orchestrator.run_transitions import (
@@ -901,45 +902,53 @@ class RunEngine:
                         )
 
                     terminated_pids: list[int] = []
-                    with defer_run_interrupt_signals():
-                        try:
-                            terminated_pids = teardown_provider_sessions(
-                                provider,
-                                run_id=run_id,
-                                phase=phase,
-                                append_event=append_event,
-                                emit_console=self._emit,
-                                audit_cancel=cancelled,
-                                store=self._store,
-                                exclude_pids=frozenset({os.getpid()}),
-                            )
-                        except Exception as exc:
-                            if isinstance(exc, ProviderTeardownError) and exc.terminated_pids:
-                                terminated_pids = sorted(
-                                    set(terminated_pids) | set(exc.terminated_pids)
-                                )
-                            verification = verify_run_agent_survivors(
-                                self._store,
-                                run_id,
-                                terminated_pids=terminated_pids,
-                                exclude_pids=frozenset({os.getpid()}),
-                            )
-                            terminated_pids = sorted(
-                                set(terminated_pids) | set(verification.terminated_pids)
-                            )
-                            teardown_failed = provider_teardown_error_with_final_survivors(
-                                exc,
-                                verification.surviving_pids,
-                            )
+                    interrupt_guard = (
+                        ignore_repeated_run_interrupt_signals
+                        if cancelled
+                        else defer_run_interrupt_signals
+                    )
+                    try:
+                        with interrupt_guard():
                             try:
-                                append_event(
-                                    "provider_teardown_failed",
+                                terminated_pids = teardown_provider_sessions(
+                                    provider,
+                                    run_id=run_id,
                                     phase=phase,
-                                    message=sanitize_operational_error(exc),
-                                    surviving_pids=list(teardown_failed.surviving_pids),
+                                    append_event=append_event,
+                                    emit_console=self._emit,
+                                    audit_cancel=cancelled,
+                                    store=self._store,
+                                    exclude_pids=frozenset({os.getpid()}),
                                 )
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                if isinstance(exc, ProviderTeardownError) and exc.terminated_pids:
+                                    terminated_pids = sorted(
+                                        set(terminated_pids) | set(exc.terminated_pids)
+                                    )
+                                verification = verify_run_agent_survivors(
+                                    self._store,
+                                    run_id,
+                                    terminated_pids=terminated_pids,
+                                    exclude_pids=frozenset({os.getpid()}),
+                                )
+                                terminated_pids = sorted(
+                                    set(terminated_pids) | set(verification.terminated_pids)
+                                )
+                                teardown_failed = provider_teardown_error_with_final_survivors(
+                                    exc,
+                                    verification.surviving_pids,
+                                )
+                                try:
+                                    append_event(
+                                        "provider_teardown_failed",
+                                        phase=phase,
+                                        message=sanitize_operational_error(exc),
+                                        surviving_pids=list(teardown_failed.surviving_pids),
+                                    )
+                                except Exception:
+                                    pass
+                    except KeyboardInterrupt:
+                        cancelled = True
                     if cancelled:
                         run = self._store.load_run(run_id)
                         if str(run.get("status") or "") == "running":

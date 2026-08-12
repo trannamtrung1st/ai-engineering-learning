@@ -8,7 +8,12 @@ from typing import Any
 import os
 
 from top_down_planning.cli.common import emit_payload, open_run_store
-from top_down_planning.domain.run_ownership import is_run_orchestrator_alive, resolve_run_dir
+from top_down_planning.domain.run_ownership import (
+    RunOwnershipError,
+    is_run_orchestrator_alive,
+    resolve_run_dir,
+    run_ownership,
+)
 from top_down_planning.orchestrator.agent_process_cleanup import (
     kill_orphan_agents,
     scan_orphan_agent_pids,
@@ -36,6 +41,33 @@ def _destructive_fix_blocked(
             "refusing destructive repair: a live orchestrator still owns this running run"
         )
     return None
+
+
+def _apply_destructive_run_repair(
+    store,
+    run_id: str,
+) -> tuple[bool, str | None]:
+    run_dir = resolve_run_dir(store, run_id)
+    if run_dir is None:
+        return False, "refusing destructive repair: run directory not found"
+    try:
+        with run_ownership(run_id, run_dir=run_dir):
+            kill_orphan_agents(
+                store,
+                run_id,
+                exclude_pids=frozenset({os.getpid()}),
+            )
+            run = store.load_run(run_id)
+            if str(run.get("status") or "") == "running":
+                reconciled = reconcile_stale_running_run(
+                    store,
+                    run_id,
+                    require_orphan_agents=False,
+                )
+                return reconciled, None
+            return False, None
+    except RunOwnershipError as exc:
+        return False, f"refusing destructive repair: {exc.message}"
 
 
 def handle_doctor_command(args: Namespace) -> None:
@@ -115,16 +147,10 @@ def handle_doctor_command(args: Namespace) -> None:
     if fix:
         repair_refused = _destructive_fix_blocked(store, run_id)
         if repair_refused is None:
-            kill_orphan_agents(
-                store,
-                run_id,
-                exclude_pids=frozenset({os.getpid()}),
-            )
-            reconciled = reconcile_stale_running_run(
-                store,
-                run_id,
-                require_orphan_agents=False,
-            )
+            reconciled, ownership_refusal = _apply_destructive_run_repair(store, run_id)
+            if ownership_refusal is not None:
+                repair_refused = ownership_refusal
+                reconciled = False
 
     run = store.load_run(run_id)
     orphan_pids = scan_orphan_agent_pids(

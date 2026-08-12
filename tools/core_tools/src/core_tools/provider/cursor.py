@@ -317,7 +317,7 @@ class CursorProvider:
         self._pending_counter = 0
         self._turn_proc_lock = threading.Lock()
         self._tracked_turn_procs: dict[int, tuple[str, str]] = {}
-        self._current_collect_context: tuple[str, str] | None = None
+        self._collect_context = threading.local()
         self._on_provider_event = on_provider_event
         self._shutting_down = False
 
@@ -523,9 +523,12 @@ class CursorProvider:
         with self._turn_proc_lock:
             tracked = dict(self._tracked_turn_procs)
 
+        tracked_ids = (
+            self._tracked_session_ids(session_id) if session_id is not None else None
+        )
         seen_pids: set[int] = set()
         for pid, (tracked_session_id, role) in tracked.items():
-            if session_id is not None and tracked_session_id != session_id:
+            if tracked_ids is not None and tracked_session_id not in tracked_ids:
                 continue
             if pid in seen_pids:
                 continue
@@ -872,7 +875,7 @@ class CursorProvider:
         expected_durable_id: str | None = None
         if not session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
             expected_durable_id = session_id
-        self._current_collect_context = (session_id, session.role)
+        self._set_collect_context(session_id, session.role)
         try:
             try:
                 stream = self._runner(argv, self._workspace)
@@ -927,6 +930,7 @@ class CursorProvider:
                                 session_id,
                                 event_session_id,
                             )
+                            self._set_collect_context(session_id, session.role)
                             provider_session_id = event_session_id
                 normalized = normalize_cursor_event(raw)
                 if normalized is not None:
@@ -958,7 +962,7 @@ class CursorProvider:
                     session_id=session_id,
                 )
         finally:
-            self._current_collect_context = None
+            self._clear_collect_context()
 
     def _maybe_migrate_session(self, current_id: str, provider_session_id: str) -> str:
         if current_id == provider_session_id:
@@ -967,11 +971,26 @@ class CursorProvider:
         session = self._sessions.pop(current_id, None)
         if session is None:
             session = self._require_session(provider_session_id)
+            self._retag_tracked_turn_procs(current_id, provider_session_id)
             return provider_session_id
 
         self._sessions[provider_session_id] = session
         self._session_aliases[current_id] = provider_session_id
+        self._retag_tracked_turn_procs(current_id, provider_session_id)
         return provider_session_id
+
+    def _retag_tracked_turn_procs(
+        self,
+        old_session_id: str,
+        new_session_id: str,
+    ) -> None:
+        with self._turn_proc_lock:
+            for pid, (tracked_session_id, role) in list(self._tracked_turn_procs.items()):
+                if tracked_session_id == old_session_id:
+                    self._tracked_turn_procs[pid] = (new_session_id, role)
+        context = self._get_collect_context()
+        if context is not None and context[0] == old_session_id:
+            self._set_collect_context(new_session_id, context[1])
 
     def _max_retries_per_call(self) -> int:
         provider_limits = (self._config.get("limits") or {}).get("provider") or {}
@@ -1037,8 +1056,23 @@ class CursorProvider:
             return None
         return {**os.environ, **dict(extra_env)}
 
+    def _set_collect_context(self, session_id: str, role: str) -> None:
+        self._collect_context.session_id = session_id
+        self._collect_context.role = role
+
+    def _clear_collect_context(self) -> None:
+        self._collect_context.session_id = None
+        self._collect_context.role = None
+
+    def _get_collect_context(self) -> tuple[str, str] | None:
+        session_id = getattr(self._collect_context, "session_id", None)
+        role = getattr(self._collect_context, "role", None)
+        if isinstance(session_id, str) and isinstance(role, str):
+            return session_id, role
+        return None
+
     def _register_tracked_turn_proc(self, proc: subprocess.Popen[str]) -> None:
-        context = self._current_collect_context
+        context = self._get_collect_context()
         if context is None:
             return
         session_id, role = context
@@ -1054,10 +1088,20 @@ class CursorProvider:
         with self._turn_proc_lock:
             self._tracked_turn_procs.pop(pid, None)
 
+    def _tracked_session_ids(self, session_id: str) -> set[str]:
+        canonical_id = self.canonical_session_id(session_id)
+        tracked_ids = {session_id, canonical_id}
+        for alias, target in self._session_aliases.items():
+            if alias in tracked_ids or target in tracked_ids:
+                tracked_ids.add(alias)
+                tracked_ids.add(target)
+        return tracked_ids
+
     def _session_has_surviving_pids(self, session_id: str) -> bool:
+        tracked_ids = self._tracked_session_ids(session_id)
         with self._turn_proc_lock:
             return any(
-                tracked_session_id == session_id and is_pid_alive(pid)
+                tracked_session_id in tracked_ids and is_pid_alive(pid)
                 for pid, (tracked_session_id, _role) in self._tracked_turn_procs.items()
             )
 
@@ -1066,15 +1110,17 @@ class CursorProvider:
         session_id: str,
         records: list[dict[str, Any]],
     ) -> tuple[int, ...]:
+        tracked_ids = self._tracked_session_ids(session_id)
         surviving = {
             int(record["pid"])
             for record in records
             if record.get("reason") == "termination_failed"
             and isinstance(record.get("pid"), int)
+            and is_pid_alive(int(record["pid"]))
         }
         with self._turn_proc_lock:
             for pid, (tracked_session_id, _role) in self._tracked_turn_procs.items():
-                if tracked_session_id == session_id and is_pid_alive(pid):
+                if tracked_session_id in tracked_ids and is_pid_alive(pid):
                     surviving.add(pid)
         return tuple(sorted(surviving))
 
@@ -1085,10 +1131,10 @@ class CursorProvider:
                 self._session_aliases.pop(alias, None)
 
     def _wrap_runner(self, runner: ProcessRunner) -> ProcessRunner:
-        active_proc: list[subprocess.Popen[str] | None] = [None]
         idle_timeout = self._turn_idle_timeout_seconds()
 
         def wrapped(argv: list[str], cwd: Path) -> Iterator[str]:
+            active_proc: list[subprocess.Popen[str] | None] = [None]
             try:
                 if runner is default_process_runner:
                     stream = default_process_runner(
@@ -1106,7 +1152,7 @@ class CursorProvider:
                         terminate_process_tree(proc)
 
                 if idle_timeout > 0:
-                    context = self._current_collect_context
+                    context = self._get_collect_context()
                     stalled_session_id = context[0] if context is not None else None
                     stream = self._iter_stream_with_idle_timeout(
                         stream,
