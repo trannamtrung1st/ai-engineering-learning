@@ -75,12 +75,16 @@ def test_scan_orphan_agent_pids_validates_historical_terminated_pids(
             "top_down_planning.orchestrator.agent_process_cleanup._read_pid_cmdline",
             return_value=command,
         ):
-            orphans = scan_orphan_agent_pids(
-                run_id,
-                terminated_pids=[pid],
-                list_live_pids=lambda: [],
-                read_pid_environ=lambda _pid: environ,
-            )
+            with patch(
+                "top_down_planning.orchestrator.agent_process_cleanup.read_process_start_time",
+                return_value="100" if expected else None,
+            ):
+                orphans = scan_orphan_agent_pids(
+                    run_id,
+                    terminated_pids=[pid],
+                    list_live_pids=lambda: [],
+                    read_pid_environ=lambda _pid: environ,
+                )
     if expected:
         assert orphans == [pid]
     else:

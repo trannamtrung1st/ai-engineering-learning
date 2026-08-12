@@ -9,9 +9,10 @@ import pytest
 
 from core_tools.provider import StubProvider
 from core_tools.provider.cursor import CursorProvider
+from core_tools.provider.process_identity import ProcessIdentity, TerminateIdentityResult
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.run_ownership import RunOwnershipError, run_ownership
-from top_down_planning.orchestrator.agent_process_cleanup import OrphanCleanupResult
+from top_down_planning.orchestrator.agent_process_cleanup import OrphanCleanupResult, PidRunAgentMatch
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import (
@@ -136,31 +137,39 @@ def test_teardown_reconciles_provider_registry_after_retry_success(tmp_path: Pat
             }
         ]
 
+    def fake_terminate_verified(identity: ProcessIdentity) -> TerminateIdentityResult:
+        alive[str(identity.pid)] = False
+        return TerminateIdentityResult.TERMINATED
+
     with patch(
         "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
         side_effect=fake_is_alive,
     ):
         with patch(
-            "top_down_planning.orchestrator.provider_teardown.terminate_pid_tree",
-            side_effect=fake_terminate,
+            "top_down_planning.orchestrator.provider_teardown.classify_pid_run_agent",
+            return_value=PidRunAgentMatch.CONFIRMED_SAME,
         ):
             with patch(
-                "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
-                return_value=True,
+                "top_down_planning.orchestrator.provider_teardown.read_process_identity",
+                return_value=ProcessIdentity(pid=111, start_time="100", run_id="run-test"),
             ):
-                with patch.object(
-                    provider,
-                    "terminate_all_sessions",
-                    side_effect=mock_terminate_all_sessions,
+                with patch(
+                    "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
+                    side_effect=fake_terminate_verified,
                 ):
-                    teardown_provider_sessions(
+                    with patch.object(
                         provider,
-                        run_id="run-test",
-                        phase=PLANNING,
-                        append_event=append_event,
-                        emit_console=lambda _event: None,
-                        audit_cancel=True,
-                    )
+                        "terminate_all_sessions",
+                        side_effect=mock_terminate_all_sessions,
+                    ):
+                        teardown_provider_sessions(
+                            provider,
+                            run_id="run-test",
+                            phase=PLANNING,
+                            append_event=append_event,
+                            emit_console=lambda _event: None,
+                            audit_cancel=True,
+                        )
 
     assert provider.list_active_sessions() == []
     ended = [event_type for event_type, _fields in events if event_type == "planner_session_ended"]

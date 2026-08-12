@@ -2343,3 +2343,66 @@ def events_append_boundary(events_path: Path) -> dict[str, int | str]:
         "events_base_size": len(data),
         "events_base_digest": digest_bytes(data),
     }
+
+
+_AGENT_COMMAND = "agent --output-format stream-json --trust"
+
+
+def patch_identity_safe_orphan_scan(
+    run_id: str,
+    pids: list[int],
+    *,
+    terminate_result: TerminateIdentityResult | None = None,
+):
+    """Patch orphan scan/kill helpers for tests that supply bare PID numbers."""
+
+    from contextlib import contextmanager
+    from unittest.mock import patch
+
+    from core_tools.provider.process_identity import ProcessIdentity, TerminateIdentityResult
+    from top_down_planning.orchestrator.agent_process_cleanup import OrphanScanResult
+
+    if terminate_result is None:
+        terminate_result = TerminateIdentityResult.TERMINATED
+
+    identities = tuple(
+        ProcessIdentity(pid=pid, start_time=str(pid), run_id=run_id) for pid in pids
+    )
+    scan_result = OrphanScanResult(
+        kill_candidates=identities,
+        unverifiable_pids=(),
+    )
+
+    @contextmanager
+    def _patch():
+        with patch(
+            "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agents",
+            return_value=scan_result,
+        ):
+            with patch(
+                "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
+                return_value=list(pids),
+            ):
+                with patch(
+                    "top_down_planning.orchestrator.agent_process_cleanup.is_pid_alive",
+                    return_value=True,
+                ):
+                    with patch(
+                        "top_down_planning.orchestrator.agent_process_cleanup.default_read_pid_environ",
+                        return_value={"TDP_RUN_ID": run_id},
+                    ):
+                        with patch(
+                            "top_down_planning.orchestrator.agent_process_cleanup._read_pid_cmdline",
+                            return_value=_AGENT_COMMAND,
+                        ):
+                            with patch(
+                                "top_down_planning.orchestrator.agent_process_cleanup.read_process_start_time",
+                                return_value="100",
+                            ):
+                                with patch(
+                                    "top_down_planning.orchestrator.agent_process_cleanup.terminate_verified_process_identity",
+                                    return_value=terminate_result,
+                                ):
+                                    yield
+
+    return _patch()

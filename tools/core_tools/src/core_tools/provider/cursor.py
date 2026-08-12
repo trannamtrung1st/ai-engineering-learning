@@ -272,6 +272,7 @@ class _CursorSession:
     model: str | None
     pending_events: deque[dict[str, Any]] = field(default_factory=deque)
     pending_argv: list[str] | None = None
+    turn_queued: bool = False
     turn_running: bool = False
     turn_complete: bool = False
     turn_aborted: bool = False
@@ -693,20 +694,11 @@ class CursorProvider:
                     session_id=session_id,
                 )
             session_model = resolve_provider_cli_model(model=model)
-            argv = build_agent_argv(
-                self._config,
-                binary=self._binary,
-                workspace=self._workspace,
-                session_id=canonical_id,
-                prompt="",
-                model=session_model,
-            )
             self._sessions[canonical_id] = _CursorSession(
                 role=role,
                 kind=kind,
                 manifest={},
                 model=session_model,
-                pending_argv=argv,
             )
             return canonical_id
 
@@ -798,8 +790,14 @@ class CursorProvider:
                     f"provider turn already in progress for session {session_id}",
                     session_id=session_id,
                 )
+            if session.turn_queued:
+                raise ProviderTurnError(
+                    f"provider turn already queued for session {session_id}",
+                    session_id=session_id,
+                )
             session.pending_events.clear()
             session.pending_argv = argv
+            session.turn_queued = True
             session.turn_running = False
             session.turn_complete = False
             session.turn_aborted = False
@@ -814,6 +812,7 @@ class CursorProvider:
                 return
             argv = session.pending_argv
             session.pending_argv = None
+            session.turn_queued = False
             session.turn_running = True
             thread = threading.Thread(
                 target=self._collect_turn,

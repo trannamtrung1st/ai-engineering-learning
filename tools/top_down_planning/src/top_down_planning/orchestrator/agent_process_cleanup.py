@@ -8,10 +8,17 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
+from core_tools.provider.process_identity import (
+    ProcessIdentity,
+    TerminateIdentityResult,
+    read_process_start_time,
+    terminate_verified_process_identity,
+)
 
 from top_down_planning.cli.common import RUN_ID_ENV_VAR
 from top_down_planning.domain.run_lifecycle import StopRecord
@@ -25,6 +32,22 @@ ListLivePids = Callable[[], list[int]]
 
 _AGENT_CMD_MARKERS = ("--output-format", "stream-json")
 _RUN_ID_PATTERN = re.compile(rf"(?:^|\s){re.escape(RUN_ID_ENV_VAR)}=([^\s]+)")
+
+
+class PidRunAgentMatch(Enum):
+    """Three-way classification for run-associated agent PID ownership."""
+
+    CONFIRMED_SAME = "confirmed_same"
+    CONFIRMED_DIFFERENT = "confirmed_different"
+    UNVERIFIABLE = "unverifiable"
+
+
+@dataclass(frozen=True)
+class OrphanScanResult:
+    """Outcome of scanning for run-associated orphan agent processes."""
+
+    kill_candidates: tuple[ProcessIdentity, ...]
+    unverifiable_pids: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -173,32 +196,116 @@ def _looks_like_agent_command(command: str) -> bool:
     return all(marker in command for marker in _AGENT_CMD_MARKERS)
 
 
+def classify_pid_run_agent(
+    run_id: str,
+    pid: int,
+    *,
+    read_environ: ReadPidEnviron | None = None,
+) -> PidRunAgentMatch:
+    """Classify whether *pid* is the same run agent, a reused PID, or unverifiable."""
+
+    read_env = read_environ or default_read_pid_environ
+    if not is_pid_alive(pid):
+        return PidRunAgentMatch.CONFIRMED_DIFFERENT
+    environ = read_env(pid)
+    env_run_id = str(environ.get(RUN_ID_ENV_VAR) or "").strip()
+    command = _read_pid_cmdline(pid)
+    if not env_run_id or not command:
+        return PidRunAgentMatch.UNVERIFIABLE
+    if env_run_id != run_id:
+        return PidRunAgentMatch.CONFIRMED_DIFFERENT
+    if not _looks_like_agent_command(command):
+        return PidRunAgentMatch.CONFIRMED_DIFFERENT
+    if read_process_start_time(pid) is None:
+        return PidRunAgentMatch.UNVERIFIABLE
+    return PidRunAgentMatch.CONFIRMED_SAME
+
+
 def pid_matches_run_agent(
     run_id: str,
     pid: int,
     *,
     read_environ: ReadPidEnviron | None = None,
 ) -> bool:
-    """Return whether *pid* is a live run-associated agent process."""
+    """Return whether *pid* is a confirmed live run-associated agent process."""
 
-    read_env = read_environ or default_read_pid_environ
-    if not is_pid_alive(pid):
-        return False
-    environ = read_env(pid)
-    env_run_id = str(environ.get(RUN_ID_ENV_VAR) or "").strip()
-    if env_run_id != run_id:
-        return False
-    command = _read_pid_cmdline(pid)
-    return _looks_like_agent_command(command)
+    return (
+        classify_pid_run_agent(run_id, pid, read_environ=read_environ)
+        == PidRunAgentMatch.CONFIRMED_SAME
+    )
 
 
-def _pid_matches_run_agent(
+def _build_kill_candidate_identity(
     run_id: str,
     pid: int,
     *,
     read_environ: ReadPidEnviron,
-) -> bool:
-    return pid_matches_run_agent(run_id, pid, read_environ=read_environ)
+) -> ProcessIdentity | None:
+    if (
+        classify_pid_run_agent(run_id, pid, read_environ=read_environ)
+        != PidRunAgentMatch.CONFIRMED_SAME
+    ):
+        return None
+    command = _read_pid_cmdline(pid)
+    start_time = read_process_start_time(pid)
+    if start_time is None:
+        return None
+    return ProcessIdentity(
+        pid=pid,
+        start_time=start_time,
+        run_id=run_id,
+        command=command,
+    )
+
+
+def scan_orphan_agents(
+    run_id: str,
+    *,
+    exclude_pids: frozenset[int] | None = None,
+    terminated_pids: list[int] | None = None,
+    list_live_pids: ListLivePids | None = None,
+    read_pid_environ: ReadPidEnviron | None = None,
+) -> OrphanScanResult:
+    """Return identity-safe kill candidates and unverifiable live PIDs."""
+
+    excluded = exclude_pids or frozenset()
+    list_pids = list_live_pids or _default_list_live_pids
+    read_environ = read_pid_environ or default_read_pid_environ
+    kill_candidates: list[ProcessIdentity] = []
+    unverifiable: list[int] = []
+    seen: set[int] = set(excluded)
+
+    def consider(pid: int) -> None:
+        if pid in seen:
+            return
+        seen.add(pid)
+        if not is_pid_alive(pid):
+            return
+        match = classify_pid_run_agent(run_id, pid, read_environ=read_environ)
+        if match == PidRunAgentMatch.UNVERIFIABLE:
+            unverifiable.append(pid)
+            return
+        if match == PidRunAgentMatch.CONFIRMED_DIFFERENT:
+            return
+        identity = _build_kill_candidate_identity(
+            run_id,
+            pid,
+            read_environ=read_environ,
+        )
+        if identity is None:
+            unverifiable.append(pid)
+            return
+        kill_candidates.append(identity)
+
+    for pid in terminated_pids or []:
+        consider(pid)
+    for pid in list_pids():
+        consider(pid)
+
+    return OrphanScanResult(
+        kill_candidates=tuple(kill_candidates),
+        unverifiable_pids=tuple(sorted(set(unverifiable))),
+    )
 
 
 def scan_orphan_agent_pids(
@@ -209,7 +316,7 @@ def scan_orphan_agent_pids(
     list_live_pids: ListLivePids | None = None,
     read_pid_environ: ReadPidEnviron | None = None,
 ) -> list[int]:
-    """Return live agent PIDs associated with *run_id* outside *exclude_pids*."""
+    """Return live confirmed run-agent PIDs associated with *run_id*."""
 
     excluded = exclude_pids or frozenset()
     list_pids = list_live_pids or _default_list_live_pids
@@ -217,19 +324,20 @@ def scan_orphan_agent_pids(
     orphans: list[int] = []
     seen: set[int] = set(excluded)
 
-    for pid in terminated_pids or []:
+    def consider(pid: int) -> None:
         if pid in seen:
-            continue
+            return
         seen.add(pid)
-        if _pid_matches_run_agent(run_id, pid, read_environ=read_environ):
+        if (
+            classify_pid_run_agent(run_id, pid, read_environ=read_environ)
+            == PidRunAgentMatch.CONFIRMED_SAME
+        ):
             orphans.append(pid)
 
+    for pid in terminated_pids or []:
+        consider(pid)
     for pid in list_pids():
-        if pid in seen:
-            continue
-        seen.add(pid)
-        if _pid_matches_run_agent(run_id, pid, read_environ=read_environ):
-            orphans.append(pid)
+        consider(pid)
 
     return sorted(set(orphans))
 
@@ -260,10 +368,20 @@ def kill_orphan_agents(
     )
     cleaned: list[int] = []
     failed: list[int] = []
+    stale_reconciled: list[int] = []
     for pid in orphan_pids:
         if not is_pid_alive(pid):
             continue
-        if terminate_pid_tree(pid):
+        identity = _build_kill_candidate_identity(
+            run_id,
+            pid,
+            read_environ=read_pid_environ or default_read_pid_environ,
+        )
+        if identity is None:
+            failed.append(pid)
+            continue
+        result = terminate_verified_process_identity(identity)
+        if result == TerminateIdentityResult.TERMINATED:
             cleaned.append(pid)
             try:
                 store.append_event(
@@ -277,6 +395,11 @@ def kill_orphan_agents(
                 )
             except Exception:
                 pass
+        elif result == TerminateIdentityResult.IDENTITY_MISMATCH:
+            stale_reconciled.append(pid)
+            continue
+        elif result == TerminateIdentityResult.ALREADY_GONE:
+            continue
         else:
             failed.append(pid)
             try:
@@ -292,15 +415,19 @@ def kill_orphan_agents(
             except Exception:
                 pass
 
-    survivors = scan_orphan_agent_pids(
+    survivor_scan = scan_orphan_agents(
         run_id,
         exclude_pids=exclude_pids,
         terminated_pids=[*terminated_pids, *cleaned],
         list_live_pids=list_live_pids,
         read_pid_environ=read_pid_environ,
     )
-    for pid in survivors:
-        if pid in cleaned or pid in failed:
+    for pid in survivor_scan.unverifiable_pids:
+        if pid not in failed:
+            failed.append(pid)
+    for identity in survivor_scan.kill_candidates:
+        pid = identity.pid
+        if pid in cleaned or pid in failed or pid in stale_reconciled:
             continue
         if is_pid_alive(pid):
             failed.append(pid)
@@ -453,11 +580,15 @@ def workspace_has_orphan_agents(
 __all__ = [
     "CancelCleanupResult",
     "OrphanCleanupResult",
+    "OrphanScanResult",
+    "PidRunAgentMatch",
+    "classify_pid_run_agent",
     "default_read_pid_environ",
     "finalize_user_cancel",
     "kill_orphan_agents",
     "pid_matches_run_agent",
     "scan_orphan_agent_pids",
+    "scan_orphan_agents",
     "terminated_pids_from_stop",
     "workspace_has_orphan_agents",
 ]

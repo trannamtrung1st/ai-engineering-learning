@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from core_tools.provider.cursor import CursorProvider
+from core_tools.provider.process_identity import ProcessIdentity
 from core_tools.provider.stub import StubProvider
 from top_down_planning.cli.doctor import handle_doctor_command
 from top_down_planning.observability import ObservabilityContext
@@ -26,7 +27,7 @@ from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.helpers import create_run_kwargs, minimal_resolved_config, patch_identity_safe_orphan_scan
 from tests.unit.test_operational_failures import _create_run
 
 
@@ -51,12 +52,16 @@ def test_scan_orphan_agent_pids_uses_stop_details_and_env(tmp_path: Path) -> Non
                 else ""
             ),
         ):
-            orphans = scan_orphan_agent_pids(
-                "run-orphan",
-                terminated_pids=[101],
-                list_live_pids=fake_list,
-                read_pid_environ=fake_environ,
-            )
+            with patch(
+                "top_down_planning.orchestrator.agent_process_cleanup.read_process_start_time",
+                return_value="100",
+            ):
+                orphans = scan_orphan_agent_pids(
+                    "run-orphan",
+                    terminated_pids=[101],
+                    list_live_pids=fake_list,
+                    read_pid_environ=fake_environ,
+                )
     assert orphans == [101, 202]
 
 
@@ -100,21 +105,10 @@ def test_kill_orphan_agents_emits_audit_event(tmp_path: Path) -> None:
     }
     store.save_run("run-20260101T001901-001901", run, expected_revision)
 
-    with patch(
-        "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
-        return_value=[4242],
-    ):
-        with patch(
-            "top_down_planning.orchestrator.agent_process_cleanup.is_pid_alive",
-            return_value=True,
-        ):
-            with patch(
-                "top_down_planning.orchestrator.agent_process_cleanup.terminate_pid_tree"
-            ) as terminate:
-                cleanup = kill_orphan_agents(store, "run-20260101T001901-001901")
+    with patch_identity_safe_orphan_scan("run-20260101T001901-001901", [4242]):
+        cleanup = kill_orphan_agents(store, "run-20260101T001901-001901")
 
     assert cleanup.cleaned_pids == (4242,)
-    terminate.assert_called_once_with(4242)
     events = store.load_events("run-20260101T001901-001901")
     assert any(event.get("type") == "agent_orphan_cleaned" for event in events)
 
@@ -343,7 +337,6 @@ def test_cursor_provider_terminate_all_sessions_unblocks_stream_events(
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
     stream = provider.stream_events(session_id)
 
     import threading

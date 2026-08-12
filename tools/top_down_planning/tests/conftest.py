@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from top_down_planning.cli.main import main
+from top_down_planning.orchestrator.agent_process_cleanup import OrphanScanResult
 
 SEND_DESKTOP_NOTIFICATION_TARGETS = (
     "top_down_planning.notifications.desktop.send_desktop_notification",
@@ -23,10 +24,16 @@ OUTCOME_SEND_DESKTOP = SEND_DESKTOP_NOTIFICATION_TARGETS[2]
 
 # Full-system PID scans are slow (~0.7s on macOS). Patch every import site; tests that
 # import scan_orphan_agent_pids directly still exercise real logic with injected fakes.
+def _empty_orphan_scan(*_args: object, **_kwargs: object) -> OrphanScanResult:
+    return OrphanScanResult(kill_candidates=(), unverifiable_pids=())
+
+
 ORPHAN_AGENT_SCAN_TARGETS = (
+    "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agents",
     "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
     "top_down_planning.orchestrator.run_lifecycle_reconciliation.scan_orphan_agent_pids",
     "top_down_planning.cli.doctor.scan_orphan_agent_pids",
+    "top_down_planning.orchestrator.provider_teardown.scan_orphan_agents",
 )
 
 
@@ -36,7 +43,10 @@ def stub_orphan_agent_scan():
 
     with ExitStack() as stack:
         for target in ORPHAN_AGENT_SCAN_TARGETS:
-            stack.enter_context(patch(target, return_value=[]))
+            if target.endswith("scan_orphan_agents"):
+                stack.enter_context(patch(target, side_effect=_empty_orphan_scan))
+            else:
+                stack.enter_context(patch(target, return_value=[]))
         yield
 
 

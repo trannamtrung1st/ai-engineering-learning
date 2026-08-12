@@ -9,14 +9,22 @@ from typing import Any
 from core_tools.observability import ConsoleEvent
 from core_tools.provider import Provider
 from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
+from core_tools.provider.process_identity import (
+    ProcessIdentity,
+    TerminateIdentityResult,
+    read_process_identity,
+    terminate_verified_process_identity,
+)
 
 from top_down_planning.observability import session_lifecycle_event
 from top_down_planning.orchestrator.agent_process_cleanup import (
+    PidRunAgentMatch,
     ReadPidEnviron,
+    classify_pid_run_agent,
     default_read_pid_environ,
     kill_orphan_agents,
-    pid_matches_run_agent,
     scan_orphan_agent_pids,
+    scan_orphan_agents,
 )
 from top_down_planning.orchestrator.errors import ProviderTeardownError
 from top_down_planning.persistence.interface import RunStore
@@ -33,6 +41,16 @@ class TeardownVerificationResult:
 
     terminated_pids: tuple[int, ...]
     surviving_pids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class RetryTerminateResult:
+    """Outcome of retrying termination for one or more PIDs."""
+
+    terminated: tuple[int, ...]
+    failed: tuple[int, ...]
+    unresolved: tuple[int, ...]
+    stale_reconciled: tuple[int, ...]
 
 
 def _session_model_fields(session: dict[str, str]) -> dict[str, str]:
@@ -101,24 +119,66 @@ def _retry_terminate_pids(
     *,
     run_id: str | None = None,
     read_pid_environ: ReadPidEnviron | None = None,
-) -> tuple[list[int], list[int]]:
+) -> RetryTerminateResult:
     terminated: list[int] = []
     failed: list[int] = []
+    unresolved: list[int] = []
+    stale_reconciled: list[int] = []
     read_environ = read_pid_environ or default_read_pid_environ
     for pid in pids:
         if not is_pid_alive(pid):
             continue
-        if run_id is not None and not pid_matches_run_agent(
-            run_id,
-            pid,
-            read_environ=read_environ,
-        ):
+        if run_id is not None:
+            match = classify_pid_run_agent(run_id, pid, read_environ=read_environ)
+            if match == PidRunAgentMatch.CONFIRMED_DIFFERENT:
+                stale_reconciled.append(pid)
+                continue
+            if match == PidRunAgentMatch.UNVERIFIABLE:
+                unresolved.append(pid)
+                continue
+            identity = read_process_identity(pid, run_id=run_id)
+            if identity is None:
+                unresolved.append(pid)
+                continue
+            result = terminate_verified_process_identity(identity)
+            if result == TerminateIdentityResult.TERMINATED:
+                terminated.append(pid)
+            elif result == TerminateIdentityResult.FAILED:
+                failed.append(pid)
+            elif result == TerminateIdentityResult.IDENTITY_MISMATCH:
+                stale_reconciled.append(pid)
             continue
         if terminate_pid_tree(pid):
             terminated.append(pid)
         else:
             failed.append(pid)
-    return terminated, failed
+    return RetryTerminateResult(
+        terminated=tuple(terminated),
+        failed=tuple(failed),
+        unresolved=tuple(unresolved),
+        stale_reconciled=tuple(stale_reconciled),
+    )
+
+
+def _retry_terminate_identities(
+    identities: list[ProcessIdentity],
+) -> RetryTerminateResult:
+    terminated: list[int] = []
+    failed: list[int] = []
+    for identity in identities:
+        if not is_pid_alive(identity.pid):
+            continue
+        result = terminate_verified_process_identity(identity)
+        if result == TerminateIdentityResult.TERMINATED:
+            terminated.append(identity.pid)
+        elif result == TerminateIdentityResult.FAILED:
+            failed.append(identity.pid)
+    return RetryTerminateResult(
+        terminated=tuple(terminated),
+        failed=tuple(failed),
+        unresolved=(),
+        stale_reconciled=(),
+    )
 
 
 def _session_surviving_pids(
@@ -235,32 +295,48 @@ def teardown_provider_sessions(
             audit_cancel=audit_cancel,
         )
 
-        retried_terminated, retried_failed = _retry_terminate_pids(
+        retried = _retry_terminate_pids(
             failed_pids,
             run_id=run_id,
         )
-        verified_terminated.extend(retried_terminated)
-        survivors = list(retried_failed)
+        verified_terminated.extend(retried.terminated)
+        survivors = list(retried.failed) + list(retried.unresolved)
+        stale_reconciled = list(retried.stale_reconciled)
 
         if store is not None:
-            orphan_pids = scan_orphan_agent_pids(
+            orphan_scan = scan_orphan_agents(
                 run_id,
                 exclude_pids=exclude_pids,
                 terminated_pids=sorted(set(verified_terminated)),
             )
-            orphan_retry_terminated, orphan_retry_failed = _retry_terminate_pids(orphan_pids)
-            verified_terminated.extend(orphan_retry_terminated)
-            survivors = sorted(set(survivors) | set(orphan_retry_failed))
-            remaining = scan_orphan_agent_pids(
+            survivors.extend(orphan_scan.unverifiable_pids)
+            orphan_retry = _retry_terminate_identities(
+                list(orphan_scan.kill_candidates),
+            )
+            verified_terminated.extend(orphan_retry.terminated)
+            stale_reconciled.extend(orphan_retry.stale_reconciled)
+            survivors = sorted(
+                set(survivors)
+                | set(orphan_retry.failed)
+                | set(orphan_retry.unresolved)
+            )
+            remaining_scan = scan_orphan_agents(
                 run_id,
                 exclude_pids=exclude_pids,
                 terminated_pids=sorted(set(verified_terminated)),
             )
-            survivors = sorted(set(survivors) | set(remaining))
+            survivors = sorted(
+                set(survivors)
+                | set(remaining_scan.unverifiable_pids)
+                | {identity.pid for identity in remaining_scan.kill_candidates}
+            )
 
         reconcile = getattr(provider, "reconcile_terminated_pids", None)
-        if reconcile is not None and verified_terminated:
-            reconcile(sorted(set(verified_terminated)))
+        reconcile_pids = sorted(
+            set(verified_terminated) | set(stale_reconciled),
+        )
+        if reconcile is not None and reconcile_pids:
+            reconcile(reconcile_pids)
 
         for pid in survivors:
             if is_pid_alive(pid):
@@ -303,10 +379,22 @@ def teardown_provider_sessions(
 
     verified_terminated = sorted(set(verified_terminated))
     alive_survivors = tuple(pid for pid in survivors if is_pid_alive(pid))
+    remaining_active = provider.list_active_sessions()
     if alive_survivors:
         raise ProviderTeardownError(
             f"provider teardown left surviving agent processes: {list(alive_survivors)}",
             surviving_pids=alive_survivors,
+            terminated_pids=tuple(verified_terminated),
+        )
+    if remaining_active:
+        active_ids = [
+            str(session.get("session_id") or "")
+            for session in remaining_active
+            if str(session.get("session_id") or "")
+        ]
+        raise ProviderTeardownError(
+            f"provider teardown left active sessions: {active_ids}",
+            surviving_pids=(),
             terminated_pids=tuple(verified_terminated),
         )
     if deferred_error is not None:
@@ -357,14 +445,17 @@ def verify_run_agent_survivors(
             if is_pid_alive(pid)
         }
     )
-    remaining = scan_orphan_agent_pids(
+    remaining_scan = scan_orphan_agents(
         run_id,
         exclude_pids=exclude_pids,
         terminated_pids=verified_terminated,
     )
-    for pid in remaining:
+    for pid in remaining_scan.unverifiable_pids:
         if is_pid_alive(pid) and pid not in survivors:
             survivors.append(pid)
+    for identity in remaining_scan.kill_candidates:
+        if is_pid_alive(identity.pid) and identity.pid not in survivors:
+            survivors.append(identity.pid)
     return TeardownVerificationResult(
         terminated_pids=tuple(verified_terminated),
         surviving_pids=tuple(sorted(set(survivors))),
@@ -372,6 +463,7 @@ def verify_run_agent_survivors(
 
 
 __all__ = [
+    "RetryTerminateResult",
     "TeardownVerificationResult",
     "teardown_provider_sessions",
     "verify_run_agent_survivors",

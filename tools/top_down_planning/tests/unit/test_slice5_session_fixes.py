@@ -328,24 +328,15 @@ def test_finalize_user_cancel_persists_orphan_pids_in_stop_details(tmp_path: Pat
     run["status"] = "running"
     store.save_run(run_id, run, expected_revision)
 
-    with patch(
-        "top_down_planning.orchestrator.agent_process_cleanup.scan_orphan_agent_pids",
-        return_value=[4242],
-    ):
-        with patch(
-            "top_down_planning.orchestrator.agent_process_cleanup.is_pid_alive",
-            return_value=True,
-        ):
-            with patch(
-                "top_down_planning.orchestrator.agent_process_cleanup.terminate_pid_tree",
-                return_value=True,
-            ):
-                finalize_user_cancel(
-                    store,
-                    run_id,
-                    phase=PLANNING,
-                    provider_terminated_pids=[],
-                )
+    from tests.helpers import patch_identity_safe_orphan_scan
+
+    with patch_identity_safe_orphan_scan(run_id, [4242]):
+        finalize_user_cancel(
+            store,
+            run_id,
+            phase=PLANNING,
+            provider_terminated_pids=[],
+        )
 
     run = store.load_run(run_id)
     assert run["stop"]["details"]["terminated_pids"] == [4242]
@@ -629,36 +620,56 @@ def test_teardown_provider_sessions_emits_agent_termination_failed_not_terminate
 
     events: list[dict[str, object]] = []
 
-    with patch(
-        "core_tools.provider.cursor.terminate_pid_tree",
-        return_value=False,
-    ):
-        with patch(
-            "top_down_planning.orchestrator.provider_teardown.terminate_pid_tree",
-            return_value=False,
+    from core_tools.provider.process_identity import ProcessIdentity, TerminateIdentityResult
+    from top_down_planning.orchestrator.agent_process_cleanup import PidRunAgentMatch
+
+    try:
+        with patch.object(
+            provider,
+            "terminate_all_sessions",
+            return_value=[
+                {
+                    "pid": proc.pid,
+                    "role": "planner",
+                    "session_id": "cursor-session-1",
+                    "reason": "termination_failed",
+                }
+            ],
         ):
             with patch(
-                "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
-                return_value=True,
+                "top_down_planning.orchestrator.provider_teardown.classify_pid_run_agent",
+                return_value=PidRunAgentMatch.CONFIRMED_SAME,
             ):
                 with patch(
-                    "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
-                    return_value=True,
+                    "top_down_planning.orchestrator.provider_teardown.read_process_identity",
+                    return_value=ProcessIdentity(
+                        pid=proc.pid,
+                        start_time="100",
+                        run_id="run-cancel",
+                    ),
                 ):
-                    with pytest.raises(ProviderTeardownError):
-                        teardown_provider_sessions(
-                            provider,
-                            run_id="run-cancel",
-                            phase=PLANNING,
-                            append_event=lambda event_type, **fields: events.append(
-                                {"type": event_type, **fields}
-                            ),
-                            emit_console=lambda _event: None,
-                            audit_cancel=True,
-                        )
-
-    proc.kill()
-    proc.wait(timeout=1)
+                    with patch(
+                        "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
+                        return_value=TerminateIdentityResult.FAILED,
+                    ):
+                        with patch(
+                            "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
+                            return_value=True,
+                        ):
+                            with pytest.raises(ProviderTeardownError):
+                                teardown_provider_sessions(
+                                    provider,
+                                    run_id="run-cancel",
+                                    phase=PLANNING,
+                                    append_event=lambda event_type, **fields: events.append(
+                                        {"type": event_type, **fields}
+                                    ),
+                                    emit_console=lambda _event: None,
+                                    audit_cancel=True,
+                                )
+    finally:
+        proc.kill()
+        proc.wait(timeout=1)
 
     assert not any(event["type"] == "agent_terminated" for event in events)
     assert any(event["type"] == "agent_termination_failed" for event in events)

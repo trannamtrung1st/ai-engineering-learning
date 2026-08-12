@@ -10,6 +10,8 @@ from unittest.mock import patch
 import pytest
 
 from core_tools.provider.cursor import CursorProvider
+from core_tools.provider.errors import ProviderTurnError
+from core_tools.provider.process_identity import ProcessIdentity, TerminateIdentityResult
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.agent_process_cleanup import OrphanCleanupResult
 from top_down_planning.orchestrator.phases import PLANNING
@@ -255,6 +257,11 @@ def test_teardown_reconciles_registry_after_orphan_retry_succeeds(tmp_path: Path
             return True
         return False
 
+    def fake_terminate_verified(identity: ProcessIdentity) -> TerminateIdentityResult:
+        alive[str(identity.pid)] = False
+        terminate_attempts.append(identity.pid)
+        return TerminateIdentityResult.TERMINATED
+
     def mock_terminate_all_sessions() -> list[dict[str, object]]:
         provider._tracked_turn_procs[111] = (session_id, "planner")
         return [
@@ -283,27 +290,59 @@ def test_teardown_reconciles_registry_after_orphan_retry_succeeds(tmp_path: Path
             side_effect=fake_terminate,
         ):
             with patch(
-                "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
-                return_value=True,
+                "top_down_planning.orchestrator.provider_teardown.classify_pid_run_agent",
+                return_value=__import__(
+                    "top_down_planning.orchestrator.agent_process_cleanup",
+                    fromlist=["PidRunAgentMatch"],
+                ).PidRunAgentMatch.CONFIRMED_SAME,
             ):
                 with patch(
-                    "top_down_planning.orchestrator.provider_teardown.scan_orphan_agent_pids",
-                    side_effect=[[111], []],
+                    "top_down_planning.orchestrator.provider_teardown.read_process_identity",
+                    return_value=ProcessIdentity(pid=111, start_time="100", run_id=run_id),
                 ):
-                    with patch.object(
-                        provider,
-                        "terminate_all_sessions",
-                        side_effect=mock_terminate_all_sessions,
+                    with patch(
+                        "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
+                        side_effect=fake_terminate_verified,
                     ):
-                        teardown_provider_sessions(
-                            provider,
-                            run_id=run_id,
-                            phase=PLANNING,
-                            append_event=append_event,
-                            emit_console=lambda _event: None,
-                            audit_cancel=True,
-                            store=store,
-                        )
+                        with patch(
+                            "top_down_planning.orchestrator.provider_teardown.scan_orphan_agents",
+                            side_effect=[
+                                __import__(
+                                    "top_down_planning.orchestrator.agent_process_cleanup",
+                                    fromlist=["OrphanScanResult"],
+                                ).OrphanScanResult(
+                                    kill_candidates=(
+                                        ProcessIdentity(
+                                            pid=111,
+                                            start_time="100",
+                                            run_id=run_id,
+                                        ),
+                                    ),
+                                    unverifiable_pids=(),
+                                ),
+                                __import__(
+                                    "top_down_planning.orchestrator.agent_process_cleanup",
+                                    fromlist=["OrphanScanResult"],
+                                ).OrphanScanResult(
+                                    kill_candidates=(),
+                                    unverifiable_pids=(),
+                                ),
+                            ],
+                        ):
+                            with patch.object(
+                                provider,
+                                "terminate_all_sessions",
+                                side_effect=mock_terminate_all_sessions,
+                            ):
+                                teardown_provider_sessions(
+                                    provider,
+                                    run_id=run_id,
+                                    phase=PLANNING,
+                                    append_event=append_event,
+                                    emit_console=lambda _event: None,
+                                    audit_cancel=True,
+                                    store=store,
+                                )
 
     assert provider.list_active_sessions() == []
     assert "provider_session_teardown_failed" not in [
@@ -324,39 +363,54 @@ def test_retry_terminate_pids_skips_reused_unrelated_process() -> None:
         return_value=True,
     ):
         with patch(
-            "top_down_planning.orchestrator.provider_teardown.terminate_pid_tree",
-            side_effect=lambda pid: terminated.append(pid) or True,
+            "top_down_planning.orchestrator.provider_teardown.classify_pid_run_agent",
+            return_value=__import__(
+                "top_down_planning.orchestrator.agent_process_cleanup",
+                fromlist=["PidRunAgentMatch"],
+            ).PidRunAgentMatch.CONFIRMED_DIFFERENT,
         ):
             with patch(
-                "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
-                return_value=False,
+                "top_down_planning.orchestrator.provider_teardown.terminate_pid_tree",
+                side_effect=lambda pid: terminated.append(pid) or True,
             ):
-                cleaned, failed = _retry_terminate_pids([4242], run_id="run-a")
+                result = _retry_terminate_pids([4242], run_id="run-a")
 
-    assert cleaned == []
-    assert failed == []
+    assert result.terminated == ()
+    assert result.failed == ()
+    assert result.unresolved == ()
+    assert result.stale_reconciled == (4242,)
     assert terminated == []
 
 
 def test_retry_terminate_pids_allows_matching_run_agent() -> None:
     from top_down_planning.orchestrator.provider_teardown import _retry_terminate_pids
+    from core_tools.provider.process_identity import ProcessIdentity, TerminateIdentityResult
+
+    identity = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
         "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
         return_value=True,
     ):
         with patch(
-            "top_down_planning.orchestrator.provider_teardown.terminate_pid_tree",
-            return_value=True,
+            "top_down_planning.orchestrator.provider_teardown.classify_pid_run_agent",
+            return_value=__import__(
+                "top_down_planning.orchestrator.agent_process_cleanup",
+                fromlist=["PidRunAgentMatch"],
+            ).PidRunAgentMatch.CONFIRMED_SAME,
         ):
             with patch(
-                "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
-                return_value=True,
+                "top_down_planning.orchestrator.provider_teardown.read_process_identity",
+                return_value=identity,
             ):
-                cleaned, failed = _retry_terminate_pids([4242], run_id="run-a")
+                with patch(
+                    "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
+                    return_value=TerminateIdentityResult.TERMINATED,
+                ):
+                    result = _retry_terminate_pids([4242], run_id="run-a")
 
-    assert cleaned == [4242]
-    assert failed == []
+    assert result.terminated == (4242,)
+    assert result.failed == ()
 
 
 def test_concurrent_pending_session_starts_get_unique_ids(tmp_path: Path) -> None:
@@ -433,8 +487,11 @@ def test_concurrent_durable_resume_does_not_overwrite_session_state(
     for thread in threads:
         thread.join(timeout=2.0)
 
-    assert errors == []
+    turn_errors = [exc for exc in errors if isinstance(exc, ProviderTurnError)]
+    assert len(turn_errors) == 1
+    assert "already queued" in str(turn_errors[0])
     assert len(provider.list_active_sessions()) == 1
     session = provider._sessions[durable_id]
     assert session.role == "planner"
     assert session.kind == "primary"
+    assert session.pending_argv is not None
