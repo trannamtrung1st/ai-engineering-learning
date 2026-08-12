@@ -27,7 +27,7 @@ from top_down_planning.orchestrator.provider_teardown import teardown_provider_s
 from top_down_planning.orchestrator.session_context import rotate_primary_session
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import update_primary_binding
-from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config
+from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, tracked_turn_proc
 
 
 def _sample_plan() -> Plan:
@@ -266,7 +266,7 @@ def test_teardown_provider_sessions_raises_when_survivors_remain(tmp_path: Path)
         stderr=__import__("subprocess").DEVNULL,
         start_new_session=sys.platform != "win32",
     )
-    provider._tracked_turn_procs[proc.pid] = ("cursor-session-1", "planner")
+    provider._tracked_turn_procs[proc.pid] = tracked_turn_proc("cursor-session-1", "planner", proc.pid, proc=proc)
 
     events: list[dict[str, object]] = []
     store = FileRunStore(tmp_path)

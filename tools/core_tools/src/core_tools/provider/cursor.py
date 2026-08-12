@@ -35,8 +35,15 @@ from core_tools.provider.events import (
 )
 from core_tools.provider.process_cleanup import (
     is_pid_alive,
-    terminate_pid_tree,
     terminate_process_tree,
+)
+from core_tools.provider.process_identity import (
+    ProcessIdentity,
+    TerminateIdentityResult,
+    process_identity_token,
+    read_process_identity,
+    read_process_start_time,
+    terminate_verified_process_identity,
 )
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
@@ -285,6 +292,14 @@ class _CursorSession:
         self.condition = threading.Condition(self.lock)
 
 
+@dataclass
+class _TrackedTurnProc:
+    session_id: str
+    role: str
+    identity: ProcessIdentity
+    proc: subprocess.Popen[str] | None = None
+
+
 class CursorProvider:
     """Cursor CLI adapter with injectable process runner for tests."""
 
@@ -318,7 +333,7 @@ class CursorProvider:
         self._pending_counter = 0
         self._session_registry_lock = threading.RLock()
         self._turn_proc_lock = threading.Lock()
-        self._tracked_turn_procs: dict[int, tuple[str, str]] = {}
+        self._tracked_turn_procs: dict[int, _TrackedTurnProc] = {}
         self._collect_context = threading.local()
         self._on_provider_event = on_provider_event
         self._shutting_down = False
@@ -511,6 +526,8 @@ class CursorProvider:
             return
         with session.condition:
             session.pending_events.clear()
+            session.pending_argv = None
+            session.turn_queued = False
             session.turn_aborted = True
         self._abort_session_turn(session, error=None)
         self._terminate_tracked_turn_procs_for_session(canonical_id)
@@ -556,35 +573,44 @@ class CursorProvider:
             self._tracked_session_ids(session_id) if session_id is not None else None
         )
         seen_pids: set[int] = set()
-        for pid, (tracked_session_id, role) in tracked.items():
-            if tracked_ids is not None and tracked_session_id not in tracked_ids:
+        for pid, entry in tracked.items():
+            if tracked_ids is not None and entry.session_id not in tracked_ids:
                 continue
             if pid in seen_pids:
                 continue
             seen_pids.add(pid)
-            if is_pid_alive(pid):
-                if terminate_pid_tree(pid):
-                    terminated.append(
-                        {
-                            "pid": pid,
-                            "role": role,
-                            "session_id": tracked_session_id,
-                            "reason": "terminated",
-                        }
-                    )
-                    self._unregister_tracked_turn_proc_by_pid(pid)
-                else:
-                    terminated.append(
-                        {
-                            "pid": pid,
-                            "role": role,
-                            "session_id": tracked_session_id,
-                            "reason": "termination_failed",
-                        }
-                    )
-            else:
+            record = self._termination_record_for_tracked_proc(entry)
+            result = terminate_verified_process_identity(
+                entry.identity,
+                proc=entry.proc,
+            )
+            if result == TerminateIdentityResult.TERMINATED:
+                terminated.append({**record, "reason": "terminated"})
                 self._unregister_tracked_turn_proc_by_pid(pid)
+            elif result in {
+                TerminateIdentityResult.ALREADY_GONE,
+                TerminateIdentityResult.IDENTITY_MISMATCH,
+            }:
+                self._unregister_tracked_turn_proc_by_pid(pid)
+            elif result == TerminateIdentityResult.FAILED:
+                if is_pid_alive(pid):
+                    terminated.append({**record, "reason": "termination_failed"})
+                else:
+                    self._unregister_tracked_turn_proc_by_pid(pid)
         return terminated
+
+    @staticmethod
+    def _termination_record_for_tracked_proc(
+        entry: _TrackedTurnProc,
+    ) -> dict[str, Any]:
+        return {
+            "pid": entry.identity.pid,
+            "role": entry.role,
+            "session_id": entry.session_id,
+            "start_time": entry.identity.start_time,
+            "process_identity": process_identity_token(entry.identity),
+            "run_id": entry.identity.run_id,
+        }
 
     def _terminate_tracked_turn_procs_for_session(
         self,
@@ -601,6 +627,8 @@ class CursorProvider:
         with session.condition:
             session.turn_running = False
             session.turn_complete = True
+            session.pending_argv = None
+            session.turn_queued = False
             if error is not None:
                 session.turn_error = error
             session.condition.notify_all()
@@ -737,6 +765,7 @@ class CursorProvider:
                 manifest=dict(manifest),
                 model=session_model,
                 pending_argv=argv,
+                turn_queued=True,
             )
         return session_id
 
@@ -1031,9 +1060,14 @@ class CursorProvider:
         new_session_id: str,
     ) -> None:
         with self._turn_proc_lock:
-            for pid, (tracked_session_id, role) in list(self._tracked_turn_procs.items()):
-                if tracked_session_id == old_session_id:
-                    self._tracked_turn_procs[pid] = (new_session_id, role)
+            for pid, entry in list(self._tracked_turn_procs.items()):
+                if entry.session_id == old_session_id:
+                    self._tracked_turn_procs[pid] = _TrackedTurnProc(
+                        session_id=new_session_id,
+                        role=entry.role,
+                        identity=entry.identity,
+                        proc=entry.proc,
+                    )
         context = self._get_collect_context()
         if context is not None and context[0] == old_session_id:
             self._set_collect_context(new_session_id, context[1])
@@ -1122,8 +1156,28 @@ class CursorProvider:
         if context is None:
             return
         session_id, role = context
+        run_id = self._extra_env.get("TDP_RUN_ID")
+        if isinstance(run_id, str):
+            run_id_value: str | None = run_id
+        else:
+            run_id_value = None
+        identity = read_process_identity(proc.pid, run_id=run_id_value)
+        if identity is None:
+            start_time = read_process_start_time(proc.pid)
+            if start_time is None:
+                return
+            identity = ProcessIdentity(
+                pid=proc.pid,
+                start_time=start_time,
+                run_id=run_id_value,
+            )
         with self._turn_proc_lock:
-            self._tracked_turn_procs[proc.pid] = (session_id, role)
+            self._tracked_turn_procs[proc.pid] = _TrackedTurnProc(
+                session_id=session_id,
+                role=role,
+                identity=identity,
+                proc=proc,
+            )
 
     def _unregister_tracked_turn_proc(self, proc: subprocess.Popen[str] | None) -> None:
         if proc is None:
@@ -1147,16 +1201,16 @@ class CursorProvider:
     def _prune_dead_tracked_pids_for_session(self, session_id: str) -> None:
         tracked_ids = self._tracked_session_ids(session_id)
         with self._turn_proc_lock:
-            for pid, (tracked_session_id, _role) in list(self._tracked_turn_procs.items()):
-                if tracked_session_id in tracked_ids and not is_pid_alive(pid):
+            for pid, entry in list(self._tracked_turn_procs.items()):
+                if entry.session_id in tracked_ids and not is_pid_alive(pid):
                     self._tracked_turn_procs.pop(pid, None)
 
     def _session_has_surviving_pids(self, session_id: str) -> bool:
         tracked_ids = self._tracked_session_ids(session_id)
         with self._turn_proc_lock:
             return any(
-                tracked_session_id in tracked_ids and is_pid_alive(pid)
-                for pid, (tracked_session_id, _role) in self._tracked_turn_procs.items()
+                entry.session_id in tracked_ids and is_pid_alive(pid)
+                for pid, entry in self._tracked_turn_procs.items()
             )
 
     def _surviving_pids_for_session(
@@ -1173,8 +1227,8 @@ class CursorProvider:
             and is_pid_alive(int(record["pid"]))
         }
         with self._turn_proc_lock:
-            for pid, (tracked_session_id, _role) in self._tracked_turn_procs.items():
-                if tracked_session_id in tracked_ids and is_pid_alive(pid):
+            for pid, entry in self._tracked_turn_procs.items():
+                if entry.session_id in tracked_ids and is_pid_alive(pid):
                     surviving.add(pid)
         return tuple(sorted(surviving))
 

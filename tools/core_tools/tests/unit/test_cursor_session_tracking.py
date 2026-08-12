@@ -12,6 +12,8 @@ import pytest
 
 from core_tools.provider.cursor import CursorProvider
 from core_tools.provider.errors import ProviderSessionTerminationError
+from core_tools.provider.process_identity import TerminateIdentityResult
+from tests.conftest import tracked_turn_proc
 
 
 def test_durable_migration_retags_tracked_pid(tmp_path: Path) -> None:
@@ -31,16 +33,22 @@ def test_durable_migration_retags_tracked_pid(tmp_path: Path) -> None:
         stderr=subprocess.DEVNULL,
         start_new_session=sys.platform != "win32",
     )
-    provider._tracked_turn_procs[proc.pid] = (pending_id, "planner")
+    provider._tracked_turn_procs[proc.pid] = tracked_turn_proc(
+        pending_id,
+        "planner",
+        proc.pid,
+        proc=proc,
+    )
     durable_id = "chat-planner-1"
 
     migrated = provider._maybe_migrate_session(pending_id, durable_id)
 
     assert migrated == durable_id
-    assert provider._tracked_turn_procs[proc.pid] == (durable_id, "planner")
+    assert provider._tracked_turn_procs[proc.pid].session_id == durable_id
+    assert provider._tracked_turn_procs[proc.pid].role == "planner"
     with patch(
-        "core_tools.provider.cursor.terminate_pid_tree",
-        return_value=False,
+        "core_tools.provider.cursor.terminate_verified_process_identity",
+        return_value=TerminateIdentityResult.FAILED,
     ):
         with pytest.raises(ProviderSessionTerminationError) as exc_info:
             provider.terminate_session(durable_id)
@@ -61,13 +69,13 @@ def test_durable_migration_does_not_retag_other_session_pids(tmp_path: Path) -> 
     )
     pending_a = provider.start_primary_session("planner", {"goal": "a"})
     pending_b = provider.start_primary_session("producer", {"goal": "b"})
-    provider._tracked_turn_procs[101] = (pending_a, "planner")
-    provider._tracked_turn_procs[202] = (pending_b, "producer")
+    provider._tracked_turn_procs[101] = tracked_turn_proc(pending_a, "planner", 101)
+    provider._tracked_turn_procs[202] = tracked_turn_proc(pending_b, "producer", 202)
 
     provider._maybe_migrate_session(pending_a, "chat-planner-1")
 
-    assert provider._tracked_turn_procs[101] == ("chat-planner-1", "planner")
-    assert provider._tracked_turn_procs[202] == (pending_b, "producer")
+    assert provider._tracked_turn_procs[101].session_id == "chat-planner-1"
+    assert provider._tracked_turn_procs[202].session_id == pending_b
 
 
 def test_failure_record_ignored_when_pid_already_dead(tmp_path: Path) -> None:
@@ -129,17 +137,13 @@ def test_concurrent_collect_contexts_track_distinct_pids(tmp_path: Path) -> None
     thread_b.join(timeout=0.5)
 
     assert tracked["a"] != tracked["b"]
-    assert provider._tracked_turn_procs[tracked["a"]] == (session_a, "planner")
-    assert provider._tracked_turn_procs[tracked["b"]] == (session_b, "producer")
+    assert provider._tracked_turn_procs[tracked["a"]].session_id == session_a
+    assert provider._tracked_turn_procs[tracked["b"]].session_id == session_b
 
-    with patch(
-        "core_tools.provider.cursor.terminate_pid_tree",
-        return_value=True,
-    ):
-        provider.terminate_session(session_a)
+    provider.terminate_session(session_a)
 
     assert session_a not in provider._sessions
-    assert provider._tracked_turn_procs[tracked["b"]] == (session_b, "producer")
+    assert provider._tracked_turn_procs[tracked["b"]].session_id == session_b
     for proc in procs:
         if proc.poll() is None:
             proc.kill()

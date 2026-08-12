@@ -27,7 +27,7 @@ from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
 from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, minimal_resolved_config, patch_identity_safe_orphan_scan
+from tests.helpers import create_run_kwargs, minimal_resolved_config, patch_identity_safe_orphan_scan, tracked_turn_proc
 from tests.unit.test_operational_failures import _create_run
 
 
@@ -256,7 +256,7 @@ def test_cursor_provider_tracked_turn_procs_killed_on_terminate_all_sessions(
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    provider._tracked_turn_procs[proc.pid] = ("cursor-session-1", "planner")
+    provider._tracked_turn_procs[proc.pid] = tracked_turn_proc("cursor-session-1", "planner", proc.pid, proc=proc)
 
     terminated = provider.terminate_all_sessions()
 

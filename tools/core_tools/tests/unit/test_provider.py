@@ -225,58 +225,20 @@ def test_build_agent_argv_omits_resume_for_transient_pending_session(tmp_path: P
     assert argv[-1] == "Review the package"
 
 
-def test_cursor_reviewer_send_before_first_turn_omits_resume_for_pending_session(
-    tmp_path: Path,
-) -> None:
-    captured_argv: list[list[str]] = []
-
-    def fake_runner(argv: list[str], cwd: Path):
-        captured_argv.append(argv)
-        yield json.dumps(
-            {
-                "type": "system",
-                "subtype": "init",
-                "session_id": "chat-reviewer-1",
-            }
-        )
-        yield json.dumps(
-            {
-                "type": "assistant",
-                "session_id": "chat-reviewer-1",
-                "message": {
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": "reviewed"}],
-                },
-            }
-        )
-        yield json.dumps(
-            {
-                "type": "result",
-                "subtype": "success",
-                "session_id": "chat-reviewer-1",
-                "is_error": False,
-                "result": "reviewed",
-            }
-        )
-
-    config = {"provider": {"name": "cursor"}}
+def test_cursor_reviewer_send_before_first_turn_is_rejected(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
     provider = CursorProvider(
-        config,
+        {"provider": {"name": "cursor"}},
         workspace=tmp_path,
-        runner=fake_runner,
+        runner=lambda argv, cwd: iter(()),
         binary=str(agent_path),
         skip_probe=True,
     )
 
     session_id = provider.start_reviewer_session({"loop_id": "review-01"})
-    provider.send(session_id, {"action": "initial_review", "loop_id": "review-01"})
-    list(provider.stream_events(session_id))
-
-    assert len(captured_argv) == 1
-    assert "--resume" not in captured_argv[0]
-    assert provider.canonical_session_id(session_id) == "chat-reviewer-1"
+    with pytest.raises(ProviderTurnError, match="already queued"):
+        provider.send(session_id, {"action": "initial_review", "loop_id": "review-01"})
 
 
 def test_cursor_provider_uses_injected_runner(tmp_path: Path) -> None:

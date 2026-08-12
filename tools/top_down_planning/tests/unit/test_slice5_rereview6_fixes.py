@@ -19,7 +19,7 @@ from top_down_planning.orchestrator.run_lifecycle_reconciliation import (
     reconcile_stale_running_run_under_ownership,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config
+from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, tracked_turn_proc
 
 
 def _sample_plan() -> Plan:
@@ -51,18 +51,21 @@ def test_terminate_session_prunes_dead_tracked_pid_after_failed_kill(tmp_path: P
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     stale_pid = 4242
-    provider._tracked_turn_procs[stale_pid] = (session_id, "planner")
+    provider._tracked_turn_procs[stale_pid] = tracked_turn_proc(session_id, "planner", stale_pid)
     alive = {stale_pid: True}
 
     def fake_is_alive(pid: int) -> bool:
         return alive.get(pid, False)
 
-    def fake_terminate(pid: int) -> bool:
-        alive[pid] = False
-        return False
+    def fake_terminate(_identity, *, proc=None):
+        alive[stale_pid] = False
+        return TerminateIdentityResult.FAILED
 
     with patch("core_tools.provider.cursor.is_pid_alive", side_effect=fake_is_alive):
-        with patch("core_tools.provider.cursor.terminate_pid_tree", side_effect=fake_terminate):
+        with patch(
+            "core_tools.provider.cursor.terminate_verified_process_identity",
+            side_effect=fake_terminate,
+        ):
             provider.terminate_session(session_id)
 
     assert stale_pid not in provider._tracked_turn_procs
@@ -81,20 +84,22 @@ def test_stale_tracked_pid_not_retargeted_after_session_removal(tmp_path: Path) 
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     stale_pid = 5151
-    provider._tracked_turn_procs[stale_pid] = (session_id, "planner")
+    provider._tracked_turn_procs[stale_pid] = tracked_turn_proc(session_id, "planner", stale_pid)
 
     with patch("core_tools.provider.cursor.is_pid_alive", return_value=False):
-        with patch("core_tools.provider.cursor.terminate_pid_tree", return_value=False):
-            provider.terminate_session(session_id)
+        provider.terminate_session(session_id)
 
     assert stale_pid not in provider._tracked_turn_procs
     terminate_calls: list[int] = []
 
-    def record_terminate(pid: int) -> bool:
-        terminate_calls.append(pid)
-        return True
+    def record_terminate(identity, *, proc=None):
+        terminate_calls.append(identity.pid)
+        return TerminateIdentityResult.TERMINATED
 
-    with patch("core_tools.provider.cursor.terminate_pid_tree", side_effect=record_terminate):
+    with patch(
+        "core_tools.provider.cursor.terminate_verified_process_identity",
+        side_effect=record_terminate,
+    ):
         with patch("core_tools.provider.cursor.is_pid_alive", return_value=True):
             provider.terminate_all_sessions()
 
@@ -127,7 +132,7 @@ def test_teardown_reconciles_provider_registry_after_retry_success(tmp_path: Pat
         return True
 
     def mock_terminate_all_sessions() -> list[dict[str, object]]:
-        provider._tracked_turn_procs[111] = (session_id, "planner")
+        provider._tracked_turn_procs[111] = tracked_turn_proc(session_id, "planner", 111)
         return [
             {
                 "pid": 111,

@@ -860,6 +860,7 @@ def test_producer_turn_persists_durable_session_id_before_turn_completes(
     )
     session_id = provider.start_primary_session("producer", {"phase": PRODUCTION})
     assert session_id == "cursor-pending-1"
+    provider.abort_turn(session_id)
     provider.resume_primary_session(session_id, {"action": "continue", "phase": PRODUCTION}, role="producer")
 
     bound_before_done = threading.Event()

@@ -2348,6 +2348,26 @@ def events_append_boundary(events_path: Path) -> dict[str, int | str]:
 _AGENT_COMMAND = "agent --output-format stream-json --trust"
 
 
+def tracked_turn_proc(
+    session_id: str,
+    role: str,
+    pid: int,
+    *,
+    proc: Any = None,
+    start_time: str = "100",
+    run_id: str | None = None,
+) -> Any:
+    from core_tools.provider.cursor import _TrackedTurnProc
+    from core_tools.provider.process_identity import ProcessIdentity
+
+    return _TrackedTurnProc(
+        session_id=session_id,
+        role=role,
+        identity=ProcessIdentity(pid=pid, start_time=start_time, run_id=run_id),
+        proc=proc,
+    )
+
+
 def patch_identity_safe_orphan_scan(
     run_id: str,
     pids: list[int],

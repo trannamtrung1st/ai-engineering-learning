@@ -13,6 +13,7 @@ import pytest
 from core_tools.provider.cursor import CursorProvider, default_process_runner
 from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree, terminate_process_tree
 from core_tools.provider.stub import StubProvider
+from tests.conftest import tracked_turn_proc
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
@@ -54,7 +55,7 @@ def test_cursor_provider_terminate_all_sessions_kills_tracked_turn(tmp_path: Pat
         stderr=subprocess.DEVNULL,
         start_new_session=sys.platform != "win32",
     )
-    provider._tracked_turn_procs[proc.pid] = ("cursor-session-1", "planner")
+    provider._tracked_turn_procs[proc.pid] = tracked_turn_proc("cursor-session-1", "planner", proc.pid, proc=proc)
 
     terminated = provider.terminate_all_sessions()
 

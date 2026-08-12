@@ -17,7 +17,7 @@ from top_down_planning.orchestrator.agent_process_cleanup import OrphanCleanupRe
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, minimal_resolved_config
+from tests.helpers import create_run_kwargs, minimal_resolved_config, tracked_turn_proc
 
 
 def _sample_plan() -> Plan:
@@ -263,7 +263,7 @@ def test_teardown_reconciles_registry_after_orphan_retry_succeeds(tmp_path: Path
         return TerminateIdentityResult.TERMINATED
 
     def mock_terminate_all_sessions() -> list[dict[str, object]]:
-        provider._tracked_turn_procs[111] = (session_id, "planner")
+        provider._tracked_turn_procs[111] = tracked_turn_proc(session_id, "planner", 111)
         return [
             {
                 "pid": 111,

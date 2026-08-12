@@ -40,7 +40,6 @@ def test_cursor_provider_does_not_retry_after_terminate_all_sessions(tmp_path: P
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="planner")
     stream = provider.stream_events(session_id)
 
     errors: list[BaseException] = []
@@ -81,6 +80,7 @@ def test_cursor_provider_terminate_session_aborts_inflight_turn(tmp_path: Path) 
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
+    provider.abort_turn(session_id)
     provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="producer")
     stream = provider.stream_events(session_id)
 
@@ -124,6 +124,7 @@ def test_cursor_provider_abort_turn_keeps_session_for_follow_up(tmp_path: Path) 
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
+    provider.abort_turn(session_id)
     provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="producer")
     stream = provider.stream_events(session_id)
 
@@ -187,6 +188,7 @@ def test_cursor_provider_abort_turn_drops_buffered_events(tmp_path: Path) -> Non
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
+    provider.abort_turn(session_id)
     provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="producer")
     stream = provider.stream_events(session_id)
     events: list[dict] = []
@@ -226,6 +228,7 @@ def test_cursor_provider_abort_turn_before_durable_id_does_not_raise(tmp_path: P
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
+    provider.abort_turn(session_id)
     provider.resume_primary_session(session_id, {"goal": "follow-up"}, role="producer")
     stream = provider.stream_events(session_id)
     errors: list[BaseException] = []
@@ -284,6 +287,7 @@ def test_cursor_provider_queue_turn_waits_for_stalled_collector(tmp_path: Path) 
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
+    provider.abort_turn(session_id)
     provider.resume_primary_session(session_id, {"goal": "turn-1"}, role="producer")
 
     errors: list[BaseException] = []
@@ -344,6 +348,7 @@ def test_cursor_provider_wait_turn_settled_after_abort(tmp_path: Path) -> None:
         skip_probe=True,
     )
     session_id = provider.start_primary_session("producer", {"goal": "x"})
+    provider.abort_turn(session_id)
     provider.resume_primary_session(session_id, {"goal": "turn-1"}, role="producer")
 
     def consume() -> None:

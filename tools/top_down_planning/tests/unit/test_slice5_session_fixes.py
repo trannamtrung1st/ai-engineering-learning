@@ -26,7 +26,7 @@ from top_down_planning.orchestrator.session_events import (
 )
 from top_down_planning.persistence import FileRunStore
 from top_down_planning.persistence.session_bindings import update_primary_binding
-from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, write_config
+from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, tracked_turn_proc, write_config
 
 
 def _sample_plan() -> Plan:
@@ -616,7 +616,7 @@ def test_teardown_provider_sessions_emits_agent_termination_failed_not_terminate
         stderr=__import__("subprocess").DEVNULL,
         start_new_session=sys.platform != "win32",
     )
-    provider._tracked_turn_procs[proc.pid] = ("cursor-session-1", "planner")
+    provider._tracked_turn_procs[proc.pid] = tracked_turn_proc("cursor-session-1", "planner", proc.pid, proc=proc)
 
     events: list[dict[str, object]] = []
 

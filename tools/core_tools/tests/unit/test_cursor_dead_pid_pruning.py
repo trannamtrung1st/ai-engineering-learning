@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from core_tools.provider.cursor import CursorProvider
+from tests.conftest import tracked_turn_proc
 
 
 def test_terminate_session_removes_stale_tracked_pid_when_process_already_dead(
@@ -22,10 +23,9 @@ def test_terminate_session_removes_stale_tracked_pid_when_process_already_dead(
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     stale_pid = 9090
-    provider._tracked_turn_procs[stale_pid] = (session_id, "planner")
+    provider._tracked_turn_procs[stale_pid] = tracked_turn_proc(session_id, "planner", stale_pid)
 
     with patch("core_tools.provider.cursor.is_pid_alive", return_value=False):
-        with patch("core_tools.provider.cursor.terminate_pid_tree", return_value=False):
-            provider.terminate_session(session_id)
+        provider.terminate_session(session_id)
 
     assert stale_pid not in provider._tracked_turn_procs
