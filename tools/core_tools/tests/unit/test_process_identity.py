@@ -7,10 +7,12 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core_tools.provider.process_cleanup import is_pid_alive
 from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
@@ -72,7 +74,7 @@ def test_terminate_verified_process_identity_skips_pid_reuse() -> None:
             return_value=True,
         ):
             with patch(
-                "core_tools.provider.process_identity._terminate_linux_pidfd",
+                "core_tools.provider.process_identity._terminate_linux_identity",
                 return_value=TerminateIdentityResult.IDENTITY_MISMATCH,
             ) as terminate:
                 result = terminate_verified_process_identity(identity)
@@ -139,7 +141,7 @@ def test_terminate_verified_process_identity_pid_reuse_before_signal_skips_kill(
     assert result == TerminateIdentityResult.IDENTITY_MISMATCH
 
 
-def test_terminate_linux_pidfd_terminates_process_group_not_only_leader() -> None:
+def test_terminate_linux_identity_uses_pidfd_not_killpg() -> None:
     identity = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
@@ -147,20 +149,25 @@ def test_terminate_linux_pidfd_terminates_process_group_not_only_leader() -> Non
         return_value=identity,
     ):
         with patch(
-            "core_tools.provider.process_identity.read_process_group_id",
-            return_value=4242,
+            "core_tools.provider.process_identity._capture_process_group_identities",
+            return_value=[identity],
         ):
-            with patch("core_tools.provider.process_identity.os.killpg") as killpg:
+            with patch(
+                "core_tools.provider.process_identity._signal_identity_via_pidfd",
+                return_value=True,
+            ) as signal_identity:
                 with patch(
-                    "core_tools.provider.process_identity._wait_process_group_gone",
+                    "core_tools.provider.process_identity._wait_identities_dead",
                     return_value=True,
                 ):
-                    from core_tools.provider.process_identity import _terminate_linux_pidfd
+                    with patch("core_tools.provider.process_identity.os.killpg") as killpg:
+                        from core_tools.provider.process_identity import _terminate_linux_identity
 
-                    result = _terminate_linux_pidfd(identity)
+                        result = _terminate_linux_identity(identity)
 
     assert result == TerminateIdentityResult.TERMINATED
-    killpg.assert_called()
+    signal_identity.assert_called()
+    killpg.assert_not_called()
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="pidfd is Linux-only")
@@ -176,7 +183,7 @@ def test_terminate_verified_process_identity_linux_pidfd_path() -> None:
             return_value=True,
         ):
             with patch(
-                "core_tools.provider.process_identity._terminate_linux_pidfd",
+                "core_tools.provider.process_identity._terminate_linux_identity",
                 return_value=TerminateIdentityResult.TERMINATED,
             ) as terminate:
                 result = terminate_verified_process_identity(identity)
@@ -189,31 +196,28 @@ def test_terminate_verified_process_identity_linux_pidfd_path() -> None:
     sys.platform != "linux" or not _pidfd_supported(),
     reason="requires Linux pidfd support",
 )
-def test_terminate_verified_process_identity_kills_child_in_process_group() -> None:
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import os, signal, time; "
-                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-                "os.setpgrp(); "
-                "child = os.fork() or (time.sleep(60), os._exit(0))[1]; "
-                "time.sleep(60)"
-            ),
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    time.sleep(0.1)
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
+def test_terminate_verified_process_identity_kills_child_in_process_group(
+    tmp_path: Path,
+) -> None:
+    from tests.conftest import spawn_sigterm_ignoring_leader_with_child
+
+    proc, child_pid = spawn_sigterm_ignoring_leader_with_child(tmp_path)
     start_time = __import__(
         "core_tools.provider.process_identity", fromlist=["read_process_start_time"]
     ).read_process_start_time(proc.pid)
     assert start_time is not None
     identity = ProcessIdentity(pid=proc.pid, start_time=start_time)
 
-    result = terminate_verified_process_identity(identity)
+    try:
+        result = terminate_verified_process_identity(identity)
 
-    assert result == TerminateIdentityResult.TERMINATED
-    assert proc.poll() is not None
+        assert result == TerminateIdentityResult.TERMINATED
+        assert proc.poll() is not None
+        assert not is_pid_alive(child_pid)
+    finally:
+        if is_pid_alive(child_pid):
+            os.kill(child_pid, signal.SIGKILL)
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)

@@ -12,7 +12,7 @@ from typing import Any
 
 from core_tools.provider.process_cleanup import (
     is_pid_alive,
-    pgid_has_live_members,
+    list_process_group_pids,
     read_process_group_id,
     terminate_process_tree,
 )
@@ -180,80 +180,117 @@ def _terminate_bound_process(
     return TerminateIdentityResult.FAILED
 
 
-def _wait_identity_dead(identity: ProcessIdentity, *, timeout: float) -> bool:
-    deadline = timeout
-    interval = 0.05
-    while deadline > 0 and is_pid_alive(identity.pid):
-        current = read_process_identity(
-            identity.pid,
-            run_id=identity.run_id,
-            command=identity.command,
+def _capture_process_group_identities(
+    leader: ProcessIdentity,
+) -> list[ProcessIdentity] | None:
+    """Capture verifiable identities for all members of *leader*'s process group."""
+
+    current = read_process_identity(
+        leader.pid,
+        run_id=leader.run_id,
+        command=leader.command,
+    )
+    if not process_identities_match(leader, current):
+        return None
+
+    pgid = read_process_group_id(leader.pid)
+    if pgid is None:
+        return [leader]
+
+    pids = list_process_group_pids(pgid)
+    if pids is None:
+        return None
+
+    identities: list[ProcessIdentity] = []
+    for pid in pids:
+        identity = read_process_identity(
+            pid,
+            run_id=leader.run_id,
+            command=leader.command,
         )
-        if not process_identities_match(identity, current):
-            return True
-        try:
-            waited_pid, _status = os.waitpid(identity.pid, os.WNOHANG)
-            if waited_pid == identity.pid:
-                return True
-        except ChildProcessError:
-            return not is_pid_alive(identity.pid)
-        except OSError:
-            break
-        import time
-
-        time.sleep(min(interval, deadline))
-        deadline -= interval
-    return not is_pid_alive(identity.pid)
+        if identity is None:
+            return None
+        identities.append(identity)
+    return identities
 
 
-def _wait_process_group_gone(pgid: int, *, timeout: float) -> bool:
+def _identity_still_alive(identity: ProcessIdentity) -> bool:
+    if not is_pid_alive(identity.pid):
+        return False
+    current = read_process_identity(
+        identity.pid,
+        run_id=identity.run_id,
+        command=identity.command,
+    )
+    return process_identities_match(identity, current)
+
+
+def _any_identities_still_alive(identities: list[ProcessIdentity]) -> bool:
+    return any(_identity_still_alive(identity) for identity in identities)
+
+
+def _wait_identities_dead(
+    identities: list[ProcessIdentity],
+    *,
+    timeout: float,
+) -> bool:
     deadline = timeout
     interval = 0.05
     while deadline > 0:
-        if not pgid_has_live_members(pgid):
+        if not _any_identities_still_alive(identities):
             return True
         import time
 
         time.sleep(min(interval, deadline))
         deadline -= interval
-    return not pgid_has_live_members(pgid)
+    return not _any_identities_still_alive(identities)
 
 
-def _terminate_linux_pidfd(identity: ProcessIdentity) -> TerminateIdentityResult:
-    current = read_process_identity(
-        identity.pid,
-        run_id=identity.run_id,
-        command=identity.command,
-    )
-    if not process_identities_match(identity, current):
-        return TerminateIdentityResult.IDENTITY_MISMATCH
+def _signal_identity_via_pidfd(identity: ProcessIdentity, sig: int) -> bool:
+    """Send *sig* through pidfd when *identity* still matches."""
 
-    pgid = read_process_group_id(identity.pid)
-    if pgid is None:
-        return TerminateIdentityResult.FAILED
-
-    current = read_process_identity(
-        identity.pid,
-        run_id=identity.run_id,
-        command=identity.command,
-    )
-    if not process_identities_match(identity, current):
-        return TerminateIdentityResult.IDENTITY_MISMATCH
-
+    if not _identity_still_alive(identity):
+        return True
     try:
-        os.killpg(pgid, signal.SIGTERM)
+        fd = os.pidfd_open(identity.pid, 0)
     except OSError:
+        return False
+    try:
+        if not _identity_still_alive(identity):
+            return True
+        signal.pidfd_send_signal(fd, sig)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def _terminate_linux_identity(identity: ProcessIdentity) -> TerminateIdentityResult:
+    current = read_process_identity(
+        identity.pid,
+        run_id=identity.run_id,
+        command=identity.command,
+    )
+    if not process_identities_match(identity, current):
+        return TerminateIdentityResult.IDENTITY_MISMATCH
+
+    captured = _capture_process_group_identities(identity)
+    if captured is None:
         return TerminateIdentityResult.FAILED
 
-    if _wait_process_group_gone(pgid, timeout=5):
+    for member in captured:
+        if not _signal_identity_via_pidfd(member, signal.SIGTERM):
+            return TerminateIdentityResult.FAILED
+
+    if _wait_identities_dead(captured, timeout=5):
         return TerminateIdentityResult.TERMINATED
 
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except OSError:
-        pass
+    for member in captured:
+        if not _signal_identity_via_pidfd(member, signal.SIGKILL):
+            return TerminateIdentityResult.FAILED
 
-    if _wait_process_group_gone(pgid, timeout=5):
+    if _wait_identities_dead(captured, timeout=5):
         return TerminateIdentityResult.TERMINATED
     return TerminateIdentityResult.FAILED
 
@@ -275,7 +312,7 @@ def terminate_verified_process_identity(
         return TerminateIdentityResult.ALREADY_GONE
 
     if _pidfd_supported():
-        return _terminate_linux_pidfd(identity)
+        return _terminate_linux_identity(identity)
 
     return TerminateIdentityResult.FAILED
 

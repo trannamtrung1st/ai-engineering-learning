@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -11,32 +13,40 @@ from unittest.mock import patch
 import pytest
 
 from core_tools.provider.cursor import CursorProvider, default_process_runner
-from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree, terminate_process_tree
+from core_tools.provider.process_cleanup import (
+    ProcessGroupState,
+    is_pid_alive,
+    process_group_state,
+    terminate_pid_tree,
+    terminate_process_tree,
+)
 from core_tools.provider.stub import StubProvider
-from tests.conftest import tracked_turn_proc
+from tests.conftest import spawn_sigterm_ignoring_leader_with_child, tracked_turn_proc
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
-def test_terminate_process_tree_kills_child_process() -> None:
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import os, signal, time; "
-                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-                "os.setpgrp(); "
-                "child = os.fork() or (time.sleep(60), os._exit(0))[1]; "
-                "time.sleep(60)"
-            ),
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    time.sleep(0.1)
-    terminate_process_tree(proc)
-    assert proc.poll() is not None
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
+def test_terminate_process_tree_kills_child_process(tmp_path: Path) -> None:
+    proc, child_pid = spawn_sigterm_ignoring_leader_with_child(tmp_path)
+    try:
+        assert terminate_process_tree(proc) is True
+        assert proc.poll() is not None
+        assert not is_pid_alive(child_pid)
+    finally:
+        if is_pid_alive(child_pid):
+            os.kill(child_pid, signal.SIGKILL)
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
+def test_process_group_state_unverifiable_without_proc(monkeypatch) -> None:
+    import os
+
+    monkeypatch.setattr(sys, "platform", "linux", raising=False)
+    monkeypatch.setattr(os.path, "isdir", lambda path: False)
+    assert process_group_state(4242) is ProcessGroupState.UNVERIFIABLE
 
 
 def test_cursor_provider_terminate_all_sessions_kills_tracked_turn(tmp_path: Path) -> None:
