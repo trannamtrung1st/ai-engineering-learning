@@ -11,6 +11,7 @@ import pytest
 from core_tools.provider import StubProvider
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator import RunEngine
+from top_down_planning.orchestrator.agent_process_cleanup import OrphanCleanupResult
 from top_down_planning.orchestrator.errors import ProviderTeardownError
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator
@@ -61,27 +62,31 @@ def test_teardown_defers_session_ended_until_pid_death_confirmed() -> None:
             "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
             return_value=True,
         ):
-            with patch.object(
-                provider,
-                "terminate_all_sessions",
-                return_value=[
-                    {
-                        "pid": 111,
-                        "role": "planner",
-                        "session_id": session_id,
-                        "reason": "termination_failed",
-                    }
-                ],
+            with patch(
+                "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
+                return_value=True,
             ):
-                with pytest.raises(ProviderTeardownError):
-                    teardown_provider_sessions(
-                        provider,
-                        run_id="run-test",
-                        phase=PLANNING,
-                        append_event=append_event,
-                        emit_console=lambda _event: None,
-                        audit_cancel=True,
-                    )
+                with patch.object(
+                    provider,
+                    "terminate_all_sessions",
+                    return_value=[
+                        {
+                            "pid": 111,
+                            "role": "planner",
+                            "session_id": session_id,
+                            "reason": "termination_failed",
+                        }
+                    ],
+                ):
+                    with pytest.raises(ProviderTeardownError):
+                        teardown_provider_sessions(
+                            provider,
+                            run_id="run-test",
+                            phase=PLANNING,
+                            append_event=append_event,
+                            emit_console=lambda _event: None,
+                            audit_cancel=True,
+                        )
 
     ended_types = [event_type for event_type, _fields in events if event_type.endswith("_session_ended")]
     assert ended_types == []
@@ -125,19 +130,23 @@ def test_teardown_emits_session_ended_only_after_retry_success() -> None:
             "top_down_planning.orchestrator.provider_teardown.terminate_pid_tree",
             side_effect=fake_terminate,
         ):
-            with patch.object(
-                provider,
-                "terminate_all_sessions",
-                side_effect=mock_terminate_all_sessions,
+            with patch(
+                "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
+                return_value=True,
             ):
-                terminated = teardown_provider_sessions(
+                with patch.object(
                     provider,
-                    run_id="run-test",
-                    phase=PLANNING,
-                    append_event=append_event,
-                    emit_console=lambda _event: None,
-                    audit_cancel=True,
-                )
+                    "terminate_all_sessions",
+                    side_effect=mock_terminate_all_sessions,
+                ):
+                    terminated = teardown_provider_sessions(
+                        provider,
+                        run_id="run-test",
+                        phase=PLANNING,
+                        append_event=append_event,
+                        emit_console=lambda _event: None,
+                        audit_cancel=True,
+                    )
 
     assert terminated == [111]
     ended = [event_type for event_type, _fields in events if event_type == "planner_session_ended"]
@@ -394,6 +403,7 @@ def test_doctor_fix_allows_repair_for_stale_running_run(tmp_path: Path) -> None:
     ):
         with patch(
             "top_down_planning.cli.doctor.kill_orphan_agents",
+            return_value=OrphanCleanupResult(cleaned_pids=(), failed_pids=()),
         ) as kill_mock:
             with patch(
                 "top_down_planning.cli.doctor.reconcile_stale_running_run_under_ownership",

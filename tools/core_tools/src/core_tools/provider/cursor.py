@@ -461,10 +461,10 @@ class CursorProvider:
             ]
 
     def reconcile_terminated_pids(self, terminated_pids: list[int]) -> None:
-        """Drop dead tracked PIDs and sessions confirmed terminated externally."""
+        """Drop tracked PIDs and sessions confirmed terminated externally."""
 
         confirmed_dead = {
-            int(pid) for pid in terminated_pids if isinstance(pid, int) and not is_pid_alive(int(pid))
+            int(pid) for pid in terminated_pids if isinstance(pid, int)
         }
         if confirmed_dead:
             with self._turn_proc_lock:
@@ -687,20 +687,28 @@ class CursorProvider:
                         session_id=session_id,
                     )
                 return canonical_id
-        if canonical_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
-            raise ProviderSessionError(
-                f"unknown provider session: {session_id}",
-                session_id=session_id,
+            if canonical_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+                raise ProviderSessionError(
+                    f"unknown provider session: {session_id}",
+                    session_id=session_id,
+                )
+            session_model = resolve_provider_cli_model(model=model)
+            argv = build_agent_argv(
+                self._config,
+                binary=self._binary,
+                workspace=self._workspace,
+                session_id=canonical_id,
+                prompt="",
+                model=session_model,
             )
-        self._register_session(
-            role=role,
-            kind=kind,
-            manifest={},
-            prompt="",
-            model=model,
-            resume_session_id=canonical_id,
-        )
-        return canonical_id
+            self._sessions[canonical_id] = _CursorSession(
+                role=role,
+                kind=kind,
+                manifest={},
+                model=session_model,
+                pending_argv=argv,
+            )
+            return canonical_id
 
     def _new_pending_session_id(self) -> str:
         self._pending_counter += 1
@@ -725,8 +733,12 @@ class CursorProvider:
             prompt=prompt,
             model=session_model,
         )
-        session_id = resume_session_id or self._new_pending_session_id()
         with self._session_registry_lock:
+            if resume_session_id is not None:
+                session_id = resume_session_id
+            else:
+                self._pending_counter += 1
+                session_id = f"{_CURSOR_TRANSIENT_SESSION_PREFIX}{self._pending_counter}"
             self._sessions[session_id] = _CursorSession(
                 role=role,
                 kind=kind,

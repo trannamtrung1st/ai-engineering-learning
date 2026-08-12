@@ -12,6 +12,7 @@ from core_tools.provider import StubProvider
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.run_ownership import RunOwnershipError
 from top_down_planning.orchestrator import RunEngine
+from top_down_planning.orchestrator.agent_process_cleanup import OrphanCleanupResult
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.planning import PlanningPhaseOrchestrator, PlanningPhaseResult
 from top_down_planning.persistence import FileRunStore
@@ -112,7 +113,10 @@ def test_doctor_fix_holds_run_ownership_during_destructive_repair(
         "top_down_planning.cli.doctor.run_ownership",
         return_value=_Ownership(),
     ):
-        with patch("top_down_planning.cli.doctor.kill_orphan_agents") as kill_mock:
+        with patch(
+            "top_down_planning.cli.doctor.kill_orphan_agents",
+            return_value=OrphanCleanupResult(cleaned_pids=(), failed_pids=()),
+        ) as kill_mock:
             with patch(
                 "top_down_planning.cli.doctor.reconcile_stale_running_run_under_ownership",
                 return_value=True,
@@ -159,7 +163,10 @@ def test_doctor_fix_refuses_when_run_ownership_cannot_be_acquired(
         "top_down_planning.cli.doctor.run_ownership",
         side_effect=RunOwnershipError("live owner"),
     ):
-        with patch("top_down_planning.cli.doctor.kill_orphan_agents") as kill_mock:
+        with patch(
+            "top_down_planning.cli.doctor.kill_orphan_agents",
+            return_value=OrphanCleanupResult(cleaned_pids=(), failed_pids=()),
+        ) as kill_mock:
             handle_doctor_command(
                 type(
                     "Args",

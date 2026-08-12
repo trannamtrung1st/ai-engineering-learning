@@ -11,6 +11,7 @@ from core_tools.provider import StubProvider
 from core_tools.provider.cursor import CursorProvider
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.run_ownership import RunOwnershipError, run_ownership
+from top_down_planning.orchestrator.agent_process_cleanup import OrphanCleanupResult
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.provider_teardown import teardown_provider_sessions
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import (
@@ -143,19 +144,23 @@ def test_teardown_reconciles_provider_registry_after_retry_success(tmp_path: Pat
             "top_down_planning.orchestrator.provider_teardown.terminate_pid_tree",
             side_effect=fake_terminate,
         ):
-            with patch.object(
-                provider,
-                "terminate_all_sessions",
-                side_effect=mock_terminate_all_sessions,
+            with patch(
+                "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
+                return_value=True,
             ):
-                teardown_provider_sessions(
+                with patch.object(
                     provider,
-                    run_id="run-test",
-                    phase=PLANNING,
-                    append_event=append_event,
-                    emit_console=lambda _event: None,
-                    audit_cancel=True,
-                )
+                    "terminate_all_sessions",
+                    side_effect=mock_terminate_all_sessions,
+                ):
+                    teardown_provider_sessions(
+                        provider,
+                        run_id="run-test",
+                        phase=PLANNING,
+                        append_event=append_event,
+                        emit_console=lambda _event: None,
+                        audit_cancel=True,
+                    )
 
     assert provider.list_active_sessions() == []
     ended = [event_type for event_type, _fields in events if event_type == "planner_session_ended"]
@@ -225,6 +230,7 @@ def test_explicit_doctor_fix_reconciles_stale_running_run_with_real_ownership(
     ):
         with patch(
             "top_down_planning.cli.doctor.kill_orphan_agents",
+            return_value=OrphanCleanupResult(cleaned_pids=(), failed_pids=()),
         ) as kill_mock:
             handle_doctor_command(
                 type(
@@ -278,6 +284,7 @@ def test_workspace_doctor_fix_uses_ownership_safe_repair(tmp_path: Path) -> None
             ):
                 with patch(
                     "top_down_planning.cli.doctor.kill_orphan_agents",
+                    return_value=OrphanCleanupResult(cleaned_pids=(), failed_pids=()),
                 ) as kill_mock:
                     handle_doctor_command(
                         type(

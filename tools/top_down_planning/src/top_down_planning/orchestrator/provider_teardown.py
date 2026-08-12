@@ -11,7 +11,13 @@ from core_tools.provider import Provider
 from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
 
 from top_down_planning.observability import session_lifecycle_event
-from top_down_planning.orchestrator.agent_process_cleanup import kill_orphan_agents, scan_orphan_agent_pids
+from top_down_planning.orchestrator.agent_process_cleanup import (
+    ReadPidEnviron,
+    default_read_pid_environ,
+    kill_orphan_agents,
+    pid_matches_run_agent,
+    scan_orphan_agent_pids,
+)
 from top_down_planning.orchestrator.errors import ProviderTeardownError
 from top_down_planning.persistence.interface import RunStore
 
@@ -90,11 +96,23 @@ def _emit_agent_termination_records(
     return terminated_pids, failed_pids
 
 
-def _retry_terminate_pids(pids: list[int]) -> tuple[list[int], list[int]]:
+def _retry_terminate_pids(
+    pids: list[int],
+    *,
+    run_id: str | None = None,
+    read_pid_environ: ReadPidEnviron | None = None,
+) -> tuple[list[int], list[int]]:
     terminated: list[int] = []
     failed: list[int] = []
+    read_environ = read_pid_environ or default_read_pid_environ
     for pid in pids:
         if not is_pid_alive(pid):
+            continue
+        if run_id is not None and not pid_matches_run_agent(
+            run_id,
+            pid,
+            read_environ=read_environ,
+        ):
             continue
         if terminate_pid_tree(pid):
             terminated.append(pid)
@@ -217,13 +235,12 @@ def teardown_provider_sessions(
             audit_cancel=audit_cancel,
         )
 
-        retried_terminated, retried_failed = _retry_terminate_pids(failed_pids)
+        retried_terminated, retried_failed = _retry_terminate_pids(
+            failed_pids,
+            run_id=run_id,
+        )
         verified_terminated.extend(retried_terminated)
         survivors = list(retried_failed)
-
-        reconcile = getattr(provider, "reconcile_terminated_pids", None)
-        if reconcile is not None and verified_terminated:
-            reconcile(sorted(set(verified_terminated)))
 
         if store is not None:
             orphan_pids = scan_orphan_agent_pids(
@@ -240,6 +257,10 @@ def teardown_provider_sessions(
                 terminated_pids=sorted(set(verified_terminated)),
             )
             survivors = sorted(set(survivors) | set(remaining))
+
+        reconcile = getattr(provider, "reconcile_terminated_pids", None)
+        if reconcile is not None and verified_terminated:
+            reconcile(sorted(set(verified_terminated)))
 
         for pid in survivors:
             if is_pid_alive(pid):

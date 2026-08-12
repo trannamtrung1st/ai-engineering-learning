@@ -173,22 +173,32 @@ def _looks_like_agent_command(command: str) -> bool:
     return all(marker in command for marker in _AGENT_CMD_MARKERS)
 
 
+def pid_matches_run_agent(
+    run_id: str,
+    pid: int,
+    *,
+    read_environ: ReadPidEnviron | None = None,
+) -> bool:
+    """Return whether *pid* is a live run-associated agent process."""
+
+    read_env = read_environ or default_read_pid_environ
+    if not is_pid_alive(pid):
+        return False
+    environ = read_env(pid)
+    env_run_id = str(environ.get(RUN_ID_ENV_VAR) or "").strip()
+    if env_run_id != run_id:
+        return False
+    command = _read_pid_cmdline(pid)
+    return _looks_like_agent_command(command)
+
+
 def _pid_matches_run_agent(
     run_id: str,
     pid: int,
     *,
     read_environ: ReadPidEnviron,
 ) -> bool:
-    """Return whether *pid* is a live run-associated agent process."""
-
-    if not is_pid_alive(pid):
-        return False
-    environ = read_environ(pid)
-    env_run_id = str(environ.get(RUN_ID_ENV_VAR) or "").strip()
-    if env_run_id != run_id:
-        return False
-    command = _read_pid_cmdline(pid)
-    return _looks_like_agent_command(command)
+    return pid_matches_run_agent(run_id, pid, read_environ=read_environ)
 
 
 def scan_orphan_agent_pids(
@@ -446,6 +456,7 @@ __all__ = [
     "default_read_pid_environ",
     "finalize_user_cancel",
     "kill_orphan_agents",
+    "pid_matches_run_agent",
     "scan_orphan_agent_pids",
     "terminated_pids_from_stop",
     "workspace_has_orphan_agents",

@@ -297,17 +297,21 @@ def test_teardown_provider_sessions_raises_when_survivors_remain(tmp_path: Path)
                     "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
                     return_value=True,
                 ):
-                    with pytest.raises(ProviderTeardownError) as exc_info:
-                        teardown_provider_sessions(
-                            provider,
-                            run_id=run_id,
-                            phase=PLANNING,
-                            append_event=lambda event_type, **fields: events.append(
-                                {"type": event_type, **fields}
-                            ),
-                            emit_console=lambda _event: None,
-                            store=store,
-                        )
+                    with patch(
+                        "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
+                        return_value=True,
+                    ):
+                        with pytest.raises(ProviderTeardownError) as exc_info:
+                            teardown_provider_sessions(
+                                provider,
+                                run_id=run_id,
+                                phase=PLANNING,
+                                append_event=lambda event_type, **fields: events.append(
+                                    {"type": event_type, **fields}
+                                ),
+                                emit_console=lambda _event: None,
+                                store=store,
+                            )
         assert proc.pid in exc_info.value.surviving_pids
         assert any(event["type"] == "agent_termination_failed" for event in events)
     finally:

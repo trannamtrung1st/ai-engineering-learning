@@ -641,17 +641,21 @@ def test_teardown_provider_sessions_emits_agent_termination_failed_not_terminate
                 "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
                 return_value=True,
             ):
-                with pytest.raises(ProviderTeardownError):
-                    teardown_provider_sessions(
-                        provider,
-                        run_id="run-cancel",
-                        phase=PLANNING,
-                        append_event=lambda event_type, **fields: events.append(
-                            {"type": event_type, **fields}
-                        ),
-                        emit_console=lambda _event: None,
-                        audit_cancel=True,
-                    )
+                with patch(
+                    "top_down_planning.orchestrator.provider_teardown.pid_matches_run_agent",
+                    return_value=True,
+                ):
+                    with pytest.raises(ProviderTeardownError):
+                        teardown_provider_sessions(
+                            provider,
+                            run_id="run-cancel",
+                            phase=PLANNING,
+                            append_event=lambda event_type, **fields: events.append(
+                                {"type": event_type, **fields}
+                            ),
+                            emit_console=lambda _event: None,
+                            audit_cancel=True,
+                        )
 
     proc.kill()
     proc.wait(timeout=1)
