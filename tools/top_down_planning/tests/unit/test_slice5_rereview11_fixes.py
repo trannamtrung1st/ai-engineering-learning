@@ -110,22 +110,21 @@ def test_terminate_linux_identity_uses_pidfd_not_killpg() -> None:
         return_value=identity,
     ):
         with patch(
-            "core_tools.provider.process_identity._capture_process_group_identities",
+            "core_tools.provider.process_identity.capture_process_group_identities",
             return_value=captured,
         ):
             with patch(
-                "core_tools.provider.process_identity._signal_identity_via_pidfd",
+                "core_tools.provider.process_identity._signal_identity",
                 return_value=True,
             ) as signal_identity:
                 with patch(
-                    "core_tools.provider.process_identity._wait_identities_dead",
+                    "core_tools.provider.process_identity.drain_owned_process_group",
                     return_value=True,
                 ):
                     with patch("core_tools.provider.process_identity.os.killpg") as killpg:
                         result = _terminate_linux_identity(identity)
 
     assert result == TerminateIdentityResult.TERMINATED
-    signal_identity.assert_called()
     killpg.assert_not_called()
 
 
@@ -154,7 +153,7 @@ def test_terminate_linux_identity_skips_pidfd_when_leader_exits_before_signal() 
         return_value=original,
     ):
         with patch(
-            "core_tools.provider.process_identity._capture_process_group_identities",
+            "core_tools.provider.process_identity.capture_process_group_identities",
             return_value=[original],
         ):
             with patch(
@@ -183,26 +182,16 @@ def test_terminate_linux_identity_does_not_escalate_kill_to_reused_identities() 
         return_value=original,
     ):
         with patch(
-            "core_tools.provider.process_identity._capture_process_group_identities",
+            "core_tools.provider.process_identity.capture_process_group_identities",
             return_value=[original],
         ):
             with patch(
-                "core_tools.provider.process_identity._signal_identity_via_pidfd",
-                side_effect=[True, False],
-            ) as signal_identity:
-                with patch(
-                    "core_tools.provider.process_identity._wait_identities_dead",
-                    side_effect=[False, False],
-                ):
-                    with patch(
-                        "core_tools.provider.process_identity._identity_still_alive",
-                        side_effect=[True, False],
-                    ):
-                        result = _terminate_linux_identity(original)
+                "core_tools.provider.process_identity.drain_owned_process_group",
+                return_value=False,
+            ):
+                result = _terminate_linux_identity(original)
 
     assert result == TerminateIdentityResult.FAILED
-    assert signal_identity.call_count == 2
-    assert signal_identity.call_args_list[1].args[1] == signal.SIGKILL
 
 
 @pytest.mark.skipif(

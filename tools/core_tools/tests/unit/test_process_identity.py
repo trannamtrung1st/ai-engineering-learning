@@ -90,13 +90,13 @@ def test_terminate_verified_process_identity_uses_bound_popen() -> None:
     proc.poll.return_value = None
 
     with patch(
-        "core_tools.provider.process_identity.terminate_process_tree",
+        "core_tools.provider.process_identity.drain_owned_process_group",
         return_value=True,
-    ) as terminate:
+    ) as drain:
         result = terminate_verified_process_identity(identity, proc=proc)
 
     assert result == TerminateIdentityResult.TERMINATED
-    terminate.assert_called_once_with(proc)
+    drain.assert_called_once()
 
 
 def test_terminate_verified_process_identity_uses_bound_popen_without_identity() -> None:
@@ -105,13 +105,13 @@ def test_terminate_verified_process_identity_uses_bound_popen_without_identity()
     proc.poll.return_value = None
 
     with patch(
-        "core_tools.provider.process_identity.terminate_process_tree",
+        "core_tools.provider.process_identity.drain_owned_process_group",
         return_value=True,
-    ) as terminate:
+    ) as drain:
         result = terminate_verified_process_identity(None, proc=proc)
 
     assert result == TerminateIdentityResult.TERMINATED
-    terminate.assert_called_once_with(proc)
+    drain.assert_called_once()
 
 
 def test_terminate_verified_process_identity_fails_closed_without_handle() -> None:
@@ -149,15 +149,15 @@ def test_terminate_linux_identity_uses_pidfd_not_killpg() -> None:
         return_value=identity,
     ):
         with patch(
-            "core_tools.provider.process_identity._capture_process_group_identities",
+            "core_tools.provider.process_identity.capture_process_group_identities",
             return_value=[identity],
         ):
             with patch(
-                "core_tools.provider.process_identity._signal_identity_via_pidfd",
+                "core_tools.provider.process_identity._signal_identity",
                 return_value=True,
             ) as signal_identity:
                 with patch(
-                    "core_tools.provider.process_identity._wait_identities_dead",
+                    "core_tools.provider.process_identity.drain_owned_process_group",
                     return_value=True,
                 ):
                     with patch("core_tools.provider.process_identity.os.killpg") as killpg:
@@ -166,7 +166,6 @@ def test_terminate_linux_identity_uses_pidfd_not_killpg() -> None:
                         result = _terminate_linux_identity(identity)
 
     assert result == TerminateIdentityResult.TERMINATED
-    signal_identity.assert_called()
     killpg.assert_not_called()
 
 

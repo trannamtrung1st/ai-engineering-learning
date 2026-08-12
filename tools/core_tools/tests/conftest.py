@@ -21,11 +21,30 @@ def tracked_turn_proc(
     start_time: str = "100",
     run_id: str | None = None,
 ) -> _TrackedTurnProc:
+    from core_tools.provider.process_cleanup import read_process_group_id
+    from core_tools.provider.process_identity import (
+        capture_process_group_identities,
+        read_process_identity,
+    )
+
+    identity = ProcessIdentity(pid=pid, start_time=start_time, run_id=run_id)
+    if proc is not None:
+        live_identity = read_process_identity(proc.pid, run_id=run_id)
+        if live_identity is not None:
+            identity = live_identity
+    pgid = read_process_group_id(pid) if proc is not None else None
+    members: tuple[ProcessIdentity, ...] | None = None
+    if proc is not None and identity is not None:
+        captured = capture_process_group_identities(identity)
+        if captured is not None:
+            members = tuple(captured)
     return _TrackedTurnProc(
         session_id=session_id,
         role=role,
         proc=proc,
-        identity=ProcessIdentity(pid=pid, start_time=start_time, run_id=run_id),
+        identity=identity,
+        pgid=pgid,
+        member_identities=members,
     )
 
 

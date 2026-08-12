@@ -7,7 +7,10 @@ import signal
 import subprocess
 import sys
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from core_tools.provider.process_identity import ProcessIdentity
 
 
 class ProcessGroupState(Enum):
@@ -18,12 +21,32 @@ class ProcessGroupState(Enum):
     UNVERIFIABLE = "unverifiable"
 
 
+def _pid_is_zombie(pid: int) -> bool:
+    if sys.platform == "win32":
+        return False
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "state="],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    if result.returncode != 0:
+        return False
+    state = result.stdout.strip()
+    return state.startswith("Z")
+
+
 def is_pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
     try:
         os.kill(pid, 0)
     except OSError:
+        return False
+    if _pid_is_zombie(pid):
         return False
     return True
 
@@ -129,85 +152,6 @@ def wait_process_group_gone(pgid: int, *, timeout: float) -> ProcessGroupState:
     return process_group_state(pgid)
 
 
-def _kill_pids(pids: list[int], sig: int) -> None:
-    for pid in pids:
-        if not is_pid_alive(pid):
-            continue
-        try:
-            os.kill(pid, sig)
-        except OSError:
-            continue
-
-
-def terminate_pid_tree(pid: int) -> bool:
-    """Terminate a process and any descendants started in its process group.
-
-    Returns True when the PID and its owned group are confirmed dead.
-    """
-
-    if not is_pid_alive(pid):
-        return True
-
-    if sys.platform == "win32":
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            return not is_pid_alive(pid)
-        _wait_pid(pid, timeout=5)
-        if is_pid_alive(pid):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                return not is_pid_alive(pid)
-            _wait_pid(pid, timeout=5)
-        return not is_pid_alive(pid)
-
-    pgid = read_process_group_id(pid)
-    if pgid is None:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            return not is_pid_alive(pid)
-        _wait_pid(pid, timeout=5)
-        if is_pid_alive(pid):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                return not is_pid_alive(pid)
-            _wait_pid(pid, timeout=5)
-        return not is_pid_alive(pid)
-
-    members_at_start = list_process_group_pids(pgid)
-    if members_at_start is None:
-        return False
-
-    try:
-        os.killpg(pgid, signal.SIGTERM)
-    except ProcessLookupError:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            return not is_pid_alive(pid)
-    except PermissionError:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            return not is_pid_alive(pid)
-
-    _wait_pid(pid, timeout=5)
-
-    state = wait_process_group_gone(pgid, timeout=5)
-    if state is ProcessGroupState.UNVERIFIABLE:
-        return False
-    if state is ProcessGroupState.GONE and not is_pid_alive(pid):
-        return True
-
-    _kill_pids(members_at_start, signal.SIGKILL)
-    _wait_pid(pid, timeout=5)
-    state = wait_process_group_gone(pgid, timeout=5)
-    return state is ProcessGroupState.GONE and not is_pid_alive(pid)
-
-
 def _wait_pid(pid: int, *, timeout: float) -> bool:
     deadline = timeout
     interval = 0.05
@@ -227,13 +171,75 @@ def _wait_pid(pid: int, *, timeout: float) -> bool:
     return not is_pid_alive(pid)
 
 
-def terminate_process_tree(proc: subprocess.Popen[Any]) -> bool:
-    """Terminate a subprocess tree and return True when the group is verified gone."""
+def terminate_pid_tree(
+    pid: int,
+    *,
+    pgid: int | None = None,
+    leader_identity: ProcessIdentity | None = None,
+    member_identities: list[ProcessIdentity] | None = None,
+) -> bool:
+    """Terminate a process tree using identity-safe group draining."""
 
-    if proc.poll() is not None:
-        return True
+    from core_tools.provider.process_identity import (
+        capture_process_group_identities,
+        drain_owned_process_group,
+        read_process_identity,
+    )
 
     if sys.platform == "win32":
+        if not is_pid_alive(pid):
+            return True
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            return not is_pid_alive(pid)
+        _wait_pid(pid, timeout=5)
+        if is_pid_alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                return not is_pid_alive(pid)
+            _wait_pid(pid, timeout=5)
+        return not is_pid_alive(pid)
+
+    identity = leader_identity
+    if identity is None and is_pid_alive(pid):
+        identity = read_process_identity(pid)
+
+    resolved_pgid = pgid
+    if resolved_pgid is None and is_pid_alive(pid):
+        resolved_pgid = read_process_group_id(pid)
+
+    members = member_identities
+    if members is None and identity is not None and is_pid_alive(pid):
+        captured = capture_process_group_identities(identity)
+        members = captured
+
+    return drain_owned_process_group(
+        pgid=resolved_pgid,
+        leader_identity=identity,
+        known_identities=members,
+    )
+
+
+def terminate_process_tree(
+    proc: subprocess.Popen[Any],
+    *,
+    pgid: int | None = None,
+    leader_identity: ProcessIdentity | None = None,
+    member_identities: list[ProcessIdentity] | None = None,
+) -> bool:
+    """Terminate a subprocess tree and return True when the group is verified gone."""
+
+    from core_tools.provider.process_identity import (
+        capture_process_group_identities,
+        drain_owned_process_group,
+        read_process_identity,
+    )
+
+    if sys.platform == "win32":
+        if proc.poll() is not None:
+            return True
         proc.terminate()
         try:
             proc.wait(timeout=5)
@@ -242,55 +248,33 @@ def terminate_process_tree(proc: subprocess.Popen[Any]) -> bool:
             proc.wait(timeout=5)
         return proc.poll() is not None
 
-    pid = proc.pid
-    pgid = read_process_group_id(pid)
-    if pgid is None:
-        proc.terminate()
+    resolved_pgid = pgid
+    if resolved_pgid is None and proc.poll() is None:
+        resolved_pgid = read_process_group_id(proc.pid)
+
+    identity = leader_identity
+    if identity is None and proc.poll() is None:
+        identity = read_process_identity(proc.pid)
+
+    members = member_identities
+    if members is None and identity is not None:
+        if proc.poll() is None:
+            captured = capture_process_group_identities(identity)
+            members = captured
+        elif resolved_pgid is not None:
+            members = member_identities
+
+    cleaned = drain_owned_process_group(
+        pgid=resolved_pgid,
+        leader_identity=identity,
+        known_identities=members,
+    )
+    if proc.poll() is None:
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=0)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
-        return proc.poll() is not None and not is_pid_alive(pid)
-
-    members_at_start = list_process_group_pids(pgid)
-    if members_at_start is None:
-        return False
-
-    try:
-        os.killpg(pgid, signal.SIGTERM)
-    except ProcessLookupError:
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            return not is_pid_alive(pid)
-    except PermissionError:
-        proc.terminate()
-
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        pass
-
-    state = wait_process_group_gone(pgid, timeout=5)
-    if state is ProcessGroupState.UNVERIFIABLE:
-        return False
-    if state is ProcessGroupState.GONE and (proc.poll() is not None or not is_pid_alive(pid)):
-        return True
-
-    _kill_pids(members_at_start, signal.SIGKILL)
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        pass
-
-    state = wait_process_group_gone(pgid, timeout=5)
-    if state is not ProcessGroupState.GONE:
-        return False
-    return proc.poll() is not None or not is_pid_alive(pid)
+            pass
+    return cleaned
 
 
 __all__ = [

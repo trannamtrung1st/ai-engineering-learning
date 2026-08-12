@@ -63,7 +63,7 @@ def test_terminate_session_prunes_dead_tracked_pid_after_failed_kill(tmp_path: P
     def fake_is_alive(pid: int) -> bool:
         return alive.get(pid, False)
 
-    def fake_terminate(_identity, *, proc=None):
+    def fake_terminate(_identity, *, proc=None, pgid=None, member_identities=None):
         alive[stale_pid] = False
         return TerminateIdentityResult.FAILED
 

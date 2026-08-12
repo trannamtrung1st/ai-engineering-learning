@@ -96,7 +96,12 @@ def test_cursor_terminate_tracked_proc_does_not_signal_pid_reuse(tmp_path: Path)
             records = provider._terminate_tracked_turn_procs()
 
     assert records == []
-    terminate.assert_called_once_with(stale_identity, proc=None)
+    terminate.assert_called_once_with(
+        stale_identity,
+        proc=None,
+        pgid=None,
+        member_identities=None,
+    )
     assert 4242 not in provider._tracked_turn_procs
 
 

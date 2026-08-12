@@ -35,11 +35,13 @@ from core_tools.provider.events import (
 )
 from core_tools.provider.process_cleanup import (
     is_pid_alive,
+    read_process_group_id,
     terminate_process_tree,
 )
 from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
+    capture_process_group_identities,
     process_identity_token,
     read_process_identity,
     read_process_start_time,
@@ -298,6 +300,8 @@ class _TrackedTurnProc:
     role: str
     proc: subprocess.Popen[str] | None = None
     identity: ProcessIdentity | None = None
+    pgid: int | None = None
+    member_identities: tuple[ProcessIdentity, ...] | None = None
 
 
 class CursorProvider:
@@ -583,6 +587,12 @@ class CursorProvider:
             result = terminate_verified_process_identity(
                 entry.identity,
                 proc=entry.proc,
+                pgid=entry.pgid,
+                member_identities=(
+                    list(entry.member_identities)
+                    if entry.member_identities is not None
+                    else None
+                ),
             )
             if result == TerminateIdentityResult.TERMINATED:
                 terminated.append({**record, "reason": "terminated"})
@@ -1175,12 +1185,20 @@ class CursorProvider:
                     start_time=start_time,
                     run_id=run_id_value,
                 )
+        pgid = read_process_group_id(proc.pid) if is_pid_alive(proc.pid) else None
+        members: tuple[ProcessIdentity, ...] | None = None
+        if identity is not None:
+            captured = capture_process_group_identities(identity)
+            if captured is not None:
+                members = tuple(captured)
         with self._turn_proc_lock:
             self._tracked_turn_procs[proc.pid] = _TrackedTurnProc(
                 session_id=session_id,
                 role=role,
                 proc=proc,
                 identity=identity,
+                pgid=pgid,
+                member_identities=members,
             )
 
     def _unregister_tracked_turn_proc(self, proc: subprocess.Popen[str] | None) -> None:
@@ -1260,8 +1278,19 @@ class CursorProvider:
 
                 def on_idle() -> None:
                     proc = active_proc[0]
-                    if proc is not None and proc.poll() is None:
-                        terminate_process_tree(proc)
+                    if proc is None:
+                        return
+                    tracked = self._tracked_turn_procs.get(proc.pid)
+                    terminate_process_tree(
+                        proc,
+                        pgid=tracked.pgid if tracked is not None else None,
+                        leader_identity=tracked.identity if tracked is not None else None,
+                        member_identities=(
+                            list(tracked.member_identities)
+                            if tracked is not None and tracked.member_identities is not None
+                            else None
+                        ),
+                    )
 
                 if idle_timeout > 0:
                     context = self._get_collect_context()
@@ -1283,9 +1312,18 @@ class CursorProvider:
             finally:
                 proc = active_proc[0]
                 if proc is not None:
-                    if proc.poll() is None:
-                        terminate_process_tree(proc)
-                    if proc.poll() is not None or not is_pid_alive(proc.pid):
+                    tracked = self._tracked_turn_procs.get(proc.pid)
+                    tree_clean = terminate_process_tree(
+                        proc,
+                        pgid=tracked.pgid if tracked is not None else None,
+                        leader_identity=tracked.identity if tracked is not None else None,
+                        member_identities=(
+                            list(tracked.member_identities)
+                            if tracked is not None and tracked.member_identities is not None
+                            else None
+                        ),
+                    )
+                    if tree_clean:
                         self._unregister_tracked_turn_proc(proc)
 
         return wrapped
