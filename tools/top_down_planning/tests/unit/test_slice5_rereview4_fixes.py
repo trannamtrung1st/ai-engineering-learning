@@ -22,7 +22,7 @@ from top_down_planning.orchestrator.run_signals import (
     ignore_repeated_run_interrupt_signals,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config
+from tests.helpers import create_run_kwargs, done_events, failed_agent_termination_record, minimal_resolved_config
 
 
 def _sample_plan() -> Plan:
@@ -119,12 +119,12 @@ def test_teardown_emits_session_ended_only_after_retry_success() -> None:
     def mock_terminate_all_sessions() -> list[dict[str, object]]:
         provider._sessions.clear()
         return [
-            {
-                "pid": 111,
-                "role": "planner",
-                "session_id": session_id,
-                "reason": "termination_failed",
-            }
+            failed_agent_termination_record(
+                session_id,
+                "planner",
+                111,
+                run_id="run-test",
+            )
         ]
 
     identity = ProcessIdentity(pid=111, start_time="100", run_id="run-test")

@@ -296,8 +296,8 @@ class _CursorSession:
 class _TrackedTurnProc:
     session_id: str
     role: str
-    identity: ProcessIdentity
     proc: subprocess.Popen[str] | None = None
+    identity: ProcessIdentity | None = None
 
 
 class CursorProvider:
@@ -603,14 +603,19 @@ class CursorProvider:
     def _termination_record_for_tracked_proc(
         entry: _TrackedTurnProc,
     ) -> dict[str, Any]:
-        return {
-            "pid": entry.identity.pid,
+        pid = entry.proc.pid if entry.proc is not None else (
+            entry.identity.pid if entry.identity is not None else 0
+        )
+        record: dict[str, Any] = {
+            "pid": pid,
             "role": entry.role,
             "session_id": entry.session_id,
-            "start_time": entry.identity.start_time,
-            "process_identity": process_identity_token(entry.identity),
-            "run_id": entry.identity.run_id,
         }
+        if entry.identity is not None:
+            record["start_time"] = entry.identity.start_time
+            record["process_identity"] = process_identity_token(entry.identity)
+            record["run_id"] = entry.identity.run_id
+        return record
 
     def _terminate_tracked_turn_procs_for_session(
         self,
@@ -1164,19 +1169,18 @@ class CursorProvider:
         identity = read_process_identity(proc.pid, run_id=run_id_value)
         if identity is None:
             start_time = read_process_start_time(proc.pid)
-            if start_time is None:
-                return
-            identity = ProcessIdentity(
-                pid=proc.pid,
-                start_time=start_time,
-                run_id=run_id_value,
-            )
+            if start_time is not None:
+                identity = ProcessIdentity(
+                    pid=proc.pid,
+                    start_time=start_time,
+                    run_id=run_id_value,
+                )
         with self._turn_proc_lock:
             self._tracked_turn_procs[proc.pid] = _TrackedTurnProc(
                 session_id=session_id,
                 role=role,
-                identity=identity,
                 proc=proc,
+                identity=identity,
             )
 
     def _unregister_tracked_turn_proc(self, proc: subprocess.Popen[str] | None) -> None:

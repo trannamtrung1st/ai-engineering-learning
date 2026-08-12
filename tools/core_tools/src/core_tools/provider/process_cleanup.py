@@ -19,6 +19,41 @@ def is_pid_alive(pid: int) -> bool:
     return True
 
 
+def read_process_group_id(pid: int) -> int | None:
+    """Return the process group ID for *pid*, or ``None`` when unavailable."""
+
+    if pid <= 0 or not is_pid_alive(pid):
+        return None
+    if sys.platform == "win32":
+        return None
+    try:
+        return int(os.getpgid(pid))
+    except OSError:
+        return None
+
+
+def pgid_has_live_members(pgid: int) -> bool:
+    """Return whether any live process still belongs to *pgid*."""
+
+    if pgid <= 0:
+        return False
+    if sys.platform == "win32":
+        return False
+    proc_root = "/proc"
+    if not os.path.isdir(proc_root):
+        return False
+    for entry in os.listdir(proc_root):
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        if not is_pid_alive(pid):
+            continue
+        member_pgid = read_process_group_id(pid)
+        if member_pgid == pgid:
+            return True
+    return False
+
+
 def terminate_pid_tree(pid: int) -> bool:
     """Terminate a process and any descendants started in its process group.
 

@@ -20,6 +20,6 @@ def tracked_turn_proc(
     return _TrackedTurnProc(
         session_id=session_id,
         role=role,
-        identity=ProcessIdentity(pid=pid, start_time=start_time, run_id=run_id),
         proc=proc,
+        identity=ProcessIdentity(pid=pid, start_time=start_time, run_id=run_id),
     )

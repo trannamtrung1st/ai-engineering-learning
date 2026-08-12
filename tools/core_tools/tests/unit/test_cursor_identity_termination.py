@@ -24,8 +24,8 @@ def _tracked(
     return _TrackedTurnProc(
         session_id=session_id,
         role=role,
-        identity=ProcessIdentity(pid=proc.pid, start_time="100"),
         proc=proc,  # type: ignore[arg-type]
+        identity=ProcessIdentity(pid=proc.pid, start_time="100"),
     )
 
 
@@ -81,8 +81,8 @@ def test_cursor_terminate_tracked_proc_does_not_signal_pid_reuse(tmp_path: Path)
     provider._tracked_turn_procs[4242] = _TrackedTurnProc(
         session_id=session_id,
         role="planner",
-        identity=stale_identity,
         proc=None,
+        identity=stale_identity,
     )
 
     with patch(
@@ -115,8 +115,8 @@ def test_cursor_failed_termination_record_carries_original_identity(tmp_path: Pa
     provider._tracked_turn_procs[4242] = _TrackedTurnProc(
         session_id=session_id,
         role="planner",
-        identity=identity,
         proc=None,
+        identity=identity,
     )
 
     with patch(

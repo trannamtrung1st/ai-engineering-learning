@@ -12,6 +12,8 @@ from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
 from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
+    process_identities_match,
+    process_identity_from_termination_record,
     read_process_identity,
     terminate_verified_process_identity,
 )
@@ -62,19 +64,24 @@ def _session_model_fields(session: dict[str, str]) -> dict[str, str]:
 
 def _partition_agent_termination_records(
     records: list[dict[str, Any]],
-) -> tuple[list[int], list[int]]:
+) -> tuple[list[int], list[ProcessIdentity], list[int]]:
     terminated_pids: list[int] = []
-    failed_pids: list[int] = []
+    failed_identities: list[ProcessIdentity] = []
+    unresolved_pids: list[int] = []
     for record in records:
         pid = record.get("pid")
         if not isinstance(pid, int):
             continue
         reason = str(record.get("reason") or "cancelled")
         if reason == "termination_failed":
-            failed_pids.append(pid)
+            identity = process_identity_from_termination_record(record)
+            if identity is None:
+                unresolved_pids.append(pid)
+            else:
+                failed_identities.append(identity)
         elif reason == "terminated":
             terminated_pids.append(pid)
-    return terminated_pids, failed_pids
+    return terminated_pids, failed_identities, unresolved_pids
 
 
 def _emit_agent_termination_records(
@@ -112,6 +119,37 @@ def _emit_agent_termination_records(
                 reason=reason,
             )
     return terminated_pids, failed_pids
+
+
+def _retry_terminate_provider_identities(
+    identities: list[ProcessIdentity],
+) -> RetryTerminateResult:
+    terminated: list[int] = []
+    failed: list[int] = []
+    unresolved: list[int] = []
+    stale_reconciled: list[int] = []
+    for identity in identities:
+        if not is_pid_alive(identity.pid):
+            continue
+        current = read_process_identity(identity.pid, run_id=identity.run_id)
+        if not process_identities_match(identity, current):
+            stale_reconciled.append(identity.pid)
+            continue
+        result = terminate_verified_process_identity(identity)
+        if result == TerminateIdentityResult.TERMINATED:
+            terminated.append(identity.pid)
+        elif result == TerminateIdentityResult.FAILED:
+            failed.append(identity.pid)
+        elif result == TerminateIdentityResult.IDENTITY_MISMATCH:
+            stale_reconciled.append(identity.pid)
+        elif result == TerminateIdentityResult.ALREADY_GONE:
+            continue
+    return RetryTerminateResult(
+        terminated=tuple(terminated),
+        failed=tuple(failed),
+        unresolved=tuple(unresolved),
+        stale_reconciled=tuple(stale_reconciled),
+    )
 
 
 def _retry_terminate_pids(
@@ -165,19 +203,27 @@ def _retry_terminate_identities(
 ) -> RetryTerminateResult:
     terminated: list[int] = []
     failed: list[int] = []
+    unresolved: list[int] = []
+    stale_reconciled: list[int] = []
     for identity in identities:
         if not is_pid_alive(identity.pid):
+            continue
+        current = read_process_identity(identity.pid, run_id=identity.run_id)
+        if not process_identities_match(identity, current):
+            stale_reconciled.append(identity.pid)
             continue
         result = terminate_verified_process_identity(identity)
         if result == TerminateIdentityResult.TERMINATED:
             terminated.append(identity.pid)
         elif result == TerminateIdentityResult.FAILED:
             failed.append(identity.pid)
+        elif result == TerminateIdentityResult.IDENTITY_MISMATCH:
+            stale_reconciled.append(identity.pid)
     return RetryTerminateResult(
         terminated=tuple(terminated),
         failed=tuple(failed),
-        unresolved=(),
-        stale_reconciled=(),
+        unresolved=tuple(unresolved),
+        stale_reconciled=tuple(stale_reconciled),
     )
 
 
@@ -284,8 +330,8 @@ def teardown_provider_sessions(
 
     try:
         termination_records = provider.terminate_all_sessions()
-        terminated_pids, failed_pids = _partition_agent_termination_records(
-            termination_records
+        terminated_pids, failed_identities, unresolved_pids = (
+            _partition_agent_termination_records(termination_records)
         )
         verified_terminated.extend(terminated_pids)
         _emit_agent_termination_records(
@@ -295,12 +341,13 @@ def teardown_provider_sessions(
             audit_cancel=audit_cancel,
         )
 
-        retried = _retry_terminate_pids(
-            failed_pids,
-            run_id=run_id,
-        )
+        retried = _retry_terminate_provider_identities(failed_identities)
         verified_terminated.extend(retried.terminated)
-        survivors = list(retried.failed) + list(retried.unresolved)
+        survivors = (
+            list(retried.failed)
+            + list(retried.unresolved)
+            + unresolved_pids
+        )
         stale_reconciled = list(retried.stale_reconciled)
 
         if store is not None:

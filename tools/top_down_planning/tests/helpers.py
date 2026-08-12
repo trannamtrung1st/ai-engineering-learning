@@ -2363,9 +2363,36 @@ def tracked_turn_proc(
     return _TrackedTurnProc(
         session_id=session_id,
         role=role,
-        identity=ProcessIdentity(pid=pid, start_time=start_time, run_id=run_id),
         proc=proc,
+        identity=ProcessIdentity(pid=pid, start_time=start_time, run_id=run_id),
     )
+
+
+def failed_agent_termination_record(
+    session_id: str,
+    role: str,
+    pid: int,
+    *,
+    start_time: str = "100",
+    run_id: str | None = None,
+) -> dict[str, object]:
+    """Provider ``termination_failed`` record with original process identity."""
+
+    from core_tools.provider.process_identity import (
+        ProcessIdentity,
+        process_identity_token,
+    )
+
+    identity = ProcessIdentity(pid=pid, start_time=start_time, run_id=run_id)
+    return {
+        "pid": pid,
+        "role": role,
+        "session_id": session_id,
+        "reason": "termination_failed",
+        "start_time": start_time,
+        "process_identity": process_identity_token(identity),
+        "run_id": run_id,
+    }
 
 
 def patch_identity_safe_orphan_scan(

@@ -12,7 +12,8 @@ from typing import Any
 
 from core_tools.provider.process_cleanup import (
     is_pid_alive,
-    terminate_pid_tree,
+    pgid_has_live_members,
+    read_process_group_id,
     terminate_process_tree,
 )
 
@@ -116,21 +117,63 @@ def process_identity_token(identity: ProcessIdentity) -> str:
     return f"{identity.pid}:{identity.start_time}"
 
 
+def process_identity_from_token(
+    token: str,
+    *,
+    run_id: str | None = None,
+) -> ProcessIdentity | None:
+    """Parse a ``pid:start_time`` token into a :class:`ProcessIdentity`."""
+
+    if ":" not in token:
+        return None
+    pid_text, start_time = token.split(":", 1)
+    if not start_time:
+        return None
+    try:
+        pid = int(pid_text)
+    except ValueError:
+        return None
+    return ProcessIdentity(pid=pid, start_time=start_time, run_id=run_id)
+
+
+def process_identity_from_termination_record(
+    record: dict[str, object],
+) -> ProcessIdentity | None:
+    """Reconstruct the original provider identity from a termination record."""
+
+    pid = record.get("pid")
+    start_time = record.get("start_time")
+    run_id = record.get("run_id")
+    run_id_value = run_id if isinstance(run_id, str) else None
+    if isinstance(pid, int) and isinstance(start_time, str) and start_time:
+        return ProcessIdentity(
+            pid=pid,
+            start_time=start_time,
+            run_id=run_id_value,
+        )
+    token = record.get("process_identity")
+    if isinstance(token, str):
+        identity = process_identity_from_token(token, run_id=run_id_value)
+        if identity is not None:
+            return identity
+    return None
+
+
 def _pidfd_supported() -> bool:
     return (
         sys.platform == "linux"
         and hasattr(os, "pidfd_open")
-        and hasattr(os, "pidfd_send_signal")
+        and hasattr(signal, "pidfd_send_signal")
     )
 
 
 def _terminate_bound_process(
-    identity: ProcessIdentity,
+    identity: ProcessIdentity | None,
     proc: subprocess.Popen[Any],
 ) -> TerminateIdentityResult:
     if proc.poll() is not None:
         return TerminateIdentityResult.ALREADY_GONE
-    if proc.pid != identity.pid:
+    if identity is not None and proc.pid != identity.pid:
         return TerminateIdentityResult.IDENTITY_MISMATCH
     if terminate_process_tree(proc):
         return TerminateIdentityResult.TERMINATED
@@ -163,38 +206,60 @@ def _wait_identity_dead(identity: ProcessIdentity, *, timeout: float) -> bool:
     return not is_pid_alive(identity.pid)
 
 
+def _wait_process_group_gone(pgid: int, *, timeout: float) -> bool:
+    deadline = timeout
+    interval = 0.05
+    while deadline > 0:
+        if not pgid_has_live_members(pgid):
+            return True
+        import time
+
+        time.sleep(min(interval, deadline))
+        deadline -= interval
+    return not pgid_has_live_members(pgid)
+
+
 def _terminate_linux_pidfd(identity: ProcessIdentity) -> TerminateIdentityResult:
+    current = read_process_identity(
+        identity.pid,
+        run_id=identity.run_id,
+        command=identity.command,
+    )
+    if not process_identities_match(identity, current):
+        return TerminateIdentityResult.IDENTITY_MISMATCH
+
+    pgid = read_process_group_id(identity.pid)
+    if pgid is None:
+        return TerminateIdentityResult.FAILED
+
+    current = read_process_identity(
+        identity.pid,
+        run_id=identity.run_id,
+        command=identity.command,
+    )
+    if not process_identities_match(identity, current):
+        return TerminateIdentityResult.IDENTITY_MISMATCH
+
     try:
-        fd = os.pidfd_open(identity.pid, 0)
+        os.killpg(pgid, signal.SIGTERM)
     except OSError:
         return TerminateIdentityResult.FAILED
+
+    if _wait_process_group_gone(pgid, timeout=5):
+        return TerminateIdentityResult.TERMINATED
+
     try:
-        current = read_process_identity(
-            identity.pid,
-            run_id=identity.run_id,
-            command=identity.command,
-        )
-        if not process_identities_match(identity, current):
-            return TerminateIdentityResult.IDENTITY_MISMATCH
-        try:
-            os.pidfd_send_signal(fd, signal.SIGTERM)
-        except OSError:
-            return TerminateIdentityResult.FAILED
-        if _wait_identity_dead(identity, timeout=5):
-            return TerminateIdentityResult.TERMINATED
-        try:
-            os.pidfd_send_signal(fd, signal.SIGKILL)
-        except OSError:
-            pass
-        if not is_pid_alive(identity.pid):
-            return TerminateIdentityResult.TERMINATED
-        return TerminateIdentityResult.FAILED
-    finally:
-        os.close(fd)
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        pass
+
+    if _wait_process_group_gone(pgid, timeout=5):
+        return TerminateIdentityResult.TERMINATED
+    return TerminateIdentityResult.FAILED
 
 
 def terminate_verified_process_identity(
-    identity: ProcessIdentity,
+    identity: ProcessIdentity | None,
     *,
     proc: subprocess.Popen[Any] | None = None,
 ) -> TerminateIdentityResult:
@@ -202,6 +267,9 @@ def terminate_verified_process_identity(
 
     if proc is not None:
         return _terminate_bound_process(identity, proc)
+
+    if identity is None:
+        return TerminateIdentityResult.FAILED
 
     if not is_pid_alive(identity.pid):
         return TerminateIdentityResult.ALREADY_GONE
@@ -216,6 +284,8 @@ __all__ = [
     "ProcessIdentity",
     "TerminateIdentityResult",
     "process_identities_match",
+    "process_identity_from_termination_record",
+    "process_identity_from_token",
     "process_identity_token",
     "read_process_identity",
     "read_process_start_time",

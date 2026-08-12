@@ -19,7 +19,13 @@ from top_down_planning.orchestrator.run_lifecycle_reconciliation import (
     reconcile_stale_running_run_under_ownership,
 )
 from top_down_planning.persistence import FileRunStore
-from tests.helpers import create_run_kwargs, done_events, minimal_resolved_config, tracked_turn_proc
+from tests.helpers import (
+    create_run_kwargs,
+    done_events,
+    failed_agent_termination_record,
+    minimal_resolved_config,
+    tracked_turn_proc,
+)
 
 
 def _sample_plan() -> Plan:
@@ -134,12 +140,12 @@ def test_teardown_reconciles_provider_registry_after_retry_success(tmp_path: Pat
     def mock_terminate_all_sessions() -> list[dict[str, object]]:
         provider._tracked_turn_procs[111] = tracked_turn_proc(session_id, "planner", 111)
         return [
-            {
-                "pid": 111,
-                "role": "planner",
-                "session_id": session_id,
-                "reason": "termination_failed",
-            }
+            failed_agent_termination_record(
+                session_id,
+                "planner",
+                111,
+                run_id="run-test",
+            )
         ]
 
     def fake_terminate_verified(identity: ProcessIdentity) -> TerminateIdentityResult:
