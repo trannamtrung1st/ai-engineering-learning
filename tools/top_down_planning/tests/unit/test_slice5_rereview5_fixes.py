@@ -114,7 +114,7 @@ def test_doctor_fix_holds_run_ownership_during_destructive_repair(
     ):
         with patch("top_down_planning.cli.doctor.kill_orphan_agents") as kill_mock:
             with patch(
-                "top_down_planning.cli.doctor.reconcile_stale_running_run",
+                "top_down_planning.cli.doctor.reconcile_stale_running_run_under_ownership",
                 return_value=True,
             ):
                 handle_doctor_command(

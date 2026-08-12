@@ -11,6 +11,7 @@ from typing import Any
 from core_tools.persistence import try_exclusive_file_lock
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import (
+    holds_run_ownership,
     is_run_orchestrator_alive,
     resolve_run_dir,
 )
@@ -55,6 +56,54 @@ def reconcile_stale_running_run(
         return False
 
     run = store.load_run(run_id)
+    orphan_pids = scan_orphan_agent_pids(
+        run_id,
+        exclude_pids=frozenset({os.getpid()}),
+        terminated_pids=terminated_pids_from_stop(run),
+    )
+    if require_orphan_agents and not orphan_pids:
+        return False
+
+    phase = str(run.get("phase") or "unknown")
+    details: dict[str, Any] = {}
+    if orphan_pids:
+        details["orphan_agent_pids"] = orphan_pids
+    pause_run(
+        store,
+        run_id,
+        stop=StopRecord(
+            code="orchestrator_interrupted",
+            category="operational",
+            phase=phase,
+            message=message,
+            details=details,
+        ),
+        event_type="run_reconciled",
+        reason="stale_running",
+    )
+    return True
+
+
+def reconcile_stale_running_run_under_ownership(
+    store: RunStore,
+    run_id: str,
+    *,
+    message: str = "orchestrator is no longer running",
+    require_orphan_agents: bool = True,
+) -> bool:
+    """Pause a stale ``running`` run while the caller holds repair ownership.
+
+    Unlike ``reconcile_stale_running_run``, this does not treat the caller's
+    repair ownership flock as evidence of a live orchestrator.
+    """
+
+    if not holds_run_ownership(run_id):
+        return False
+
+    run = store.load_run(run_id)
+    if str(run.get("status") or "") != "running":
+        return False
+
     orphan_pids = scan_orphan_agent_pids(
         run_id,
         exclude_pids=frozenset({os.getpid()}),
@@ -248,5 +297,6 @@ __all__ = [
     "list_incomplete_run_dirs",
     "list_staging_run_dirs",
     "reconcile_stale_running_run",
+    "reconcile_stale_running_run_under_ownership",
     "workspace_diagnostics",
 ]

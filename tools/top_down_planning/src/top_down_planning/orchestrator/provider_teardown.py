@@ -221,6 +221,10 @@ def teardown_provider_sessions(
         verified_terminated.extend(retried_terminated)
         survivors = list(retried_failed)
 
+        reconcile = getattr(provider, "reconcile_terminated_pids", None)
+        if reconcile is not None and verified_terminated:
+            reconcile(sorted(set(verified_terminated)))
+
         if store is not None:
             orphan_pids = scan_orphan_agent_pids(
                 run_id,

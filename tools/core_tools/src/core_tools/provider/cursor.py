@@ -315,6 +315,7 @@ class CursorProvider:
         self._sessions: dict[str, _CursorSession] = {}
         self._session_aliases: dict[str, str] = {}
         self._pending_counter = 0
+        self._session_registry_lock = threading.RLock()
         self._turn_proc_lock = threading.Lock()
         self._tracked_turn_procs: dict[int, tuple[str, str]] = {}
         self._collect_context = threading.local()
@@ -412,7 +413,8 @@ class CursorProvider:
                     break
 
     def canonical_session_id(self, session_id: str) -> str:
-        return self._session_aliases.get(session_id, session_id)
+        with self._session_registry_lock:
+            return self._session_aliases.get(session_id, session_id)
 
     def get_capabilities(self) -> dict[str, Any]:
         models: list[str] = []
@@ -447,15 +449,32 @@ class CursorProvider:
         }
 
     def list_active_sessions(self) -> list[dict[str, str]]:
-        return [
-            {
-                "session_id": session_id,
-                "role": session.role,
-                "kind": session.kind,
-                "model": format_provider_model_name(session.model),
-            }
-            for session_id, session in self._sessions.items()
-        ]
+        with self._session_registry_lock:
+            return [
+                {
+                    "session_id": session_id,
+                    "role": session.role,
+                    "kind": session.kind,
+                    "model": format_provider_model_name(session.model),
+                }
+                for session_id, session in self._sessions.items()
+            ]
+
+    def reconcile_terminated_pids(self, terminated_pids: list[int]) -> None:
+        """Drop dead tracked PIDs and sessions confirmed terminated externally."""
+
+        confirmed_dead = {
+            int(pid) for pid in terminated_pids if isinstance(pid, int) and not is_pid_alive(int(pid))
+        }
+        if confirmed_dead:
+            with self._turn_proc_lock:
+                for pid in confirmed_dead:
+                    self._tracked_turn_procs.pop(pid, None)
+        with self._session_registry_lock:
+            for session_id in list(self._sessions.keys()):
+                self._prune_dead_tracked_pids_for_session(session_id)
+                if not self._session_has_surviving_pids(session_id):
+                    self._remove_session(session_id)
 
     def terminate_session(self, session_id: str) -> None:
         canonical_id = self.canonical_session_id(session_id)
@@ -472,7 +491,9 @@ class CursorProvider:
                 session_id=canonical_id,
                 surviving_pids=surviving_pids,
             )
-        self._remove_session(canonical_id)
+        self._prune_dead_tracked_pids_for_session(canonical_id)
+        with self._session_registry_lock:
+            self._remove_session(canonical_id)
 
     def abort_turn(self, session_id: str) -> None:
         """End the current in-flight turn without dropping the durable session.
@@ -483,7 +504,8 @@ class CursorProvider:
         """
 
         canonical_id = self.canonical_session_id(session_id)
-        session = self._sessions.get(canonical_id)
+        with self._session_registry_lock:
+            session = self._sessions.get(canonical_id)
         if session is None:
             return
         with session.condition:
@@ -500,16 +522,22 @@ class CursorProvider:
         self._abort_inflight_sessions()
         terminated.extend(self._terminate_tracked_turn_procs())
 
-        for session in list(self._sessions.values()):
+        with self._session_registry_lock:
+            session_snapshot = list(self._sessions.values())
+            session_ids = list(self._sessions.keys())
+        for session in session_snapshot:
             thread = session.collector_thread
             if thread is not None and thread.is_alive():
                 thread.join(timeout=0.5)
 
         terminated.extend(self._terminate_tracked_turn_procs())
 
-        for session_id in list(self._sessions.keys()):
+        for session_id in session_ids:
             if not self._session_has_surviving_pids(session_id):
-                self._remove_session(session_id)
+                self._prune_dead_tracked_pids_for_session(session_id)
+                if not self._session_has_surviving_pids(session_id):
+                    with self._session_registry_lock:
+                        self._remove_session(session_id)
 
         self._shutting_down = False
         return terminated
@@ -577,7 +605,9 @@ class CursorProvider:
             session.condition.notify_all()
 
     def _abort_inflight_sessions(self) -> None:
-        for session_id, session in list(self._sessions.items()):
+        with self._session_registry_lock:
+            inflight = list(self._sessions.items())
+        for session_id, session in inflight:
             self._abort_session_turn(
                 session,
                 error=ProviderTurnError(
@@ -624,7 +654,8 @@ class CursorProvider:
 
     def _require_session(self, session_id: str) -> _CursorSession:
         canonical_id = self.canonical_session_id(session_id)
-        session = self._sessions.get(canonical_id)
+        with self._session_registry_lock:
+            session = self._sessions.get(canonical_id)
         if session is None:
             raise ProviderSessionError(
                 f"unknown provider session: {session_id}",
@@ -643,18 +674,19 @@ class CursorProvider:
         """Re-register a persisted Cursor session after in-memory teardown."""
 
         canonical_id = self.canonical_session_id(session_id)
-        if canonical_id in self._sessions:
-            existing = self._sessions[canonical_id]
-            if existing.role != role or existing.kind != kind:
-                raise ProviderSessionError(
-                    (
-                        f"durable session {session_id} role/kind mismatch: "
-                        f"existing role={existing.role!r} kind={existing.kind!r}, "
-                        f"requested role={role!r} kind={kind!r}"
-                    ),
-                    session_id=session_id,
-                )
-            return canonical_id
+        with self._session_registry_lock:
+            if canonical_id in self._sessions:
+                existing = self._sessions[canonical_id]
+                if existing.role != role or existing.kind != kind:
+                    raise ProviderSessionError(
+                        (
+                            f"durable session {session_id} role/kind mismatch: "
+                            f"existing role={existing.role!r} kind={existing.kind!r}, "
+                            f"requested role={role!r} kind={kind!r}"
+                        ),
+                        session_id=session_id,
+                    )
+                return canonical_id
         if canonical_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
             raise ProviderSessionError(
                 f"unknown provider session: {session_id}",
@@ -694,20 +726,22 @@ class CursorProvider:
             model=session_model,
         )
         session_id = resume_session_id or self._new_pending_session_id()
-        self._sessions[session_id] = _CursorSession(
-            role=role,
-            kind=kind,
-            manifest=dict(manifest),
-            model=session_model,
-            pending_argv=argv,
-        )
+        with self._session_registry_lock:
+            self._sessions[session_id] = _CursorSession(
+                role=role,
+                kind=kind,
+                manifest=dict(manifest),
+                model=session_model,
+                pending_argv=argv,
+            )
         return session_id
 
     def wait_turn_settled(self, session_id: str, *, timeout: float = 30.0) -> None:
         """Block until the in-flight collector thread for this session has finished."""
 
         canonical_id = self.canonical_session_id(session_id)
-        session = self._sessions.get(canonical_id)
+        with self._session_registry_lock:
+            session = self._sessions.get(canonical_id)
         if session is None:
             return
 
@@ -968,16 +1002,17 @@ class CursorProvider:
         if current_id == provider_session_id:
             return current_id
 
-        session = self._sessions.pop(current_id, None)
-        if session is None:
-            session = self._require_session(provider_session_id)
-            self._retag_tracked_turn_procs(current_id, provider_session_id)
-            return provider_session_id
-
-        self._sessions[provider_session_id] = session
-        self._session_aliases[current_id] = provider_session_id
-        self._retag_tracked_turn_procs(current_id, provider_session_id)
-        return provider_session_id
+        with self._session_registry_lock:
+            session = self._sessions.pop(current_id, None)
+            if session is None:
+                session = self._require_session(provider_session_id)
+                migrated_id = provider_session_id
+            else:
+                self._sessions[provider_session_id] = session
+                self._session_aliases[current_id] = provider_session_id
+                migrated_id = provider_session_id
+        self._retag_tracked_turn_procs(current_id, migrated_id)
+        return migrated_id
 
     def _retag_tracked_turn_procs(
         self,
@@ -1089,13 +1124,21 @@ class CursorProvider:
             self._tracked_turn_procs.pop(pid, None)
 
     def _tracked_session_ids(self, session_id: str) -> set[str]:
-        canonical_id = self.canonical_session_id(session_id)
-        tracked_ids = {session_id, canonical_id}
-        for alias, target in self._session_aliases.items():
-            if alias in tracked_ids or target in tracked_ids:
-                tracked_ids.add(alias)
-                tracked_ids.add(target)
-        return tracked_ids
+        with self._session_registry_lock:
+            canonical_id = self._session_aliases.get(session_id, session_id)
+            tracked_ids = {session_id, canonical_id}
+            for alias, target in self._session_aliases.items():
+                if alias in tracked_ids or target in tracked_ids:
+                    tracked_ids.add(alias)
+                    tracked_ids.add(target)
+            return tracked_ids
+
+    def _prune_dead_tracked_pids_for_session(self, session_id: str) -> None:
+        tracked_ids = self._tracked_session_ids(session_id)
+        with self._turn_proc_lock:
+            for pid, (tracked_session_id, _role) in list(self._tracked_turn_procs.items()):
+                if tracked_session_id in tracked_ids and not is_pid_alive(pid):
+                    self._tracked_turn_procs.pop(pid, None)
 
     def _session_has_surviving_pids(self, session_id: str) -> bool:
         tracked_ids = self._tracked_session_ids(session_id)

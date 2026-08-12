@@ -21,7 +21,7 @@ from top_down_planning.orchestrator.agent_process_cleanup import (
 )
 from top_down_planning.orchestrator.run_lifecycle_reconciliation import (
     cleanup_staging_dirs,
-    reconcile_stale_running_run,
+    reconcile_stale_running_run_under_ownership,
     workspace_diagnostics,
 )
 
@@ -59,7 +59,7 @@ def _apply_destructive_run_repair(
             )
             run = store.load_run(run_id)
             if str(run.get("status") or "") == "running":
-                reconciled = reconcile_stale_running_run(
+                reconciled = reconcile_stale_running_run_under_ownership(
                     store,
                     run_id,
                     require_orphan_agents=False,
@@ -68,6 +68,13 @@ def _apply_destructive_run_repair(
             return False, None
     except RunOwnershipError as exc:
         return False, f"refusing destructive repair: {exc.message}"
+
+
+def _repair_candidate_run_ids(diagnostics: dict[str, Any]) -> list[str]:
+    return sorted(
+        set(diagnostics["interrupted_running_run_ids"])
+        | set(diagnostics["idle_running_run_ids"])
+    )
 
 
 def handle_doctor_command(args: Namespace) -> None:
@@ -81,15 +88,11 @@ def handle_doctor_command(args: Namespace) -> None:
         diagnostics = workspace_diagnostics(store)
         reconciled: list[str] = []
         if fix:
-            for run_id in sorted(
-                set(diagnostics["interrupted_running_run_ids"])
-                | set(diagnostics["idle_running_run_ids"])
-            ):
-                if reconcile_stale_running_run(
-                    store,
-                    run_id,
-                    require_orphan_agents=False,
-                ):
+            for run_id in _repair_candidate_run_ids(diagnostics):
+                if _destructive_fix_blocked(store, run_id) is not None:
+                    continue
+                run_reconciled, _refusal = _apply_destructive_run_repair(store, run_id)
+                if run_reconciled:
                     reconciled.append(run_id)
             diagnostics = workspace_diagnostics(store)
 
