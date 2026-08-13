@@ -66,8 +66,11 @@ def spawn_sigterm_ignoring_leader_with_child(
         "    handle.write(str(child))\n"
         "time.sleep(60)\n"
     )
+    from core_tools.provider.session_janitor import janitor_command
+
     proc = subprocess.Popen(
-        [sys.executable, "-c", script],
+        janitor_command([sys.executable, "-c", script]),
+        stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,

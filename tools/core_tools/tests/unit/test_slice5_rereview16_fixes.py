@@ -39,9 +39,7 @@ def _provider(tmp_path: Path) -> CursorProvider:
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
-@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
-def test_bound_tree_cleanup_terminates_darwin_leader_and_child(tmp_path: Path) -> None:
+def _assert_bound_tree_cleanup_terminates_leader_and_child(tmp_path: Path) -> None:
     proc, child_pid = spawn_sigterm_ignoring_leader_with_child(tmp_path)
     try:
         cleaned = terminate_process_tree(proc)
@@ -55,6 +53,17 @@ def test_bound_tree_cleanup_terminates_darwin_leader_and_child(tmp_path: Path) -
         if proc.poll() is None:
             proc.kill()
             proc.wait(timeout=5)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
+def test_bound_tree_cleanup_terminates_session_leader_and_child(tmp_path: Path) -> None:
+    _assert_bound_tree_cleanup_terminates_leader_and_child(tmp_path)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Darwin process-group contract")
+def test_bound_tree_cleanup_terminates_darwin_leader_and_child(tmp_path: Path) -> None:
+    _assert_bound_tree_cleanup_terminates_leader_and_child(tmp_path)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
@@ -77,6 +86,7 @@ def test_janitor_cleans_descendants_after_agent_exits(tmp_path: Path) -> None:
     )
     proc = subprocess.Popen(
         janitor_command([sys.executable, "-c", script]),
+        stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
@@ -126,6 +136,7 @@ def test_janitor_cleans_descendants_after_unexpected_agent_exit(tmp_path: Path) 
     )
     proc = subprocess.Popen(
         janitor_command([sys.executable, "-c", script]),
+        stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
@@ -230,7 +241,7 @@ def test_tracked_tree_stays_unresolved_when_group_is_unverifiable(tmp_path: Path
             ) is True
 
 
-def test_live_unrelated_group_is_not_treated_as_owned_tree(tmp_path: Path) -> None:
+def test_live_group_without_observed_gone_stays_unresolved(tmp_path: Path) -> None:
     provider = _provider(tmp_path)
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     leader = ProcessIdentity(pid=4242, start_time="100")
@@ -253,7 +264,7 @@ def test_live_unrelated_group_is_not_treated_as_owned_tree(tmp_path: Path) -> No
         ):
             assert provider._tracked_tree_is_live(
                 provider._tracked_turn_procs[4242]
-            ) is False
+            ) is True
 
 
 def test_unrelated_unreadable_proc_does_not_poison_target_group(monkeypatch) -> None:

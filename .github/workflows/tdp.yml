@@ -72,3 +72,20 @@ jobs:
           cd tools/core_tools
           python -m pip install -e ".[dev]"
           python -m pytest
+
+  darwin-janitor:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: core_tools Darwin janitor tests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "tools/core_tools[dev]"
+          cd tools/core_tools
+          python -m pytest tests/unit/test_process_cleanup.py tests/unit/test_slice5_rereview16_fixes.py tests/unit/test_slice5_rereview17_fixes.py

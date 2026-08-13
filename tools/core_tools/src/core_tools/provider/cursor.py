@@ -83,6 +83,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
             from core_tools.provider.session_janitor import janitor_command
 
             popen_kwargs["start_new_session"] = True
+            popen_kwargs["stdin"] = subprocess.PIPE
             spawn_argv = janitor_command(argv)
 
         try:
@@ -310,6 +311,7 @@ class _TrackedTurnProc:
     identity: ProcessIdentity | None = None
     pgid: int | None = None
     member_identities: tuple[ProcessIdentity, ...] | None = None
+    group_observed_gone: bool = False
 
 
 class CursorProvider:
@@ -609,11 +611,11 @@ class CursorProvider:
             if result == TerminateIdentityResult.TERMINATED:
                 terminated.append({**record, "reason": "terminated"})
                 self._unregister_tracked_turn_proc_by_pid(pid)
-            elif result in {
-                TerminateIdentityResult.ALREADY_GONE,
-                TerminateIdentityResult.IDENTITY_MISMATCH,
-            }:
+            elif result is TerminateIdentityResult.IDENTITY_MISMATCH:
                 self._unregister_tracked_turn_proc_by_pid(pid)
+            elif result is TerminateIdentityResult.ALREADY_GONE:
+                if not self._tracked_tree_is_live(entry):
+                    self._unregister_tracked_turn_proc_by_pid(pid)
             elif result == TerminateIdentityResult.FAILED:
                 terminated.append(
                     {**record, "reason": "termination_failed", "tree_status": "unresolved"}
@@ -1105,6 +1107,7 @@ class CursorProvider:
                         proc=entry.proc,
                         pgid=entry.pgid,
                         member_identities=entry.member_identities,
+                        group_observed_gone=entry.group_observed_gone,
                     )
         context = self._get_collect_context()
         if context is not None and context[0] == old_session_id:
@@ -1256,7 +1259,14 @@ class CursorProvider:
                 return True
         if entry.pgid is not None:
             state = process_group_state(entry.pgid)
-            return state is ProcessGroupState.UNVERIFIABLE
+            if state is ProcessGroupState.GONE:
+                entry.group_observed_gone = True
+                return False
+            if state is ProcessGroupState.UNVERIFIABLE:
+                return True
+            if entry.group_observed_gone:
+                return False
+            return True
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )
