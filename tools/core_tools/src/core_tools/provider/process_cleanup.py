@@ -191,7 +191,13 @@ def list_process_group_pids(pgid: int) -> list[int] | None:
             continue
         result = _read_linux_proc_stat(int(entry))
         if result.state is PidInspectState.UNVERIFIABLE:
-            return None
+            try:
+                member_pgid = os.getpgid(int(entry))
+            except OSError:
+                return None
+            if member_pgid == pgid:
+                return None
+            continue
         if result.state is PidInspectState.GONE or result.stat is None:
             continue
         if result.stat.pgid == pgid:
@@ -384,6 +390,9 @@ def terminate_process_tree(
 
     _terminate_via_bound_popen(proc)
 
+    if resolved_pgid is None:
+        resolved_pgid = proc.pid
+
     cleaned = drain_owned_process_group(
         pgid=resolved_pgid,
         leader_identity=identity,
@@ -394,10 +403,16 @@ def terminate_process_tree(
             proc.wait(timeout=0)
         except subprocess.TimeoutExpired:
             pass
-    return cleaned
+    if cleaned:
+        return True
+    if proc.poll() is not None and process_group_state(proc.pid) is ProcessGroupState.GONE:
+        return True
+    return False
 
 
 __all__ = [
+    "LinuxProcStat",
+    "PidInspectResult",
     "PidInspectState",
     "ProcessGroupState",
     "inspect_pid_liveness",

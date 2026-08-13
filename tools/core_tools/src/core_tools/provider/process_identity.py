@@ -485,18 +485,48 @@ def drain_owned_process_group(
     return process_group_state(resolved_pgid) is ProcessGroupState.GONE
 
 
+def _bound_session_pgid(proc: subprocess.Popen[Any]) -> int | None:
+    if proc.poll() is not None:
+        return None
+    try:
+        pgid = os.getpgid(proc.pid)
+    except OSError:
+        return None
+    if pgid != proc.pid:
+        return None
+    return pgid
+
+
+def _signal_bound_session_group(proc: subprocess.Popen[Any], sig: int) -> bool:
+    """Signal the live session we spawned. The PGID is the still-running leader PID."""
+
+    pgid = _bound_session_pgid(proc)
+    if pgid is None:
+        return False
+    try:
+        os.killpg(pgid, sig)
+    except OSError:
+        return False
+    return True
+
+
 def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> None:
     if proc.poll() is not None:
         return
-    try:
-        proc.terminate()
-    except OSError:
-        return
+    if not _signal_bound_session_group(proc, signal.SIGTERM):
+        try:
+            proc.terminate()
+        except OSError:
+            return
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
+        if not _signal_bound_session_group(proc, signal.SIGKILL):
+            try:
+                proc.kill()
+            except OSError:
+                return
         try:
-            proc.kill()
             proc.wait(timeout=5)
         except (OSError, subprocess.TimeoutExpired):
             pass

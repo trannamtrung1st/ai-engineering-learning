@@ -34,7 +34,9 @@ from core_tools.provider.events import (
     normalize_cursor_event,
 )
 from core_tools.provider.process_cleanup import (
+    ProcessGroupState,
     is_pid_alive,
+    process_group_state,
     read_process_group_id,
     terminate_process_tree,
 )
@@ -76,11 +78,15 @@ class _SubprocessStdoutIterator(Iterator[str]):
         }
         if env is not None:
             popen_kwargs["env"] = dict(env)
+        spawn_argv = list(argv)
         if sys.platform != "win32":
+            from core_tools.provider.session_janitor import janitor_command
+
             popen_kwargs["start_new_session"] = True
+            spawn_argv = janitor_command(argv)
 
         try:
-            self._proc = subprocess.Popen(argv, **popen_kwargs)
+            self._proc = subprocess.Popen(spawn_argv, **popen_kwargs)
         except OSError as exc:
             raise ProviderTurnError(f"failed to start Cursor CLI: {exc}") from exc
 
@@ -1244,11 +1250,13 @@ class CursorProvider:
         if entry.identity is not None and process_identity_is_live(entry.identity):
             return True
         if entry.member_identities:
-            return any(
+            if any(
                 process_identity_is_live(identity) for identity in entry.member_identities
-            )
+            ):
+                return True
         if entry.pgid is not None:
-            return True
+            state = process_group_state(entry.pgid)
+            return state is ProcessGroupState.UNVERIFIABLE
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )

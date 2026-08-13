@@ -30,14 +30,9 @@ def test_terminate_process_tree_kills_child_process(tmp_path: Path) -> None:
     proc, child_pid = spawn_sigterm_ignoring_leader_with_child(tmp_path)
     try:
         cleaned = terminate_process_tree(proc)
-        from core_tools.provider.process_identity import _pidfd_supported
-
         child_alive = is_pid_alive(child_pid)
-        if _pidfd_supported():
-            assert cleaned is True
-            assert not child_alive
-        else:
-            assert not (cleaned is True and child_alive)
+        assert cleaned is True
+        assert not child_alive
     finally:
         if is_pid_alive(child_pid):
             os.kill(child_pid, signal.SIGKILL)
