@@ -20,6 +20,7 @@ from core_tools.provider.process_cleanup import (
     process_group_state,
     read_process_group_id,
 )
+from core_tools.provider.session_janitor import JANITOR_PARENT_WAIT_SECONDS
 
 
 class TerminateIdentityResult(Enum):
@@ -509,7 +510,7 @@ def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> None:
         return
     if _request_janitor_stop(proc):
         try:
-            proc.wait(timeout=12)
+            proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()
@@ -525,7 +526,7 @@ def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> None:
     except OSError:
         return
     try:
-        proc.wait(timeout=12)
+        proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
     except subprocess.TimeoutExpired:
         try:
             proc.kill()

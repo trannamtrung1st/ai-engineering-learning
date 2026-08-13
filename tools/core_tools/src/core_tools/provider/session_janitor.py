@@ -2,12 +2,14 @@
 
 The janitor is spawned with ``start_new_session=True`` so its PID is the PGID.
 It proxies agent stdio so descendants cannot hold Cursor's external pipes, and it
-does not exit successfully until the owned group is empty.
+does not drop the ownership anchor until the owned group is emptied or SIGKILL'd
+while this process is still the live session leader.
 """
 
 from __future__ import annotations
 
 import errno
+import json
 import os
 import select
 import signal
@@ -17,15 +19,21 @@ import threading
 import time
 from enum import Enum
 from pathlib import Path
-
-JANITOR_EXIT_UNVERIFIABLE = 124
-JANITOR_EXIT_SURVIVORS = 125
+from typing import Any, Mapping
 
 _TERM_DRAIN_SECONDS = 5.0
 _KILL_DRAIN_SECONDS = 5.0
 _POLL_INTERVAL = 0.05
 _AGENT_WAIT_SECONDS = 2.0
 _TAIL_DRAIN_SECONDS = 0.2
+
+JANITOR_CLEANUP_BUDGET_SECONDS = (
+    _TERM_DRAIN_SECONDS
+    + _KILL_DRAIN_SECONDS
+    + _AGENT_WAIT_SECONDS
+    + _TAIL_DRAIN_SECONDS
+)
+JANITOR_PARENT_WAIT_SECONDS = JANITOR_CLEANUP_BUDGET_SECONDS + 3.0
 
 
 class DrainResult(Enum):
@@ -41,10 +49,44 @@ class ControlEvent(Enum):
     ERROR = "error"
 
 
-def janitor_command(agent_argv: list[str]) -> list[str]:
+def janitor_command(agent_argv: list[str], *, status_fd: int | None = None) -> list[str]:
     """Return argv that runs *agent_argv* under this session-leader janitor."""
 
-    return [sys.executable, "-u", str(Path(__file__).resolve()), *agent_argv]
+    command = [sys.executable, "-u", str(Path(__file__).resolve())]
+    if status_fd is not None:
+        command.extend(["--status-fd", str(status_fd)])
+    command.append("--")
+    command.extend(agent_argv)
+    return command
+
+
+def decode_janitor_status(raw: bytes | str | None) -> dict[str, Any] | None:
+    """Parse a janitor status record from a side-channel payload."""
+
+    if not raw:
+        return None
+    if isinstance(raw, bytes):
+        text = raw.decode("utf-8", errors="replace")
+    else:
+        text = raw
+    line = ""
+    for candidate in reversed(text.splitlines()):
+        stripped = candidate.strip()
+        if stripped:
+            line = stripped
+            break
+    if not line:
+        return None
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    drain = payload.get("drain")
+    if drain not in {item.value for item in DrainResult}:
+        return None
+    return payload
 
 
 def _linux_peer_pids(pgid: int, me: int) -> list[int] | None:
@@ -89,45 +131,24 @@ def _linux_peer_pids(pgid: int, me: int) -> list[int] | None:
 
 
 def _ps_peer_pids(pgid: int, me: int) -> list[int] | None:
-    read_fd, write_fd = os.pipe()
     try:
-        helper_pid = os.fork()
-    except OSError:
-        os.close(read_fd)
-        os.close(write_fd)
+        completed = subprocess.run(
+            ["ps", "-axo", "pid=,pgid="],
+            check=False,
+            capture_output=True,
+            text=True,
+            start_new_session=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
         return None
-    if helper_pid == 0:
-        os.close(read_fd)
-        try:
-            os.setsid()
-        except OSError:
-            os._exit(127)
-        os.dup2(write_fd, 1)
-        os.close(write_fd)
-        try:
-            os.execvp("ps", ["ps", "-axo", "pid=,pgid="])
-        except OSError:
-            os._exit(127)
-        os._exit(127)
-    os.close(write_fd)
-    chunks: list[bytes] = []
-    try:
-        while True:
-            data = os.read(read_fd, 65536)
-            if not data:
-                break
-            chunks.append(data)
-    except OSError:
-        chunks = []
-    finally:
-        os.close(read_fd)
-    _, status = os.waitpid(helper_pid, 0)
-    if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
+    if completed.returncode != 0:
         return None
-    text = b"".join(chunks).decode("utf-8", errors="replace")
     peers: list[int] = []
-    for line in text.splitlines():
+    for line in completed.stdout.splitlines():
         parts = line.split()
+        if not parts:
+            continue
         if len(parts) < 2:
             return None
         try:
@@ -135,7 +156,7 @@ def _ps_peer_pids(pgid: int, me: int) -> list[int] | None:
             member_pgid = int(parts[1])
         except ValueError:
             return None
-        if pid in {me, helper_pid}:
+        if pid == me:
             continue
         if member_pgid == pgid:
             peers.append(pid)
@@ -159,12 +180,6 @@ def _confirmed_peers(candidates: list[int], pgid: int, me: int) -> list[int]:
 def _peer_pids() -> list[int] | None:
     """Return same-group peers excluding this process, or None if listing failed."""
 
-    mode = os.environ.get("CORE_TOOLS_JANITOR_PEERS")
-    if mode in {"unreadable", "malformed"}:
-        return None
-    if mode == "empty":
-        return []
-
     me = os.getpid()
     pgid = os.getpgrp()
     if sys.platform.startswith("linux") and os.path.isdir("/proc"):
@@ -172,31 +187,44 @@ def _peer_pids() -> list[int] | None:
     return _ps_peer_pids(pgid, me)
 
 
+def _signal_listed_peers(sig: int) -> None:
+    peers = _peer_pids()
+    if not peers:
+        return
+    me = os.getpid()
+    for pid in peers:
+        if pid == me:
+            continue
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            pass
+
+
 def _signal_group(sig: int) -> None:
     try:
         os.killpg(os.getpgrp(), sig)
     except OSError:
         pass
+    _signal_listed_peers(sig)
 
 
-def _escalate_kill_group() -> None:
-    pgid = os.getpgrp()
-    helper = (
-        "import os, signal, sys\n"
-        f"os.killpg({pgid}, signal.SIGKILL)\n"
-    )
-    try:
-        subprocess.Popen(
-            [sys.executable, "-c", helper],
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except OSError:
-        pass
-    deadline = time.monotonic() + _KILL_DRAIN_SECONDS
-    while time.monotonic() < deadline:
-        time.sleep(_POLL_INTERVAL)
+def _kill_agent_and_listed_peers(agent: subprocess.Popen[Any]) -> None:
+    if agent.poll() is None:
+        try:
+            agent.kill()
+        except OSError:
+            pass
+    peers = _peer_pids()
+    if not peers:
+        return
+    for pid in peers:
+        if pid == agent.pid:
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
 
 
 def _wait_peers_gone(timeout: float) -> DrainResult:
@@ -216,17 +244,27 @@ def _wait_peers_gone(timeout: float) -> DrainResult:
     return DrainResult.SURVIVORS
 
 
-def _drain_group() -> DrainResult:
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    _signal_group(signal.SIGTERM)
-    result = _wait_peers_gone(_TERM_DRAIN_SECONDS)
-    if result is DrainResult.CLEAN:
-        return result
-    if result is DrainResult.UNVERIFIABLE:
-        return result
-    _escalate_kill_group()
-    return _wait_peers_gone(_KILL_DRAIN_SECONDS)
+def _drain_group(agent: subprocess.Popen[Any]) -> DrainResult:
+    previous_term = signal.getsignal(signal.SIGTERM)
+    previous_int = signal.getsignal(signal.SIGINT)
+    try:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        _signal_group(signal.SIGTERM)
+        result = _wait_peers_gone(_TERM_DRAIN_SECONDS)
+        if result is DrainResult.CLEAN:
+            return result
+        _kill_agent_and_listed_peers(agent)
+        return _wait_peers_gone(_KILL_DRAIN_SECONDS)
+    finally:
+        try:
+            signal.signal(signal.SIGTERM, previous_term)
+        except (OSError, ValueError):
+            pass
+        try:
+            signal.signal(signal.SIGINT, previous_int)
+        except (OSError, ValueError):
+            pass
 
 
 def _poll_control(timeout: float) -> ControlEvent:
@@ -314,18 +352,65 @@ def _proxy_stream(src: object, dst: object, stop: threading.Event) -> None:
     _copy_available(src_fd, dst, _TAIL_DRAIN_SECONDS)
 
 
-def _exit_for_drain(agent_code: int, drain: DrainResult) -> int:
-    if drain is DrainResult.UNVERIFIABLE:
-        return JANITOR_EXIT_UNVERIFIABLE
-    if drain is DrainResult.SURVIVORS:
-        return JANITOR_EXIT_SURVIVORS
-    return agent_code if agent_code is not None else 1
+def _parse_argv(argv: list[str]) -> tuple[int | None, list[str]]:
+    args = list(argv)
+    status_fd: int | None = None
+    if len(args) >= 2 and args[0] == "--status-fd":
+        try:
+            status_fd = int(args[1])
+        except ValueError:
+            status_fd = None
+        args = args[2:]
+    if args[:1] == ["--"]:
+        args = args[1:]
+    return status_fd, args
 
 
-def main(argv: list[str] | None = None) -> int:
-    command = list(sys.argv[1:] if argv is None else argv)
+def _write_status(status_fd: int | None, payload: Mapping[str, Any]) -> None:
+    if status_fd is None:
+        return
+    try:
+        os.write(status_fd, json.dumps(dict(payload)).encode("utf-8") + b"\n")
+    except OSError:
+        pass
+
+
+def _wait_agent(agent: subprocess.Popen[Any]) -> int | None:
+    try:
+        return agent.wait(timeout=_AGENT_WAIT_SECONDS)
+    except subprocess.TimeoutExpired:
+        if agent.poll() is None:
+            try:
+                agent.kill()
+            except OSError:
+                pass
+            try:
+                return agent.wait(timeout=_AGENT_WAIT_SECONDS)
+            except subprocess.TimeoutExpired:
+                return agent.poll()
+        return agent.poll()
+
+
+def _abandon_group_if_unresolved(drain: DrainResult) -> None:
+    if drain is DrainResult.CLEAN:
+        return
+    _signal_group(signal.SIGKILL)
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    status_fd: int | None = None,
+) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
+    parsed_fd, command = _parse_argv(raw)
+    if status_fd is None:
+        status_fd = parsed_fd
     if not command:
         return 2
+
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     agent = subprocess.Popen(
         command,
@@ -333,6 +418,7 @@ def main(argv: list[str] | None = None) -> int:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         bufsize=0,
+        close_fds=True,
     )
     drain_lock = threading.Lock()
     drained: DrainResult | None = None
@@ -344,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
         with drain_lock:
             if drained is not None:
                 return drained
-            drained = _drain_group()
+            drained = _drain_group(agent)
             return drained
 
     def request_agent_stop() -> None:
@@ -384,35 +470,32 @@ def main(argv: list[str] | None = None) -> int:
             break
 
     stop_copy.set()
-    if agent.stdout is not None:
-        _copy_available(agent.stdout.fileno(), stdout_dst, _TAIL_DRAIN_SECONDS)
-    if agent.stderr is not None:
-        _copy_available(agent.stderr.fileno(), stderr_dst, _TAIL_DRAIN_SECONDS)
     stdout_thread.join(timeout=1)
     stderr_thread.join(timeout=1)
     observed = agent.poll()
     drain = drain_once()
-    try:
-        return_code = agent.wait(timeout=_AGENT_WAIT_SECONDS)
-    except subprocess.TimeoutExpired:
-        return_code = agent.poll()
-        if return_code is None:
-            return_code = 1
+    return_code = _wait_agent(agent)
     if observed == 0:
         return_code = 0
-    elif (
-        return_code is not None
-        and return_code < 0
-        and drain is DrainResult.CLEAN
-    ):
-        return_code = 0
+    if return_code is None:
+        return_code = 1
+        drain = DrainResult.SURVIVORS if drain is DrainResult.CLEAN else drain
+    payload = {
+        "agent_code": return_code,
+        "drain": drain.value,
+        "stop_requested": stop_requested,
+    }
+    _write_status(status_fd, payload)
     for stream in (agent.stdout, agent.stderr):
         if stream is not None:
             try:
                 stream.close()
             except OSError:
                 pass
-    return _exit_for_drain(return_code, drain)
+    _abandon_group_if_unresolved(drain)
+    if drain is DrainResult.CLEAN:
+        return 0 if stop_requested and return_code < 0 else return_code
+    return 1
 
 
 if __name__ == "__main__":

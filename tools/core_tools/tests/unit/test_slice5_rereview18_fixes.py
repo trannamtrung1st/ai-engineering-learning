@@ -16,10 +16,7 @@ import pytest
 from core_tools.provider.cursor import CursorProvider, _TrackedTurnProc, default_process_runner
 from core_tools.provider.process_cleanup import ProcessGroupState, is_pid_alive
 from core_tools.provider.process_identity import ProcessIdentity
-from core_tools.provider.session_janitor import (
-    JANITOR_EXIT_UNVERIFIABLE,
-    janitor_command,
-)
+from core_tools.provider.session_janitor import DrainResult, janitor_command
 
 
 def _provider(tmp_path: Path) -> CursorProvider:
@@ -193,46 +190,47 @@ def test_drain_does_not_signal_unrelated_replacement_process(tmp_path: Path) -> 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
 def test_unverifiable_peer_scan_does_not_report_agent_success() -> None:
-    env = {**os.environ, "CORE_TOOLS_JANITOR_PEERS": "unreadable"}
-    proc = subprocess.Popen(
-        janitor_command([sys.executable, "-c", "import sys; sys.exit(0)"]),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        text=True,
-        env=env,
-    )
+    from tests.unit.test_slice5_rereview19_fixes import _read_status_fd, _spawn_hooked_janitor
+
+    proc, status_r = _spawn_hooked_janitor([sys.executable, "-c", "import sys; sys.exit(0)"])
     proc.communicate(timeout=3)
-    assert proc.returncode == JANITOR_EXIT_UNVERIFIABLE
+    status = _read_status_fd(status_r)
+    assert status is not None
+    assert status["drain"] == DrainResult.UNVERIFIABLE.value
+    assert proc.returncode != 0
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
-def test_stop_path_is_bounded_when_agent_ignores_term_and_scan_fails() -> None:
+def test_stop_path_is_bounded_when_agent_ignores_term_and_scan_fails(
+    tmp_path: Path,
+) -> None:
+    from tests.unit.test_slice5_rereview19_fixes import (
+        _read_status_fd,
+        _spawn_hooked_janitor,
+        _wait_pid_file,
+    )
+
+    agent_pid_file = tmp_path / "agent.pid"
     script = (
-        "import signal, time\n"
+        "import os, signal, time\n"
         "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        f"open({str(agent_pid_file)!r}, 'w', encoding='utf-8').write(str(os.getpid()))\n"
         "time.sleep(60)\n"
     )
-    env = {**os.environ, "CORE_TOOLS_JANITOR_PEERS": "unreadable"}
-    proc = subprocess.Popen(
-        janitor_command([sys.executable, "-c", script]),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        text=True,
-        env=env,
-    )
+    proc, status_r = _spawn_hooked_janitor([sys.executable, "-c", script])
+    agent_pid = _wait_pid_file(agent_pid_file)
     started = time.monotonic()
     assert proc.stdin is not None
     proc.stdin.write("STOP\n")
     proc.stdin.close()
     proc.wait(timeout=4)
     elapsed = time.monotonic() - started
+    status = _read_status_fd(status_r)
     assert elapsed < 4.0
-    assert proc.returncode == JANITOR_EXIT_UNVERIFIABLE
+    assert status is not None
+    assert status["drain"] == DrainResult.UNVERIFIABLE.value
+    assert is_pid_alive(agent_pid) is False
     if proc.poll() is None:
         proc.kill()
         proc.wait(timeout=2)

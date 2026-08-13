@@ -51,12 +51,53 @@ from core_tools.provider.process_identity import (
     read_process_start_time,
     terminate_verified_process_identity,
 )
+from core_tools.provider.session_janitor import DrainResult, decode_janitor_status
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 _STDERR_TAIL_MAX_BYTES = 64 * 1024
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
 ProviderEventCallback = Callable[[dict[str, Any]], None]
+
+
+def raise_for_cursor_cli_exit(
+    return_code: int,
+    *,
+    status: dict[str, Any] | None,
+    stderr: str = "",
+) -> None:
+    """Raise ``ProviderTurnError`` unless the janitor reported a successful turn."""
+
+    detail = stderr.strip() or f"exit code {return_code}"
+    if status is not None:
+        drain = status.get("drain")
+        if drain in {DrainResult.UNVERIFIABLE.value, DrainResult.SURVIVORS.value}:
+            raise ProviderTurnError(f"Cursor CLI cleanup failed: {detail}")
+        agent_code = status.get("agent_code", return_code)
+        if agent_code in (None, 0):
+            return
+        if (
+            isinstance(agent_code, int)
+            and agent_code < 0
+            and status.get("stop_requested") is True
+            and drain == DrainResult.CLEAN.value
+        ):
+            return
+        raise ProviderTurnError(f"Cursor CLI failed: {detail}")
+    if return_code == 0:
+        return
+    raise ProviderTurnError(f"Cursor CLI failed: {detail}")
+
+
+def janitor_group_was_cleaned(
+    return_code: int,
+    status: dict[str, Any] | None,
+) -> bool:
+    """Whether the owned process group was observed empty after this turn."""
+
+    if status is not None:
+        return status.get("drain") == DrainResult.CLEAN.value
+    return return_code == 0
 
 
 class _SubprocessStdoutIterator(Iterator[str]):
@@ -79,17 +120,28 @@ class _SubprocessStdoutIterator(Iterator[str]):
         if env is not None:
             popen_kwargs["env"] = dict(env)
         spawn_argv = list(argv)
+        status_r: int | None = None
+        status_w: int | None = None
         if sys.platform != "win32":
             from core_tools.provider.session_janitor import janitor_command
 
+            status_r, status_w = os.pipe()
             popen_kwargs["start_new_session"] = True
             popen_kwargs["stdin"] = subprocess.PIPE
-            spawn_argv = janitor_command(argv)
+            popen_kwargs["pass_fds"] = (status_w,)
+            spawn_argv = janitor_command(argv, status_fd=status_w)
 
         try:
             self._proc = subprocess.Popen(spawn_argv, **popen_kwargs)
         except OSError as exc:
+            if status_r is not None:
+                os.close(status_r)
+            if status_w is not None:
+                os.close(status_w)
             raise ProviderTurnError(f"failed to start Cursor CLI: {exc}") from exc
+        if status_w is not None:
+            os.close(status_w)
+        self._status_read_fd = status_r
 
         if active_proc is not None:
             active_proc[0] = self._proc
@@ -106,6 +158,27 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
         self._finished = False
+
+    def _read_janitor_status(self) -> dict[str, Any] | None:
+        fd = getattr(self, "_status_read_fd", None)
+        if fd is None:
+            return None
+        self._status_read_fd = None
+        chunks: list[bytes] = []
+        try:
+            while True:
+                data = os.read(fd, 4096)
+                if not data:
+                    break
+                chunks.append(data)
+        except OSError:
+            return None
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        return decode_janitor_status(b"".join(chunks))
 
     def _append_stderr_bytes(self, chunk: bytes) -> None:
         if not chunk:
@@ -166,22 +239,9 @@ class _SubprocessStdoutIterator(Iterator[str]):
                 f"{stderr}"
             )
         return_code = self._proc.wait()
-        from core_tools.provider.session_janitor import (
-            JANITOR_EXIT_SURVIVORS,
-            JANITOR_EXIT_UNVERIFIABLE,
-        )
-
-        if return_code in {JANITOR_EXIT_UNVERIFIABLE, JANITOR_EXIT_SURVIVORS}:
-            detail = stderr.strip() or f"exit code {return_code}"
-            raise ProviderTurnError(f"Cursor CLI cleanup failed: {detail}")
-        if return_code != 0:
-            if (
-                return_code < 0
-                and process_group_state(self._proc.pid) is ProcessGroupState.GONE
-            ):
-                return
-            detail = stderr.strip() or f"exit code {return_code}"
-            raise ProviderTurnError(f"Cursor CLI failed: {detail}")
+        status = self._read_janitor_status()
+        setattr(self._proc, "_core_tools_janitor_status", status)
+        raise_for_cursor_cli_exit(return_code, status=status, stderr=stderr)
 
 
 def default_process_runner(
@@ -1393,16 +1453,12 @@ class CursorProvider:
                 if proc is not None:
                     tracked = self._tracked_turn_procs.get(proc.pid)
                     returncode = proc.poll()
-                    if tracked is not None and returncode == 0:
-                        tracked.group_observed_gone = True
-                    elif (
-                        tracked is not None
-                        and returncode is not None
-                        and returncode < 0
+                    status = getattr(proc, "_core_tools_janitor_status", None)
+                    if tracked is not None and janitor_group_was_cleaned(
+                        returncode if returncode is not None else 1,
+                        status if isinstance(status, dict) else None,
                     ):
-                        pgid = tracked.pgid if tracked.pgid is not None else proc.pid
-                        if process_group_state(pgid) is ProcessGroupState.GONE:
-                            tracked.group_observed_gone = True
+                        tracked.group_observed_gone = True
                     tree_clean = terminate_process_tree(
                         proc,
                         pgid=tracked.pgid if tracked is not None else None,
