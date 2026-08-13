@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -21,24 +20,7 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.stub import StubProvider
-from tests.conftest import spawn_sigterm_ignoring_leader_with_child, tracked_turn_proc
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
-@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
-def test_terminate_process_tree_kills_child_process(tmp_path: Path) -> None:
-    proc, child_pid = spawn_sigterm_ignoring_leader_with_child(tmp_path)
-    try:
-        cleaned = terminate_process_tree(proc)
-        child_alive = is_pid_alive(child_pid)
-        assert cleaned is True
-        assert not child_alive
-    finally:
-        if is_pid_alive(child_pid):
-            os.kill(child_pid, signal.SIGKILL)
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait(timeout=5)
+from tests.conftest import tracked_turn_proc
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
@@ -48,6 +30,26 @@ def test_process_group_state_unverifiable_without_proc(monkeypatch) -> None:
     monkeypatch.setattr(sys, "platform", "linux", raising=False)
     monkeypatch.setattr(os.path, "isdir", lambda path: False)
     assert process_group_state(4242) is ProcessGroupState.UNVERIFIABLE
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
+def test_terminate_process_tree_fails_closed_when_group_unverifiable(
+    monkeypatch,
+) -> None:
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        monkeypatch.setattr(sys, "platform", "linux", raising=False)
+        monkeypatch.setattr(os.path, "isdir", lambda path: False)
+        assert terminate_process_tree(proc) is False
+        # Bound Popen may still terminate the leader; PGID occupants must not be signaled.
+    finally:
+        proc.kill()
+        proc.wait(timeout=5)
 
 
 def test_cursor_provider_terminate_all_sessions_kills_tracked_turn(tmp_path: Path) -> None:

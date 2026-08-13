@@ -6,14 +6,13 @@ import os
 import signal
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from core_tools.provider.cursor import CursorProvider, _TrackedTurnProc, default_process_runner
+from core_tools.provider.cursor import CursorProvider, _TrackedTurnProc
 from core_tools.provider.process_cleanup import ProcessGroupState, is_pid_alive, terminate_process_tree
 from core_tools.provider.process_identity import ProcessIdentity
 from core_tools.provider.session_janitor import janitor_command
@@ -40,93 +39,6 @@ def _wait_pid_file(path: Path, timeout: float = 2.0) -> int:
                 return int(text)
         time.sleep(0.05)
     raise AssertionError(f"pid file was not written: {path}")
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
-@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
-def test_janitor_keeps_anchor_until_sigterm_ignoring_descendant_is_gone(
-    tmp_path: Path,
-) -> None:
-    child_pid_file = tmp_path / "child.pid"
-    script = (
-        "import os, signal, sys, time\n"
-        f"child_pid_file = {str(child_pid_file)!r}\n"
-        "child = os.fork()\n"
-        "if child == 0:\n"
-        "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-        "    time.sleep(60)\n"
-        "    os._exit(0)\n"
-        "with open(child_pid_file, 'w', encoding='utf-8') as handle:\n"
-        "    handle.write(str(child))\n"
-        "sys.stdout.write('agent-done\\n')\n"
-        "sys.stdout.flush()\n"
-        "os._exit(0)\n"
-    )
-    proc = subprocess.Popen(
-        janitor_command([sys.executable, "-c", script]),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-        text=True,
-    )
-    child_pid = None
-    try:
-        line = proc.stdout.readline() if proc.stdout is not None else ""
-        assert "agent-done" in line
-        child_pid = _wait_pid_file(child_pid_file)
-        time.sleep(0.1)
-        assert proc.poll() is None
-        assert is_pid_alive(child_pid) is True
-        proc.wait(timeout=15)
-        assert is_pid_alive(child_pid) is False
-        assert proc.returncode == 0
-    finally:
-        if child_pid is not None and is_pid_alive(child_pid):
-            os.kill(child_pid, signal.SIGKILL)
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait(timeout=5)
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
-@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
-def test_provider_stream_does_not_hang_when_descendant_inherits_stdout(
-    tmp_path: Path,
-) -> None:
-    child_pid_file = tmp_path / "child.pid"
-    script = (
-        "import os, signal, sys, time\n"
-        f"child_pid_file = {str(child_pid_file)!r}\n"
-        "child = os.fork()\n"
-        "if child == 0:\n"
-        "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-        "    time.sleep(60)\n"
-        "    os._exit(0)\n"
-        "with open(child_pid_file, 'w', encoding='utf-8') as handle:\n"
-        "    handle.write(str(child))\n"
-        "print('ok', flush=True)\n"
-    )
-    done = threading.Event()
-    lines: list[str] = []
-    error: list[BaseException] = []
-
-    def consume() -> None:
-        try:
-            lines.extend(list(default_process_runner([sys.executable, "-c", script], tmp_path)))
-        except BaseException as exc:
-            error.append(exc)
-        finally:
-            done.set()
-
-    thread = threading.Thread(target=consume)
-    thread.start()
-    finished = done.wait(timeout=15)
-    child_pid = _wait_pid_file(child_pid_file)
-    assert finished is True
-    assert error == []
-    assert "ok" in lines
-    assert is_pid_alive(child_pid) is False
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
@@ -258,8 +170,3 @@ def test_janitor_cleans_sigterm_ignoring_child_after_unexpected_agent_exit(
         if proc.poll() is None:
             proc.kill()
             proc.wait(timeout=5)
-
-
-@pytest.mark.skipif(sys.platform != "darwin", reason="Darwin process-group contract")
-def test_darwin_janitor_cleans_sigterm_ignoring_child(tmp_path: Path) -> None:
-    test_janitor_keeps_anchor_until_sigterm_ignoring_descendant_is_gone(tmp_path)

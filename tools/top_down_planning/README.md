@@ -508,7 +508,8 @@ This is not published as a standalone wheel. The `file:../core_tools` dependency
 
 ```bash
 tdp --help
-python -m pytest                  # unit tests (default; excludes integration)
+python -m pytest                  # parallel unit tests (default; excludes integration)
+python -m pytest -n 0             # serial unit tests for debugging
 export TDP_PACKAGING_WHEELHOUSE=$(python scripts/build_packaging_wheelhouse.py)
 python -m pytest -m integration
 python -m pytest -m ""            # full suite (includes packaging integration tests)

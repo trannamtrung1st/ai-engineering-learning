@@ -72,7 +72,7 @@ def test_exclusive_create_bytes_concurrent_publish_one_winner(tmp_path: Path) ->
     from tests.fixtures.artifact_exclusive_worker import exclusive_create_worker
 
     artifact_path = tmp_path / "artifact.bin"
-    ctx = multiprocessing.get_context("fork")
+    ctx = multiprocessing.get_context("spawn")
     result_queue: multiprocessing.Queue[str] = ctx.Queue()
     barrier = ctx.Barrier(2)
     processes = [

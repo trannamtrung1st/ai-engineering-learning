@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -64,6 +65,7 @@ def test_proc_stat_permission_error_is_not_treated_as_dead(
         return open(path, *args, **kwargs)
 
     monkeypatch.setattr(cleanup, "open", deny_stat, raising=False)
+    monkeypatch.setattr(cleanup.os, "getpgid", lambda pid: 99 if pid == 11 else os.getpgid(pid))
 
     assert is_pid_alive(11) is True
     assert process_group_state(99) is ProcessGroupState.UNVERIFIABLE
@@ -74,6 +76,10 @@ def test_malformed_proc_stat_fails_closed(tmp_path: Path, monkeypatch) -> None:
     proc_root = _linux_proc(tmp_path, monkeypatch)
     (proc_root / "11").mkdir()
     (proc_root / "11" / "stat").write_text("not-a-stat\n", encoding="utf-8")
+
+    import core_tools.provider.process_cleanup as cleanup
+
+    monkeypatch.setattr(cleanup.os, "getpgid", lambda pid: 99 if pid == 11 else os.getpgid(pid))
 
     assert is_pid_alive(11) is True
     assert process_group_state(99) is ProcessGroupState.UNVERIFIABLE
@@ -96,6 +102,7 @@ def test_unreadable_group_member_makes_group_unverifiable(
         return open(path, *args, **kwargs)
 
     monkeypatch.setattr(cleanup, "open", deny_member, raising=False)
+    monkeypatch.setattr(cleanup.os, "getpgid", lambda pid: 99 if pid == 11 else os.getpgid(pid))
 
     assert list_process_group_pids(99) is None
     assert process_group_state(99) is ProcessGroupState.UNVERIFIABLE

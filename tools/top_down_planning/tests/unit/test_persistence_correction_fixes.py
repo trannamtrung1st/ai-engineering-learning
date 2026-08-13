@@ -445,7 +445,7 @@ def test_load_resolved_config_blocks_behind_active_commit_lock(tmp_path: Path) -
         },
     )
 
-    ctx = multiprocessing.get_context("fork")
+    ctx = multiprocessing.get_context("spawn")
     result_queue: multiprocessing.Queue[dict[str, Any]] = ctx.Queue()
     writer_ready: multiprocessing.Queue[str] = ctx.Queue()
     reader_started: multiprocessing.Queue[str] = ctx.Queue()

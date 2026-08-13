@@ -46,7 +46,7 @@ def test_concurrent_commit_with_same_revision_exactly_one_succeeds(tmp_path: Pat
     store = FileRunStore(tmp_path)
     _create_run(store)
 
-    ctx = multiprocessing.get_context("fork")
+    ctx = multiprocessing.get_context("spawn")
     queue: multiprocessing.Queue[CommitResult] = ctx.Queue()
     load_barrier = ctx.Barrier(3)
     commit_barrier = ctx.Barrier(3)
@@ -76,7 +76,7 @@ def test_reader_waits_for_writer_lock_before_recovering_txn(tmp_path: Path) -> N
     run_id = "run-20260101T000701-000701"
     run_dir = store.run_dir(run_id)
 
-    ctx = multiprocessing.get_context("fork")
+    ctx = multiprocessing.get_context("spawn")
     ready_queue: multiprocessing.Queue[str] = ctx.Queue()
     release_queue: multiprocessing.Queue[str] = ctx.Queue()
     result_queue: multiprocessing.Queue[int] = ctx.Queue()

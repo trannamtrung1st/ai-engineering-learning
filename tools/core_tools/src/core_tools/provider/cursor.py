@@ -166,11 +166,22 @@ class _SubprocessStdoutIterator(Iterator[str]):
                 f"{stderr}"
             )
         return_code = self._proc.wait()
+        from core_tools.provider.session_janitor import (
+            JANITOR_EXIT_SURVIVORS,
+            JANITOR_EXIT_UNVERIFIABLE,
+        )
+
+        if return_code in {JANITOR_EXIT_UNVERIFIABLE, JANITOR_EXIT_SURVIVORS}:
+            detail = stderr.strip() or f"exit code {return_code}"
+            raise ProviderTurnError(f"Cursor CLI cleanup failed: {detail}")
         if return_code != 0:
+            if (
+                return_code < 0
+                and process_group_state(self._proc.pid) is ProcessGroupState.GONE
+            ):
+                return
             detail = stderr.strip() or f"exit code {return_code}"
             raise ProviderTurnError(f"Cursor CLI failed: {detail}")
-        if self._active_proc is not None:
-            self._active_proc[0] = None
 
 
 def default_process_runner(
@@ -1381,6 +1392,17 @@ class CursorProvider:
                 proc = active_proc[0]
                 if proc is not None:
                     tracked = self._tracked_turn_procs.get(proc.pid)
+                    returncode = proc.poll()
+                    if tracked is not None and returncode == 0:
+                        tracked.group_observed_gone = True
+                    elif (
+                        tracked is not None
+                        and returncode is not None
+                        and returncode < 0
+                    ):
+                        pgid = tracked.pgid if tracked.pgid is not None else proc.pid
+                        if process_group_state(pgid) is ProcessGroupState.GONE:
+                            tracked.group_observed_gone = True
                     tree_clean = terminate_process_tree(
                         proc,
                         pgid=tracked.pgid if tracked is not None else None,
@@ -1391,7 +1413,9 @@ class CursorProvider:
                             else None
                         ),
                     )
-                    if tree_clean:
+                    if tree_clean or (
+                        tracked is not None and tracked.group_observed_gone
+                    ):
                         self._unregister_tracked_turn_proc(proc)
 
         return wrapped

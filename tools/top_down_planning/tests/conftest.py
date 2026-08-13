@@ -37,9 +37,9 @@ ORPHAN_AGENT_SCAN_TARGETS = (
 )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def stub_orphan_agent_scan():
-    """Stub orphan-agent PID scans so unit tests avoid live process enumeration."""
+    """Stub orphan-agent PID scans once so tests avoid live process enumeration."""
 
     with ExitStack() as stack:
         for target in ORPHAN_AGENT_SCAN_TARGETS:
@@ -50,9 +50,9 @@ def stub_orphan_agent_scan():
         yield
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def suppress_desktop_notifications():
-    """Stub desktop notification transport so tests never invoke notify-py."""
+    """Stub desktop notification transport once so tests never invoke notify-py."""
 
     with ExitStack() as stack:
         for target in SEND_DESKTOP_NOTIFICATION_TARGETS:

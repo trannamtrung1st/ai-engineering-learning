@@ -170,6 +170,65 @@ def test_terminate_linux_identity_uses_pidfd_not_killpg() -> None:
     killpg.assert_not_called()
 
 
+def test_terminate_linux_identity_does_not_signal_reused_leader() -> None:
+    original = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
+
+    with patch(
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.IDENTITY_MISMATCH,
+    ):
+        with patch(
+            "core_tools.provider.process_identity._signal_identity_via_pidfd",
+        ) as signal_identity:
+            from core_tools.provider.process_identity import _terminate_linux_identity
+
+            result = _terminate_linux_identity(original)
+
+    assert result == TerminateIdentityResult.IDENTITY_MISMATCH
+    signal_identity.assert_not_called()
+
+
+def test_terminate_linux_identity_skips_pidfd_when_leader_is_gone() -> None:
+    original = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
+
+    with patch(
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.GONE,
+    ):
+        with patch(
+            "core_tools.provider.process_identity.os.pidfd_open",
+            create=True,
+        ) as pidfd_open:
+            from core_tools.provider.process_identity import _terminate_linux_identity
+
+            result = _terminate_linux_identity(original)
+
+    assert result == TerminateIdentityResult.ALREADY_GONE
+    pidfd_open.assert_not_called()
+
+
+def test_terminate_linux_identity_reports_failed_when_group_drain_fails() -> None:
+    original = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
+
+    with patch(
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
+    ):
+        with patch(
+            "core_tools.provider.process_identity.capture_process_group_identities",
+            return_value=[original],
+        ):
+            with patch(
+                "core_tools.provider.process_identity.drain_owned_process_group",
+                return_value=False,
+            ):
+                from core_tools.provider.process_identity import _terminate_linux_identity
+
+                result = _terminate_linux_identity(original)
+
+    assert result == TerminateIdentityResult.FAILED
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="pidfd is Linux-only")
 def test_terminate_verified_process_identity_linux_pidfd_path() -> None:
     identity = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")

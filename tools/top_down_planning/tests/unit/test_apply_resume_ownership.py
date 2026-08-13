@@ -117,6 +117,29 @@ def _paused_resume_plan(
     )
 
 
+def _apply_resume_config_worker(
+    root: str,
+    run_id: str,
+    candidate_config: dict[str, Any],
+    invocation: dict[str, Any],
+    queue: Any,
+    ready: Any,
+) -> None:
+    worker_store = FileRunStore(Path(root))
+    ready.wait()
+    try:
+        apply_resume_config_atomic(
+            worker_store,
+            run_id,
+            resolved_config=candidate_config,
+            invocation=invocation,
+            run_expected_revision=1,
+        )
+        queue.put("ok")
+    except ResumeConfigCommitError:
+        queue.put("blocked")
+
+
 def test_concurrent_resume_apply_blocked_while_engine_owns_run(tmp_path: Path) -> None:
     store = FileRunStore(tmp_path)
     run_id = _create_running_run(store)
@@ -129,27 +152,22 @@ def test_concurrent_resume_apply_blocked_while_engine_owns_run(tmp_path: Path) -
     candidate_config["limits"]["production"]["max_batches"] = 99
     invocation = store.load_invocation(run_id)
 
-    ctx = multiprocessing.get_context("fork")
+    ctx = multiprocessing.get_context("spawn")
     queue: multiprocessing.Queue[str] = ctx.Queue()
     ready = ctx.Barrier(2)
 
-    def worker() -> None:
-        worker_store = FileRunStore(tmp_path)
-        ready.wait()
-        try:
-            apply_resume_config_atomic(
-                worker_store,
-                run_id,
-                resolved_config=candidate_config,
-                invocation=invocation,
-                run_expected_revision=1,
-            )
-            queue.put("ok")
-        except ResumeConfigCommitError:
-            queue.put("blocked")
-
     token = acquire_run_ownership(run_id, run_dir=run_dir)
-    process = ctx.Process(target=worker)
+    process = ctx.Process(
+        target=_apply_resume_config_worker,
+        args=(
+            str(tmp_path),
+            run_id,
+            candidate_config,
+            invocation,
+            queue,
+            ready,
+        ),
+    )
     process.start()
     ready.wait()
     process.join(timeout=10)

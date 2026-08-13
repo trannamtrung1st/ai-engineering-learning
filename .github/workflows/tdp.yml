@@ -57,13 +57,6 @@ jobs:
           cd tools/top_down_planning
           python -m pytest -m integration
 
-      - name: Full TDP test suite
-        env:
-          TDP_PACKAGING_WHEELHOUSE: ${{ steps.wheelhouse.outputs.path }}
-        run: |
-          cd tools/top_down_planning
-          python -m pytest -m ""
-
       - name: Wheel build gate
         run: python -m build --wheel tools/top_down_planning
 
@@ -88,4 +81,4 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e "tools/core_tools[dev]"
           cd tools/core_tools
-          python -m pytest tests/unit/test_process_cleanup.py tests/unit/test_slice5_rereview16_fixes.py tests/unit/test_slice5_rereview17_fixes.py
+          python -m pytest tests/unit/test_process_cleanup.py tests/unit/test_slice5_rereview16_fixes.py tests/unit/test_slice5_rereview17_fixes.py tests/unit/test_slice5_rereview18_fixes.py

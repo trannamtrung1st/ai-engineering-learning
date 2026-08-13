@@ -16,8 +16,10 @@ dependencies = [
 dev = [
   "build",
   "pytest>=8.0",
+  "pytest-xdist>=3.8",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = ["-n", "auto", "--dist", "worksteal"]

@@ -409,9 +409,16 @@ def test_cursor_provider_tracks_pid_before_first_stdout(tmp_path: Path) -> None:
     import time
 
     tracked_pid: int | None = None
+    unexpected_errors: list[BaseException] = []
 
     def consume() -> None:
-        list(provider.stream_events(session_id))
+        try:
+            list(provider.stream_events(session_id))
+        except ProviderTurnError:
+            # Expected when terminate_all_sessions() stops the tracked turn.
+            pass
+        except BaseException as exc:
+            unexpected_errors.append(exc)
 
     thread = threading.Thread(target=consume, daemon=True)
     thread.start()
@@ -425,6 +432,8 @@ def test_cursor_provider_tracks_pid_before_first_stdout(tmp_path: Path) -> None:
     assert tracked_pid is not None
     provider.terminate_all_sessions()
     thread.join(timeout=1.0)
+    assert thread.is_alive() is False
+    assert unexpected_errors == []
 
 
 def test_amendment_starts_fresh_planner_when_unbound(tmp_path: Path) -> None:

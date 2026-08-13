@@ -279,7 +279,7 @@ def test_load_resolved_config_waits_for_pending_transaction(tmp_path: Path) -> N
 
 def test_concurrent_create_same_run_id_exactly_one_succeeds(tmp_path: Path) -> None:
     run_id = "run-20260101T000801-000801"
-    ctx = multiprocessing.get_context("fork")
+    ctx = multiprocessing.get_context("spawn")
     result_queue: multiprocessing.Queue[str] = ctx.Queue()
     barrier = ctx.Barrier(3)
     processes = [
