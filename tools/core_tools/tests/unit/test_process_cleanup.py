@@ -29,9 +29,15 @@ from tests.conftest import spawn_sigterm_ignoring_leader_with_child, tracked_tur
 def test_terminate_process_tree_kills_child_process(tmp_path: Path) -> None:
     proc, child_pid = spawn_sigterm_ignoring_leader_with_child(tmp_path)
     try:
-        assert terminate_process_tree(proc) is True
-        assert proc.poll() is not None
-        assert not is_pid_alive(child_pid)
+        cleaned = terminate_process_tree(proc)
+        from core_tools.provider.process_identity import _pidfd_supported
+
+        child_alive = is_pid_alive(child_pid)
+        if _pidfd_supported():
+            assert cleaned is True
+            assert not child_alive
+        else:
+            assert not (cleaned is True and child_alive)
     finally:
         if is_pid_alive(child_pid):
             os.kill(child_pid, signal.SIGKILL)
@@ -111,11 +117,18 @@ def test_terminate_pid_tree_returns_true_when_process_dies() -> None:
         start_new_session=sys.platform != "win32",
     )
     try:
-        assert terminate_pid_tree(proc.pid) is True
-        assert not is_pid_alive(proc.pid)
+        from core_tools.provider.process_identity import _pidfd_supported
+
+        cleaned = terminate_pid_tree(proc.pid)
+        if _pidfd_supported():
+            assert cleaned is True
+            assert not is_pid_alive(proc.pid)
+        else:
+            assert cleaned is False
     finally:
         if is_pid_alive(proc.pid):
-            terminate_pid_tree(proc.pid)
+            proc.kill()
+            proc.wait(timeout=5)
 
 
 def test_terminate_pid_tree_returns_false_when_kill_fails() -> None:

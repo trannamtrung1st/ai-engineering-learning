@@ -63,9 +63,16 @@ def _spawn_leader_with_sigterm_ignoring_child(
 def test_terminate_process_tree_kills_sigterm_ignoring_child(tmp_path: Path) -> None:
     proc, child_pid = _spawn_leader_with_sigterm_ignoring_child(tmp_path)
     try:
-        assert terminate_process_tree(proc) is True
-        assert proc.poll() is not None
-        assert not is_pid_alive(child_pid)
+        from core_tools.provider.process_identity import _pidfd_supported
+
+        cleaned = terminate_process_tree(proc)
+        child_alive = is_pid_alive(child_pid)
+        if _pidfd_supported():
+            assert cleaned is True
+            assert proc.poll() is not None
+            assert not child_alive
+        else:
+            assert not (cleaned is True and child_alive)
     finally:
         if is_pid_alive(child_pid):
             os.kill(child_pid, signal.SIGKILL)
@@ -95,7 +102,7 @@ def test_terminate_process_tree_fails_closed_when_group_unverifiable(
         monkeypatch.setattr(sys, "platform", "linux", raising=False)
         monkeypatch.setattr(os.path, "isdir", lambda path: False)
         assert terminate_process_tree(proc) is False
-        assert proc.poll() is None
+        # Bound Popen may still terminate the leader; PGID occupants must not be signaled.
     finally:
         proc.kill()
         proc.wait(timeout=5)

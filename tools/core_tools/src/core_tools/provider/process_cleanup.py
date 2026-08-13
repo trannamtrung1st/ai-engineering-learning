@@ -6,11 +6,25 @@ import os
 import signal
 import subprocess
 import sys
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from core_tools.provider.process_identity import ProcessIdentity
+
+
+_PROC_ROOT = "/proc"
+
+
+@dataclass(frozen=True)
+class LinuxProcStat:
+    """Parsed fields from ``/proc/<pid>/stat``."""
+
+    pid: int
+    state: str
+    pgid: int
+    start_time: str
 
 
 class ProcessGroupState(Enum):
@@ -21,9 +35,52 @@ class ProcessGroupState(Enum):
     UNVERIFIABLE = "unverifiable"
 
 
+def _parse_linux_proc_stat_text(text: str, *, pid: int) -> LinuxProcStat | None:
+    right_paren = text.rfind(")")
+    if right_paren == -1:
+        return None
+    fields = text[right_paren + 2 :].split()
+    if len(fields) < 20:
+        return None
+    state = fields[0]
+    if not state:
+        return None
+    try:
+        pgid = int(fields[2])
+    except ValueError:
+        return None
+    return LinuxProcStat(
+        pid=pid,
+        state=state[0],
+        pgid=pgid,
+        start_time=fields[19],
+    )
+
+
+def _read_linux_proc_stat(pid: int) -> LinuxProcStat | None:
+    if pid <= 0:
+        return None
+    path = os.path.join(_PROC_ROOT, str(pid), "stat")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        return None
+    return _parse_linux_proc_stat_text(text, pid=pid)
+
+
+def _linux_proc_available() -> bool:
+    return sys.platform.startswith("linux") and os.path.isdir(_PROC_ROOT)
+
+
 def _pid_is_zombie(pid: int) -> bool:
     if sys.platform == "win32":
         return False
+    if _linux_proc_available():
+        parsed = _read_linux_proc_stat(pid)
+        if parsed is None:
+            return False
+        return parsed.state in {"Z", "X"}
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "state="],
@@ -42,6 +99,11 @@ def _pid_is_zombie(pid: int) -> bool:
 def is_pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if _linux_proc_available():
+        parsed = _read_linux_proc_stat(pid)
+        if parsed is None:
+            return False
+        return parsed.state not in {"Z", "X"}
     try:
         os.kill(pid, 0)
     except OSError:
@@ -54,9 +116,16 @@ def is_pid_alive(pid: int) -> bool:
 def read_process_group_id(pid: int) -> int | None:
     """Return the process group ID for *pid*, or ``None`` when unavailable."""
 
-    if pid <= 0 or not is_pid_alive(pid):
+    if pid <= 0:
         return None
     if sys.platform == "win32":
+        return None
+    if _linux_proc_available():
+        parsed = _read_linux_proc_stat(pid)
+        if parsed is None or parsed.state in {"Z", "X"}:
+            return None
+        return parsed.pgid
+    if not is_pid_alive(pid):
         return None
     try:
         return int(os.getpgid(pid))
@@ -73,19 +142,22 @@ def list_process_group_pids(pgid: int) -> list[int] | None:
         return None
     if sys.platform == "darwin":
         return _list_darwin_process_group_pids(pgid)
-    proc_root = "/proc"
-    if not os.path.isdir(proc_root):
+    if not _linux_proc_available():
         return None
     members: list[int] = []
-    for entry in os.listdir(proc_root):
+    try:
+        entries = os.listdir(_PROC_ROOT)
+    except OSError:
+        return None
+    for entry in entries:
         if not entry.isdigit():
             continue
-        pid = int(entry)
-        if not is_pid_alive(pid):
+        parsed = _read_linux_proc_stat(int(entry))
+        if parsed is None or parsed.state in {"Z", "X"}:
             continue
-        member_pgid = read_process_group_id(pid)
-        if member_pgid == pgid:
-            members.append(pid)
+        if parsed.pgid == pgid:
+            members.append(parsed.pid)
+    members.sort()
     return members
 
 
@@ -232,6 +304,7 @@ def terminate_process_tree(
     """Terminate a subprocess tree and return True when the group is verified gone."""
 
     from core_tools.provider.process_identity import (
+        _terminate_via_bound_popen,
         capture_process_group_identities,
         drain_owned_process_group,
         read_process_identity,
@@ -257,12 +330,10 @@ def terminate_process_tree(
         identity = read_process_identity(proc.pid)
 
     members = member_identities
-    if members is None and identity is not None:
-        if proc.poll() is None:
-            captured = capture_process_group_identities(identity)
-            members = captured
-        elif resolved_pgid is not None:
-            members = member_identities
+    if members is None and identity is not None and proc.poll() is None:
+        members = capture_process_group_identities(identity)
+
+    _terminate_via_bound_popen(proc)
 
     cleaned = drain_owned_process_group(
         pgid=resolved_pgid,

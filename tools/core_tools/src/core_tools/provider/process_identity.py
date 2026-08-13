@@ -12,6 +12,7 @@ from typing import Any
 
 from core_tools.provider.process_cleanup import (
     ProcessGroupState,
+    _read_linux_proc_stat,
     is_pid_alive,
     list_process_group_pids,
     process_group_state,
@@ -54,19 +55,10 @@ def read_process_start_time(pid: int) -> str | None:
 
 
 def _read_linux_process_start_time(pid: int) -> str | None:
-    path = f"/proc/{pid}/stat"
-    try:
-        with open(path, encoding="utf-8") as handle:
-            stat = handle.read()
-    except OSError:
+    parsed = _read_linux_proc_stat(pid)
+    if parsed is None:
         return None
-    right_paren = stat.rfind(")")
-    if right_paren == -1:
-        return None
-    fields = stat[right_paren + 2 :].split()
-    if len(fields) < 20:
-        return None
-    return fields[19]
+    return parsed.start_time
 
 
 def _read_darwin_process_start_time(pid: int) -> str | None:
@@ -163,6 +155,41 @@ def process_identity_from_termination_record(
     return None
 
 
+def process_identities_from_termination_record(
+    record: dict[str, object],
+) -> list[ProcessIdentity]:
+    """Return leader and member identities preserved on a termination record."""
+
+    identities: list[ProcessIdentity] = []
+    seen: set[tuple[int, str]] = set()
+    leader = process_identity_from_termination_record(record)
+    if leader is not None:
+        identities.append(leader)
+        seen.add(_identity_token(leader))
+    run_id = record.get("run_id")
+    run_id_value = run_id if isinstance(run_id, str) else None
+    raw_members = record.get("member_identities")
+    if isinstance(raw_members, list):
+        for token in raw_members:
+            if not isinstance(token, str):
+                continue
+            identity = process_identity_from_token(token, run_id=run_id_value)
+            if identity is None:
+                continue
+            token_key = _identity_token(identity)
+            if token_key in seen:
+                continue
+            seen.add(token_key)
+            identities.append(identity)
+    return identities
+
+
+def process_identity_is_live(identity: ProcessIdentity) -> bool:
+    """Return whether *identity* still refers to a live process instance."""
+
+    return _identity_still_alive(identity)
+
+
 def _pidfd_supported() -> bool:
     return (
         sys.platform == "linux"
@@ -240,20 +267,12 @@ def _signal_identity_via_pidfd(identity: ProcessIdentity, sig: int) -> bool:
         os.close(fd)
 
 
-def _signal_identity_verified(identity: ProcessIdentity, sig: int) -> bool:
+def _signal_identity(identity: ProcessIdentity, sig: int) -> bool:
     if not _identity_still_alive(identity):
         return True
-    try:
-        os.kill(identity.pid, sig)
-        return True
-    except OSError:
-        return False
-
-
-def _signal_identity(identity: ProcessIdentity, sig: int) -> bool:
     if _pidfd_supported():
         return _signal_identity_via_pidfd(identity, sig)
-    return _signal_identity_verified(identity, sig)
+    return False
 
 
 def _group_still_ours(
@@ -420,6 +439,23 @@ def drain_owned_process_group(
     return process_group_state(resolved_pgid) is ProcessGroupState.GONE
 
 
+def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+    except OSError:
+        return
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+            proc.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+
 def _terminate_bound_process(
     identity: ProcessIdentity | None,
     proc: subprocess.Popen[Any],
@@ -429,6 +465,8 @@ def _terminate_bound_process(
 ) -> TerminateIdentityResult:
     if identity is not None and proc.poll() is None and proc.pid != identity.pid:
         return TerminateIdentityResult.IDENTITY_MISMATCH
+
+    _terminate_via_bound_popen(proc)
 
     resolved_identity = identity
     if resolved_identity is None and proc.poll() is None:
@@ -440,10 +478,7 @@ def _terminate_bound_process(
 
     members = list(member_identities) if member_identities is not None else None
     if members is None and resolved_identity is not None and proc.poll() is None:
-        captured = capture_process_group_identities(resolved_identity)
-        members = captured
-    if members is None and resolved_pgid is not None:
-        members = _current_group_identities(resolved_pgid)
+        members = capture_process_group_identities(resolved_identity)
 
     if drain_owned_process_group(
         pgid=resolved_pgid,
@@ -509,20 +544,10 @@ def terminate_verified_process_identity(
             return TerminateIdentityResult.FAILED
         return TerminateIdentityResult.ALREADY_GONE
 
-    if _pidfd_supported():
-        return _terminate_linux_identity(identity)
-
-    pgid_value = read_process_group_id(identity.pid) if pgid is None else pgid
-    captured = capture_process_group_identities(identity)
-    if captured is None:
+    if not _pidfd_supported():
         return TerminateIdentityResult.FAILED
-    if drain_owned_process_group(
-        pgid=pgid_value,
-        leader_identity=identity,
-        known_identities=captured,
-    ):
-        return TerminateIdentityResult.TERMINATED
-    return TerminateIdentityResult.FAILED
+
+    return _terminate_linux_identity(identity)
 
 
 __all__ = [
@@ -530,9 +555,11 @@ __all__ = [
     "TerminateIdentityResult",
     "capture_process_group_identities",
     "drain_owned_process_group",
+    "process_identities_from_termination_record",
     "process_identities_match",
     "process_identity_from_termination_record",
     "process_identity_from_token",
+    "process_identity_is_live",
     "process_identity_token",
     "read_process_identity",
     "read_process_start_time",

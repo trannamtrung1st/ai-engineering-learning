@@ -42,6 +42,8 @@ from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
     capture_process_group_identities,
+    process_identities_from_termination_record,
+    process_identity_is_live,
     process_identity_token,
     read_process_identity,
     read_process_start_time,
@@ -489,7 +491,11 @@ class CursorProvider:
         if confirmed_dead:
             with self._turn_proc_lock:
                 for pid in confirmed_dead:
-                    self._tracked_turn_procs.pop(pid, None)
+                    entry = self._tracked_turn_procs.get(pid)
+                    if entry is None:
+                        continue
+                    if not self._tracked_tree_is_live(entry):
+                        self._tracked_turn_procs.pop(pid, None)
         with self._session_registry_lock:
             for session_id in list(self._sessions.keys()):
                 self._prune_dead_tracked_pids_for_session(session_id)
@@ -603,10 +609,9 @@ class CursorProvider:
             }:
                 self._unregister_tracked_turn_proc_by_pid(pid)
             elif result == TerminateIdentityResult.FAILED:
-                if is_pid_alive(pid):
-                    terminated.append({**record, "reason": "termination_failed"})
-                else:
-                    self._unregister_tracked_turn_proc_by_pid(pid)
+                terminated.append(
+                    {**record, "reason": "termination_failed", "tree_status": "unresolved"}
+                )
         return terminated
 
     @staticmethod
@@ -621,6 +626,16 @@ class CursorProvider:
             "role": entry.role,
             "session_id": entry.session_id,
         }
+        if entry.pgid is not None:
+            record["pgid"] = entry.pgid
+        members = list(entry.member_identities or ())
+        if entry.identity is not None and entry.identity not in members:
+            members = [entry.identity, *members]
+        if members:
+            record["member_pids"] = [identity.pid for identity in members]
+            record["member_identities"] = [
+                process_identity_token(identity) for identity in members
+            ]
         if entry.identity is not None:
             record["start_time"] = entry.identity.start_time
             record["process_identity"] = process_identity_token(entry.identity)
@@ -1082,6 +1097,8 @@ class CursorProvider:
                         role=entry.role,
                         identity=entry.identity,
                         proc=entry.proc,
+                        pgid=entry.pgid,
+                        member_identities=entry.member_identities,
                     )
         context = self._get_collect_context()
         if context is not None and context[0] == old_session_id:
@@ -1220,19 +1237,36 @@ class CursorProvider:
                     tracked_ids.add(target)
             return tracked_ids
 
+    @staticmethod
+    def _tracked_tree_is_live(entry: _TrackedTurnProc) -> bool:
+        if entry.proc is not None and entry.proc.poll() is None:
+            return True
+        if entry.identity is not None and process_identity_is_live(entry.identity):
+            return True
+        if entry.member_identities:
+            return any(
+                process_identity_is_live(identity) for identity in entry.member_identities
+            )
+        if entry.pgid is not None:
+            return True
+        pid = entry.proc.pid if entry.proc is not None else (
+            entry.identity.pid if entry.identity is not None else 0
+        )
+        return is_pid_alive(pid)
+
     def _prune_dead_tracked_pids_for_session(self, session_id: str) -> None:
         tracked_ids = self._tracked_session_ids(session_id)
         with self._turn_proc_lock:
             for pid, entry in list(self._tracked_turn_procs.items()):
-                if entry.session_id in tracked_ids and not is_pid_alive(pid):
+                if entry.session_id in tracked_ids and not self._tracked_tree_is_live(entry):
                     self._tracked_turn_procs.pop(pid, None)
 
     def _session_has_surviving_pids(self, session_id: str) -> bool:
         tracked_ids = self._tracked_session_ids(session_id)
         with self._turn_proc_lock:
             return any(
-                entry.session_id in tracked_ids and is_pid_alive(pid)
-                for pid, entry in self._tracked_turn_procs.items()
+                entry.session_id in tracked_ids and self._tracked_tree_is_live(entry)
+                for entry in self._tracked_turn_procs.values()
             )
 
     def _surviving_pids_for_session(
@@ -1241,16 +1275,37 @@ class CursorProvider:
         records: list[dict[str, Any]],
     ) -> tuple[int, ...]:
         tracked_ids = self._tracked_session_ids(session_id)
-        surviving = {
-            int(record["pid"])
-            for record in records
-            if record.get("reason") == "termination_failed"
-            and isinstance(record.get("pid"), int)
-            and is_pid_alive(int(record["pid"]))
-        }
+        surviving: set[int] = set()
+        for record in records:
+            if record.get("reason") != "termination_failed":
+                continue
+            for identity in process_identities_from_termination_record(record):
+                if process_identity_is_live(identity):
+                    surviving.add(identity.pid)
+            member_pids = record.get("member_pids")
+            if isinstance(member_pids, list):
+                for member_pid in member_pids:
+                    if isinstance(member_pid, int) and is_pid_alive(member_pid):
+                        surviving.add(member_pid)
+            pid = record.get("pid")
+            if isinstance(pid, int) and is_pid_alive(pid):
+                surviving.add(pid)
         with self._turn_proc_lock:
             for pid, entry in self._tracked_turn_procs.items():
-                if entry.session_id in tracked_ids and is_pid_alive(pid):
+                if entry.session_id not in tracked_ids:
+                    continue
+                if not self._tracked_tree_is_live(entry):
+                    continue
+                live_found = False
+                if entry.member_identities:
+                    for identity in entry.member_identities:
+                        if process_identity_is_live(identity):
+                            surviving.add(identity.pid)
+                            live_found = True
+                if entry.identity is not None and process_identity_is_live(entry.identity):
+                    surviving.add(entry.identity.pid)
+                    live_found = True
+                if not live_found:
                     surviving.add(pid)
         return tuple(sorted(surviving))
 

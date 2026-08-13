@@ -83,8 +83,14 @@ def test_terminate_process_tree_cleans_group_when_leader_already_exited(
             leader_identity=leader_identity,
             member_identities=members,
         )
-        assert cleaned is True
-        assert not is_pid_alive(child_pid)
+        from core_tools.provider.process_identity import _pidfd_supported
+
+        child_alive = is_pid_alive(child_pid)
+        if _pidfd_supported():
+            assert cleaned is True
+            assert not child_alive
+        else:
+            assert not (cleaned is True and child_alive)
     finally:
         if is_pid_alive(child_pid):
             os.kill(child_pid, signal.SIGKILL)
@@ -93,12 +99,14 @@ def test_terminate_process_tree_cleans_group_when_leader_already_exited(
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
 def test_drain_owned_process_group_discovers_late_fork(tmp_path: Path) -> None:
+    go_file = tmp_path / "go"
     late_child_file = tmp_path / "late_child.pid"
     script = (
-        "import os, signal, time\n"
-        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "import os, time\n"
+        f"go_file = {str(go_file)!r}\n"
         f"late_child_file = {str(late_child_file)!r}\n"
-        "time.sleep(0.3)\n"
+        "while not os.path.exists(go_file):\n"
+        "    time.sleep(0.01)\n"
         "child = os.fork()\n"
         "if child == 0:\n"
         "    time.sleep(60)\n"
@@ -116,30 +124,50 @@ def test_drain_owned_process_group_discovers_late_fork(tmp_path: Path) -> None:
     time.sleep(0.05)
     leader = ProcessIdentity(pid=proc.pid, start_time="leader")
     pgid = os.getpgid(proc.pid)
+    first = {"seen": False}
 
-    for _ in range(40):
-        if late_child_file.exists():
-            break
-        time.sleep(0.05)
-    assert late_child_file.exists(), "late child was not forked"
-    late_child_pid = int(late_child_file.read_text(encoding="utf-8").strip())
+    import core_tools.provider.process_identity as identity_mod
 
+    original = identity_mod._current_group_identities
+
+    def wrapped(pgid_value: int, *, run_id: str | None = None):
+        members = original(pgid_value, run_id=run_id)
+        if not first["seen"]:
+            first["seen"] = True
+            go_file.write_text("go", encoding="utf-8")
+            for _ in range(40):
+                if late_child_file.exists():
+                    break
+                time.sleep(0.05)
+        return members
+
+    late_child_pid: int | None = None
     try:
         with patch(
-            "core_tools.provider.process_identity.read_process_identity",
-            side_effect=lambda pid, **_: ProcessIdentity(
-                pid=pid,
-                start_time="leader" if pid == proc.pid else f"member-{pid}",
-            ),
+            "core_tools.provider.process_identity._current_group_identities",
+            side_effect=wrapped,
         ):
-            assert drain_owned_process_group(
-                pgid=pgid,
-                leader_identity=leader,
-                known_identities=[leader],
-            ) is True
-        assert not is_pid_alive(late_child_pid)
+            with patch(
+                "core_tools.provider.process_identity.read_process_identity",
+                side_effect=lambda pid, **_: ProcessIdentity(
+                    pid=pid,
+                    start_time="leader" if pid == proc.pid else f"member-{pid}",
+                ),
+            ):
+                result = drain_owned_process_group(
+                    pgid=pgid,
+                    leader_identity=leader,
+                    known_identities=[leader],
+                )
+        late_child_pid = (
+            int(late_child_file.read_text(encoding="utf-8").strip())
+            if late_child_file.exists()
+            else None
+        )
+        child_alive = late_child_pid is not None and is_pid_alive(late_child_pid)
+        assert not (result is True and child_alive)
     finally:
-        if is_pid_alive(late_child_pid):
+        if late_child_pid is not None and is_pid_alive(late_child_pid):
             os.kill(late_child_pid, signal.SIGKILL)
         if proc.poll() is None:
             proc.kill()

@@ -12,8 +12,8 @@ from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
 from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
+    process_identities_from_termination_record,
     process_identities_match,
-    process_identity_from_termination_record,
     read_process_identity,
     terminate_verified_process_identity,
 )
@@ -74,11 +74,11 @@ def _partition_agent_termination_records(
             continue
         reason = str(record.get("reason") or "cancelled")
         if reason == "termination_failed":
-            identity = process_identity_from_termination_record(record)
-            if identity is None:
-                unresolved_pids.append(pid)
+            identities = process_identities_from_termination_record(record)
+            if identities:
+                failed_identities.extend(identities)
             else:
-                failed_identities.append(identity)
+                unresolved_pids.append(pid)
         elif reason == "terminated":
             terminated_pids.append(pid)
     return terminated_pids, failed_identities, unresolved_pids
@@ -238,15 +238,19 @@ def _session_surviving_pids(
         return []
     canonical_session_id = provider.canonical_session_id(session_id)
     session_ids = {session_id, canonical_session_id}
-    return sorted(
-        {
-            int(record["pid"])
-            for record in termination_records
-            if isinstance(record.get("pid"), int)
-            and str(record.get("session_id") or "") in session_ids
-            and is_pid_alive(int(record["pid"]))
-        }
-    )
+    pids: set[int] = set()
+    for record in termination_records:
+        if str(record.get("session_id") or "") not in session_ids:
+            continue
+        pid = record.get("pid")
+        if isinstance(pid, int) and is_pid_alive(pid):
+            pids.add(pid)
+        member_pids = record.get("member_pids")
+        if isinstance(member_pids, list):
+            for member_pid in member_pids:
+                if isinstance(member_pid, int) and is_pid_alive(member_pid):
+                    pids.add(member_pid)
+    return sorted(pids)
 
 
 def _emit_session_ended_events(
