@@ -11,8 +11,10 @@ from enum import Enum
 from typing import Any
 
 from core_tools.provider.process_cleanup import (
+    PidInspectState,
     ProcessGroupState,
     _read_linux_proc_stat,
+    inspect_pid_liveness,
     is_pid_alive,
     list_process_group_pids,
     process_group_state,
@@ -27,6 +29,15 @@ class TerminateIdentityResult(Enum):
     ALREADY_GONE = "already_gone"
     IDENTITY_MISMATCH = "identity_mismatch"
     FAILED = "failed"
+
+
+class IdentityInspectState(Enum):
+    """Whether a captured identity still matches a live process instance."""
+
+    LIVE_MATCH = "live_match"
+    GONE = "gone"
+    IDENTITY_MISMATCH = "identity_mismatch"
+    UNVERIFIABLE = "unverifiable"
 
 
 _MAX_DRAIN_ROUNDS = 10
@@ -184,8 +195,31 @@ def process_identities_from_termination_record(
     return identities
 
 
+def inspect_process_identity(identity: ProcessIdentity) -> IdentityInspectState:
+    """Inspect whether *identity* still matches a live process instance."""
+
+    pid_state = inspect_pid_liveness(identity.pid)
+    if pid_state is PidInspectState.GONE:
+        return IdentityInspectState.GONE
+    if pid_state is PidInspectState.UNVERIFIABLE:
+        return IdentityInspectState.UNVERIFIABLE
+    current = read_process_identity(
+        identity.pid,
+        run_id=identity.run_id,
+        command=identity.command,
+    )
+    if current is None:
+        return IdentityInspectState.UNVERIFIABLE
+    if process_identities_match(identity, current):
+        return IdentityInspectState.LIVE_MATCH
+    return IdentityInspectState.IDENTITY_MISMATCH
+
+
 def process_identity_is_live(identity: ProcessIdentity) -> bool:
-    """Return whether *identity* still refers to a live process instance."""
+    """Return whether *identity* may still refer to a live process instance.
+
+    Unverifiable inspections are treated as live so callers keep the tree.
+    """
 
     return _identity_still_alive(identity)
 
@@ -216,14 +250,10 @@ def _known_tokens(
 
 
 def _identity_still_alive(identity: ProcessIdentity) -> bool:
-    if not is_pid_alive(identity.pid):
-        return False
-    current = read_process_identity(
-        identity.pid,
-        run_id=identity.run_id,
-        command=identity.command,
-    )
-    return process_identities_match(identity, current)
+    return inspect_process_identity(identity) in {
+        IdentityInspectState.LIVE_MATCH,
+        IdentityInspectState.UNVERIFIABLE,
+    }
 
 
 def _any_identities_still_alive(identities: list[ProcessIdentity]) -> bool:
@@ -247,18 +277,31 @@ def _wait_identities_dead(
     return not _any_identities_still_alive(identities)
 
 
+def _identity_needs_no_signal(state: IdentityInspectState) -> bool:
+    return state in {
+        IdentityInspectState.GONE,
+        IdentityInspectState.IDENTITY_MISMATCH,
+    }
+
+
 def _signal_identity_via_pidfd(identity: ProcessIdentity, sig: int) -> bool:
     """Send *sig* through pidfd when *identity* still matches."""
 
-    if not _identity_still_alive(identity):
+    state = inspect_process_identity(identity)
+    if _identity_needs_no_signal(state):
         return True
+    if state is IdentityInspectState.UNVERIFIABLE:
+        return False
     try:
         fd = os.pidfd_open(identity.pid, 0)
     except OSError:
         return False
     try:
-        if not _identity_still_alive(identity):
+        state = inspect_process_identity(identity)
+        if _identity_needs_no_signal(state):
             return True
+        if state is IdentityInspectState.UNVERIFIABLE:
+            return False
         signal.pidfd_send_signal(fd, sig)
         return True
     except OSError:
@@ -268,8 +311,11 @@ def _signal_identity_via_pidfd(identity: ProcessIdentity, sig: int) -> bool:
 
 
 def _signal_identity(identity: ProcessIdentity, sig: int) -> bool:
-    if not _identity_still_alive(identity):
+    state = inspect_process_identity(identity)
+    if _identity_needs_no_signal(state):
         return True
+    if state is IdentityInspectState.UNVERIFIABLE:
+        return False
     if _pidfd_supported():
         return _signal_identity_via_pidfd(identity, sig)
     return False
@@ -490,13 +536,13 @@ def _terminate_bound_process(
 
 
 def _terminate_linux_identity(identity: ProcessIdentity) -> TerminateIdentityResult:
-    current = read_process_identity(
-        identity.pid,
-        run_id=identity.run_id,
-        command=identity.command,
-    )
-    if not process_identities_match(identity, current):
+    state = inspect_process_identity(identity)
+    if state is IdentityInspectState.GONE:
+        return TerminateIdentityResult.ALREADY_GONE
+    if state is IdentityInspectState.IDENTITY_MISMATCH:
         return TerminateIdentityResult.IDENTITY_MISMATCH
+    if state is IdentityInspectState.UNVERIFIABLE:
+        return TerminateIdentityResult.FAILED
 
     captured = capture_process_group_identities(identity)
     if captured is None:
@@ -532,7 +578,12 @@ def terminate_verified_process_identity(
     if identity is None:
         return TerminateIdentityResult.FAILED
 
-    if not is_pid_alive(identity.pid):
+    state = inspect_process_identity(identity)
+    if state is IdentityInspectState.UNVERIFIABLE:
+        return TerminateIdentityResult.FAILED
+    if state is IdentityInspectState.IDENTITY_MISMATCH:
+        return TerminateIdentityResult.IDENTITY_MISMATCH
+    if state is IdentityInspectState.GONE:
         pgid = read_process_group_id(identity.pid) if pgid is None else pgid
         if pgid is not None and member_identities:
             if drain_owned_process_group(
@@ -551,10 +602,12 @@ def terminate_verified_process_identity(
 
 
 __all__ = [
+    "IdentityInspectState",
     "ProcessIdentity",
     "TerminateIdentityResult",
     "capture_process_group_identities",
     "drain_owned_process_group",
+    "inspect_process_identity",
     "process_identities_from_termination_record",
     "process_identities_match",
     "process_identity_from_termination_record",

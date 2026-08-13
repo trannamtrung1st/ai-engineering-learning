@@ -10,10 +10,11 @@ from core_tools.observability import ConsoleEvent
 from core_tools.provider import Provider
 from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
 from core_tools.provider.process_identity import (
+    IdentityInspectState,
     ProcessIdentity,
     TerminateIdentityResult,
+    inspect_process_identity,
     process_identities_from_termination_record,
-    process_identities_match,
     process_identity_is_live,
     read_process_identity,
     terminate_verified_process_identity,
@@ -132,6 +133,10 @@ def _emit_agent_termination_records(
     return terminated_pids, failed_pids
 
 
+def _classify_retry_identity(identity: ProcessIdentity) -> IdentityInspectState:
+    return inspect_process_identity(identity)
+
+
 def _retry_terminate_provider_identities(
     identities: list[ProcessIdentity],
 ) -> RetryTerminateResult:
@@ -140,10 +145,13 @@ def _retry_terminate_provider_identities(
     unresolved: list[int] = []
     stale_reconciled: list[int] = []
     for identity in identities:
-        if not is_pid_alive(identity.pid):
+        state = _classify_retry_identity(identity)
+        if state is IdentityInspectState.GONE:
             continue
-        current = read_process_identity(identity.pid, run_id=identity.run_id)
-        if not process_identities_match(identity, current):
+        if state is IdentityInspectState.UNVERIFIABLE:
+            unresolved.append(identity.pid)
+            continue
+        if state is IdentityInspectState.IDENTITY_MISMATCH:
             stale_reconciled.append(identity.pid)
             continue
         result = terminate_verified_process_identity(identity)
@@ -217,10 +225,13 @@ def _retry_terminate_identities(
     unresolved: list[int] = []
     stale_reconciled: list[int] = []
     for identity in identities:
-        if not is_pid_alive(identity.pid):
+        state = _classify_retry_identity(identity)
+        if state is IdentityInspectState.GONE:
             continue
-        current = read_process_identity(identity.pid, run_id=identity.run_id)
-        if not process_identities_match(identity, current):
+        if state is IdentityInspectState.UNVERIFIABLE:
+            unresolved.append(identity.pid)
+            continue
+        if state is IdentityInspectState.IDENTITY_MISMATCH:
             stale_reconciled.append(identity.pid)
             continue
         result = terminate_verified_process_identity(identity)

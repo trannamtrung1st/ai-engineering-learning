@@ -14,6 +14,7 @@ import pytest
 
 from core_tools.provider.process_cleanup import is_pid_alive
 from core_tools.provider.process_identity import (
+    IdentityInspectState,
     ProcessIdentity,
     TerminateIdentityResult,
     drain_owned_process_group,
@@ -125,31 +126,36 @@ def test_teardown_fails_when_dead_leader_leaves_live_descendant(tmp_path: Path) 
             }
         ]
 
-    def fake_alive(pid: int) -> bool:
-        return pid == 5151
-
     with patch.object(provider, "terminate_all_sessions", side_effect=terminate_all_sessions):
         with patch.object(provider, "list_active_sessions", return_value=[]):
             with patch(
                 "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
-                side_effect=fake_alive,
+                side_effect=lambda pid: pid == 5151,
             ):
                 with patch(
-                    "top_down_planning.orchestrator.provider_teardown.read_process_identity",
-                    return_value=child,
+                    "top_down_planning.orchestrator.provider_teardown.inspect_process_identity",
+                    side_effect=lambda identity: (
+                        IdentityInspectState.LIVE_MATCH
+                        if identity.pid == 5151
+                        else IdentityInspectState.GONE
+                    ),
                 ):
                     with patch(
-                        "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
-                        return_value=TerminateIdentityResult.FAILED,
-                    ) as terminate:
-                        with pytest.raises(ProviderTeardownError) as exc_info:
-                            teardown_provider_sessions(
-                                provider,
-                                run_id="run-rr13",
-                                phase=PLANNING,
-                                append_event=lambda *_args, **_kwargs: None,
-                                emit_console=lambda _event: None,
-                            )
+                        "top_down_planning.orchestrator.provider_teardown.process_identity_is_live",
+                        side_effect=lambda identity: identity.pid == 5151,
+                    ):
+                        with patch(
+                            "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
+                            return_value=TerminateIdentityResult.FAILED,
+                        ) as terminate:
+                            with pytest.raises(ProviderTeardownError) as exc_info:
+                                teardown_provider_sessions(
+                                    provider,
+                                    run_id="run-rr13",
+                                    phase=PLANNING,
+                                    append_event=lambda *_args, **_kwargs: None,
+                                    emit_console=lambda _event: None,
+                                )
 
     assert 5151 in exc_info.value.surviving_pids
     assert any(call.args and call.args[0].pid == 5151 for call in terminate.call_args_list)

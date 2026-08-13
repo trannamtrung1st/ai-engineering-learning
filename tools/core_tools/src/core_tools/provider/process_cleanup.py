@@ -124,21 +124,30 @@ def _pid_is_zombie(pid: int) -> bool:
     return state.startswith("Z")
 
 
-def is_pid_alive(pid: int) -> bool:
+def inspect_pid_liveness(pid: int) -> PidInspectState:
+    """Return whether *pid* is live, gone, or unverifiable."""
+
     if pid <= 0:
-        return False
+        return PidInspectState.GONE
     if _linux_proc_available():
-        result = _read_linux_proc_stat(pid)
-        if result.state is PidInspectState.GONE:
-            return False
-        return True
+        return _read_linux_proc_stat(pid).state
     try:
         os.kill(pid, 0)
-    except OSError:
-        return False
+    except ProcessLookupError:
+        return PidInspectState.GONE
+    except PermissionError:
+        return PidInspectState.UNVERIFIABLE
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return PidInspectState.GONE
+        return PidInspectState.UNVERIFIABLE
     if _pid_is_zombie(pid):
-        return False
-    return True
+        return PidInspectState.GONE
+    return PidInspectState.LIVE
+
+
+def is_pid_alive(pid: int) -> bool:
+    return inspect_pid_liveness(pid) is not PidInspectState.GONE
 
 
 def read_process_group_id(pid: int) -> int | None:
@@ -194,7 +203,7 @@ def list_process_group_pids(pgid: int) -> list[int] | None:
 def _list_darwin_process_group_pids(pgid: int) -> list[int] | None:
     try:
         result = subprocess.run(
-            ["ps", "-g", str(pgid), "-o", "pid="],
+            ["ps", "-axo", "pid=,pgid="],
             capture_output=True,
             text=True,
             check=False,
@@ -202,20 +211,28 @@ def _list_darwin_process_group_pids(pgid: int) -> list[int] | None:
     except OSError:
         return None
     if result.returncode != 0:
-        if result.stdout.strip() or result.stderr.strip():
-            return None
-        return []
+        return None
     members: list[int] = []
     for line in result.stdout.splitlines():
         text = line.strip()
         if not text:
             continue
+        parts = text.split()
+        if len(parts) < 2:
+            return None
         try:
-            pid = int(text)
+            pid = int(parts[0])
+            member_pgid = int(parts[1])
         except ValueError:
             return None
-        if is_pid_alive(pid):
-            members.append(pid)
+        if member_pgid != pgid:
+            continue
+        state = inspect_pid_liveness(pid)
+        if state is PidInspectState.UNVERIFIABLE:
+            return None
+        if state is PidInspectState.GONE:
+            continue
+        members.append(pid)
     return members
 
 
@@ -381,7 +398,9 @@ def terminate_process_tree(
 
 
 __all__ = [
+    "PidInspectState",
     "ProcessGroupState",
+    "inspect_pid_liveness",
     "is_pid_alive",
     "list_process_group_pids",
     "pgid_has_live_members",

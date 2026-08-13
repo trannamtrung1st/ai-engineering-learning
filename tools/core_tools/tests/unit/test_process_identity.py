@@ -14,6 +14,7 @@ import pytest
 
 from core_tools.provider.process_cleanup import is_pid_alive
 from core_tools.provider.process_identity import (
+    IdentityInspectState,
     ProcessIdentity,
     TerminateIdentityResult,
     _pidfd_supported,
@@ -66,8 +67,8 @@ def test_terminate_verified_process_identity_skips_pid_reuse() -> None:
     identity = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
-        "core_tools.provider.process_identity.is_pid_alive",
-        return_value=True,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
     ):
         with patch(
             "core_tools.provider.process_identity._pidfd_supported",
@@ -118,8 +119,8 @@ def test_terminate_verified_process_identity_fails_closed_without_handle() -> No
     identity = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
-        "core_tools.provider.process_identity.is_pid_alive",
-        return_value=True,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
     ):
         with patch(
             "core_tools.provider.process_identity._pidfd_supported",
@@ -145,8 +146,8 @@ def test_terminate_linux_identity_uses_pidfd_not_killpg() -> None:
     identity = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
-        "core_tools.provider.process_identity.read_process_identity",
-        return_value=identity,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
     ):
         with patch(
             "core_tools.provider.process_identity.capture_process_group_identities",
@@ -174,8 +175,8 @@ def test_terminate_verified_process_identity_linux_pidfd_path() -> None:
     identity = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
-        "core_tools.provider.process_identity.is_pid_alive",
-        return_value=True,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
     ):
         with patch(
             "core_tools.provider.process_identity._pidfd_supported",

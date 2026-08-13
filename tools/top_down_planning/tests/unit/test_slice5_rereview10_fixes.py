@@ -11,6 +11,7 @@ import pytest
 
 from core_tools.provider.cursor import CursorProvider
 from core_tools.provider.process_identity import (
+    IdentityInspectState,
     ProcessIdentity,
     TerminateIdentityResult,
 )
@@ -26,20 +27,15 @@ def test_retry_terminate_provider_identities_does_not_kill_reused_pid(
     tmp_path: Path,
 ) -> None:
     original = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
-    reused = ProcessIdentity(pid=4242, start_time="200", run_id="run-a")
 
     with patch(
-        "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
-        return_value=True,
+        "top_down_planning.orchestrator.provider_teardown.inspect_process_identity",
+        return_value=IdentityInspectState.IDENTITY_MISMATCH,
     ):
         with patch(
-            "top_down_planning.orchestrator.provider_teardown.read_process_identity",
-            return_value=reused,
-        ):
-            with patch(
-                "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
-            ) as terminate:
-                result = _retry_terminate_provider_identities([original])
+            "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
+        ) as terminate:
+            result = _retry_terminate_provider_identities([original])
 
     assert result.stale_reconciled == (4242,)
     terminate.assert_not_called()
@@ -51,18 +47,14 @@ def test_retry_terminate_provider_identities_retries_original_identity(
     original = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
-        "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
-        return_value=True,
+        "top_down_planning.orchestrator.provider_teardown.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
     ):
         with patch(
-            "top_down_planning.orchestrator.provider_teardown.read_process_identity",
-            return_value=original,
-        ):
-            with patch(
-                "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
-                return_value=TerminateIdentityResult.TERMINATED,
-            ) as terminate:
-                result = _retry_terminate_provider_identities([original])
+            "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
+            return_value=TerminateIdentityResult.TERMINATED,
+        ) as terminate:
+            result = _retry_terminate_provider_identities([original])
 
     assert result.terminated == (4242,)
     terminate.assert_called_once_with(original)
@@ -91,28 +83,22 @@ def test_teardown_retries_provider_failure_record_identity_not_fresh_read(
             }
         ]
 
-    reused = ProcessIdentity(pid=4242, start_time="200", run_id="run-rr10")
-
     with patch.object(provider, "terminate_all_sessions", side_effect=terminate_all_sessions):
         with patch(
-            "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
-            return_value=True,
+            "top_down_planning.orchestrator.provider_teardown.inspect_process_identity",
+            return_value=IdentityInspectState.IDENTITY_MISMATCH,
         ):
             with patch(
-                "top_down_planning.orchestrator.provider_teardown.read_process_identity",
-                return_value=reused,
-            ):
-                with patch(
-                    "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
-                ) as terminate:
-                    with pytest.raises(ProviderTeardownError):
-                        teardown_provider_sessions(
-                            provider,
-                            run_id="run-rr10",
-                            phase=PLANNING,
-                            append_event=lambda *_args, **_kwargs: None,
-                            emit_console=lambda _event: None,
-                        )
+                "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
+            ) as terminate:
+                with pytest.raises(ProviderTeardownError):
+                    teardown_provider_sessions(
+                        provider,
+                        run_id="run-rr10",
+                        phase=PLANNING,
+                        append_event=lambda *_args, **_kwargs: None,
+                        emit_console=lambda _event: None,
+                    )
 
     terminate.assert_not_called()
 

@@ -130,15 +130,15 @@ def test_darwin_ps_nonzero_is_unverifiable(monkeypatch) -> None:
         assert process_group_state(99) is ProcessGroupState.UNVERIFIABLE
 
 
-def test_darwin_ps_empty_group_with_nonzero_is_gone(monkeypatch) -> None:
+def test_darwin_ps_empty_group_with_nonzero_is_unverifiable(monkeypatch) -> None:
     monkeypatch.setattr(sys, "platform", "darwin", raising=False)
     result = MagicMock(returncode=1, stdout="", stderr="")
     with patch(
         "core_tools.provider.process_cleanup.subprocess.run",
         return_value=result,
     ):
-        assert list_process_group_pids(99) == []
-        assert process_group_state(99) is ProcessGroupState.GONE
+        assert list_process_group_pids(99) is None
+        assert process_group_state(99) is ProcessGroupState.UNVERIFIABLE
 
 
 def test_darwin_malformed_pid_output_is_unverifiable(monkeypatch) -> None:

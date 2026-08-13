@@ -11,7 +11,11 @@ import pytest
 
 from core_tools.provider.cursor import CursorProvider
 from core_tools.provider.errors import ProviderTurnError
-from core_tools.provider.process_identity import ProcessIdentity, TerminateIdentityResult
+from core_tools.provider.process_identity import (
+    IdentityInspectState,
+    ProcessIdentity,
+    TerminateIdentityResult,
+)
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.orchestrator.agent_process_cleanup import OrphanCleanupResult
 from top_down_planning.orchestrator.phases import PLANNING
@@ -301,48 +305,52 @@ def test_teardown_reconciles_registry_after_orphan_retry_succeeds(tmp_path: Path
                     return_value=ProcessIdentity(pid=111, start_time="100", run_id=run_id),
                 ):
                     with patch(
-                        "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
-                        side_effect=fake_terminate_verified,
+                        "top_down_planning.orchestrator.provider_teardown.inspect_process_identity",
+                        return_value=IdentityInspectState.LIVE_MATCH,
                     ):
                         with patch(
-                            "top_down_planning.orchestrator.provider_teardown.scan_orphan_agents",
-                            side_effect=[
-                                __import__(
-                                    "top_down_planning.orchestrator.agent_process_cleanup",
-                                    fromlist=["OrphanScanResult"],
-                                ).OrphanScanResult(
-                                    kill_candidates=(
-                                        ProcessIdentity(
-                                            pid=111,
-                                            start_time="100",
-                                            run_id=run_id,
-                                        ),
-                                    ),
-                                    unverifiable_pids=(),
-                                ),
-                                __import__(
-                                    "top_down_planning.orchestrator.agent_process_cleanup",
-                                    fromlist=["OrphanScanResult"],
-                                ).OrphanScanResult(
-                                    kill_candidates=(),
-                                    unverifiable_pids=(),
-                                ),
-                            ],
+                            "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
+                            side_effect=fake_terminate_verified,
                         ):
-                            with patch.object(
-                                provider,
-                                "terminate_all_sessions",
-                                side_effect=mock_terminate_all_sessions,
+                            with patch(
+                                "top_down_planning.orchestrator.provider_teardown.scan_orphan_agents",
+                                side_effect=[
+                                    __import__(
+                                        "top_down_planning.orchestrator.agent_process_cleanup",
+                                        fromlist=["OrphanScanResult"],
+                                    ).OrphanScanResult(
+                                        kill_candidates=(
+                                            ProcessIdentity(
+                                                pid=111,
+                                                start_time="100",
+                                                run_id=run_id,
+                                            ),
+                                        ),
+                                        unverifiable_pids=(),
+                                    ),
+                                    __import__(
+                                        "top_down_planning.orchestrator.agent_process_cleanup",
+                                        fromlist=["OrphanScanResult"],
+                                    ).OrphanScanResult(
+                                        kill_candidates=(),
+                                        unverifiable_pids=(),
+                                    ),
+                                ],
                             ):
-                                teardown_provider_sessions(
+                                with patch.object(
                                     provider,
-                                    run_id=run_id,
-                                    phase=PLANNING,
-                                    append_event=append_event,
-                                    emit_console=lambda _event: None,
-                                    audit_cancel=True,
-                                    store=store,
-                                )
+                                    "terminate_all_sessions",
+                                    side_effect=mock_terminate_all_sessions,
+                                ):
+                                    teardown_provider_sessions(
+                                        provider,
+                                        run_id=run_id,
+                                        phase=PLANNING,
+                                        append_event=append_event,
+                                        emit_console=lambda _event: None,
+                                        audit_cancel=True,
+                                        store=store,
+                                    )
 
     assert provider.list_active_sessions() == []
     assert "provider_session_teardown_failed" not in [

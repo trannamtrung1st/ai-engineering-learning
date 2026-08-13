@@ -19,6 +19,7 @@ from core_tools.provider.process_cleanup import (
     list_process_group_pids,
 )
 from core_tools.provider.process_identity import (
+    IdentityInspectState,
     ProcessIdentity,
     TerminateIdentityResult,
     _pidfd_supported,
@@ -330,8 +331,8 @@ def test_signal_identity_does_not_raw_kill_without_pidfd() -> None:
         return_value=False,
     ):
         with patch(
-            "core_tools.provider.process_identity._identity_still_alive",
-            return_value=True,
+            "core_tools.provider.process_identity.inspect_process_identity",
+            return_value=IdentityInspectState.LIVE_MATCH,
         ):
             with patch("core_tools.provider.process_identity.os.kill") as kill:
                 result = _signal_identity(identity, signal.SIGTERM)
@@ -353,8 +354,8 @@ def test_signal_identity_pid_reuse_before_signal_does_not_kill_replacement() -> 
         return_value=False,
     ):
         with patch(
-            "core_tools.provider.process_identity._identity_still_alive",
-            side_effect=fake_alive,
+            "core_tools.provider.process_identity.inspect_process_identity",
+            return_value=IdentityInspectState.LIVE_MATCH,
         ):
             with patch("core_tools.provider.process_identity.os.kill") as kill:
                 result = _signal_identity(identity, signal.SIGKILL)
@@ -367,8 +368,8 @@ def test_terminate_verified_identity_fails_closed_without_pidfd_or_bound_handle(
     identity = ProcessIdentity(pid=4242, start_time="100")
 
     with patch(
-        "core_tools.provider.process_identity.is_pid_alive",
-        return_value=True,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
     ):
         with patch(
             "core_tools.provider.process_identity._pidfd_supported",
@@ -392,8 +393,8 @@ def test_darwin_identity_cleanup_fails_closed_without_raw_kill(monkeypatch) -> N
         return_value=False,
     ):
         with patch(
-            "core_tools.provider.process_identity._identity_still_alive",
-            return_value=True,
+            "core_tools.provider.process_identity.inspect_process_identity",
+            return_value=IdentityInspectState.LIVE_MATCH,
         ):
             with patch("core_tools.provider.process_identity.os.kill") as kill:
                 assert _signal_identity(identity, signal.SIGTERM) is False
@@ -549,8 +550,8 @@ def test_non_pidfd_platform_is_fail_closed() -> None:
     identity = ProcessIdentity(pid=os.getpid(), start_time="token")
     with patch("core_tools.provider.process_identity.os.kill") as kill:
         with patch(
-            "core_tools.provider.process_identity._identity_still_alive",
-            return_value=True,
+            "core_tools.provider.process_identity.inspect_process_identity",
+            return_value=IdentityInspectState.LIVE_MATCH,
         ):
             assert _signal_identity(identity, signal.SIGTERM) is False
     kill.assert_not_called()

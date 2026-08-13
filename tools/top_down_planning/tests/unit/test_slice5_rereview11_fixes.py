@@ -19,6 +19,7 @@ from core_tools.provider.process_cleanup import (
     terminate_process_tree,
 )
 from core_tools.provider.process_identity import (
+    IdentityInspectState,
     ProcessIdentity,
     TerminateIdentityResult,
     _terminate_linux_identity,
@@ -113,8 +114,8 @@ def test_terminate_linux_identity_uses_pidfd_not_killpg() -> None:
     captured = [identity]
 
     with patch(
-        "core_tools.provider.process_identity.read_process_identity",
-        return_value=identity,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
     ):
         with patch(
             "core_tools.provider.process_identity.capture_process_group_identities",
@@ -140,8 +141,8 @@ def test_terminate_linux_identity_does_not_kill_reused_group_members() -> None:
     reused = ProcessIdentity(pid=4242, start_time="200", run_id="run-a")
 
     with patch(
-        "core_tools.provider.process_identity.read_process_identity",
-        return_value=reused,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.IDENTITY_MISMATCH,
     ):
         with patch(
             "core_tools.provider.process_identity._signal_identity_via_pidfd",
@@ -156,28 +157,16 @@ def test_terminate_linux_identity_skips_pidfd_when_leader_exits_before_signal() 
     original = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
-        "core_tools.provider.process_identity.read_process_identity",
-        return_value=original,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.GONE,
     ):
         with patch(
-            "core_tools.provider.process_identity.capture_process_group_identities",
-            return_value=[original],
-        ):
-            with patch(
-                "core_tools.provider.process_identity._identity_still_alive",
-                return_value=False,
-            ):
-                with patch(
-                    "core_tools.provider.process_identity._wait_identities_dead",
-                    return_value=True,
-                ):
-                    with patch(
-                        "core_tools.provider.process_identity.os.pidfd_open",
-                        create=True,
-                    ) as pidfd_open:
-                        result = _terminate_linux_identity(original)
+            "core_tools.provider.process_identity.os.pidfd_open",
+            create=True,
+        ) as pidfd_open:
+            result = _terminate_linux_identity(original)
 
-    assert result == TerminateIdentityResult.TERMINATED
+    assert result == TerminateIdentityResult.ALREADY_GONE
     pidfd_open.assert_not_called()
 
 
@@ -185,8 +174,8 @@ def test_terminate_linux_identity_does_not_escalate_kill_to_reused_identities() 
     original = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
-        "core_tools.provider.process_identity.read_process_identity",
-        return_value=original,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
     ):
         with patch(
             "core_tools.provider.process_identity.capture_process_group_identities",
@@ -209,8 +198,8 @@ def test_terminate_verified_process_identity_pidfd_signals_leader() -> None:
     identity = ProcessIdentity(pid=4242, start_time="100", run_id="run-a")
 
     with patch(
-        "core_tools.provider.process_identity.is_pid_alive",
-        return_value=True,
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.LIVE_MATCH,
     ):
         with patch(
             "core_tools.provider.process_identity._pidfd_supported",
