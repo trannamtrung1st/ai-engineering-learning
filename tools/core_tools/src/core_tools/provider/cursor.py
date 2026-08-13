@@ -149,6 +149,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
         if self._proc.stdout is None:
             if active_proc is not None:
                 active_proc[0] = None
+            self.close()
             raise ProviderTurnError("Cursor CLI stdout pipe was not available")
 
         self._active_proc = active_proc
@@ -158,6 +159,46 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
         self._finished = False
+
+    def _close_status_fd(self) -> None:
+        fd = getattr(self, "_status_read_fd", None)
+        self._status_read_fd = None
+        if fd is None:
+            return
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def close(self) -> None:
+        """Idempotently close status, stdio, and thread resources."""
+
+        self._close_status_fd()
+        self._finished = True
+        proc = getattr(self, "_proc", None)
+        if proc is not None:
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                if stream is None:
+                    continue
+                try:
+                    stream.close()
+                except (OSError, ValueError):
+                    pass
+        thread = getattr(self, "_stderr_thread", None)
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=0.2)
+
+    def __enter__(self) -> _SubprocessStdoutIterator:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        try:
+            self._close_status_fd()
+        except Exception:
+            return
 
     def _read_janitor_status(self) -> dict[str, Any] | None:
         fd = getattr(self, "_status_read_fd", None)
@@ -231,17 +272,20 @@ class _SubprocessStdoutIterator(Iterator[str]):
         if self._finished:
             return
         self._finished = True
-        self._stderr_done.wait(timeout=5)
-        stderr = self._stderr_tail.decode("utf-8", errors="replace")
-        if self._stderr_truncated:
-            stderr = (
-                f"[stderr truncated; showing last {_STDERR_TAIL_MAX_BYTES} bytes]\n"
-                f"{stderr}"
-            )
-        return_code = self._proc.wait()
-        status = self._read_janitor_status()
-        setattr(self._proc, "_core_tools_janitor_status", status)
-        raise_for_cursor_cli_exit(return_code, status=status, stderr=stderr)
+        try:
+            self._stderr_done.wait(timeout=5)
+            stderr = self._stderr_tail.decode("utf-8", errors="replace")
+            if self._stderr_truncated:
+                stderr = (
+                    f"[stderr truncated; showing last {_STDERR_TAIL_MAX_BYTES} bytes]\n"
+                    f"{stderr}"
+                )
+            return_code = self._proc.wait()
+            status = self._read_janitor_status()
+            setattr(self._proc, "_core_tools_janitor_status", status)
+            raise_for_cursor_cli_exit(return_code, status=status, stderr=stderr)
+        finally:
+            self._close_status_fd()
 
 
 def default_process_runner(
@@ -1404,14 +1448,17 @@ class CursorProvider:
 
         def wrapped(argv: list[str], cwd: Path) -> Iterator[str]:
             active_proc: list[subprocess.Popen[str] | None] = [None]
+            iterator: _SubprocessStdoutIterator | None = None
+            stream: Iterator[str] | None = None
             try:
                 if runner is default_process_runner:
-                    stream = default_process_runner(
+                    iterator = _SubprocessStdoutIterator(
                         argv,
                         cwd,
                         env=self._subprocess_env,
                         active_proc=active_proc,
                     )
+                    stream = iterator
                 else:
                     stream = runner(argv, cwd)
 
@@ -1430,6 +1477,8 @@ class CursorProvider:
                             else None
                         ),
                     )
+                    if iterator is not None:
+                        iterator.close()
 
                 if idle_timeout > 0:
                     context = self._get_collect_context()
@@ -1444,34 +1493,39 @@ class CursorProvider:
                 if active_proc[0] is not None:
                     self._register_tracked_turn_proc(active_proc[0])
 
+                assert stream is not None
                 for line in stream:
                     if active_proc[0] is not None:
                         self._register_tracked_turn_proc(active_proc[0])
                     yield line
             finally:
                 proc = active_proc[0]
-                if proc is not None:
-                    tracked = self._tracked_turn_procs.get(proc.pid)
-                    returncode = proc.poll()
-                    status = getattr(proc, "_core_tools_janitor_status", None)
-                    if tracked is not None and janitor_group_was_cleaned(
-                        returncode if returncode is not None else 1,
-                        status if isinstance(status, dict) else None,
-                    ):
-                        tracked.group_observed_gone = True
-                    tree_clean = terminate_process_tree(
-                        proc,
-                        pgid=tracked.pgid if tracked is not None else None,
-                        leader_identity=tracked.identity if tracked is not None else None,
-                        member_identities=(
-                            list(tracked.member_identities)
-                            if tracked is not None and tracked.member_identities is not None
-                            else None
-                        ),
-                    )
-                    if tree_clean or (
-                        tracked is not None and tracked.group_observed_gone
-                    ):
-                        self._unregister_tracked_turn_proc(proc)
+                try:
+                    if proc is not None:
+                        tracked = self._tracked_turn_procs.get(proc.pid)
+                        returncode = proc.poll()
+                        status = getattr(proc, "_core_tools_janitor_status", None)
+                        if tracked is not None and janitor_group_was_cleaned(
+                            returncode if returncode is not None else 1,
+                            status if isinstance(status, dict) else None,
+                        ):
+                            tracked.group_observed_gone = True
+                        tree_clean = terminate_process_tree(
+                            proc,
+                            pgid=tracked.pgid if tracked is not None else None,
+                            leader_identity=tracked.identity if tracked is not None else None,
+                            member_identities=(
+                                list(tracked.member_identities)
+                                if tracked is not None and tracked.member_identities is not None
+                                else None
+                            ),
+                        )
+                        if tree_clean or (
+                            tracked is not None and tracked.group_observed_gone
+                        ):
+                            self._unregister_tracked_turn_proc(proc)
+                finally:
+                    if iterator is not None:
+                        iterator.close()
 
         return wrapped

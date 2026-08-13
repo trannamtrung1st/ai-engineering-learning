@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
@@ -26,14 +27,33 @@ _KILL_DRAIN_SECONDS = 5.0
 _POLL_INTERVAL = 0.05
 _AGENT_WAIT_SECONDS = 2.0
 _TAIL_DRAIN_SECONDS = 0.2
+_PROXY_JOIN_SECONDS = 1.0
+_PS_TIMEOUT_SECONDS = 2.0
+_PARENT_WAIT_MARGIN_SECONDS = 3.0
 
 JANITOR_CLEANUP_BUDGET_SECONDS = (
-    _TERM_DRAIN_SECONDS
+    2 * _PROXY_JOIN_SECONDS
+    + _TERM_DRAIN_SECONDS
     + _KILL_DRAIN_SECONDS
-    + _AGENT_WAIT_SECONDS
+    + 2 * _AGENT_WAIT_SECONDS
     + _TAIL_DRAIN_SECONDS
+    + 2 * _PS_TIMEOUT_SECONDS
 )
-JANITOR_PARENT_WAIT_SECONDS = JANITOR_CLEANUP_BUDGET_SECONDS + 3.0
+JANITOR_PARENT_WAIT_SECONDS = JANITOR_CLEANUP_BUDGET_SECONDS + _PARENT_WAIT_MARGIN_SECONDS
+
+
+@dataclass(frozen=True)
+class CleanupDeadline:
+    """Absolute monotonic deadline for janitor tree cleanup."""
+
+    end: float
+
+    @classmethod
+    def after(cls, seconds: float) -> CleanupDeadline:
+        return cls(time.monotonic() + max(0.0, seconds))
+
+    def remaining(self) -> float:
+        return max(0.0, self.end - time.monotonic())
 
 
 class DrainResult(Enum):
@@ -130,7 +150,23 @@ def _linux_peer_pids(pgid: int, me: int) -> list[int] | None:
     return _confirmed_peers(peers, pgid, me)
 
 
-def _ps_peer_pids(pgid: int, me: int) -> list[int] | None:
+def _scan_timeout(deadline: CleanupDeadline | None) -> float:
+    if deadline is None:
+        return _PS_TIMEOUT_SECONDS
+    remaining = deadline.remaining()
+    if remaining <= 0:
+        return 0.0
+    return min(_PS_TIMEOUT_SECONDS, remaining)
+
+
+def _ps_peer_pids(
+    pgid: int,
+    me: int,
+    deadline: CleanupDeadline | None = None,
+) -> list[int] | None:
+    timeout = _scan_timeout(deadline)
+    if timeout <= 0:
+        return None
     try:
         completed = subprocess.run(
             ["ps", "-axo", "pid=,pgid="],
@@ -138,7 +174,7 @@ def _ps_peer_pids(pgid: int, me: int) -> list[int] | None:
             capture_output=True,
             text=True,
             start_new_session=True,
-            timeout=2,
+            timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -163,42 +199,33 @@ def _ps_peer_pids(pgid: int, me: int) -> list[int] | None:
     return _confirmed_peers(peers, pgid, me)
 
 
-def _confirmed_peers(candidates: list[int], pgid: int, me: int) -> list[int]:
+def _confirmed_peers(candidates: list[int], pgid: int, me: int) -> list[int] | None:
     peers: list[int] = []
     for pid in candidates:
         if pid == me:
             continue
         try:
-            if os.getpgid(pid) != pgid:
+            member_pgid = os.getpgid(pid)
+        except OSError as exc:
+            if getattr(exc, "errno", None) == errno.ESRCH:
                 continue
-        except OSError:
+            return None
+        if member_pgid != pgid:
             continue
         peers.append(pid)
     return peers
 
 
-def _peer_pids() -> list[int] | None:
+def _peer_pids(deadline: CleanupDeadline | None = None) -> list[int] | None:
     """Return same-group peers excluding this process, or None if listing failed."""
 
+    if deadline is not None and deadline.remaining() <= 0:
+        return None
     me = os.getpid()
     pgid = os.getpgrp()
     if sys.platform.startswith("linux") and os.path.isdir("/proc"):
         return _linux_peer_pids(pgid, me)
-    return _ps_peer_pids(pgid, me)
-
-
-def _signal_listed_peers(sig: int) -> None:
-    peers = _peer_pids()
-    if not peers:
-        return
-    me = os.getpid()
-    for pid in peers:
-        if pid == me:
-            continue
-        try:
-            os.kill(pid, sig)
-        except OSError:
-            pass
+    return _ps_peer_pids(pgid, me, deadline=deadline)
 
 
 def _signal_group(sig: int) -> None:
@@ -206,56 +233,54 @@ def _signal_group(sig: int) -> None:
         os.killpg(os.getpgrp(), sig)
     except OSError:
         pass
-    _signal_listed_peers(sig)
 
 
-def _kill_agent_and_listed_peers(agent: subprocess.Popen[Any]) -> None:
+def _kill_agent(agent: subprocess.Popen[Any]) -> None:
     if agent.poll() is None:
         try:
             agent.kill()
         except OSError:
             pass
-    peers = _peer_pids()
-    if not peers:
-        return
-    for pid in peers:
-        if pid == agent.pid:
-            continue
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except OSError:
-            pass
 
 
-def _wait_peers_gone(timeout: float) -> DrainResult:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        peers = _peer_pids()
+def _wait_peers_gone(deadline: CleanupDeadline, *, budget: float) -> DrainResult:
+    phase_end = time.monotonic() + min(max(0.0, budget), deadline.remaining())
+    last: DrainResult = DrainResult.SURVIVORS
+    while time.monotonic() < phase_end and deadline.remaining() > 0:
+        peers = _peer_pids(deadline)
         if peers is None:
             return DrainResult.UNVERIFIABLE
         if not peers:
             return DrainResult.CLEAN
-        time.sleep(_POLL_INTERVAL)
-    peers = _peer_pids()
+        last = DrainResult.SURVIVORS
+        time.sleep(min(_POLL_INTERVAL, deadline.remaining()))
+    peers = _peer_pids(deadline)
     if peers is None:
         return DrainResult.UNVERIFIABLE
     if not peers:
         return DrainResult.CLEAN
-    return DrainResult.SURVIVORS
+    return last
 
 
-def _drain_group(agent: subprocess.Popen[Any]) -> DrainResult:
+def _drain_group(
+    agent: subprocess.Popen[Any],
+    deadline: CleanupDeadline | None = None,
+) -> DrainResult:
+    if deadline is None:
+        deadline = CleanupDeadline.after(JANITOR_CLEANUP_BUDGET_SECONDS)
     previous_term = signal.getsignal(signal.SIGTERM)
     previous_int = signal.getsignal(signal.SIGINT)
     try:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         _signal_group(signal.SIGTERM)
-        result = _wait_peers_gone(_TERM_DRAIN_SECONDS)
+        result = _wait_peers_gone(deadline, budget=_TERM_DRAIN_SECONDS)
         if result is DrainResult.CLEAN:
             return result
-        _kill_agent_and_listed_peers(agent)
-        return _wait_peers_gone(_KILL_DRAIN_SECONDS)
+        _kill_agent(agent)
+        if deadline.remaining() <= 0:
+            return result
+        return _wait_peers_gone(deadline, budget=_KILL_DRAIN_SECONDS)
     finally:
         try:
             signal.signal(signal.SIGTERM, previous_term)
@@ -375,17 +400,30 @@ def _write_status(status_fd: int | None, payload: Mapping[str, Any]) -> None:
         pass
 
 
-def _wait_agent(agent: subprocess.Popen[Any]) -> int | None:
+def _wait_agent(
+    agent: subprocess.Popen[Any],
+    deadline: CleanupDeadline | None = None,
+) -> int | None:
+    timeout = _AGENT_WAIT_SECONDS
+    if deadline is not None:
+        timeout = min(timeout, deadline.remaining())
+    if timeout <= 0:
+        return agent.poll()
     try:
-        return agent.wait(timeout=_AGENT_WAIT_SECONDS)
+        return agent.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         if agent.poll() is None:
             try:
                 agent.kill()
             except OSError:
                 pass
+            remaining = _AGENT_WAIT_SECONDS
+            if deadline is not None:
+                remaining = min(remaining, deadline.remaining())
+            if remaining <= 0:
+                return agent.poll()
             try:
-                return agent.wait(timeout=_AGENT_WAIT_SECONDS)
+                return agent.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
                 return agent.poll()
         return agent.poll()
@@ -424,13 +462,15 @@ def main(
     drained: DrainResult | None = None
     stop_requested = False
     stop_copy = threading.Event()
+    cleanup_deadline: CleanupDeadline | None = None
 
     def drain_once() -> DrainResult:
         nonlocal drained
+        active = cleanup_deadline or CleanupDeadline.after(JANITOR_CLEANUP_BUDGET_SECONDS)
         with drain_lock:
             if drained is not None:
                 return drained
-            drained = _drain_group(agent)
+            drained = _drain_group(agent, active)
             return drained
 
     def request_agent_stop() -> None:
@@ -469,12 +509,13 @@ def main(
             request_agent_stop()
             break
 
+    cleanup_deadline = CleanupDeadline.after(JANITOR_CLEANUP_BUDGET_SECONDS)
     stop_copy.set()
-    stdout_thread.join(timeout=1)
-    stderr_thread.join(timeout=1)
+    stdout_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
+    stderr_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
     observed = agent.poll()
     drain = drain_once()
-    return_code = _wait_agent(agent)
+    return_code = _wait_agent(agent, cleanup_deadline)
     if observed == 0:
         return_code = 0
     if return_code is None:
