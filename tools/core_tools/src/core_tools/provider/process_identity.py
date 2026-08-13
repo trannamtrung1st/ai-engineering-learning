@@ -55,10 +55,10 @@ def read_process_start_time(pid: int) -> str | None:
 
 
 def _read_linux_process_start_time(pid: int) -> str | None:
-    parsed = _read_linux_proc_stat(pid)
-    if parsed is None:
+    result = _read_linux_proc_stat(pid)
+    if result.stat is None:
         return None
-    return parsed.start_time
+    return result.stat.start_time
 
 
 def _read_darwin_process_start_time(pid: int) -> str | None:

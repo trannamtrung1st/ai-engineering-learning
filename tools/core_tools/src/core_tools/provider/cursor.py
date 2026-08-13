@@ -1279,17 +1279,12 @@ class CursorProvider:
         for record in records:
             if record.get("reason") != "termination_failed":
                 continue
-            for identity in process_identities_from_termination_record(record):
+            identities = process_identities_from_termination_record(record)
+            if not identities:
+                continue
+            for identity in identities:
                 if process_identity_is_live(identity):
                     surviving.add(identity.pid)
-            member_pids = record.get("member_pids")
-            if isinstance(member_pids, list):
-                for member_pid in member_pids:
-                    if isinstance(member_pid, int) and is_pid_alive(member_pid):
-                        surviving.add(member_pid)
-            pid = record.get("pid")
-            if isinstance(pid, int) and is_pid_alive(pid):
-                surviving.add(pid)
         with self._turn_proc_lock:
             for pid, entry in self._tracked_turn_procs.items():
                 if entry.session_id not in tracked_ids:

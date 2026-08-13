@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import signal
 import subprocess
@@ -25,6 +26,22 @@ class LinuxProcStat:
     state: str
     pgid: int
     start_time: str
+
+
+class PidInspectState(Enum):
+    """Whether a PID could be inspected as live, gone, or unverifiable."""
+
+    LIVE = "live"
+    GONE = "gone"
+    UNVERIFIABLE = "unverifiable"
+
+
+@dataclass(frozen=True)
+class PidInspectResult:
+    """Inspection outcome for a single PID."""
+
+    state: PidInspectState
+    stat: LinuxProcStat | None = None
 
 
 class ProcessGroupState(Enum):
@@ -57,16 +74,27 @@ def _parse_linux_proc_stat_text(text: str, *, pid: int) -> LinuxProcStat | None:
     )
 
 
-def _read_linux_proc_stat(pid: int) -> LinuxProcStat | None:
+def _read_linux_proc_stat(pid: int) -> PidInspectResult:
     if pid <= 0:
-        return None
+        return PidInspectResult(PidInspectState.GONE)
     path = os.path.join(_PROC_ROOT, str(pid), "stat")
     try:
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
-    except OSError:
-        return None
-    return _parse_linux_proc_stat_text(text, pid=pid)
+    except FileNotFoundError:
+        return PidInspectResult(PidInspectState.GONE)
+    except PermissionError:
+        return PidInspectResult(PidInspectState.UNVERIFIABLE)
+    except OSError as exc:
+        if exc.errno in {errno.ENOENT, errno.ESRCH}:
+            return PidInspectResult(PidInspectState.GONE)
+        return PidInspectResult(PidInspectState.UNVERIFIABLE)
+    parsed = _parse_linux_proc_stat_text(text, pid=pid)
+    if parsed is None:
+        return PidInspectResult(PidInspectState.UNVERIFIABLE)
+    if parsed.state in {"Z", "X"}:
+        return PidInspectResult(PidInspectState.GONE, parsed)
+    return PidInspectResult(PidInspectState.LIVE, parsed)
 
 
 def _linux_proc_available() -> bool:
@@ -77,10 +105,10 @@ def _pid_is_zombie(pid: int) -> bool:
     if sys.platform == "win32":
         return False
     if _linux_proc_available():
-        parsed = _read_linux_proc_stat(pid)
-        if parsed is None:
+        result = _read_linux_proc_stat(pid)
+        if result.stat is None:
             return False
-        return parsed.state in {"Z", "X"}
+        return result.stat.state in {"Z", "X"}
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "state="],
@@ -100,10 +128,10 @@ def is_pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
     if _linux_proc_available():
-        parsed = _read_linux_proc_stat(pid)
-        if parsed is None:
+        result = _read_linux_proc_stat(pid)
+        if result.state is PidInspectState.GONE:
             return False
-        return parsed.state not in {"Z", "X"}
+        return True
     try:
         os.kill(pid, 0)
     except OSError:
@@ -121,10 +149,10 @@ def read_process_group_id(pid: int) -> int | None:
     if sys.platform == "win32":
         return None
     if _linux_proc_available():
-        parsed = _read_linux_proc_stat(pid)
-        if parsed is None or parsed.state in {"Z", "X"}:
+        result = _read_linux_proc_stat(pid)
+        if result.state is not PidInspectState.LIVE or result.stat is None:
             return None
-        return parsed.pgid
+        return result.stat.pgid
     if not is_pid_alive(pid):
         return None
     try:
@@ -152,11 +180,13 @@ def list_process_group_pids(pgid: int) -> list[int] | None:
     for entry in entries:
         if not entry.isdigit():
             continue
-        parsed = _read_linux_proc_stat(int(entry))
-        if parsed is None or parsed.state in {"Z", "X"}:
+        result = _read_linux_proc_stat(int(entry))
+        if result.state is PidInspectState.UNVERIFIABLE:
+            return None
+        if result.state is PidInspectState.GONE or result.stat is None:
             continue
-        if parsed.pgid == pgid:
-            members.append(parsed.pid)
+        if result.stat.pgid == pgid:
+            members.append(result.stat.pid)
     members.sort()
     return members
 
@@ -172,6 +202,8 @@ def _list_darwin_process_group_pids(pgid: int) -> list[int] | None:
     except OSError:
         return None
     if result.returncode != 0:
+        if result.stdout.strip() or result.stderr.strip():
+            return None
         return []
     members: list[int] = []
     for line in result.stdout.splitlines():
@@ -181,7 +213,7 @@ def _list_darwin_process_group_pids(pgid: int) -> list[int] | None:
         try:
             pid = int(text)
         except ValueError:
-            continue
+            return None
         if is_pid_alive(pid):
             members.append(pid)
     return members

@@ -14,6 +14,7 @@ from core_tools.provider.process_identity import (
     TerminateIdentityResult,
     process_identities_from_termination_record,
     process_identities_match,
+    process_identity_is_live,
     read_process_identity,
     terminate_verified_process_identity,
 )
@@ -100,14 +101,24 @@ def _emit_agent_termination_records(
         reason = str(record.get("reason") or "cancelled")
         if reason == "termination_failed":
             failed_pids.append(pid)
-            append_event(
-                "agent_termination_failed",
-                pid=pid,
-                role=str(record.get("role") or "unknown"),
-                session_id=record.get("session_id"),
-                phase=phase,
-                reason=reason,
-            )
+            fields: dict[str, Any] = {
+                "pid": pid,
+                "role": str(record.get("role") or "unknown"),
+                "session_id": record.get("session_id"),
+                "phase": phase,
+                "reason": reason,
+            }
+            for key in (
+                "process_identity",
+                "start_time",
+                "pgid",
+                "member_identities",
+                "tree_status",
+                "run_id",
+            ):
+                if key in record and record[key] is not None:
+                    fields[key] = record[key]
+            append_event("agent_termination_failed", **fields)
             continue
         if reason == "terminated" and audit_cancel:
             append_event(
@@ -242,14 +253,12 @@ def _session_surviving_pids(
     for record in termination_records:
         if str(record.get("session_id") or "") not in session_ids:
             continue
-        pid = record.get("pid")
-        if isinstance(pid, int) and is_pid_alive(pid):
-            pids.add(pid)
-        member_pids = record.get("member_pids")
-        if isinstance(member_pids, list):
-            for member_pid in member_pids:
-                if isinstance(member_pid, int) and is_pid_alive(member_pid):
-                    pids.add(member_pid)
+        identities = process_identities_from_termination_record(record)
+        if not identities:
+            continue
+        for identity in identities:
+            if process_identity_is_live(identity):
+                pids.add(identity.pid)
     return sorted(pids)
 
 
