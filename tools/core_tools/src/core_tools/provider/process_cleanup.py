@@ -102,7 +102,7 @@ def _linux_proc_available() -> bool:
     return sys.platform.startswith("linux") and os.path.isdir(_PROC_ROOT)
 
 
-def _pid_is_zombie(pid: int) -> bool:
+def _pid_is_zombie(pid: int, *, timeout: float | None = None) -> bool:
     if sys.platform == "win32":
         return False
     if _linux_proc_available():
@@ -110,14 +110,18 @@ def _pid_is_zombie(pid: int) -> bool:
         if result.stat is None:
             return False
         return result.stat.state in {"Z", "X"}
+    budget = _DARWIN_PS_TIMEOUT_SECONDS if timeout is None else timeout
+    if budget <= 0:
+        return False
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "state="],
             capture_output=True,
             text=True,
             check=False,
+            timeout=budget,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return False
     if result.returncode != 0:
         return False
@@ -125,7 +129,11 @@ def _pid_is_zombie(pid: int) -> bool:
     return state.startswith("Z")
 
 
-def inspect_pid_liveness(pid: int) -> PidInspectState:
+def inspect_pid_liveness(
+    pid: int,
+    *,
+    timeout: float | None = None,
+) -> PidInspectState:
     """Return whether *pid* is live, gone, or unverifiable."""
 
     if pid <= 0:
@@ -142,13 +150,17 @@ def inspect_pid_liveness(pid: int) -> PidInspectState:
         if exc.errno == errno.ESRCH:
             return PidInspectState.GONE
         return PidInspectState.UNVERIFIABLE
-    if _pid_is_zombie(pid):
+    try:
+        zombie = _pid_is_zombie(pid, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return PidInspectState.UNVERIFIABLE
+    if zombie:
         return PidInspectState.GONE
     return PidInspectState.LIVE
 
 
-def is_pid_alive(pid: int) -> bool:
-    return inspect_pid_liveness(pid) is not PidInspectState.GONE
+def is_pid_alive(pid: int, *, timeout: float | None = None) -> bool:
+    return inspect_pid_liveness(pid, timeout=timeout) is not PidInspectState.GONE
 
 
 def read_process_group_id(pid: int) -> int | None:
@@ -195,10 +207,15 @@ def list_process_group_pids(
         entries = os.listdir(_PROC_ROOT)
     except OSError:
         return None
+    deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
     for entry in entries:
+        if deadline is not None and time.monotonic() >= deadline:
+            return None
         if not entry.isdigit():
             continue
         result = _read_linux_proc_stat(int(entry))
+        if deadline is not None and time.monotonic() >= deadline:
+            return None
         if result.state is PidInspectState.UNVERIFIABLE:
             try:
                 member_pgid = os.getpgid(int(entry))
@@ -224,7 +241,7 @@ def _list_darwin_process_group_pids(
         return None
     try:
         result = subprocess.run(
-            ["ps", "-axo", "pid=,pgid="],
+            ["ps", "-axo", "pid=,pgid=,state="],
             capture_output=True,
             text=True,
             check=False,
@@ -240,19 +257,17 @@ def _list_darwin_process_group_pids(
         if not text:
             continue
         parts = text.split()
-        if len(parts) < 2:
+        if len(parts) < 3:
             return None
         try:
             pid = int(parts[0])
             member_pgid = int(parts[1])
         except ValueError:
             return None
+        state = parts[2]
         if member_pgid != pgid:
             continue
-        state = inspect_pid_liveness(pid)
-        if state is PidInspectState.UNVERIFIABLE:
-            return None
-        if state is PidInspectState.GONE:
+        if not state or state[0] in {"Z", "X"}:
             continue
         members.append(pid)
     return members
@@ -423,12 +438,23 @@ def terminate_process_tree(
         leader_identity=identity,
         known_identities=members,
     )
-    if proc.poll() is None:
-        try:
-            proc.wait(timeout=0)
-        except subprocess.TimeoutExpired:
-            pass
     if cleaned:
+        owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+        payload = {
+            "agent_code": 0,
+            "drain": "clean",
+            "stop_requested": True,
+        }
+        marker = getattr(owner, "mark_safe_fallback", None)
+        if callable(marker):
+            marker(payload)
+        setattr(proc, "_core_tools_janitor_status", payload)
+        try:
+            from core_tools.provider.session_janitor import JANITOR_PARENT_WAIT_SECONDS
+
+            proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
         return True
     if proc.poll() is not None and process_group_state(proc.pid) is ProcessGroupState.GONE:
         return True

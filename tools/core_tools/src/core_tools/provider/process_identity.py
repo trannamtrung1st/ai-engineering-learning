@@ -541,7 +541,7 @@ def _fallback_kill_bound_janitor_group(
             return _fallback_status(DrainResult.UNVERIFIABLE)
         if members:
             return _fallback_status(DrainResult.SURVIVORS)
-        if is_pid_alive(proc.pid):
+        if is_pid_alive(proc.pid, timeout=remaining()):
             return _fallback_status(DrainResult.UNVERIFIABLE)
         return _fallback_status(DrainResult.CLEAN)
     wait_process_group_gone(int(resolved), timeout=remaining())
@@ -644,6 +644,19 @@ def _terminate_bound_process(
         leader_identity=resolved_identity,
         known_identities=members,
     ):
+        owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+        cleaned = {
+            "agent_code": 0,
+            "drain": DrainResult.CLEAN.value,
+            "stop_requested": True,
+        }
+        if isinstance(owner, JanitorStatusOwner):
+            owner.mark_safe_fallback(cleaned)
+        setattr(proc, "_core_tools_janitor_status", cleaned)
+        try:
+            proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
+            return TerminateIdentityResult.FAILED
         return TerminateIdentityResult.TERMINATED
     return TerminateIdentityResult.FAILED
 

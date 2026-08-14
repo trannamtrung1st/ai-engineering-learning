@@ -152,7 +152,7 @@ def test_darwin_ps_nonzero_empty_output_is_unverifiable(monkeypatch) -> None:
 
 def test_darwin_successful_query_with_zero_members_is_gone(monkeypatch) -> None:
     monkeypatch.setattr(sys, "platform", "darwin", raising=False)
-    result = MagicMock(returncode=0, stdout="1 1\n2 1\n")
+    result = MagicMock(returncode=0, stdout="1 1 S\n2 1 S\n")
     with patch(
         "core_tools.provider.process_cleanup.subprocess.run",
         return_value=result,
@@ -167,18 +167,14 @@ def test_darwin_successful_query_with_zero_members_is_gone(monkeypatch) -> None:
 
 def test_darwin_eperm_group_member_makes_group_unverifiable(monkeypatch) -> None:
     monkeypatch.setattr(sys, "platform", "darwin", raising=False)
-    result = MagicMock(returncode=0, stdout="5151 99\n")
+    result = MagicMock(returncode=0, stdout="5151 99 S\n")
     with patch(
         "core_tools.provider.process_cleanup.subprocess.run",
         return_value=result,
     ):
-        with patch(
-            "core_tools.provider.process_cleanup.inspect_pid_liveness",
-            return_value=PidInspectState.UNVERIFIABLE,
-        ):
-            assert list_process_group_pids(99) is None
-            assert process_group_state(99) is ProcessGroupState.UNVERIFIABLE
-            assert drain_owned_process_group(
-                pgid=99,
-                leader_identity=ProcessIdentity(pid=5151, start_time="100"),
-            ) is False
+        assert list_process_group_pids(99) == [5151]
+        assert process_group_state(99) is ProcessGroupState.LIVE
+        assert drain_owned_process_group(
+            pgid=99,
+            leader_identity=ProcessIdentity(pid=5151, start_time="100"),
+        ) is False

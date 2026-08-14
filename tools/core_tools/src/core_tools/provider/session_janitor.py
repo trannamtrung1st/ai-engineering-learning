@@ -210,7 +210,7 @@ class JanitorStatusOwner:
                     getattr(proc, "args", None),
                     timeout if timeout is not None else budget,
                 )
-            remaining = None if timeout is None else max(0.0, deadline - time.monotonic())
+            remaining = max(0.0, deadline - time.monotonic())
             return raw_wait(timeout=remaining)
 
         proc.poll = poll
