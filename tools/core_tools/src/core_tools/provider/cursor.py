@@ -557,16 +557,24 @@ class CursorProvider:
         session = self._require_session(canonical_id)
         self._ensure_turn_started(canonical_id, session)
         while True:
+            event = None
+            turn_error = None
+            complete = False
             with session.condition:
                 while not session.pending_events and not session.turn_complete:
                     session.condition.wait(timeout=0.05)
                 if session.pending_events:
-                    yield session.pending_events.popleft()
-                    continue
-                if session.turn_complete:
-                    if session.turn_error is not None:
-                        raise session.turn_error
-                    break
+                    event = session.pending_events.popleft()
+                elif session.turn_complete:
+                    turn_error = session.turn_error
+                    complete = True
+            if event is not None:
+                yield event
+                continue
+            if complete:
+                if turn_error is not None:
+                    raise turn_error
+                break
 
     def canonical_session_id(self, session_id: str) -> str:
         with self._session_registry_lock:
@@ -680,29 +688,31 @@ class CursorProvider:
         """Stop in-flight turns and drop tracked provider sessions."""
 
         self._shutting_down = True
-        terminated: list[dict[str, Any]] = []
-        self._abort_inflight_sessions()
-        terminated.extend(self._terminate_tracked_turn_procs())
+        try:
+            terminated: list[dict[str, Any]] = []
+            self._abort_inflight_sessions()
+            terminated.extend(self._terminate_tracked_turn_procs())
 
-        with self._session_registry_lock:
-            session_snapshot = list(self._sessions.values())
-            session_ids = list(self._sessions.keys())
-        for session in session_snapshot:
-            thread = session.collector_thread
-            if thread is not None and thread.is_alive():
-                thread.join(timeout=0.5)
+            with self._session_registry_lock:
+                session_snapshot = list(self._sessions.values())
+                session_ids = list(self._sessions.keys())
+            for session in session_snapshot:
+                thread = session.collector_thread
+                if thread is not None and thread.is_alive():
+                    thread.join(timeout=0.5)
 
-        terminated.extend(self._terminate_tracked_turn_procs())
+            terminated.extend(self._terminate_tracked_turn_procs())
 
-        for session_id in session_ids:
-            if not self._session_has_surviving_pids(session_id):
-                self._prune_dead_tracked_pids_for_session(session_id)
+            for session_id in session_ids:
                 if not self._session_has_surviving_pids(session_id):
-                    with self._session_registry_lock:
-                        self._remove_session(session_id)
+                    self._prune_dead_tracked_pids_for_session(session_id)
+                    if not self._session_has_surviving_pids(session_id):
+                        with self._session_registry_lock:
+                            self._remove_session(session_id)
 
-        self._shutting_down = False
-        return terminated
+            return terminated
+        finally:
+            self._shutting_down = False
 
     def _terminate_tracked_turn_procs(
         self,
@@ -1235,6 +1245,16 @@ class CursorProvider:
             return current_id
 
         with self._session_registry_lock:
+            current = self._sessions.get(current_id)
+            existing = self._sessions.get(provider_session_id)
+            if existing is not None and current is not None and existing is not current:
+                raise ProviderSessionError(
+                    (
+                        f"durable provider session {provider_session_id} is already owned "
+                        f"by a different live session; refusing to migrate {current_id}"
+                    ),
+                    session_id=current_id,
+                )
             session = self._sessions.pop(current_id, None)
             if session is None:
                 session = self._require_session(provider_session_id)

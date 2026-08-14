@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import queue
 import threading
-from collections.abc import Callable
-from dataclasses import dataclass
+import time
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from typing import Any
 
 from core_tools.provider import Provider
@@ -260,32 +262,136 @@ def _session_binding_syncer(
     return sync_reviewer
 
 
+BOUNDARY_POLL_JOIN_SECONDS = 2.0
+
+
+@dataclass
+class _BoundaryPollState:
+    stop: threading.Event
+    done: threading.Event
+    thread: threading.Thread | None = None
+    signal: str | None = None
+    error: BaseException | None = None
+    heartbeat: float = field(default_factory=time.monotonic)
+
+
 def _start_boundary_poll(
     provider: Provider,
     session_id_holder: list[str],
     on_boundary: Callable[[], str | None],
-) -> tuple[threading.Event, list[str | None], threading.Thread]:
+) -> _BoundaryPollState:
     """Poll store-driven turn boundaries while the provider stream is idle."""
 
-    stop = threading.Event()
-    boundary_signal: list[str | None] = [None]
+    state = _BoundaryPollState(stop=threading.Event(), done=threading.Event())
 
     def poll() -> None:
-        while not stop.is_set():
-            signal = on_boundary()
-            if signal is not None:
-                boundary_signal[0] = signal
-                _abort_provider_turn(provider, session_id_holder[0])
-                return
-            stop.wait(0.05)
+        try:
+            while not state.stop.is_set():
+                state.heartbeat = time.monotonic()
+                try:
+                    signal = on_boundary()
+                except BaseException as exc:
+                    state.error = exc
+                    try:
+                        _abort_provider_turn(provider, session_id_holder[0])
+                    except BaseException:
+                        pass
+                    return
+                if signal is not None:
+                    state.signal = signal
+                    try:
+                        _abort_provider_turn(provider, session_id_holder[0])
+                    except BaseException as exc:
+                        state.error = exc
+                    return
+                state.stop.wait(0.05)
+        finally:
+            state.done.set()
 
     thread = threading.Thread(target=poll, daemon=True)
+    state.thread = thread
     thread.start()
-    return stop, boundary_signal, thread
+    return state
 
 
-def _boundary_poll_triggered(boundary_signal: list[str | None] | None) -> bool:
-    return boundary_signal is not None and boundary_signal[0] is not None
+def _boundary_poll_triggered(poll_state: _BoundaryPollState | None) -> bool:
+    return poll_state is not None and poll_state.signal is not None
+
+
+def _raise_poll_failure(poll_state: _BoundaryPollState | None) -> None:
+    if poll_state is not None and poll_state.error is not None:
+        raise poll_state.error
+
+
+def _finalize_boundary_poll(
+    poll_state: _BoundaryPollState | None,
+    provider: Provider,
+    session_id: str,
+) -> None:
+    if poll_state is None:
+        return
+    poll_state.stop.set()
+    thread = poll_state.thread
+    if thread is not None:
+        thread.join(timeout=BOUNDARY_POLL_JOIN_SECONDS)
+        if thread.is_alive():
+            try:
+                _abort_provider_turn(provider, session_id)
+            except BaseException:
+                pass
+            if poll_state.error is not None:
+                raise poll_state.error
+            raise ProviderRunError("store-driven boundary poller failed to stop")
+    _raise_poll_failure(poll_state)
+
+
+def _iter_events_with_boundary_poll(
+    provider: Provider,
+    session_id: str,
+    poll_state: _BoundaryPollState | None,
+) -> Iterator[dict[str, Any]]:
+    if poll_state is None:
+        yield from provider.stream_events(session_id)
+        return
+
+    events: queue.Queue[tuple[str, Any]] = queue.Queue()
+
+    def pump() -> None:
+        try:
+            for event in provider.stream_events(session_id):
+                events.put(("event", event))
+        except BaseException as exc:
+            events.put(("error", exc))
+        else:
+            events.put(("end", None))
+
+    pump_thread = threading.Thread(target=pump, daemon=True)
+    pump_thread.start()
+    stop_stream = False
+    try:
+        while True:
+            _raise_poll_failure(poll_state)
+            if poll_state.signal is not None:
+                return
+            if time.monotonic() - poll_state.heartbeat > BOUNDARY_POLL_JOIN_SECONDS:
+                stop_stream = True
+                raise ProviderRunError("store-driven boundary poller failed to stop")
+            try:
+                kind, payload = events.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            if kind == "event":
+                yield payload
+            elif kind == "error":
+                raise payload
+            else:
+                return
+    finally:
+        if stop_stream:
+            try:
+                _abort_provider_turn(provider, session_id)
+            except BaseException:
+                pass
 
 
 def _drain_provider_turn(
@@ -308,20 +414,23 @@ def _drain_provider_turn(
     active_session_id = session_id
     session_id_holder = [session_id]
     accumulator = TurnTextAccumulator()
-    stop_poll: threading.Event | None = None
-    boundary_signal: list[str | None] | None = None
-    poll_thread: threading.Thread | None = None
+    poll_state: _BoundaryPollState | None = None
 
     if on_boundary is not None:
-        stop_poll, boundary_signal, poll_thread = _start_boundary_poll(
+        poll_state = _start_boundary_poll(
             provider,
             session_id_holder,
             on_boundary,
         )
 
     try:
-        for event in provider.stream_events(active_session_id):
-            if _boundary_poll_triggered(boundary_signal):
+        for event in _iter_events_with_boundary_poll(
+            provider,
+            active_session_id,
+            poll_state,
+        ):
+            _raise_poll_failure(poll_state)
+            if _boundary_poll_triggered(poll_state):
                 break
 
             event_type = str(event.get("type") or "")
@@ -341,28 +450,27 @@ def _drain_provider_turn(
                     if sync_session_id is not None:
                         active_session_id = sync_session_id(active_session_id)
                         session_id_holder[0] = active_session_id
+                    if poll_state is not None:
+                        poll_state.signal = implicit_signal
                     return implicit_signal
             if event_type == "done":
                 if event.get("is_error"):
                     text = event.get("text") or "provider turn failed"
                     raise ProviderRunError(str(text))
                 break
-            if _boundary_poll_triggered(boundary_signal):
+            if _boundary_poll_triggered(poll_state):
                 _abort_provider_turn(provider, active_session_id)
                 break
     finally:
-        if stop_poll is not None:
-            stop_poll.set()
-        if poll_thread is not None:
-            poll_thread.join()
+        _finalize_boundary_poll(poll_state, provider, session_id_holder[0])
         if sync_session_id is not None:
             session_id_holder[0] = sync_session_id(session_id_holder[0])
         _wait_provider_turn_settled(provider, session_id_holder[0])
 
-    if _boundary_poll_triggered(boundary_signal):
+    if _boundary_poll_triggered(poll_state):
         if sync_session_id is not None:
             active_session_id = sync_session_id(session_id_holder[0])
-        return boundary_signal[0]  # type: ignore[index]
+        return poll_state.signal if poll_state is not None else None
 
     resolved = accumulator.resolve_signal(allowed_signals)
     if resolved is not None:

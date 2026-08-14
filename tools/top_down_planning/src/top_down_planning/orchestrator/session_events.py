@@ -22,12 +22,85 @@ from top_down_planning.persistence.review_commit import (
 )
 from top_down_planning.persistence.session_bindings import (
     get_primary_binding,
+    primary_provider_session_id,
     update_primary_binding,
 )
 from core_tools.persistence import RunNotFoundError
 from core_tools.provider import Provider
+from core_tools.provider.errors import ProviderSessionError
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
+
+
+def _require_owned_provider_session(
+    provider: Provider,
+    session_id: str,
+    *,
+    role: str,
+    kind: str,
+) -> str:
+    canonical_session_id = provider.canonical_session_id(session_id)
+    reference = provider.get_session_reference(canonical_session_id)
+    reported_role = str(reference.get("role") or "")
+    reported_kind = str(reference.get("kind") or "")
+    if reported_role != role or reported_kind != kind:
+        raise ProviderSessionError(
+            (
+                f"refusing to terminate provider session {canonical_session_id}: "
+                f"expected {role}/{kind}, provider reports "
+                f"{reported_role}/{reported_kind}"
+            ),
+            session_id=canonical_session_id,
+        )
+    return canonical_session_id
+
+
+def _assert_unique_durable_session_owner(
+    provider: Provider,
+    store: RunStore,
+    run_id: str,
+    resolved: str,
+    *,
+    owner_role: str,
+    owner_loop_id: str | None = None,
+) -> None:
+    if is_transient_provider_session_id(resolved):
+        return
+    run = store.load_run(run_id)
+    for role in ("planner", "producer"):
+        primary_id = primary_provider_session_id(run, role)
+        if not primary_id or is_transient_provider_session_id(primary_id):
+            continue
+        if provider.canonical_session_id(primary_id) != resolved:
+            continue
+        if owner_role == role and owner_loop_id is None:
+            continue
+        raise ProviderSessionError(
+            (
+                f"durable provider session {resolved} is already owned by "
+                f"{role}; refusing {owner_role} binding"
+            ),
+            session_id=resolved,
+        )
+    for payload in store.list_reviews(run_id):
+        loop = ReviewLoop.from_dict(payload)
+        binding = loop.reviewer_binding
+        if binding is None or not binding.provider_session_id:
+            continue
+        reviewer_id = str(binding.provider_session_id)
+        if is_transient_provider_session_id(reviewer_id):
+            continue
+        if provider.canonical_session_id(reviewer_id) != resolved:
+            continue
+        if owner_role == "reviewer" and owner_loop_id == loop.id:
+            continue
+        raise ProviderSessionError(
+            (
+                f"durable provider session {resolved} is already owned by "
+                f"reviewer loop {loop.id}; refusing {owner_role} binding"
+            ),
+            session_id=resolved,
+        )
 
 
 @dataclass(frozen=True)
@@ -185,9 +258,17 @@ def end_primary_session_with_audit(
 
     if role not in _PRIMARY_ROLES:
         raise ValueError(f"unsupported primary session role: {role}")
-    canonical_session_id = provider.canonical_session_id(session_id)
     if not _primary_session_is_active(provider, session_id):
-        return SessionTerminationResult(canonical_session_id, ended=True)
+        return SessionTerminationResult(
+            provider.canonical_session_id(session_id),
+            ended=True,
+        )
+    canonical_session_id = _require_owned_provider_session(
+        provider,
+        session_id,
+        role=role,
+        kind="primary",
+    )
 
     model_fields = _session_model_fields(provider, canonical_session_id)
 
@@ -234,9 +315,17 @@ def end_reviewer_session_with_audit(
     termination and the durable audit event are skipped.
     """
 
-    canonical_session_id = provider.canonical_session_id(session_id)
     if not _reviewer_session_is_active(provider, session_id):
-        return SessionTerminationResult(canonical_session_id, ended=True)
+        return SessionTerminationResult(
+            provider.canonical_session_id(session_id),
+            ended=True,
+        )
+    canonical_session_id = _require_owned_provider_session(
+        provider,
+        session_id,
+        role="reviewer",
+        kind="reviewer",
+    )
 
     model_fields = _session_model_fields(provider, canonical_session_id)
 
@@ -391,6 +480,15 @@ def sync_persisted_session_id(
     if role not in _PRIMARY_ROLES:
         raise ValueError(f"unsupported primary session role: {role}")
     resolved = provider.canonical_session_id(session_id)
+    if is_transient_provider_session_id(resolved):
+        return resolved
+    _assert_unique_durable_session_owner(
+        provider,
+        store,
+        run_id,
+        resolved,
+        owner_role=role,
+    )
     run = store.load_run(run_id)
     existing = get_primary_binding(run, role)
     current = existing.provider_session_id if existing is not None else None
@@ -455,16 +553,14 @@ def sync_reviewer_loop_session_id(
     resolved = provider.canonical_session_id(session_id)
     if is_transient_provider_session_id(resolved):
         return resolved
-
-    run = store.load_run(run_id)
-    from top_down_planning.persistence.session_bindings import (
-        primary_provider_session_id,
+    _assert_unique_durable_session_owner(
+        provider,
+        store,
+        run_id,
+        resolved,
+        owner_role="reviewer",
+        owner_loop_id=loop_id,
     )
-
-    for role in ("planner", "producer"):
-        primary_id = primary_provider_session_id(run, role)
-        if primary_id and provider.canonical_session_id(primary_id) == resolved:
-            return resolved
 
     review = dict(store.load_review(run_id, loop_id))
     loop = ReviewLoop.from_dict(review)
