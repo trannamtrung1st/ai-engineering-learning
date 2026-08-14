@@ -55,6 +55,7 @@ from core_tools.provider.process_identity import (
 from core_tools.provider.session_janitor import (
     DrainResult,
     JANITOR_PARENT_WAIT_SECONDS,
+    JanitorStatusOwner,
     read_bound_janitor_status,
 )
 
@@ -148,7 +149,11 @@ class _SubprocessStdoutIterator(Iterator[str]):
             os.close(status_w)
         self._status_read_fd = status_r
         if self._proc is not None and status_r is not None:
-            setattr(self._proc, "_core_tools_janitor_status_fd", status_r)
+            setattr(
+                self._proc,
+                "_core_tools_janitor_status_owner",
+                JanitorStatusOwner(status_r),
+            )
 
         if active_proc is not None:
             active_proc[0] = self._proc
@@ -171,6 +176,10 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._status_read_fd = None
         proc = getattr(self, "_proc", None)
         if proc is None:
+            return
+        owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+        if owner is not None:
+            owner.close()
             return
         fd = getattr(proc, "_core_tools_janitor_status_fd", None)
         if fd is None:
@@ -406,6 +415,7 @@ class _CursorSession:
     turn_complete: bool = False
     turn_aborted: bool = False
     turn_error: ProviderTurnError | None = None
+    turn_remote_observed: bool = False
     collector_thread: threading.Thread | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     condition: threading.Condition = field(init=False)
@@ -1062,6 +1072,7 @@ class CursorProvider:
                     session_id=session_id,
                 )
             try:
+                session.turn_remote_observed = False
                 self._collect_turn_stream(session_id, session, argv)
                 return
             except ProviderTurnError as exc:
@@ -1077,7 +1088,7 @@ class CursorProvider:
                         "provider session terminated",
                         session_id=session_id,
                     ) from exc
-                if self._turn_already_observed_durable(session_id):
+                if session.turn_remote_observed:
                     raise classified from exc
                 last_error = classified
                 if attempt < max_retries:
@@ -1138,17 +1149,20 @@ class CursorProvider:
                         f"Cursor CLI error event: {detail}",
                         session_id=session_id,
                     )
-                if raw.get("type") == "result" and raw.get("is_error"):
-                    detail = str(raw.get("result") or raw.get("message") or raw)
-                    classified = classify_cursor_session_failure(
-                        detail,
-                        session_id=session_id,
-                    )
-                    if classified is not None:
-                        raise classified
+                if raw.get("type") == "result":
+                    session.turn_remote_observed = True
+                    if raw.get("is_error"):
+                        detail = str(raw.get("result") or raw.get("message") or raw)
+                        classified = classify_cursor_session_failure(
+                            detail,
+                            session_id=session_id,
+                        )
+                        if classified is not None:
+                            raise classified
                 if raw.get("session_id"):
                     event_session_id = str(raw["session_id"])
                     if not event_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+                        session.turn_remote_observed = True
                         if expected_durable_id is not None:
                             if event_session_id != expected_durable_id:
                                 raise ProviderTurnError(
@@ -1232,10 +1246,6 @@ class CursorProvider:
         context = self._get_collect_context()
         if context is not None and context[0] == old_session_id:
             self._set_collect_context(new_session_id, context[1])
-
-    def _turn_already_observed_durable(self, session_id: str) -> bool:
-        canonical = self.canonical_session_id(session_id)
-        return not canonical.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX)
 
     def _max_retries_per_call(self) -> int:
         provider_limits = (self._config.get("limits") or {}).get("provider") or {}

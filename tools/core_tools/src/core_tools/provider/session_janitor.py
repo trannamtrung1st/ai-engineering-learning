@@ -8,6 +8,7 @@ while this process is still the live session leader.
 
 from __future__ import annotations
 
+import ctypes
 import errno
 import json
 import os
@@ -118,20 +119,49 @@ def decode_janitor_status(raw: bytes | str | None) -> dict[str, Any] | None:
     return payload
 
 
-def read_bound_janitor_status(
-    proc: Any,
-    *,
-    timeout: float,
-) -> dict[str, Any] | None:
-    """Read public janitor status from a bound Popen without reaping it first."""
+class JanitorStatusOwner:
+    """Single-reader barrier for a bound janitor public-status FD."""
 
-    cached = getattr(proc, "_core_tools_janitor_status", None)
-    if isinstance(cached, dict):
-        return cached
-    fd = getattr(proc, "_core_tools_janitor_status_fd", None)
-    if not isinstance(fd, int):
-        return cached if isinstance(cached, dict) else None
-    setattr(proc, "_core_tools_janitor_status_fd", None)
+    def __init__(self, fd: int) -> None:
+        self._lock = threading.Lock()
+        self._done = threading.Condition(self._lock)
+        self._fd: int | None = fd
+        self._status: dict[str, Any] | None = None
+        self._published = False
+
+    def close(self) -> None:
+        with self._lock:
+            fd = self._fd
+            self._fd = None
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    def read(self, *, timeout: float) -> dict[str, Any] | None:
+        deadline = time.monotonic() + max(0.0, timeout)
+        with self._lock:
+            if self._published:
+                return self._status
+            fd = self._fd
+            if fd is not None:
+                self._fd = None
+            else:
+                remaining = max(0.0, deadline - time.monotonic())
+                if remaining <= 0:
+                    return self._status
+                self._done.wait(timeout=remaining)
+                return self._status
+        status = _consume_status_fd(fd, timeout=max(0.0, deadline - time.monotonic()))
+        with self._lock:
+            self._status = status
+            self._published = True
+            self._done.notify_all()
+        return status
+
+
+def _consume_status_fd(fd: int, *, timeout: float) -> dict[str, Any] | None:
     chunks: list[bytes] = []
     try:
         ready, _, _ = select.select([fd], [], [], max(0.0, timeout))
@@ -150,9 +180,38 @@ def read_bound_janitor_status(
             os.close(fd)
         except OSError:
             pass
-    status = decode_janitor_status(b"".join(chunks)) if chunks else None
-    setattr(proc, "_core_tools_janitor_status", status)
-    return status
+    return decode_janitor_status(b"".join(chunks)) if chunks else None
+
+
+_STATUS_BIND_LOCK = threading.Lock()
+
+
+def read_bound_janitor_status(
+    proc: Any,
+    *,
+    timeout: float,
+) -> dict[str, Any] | None:
+    """Read public janitor status from a bound Popen without reaping it first."""
+
+    cached = getattr(proc, "_core_tools_janitor_status", None)
+    if isinstance(cached, dict):
+        return cached
+    with _STATUS_BIND_LOCK:
+        cached = getattr(proc, "_core_tools_janitor_status", None)
+        if isinstance(cached, dict):
+            return cached
+        owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+        if owner is None:
+            fd = getattr(proc, "_core_tools_janitor_status_fd", None)
+            if isinstance(fd, int):
+                owner = JanitorStatusOwner(fd)
+                setattr(proc, "_core_tools_janitor_status_owner", owner)
+                setattr(proc, "_core_tools_janitor_status_fd", None)
+    if owner is not None:
+        status = owner.read(timeout=timeout)
+        setattr(proc, "_core_tools_janitor_status", status)
+        return status
+    return cached if isinstance(cached, dict) else None
 
 
 def _deadline_expired(deadline: CleanupDeadline | None) -> bool:
@@ -316,54 +375,115 @@ def _peer_pids(
     return _ps_peer_pids(group, self_pid, deadline=deadline, exclude=skipped)
 
 
-def _process_start_token(pid: int) -> str | None:
+def _process_start_token(
+    pid: int,
+    deadline: CleanupDeadline | None = None,
+) -> str | None:
     """Return a process-instance start token, or None when it cannot be read."""
 
-    if pid <= 0:
+    if pid <= 0 or _deadline_expired(deadline):
         return None
     if os.path.isdir("/proc"):
-        try:
-            with open(f"/proc/{pid}/stat", encoding="utf-8") as handle:
-                text = handle.read()
-        except OSError:
-            return None
-        close = text.rfind(")")
-        if close == -1:
-            return None
-        fields = text[close + 2 :].split()
-        if len(fields) < 20:
-            return None
-        return fields[19]
+        return _linux_process_start_token(pid, deadline=deadline)
+    if sys.platform == "darwin":
+        return _darwin_process_start_token(pid, deadline=deadline)
+    return None
+
+
+def _linux_process_start_token(
+    pid: int,
+    deadline: CleanupDeadline | None = None,
+) -> str | None:
+    if _deadline_expired(deadline):
+        return None
     try:
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "lstart="],
-            capture_output=True,
-            text=True,
-            check=False,
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as handle:
+            if _deadline_expired(deadline):
+                return None
+            text = handle.read()
+    except OSError:
+        return None
+    close = text.rfind(")")
+    if close == -1:
+        return None
+    fields = text[close + 2 :].split()
+    if len(fields) < 20:
+        return None
+    return fields[19]
+
+
+_PROC_PIDTBSDINFO = 3
+_MAXCOMLEN = 16
+
+
+class _ProcBsdInfo(ctypes.Structure):
+    _fields_ = [
+        ("pbi_flags", ctypes.c_uint32),
+        ("pbi_status", ctypes.c_uint32),
+        ("pbi_xstatus", ctypes.c_uint32),
+        ("pbi_pid", ctypes.c_uint32),
+        ("pbi_ppid", ctypes.c_uint32),
+        ("pbi_uid", ctypes.c_uint32),
+        ("pbi_gid", ctypes.c_uint32),
+        ("pbi_ruid", ctypes.c_uint32),
+        ("pbi_rgid", ctypes.c_uint32),
+        ("pbi_svuid", ctypes.c_uint32),
+        ("pbi_svgid", ctypes.c_uint32),
+        ("rfu_1", ctypes.c_uint32),
+        ("pbi_comm", ctypes.c_char * _MAXCOMLEN),
+        ("pbi_name", ctypes.c_char * (2 * _MAXCOMLEN)),
+        ("pbi_nfiles", ctypes.c_uint32),
+        ("pbi_pgid", ctypes.c_uint32),
+        ("pbi_pjobc", ctypes.c_uint32),
+        ("e_tdev", ctypes.c_uint32),
+        ("e_tpgid", ctypes.c_uint32),
+        ("pbi_nice", ctypes.c_int32),
+        ("pbi_start_tvsec", ctypes.c_uint64),
+        ("pbi_start_tvusec", ctypes.c_uint64),
+    ]
+
+
+def _darwin_process_start_token(
+    pid: int,
+    deadline: CleanupDeadline | None = None,
+) -> str | None:
+    if _deadline_expired(deadline) or pid <= 0:
+        return None
+    info = _ProcBsdInfo()
+    try:
+        lib = ctypes.CDLL("/usr/lib/libproc.dylib")
+        nbytes = lib.proc_pidinfo(
+            int(pid),
+            _PROC_PIDTBSDINFO,
+            ctypes.c_uint64(0),
+            ctypes.byref(info),
+            ctypes.sizeof(info),
         )
     except OSError:
         return None
-    if result.returncode != 0:
+    if nbytes != ctypes.sizeof(info):
         return None
-    start = result.stdout.strip()
-    return start or None
+    if int(info.pbi_pid) != int(pid):
+        return None
+    return f"{int(info.pbi_start_tvsec)}.{int(info.pbi_start_tvusec):06d}"
 
 
 def _leader_still_owns_group(
     pgid: int,
     leader_pid: int | None,
     leader_start: str | None,
+    deadline: CleanupDeadline | None = None,
 ) -> bool:
     """Return True when *leader_pid* still anchors *pgid* as the same process."""
 
-    if leader_pid is None:
+    if leader_pid is None or not leader_start or _deadline_expired(deadline):
         return False
     try:
         if os.getpgid(leader_pid) != pgid:
             return False
     except OSError:
         return False
-    current = _process_start_token(leader_pid)
+    current = _process_start_token(leader_pid, deadline=deadline)
     if current is None or not leader_start:
         return False
     return current == leader_start
@@ -651,9 +771,12 @@ def _reap_verifier(proc: subprocess.Popen[Any] | None) -> None:
         return
     if proc.poll() is None:
         try:
-            proc.kill()
+            os.killpg(proc.pid, signal.SIGKILL)
         except OSError:
-            pass
+            try:
+                proc.kill()
+            except OSError:
+                pass
     try:
         proc.wait(timeout=1.0)
     except (OSError, subprocess.TimeoutExpired):
@@ -742,7 +865,7 @@ def _handoff_group_escalation(
         agent_code=agent_code,
         stop_requested=stop_requested,
         leader_pid=leader_pid,
-        leader_start=_process_start_token(leader_pid),
+        leader_start=_process_start_token(leader_pid, deadline=deadline),
     )
     pass_fds = [handshake_w, go_r, result_w]
     if status_fd is not None:
@@ -877,7 +1000,12 @@ def _run_escalation(
         _close_fd(result_fd)
         return 1
 
-    if not _leader_still_owns_group(pgid, leader_pid, leader_start):
+    if not _leader_still_owns_group(
+        pgid,
+        leader_pid,
+        leader_start,
+        deadline=CleanupDeadline.after(_PS_TIMEOUT_SECONDS),
+    ):
         return publish_failure("leader_identity_lost", error="leader_identity_lost")
     try:
         os.killpg(pgid, signal.SIGKILL)

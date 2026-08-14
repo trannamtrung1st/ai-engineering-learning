@@ -21,6 +21,7 @@ from core_tools.provider.process_cleanup import (
     read_process_group_id,
 )
 from core_tools.provider.session_janitor import (
+    DrainResult,
     JANITOR_PARENT_WAIT_SECONDS,
     read_bound_janitor_status,
 )
@@ -66,7 +67,9 @@ def read_process_start_time(pid: int) -> str | None:
         return None
     if os.path.isdir("/proc"):
         return _read_linux_process_start_time(pid)
-    return _read_darwin_process_start_time(pid)
+    from core_tools.provider.session_janitor import _process_start_token
+
+    return _process_start_token(pid)
 
 
 def _read_linux_process_start_time(pid: int) -> str | None:
@@ -74,22 +77,6 @@ def _read_linux_process_start_time(pid: int) -> str | None:
     if result.stat is None:
         return None
     return result.stat.start_time
-
-
-def _read_darwin_process_start_time(pid: int) -> str | None:
-    try:
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "lstart="],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    start = result.stdout.strip()
-    return start or None
 
 
 def read_process_identity(
@@ -508,38 +495,41 @@ def _request_janitor_stop(proc: subprocess.Popen[Any]) -> bool:
     return True
 
 
-def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> None:
+def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> dict[str, Any] | None:
     if proc.poll() is not None:
-        return
+        cached = getattr(proc, "_core_tools_janitor_status", None)
+        return cached if isinstance(cached, dict) else None
+    status: dict[str, Any] | None = None
     if _request_janitor_stop(proc):
-        read_bound_janitor_status(proc, timeout=JANITOR_PARENT_WAIT_SECONDS)
+        status = read_bound_janitor_status(proc, timeout=JANITOR_PARENT_WAIT_SECONDS)
         try:
             proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
         except subprocess.TimeoutExpired:
             try:
                 proc.kill()
             except OSError:
-                return
+                return status
             try:
                 proc.wait(timeout=2)
             except (OSError, subprocess.TimeoutExpired):
                 pass
-        return
+        return status
     try:
         proc.terminate()
     except OSError:
-        return
+        return status
     try:
         proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
     except subprocess.TimeoutExpired:
         try:
             proc.kill()
         except OSError:
-            return
+            return status
         try:
             proc.wait(timeout=5)
         except (OSError, subprocess.TimeoutExpired):
             pass
+    return status
 
 
 def _terminate_bound_process(
@@ -552,7 +542,9 @@ def _terminate_bound_process(
     if identity is not None and proc.poll() is None and proc.pid != identity.pid:
         return TerminateIdentityResult.IDENTITY_MISMATCH
 
-    _terminate_via_bound_popen(proc)
+    status = _terminate_via_bound_popen(proc)
+    if isinstance(status, dict) and status.get("drain") == DrainResult.CLEAN.value:
+        return TerminateIdentityResult.TERMINATED
 
     resolved_identity = identity
     if resolved_identity is None and proc.poll() is None:

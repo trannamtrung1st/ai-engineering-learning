@@ -388,7 +388,9 @@ def terminate_process_tree(
     if members is None and identity is not None and proc.poll() is None:
         members = capture_process_group_identities(identity)
 
-    _terminate_via_bound_popen(proc)
+    status = _terminate_via_bound_popen(proc)
+    if isinstance(status, dict) and status.get("drain") == "clean":
+        return True
 
     if resolved_pgid is None:
         resolved_pgid = proc.pid
