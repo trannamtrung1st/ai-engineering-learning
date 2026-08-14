@@ -65,3 +65,7 @@ class ProviderTurnCleanupError(ProviderTurnError):
 
 class ProviderLifecycleTimeoutError(ProviderSessionError):
     """A provider abort or terminate call did not finish within its timeout."""
+
+
+class ProviderReplacementIdentityError(ProviderSessionError):
+    """A replacement session canonicalized to a forbidden replaced provider id."""

@@ -17,10 +17,15 @@ from top_down_planning.orchestrator.capability import (
 )
 from top_down_planning.domain.session_lineage import (
     SESSION_PROVIDER_ID_BOUND,
+    SESSION_REPLACED,
+    SESSION_REPLACEMENT_FAILED,
     SESSION_REPLACEMENT_STARTED,
     session_provider_id_bound_payload,
 )
-from top_down_planning.orchestrator.session_lineage import emit_session_provider_id_bound
+from top_down_planning.orchestrator.session_lineage import (
+    emit_session_provider_id_bound,
+    emit_session_replaced,
+)
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.review_commit import (
@@ -33,7 +38,7 @@ from top_down_planning.persistence.session_bindings import (
 )
 from core_tools.persistence import PersistenceError, RunNotFoundError
 from core_tools.provider import Provider
-from core_tools.provider.errors import ProviderSessionError
+from core_tools.provider.errors import ProviderReplacementIdentityError, ProviderSessionError
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
 DEFAULT_PROVIDER_LIFECYCLE_TIMEOUT_SECONDS = 2.0
@@ -341,22 +346,20 @@ def discard_unbound_provider_session(
         return
     last_error: BaseException | None = None
     terminated = False
+    seen: set[str] = set()
     for candidate in (canonical, session_id):
-            try:
-                provider.terminate_session(candidate, timeout=timeout)
-                terminated = True
-                break
-            except TypeError:
-                raise ProviderSessionError(
-                    (
-                        f"{type(provider).__name__}.terminate_session must accept "
-                        "timeout="
-                    ),
-                    session_id=canonical,
-                ) from None
-            except Exception as exc:
-                last_error = exc
-                continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            provider.terminate_session(candidate, timeout=timeout)
+            terminated = True
+            break
+        except TypeError:
+            raise
+        except Exception as exc:
+            last_error = exc
+            continue
     remaining = {
         str(session["session_id"])
         for session in provider.list_active_sessions()
@@ -848,7 +851,7 @@ def _reject_replacement_reuse_of_old_id(
         if provider.canonical_session_id(forbidden) == provider.canonical_session_id(
             resolved
         ):
-            raise ProviderSessionError(
+            raise ProviderReplacementIdentityError(
                 (
                     f"replacement provider session {resolved} canonicalizes to "
                     f"replaced id {forbidden}"
@@ -876,6 +879,54 @@ def _has_session_provider_id_bound_event(
             continue
         return True
     return False
+
+
+def _complete_replacement_if_durable(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    generation: int | None,
+    provider_session_id: str,
+    loop_id: str | None = None,
+) -> None:
+    if generation is None or is_transient_provider_session_id(provider_session_id):
+        return
+    started: dict[str, Any] | None = None
+    replaced = False
+    failed = False
+    for event in store.load_events(run_id):
+        if str(event.get("role") or "") != role:
+            continue
+        if int(event.get("generation") or 0) != int(generation):
+            continue
+        if loop_id is not None and str(event.get("loop_id") or "") != str(loop_id):
+            continue
+        event_type = str(event.get("type") or "")
+        if event_type == SESSION_REPLACEMENT_STARTED:
+            started = event
+        elif event_type == SESSION_REPLACED:
+            replaced = True
+        elif event_type == SESSION_REPLACEMENT_FAILED:
+            failed = True
+    if started is None or replaced or failed:
+        return
+    run = store.load_run(run_id)
+    instance_id = str(started.get("session_instance_id") or "")
+    emit_session_replaced(
+        store,
+        run_id,
+        phase=str(started.get("phase") or run.get("phase") or ""),
+        role=role,
+        old_session_instance_id=instance_id,
+        new_session_instance_id=instance_id,
+        generation=int(generation),
+        reason=str(started.get("reason") or ""),
+        old_provider_session_id=started.get("old_provider_session_id"),
+        new_provider_session_id=provider_session_id,
+        phase_action_id=started.get("phase_action_id"),
+        loop_id=loop_id,
+    )
 
 
 def sync_persisted_session_id(
@@ -915,7 +966,15 @@ def sync_persisted_session_id(
         generation=existing.generation if existing is not None else None,
     )
     current = existing.provider_session_id if existing is not None else None
+    generation = existing.generation if existing is not None else None
     if current == resolved:
+        _complete_replacement_if_durable(
+            store,
+            run_id,
+            role=role,
+            generation=generation,
+            provider_session_id=resolved,
+        )
         return resolved
     if current and not is_transient_provider_session_id(current) and current != resolved:
         raise ProviderSessionError(
@@ -933,6 +992,13 @@ def sync_persisted_session_id(
         session_provider=provider,
     )
     rebind_primary_session_capability(store, run_id, provider, role=role)
+    _complete_replacement_if_durable(
+        store,
+        run_id,
+        role=role,
+        generation=generation,
+        provider_session_id=resolved,
+    )
     return resolved
 
 
@@ -1017,6 +1083,14 @@ def sync_reviewer_loop_session_id(
         ):
             _emit_reviewer_provider_id_bound(store, run_id, loop)
         rebind_reviewer_session_capability(store, run_id, provider, loop_id=loop_id)
+        _complete_replacement_if_durable(
+            store,
+            run_id,
+            role="reviewer",
+            generation=binding.generation if binding is not None else None,
+            provider_session_id=resolved,
+            loop_id=loop_id,
+        )
         return resolved
     if (
         prior_provider_id
@@ -1039,6 +1113,14 @@ def sync_reviewer_loop_session_id(
         session_provider=provider,
     )
     rebind_reviewer_session_capability(store, run_id, provider, loop_id=loop_id)
+    _complete_replacement_if_durable(
+        store,
+        run_id,
+        role="reviewer",
+        generation=binding.generation if binding is not None else None,
+        provider_session_id=resolved,
+        loop_id=loop_id,
+    )
     return resolved
 
 

@@ -81,7 +81,7 @@ def test_terminate_verified_process_identity_skips_pid_reuse() -> None:
                 result = terminate_verified_process_identity(identity)
 
     assert result == TerminateIdentityResult.IDENTITY_MISMATCH
-    terminate.assert_called_once_with(identity)
+    terminate.assert_called_once_with(identity, timeout=None)
 
 
 def test_terminate_verified_process_identity_uses_bound_popen() -> None:
@@ -248,7 +248,7 @@ def test_terminate_verified_process_identity_linux_pidfd_path() -> None:
                 result = terminate_verified_process_identity(identity)
 
     assert result == TerminateIdentityResult.TERMINATED
-    terminate.assert_called_once_with(identity)
+    terminate.assert_called_once_with(identity, timeout=None)
 
 
 @pytest.mark.skipif(

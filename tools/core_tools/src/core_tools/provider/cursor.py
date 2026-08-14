@@ -61,7 +61,6 @@ from core_tools.provider.session_janitor import (
     JanitorStatusOwner,
     read_bound_janitor_status,
 )
-from core_tools.provider.thread_stop import force_stop_thread
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 DEFAULT_TURN_IDLE_TIMEOUT_SECONDS = 2.0
@@ -661,9 +660,14 @@ class CursorProvider:
 
     def terminate_session(self, session_id: str, *, timeout: float = 2.0) -> None:
         canonical_id = self.canonical_session_id(session_id)
+        deadline = time.monotonic() + max(0.01, timeout)
         abort_budget = max(0.01, min(timeout, timeout / 2.0 if timeout > 0 else 0.01))
-        self.abort_turn(canonical_id, timeout=abort_budget)
-        remaining = max(0.01, timeout - abort_budget)
+        try:
+            self.abort_turn(canonical_id, timeout=abort_budget)
+        except ProviderLifecycleTimeoutError:
+            if time.monotonic() >= deadline:
+                raise
+        remaining = max(0.01, deadline - time.monotonic())
         try:
             self.wait_turn_settled(canonical_id, timeout=remaining)
         except ProviderTurnError as exc:
@@ -671,7 +675,11 @@ class CursorProvider:
                 str(exc),
                 session_id=canonical_id,
             ) from exc
-        records = self._terminate_tracked_turn_procs_for_session(canonical_id)
+        remaining = max(0.0, deadline - time.monotonic())
+        records = self._terminate_tracked_turn_procs_for_session(
+            canonical_id,
+            timeout=remaining,
+        )
         surviving_pids = self._surviving_pids_for_session(canonical_id, records)
         if surviving_pids:
             raise ProviderSessionTerminationError(
@@ -697,6 +705,7 @@ class CursorProvider:
 
         if timeout <= 0:
             raise ValueError("abort_turn timeout must be positive")
+        deadline = time.monotonic() + timeout
         canonical_id = self.canonical_session_id(session_id)
         with self._session_registry_lock:
             session = self._sessions.get(canonical_id)
@@ -708,7 +717,21 @@ class CursorProvider:
             session.turn_queued = False
             session.turn_aborted = True
         self._abort_session_turn(session, error=None)
-        self._terminate_tracked_turn_procs_for_session(canonical_id)
+        remaining = max(0.0, deadline - time.monotonic())
+        records = self._terminate_tracked_turn_procs_for_session(
+            canonical_id,
+            timeout=remaining,
+        )
+        surviving = self._surviving_pids_for_session(canonical_id, records)
+        if surviving:
+            raise ProviderLifecycleTimeoutError(
+                (
+                    f"abort_turn exceeded {timeout:g}s with surviving agent "
+                    f"processes {list(surviving)}"
+                ),
+                session_id=canonical_id,
+            )
+
 
     def terminate_all_sessions(self) -> list[dict[str, Any]]:
         """Stop in-flight turns and drop tracked provider sessions."""
@@ -744,8 +767,10 @@ class CursorProvider:
         self,
         *,
         session_id: str | None = None,
+        timeout: float | None = None,
     ) -> list[dict[str, Any]]:
         terminated: list[dict[str, Any]] = []
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
         with self._turn_proc_lock:
             tracked = dict(self._tracked_turn_procs)
 
@@ -759,6 +784,7 @@ class CursorProvider:
             if pid in seen_pids:
                 continue
             seen_pids.add(pid)
+            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
             record = self._termination_record_for_tracked_proc(entry)
             result = terminate_verified_process_identity(
                 entry.identity,
@@ -769,6 +795,7 @@ class CursorProvider:
                     if entry.member_identities is not None
                     else None
                 ),
+                timeout=remaining,
             )
             if result == TerminateIdentityResult.TERMINATED:
                 terminated.append({**record, "reason": "terminated"})
@@ -815,8 +842,10 @@ class CursorProvider:
     def _terminate_tracked_turn_procs_for_session(
         self,
         session_id: str,
+        *,
+        timeout: float | None = None,
     ) -> list[dict[str, Any]]:
-        return self._terminate_tracked_turn_procs(session_id=session_id)
+        return self._terminate_tracked_turn_procs(session_id=session_id, timeout=timeout)
 
     def _abort_session_turn(
         self,
@@ -1396,8 +1425,6 @@ class CursorProvider:
                         pass
                 thread.join(timeout=max(idle_timeout, 0.2))
                 if thread.is_alive():
-                    force_stop_thread(thread, timeout=max(idle_timeout, 0.2))
-                if thread.is_alive():
                     raise ProviderTurnError(
                         "cursor idle-stream producer failed to stop",
                         session_id=session_id,
@@ -1608,6 +1635,7 @@ class CursorProvider:
                             if tracked is not None and tracked.member_identities is not None
                             else None
                         ),
+                        timeout=idle_timeout,
                     )
                     if iterator is not None:
                         iterator.close()

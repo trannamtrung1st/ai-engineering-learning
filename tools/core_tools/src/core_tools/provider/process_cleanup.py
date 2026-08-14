@@ -397,6 +397,7 @@ def terminate_process_tree(
     pgid: int | None = None,
     leader_identity: ProcessIdentity | None = None,
     member_identities: list[ProcessIdentity] | None = None,
+    timeout: float | None = None,
 ) -> bool:
     """Terminate a subprocess tree and return True when the group is verified gone."""
 
@@ -407,15 +408,19 @@ def terminate_process_tree(
         read_process_identity,
     )
 
+    wait_s = 5.0 if timeout is None else max(0.0, timeout)
     if sys.platform == "win32":
         if proc.poll() is not None:
             return True
         proc.terminate()
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=wait_s)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.wait(timeout=5)
+            try:
+                proc.wait(timeout=wait_s)
+            except subprocess.TimeoutExpired:
+                pass
         return proc.poll() is not None
 
     resolved_pgid = pgid
@@ -430,7 +435,7 @@ def terminate_process_tree(
     if members is None and identity is not None and proc.poll() is None:
         members = capture_process_group_identities(identity)
 
-    status = _terminate_via_bound_popen(proc, pgid=resolved_pgid)
+    status = _terminate_via_bound_popen(proc, pgid=resolved_pgid, timeout=timeout)
     if isinstance(status, dict) and status.get("drain") == "clean":
         return True
 
@@ -441,6 +446,7 @@ def terminate_process_tree(
         pgid=resolved_pgid,
         leader_identity=identity,
         known_identities=members,
+        timeout=timeout,
     )
     if cleaned:
         from core_tools.provider.session_janitor import complete_bound_secondary_clean

@@ -50,6 +50,19 @@ class IdentityInspectState(Enum):
 
 
 _MAX_DRAIN_ROUNDS = 10
+_DEFAULT_WAIT_SECONDS = 5.0
+
+
+def _deadline_from_timeout(timeout: float | None) -> float | None:
+    if timeout is None:
+        return None
+    return time.monotonic() + max(0.0, timeout)
+
+
+def _remaining_seconds(deadline: float | None, *, default: float = _DEFAULT_WAIT_SECONDS) -> float:
+    if deadline is None:
+        return default
+    return max(0.0, deadline - time.monotonic())
 
 
 @dataclass(frozen=True)
@@ -260,15 +273,15 @@ def _wait_identities_dead(
     *,
     timeout: float,
 ) -> bool:
-    deadline = timeout
+    if timeout <= 0:
+        return not _any_identities_still_alive(identities)
+    remaining = timeout
     interval = 0.05
-    while deadline > 0:
+    while remaining > 0:
         if not _any_identities_still_alive(identities):
             return True
-        import time
-
-        time.sleep(min(interval, deadline))
-        deadline -= interval
+        time.sleep(min(interval, remaining))
+        remaining -= interval
     return not _any_identities_still_alive(identities)
 
 
@@ -401,8 +414,14 @@ def drain_owned_process_group(
     pgid: int | None,
     leader_identity: ProcessIdentity | None = None,
     known_identities: list[ProcessIdentity] | None = None,
+    timeout: float | None = None,
 ) -> bool:
     """Terminate an owned process group using identity-safe signaling."""
+
+    deadline = _deadline_from_timeout(timeout)
+
+    def wait_budget() -> float:
+        return _remaining_seconds(deadline)
 
     resolved_pgid = pgid
     if resolved_pgid is None and leader_identity is not None:
@@ -413,9 +432,11 @@ def drain_owned_process_group(
         if leader_identity is None:
             return False
         for sig in (signal.SIGTERM, signal.SIGKILL):
+            if wait_budget() <= 0:
+                return not _identity_still_alive(leader_identity)
             if not _signal_identity(leader_identity, sig):
                 return False
-            if _wait_identities_dead([leader_identity], timeout=5):
+            if _wait_identities_dead([leader_identity], timeout=wait_budget()):
                 return True
         return not _identity_still_alive(leader_identity)
 
@@ -423,6 +444,8 @@ def drain_owned_process_group(
     run_id = leader_identity.run_id if leader_identity is not None else None
 
     for _round in range(_MAX_DRAIN_ROUNDS):
+        if wait_budget() <= 0:
+            return process_group_state(resolved_pgid) is ProcessGroupState.GONE
         state = process_group_state(resolved_pgid)
         if state is ProcessGroupState.UNVERIFIABLE:
             return False
@@ -457,12 +480,15 @@ def drain_owned_process_group(
             except (ChildProcessError, OSError):
                 pass
 
-        if _wait_identities_dead(targets, timeout=5):
+        if _wait_identities_dead(targets, timeout=wait_budget()):
             if process_group_state(resolved_pgid) is ProcessGroupState.GONE:
                 return True
 
         if process_group_state(resolved_pgid) is ProcessGroupState.GONE:
             return True
+
+        if wait_budget() <= 0:
+            return process_group_state(resolved_pgid) is ProcessGroupState.GONE
 
         survivors = [identity for identity in targets if _identity_still_alive(identity)]
         for identity in survivors:
@@ -473,7 +499,7 @@ def drain_owned_process_group(
             except (ChildProcessError, OSError):
                 pass
 
-        if _wait_identities_dead(survivors, timeout=5):
+        if _wait_identities_dead(survivors, timeout=wait_budget()):
             if process_group_state(resolved_pgid) is ProcessGroupState.GONE:
                 return True
 
@@ -557,7 +583,15 @@ def _terminate_via_bound_popen(
     proc: subprocess.Popen[Any],
     *,
     pgid: int | None = None,
+    timeout: float | None = None,
 ) -> dict[str, Any] | None:
+    deadline = _deadline_from_timeout(
+        JANITOR_PARENT_WAIT_SECONDS if timeout is None else timeout
+    )
+
+    def wait_budget() -> float:
+        return _remaining_seconds(deadline, default=JANITOR_PARENT_WAIT_SECONDS)
+
     owner = getattr(proc, "_core_tools_janitor_status_owner", None)
     fd = getattr(proc, "_core_tools_janitor_status_fd", None)
     cached = getattr(proc, "_core_tools_janitor_status", None)
@@ -568,23 +602,25 @@ def _terminate_via_bound_popen(
     )
     if janitor_bound:
         _request_janitor_stop(proc)
-        status = read_bound_janitor_status(proc, timeout=JANITOR_PARENT_WAIT_SECONDS)
+        status = read_bound_janitor_status(proc, timeout=wait_budget())
         if isinstance(status, dict) and status.get("drain") == DrainResult.CLEAN.value:
             if isinstance(owner, JanitorStatusOwner) and not owner.reap_allowed:
                 owner.mark_safe_fallback(status)
             try:
-                proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
+                proc.wait(timeout=wait_budget())
             except (OSError, subprocess.TimeoutExpired):
                 return _fallback_status(DrainResult.UNVERIFIABLE)
             return status
-        fallback = _fallback_kill_bound_janitor_group(proc, pgid=pgid)
+        fallback = _fallback_kill_bound_janitor_group(
+            proc, pgid=pgid, timeout=wait_budget()
+        )
         if isinstance(owner, JanitorStatusOwner):
             owner.mark_safe_fallback(fallback)
         setattr(proc, "_core_tools_janitor_status", fallback)
         if fallback.get("drain") != DrainResult.CLEAN.value:
             return fallback
         try:
-            proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
+            proc.wait(timeout=wait_budget())
         except (OSError, subprocess.TimeoutExpired):
             failed = _fallback_status(DrainResult.UNVERIFIABLE)
             if isinstance(owner, JanitorStatusOwner):
@@ -600,14 +636,14 @@ def _terminate_via_bound_popen(
     except OSError:
         return status
     try:
-        proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
+        proc.wait(timeout=wait_budget())
     except subprocess.TimeoutExpired:
         try:
             proc.kill()
         except OSError:
             return status
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=wait_budget())
         except (OSError, subprocess.TimeoutExpired):
             pass
     return status
@@ -619,11 +655,12 @@ def _terminate_bound_process(
     *,
     pgid: int | None = None,
     member_identities: list[ProcessIdentity] | None = None,
+    timeout: float | None = None,
 ) -> TerminateIdentityResult:
     if identity is not None and proc.poll() is None and proc.pid != identity.pid:
         return TerminateIdentityResult.IDENTITY_MISMATCH
 
-    status = _terminate_via_bound_popen(proc, pgid=pgid)
+    status = _terminate_via_bound_popen(proc, pgid=pgid, timeout=timeout)
     if isinstance(status, dict) and status.get("drain") == DrainResult.CLEAN.value:
         return TerminateIdentityResult.TERMINATED
 
@@ -643,6 +680,7 @@ def _terminate_bound_process(
         pgid=resolved_pgid,
         leader_identity=resolved_identity,
         known_identities=members,
+        timeout=timeout,
     ):
         from core_tools.provider.session_janitor import complete_bound_secondary_clean
 
@@ -657,7 +695,11 @@ def _terminate_bound_process(
     return TerminateIdentityResult.FAILED
 
 
-def _terminate_linux_identity(identity: ProcessIdentity) -> TerminateIdentityResult:
+def _terminate_linux_identity(
+    identity: ProcessIdentity,
+    *,
+    timeout: float | None = None,
+) -> TerminateIdentityResult:
     state = inspect_process_identity(identity)
     if state is IdentityInspectState.GONE:
         return TerminateIdentityResult.ALREADY_GONE
@@ -675,6 +717,7 @@ def _terminate_linux_identity(identity: ProcessIdentity) -> TerminateIdentityRes
         pgid=pgid,
         leader_identity=identity,
         known_identities=captured,
+        timeout=timeout,
     ):
         return TerminateIdentityResult.TERMINATED
     return TerminateIdentityResult.FAILED
@@ -686,6 +729,7 @@ def terminate_verified_process_identity(
     proc: subprocess.Popen[Any] | None = None,
     pgid: int | None = None,
     member_identities: list[ProcessIdentity] | None = None,
+    timeout: float | None = None,
 ) -> TerminateIdentityResult:
     """Terminate *identity* using a process-instance-safe primitive."""
 
@@ -695,6 +739,7 @@ def terminate_verified_process_identity(
             proc,
             pgid=pgid,
             member_identities=member_identities,
+            timeout=timeout,
         )
 
     if identity is None:
@@ -712,6 +757,7 @@ def terminate_verified_process_identity(
                 pgid=pgid,
                 leader_identity=identity,
                 known_identities=member_identities,
+                timeout=timeout,
             ):
                 return TerminateIdentityResult.TERMINATED
             return TerminateIdentityResult.FAILED
@@ -720,7 +766,7 @@ def terminate_verified_process_identity(
     if not _pidfd_supported():
         return TerminateIdentityResult.FAILED
 
-    return _terminate_linux_identity(identity)
+    return _terminate_linux_identity(identity, timeout=timeout)
 
 
 __all__ = [

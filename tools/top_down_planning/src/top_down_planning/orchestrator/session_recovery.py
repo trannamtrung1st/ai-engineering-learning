@@ -416,23 +416,20 @@ def replace_primary_session(
             if saved_binding is None:
                 raise ProviderRunError(f"failed to bind replacement {role} session")
 
-            emit_session_replaced(
-                store,
-                run_id,
-                phase=phase,
-                role=role,
-                old_session_instance_id=binding.session_instance_id,
-                new_session_instance_id=saved_binding.session_instance_id,
-                generation=saved_binding.generation,
-                reason=recovery_reason,
-                old_provider_session_id=old_provider_session_id,
-                new_provider_session_id=(
-                    resolved
-                    if not is_transient_provider_session_id(resolved)
-                    else None
-                ),
-                phase_action_id=phase_action_id,
-            )
+            if not is_transient_provider_session_id(resolved):
+                emit_session_replaced(
+                    store,
+                    run_id,
+                    phase=phase,
+                    role=role,
+                    old_session_instance_id=binding.session_instance_id,
+                    new_session_instance_id=saved_binding.session_instance_id,
+                    generation=saved_binding.generation,
+                    reason=recovery_reason,
+                    old_provider_session_id=old_provider_session_id,
+                    new_provider_session_id=resolved,
+                    phase_action_id=phase_action_id,
+                )
             return resolved
         except SessionRecoveryPaused:
             raise
@@ -466,7 +463,7 @@ def replace_primary_session(
                 )
             except BaseException as record_exc:
                 _attach_cleanup_errors(record_exc, cleanup)
-                raise
+                raise record_exc from exc
             paused = SessionRecoveryPaused(str(exc))
             _attach_cleanup_errors(paused, cleanup)
             raise paused from exc
@@ -500,7 +497,7 @@ def replace_primary_session(
                 )
             except BaseException as record_exc:
                 _attach_cleanup_errors(record_exc, cleanup)
-                raise
+                raise record_exc from exc
             _attach_cleanup_errors(exc, cleanup)
             raise
         except Exception as exc:
@@ -512,22 +509,30 @@ def replace_primary_session(
                 preexisting_ids=preexisting,
                 role=role,
             )
-            if fail_generation != binding.generation:
-                try:
-                    emit_session_replacement_failed(
+            try:
+                emit_session_replacement_failed(
+                    store,
+                    run_id,
+                    phase=phase,
+                    role=role,
+                    session_instance_id=fail_instance,
+                    generation=fail_generation,
+                    reason="orchestrator_invariant_failure",
+                    provider_session_id=old_provider_session_id,
+                    phase_action_id=phase_action_id,
+                )
+                current = store.load_run(run_id)
+                if str(current.get("status") or "") == "running":
+                    _fail_replacement_persistence(
                         store,
                         run_id,
                         phase=phase,
                         role=role,
-                        session_instance_id=fail_instance,
-                        generation=fail_generation,
-                        reason="orchestrator_invariant_failure",
-                        provider_session_id=old_provider_session_id,
-                        phase_action_id=phase_action_id,
+                        message=str(exc),
                     )
-                except BaseException as record_exc:
-                    _attach_cleanup_errors(record_exc, cleanup)
-                    raise
+            except BaseException as record_exc:
+                _attach_cleanup_errors(record_exc, cleanup)
+                raise record_exc from exc
             _attach_cleanup_errors(exc, cleanup)
             raise
 
@@ -673,24 +678,21 @@ def replace_reviewer_session(
             if committed_binding is None:
                 raise ProviderRunError("failed to bind replacement reviewer session")
 
-            emit_session_replaced(
-                store,
-                run_id,
-                phase=phase,
-                role="reviewer",
-                old_session_instance_id=binding.session_instance_id,
-                new_session_instance_id=committed_binding.session_instance_id,
-                generation=committed_binding.generation,
-                reason=recovery_reason,
-                old_provider_session_id=old_provider_session_id,
-                new_provider_session_id=(
-                    resolved
-                    if not is_transient_provider_session_id(resolved)
-                    else None
-                ),
-                phase_action_id=phase_action_id,
-                loop_id=loop.id,
-            )
+            if not is_transient_provider_session_id(resolved):
+                emit_session_replaced(
+                    store,
+                    run_id,
+                    phase=phase,
+                    role="reviewer",
+                    old_session_instance_id=binding.session_instance_id,
+                    new_session_instance_id=committed_binding.session_instance_id,
+                    generation=committed_binding.generation,
+                    reason=recovery_reason,
+                    old_provider_session_id=old_provider_session_id,
+                    new_provider_session_id=resolved,
+                    phase_action_id=phase_action_id,
+                    loop_id=loop.id,
+                )
             return resolved
         except SessionRecoveryPaused:
             raise
@@ -726,7 +728,7 @@ def replace_reviewer_session(
                 )
             except BaseException as record_exc:
                 _attach_cleanup_errors(record_exc, cleanup)
-                raise
+                raise record_exc from exc
             paused = SessionRecoveryPaused(str(exc))
             _attach_cleanup_errors(paused, cleanup)
             raise paused from exc
@@ -762,7 +764,7 @@ def replace_reviewer_session(
                 )
             except BaseException as record_exc:
                 _attach_cleanup_errors(record_exc, cleanup)
-                raise
+                raise record_exc from exc
             _attach_cleanup_errors(exc, cleanup)
             raise
         except Exception as exc:
@@ -775,23 +777,31 @@ def replace_reviewer_session(
                 role="reviewer",
                 loop_id=loop.id,
             )
-            if fail_generation != binding.generation:
-                try:
-                    emit_session_replacement_failed(
+            try:
+                emit_session_replacement_failed(
+                    store,
+                    run_id,
+                    phase=phase,
+                    role="reviewer",
+                    session_instance_id=fail_instance,
+                    generation=fail_generation,
+                    reason="orchestrator_invariant_failure",
+                    provider_session_id=old_provider_session_id,
+                    phase_action_id=phase_action_id,
+                    loop_id=loop.id,
+                )
+                current = store.load_run(run_id)
+                if str(current.get("status") or "") == "running":
+                    _fail_replacement_persistence(
                         store,
                         run_id,
                         phase=phase,
                         role="reviewer",
-                        session_instance_id=fail_instance,
-                        generation=fail_generation,
-                        reason="orchestrator_invariant_failure",
-                        provider_session_id=old_provider_session_id,
-                        phase_action_id=phase_action_id,
-                        loop_id=loop.id,
+                        message=str(exc),
                     )
-                except BaseException as record_exc:
-                    _attach_cleanup_errors(record_exc, cleanup)
-                    raise
+            except BaseException as record_exc:
+                _attach_cleanup_errors(record_exc, cleanup)
+                raise record_exc from exc
             _attach_cleanup_errors(exc, cleanup)
             raise
 

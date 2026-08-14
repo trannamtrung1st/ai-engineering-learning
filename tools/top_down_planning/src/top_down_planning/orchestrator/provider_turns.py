@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import queue
-import signal
-import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -13,8 +11,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core_tools.provider import Provider
-from core_tools.provider.errors import ProviderSessionNotFoundError, ProviderTurnStalledError
-from core_tools.provider.thread_stop import force_stop_thread
+from core_tools.provider.errors import (
+    ProviderReplacementIdentityError,
+    ProviderSessionNotFoundError,
+    ProviderTurnStalledError,
+)
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
@@ -304,68 +305,8 @@ _BOUNDARY_CANCEL: ContextVar[threading.Event | None] = ContextVar(
 )
 
 
-class _DeadlineExceeded(BaseException):
-    """Raised by SIGALRM to interrupt a same-thread blocking call."""
-
-
-def _run_with_timeout(seconds: float, fn: Callable[[], Any]) -> Any:
-    """Run *fn* on this thread, interrupting it after *seconds* on Unix main threads."""
-
-    if seconds <= 0:
-        return fn()
-    use_alarm = (
-        sys.platform != "win32"
-        and hasattr(signal, "setitimer")
-        and threading.current_thread() is threading.main_thread()
-    )
-    if not use_alarm:
-        box: list[tuple[str, Any]] = []
-        done = threading.Event()
-
-        def run() -> None:
-            try:
-                box.append(("ok", fn()))
-            except BaseException as exc:
-                box.append(("err", exc))
-            finally:
-                done.set()
-
-        thread = threading.Thread(target=run, name=BOUNDARY_POLL_THREAD_NAME, daemon=True)
-        thread.start()
-        finished = done.wait(timeout=seconds)
-        if not finished:
-            thread.join(timeout=seconds)
-            force_stop_thread(thread, timeout=seconds)
-            if thread.is_alive():
-                raise ProviderRunError("store-driven boundary probe timed out")
-            raise ProviderRunError("store-driven boundary probe timed out")
-        thread.join(timeout=seconds)
-        if not box:
-            return None
-        kind, payload = box[0]
-        if kind == "err":
-            raise payload
-        return payload
-
-    def handler(_signum: int, _frame: Any) -> None:
-        raise _DeadlineExceeded()
-
-    previous_handler = signal.getsignal(signal.SIGALRM)
-    previous_timer = signal.getitimer(signal.ITIMER_REAL)
-    signal.signal(signal.SIGALRM, handler)
-    try:
-        signal.setitimer(signal.ITIMER_REAL, seconds)
-        try:
-            return fn()
-        except _DeadlineExceeded as exc:
-            raise ProviderRunError("store-driven boundary probe timed out") from exc
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, previous_timer[0], previous_timer[1])
-        signal.signal(signal.SIGALRM, previous_handler)
-
-
 def boundary_cancel_event() -> threading.Event | None:
-    """Stop event for the in-flight bounded boundary probe, if any."""
+    """Stop event for the in-flight store-driven boundary probe, if any."""
 
     return _BOUNDARY_CANCEL.get()
 
@@ -437,8 +378,6 @@ def _finalize_boundary_poll(
                 _record_poll_error(poll_state, exc)
             pump.join(timeout=BOUNDARY_POLL_JOIN_SECONDS)
         if pump.is_alive():
-            force_stop_thread(pump, timeout=BOUNDARY_POLL_JOIN_SECONDS)
-        if pump.is_alive():
             _record_poll_error(
                 poll_state,
                 ProviderRunError("provider event pump failed to stop"),
@@ -452,15 +391,15 @@ def _invoke_boundary_bounded(
     *,
     timeout: float,
 ) -> str | None:
-    """Run *callback* until it returns, *stop* is set, or *timeout* elapses."""
+    """Run a store-only boundary callback on this thread.
 
+    Callbacks must return promptly. TDP does not asynchronously inject exceptions
+    into other threads or commandeer process-global ``SIGALRM``.
+    """
+
+    del timeout
     _BOUNDARY_CANCEL.set(stop)
-
-    def run() -> str | None:
-        _BOUNDARY_CANCEL.set(stop)
-        return callback()
-
-    return _run_with_timeout(timeout, run)
+    return callback()
 
 
 def _probe_boundary(
@@ -811,6 +750,31 @@ def _consume_provider_turn_with_session_recovery(
                 allowed_signals=allowed_signals,
                 on_boundary=on_boundary,
                 sync_session_id=sync_session_id,
+            )
+        except ProviderReplacementIdentityError as exc:
+            _emit_replacement_blocked(
+                store,
+                run_id,
+                recovery,
+                phase_action_id,
+                new_session_id,
+                "replacement_identity_conflict",
+            )
+            try:
+                provider.terminate_session(new_session_id, timeout=2.0)
+            except Exception:
+                pass
+            fail_session_recovery_exhausted(
+                store,
+                run_id,
+                phase=phase,
+                role=role,
+                phase_action_id=phase_action_id,
+                message=(
+                    "replacement provider session identity failed for "
+                    f"phase_action_id {phase_action_id}: {exc}"
+                ),
+                loop_id=loop_id,
             )
         except (ProviderSessionNotFoundError, ProviderTurnStalledError) as exc:
             fail_session_recovery_exhausted(

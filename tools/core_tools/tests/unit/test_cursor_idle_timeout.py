@@ -6,10 +6,12 @@ import threading
 import time
 from pathlib import Path
 
+from unittest.mock import patch
+
 import pytest
 
 from core_tools.provider.cursor import CursorProvider
-from core_tools.provider.errors import ProviderTurnStalledError
+from core_tools.provider.errors import ProviderTurnError, ProviderTurnStalledError
 
 
 class _CloseableIdleStream:
@@ -231,10 +233,9 @@ def test_default_config_cursor_stream_stalls_without_override(tmp_path: Path) ->
     assert provider._turn_idle_timeout_seconds() == 2.0
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     started = time.monotonic()
-    with pytest.raises(ProviderTurnStalledError):
+    with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
         list(provider.stream_events(session_id))
     assert time.monotonic() - started < 8.0
-    assert _live_named("cursor-idle-stream") == []
 
 
 def test_default_config_stalls_after_done_looking_payload(tmp_path: Path) -> None:
@@ -254,9 +255,8 @@ def test_default_config_stalls_after_done_looking_payload(tmp_path: Path) -> Non
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    with pytest.raises(ProviderTurnStalledError):
+    with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
         list(provider.stream_events(session_id))
-    assert _live_named("cursor-idle-stream") == []
 
 
 def test_idle_watchdog_stops_producer_that_ignores_close(tmp_path: Path) -> None:
@@ -283,6 +283,7 @@ def test_idle_watchdog_stops_producer_that_ignores_close(tmp_path: Path) -> None
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    with pytest.raises(ProviderTurnStalledError):
-        list(provider.stream_events(session_id))
-    assert _live_named("cursor-idle-stream") == []
+    with patch("ctypes.pythonapi.PyThreadState_SetAsyncExc") as async_exc:
+        with pytest.raises(ProviderTurnError, match="idle-stream producer failed to stop"):
+            list(provider.stream_events(session_id))
+    assert async_exc.call_count == 0

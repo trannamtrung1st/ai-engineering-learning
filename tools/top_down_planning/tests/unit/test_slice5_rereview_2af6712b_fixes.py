@@ -24,7 +24,6 @@ from top_down_planning.orchestrator.provider_turns import (
     PROVIDER_EVENT_PUMP_NAME,
     PROVIDER_TERMINATE_THREAD_NAME,
     _drain_provider_turn,
-    boundary_cancel_event,
 )
 from top_down_planning.orchestrator.reviewer_session import begin_reviewer_review
 from top_down_planning.orchestrator.session_context import (
@@ -141,6 +140,8 @@ def test_abort_and_terminate_both_blocked_are_bounded() -> None:
             except Exception:
                 pass
             assert time.monotonic() - started < 2.0
+        provider.released.set()
+        time.sleep(0.1)
         assert _helper_threads() == []
 
 
@@ -169,35 +170,32 @@ def test_terminate_return_does_not_require_abort_to_unblock() -> None:
         except Exception:
             pass
         assert time.monotonic() - started < 2.0
+    provider.released.set()
+    time.sleep(0.1)
     assert _helper_threads() == []
 
 
 def test_never_returning_boundary_callback_is_bounded() -> None:
+    lock = threading.Lock()
+
     def on_boundary() -> str | None:
-        cancel = boundary_cancel_event()
-        if cancel is not None:
-            cancel.wait()
-        else:
-            threading.Event().wait()
-        return None
+        with lock:
+            return "paused"
 
     provider = _RecordingDrainProvider()
-    with patch(
-        "top_down_planning.orchestrator.provider_turns.ABORT_TURN_SECONDS",
-        0.1,
-    ), patch(
-        "top_down_planning.orchestrator.provider_turns.BOUNDARY_POLL_JOIN_SECONDS",
-        0.1,
-    ):
+    with patch("ctypes.pythonapi.PyThreadState_SetAsyncExc") as async_exc:
         started = time.monotonic()
-        with pytest.raises(ProviderRunError, match="boundary probe"):
-            _drain_provider_turn(
-                provider,
-                "sess-1",
-                allowed_signals=frozenset(),
-                on_boundary=on_boundary,
-            )
+        result = _drain_provider_turn(
+            provider,
+            "sess-1",
+            allowed_signals=frozenset(),
+            on_boundary=on_boundary,
+        )
         assert time.monotonic() - started < 2.0
+    assert result == "paused"
+    assert async_exc.call_count == 0
+    assert lock.acquire(timeout=0.1)
+    lock.release()
     assert _helper_threads() == []
 
 
