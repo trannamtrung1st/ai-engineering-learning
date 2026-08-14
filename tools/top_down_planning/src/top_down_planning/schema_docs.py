@@ -1328,7 +1328,8 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                     "argv before the turn fails. Does not apply to "
                                     "ProviderTurnStalledError, ProviderTurnCleanupError, "
                                     "or a turn that already observed a durable session id "
-                                    "or result event on the current attempt."
+                                    "on the current attempt (including on a type:error "
+                                    "event) or a result event."
                                 ),
                             },
                             "turn_idle_timeout_seconds": {

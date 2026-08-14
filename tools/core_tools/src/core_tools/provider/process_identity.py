@@ -23,6 +23,7 @@ from core_tools.provider.process_cleanup import (
 from core_tools.provider.session_janitor import (
     DrainResult,
     JANITOR_PARENT_WAIT_SECONDS,
+    JanitorStatusOwner,
     read_bound_janitor_status,
 )
 
@@ -496,17 +497,27 @@ def _request_janitor_stop(proc: subprocess.Popen[Any]) -> bool:
 
 
 def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> dict[str, Any] | None:
-    if proc.poll() is not None:
-        cached = getattr(proc, "_core_tools_janitor_status", None)
-        return cached if isinstance(cached, dict) else None
-    status: dict[str, Any] | None = None
-    if _request_janitor_stop(proc):
+    owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+    fd = getattr(proc, "_core_tools_janitor_status_fd", None)
+    cached = getattr(proc, "_core_tools_janitor_status", None)
+    janitor_bound = (
+        isinstance(owner, JanitorStatusOwner)
+        or isinstance(fd, int)
+        or isinstance(cached, dict)
+    )
+    if janitor_bound:
+        _request_janitor_stop(proc)
         status = read_bound_janitor_status(proc, timeout=JANITOR_PARENT_WAIT_SECONDS)
+        wait_timeout = (
+            JANITOR_PARENT_WAIT_SECONDS if isinstance(status, dict) else 0.2
+        )
         try:
-            proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
+            proc.wait(timeout=wait_timeout)
         except subprocess.TimeoutExpired:
             try:
-                proc.kill()
+                raw_kill = getattr(proc, "kill", None)
+                if raw_kill is not None:
+                    raw_kill()
             except OSError:
                 return status
             try:
@@ -514,6 +525,9 @@ def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> dict[str, Any] | 
             except (OSError, subprocess.TimeoutExpired):
                 pass
         return status
+    if proc.poll() is not None:
+        return cached if isinstance(cached, dict) else None
+    status = None
     try:
         proc.terminate()
     except OSError:

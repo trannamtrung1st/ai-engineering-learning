@@ -58,9 +58,10 @@ class CleanupDeadline:
         cls,
         seconds: float,
         *,
-        clock: Callable[[], float] = time.monotonic,
+        clock: Callable[[], float] | None = None,
     ) -> CleanupDeadline:
-        return cls(clock() + max(0.0, seconds), clock=clock)
+        tick = time.monotonic if clock is None else clock
+        return cls(tick() + max(0.0, seconds), clock=tick)
 
     def remaining(self) -> float:
         return max(0.0, self.end - self.clock())
@@ -133,11 +134,42 @@ class JanitorStatusOwner:
         with self._lock:
             fd = self._fd
             self._fd = None
+            if not self._published:
+                self._published = True
+                self._done.notify_all()
         if fd is not None:
             try:
                 os.close(fd)
             except OSError:
                 pass
+
+    def bind(self, proc: Any) -> None:
+        """Attach lifecycle guards so poll/wait cannot reap before terminal status."""
+
+        if getattr(proc, "_core_tools_janitor_bound", False):
+            return
+        raw_poll = getattr(proc, "poll", None)
+        raw_wait = getattr(proc, "wait", None)
+        if not callable(raw_poll) or not callable(raw_wait):
+            return
+        owner = self
+
+        def poll(*args: object, **kwargs: object) -> int | None:
+            with owner._lock:
+                if not owner._published:
+                    return None
+            return raw_poll(*args, **kwargs)
+
+        def wait(timeout: float | None = None) -> int:
+            remaining = JANITOR_PARENT_WAIT_SECONDS if timeout is None else max(0.0, timeout)
+            owner.read(timeout=remaining)
+            return raw_wait(timeout=timeout)
+
+        proc.poll = poll
+        proc.wait = wait
+        proc._core_tools_janitor_bound = True
+        proc._core_tools_raw_poll = raw_poll
+        proc._core_tools_raw_wait = raw_wait
 
     def read(self, *, timeout: float) -> dict[str, Any] | None:
         deadline = time.monotonic() + max(0.0, timeout)
@@ -205,8 +237,11 @@ def read_bound_janitor_status(
             fd = getattr(proc, "_core_tools_janitor_status_fd", None)
             if isinstance(fd, int):
                 owner = JanitorStatusOwner(fd)
+                owner.bind(proc)
                 setattr(proc, "_core_tools_janitor_status_owner", owner)
                 setattr(proc, "_core_tools_janitor_status_fd", None)
+        elif owner is not None:
+            owner.bind(proc)
     if owner is not None:
         status = owner.read(timeout=timeout)
         setattr(proc, "_core_tools_janitor_status", status)
@@ -409,7 +444,10 @@ def _linux_process_start_token(
     fields = text[close + 2 :].split()
     if len(fields) < 20:
         return None
-    return fields[19]
+    token = fields[19]
+    if _deadline_expired(deadline):
+        return None
+    return token
 
 
 _PROC_PIDTBSDINFO = 3
@@ -465,6 +503,8 @@ def _darwin_process_start_token(
         return None
     if int(info.pbi_pid) != int(pid):
         return None
+    if _deadline_expired(deadline):
+        return None
     return f"{int(info.pbi_start_tvsec)}.{int(info.pbi_start_tvusec):06d}"
 
 
@@ -484,9 +524,11 @@ def _leader_still_owns_group(
     except OSError:
         return False
     current = _process_start_token(leader_pid, deadline=deadline)
-    if current is None or not leader_start:
+    if current is None or current != leader_start:
         return False
-    return current == leader_start
+    if _deadline_expired(deadline):
+        return False
+    return True
 
 
 def _signal_group(sig: int) -> None:
@@ -836,7 +878,7 @@ def _escalation_command(
             "--leader-pid",
             str(leader_pid),
             "--leader-start",
-            leader_start if leader_start else (_process_start_token(leader_pid) or ""),
+            leader_start or "",
         ]
     )
     return command
@@ -1000,12 +1042,15 @@ def _run_escalation(
         _close_fd(result_fd)
         return 1
 
+    auth_deadline = CleanupDeadline.after(_PS_TIMEOUT_SECONDS)
     if not _leader_still_owns_group(
         pgid,
         leader_pid,
         leader_start,
-        deadline=CleanupDeadline.after(_PS_TIMEOUT_SECONDS),
+        deadline=auth_deadline,
     ):
+        return publish_failure("leader_identity_lost", error="leader_identity_lost")
+    if _deadline_expired(auth_deadline):
         return publish_failure("leader_identity_lost", error="leader_identity_lost")
     try:
         os.killpg(pgid, signal.SIGKILL)

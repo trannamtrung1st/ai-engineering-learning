@@ -149,11 +149,9 @@ class _SubprocessStdoutIterator(Iterator[str]):
             os.close(status_w)
         self._status_read_fd = status_r
         if self._proc is not None and status_r is not None:
-            setattr(
-                self._proc,
-                "_core_tools_janitor_status_owner",
-                JanitorStatusOwner(status_r),
-            )
+            owner = JanitorStatusOwner(status_r)
+            owner.bind(self._proc)
+            setattr(self._proc, "_core_tools_janitor_status_owner", owner)
 
         if active_proc is not None:
             active_proc[0] = self._proc
@@ -290,7 +288,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
             setattr(self._proc, "_core_tools_janitor_status", status)
             raise_for_cursor_cli_exit(return_code, status=status, stderr=stderr)
         finally:
-            self._close_status_fd()
+            self.close()
 
 
 def default_process_runner(
@@ -1137,6 +1135,14 @@ class CursorProvider:
                     ) from exc
                 if not isinstance(raw, dict):
                     continue
+                session_id, observed_id = self._observe_stream_session_identity(
+                    session,
+                    session_id,
+                    expected_durable_id,
+                    raw,
+                )
+                if observed_id is not None:
+                    provider_session_id = observed_id
                 if raw.get("type") == "error":
                     detail = str(raw.get("text") or raw.get("message") or raw)
                     classified = classify_cursor_session_failure(
@@ -1159,25 +1165,6 @@ class CursorProvider:
                         )
                         if classified is not None:
                             raise classified
-                if raw.get("session_id"):
-                    event_session_id = str(raw["session_id"])
-                    if not event_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
-                        session.turn_remote_observed = True
-                        if expected_durable_id is not None:
-                            if event_session_id != expected_durable_id:
-                                raise ProviderTurnError(
-                                    "Cursor CLI resume returned unexpected session id "
-                                    f"{event_session_id!r} (expected {expected_durable_id!r})",
-                                    session_id=session_id,
-                                )
-                            provider_session_id = event_session_id
-                        else:
-                            session_id = self._maybe_migrate_session(
-                                session_id,
-                                event_session_id,
-                            )
-                            self._set_collect_context(session_id, session.role)
-                            provider_session_id = event_session_id
                 normalized = normalize_cursor_event(raw)
                 if normalized is not None:
                     enriched = enrich_provider_observability_event(
@@ -1209,6 +1196,32 @@ class CursorProvider:
                 )
         finally:
             self._clear_collect_context()
+
+    def _observe_stream_session_identity(
+        self,
+        session: _CursorSession,
+        session_id: str,
+        expected_durable_id: str | None,
+        raw: dict[str, Any],
+    ) -> tuple[str, str | None]:
+        event_session_id = raw.get("session_id")
+        if not event_session_id:
+            return session_id, None
+        event_session_id = str(event_session_id)
+        if event_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+            return session_id, None
+        session.turn_remote_observed = True
+        if expected_durable_id is not None:
+            if event_session_id != expected_durable_id:
+                raise ProviderTurnError(
+                    "Cursor CLI resume returned unexpected session id "
+                    f"{event_session_id!r} (expected {expected_durable_id!r})",
+                    session_id=session_id,
+                )
+            return session_id, event_session_id
+        session_id = self._maybe_migrate_session(session_id, event_session_id)
+        self._set_collect_context(session_id, session.role)
+        return session_id, event_session_id
 
     def _maybe_migrate_session(self, current_id: str, provider_session_id: str) -> str:
         if current_id == provider_session_id:
