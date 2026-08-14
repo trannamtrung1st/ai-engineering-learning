@@ -19,6 +19,7 @@ from core_tools.provider.session_janitor import (
     CleanupDeadline,
     DrainResult,
     _handoff_group_escalation,
+    _process_start_token,
     _run_escalation,
     _wait_peers_gone,
 )
@@ -94,8 +95,12 @@ def test_killpg_eperm_is_reported_and_does_not_exit_with_survivors() -> None:
     def boom(_pgid: int, _sig: int) -> None:
         raise OSError(errno.EPERM, "Operation not permitted")
 
-    with patch("core_tools.provider.session_janitor.os.killpg", side_effect=boom):
-        code = _run_escalation(
+    with patch(
+        "core_tools.provider.session_janitor._leader_still_owns_group",
+        return_value=True,
+    ):
+        with patch("core_tools.provider.session_janitor.os.killpg", side_effect=boom):
+            code = _run_escalation(
             pgid=999999,
             status_fd=None,
             handshake_fd=handshake_w,
@@ -141,6 +146,7 @@ def test_killpg_oserror_is_reported_and_leaves_target_alive() -> None:
                 agent_code=0,
                 stop_requested=False,
                 leader_pid=target.pid,
+                leader_start=_process_start_token(target.pid),
             )
         os.close(handshake_r)
         result = json.loads(_read_fd(result_r).splitlines()[-1])
@@ -172,7 +178,11 @@ def test_verifier_terminal_survivors_and_unverifiable_are_returned(
             "core_tools.provider.session_janitor._wait_peers_gone",
             return_value=drain,
         ):
-            _run_escalation(
+            with patch(
+                "core_tools.provider.session_janitor._leader_still_owns_group",
+                return_value=True,
+            ):
+                _run_escalation(
                 pgid=12345,
                 status_fd=status_w,
                 handshake_fd=handshake_w,
@@ -320,6 +330,7 @@ def _escalation_argv(
     agent_code: int,
     stop_requested: bool,
     leader_pid: int,
+    leader_start: str | None = None,
 ) -> list[str]:
     argv = [
         "--escalate-pgid",

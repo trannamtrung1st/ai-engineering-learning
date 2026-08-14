@@ -25,6 +25,7 @@ from core_tools.provider.errors import (
     ProviderSessionError,
     ProviderSessionNotFoundError,
     ProviderSessionTerminationError,
+    ProviderTurnCleanupError,
     ProviderTurnError,
     ProviderTurnStalledError,
 )
@@ -51,7 +52,11 @@ from core_tools.provider.process_identity import (
     read_process_start_time,
     terminate_verified_process_identity,
 )
-from core_tools.provider.session_janitor import DrainResult, decode_janitor_status
+from core_tools.provider.session_janitor import (
+    DrainResult,
+    JANITOR_PARENT_WAIT_SECONDS,
+    read_bound_janitor_status,
+)
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 _STDERR_TAIL_MAX_BYTES = 64 * 1024
@@ -72,7 +77,7 @@ def raise_for_cursor_cli_exit(
     if status is not None:
         drain = status.get("drain")
         if drain in {DrainResult.UNVERIFIABLE.value, DrainResult.SURVIVORS.value}:
-            raise ProviderTurnError(f"Cursor CLI cleanup failed: {detail}")
+            raise ProviderTurnCleanupError(f"Cursor CLI cleanup failed: {detail}")
         agent_code = status.get("agent_code", return_code)
         if agent_code in (None, 0):
             return
@@ -142,6 +147,8 @@ class _SubprocessStdoutIterator(Iterator[str]):
         if status_w is not None:
             os.close(status_w)
         self._status_read_fd = status_r
+        if self._proc is not None and status_r is not None:
+            setattr(self._proc, "_core_tools_janitor_status_fd", status_r)
 
         if active_proc is not None:
             active_proc[0] = self._proc
@@ -161,10 +168,14 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._finished = False
 
     def _close_status_fd(self) -> None:
-        fd = getattr(self, "_status_read_fd", None)
         self._status_read_fd = None
+        proc = getattr(self, "_proc", None)
+        if proc is None:
+            return
+        fd = getattr(proc, "_core_tools_janitor_status_fd", None)
         if fd is None:
             return
+        setattr(proc, "_core_tools_janitor_status_fd", None)
         try:
             os.close(fd)
         except OSError:
@@ -201,25 +212,10 @@ class _SubprocessStdoutIterator(Iterator[str]):
             return
 
     def _read_janitor_status(self) -> dict[str, Any] | None:
-        fd = getattr(self, "_status_read_fd", None)
-        if fd is None:
+        proc = getattr(self, "_proc", None)
+        if proc is None:
             return None
-        self._status_read_fd = None
-        chunks: list[bytes] = []
-        try:
-            while True:
-                data = os.read(fd, 4096)
-                if not data:
-                    break
-                chunks.append(data)
-        except OSError:
-            return None
-        finally:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        return decode_janitor_status(b"".join(chunks))
+        return read_bound_janitor_status(proc, timeout=JANITOR_PARENT_WAIT_SECONDS)
 
     def _append_stderr_bytes(self, chunk: bytes) -> None:
         if not chunk:
@@ -1020,6 +1016,11 @@ class CursorProvider:
                 if session.turn_aborted:
                     return
                 session.turn_error = exc
+        except ProviderTurnCleanupError as exc:
+            with session.condition:
+                if session.turn_aborted:
+                    return
+                session.turn_error = exc
         except ProviderTurnError as exc:
             with session.condition:
                 if session.turn_aborted:
@@ -1064,16 +1065,20 @@ class CursorProvider:
                 self._collect_turn_stream(session_id, session, argv)
                 return
             except ProviderTurnError as exc:
-                if isinstance(exc, ProviderTurnStalledError):
+                if isinstance(exc, (ProviderTurnStalledError, ProviderTurnCleanupError)):
                     raise exc
                 classified = reclassify_provider_turn_error(exc, session_id=session_id)
                 if isinstance(classified, ProviderSessionNotFoundError):
+                    raise classified from exc
+                if isinstance(classified, ProviderTurnCleanupError):
                     raise classified from exc
                 if self._session_turn_aborted(session):
                     raise ProviderTurnError(
                         "provider session terminated",
                         session_id=session_id,
                     ) from exc
+                if self._turn_already_observed_durable(session_id):
+                    raise classified from exc
                 last_error = classified
                 if attempt < max_retries:
                     self._emit_provider_event(
@@ -1227,6 +1232,10 @@ class CursorProvider:
         context = self._get_collect_context()
         if context is not None and context[0] == old_session_id:
             self._set_collect_context(new_session_id, context[1])
+
+    def _turn_already_observed_durable(self, session_id: str) -> bool:
+        canonical = self.canonical_session_id(session_id)
+        return not canonical.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX)
 
     def _max_retries_per_call(self) -> int:
         provider_limits = (self._config.get("limits") or {}).get("provider") or {}

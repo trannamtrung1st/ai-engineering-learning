@@ -118,6 +118,43 @@ def decode_janitor_status(raw: bytes | str | None) -> dict[str, Any] | None:
     return payload
 
 
+def read_bound_janitor_status(
+    proc: Any,
+    *,
+    timeout: float,
+) -> dict[str, Any] | None:
+    """Read public janitor status from a bound Popen without reaping it first."""
+
+    cached = getattr(proc, "_core_tools_janitor_status", None)
+    if isinstance(cached, dict):
+        return cached
+    fd = getattr(proc, "_core_tools_janitor_status_fd", None)
+    if not isinstance(fd, int):
+        return cached if isinstance(cached, dict) else None
+    setattr(proc, "_core_tools_janitor_status_fd", None)
+    chunks: list[bytes] = []
+    try:
+        ready, _, _ = select.select([fd], [], [], max(0.0, timeout))
+        if ready:
+            while True:
+                data = os.read(fd, 4096)
+                if not data:
+                    break
+                chunks.append(data)
+                if b"\n" in data:
+                    break
+    except OSError:
+        chunks = []
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+    status = decode_janitor_status(b"".join(chunks)) if chunks else None
+    setattr(proc, "_core_tools_janitor_status", status)
+    return status
+
+
 def _deadline_expired(deadline: CleanupDeadline | None) -> bool:
     return deadline is not None and deadline.remaining() <= 0
 
@@ -277,6 +314,59 @@ def _peer_pids(
     if sys.platform.startswith("linux") and os.path.isdir("/proc"):
         return _linux_peer_pids(group, self_pid, deadline=deadline, exclude=skipped)
     return _ps_peer_pids(group, self_pid, deadline=deadline, exclude=skipped)
+
+
+def _process_start_token(pid: int) -> str | None:
+    """Return a process-instance start token, or None when it cannot be read."""
+
+    if pid <= 0:
+        return None
+    if os.path.isdir("/proc"):
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as handle:
+                text = handle.read()
+        except OSError:
+            return None
+        close = text.rfind(")")
+        if close == -1:
+            return None
+        fields = text[close + 2 :].split()
+        if len(fields) < 20:
+            return None
+        return fields[19]
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "lstart="],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    start = result.stdout.strip()
+    return start or None
+
+
+def _leader_still_owns_group(
+    pgid: int,
+    leader_pid: int | None,
+    leader_start: str | None,
+) -> bool:
+    """Return True when *leader_pid* still anchors *pgid* as the same process."""
+
+    if leader_pid is None:
+        return False
+    try:
+        if os.getpgid(leader_pid) != pgid:
+            return False
+    except OSError:
+        return False
+    current = _process_start_token(leader_pid)
+    if current is None or not leader_start:
+        return False
+    return current == leader_start
 
 
 def _signal_group(sig: int) -> None:
@@ -444,6 +534,7 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
     go_fd: int | None = None
     result_fd: int | None = None
     leader_pid: int | None = None
+    leader_start: str | None = None
     agent_code = 0
     stop_requested = False
     while len(args) >= 2 and args[0].startswith("--") and args[0] != "--":
@@ -463,6 +554,8 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
                 result_fd = int(raw_value)
             elif flag == "--leader-pid":
                 leader_pid = int(raw_value)
+            elif flag == "--leader-start":
+                leader_start = raw_value
             elif flag == "--agent-code":
                 agent_code = int(raw_value)
             elif flag == "--stop-requested":
@@ -480,6 +573,7 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
         "go_fd": go_fd,
         "result_fd": result_fd,
         "leader_pid": leader_pid,
+        "leader_start": leader_start,
         "agent_code": agent_code,
         "stop_requested": stop_requested,
     }
@@ -597,6 +691,7 @@ def _escalation_command(
     agent_code: int,
     stop_requested: bool,
     leader_pid: int,
+    leader_start: str | None = None,
 ) -> list[str]:
     command = [sys.executable, "-u", str(Path(__file__).resolve())]
     if status_fd is not None:
@@ -617,6 +712,8 @@ def _escalation_command(
             "1" if stop_requested else "0",
             "--leader-pid",
             str(leader_pid),
+            "--leader-start",
+            leader_start if leader_start else (_process_start_token(leader_pid) or ""),
         ]
     )
     return command
@@ -645,6 +742,7 @@ def _handoff_group_escalation(
         agent_code=agent_code,
         stop_requested=stop_requested,
         leader_pid=leader_pid,
+        leader_start=_process_start_token(leader_pid),
     )
     pass_fds = [handshake_w, go_r, result_w]
     if status_fd is not None:
@@ -741,6 +839,7 @@ def _run_escalation(
     go_fd: int | None = None,
     result_fd: int | None = None,
     leader_pid: int | None = None,
+    leader_start: str | None = None,
     go_timeout: float | None = None,
 ) -> int:
     if handshake_fd is not None:
@@ -758,16 +857,33 @@ def _run_escalation(
         _close_fd(result_fd)
         return 0
     _close_fd(go_fd)
+
+    def publish_failure(cleanup_error: str, *, error: str) -> int:
+        payload = {
+            "agent_code": agent_code,
+            "drain": DrainResult.UNVERIFIABLE.value,
+            "stop_requested": stop_requested,
+            "cleanup_error": cleanup_error,
+        }
+        _write_status(status_fd, payload)
+        _write_result(
+            result_fd,
+            {
+                "ok": False,
+                "error": error,
+                "drain": DrainResult.UNVERIFIABLE.value,
+            },
+        )
+        _close_fd(result_fd)
+        return 1
+
+    if not _leader_still_owns_group(pgid, leader_pid, leader_start):
+        return publish_failure("leader_identity_lost", error="leader_identity_lost")
     try:
         os.killpg(pgid, signal.SIGKILL)
     except OSError as exc:
         error = "eperm" if getattr(exc, "errno", None) == errno.EPERM else "oserror"
-        _write_result(
-            result_fd,
-            {"ok": False, "error": error, "drain": DrainResult.UNVERIFIABLE.value},
-        )
-        _close_fd(result_fd)
-        return 1
+        return publish_failure("verifier_signal_failed", error=error)
     exclude = {leader_pid} if leader_pid is not None else None
     deadline = CleanupDeadline.after(_KILL_DRAIN_SECONDS + _PS_TIMEOUT_SECONDS)
     drain = _wait_peers_gone(
@@ -808,6 +924,7 @@ def main(
             agent_code=int(extra["agent_code"]),
             stop_requested=bool(extra["stop_requested"]),
             leader_pid=extra["leader_pid"],
+            leader_start=extra.get("leader_start"),
         )
     if not command:
         return 2

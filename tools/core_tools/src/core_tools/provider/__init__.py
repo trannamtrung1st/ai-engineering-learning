@@ -17,6 +17,7 @@ from core_tools.provider.errors import (
     ProviderSessionNotFoundError,
     ProviderSessionTerminationError,
     ProviderTurnError,
+    ProviderTurnCleanupError,
     ProviderTurnStalledError,
 )
 from core_tools.provider.events import normalize_cursor_event
@@ -34,6 +35,7 @@ __all__ = [
     "ProviderSessionNotFoundError",
     "ProviderSessionTerminationError",
     "ProviderTurnError",
+    "ProviderTurnCleanupError",
     "ProviderTurnStalledError",
     "StubProvider",
     "build_agent_argv",

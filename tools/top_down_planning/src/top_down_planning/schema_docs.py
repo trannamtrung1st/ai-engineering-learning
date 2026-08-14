@@ -1326,7 +1326,8 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                 "description": (
                                     "Transient Cursor CLI failures retried on the same "
                                     "argv before the turn fails. Does not apply to "
-                                    "ProviderTurnStalledError."
+                                    "ProviderTurnStalledError, ProviderTurnCleanupError, "
+                                    "or a turn that already observed a durable session id."
                                 ),
                             },
                             "turn_idle_timeout_seconds": {
