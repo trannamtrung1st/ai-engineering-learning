@@ -644,20 +644,16 @@ def _terminate_bound_process(
         leader_identity=resolved_identity,
         known_identities=members,
     ):
-        owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+        from core_tools.provider.session_janitor import complete_bound_secondary_clean
+
         cleaned = {
             "agent_code": 0,
             "drain": DrainResult.CLEAN.value,
             "stop_requested": True,
         }
-        if isinstance(owner, JanitorStatusOwner):
-            owner.mark_safe_fallback(cleaned)
-        setattr(proc, "_core_tools_janitor_status", cleaned)
-        try:
-            proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
-        except (OSError, subprocess.TimeoutExpired):
-            return TerminateIdentityResult.FAILED
-        return TerminateIdentityResult.TERMINATED
+        if complete_bound_secondary_clean(proc, cleaned):
+            return TerminateIdentityResult.TERMINATED
+        return TerminateIdentityResult.FAILED
     return TerminateIdentityResult.FAILED
 
 

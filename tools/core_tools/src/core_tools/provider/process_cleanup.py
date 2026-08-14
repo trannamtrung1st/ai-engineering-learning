@@ -121,7 +121,7 @@ def _pid_is_zombie(pid: int, *, timeout: float | None = None) -> bool:
             check=False,
             timeout=budget,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError:
         return False
     if result.returncode != 0:
         return False
@@ -203,11 +203,15 @@ def list_process_group_pids(
     if not _linux_proc_available():
         return None
     members: list[int] = []
+    deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+    if deadline is not None and time.monotonic() >= deadline:
+        return None
     try:
         entries = os.listdir(_PROC_ROOT)
     except OSError:
         return None
-    deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+    if deadline is not None and time.monotonic() >= deadline:
+        return None
     for entry in entries:
         if deadline is not None and time.monotonic() >= deadline:
             return None
@@ -439,23 +443,14 @@ def terminate_process_tree(
         known_identities=members,
     )
     if cleaned:
-        owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+        from core_tools.provider.session_janitor import complete_bound_secondary_clean
+
         payload = {
             "agent_code": 0,
             "drain": "clean",
             "stop_requested": True,
         }
-        marker = getattr(owner, "mark_safe_fallback", None)
-        if callable(marker):
-            marker(payload)
-        setattr(proc, "_core_tools_janitor_status", payload)
-        try:
-            from core_tools.provider.session_janitor import JANITOR_PARENT_WAIT_SECONDS
-
-            proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        return True
+        return complete_bound_secondary_clean(proc, payload)
     if proc.poll() is not None and process_group_state(proc.pid) is ProcessGroupState.GONE:
         return True
     return False

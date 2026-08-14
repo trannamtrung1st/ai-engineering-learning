@@ -185,6 +185,22 @@ class JanitorStatusOwner:
             except OSError:
                 pass
 
+    def finalize_status_ownership(self) -> None:
+        """Release the barrier and close the retained FD after CLEAN is recorded."""
+
+        deadline = time.monotonic() + JANITOR_PARENT_WAIT_SECONDS
+        while True:
+            with self._lock:
+                if not self._reader_active:
+                    break
+                remaining = max(0.0, deadline - time.monotonic())
+                if remaining <= 0:
+                    break
+                self._done.wait(timeout=remaining)
+            if time.monotonic() >= deadline:
+                break
+        self.close()
+
     def bind(self, proc: Any) -> None:
         """Attach lifecycle guards so poll/wait cannot reap before terminal status."""
 
@@ -310,6 +326,38 @@ def _consume_status_fd(fd: int, *, timeout: float) -> dict[str, Any] | None:
 
 
 _STATUS_BIND_LOCK = threading.Lock()
+
+
+def complete_bound_secondary_clean(
+    proc: Any,
+    payload: dict[str, Any] | None = None,
+) -> bool:
+    """Record CLEAN, reap the bound Popen, then finalize status ownership."""
+
+    cleaned = payload or {
+        "agent_code": 0,
+        "drain": DrainResult.CLEAN.value,
+        "stop_requested": True,
+    }
+    owner = getattr(proc, "_core_tools_janitor_status_owner", None)
+    if isinstance(owner, JanitorStatusOwner):
+        owner.mark_safe_fallback(cleaned)
+    else:
+        marker = getattr(owner, "mark_safe_fallback", None)
+        if callable(marker):
+            marker(cleaned)
+    setattr(proc, "_core_tools_janitor_status", cleaned)
+    try:
+        proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if isinstance(owner, JanitorStatusOwner):
+        owner.finalize_status_ownership()
+    else:
+        closer = getattr(owner, "close", None)
+        if callable(closer):
+            closer()
+    return True
 
 
 def read_bound_janitor_status(
