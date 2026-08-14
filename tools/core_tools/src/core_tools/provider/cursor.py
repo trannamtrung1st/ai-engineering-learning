@@ -111,6 +111,48 @@ def janitor_group_was_cleaned(
     return return_code == 0
 
 
+def _windows_pipe_has_data(fd: int, timeout: float | None, *, proc: subprocess.Popen[str]) -> bool:
+    """Wait until a Windows pipe has bytes, the process exits, or *timeout* elapses."""
+
+    try:
+        import msvcrt
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return True
+    handle = msvcrt.get_osfhandle(fd)
+    kernel32 = ctypes.windll.kernel32
+    avail = wintypes.DWORD(0)
+    deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+    peek = kernel32.PeekNamedPipe
+    while True:
+        if proc.poll() is not None:
+            return True
+        if peek(handle, None, 0, None, ctypes.byref(avail), None):
+            if int(avail.value) > 0:
+                return True
+        else:
+            return True
+        if deadline is not None and time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+
+
+def _stdout_fd_readable(
+    fd: int,
+    timeout: float | None,
+    *,
+    proc: subprocess.Popen[str],
+) -> bool:
+    if sys.platform == "win32":
+        return _windows_pipe_has_data(fd, timeout, proc=proc)
+    try:
+        ready, _, _ = select.select([fd], [], [], None if timeout is None else max(0.0, timeout))
+    except (OSError, ValueError):
+        return True
+    return bool(ready)
+
+
 class _SubprocessStdoutIterator(Iterator[str]):
     """Eager-start subprocess runner so callers can track PID before first stdout line."""
 
@@ -174,6 +216,8 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
         self._finished = False
+        self._stdout_buf = bytearray()
+        self._stdout_eof = False
 
     def _close_status_fd(self) -> None:
         self._status_read_fd = None
@@ -254,46 +298,113 @@ class _SubprocessStdoutIterator(Iterator[str]):
         return self
 
     def wait_readable(self, timeout: float) -> bool:
-        """Return True when stdout may have a line or the process has exited."""
+        """Return True when a complete stdout line is buffered or the process exited."""
 
-        if self._finished:
-            return True
-        if self._proc.poll() is not None:
-            return True
+        return self._wait_for_complete_line(timeout)
+
+    def _pop_complete_line(self) -> str | None:
+        idx = self._stdout_buf.find(b"\n")
+        if idx < 0:
+            return None
+        raw = bytes(self._stdout_buf[:idx])
+        del self._stdout_buf[: idx + 1]
+        if raw.endswith(b"\r"):
+            raw = raw[:-1]
+        return raw.decode("utf-8", errors="replace")
+
+    def _stdout_fd(self) -> int | None:
         stdout = self._proc.stdout
         if stdout is None:
-            return True
+            return None
         try:
-            fd = stdout.fileno()
+            return stdout.fileno()
         except (OSError, ValueError):
+            return None
+
+    def _fill_stdout_buffer(self, timeout: float | None) -> bool:
+        """Read available bytes into the line buffer. True if data, EOF, or exit."""
+
+        if self._stdout_eof or self._finished:
             return True
-        if sys.platform == "win32":
+        fd = self._stdout_fd()
+        if fd is None:
+            self._stdout_eof = True
             return True
+        if not _stdout_fd_readable(fd, timeout, proc=self._proc):
+            return False
         try:
-            ready, _, _ = select.select([fd], [], [], max(0.0, timeout))
+            chunk = os.read(fd, 4096)
+        except BlockingIOError:
+            return False
         except (OSError, ValueError):
+            self._stdout_eof = True
             return True
-        return bool(ready)
+        if not chunk:
+            self._stdout_eof = True
+            return True
+        self._stdout_buf.extend(chunk)
+        return True
+
+    def _wait_for_complete_line(self, timeout: float | None) -> bool:
+        if self._finished or b"\n" in self._stdout_buf:
+            return True
+        if self._stdout_eof or self._proc.poll() is not None:
+            if self._stdout_buf:
+                self._stdout_buf.extend(b"\n")
+            return True
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        while True:
+            if b"\n" in self._stdout_buf:
+                return True
+            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+            if deadline is not None and remaining <= 0:
+                return b"\n" in self._stdout_buf
+            if not self._fill_stdout_buffer(remaining):
+                if deadline is None:
+                    continue
+                return b"\n" in self._stdout_buf
+            if self._stdout_eof or self._proc.poll() is not None:
+                if self._stdout_buf and b"\n" not in self._stdout_buf:
+                    self._stdout_buf.extend(b"\n")
+                return True
 
     def __next__(self) -> str:
         if self._finished:
             raise StopIteration
         while True:
-            if self._proc.poll() is not None:
-                if self._proc.stdout is not None:
-                    for line in self._proc.stdout:
-                        stripped = line.strip()
-                        if stripped:
-                            return stripped
+            line = self._pop_complete_line()
+            if line is not None:
+                stripped = line.strip()
+                if stripped:
+                    return stripped
+                continue
+            if self._stdout_eof or self._finished:
                 self._finalize()
                 raise StopIteration
-            if self._proc.stdout is None:
+            if not self._wait_for_complete_line(None):
                 self._finalize()
                 raise StopIteration
-            line = self._proc.stdout.readline()
-            if not line:
+            if not self._stdout_buf and (self._stdout_eof or self._proc.poll() is not None):
                 self._finalize()
                 raise StopIteration
+
+    def read_nonempty_line(self, timeout: float) -> str | None:
+        """Return the next non-empty line, or None when idle *timeout* elapses."""
+
+        if self._finished:
+            raise StopIteration
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            if not self._wait_for_complete_line(remaining):
+                return None
+            line = self._pop_complete_line()
+            if line is None:
+                if self._stdout_eof or self._finished:
+                    raise StopIteration
+                continue
             stripped = line.strip()
             if stripped:
                 return stripped
@@ -1420,7 +1531,11 @@ class CursorProvider:
         session_id: str | None = None,
     ) -> Iterator[str]:
         while True:
-            if not stream.wait_readable(idle_timeout):
+            try:
+                line = stream.read_nonempty_line(idle_timeout)
+            except StopIteration:
+                return
+            if line is None:
                 on_idle()
                 try:
                     stream.close()
@@ -1430,10 +1545,7 @@ class CursorProvider:
                     f"provider turn produced no stream output for {idle_timeout:g}s",
                     session_id=session_id,
                 )
-            try:
-                yield next(stream)
-            except StopIteration:
-                return
+            yield line
 
     @staticmethod
     def _iter_stream_with_idle_timeout(
@@ -1689,6 +1801,7 @@ class CursorProvider:
             active_proc: list[subprocess.Popen[str] | None] = [None]
             iterator: _SubprocessStdoutIterator | None = None
             stream: Iterator[str] | None = None
+            teardown_deadline: list[float | None] = [None]
             try:
                 if runner is default_process_runner:
                     iterator = _SubprocessStdoutIterator(
@@ -1707,9 +1820,11 @@ class CursorProvider:
 
                 def on_idle() -> None:
                     proc = active_proc[0]
+                    teardown_deadline[0] = time.monotonic() + idle_timeout
                     if proc is None:
                         return
                     tracked = self._tracked_turn_procs.get(proc.pid)
+                    remaining = max(0.0, teardown_deadline[0] - time.monotonic())
                     terminate_process_tree(
                         proc,
                         pgid=tracked.pgid if tracked is not None else None,
@@ -1719,7 +1834,7 @@ class CursorProvider:
                             if tracked is not None and tracked.member_identities is not None
                             else None
                         ),
-                        timeout=idle_timeout,
+                        timeout=remaining,
                     )
                     if iterator is not None:
                         iterator.close()
@@ -1762,6 +1877,11 @@ class CursorProvider:
                                 list(tracked.member_identities)
                                 if tracked is not None and tracked.member_identities is not None
                                 else None
+                            ),
+                            timeout=(
+                                None
+                                if teardown_deadline[0] is None
+                                else max(0.0, teardown_deadline[0] - time.monotonic())
                             ),
                         )
                         if tree_clean or (

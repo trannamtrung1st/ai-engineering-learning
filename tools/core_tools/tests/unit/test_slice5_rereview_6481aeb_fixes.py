@@ -20,7 +20,7 @@ from core_tools.provider.errors import (
 )
 from core_tools.provider.process_cleanup import terminate_process_tree
 from core_tools.provider.process_identity import terminate_verified_process_identity
-from tests.conftest import spawn_sigterm_ignoring_leader_with_child, tracked_turn_proc
+from tests.conftest import reap_process_group, spawn_sigterm_ignoring_leader_with_child, tracked_turn_proc
 
 
 def _idle_stream_survivors() -> list[threading.Thread]:
@@ -75,12 +75,7 @@ def test_abort_turn_timeout_stays_within_caller_budget(tmp_path: Path) -> None:
         elapsed = time.monotonic() - started
         assert elapsed <= timeout + 0.35
     finally:
-        if proc.poll() is None:
-            proc.kill()
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                pass
+        reap_process_group(proc, extra_pids=(_child_pid,))
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
@@ -107,12 +102,7 @@ def test_bound_popen_then_drain_share_remaining_budget(tmp_path: Path) -> None:
         elapsed = time.monotonic() - started
         assert elapsed <= timeout + 0.35
     finally:
-        if proc.poll() is None:
-            proc.kill()
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                pass
+        reap_process_group(proc, extra_pids=(_child_pid,))
 
 
 def test_windows_terminate_then_kill_shares_one_deadline() -> None:

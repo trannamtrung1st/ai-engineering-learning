@@ -436,11 +436,11 @@ def terminate_process_tree(
 
     identity = leader_identity
     if identity is None and proc.poll() is None:
-        identity = read_process_identity(proc.pid)
+        identity = read_process_identity(proc.pid, timeout=remaining())
 
     members = member_identities
     if members is None and identity is not None and proc.poll() is None:
-        members = capture_process_group_identities(identity)
+        members = capture_process_group_identities(identity, timeout=remaining())
 
     status = _terminate_via_bound_popen(proc, pgid=resolved_pgid, timeout=remaining())
     if isinstance(status, dict) and status.get("drain") == "clean":

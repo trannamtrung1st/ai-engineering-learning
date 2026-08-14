@@ -168,19 +168,13 @@ def test_timeout_aware_internal_typeerror_invokes_lifecycle_once() -> None:
 
 
 def test_boundary_callback_that_ignores_cancel_leaves_no_helper() -> None:
-    side_effects: list[str] = []
-
-    def callback() -> str | None:
-        threading.Event().wait()
-        side_effects.append("ran")
-        return "paused"
+    from tests.unit.test_slice5_rereview_41a27ee_fixes import NeverReturnBoundary
 
     stop = threading.Event()
     with patch("ctypes.pythonapi.PyThreadState_SetAsyncExc") as async_exc:
         with pytest.raises(ProviderRunError, match="boundary probe exceeded timeout"):
-            _invoke_boundary_bounded(callback, stop, timeout=0.1)
+            _invoke_boundary_bounded(NeverReturnBoundary(), stop, timeout=0.4)
     assert async_exc.call_count == 0
-    assert side_effects == []
     survivors = [
         thread
         for thread in threading.enumerate()

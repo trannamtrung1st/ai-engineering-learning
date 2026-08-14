@@ -27,7 +27,6 @@ from top_down_planning.domain.session_lineage import (
     session_replacement_started_payload,
 )
 from top_down_planning.persistence.commit import CommitSpec
-from top_down_planning.domain.session_bindings import is_transient_provider_session_id
 from top_down_planning.domain.run_lifecycle import StopRecord
 from top_down_planning.domain.run_ownership import (
     assert_expected_run_revision,
@@ -56,7 +55,6 @@ from top_down_planning.orchestrator.session_events import (
     validate_provider_session_binding,
 )
 from top_down_planning.orchestrator.session_lineage import (
-    emit_session_replaced,
     emit_session_replacement_failed,
     emit_session_resume_failed,
 )
@@ -418,20 +416,6 @@ def replace_primary_session(
             if saved_binding is None:
                 raise ProviderRunError(f"failed to bind replacement {role} session")
 
-            if not is_transient_provider_session_id(resolved):
-                emit_session_replaced(
-                    store,
-                    run_id,
-                    phase=phase,
-                    role=role,
-                    old_session_instance_id=binding.session_instance_id,
-                    new_session_instance_id=saved_binding.session_instance_id,
-                    generation=saved_binding.generation,
-                    reason=recovery_reason,
-                    old_provider_session_id=old_provider_session_id,
-                    new_provider_session_id=resolved,
-                    phase_action_id=phase_action_id,
-                )
             return resolved
         except SessionRecoveryPaused:
             raise
@@ -682,21 +666,6 @@ def replace_reviewer_session(
             if committed_binding is None:
                 raise ProviderRunError("failed to bind replacement reviewer session")
 
-            if not is_transient_provider_session_id(resolved):
-                emit_session_replaced(
-                    store,
-                    run_id,
-                    phase=phase,
-                    role="reviewer",
-                    old_session_instance_id=binding.session_instance_id,
-                    new_session_instance_id=committed_binding.session_instance_id,
-                    generation=committed_binding.generation,
-                    reason=recovery_reason,
-                    old_provider_session_id=old_provider_session_id,
-                    new_provider_session_id=resolved,
-                    phase_action_id=phase_action_id,
-                    loop_id=loop.id,
-                )
             return resolved
         except SessionRecoveryPaused:
             raise

@@ -84,9 +84,10 @@ def read_process_start_time(pid: int, *, timeout: float | None = None) -> str | 
         return None
     if os.path.isdir("/proc"):
         return _read_linux_process_start_time(pid)
-    from core_tools.provider.session_janitor import _process_start_token
+    from core_tools.provider.session_janitor import CleanupDeadline, _process_start_token
 
-    return _process_start_token(pid)
+    deadline = None if timeout is None else CleanupDeadline.after(timeout)
+    return _process_start_token(pid, deadline=deadline)
 
 
 def _read_linux_process_start_time(pid: int) -> str | None:
@@ -422,22 +423,32 @@ def _select_owned_targets(
 
 def capture_process_group_identities(
     leader: ProcessIdentity,
+    *,
+    timeout: float | None = None,
 ) -> list[ProcessIdentity] | None:
     """Capture verifiable identities for all members of *leader*'s process group."""
+
+    deadline = _deadline_from_timeout(timeout)
+
+    def remaining() -> float | None:
+        if deadline is None:
+            return None
+        return _remaining_seconds(deadline, default=0.0)
 
     current = read_process_identity(
         leader.pid,
         run_id=leader.run_id,
         command=leader.command,
+        timeout=remaining(),
     )
     if not process_identities_match(leader, current):
         return None
 
-    pgid = read_process_group_id(leader.pid)
+    pgid = read_process_group_id(leader.pid, timeout=remaining())
     if pgid is None:
         return [leader]
 
-    return _current_group_identities(pgid, run_id=leader.run_id)
+    return _current_group_identities(pgid, run_id=leader.run_id, timeout=remaining())
 
 
 def drain_owned_process_group(
@@ -708,15 +719,24 @@ def _terminate_bound_process(
 
     resolved_identity = identity
     if resolved_identity is None and proc.poll() is None:
-        resolved_identity = read_process_identity(proc.pid)
+        resolved_identity = read_process_identity(
+            proc.pid,
+            timeout=None if deadline is None else _remaining_seconds(deadline, default=0.0),
+        )
 
     resolved_pgid = pgid
     if resolved_pgid is None and proc.poll() is None:
-        resolved_pgid = read_process_group_id(proc.pid, timeout=popen_budget)
+        resolved_pgid = read_process_group_id(
+            proc.pid,
+            timeout=None if deadline is None else _remaining_seconds(deadline, default=0.0),
+        )
 
     members = list(member_identities) if member_identities is not None else None
     if members is None and resolved_identity is not None and proc.poll() is None:
-        members = capture_process_group_identities(resolved_identity)
+        members = capture_process_group_identities(
+            resolved_identity,
+            timeout=None if deadline is None else _remaining_seconds(deadline, default=0.0),
+        )
 
     drain_budget = None if deadline is None else _remaining_seconds(deadline, default=0.0)
     if drain_owned_process_group(
@@ -751,16 +771,23 @@ def _terminate_linux_identity(
     if state is IdentityInspectState.UNVERIFIABLE:
         return TerminateIdentityResult.FAILED
 
-    captured = capture_process_group_identities(identity)
+    deadline = _deadline_from_timeout(timeout)
+
+    def remaining() -> float | None:
+        if deadline is None:
+            return None
+        return _remaining_seconds(deadline, default=0.0)
+
+    captured = capture_process_group_identities(identity, timeout=remaining())
     if captured is None:
         return TerminateIdentityResult.FAILED
 
-    pgid = read_process_group_id(identity.pid)
+    pgid = read_process_group_id(identity.pid, timeout=remaining())
     if drain_owned_process_group(
         pgid=pgid,
         leader_identity=identity,
         known_identities=captured,
-        timeout=timeout,
+        timeout=remaining(),
     ):
         return TerminateIdentityResult.TERMINATED
     return TerminateIdentityResult.FAILED

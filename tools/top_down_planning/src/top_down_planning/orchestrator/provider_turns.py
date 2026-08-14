@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import os
+import multiprocessing
 import pickle
 import queue
-import select
-import signal
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -390,6 +388,18 @@ def _finalize_boundary_poll(
     _raise_poll_failure(poll_state)
 
 
+def _boundary_spawn_entry(callback: Callable[[], str | None], conn: Any) -> None:
+    try:
+        conn.send(("ok", callback()))
+    except BaseException as exc:
+        try:
+            conn.send(("err", exc))
+        except Exception:
+            conn.send(("err", ProviderRunError(f"boundary probe failed: {exc!r}")))
+    finally:
+        conn.close()
+
+
 def _invoke_boundary_bounded(
     callback: Callable[[], str | None],
     stop: threading.Event,
@@ -398,107 +408,39 @@ def _invoke_boundary_bounded(
 ) -> str | None:
     """Run a store-only boundary callback with a hard wall-clock bound.
 
-    Callbacks must be TDP-owned store probes. This helper does not inject
-    asynchronous exceptions or commandeer process-global ``SIGALRM``. On POSIX it
-    isolates the probe in a child process so a never-returning callback cannot
-    leak a worker in the caller.
+    TDP-owned store closures stay in-process. Picklable probes run in a spawn
+    worker that can be killed when they never return. Raw ``os.fork()`` is not
+    used from the application process.
     """
 
     if timeout <= 0:
         raise ValueError("boundary probe timeout must be positive")
     _BOUNDARY_CANCEL.set(stop)
-    if hasattr(os, "fork") and threading.active_count() == 1:
-        return _invoke_boundary_in_child(callback, timeout=timeout)
-    return _invoke_boundary_in_thread(callback, timeout=timeout)
+    try:
+        pickle.dumps(callback, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception:
+        return callback()
+    return _invoke_boundary_in_spawn(callback, timeout=timeout)
 
 
-def _invoke_boundary_in_thread(
+def _invoke_boundary_in_spawn(
     callback: Callable[[], str | None],
     *,
     timeout: float,
 ) -> str | None:
-    box: list[str | None | BaseException] = []
-
-    def run() -> None:
-        try:
-            box.append(callback())
-        except BaseException as exc:
-            box.append(exc)
-
-    worker = threading.Thread(target=run, daemon=True, name=BOUNDARY_POLL_THREAD_NAME)
-    worker.start()
-    worker.join(timeout)
-    if worker.is_alive():
-        raise ProviderRunError("boundary probe exceeded timeout")
-    if not box:
-        return None
-    outcome = box[0]
-    if isinstance(outcome, BaseException):
-        raise outcome
-    return outcome
-
-
-def _invoke_boundary_in_child(
-    callback: Callable[[], str | None],
-    *,
-    timeout: float,
-) -> str | None:
-    read_fd, write_fd = os.pipe()
+    ctx = multiprocessing.get_context("spawn")
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
+    proc = ctx.Process(
+        target=_boundary_spawn_entry,
+        args=(callback, child_conn),
+        name="tdp-boundary-spawn",
+    )
+    proc.start()
+    child_conn.close()
     try:
-        pid = os.fork()
-    except OSError:
-        os.close(read_fd)
-        os.close(write_fd)
-        return _invoke_boundary_in_thread(callback, timeout=timeout)
-    if pid == 0:
-        os.close(read_fd)
-        try:
-            payload = pickle.dumps(("ok", callback()), protocol=pickle.HIGHEST_PROTOCOL)
-        except BaseException as exc:
-            try:
-                payload = pickle.dumps(("err", exc), protocol=pickle.HIGHEST_PROTOCOL)
-            except Exception:
-                payload = pickle.dumps(
-                    ("err", ProviderRunError(f"boundary probe failed: {exc!r}")),
-                    protocol=pickle.HIGHEST_PROTOCOL,
-                )
-        try:
-            os.write(write_fd, payload)
-        except OSError:
-            pass
-        try:
-            os.close(write_fd)
-        except OSError:
-            pass
-        os._exit(0)
-    os.close(write_fd)
-    try:
-        deadline = time.monotonic() + timeout
-        chunks = bytearray()
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                _kill_boundary_child(pid)
-                raise ProviderRunError("boundary probe exceeded timeout")
-            try:
-                ready, _, _ = select.select([read_fd], [], [], remaining)
-            except InterruptedError:
-                continue
-            if not ready:
-                _kill_boundary_child(pid)
-                raise ProviderRunError("boundary probe exceeded timeout")
-            try:
-                chunk = os.read(read_fd, 65536)
-            except OSError:
-                chunk = b""
-            if not chunk:
-                break
-            chunks.extend(chunk)
-            try:
-                kind, value = pickle.loads(bytes(chunks))
-            except Exception:
-                continue
-            _reap_boundary_child(pid)
+        if parent_conn.poll(timeout):
+            kind, value = parent_conn.recv()
+            proc.join(timeout=1.0)
             if kind == "err":
                 if isinstance(value, BaseException):
                     raise value
@@ -506,32 +448,14 @@ def _invoke_boundary_in_child(
             if value is None or isinstance(value, str):
                 return value
             raise ProviderRunError("boundary probe returned a non-signal value")
-        _reap_boundary_child(pid)
-        raise ProviderRunError("boundary probe exited without a result")
+        proc.kill()
+        proc.join(timeout=1.0)
+        raise ProviderRunError("boundary probe exceeded timeout")
     finally:
-        try:
-            os.close(read_fd)
-        except OSError:
-            pass
-
-
-def _kill_boundary_child(pid: int) -> None:
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    except OSError:
-        pass
-    _reap_boundary_child(pid)
-
-
-def _reap_boundary_child(pid: int) -> None:
-    try:
-        os.waitpid(pid, 0)
-    except ChildProcessError:
-        pass
-    except OSError:
-        pass
+        parent_conn.close()
+        if proc.is_alive():
+            proc.kill()
+            proc.join(timeout=1.0)
 
 
 def _probe_boundary(

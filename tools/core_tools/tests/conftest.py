@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -80,6 +81,45 @@ def spawn_sigterm_ignoring_leader_with_child(
         if child_pid_file.exists():
             return proc, int(child_pid_file.read_text(encoding="utf-8").strip())
         time.sleep(0.05)
-    proc.kill()
-    proc.wait(timeout=5)
+    reap_process_group(proc)
     raise AssertionError("child PID file was not written")
+
+
+def reap_process_group(
+    proc: subprocess.Popen[str],
+    extra_pids: tuple[int, ...] = (),
+) -> None:
+    """SIGKILL the spawned session and any known descendants, then wait."""
+
+    pgid: int | None = None
+    try:
+        if proc.pid:
+            pgid = os.getpgid(proc.pid)
+    except OSError:
+        pgid = None
+    if pgid is not None:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except OSError:
+            pass
+    for pid in extra_pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    if proc.poll() is None:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        pass
+    for pid in extra_pids:
+        for _ in range(20):
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                break
+            time.sleep(0.05)

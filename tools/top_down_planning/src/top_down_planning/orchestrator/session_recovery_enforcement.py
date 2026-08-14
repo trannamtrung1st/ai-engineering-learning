@@ -181,6 +181,7 @@ def fail_session_recovery_exhausted(
         store,
         run_id,
         stop=stop,
+        revoke_phase=phase,
         phase_action_id=phase_action_id,
         loop_id=loop_id,
     )

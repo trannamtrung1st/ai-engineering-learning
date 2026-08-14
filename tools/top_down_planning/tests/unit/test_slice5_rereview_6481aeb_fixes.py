@@ -63,20 +63,14 @@ def _idle_or_pump_survivors() -> list[threading.Thread]:
 
 
 def test_never_returning_boundary_callback_fails_within_timeout() -> None:
-    side_effects: list[str] = []
-
-    def callback() -> str | None:
-        threading.Event().wait()
-        side_effects.append("ran")
-        return "paused"
+    from tests.unit.test_slice5_rereview_41a27ee_fixes import NeverReturnBoundary
 
     started = time.monotonic()
     with patch("ctypes.pythonapi.PyThreadState_SetAsyncExc") as async_exc:
         with pytest.raises(ProviderRunError, match="boundary probe exceeded timeout"):
-            _invoke_boundary_bounded(callback, threading.Event(), timeout=0.15)
-    assert time.monotonic() - started <= 0.5
+            _invoke_boundary_bounded(NeverReturnBoundary(), threading.Event(), timeout=0.4)
+    assert time.monotonic() - started <= 1.5
     assert async_exc.call_count == 0
-    assert side_effects == []
     assert _helper_threads() == []
 
 

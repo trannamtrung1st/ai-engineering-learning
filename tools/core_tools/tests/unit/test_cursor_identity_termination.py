@@ -101,6 +101,7 @@ def test_cursor_terminate_tracked_proc_does_not_signal_pid_reuse(tmp_path: Path)
         proc=None,
         pgid=None,
         member_identities=None,
+        timeout=None,
     )
     assert 4242 not in provider._tracked_turn_procs
 

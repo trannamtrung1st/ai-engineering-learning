@@ -368,7 +368,8 @@ def discard_unbound_provider_session(
         for session in provider.list_active_sessions()
         if isinstance(session, dict) and session.get("session_id")
     }
-    still_active = any(target in remaining for target in targets)
+    verify_ids = {session_id, canonical}
+    still_active = any(candidate in remaining for candidate in verify_ids)
     if still_active:
         raise ProviderSessionError(
             (
@@ -894,6 +895,37 @@ def _has_session_provider_id_bound_event(
     return False
 
 
+def _prior_generation_session_instance_id(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    generation: int,
+    loop_id: str | None = None,
+) -> str:
+    prior = int(generation) - 1
+    if prior < 1:
+        return ""
+    found = ""
+    for event in store.load_events(run_id):
+        if str(event.get("role") or "") != role:
+            continue
+        if int(event.get("generation") or 0) != prior:
+            continue
+        if loop_id is not None and str(event.get("loop_id") or "") != str(loop_id):
+            continue
+        event_type = str(event.get("type") or "")
+        if event_type == SESSION_PROVIDER_ID_BOUND:
+            candidate = str(event.get("session_instance_id") or "").strip()
+            if candidate:
+                found = candidate
+        elif event_type == SESSION_REPLACED:
+            candidate = str(event.get("new_session_instance_id") or "").strip()
+            if candidate:
+                found = candidate
+    return found
+
+
 def _pending_replacement_success_payload(
     store: RunStore,
     run_id: str,
@@ -926,14 +958,20 @@ def _pending_replacement_success_payload(
     if started is None or replaced or failed:
         return None
     run = store.load_run(run_id)
-    old_instance = str(
-        started.get("old_session_instance_id")
-        or started.get("session_instance_id")
-        or ""
-    )
+    old_instance = str(started.get("old_session_instance_id") or "").strip()
     new_instance = str(
         started.get("new_session_instance_id") or new_session_instance_id
-    )
+    ).strip()
+    if not old_instance:
+        old_instance = _prior_generation_session_instance_id(
+            store,
+            run_id,
+            role=role,
+            generation=int(generation),
+            loop_id=loop_id,
+        )
+    if not old_instance or not new_instance or old_instance == new_instance:
+        return None
     return session_replaced_payload(
         run_id=run_id,
         phase=str(started.get("phase") or run.get("phase") or ""),
