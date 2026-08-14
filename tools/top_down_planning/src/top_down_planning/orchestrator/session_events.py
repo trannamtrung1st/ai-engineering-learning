@@ -14,7 +14,11 @@ from top_down_planning.orchestrator.capability import (
     rebind_primary_session_capability,
     rebind_reviewer_session_capability,
 )
+from top_down_planning.domain.session_lineage import (
+    session_provider_id_bound_payload,
+)
 from top_down_planning.orchestrator.session_lineage import emit_session_provider_id_bound
+from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.review_commit import (
     review_record_revision,
@@ -22,6 +26,7 @@ from top_down_planning.persistence.review_commit import (
 )
 from top_down_planning.persistence.session_bindings import (
     get_primary_binding,
+    review_record_for_persistence,
     update_primary_binding,
 )
 from core_tools.persistence import RunNotFoundError
@@ -205,6 +210,29 @@ def _assert_session_binding_before_persist(
     return resolved
 
 
+def provider_session_is_published(
+    store: RunStore,
+    run_id: str,
+    session_id: str,
+    provider: Provider,
+    *,
+    role: str,
+    loop_id: str | None = None,
+) -> bool:
+    canonical = provider.canonical_session_id(session_id)
+    if role == "reviewer" and loop_id is not None:
+        try:
+            loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+        except Exception:
+            return False
+        binding = loop.reviewer_binding
+    else:
+        binding = get_primary_binding(store.load_run(run_id), role)
+    if binding is None or not binding.provider_session_id:
+        return False
+    return provider.canonical_session_id(binding.provider_session_id) == canonical
+
+
 def validate_provider_session_binding(
     session_provider: Provider | None,
     store: RunStore,
@@ -233,18 +261,45 @@ def discard_unbound_provider_session(
     session_id: str,
     *,
     preexisting_ids: set[str],
+    timeout: float = 2.0,
 ) -> None:
     """Terminate a newly allocated session that failed bind validation."""
 
     canonical = provider.canonical_session_id(session_id)
     if canonical in preexisting_ids or session_id in preexisting_ids:
         return
+    last_error: BaseException | None = None
+    terminated = False
     for candidate in (canonical, session_id):
         try:
-            provider.terminate_session(candidate)
-            return
-        except Exception:
+            try:
+                provider.terminate_session(candidate, timeout=timeout)
+            except TypeError:
+                provider.terminate_session(candidate)
+            terminated = True
+            break
+        except Exception as exc:
+            last_error = exc
             continue
+    remaining = {
+        str(session["session_id"])
+        for session in provider.list_active_sessions()
+        if isinstance(session, dict) and session.get("session_id")
+    }
+    still_active = canonical in remaining or session_id in remaining
+    if still_active:
+        raise ProviderSessionError(
+            (
+                f"rejected provider session {canonical} is still active after discard"
+                + (f": {last_error}" if last_error is not None else "")
+            ),
+            session_id=canonical,
+        )
+    if not terminated and last_error is not None:
+        raise ProviderSessionError(
+            f"failed to discard unbound provider session {canonical}: {last_error}",
+            session_id=canonical,
+        ) from last_error
 
 
 def active_provider_session_ids(provider: Provider) -> set[str]:
@@ -635,25 +690,33 @@ def commit_primary_provider_session_binding(
         activity=activity,
         context_digest=context_digest,
     )
-    store.save_run(run_id, run, expected_revision)
-    saved = store.load_run(run_id)
-    binding = get_primary_binding(saved, role)
+    binding = get_primary_binding(run, role)
+    events: list[dict[str, Any]] = []
     if (
         binding is not None
         and binding.provider_session_id
         and not is_transient_provider_session_id(binding.provider_session_id)
     ):
-        emit_session_provider_id_bound(
-            store,
-            run_id,
-            phase=phase,
-            role=role,
-            session_instance_id=binding.session_instance_id,
-            generation=binding.generation,
-            provider_session_id=binding.provider_session_id,
-            provider=binding.provider,
-            phase_action_id=phase_action_id,
+        events.append(
+            session_provider_id_bound_payload(
+                run_id=run_id,
+                phase=phase,
+                role=role,
+                session_instance_id=binding.session_instance_id,
+                generation=binding.generation,
+                provider_session_id=binding.provider_session_id,
+                provider=binding.provider,
+                phase_action_id=phase_action_id,
+            )
         )
+    store.commit(
+        run_id,
+        CommitSpec(
+            run=run,
+            run_expected_revision=expected_revision,
+            events=events,
+        ),
+    )
     return store.load_run(run_id)
 
 
@@ -868,16 +931,35 @@ def commit_reviewer_loop_provider_session(
             expected_revision = 0
         else:
             expected_revision = review_record_revision(review_record)
-    save_review_with_expected_revision(
-        store,
+    payload = loop.to_dict()
+    payload["revision"] = int(expected_revision) + 1
+    events: list[dict[str, Any]] = []
+    committed_binding = loop.reviewer_binding
+    if (
+        committed_binding is not None
+        and committed_binding.provider_session_id
+        and not is_transient_provider_session_id(committed_binding.provider_session_id)
+    ):
+        run = store.load_run(run_id)
+        events.append(
+            session_provider_id_bound_payload(
+                run_id=run_id,
+                phase=str(run.get("phase") or ""),
+                role="reviewer",
+                session_instance_id=committed_binding.session_instance_id,
+                generation=committed_binding.generation,
+                provider_session_id=committed_binding.provider_session_id,
+                provider=committed_binding.provider,
+                loop_id=loop.id,
+                phase_action_id=phase_action_id,
+            )
+        )
+    store.commit(
         run_id,
-        loop,
-        expected_revision=int(expected_revision),
+        CommitSpec(
+            reviews=[review_record_for_persistence(payload)],
+            review_expected_revisions={loop.id: int(expected_revision)},
+            events=events,
+        ),
     )
-    _emit_reviewer_provider_id_bound(
-        store,
-        run_id,
-        loop,
-        phase_action_id=phase_action_id,
-    )
-    return loop
+    return ReviewLoop.from_dict(store.load_review(run_id, loop.id))

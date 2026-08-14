@@ -204,10 +204,11 @@ class StubProvider:
             for session_id, session in self._sessions.items()
         ]
 
-    def terminate_session(self, session_id: str) -> None:
+    def terminate_session(self, session_id: str, timeout: float | None = None) -> None:
+        del timeout
         self._sessions.pop(session_id, None)
 
-    def abort_turn(self, session_id: str) -> None:
+    def abort_turn(self, session_id: str, timeout: float | None = None) -> None:
         """Drop any queued events from an orchestrator-closed turn."""
 
         session = self._sessions.get(session_id)

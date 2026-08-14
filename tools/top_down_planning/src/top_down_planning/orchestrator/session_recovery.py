@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
+from core_tools.persistence import PersistenceError, StoreRevisionConflictError
 from core_tools.provider import Provider
 from core_tools.provider.errors import (
     ProviderError,
@@ -40,7 +41,7 @@ from top_down_planning.orchestrator.errors import (
     ProviderRunError,
     SessionRecoveryPaused,
 )
-from top_down_planning.orchestrator.run_transitions import pause_run
+from top_down_planning.orchestrator.run_transitions import fail_run, pause_run
 from top_down_planning.orchestrator.session_events import (
     active_provider_session_ids,
     commit_primary_provider_session_binding,
@@ -179,6 +180,66 @@ def _pause_for_provider_unavailable(
     pause_run(store, run_id, stop=stop, role=role, phase=phase)
 
 
+def _fail_replacement_persistence(
+    store: RunStore,
+    run_id: str,
+    *,
+    phase: str,
+    role: str,
+    message: str,
+) -> None:
+    fail_run(
+        store,
+        run_id,
+        stop=StopRecord(
+            code="state_integrity_failure",
+            category="invariant",
+            phase=phase,
+            role=role,
+            message=message,
+        ),
+    )
+
+
+def _discard_replacement_candidate(
+    provider: Provider,
+    store: RunStore,
+    run_id: str,
+    session_id: str,
+    *,
+    preexisting_ids: set[str],
+    role: str,
+    loop_id: str | None = None,
+) -> None:
+    if role == "reviewer" and loop_id is not None:
+        try:
+            loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+        except Exception:
+            loop = None
+        binding = loop.reviewer_binding if loop is not None else None
+        if (
+            binding is not None
+            and binding.provider_session_id
+            and provider.canonical_session_id(binding.provider_session_id)
+            == provider.canonical_session_id(session_id)
+        ):
+            return
+    else:
+        binding = get_primary_binding(store.load_run(run_id), role)
+        if (
+            binding is not None
+            and binding.provider_session_id
+            and provider.canonical_session_id(binding.provider_session_id)
+            == provider.canonical_session_id(session_id)
+        ):
+            return
+    discard_unbound_provider_session(
+        provider,
+        session_id,
+        preexisting_ids=preexisting_ids,
+    )
+
+
 def _run_with_ownership(
     store: RunStore,
     run_id: str,
@@ -248,6 +309,8 @@ def replace_primary_session(
 
         preexisting = active_provider_session_ids(provider)
         new_session_id: str | None = None
+        fail_instance = binding.session_instance_id
+        fail_generation = binding.generation
         try:
             activity, context_digest = manifest_agent_context_fields(manifest)
             new_session_id = provider.start_primary_session(role, manifest, model=model)
@@ -286,6 +349,8 @@ def replace_primary_session(
             run["sessions"] = updated_sessions
             store.save_run(run_id, run, expected_revision)
             assert_expected_run_revision(store.load_run(run_id), expected_revision + 1)
+            fail_instance = new_binding.session_instance_id
+            fail_generation = new_binding.generation
 
             emit_session_replacement_started(
                 store,
@@ -345,20 +410,23 @@ def replace_primary_session(
             return resolved
         except SessionRecoveryPaused:
             raise
-        except Exception as exc:
+        except (ProviderError, ProviderTurnError) as exc:
             if new_session_id is not None:
-                discard_unbound_provider_session(
+                _discard_replacement_candidate(
                     provider,
+                    store,
+                    run_id,
                     new_session_id,
                     preexisting_ids=preexisting,
+                    role=role,
                 )
             emit_session_replacement_failed(
                 store,
                 run_id,
                 phase=phase,
                 role=role,
-                session_instance_id=binding.session_instance_id,
-                generation=binding.generation,
+                session_instance_id=fail_instance,
+                generation=fail_generation,
                 reason="provider_unavailable",
                 provider_session_id=old_provider_session_id,
                 phase_action_id=phase_action_id,
@@ -371,6 +439,58 @@ def replace_primary_session(
                 message=str(exc),
             )
             raise SessionRecoveryPaused(str(exc)) from exc
+        except (PersistenceError, StoreRevisionConflictError, OSError) as exc:
+            if new_session_id is not None:
+                _discard_replacement_candidate(
+                    provider,
+                    store,
+                    run_id,
+                    new_session_id,
+                    preexisting_ids=preexisting,
+                    role=role,
+                )
+            emit_session_replacement_failed(
+                store,
+                run_id,
+                phase=phase,
+                role=role,
+                session_instance_id=fail_instance,
+                generation=fail_generation,
+                reason="persistence_failure",
+                provider_session_id=old_provider_session_id,
+                phase_action_id=phase_action_id,
+            )
+            _fail_replacement_persistence(
+                store,
+                run_id,
+                phase=phase,
+                role=role,
+                message=str(exc),
+            )
+            raise
+        except Exception:
+            if new_session_id is not None:
+                _discard_replacement_candidate(
+                    provider,
+                    store,
+                    run_id,
+                    new_session_id,
+                    preexisting_ids=preexisting,
+                    role=role,
+                )
+            if fail_generation != binding.generation:
+                emit_session_replacement_failed(
+                    store,
+                    run_id,
+                    phase=phase,
+                    role=role,
+                    session_instance_id=fail_instance,
+                    generation=fail_generation,
+                    reason="orchestrator_invariant_failure",
+                    provider_session_id=old_provider_session_id,
+                    phase_action_id=phase_action_id,
+                )
+            raise
 
     return _run_with_ownership(store, run_id, _replace)
 
@@ -432,6 +552,8 @@ def replace_reviewer_session(
 
         preexisting = active_provider_session_ids(provider)
         new_session_id: str | None = None
+        fail_instance = binding.session_instance_id
+        fail_generation = binding.generation
         try:
             activity, context_digest = manifest_agent_context_fields(manifest)
             new_session_id = provider.start_reviewer_session(manifest, model=model)
@@ -464,6 +586,8 @@ def replace_reviewer_session(
                 expected_revision=review_revision,
             )
             review_revision += 1
+            fail_instance = updated_binding.session_instance_id
+            fail_generation = updated_binding.generation
 
             revoke_all_capabilities_for_session_instance(
                 store,
@@ -527,20 +651,24 @@ def replace_reviewer_session(
             return resolved
         except SessionRecoveryPaused:
             raise
-        except Exception as exc:
+        except (ProviderError, ProviderTurnError) as exc:
             if new_session_id is not None:
-                discard_unbound_provider_session(
+                _discard_replacement_candidate(
                     provider,
+                    store,
+                    run_id,
                     new_session_id,
                     preexisting_ids=preexisting,
+                    role="reviewer",
+                    loop_id=loop.id,
                 )
             emit_session_replacement_failed(
                 store,
                 run_id,
                 phase=phase,
                 role="reviewer",
-                session_instance_id=binding.session_instance_id,
-                generation=binding.generation,
+                session_instance_id=fail_instance,
+                generation=fail_generation,
                 reason="provider_unavailable",
                 provider_session_id=old_provider_session_id,
                 phase_action_id=phase_action_id,
@@ -554,6 +682,62 @@ def replace_reviewer_session(
                 message=str(exc),
             )
             raise SessionRecoveryPaused(str(exc)) from exc
+        except (PersistenceError, StoreRevisionConflictError, OSError) as exc:
+            if new_session_id is not None:
+                _discard_replacement_candidate(
+                    provider,
+                    store,
+                    run_id,
+                    new_session_id,
+                    preexisting_ids=preexisting,
+                    role="reviewer",
+                    loop_id=loop.id,
+                )
+            emit_session_replacement_failed(
+                store,
+                run_id,
+                phase=phase,
+                role="reviewer",
+                session_instance_id=fail_instance,
+                generation=fail_generation,
+                reason="persistence_failure",
+                provider_session_id=old_provider_session_id,
+                phase_action_id=phase_action_id,
+                loop_id=loop.id,
+            )
+            _fail_replacement_persistence(
+                store,
+                run_id,
+                phase=phase,
+                role="reviewer",
+                message=str(exc),
+            )
+            raise
+        except Exception:
+            if new_session_id is not None:
+                _discard_replacement_candidate(
+                    provider,
+                    store,
+                    run_id,
+                    new_session_id,
+                    preexisting_ids=preexisting,
+                    role="reviewer",
+                    loop_id=loop.id,
+                )
+            if fail_generation != binding.generation:
+                emit_session_replacement_failed(
+                    store,
+                    run_id,
+                    phase=phase,
+                    role="reviewer",
+                    session_instance_id=fail_instance,
+                    generation=fail_generation,
+                    reason="orchestrator_invariant_failure",
+                    provider_session_id=old_provider_session_id,
+                    phase_action_id=phase_action_id,
+                    loop_id=loop.id,
+                )
+            raise
 
     return _run_with_ownership(store, run_id, _replace)
 

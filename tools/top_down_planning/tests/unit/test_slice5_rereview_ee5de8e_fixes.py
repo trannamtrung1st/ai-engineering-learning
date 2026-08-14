@@ -170,6 +170,7 @@ class _RecordingDrainProvider:
         unblock_on_terminate: bool = True,
     ) -> None:
         self.released = threading.Event()
+        self.woken = threading.Event()
         self.abort_gate = threading.Event()
         self.aborted: list[str] = []
         self.settled: list[str] = []
@@ -184,14 +185,20 @@ class _RecordingDrainProvider:
     def stream_events(self, session_id: str):
         if self.yield_event is not None:
             yield self.yield_event
-        self.released.wait(timeout=30)
+        while not self.released.is_set() and not self.woken.is_set():
+            if self.released.wait(timeout=0.05):
+                break
+            if self.woken.is_set():
+                break
         return
         yield
 
-    def abort_turn(self, session_id: str) -> None:
+    def abort_turn(self, session_id: str, timeout: float | None = None) -> None:
         self.aborted.append(session_id)
+        self.woken.set()
+        wait = 30.0 if timeout is None else timeout
         if self.hang_abort:
-            self.abort_gate.wait(timeout=30)
+            self.abort_gate.wait(timeout=wait)
         if self.unblock_on_abort:
             self.released.set()
         if self.abort_error is not None:
@@ -200,11 +207,13 @@ class _RecordingDrainProvider:
     def wait_turn_settled(self, session_id: str, *, timeout: float = 30.0) -> None:
         self.settled.append(session_id)
 
-    def terminate_session(self, session_id: str) -> None:
+    def terminate_session(self, session_id: str, timeout: float | None = None) -> None:
         self.terminated.append(session_id)
+        self.woken.set()
         self.abort_gate.set()
+        wait = 30.0 if timeout is None else timeout
         if self.hang_terminate:
-            self.released.wait(timeout=30)
+            self.released.wait(timeout=wait)
         if self.unblock_on_terminate:
             self.released.set()
 

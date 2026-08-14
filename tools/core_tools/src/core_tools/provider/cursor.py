@@ -656,10 +656,13 @@ class CursorProvider:
                 if not self._session_has_surviving_pids(session_id):
                     self._remove_session(session_id)
 
-    def terminate_session(self, session_id: str) -> None:
+    def terminate_session(self, session_id: str, timeout: float | None = None) -> None:
         canonical_id = self.canonical_session_id(session_id)
         self.abort_turn(canonical_id)
-        self.wait_turn_settled(canonical_id)
+        self.wait_turn_settled(
+            canonical_id,
+            timeout=30.0 if timeout is None else timeout,
+        )
         records = self._terminate_tracked_turn_procs_for_session(canonical_id)
         surviving_pids = self._surviving_pids_for_session(canonical_id, records)
         if surviving_pids:
@@ -675,7 +678,7 @@ class CursorProvider:
         with self._session_registry_lock:
             self._remove_session(canonical_id)
 
-    def abort_turn(self, session_id: str) -> None:
+    def abort_turn(self, session_id: str, timeout: float | None = None) -> None:
         """End the current in-flight turn without dropping the durable session.
 
         Marks the turn aborted and wakes ``stream_events`` waiters. Callers that
@@ -683,6 +686,7 @@ class CursorProvider:
         draining or closing the turn.
         """
 
+        del timeout
         canonical_id = self.canonical_session_id(session_id)
         with self._session_registry_lock:
             session = self._sessions.get(canonical_id)
@@ -1358,13 +1362,24 @@ class CursorProvider:
             finally:
                 line_queue.put(None)
 
-        thread = threading.Thread(target=produce, daemon=True)
+        thread = threading.Thread(
+            target=produce,
+            daemon=True,
+            name="cursor-idle-stream",
+        )
         thread.start()
         while True:
             try:
                 line = line_queue.get(timeout=idle_timeout)
             except queue.Empty:
                 on_idle()
+                closer = getattr(stream, "close", None)
+                if callable(closer):
+                    try:
+                        closer()
+                    except Exception:
+                        pass
+                thread.join(timeout=max(idle_timeout, 0.2))
                 raise ProviderTurnStalledError(
                     f"provider turn produced no stream output for {idle_timeout:g}s",
                     session_id=session_id,

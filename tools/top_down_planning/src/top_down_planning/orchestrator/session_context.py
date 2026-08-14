@@ -17,6 +17,7 @@ from top_down_planning.orchestrator.session_events import (
     discard_unbound_provider_session,
     emit_primary_session_started,
     end_primary_session_with_audit,
+    provider_session_is_published,
     resume_primary_session_with_audit,
     validate_provider_session_binding,
 )
@@ -88,37 +89,48 @@ def rotate_primary_session(
             f"cannot rotate primary session {termination.session_id}: teardown failed"
         )
 
-    run = store.load_run(run_id)
-    expected_revision = int(run["revision"])
-    updated_sessions = bump_primary_binding_generation(
-        dict(run.get("sessions") or {}),
-        role=role,
-    )
-    run = dict(run)
-    run["revision"] = expected_revision + 1
-    run["sessions"] = updated_sessions
-    store.save_run(run_id, run, expected_revision)
-    commit_primary_provider_session_binding(
-        store,
-        run_id,
-        role=role,
-        provider_session_id=bound_id,
-        provider="cursor",
-        phase_action_id=phase_action_id,
-        activity=requested.activity,
-        context_digest=requested.context_digest,
-        session_provider=provider,
-    )
-    emit_primary_session_started(
-        append_event,
-        provider,
-        role=role,
-        phase=phase,
-        session_id=bound_id,
-        activity=requested.activity,
-        context_digest=requested.context_digest,
-    )
-    return bound_id
+    try:
+        run = store.load_run(run_id)
+        expected_revision = int(run["revision"])
+        updated_sessions = bump_primary_binding_generation(
+            dict(run.get("sessions") or {}),
+            role=role,
+        )
+        run = dict(run)
+        run["revision"] = expected_revision + 1
+        run["sessions"] = updated_sessions
+        store.save_run(run_id, run, expected_revision)
+        commit_primary_provider_session_binding(
+            store,
+            run_id,
+            role=role,
+            provider_session_id=bound_id,
+            provider="cursor",
+            phase_action_id=phase_action_id,
+            activity=requested.activity,
+            context_digest=requested.context_digest,
+            session_provider=provider,
+        )
+        emit_primary_session_started(
+            append_event,
+            provider,
+            role=role,
+            phase=phase,
+            session_id=bound_id,
+            activity=requested.activity,
+            context_digest=requested.context_digest,
+        )
+        return bound_id
+    except Exception:
+        if not provider_session_is_published(
+            store, run_id, bound_id, provider, role=role
+        ):
+            discard_unbound_provider_session(
+                provider,
+                bound_id,
+                preexisting_ids=preexisting,
+            )
+        raise
 
 
 def _start_fresh_primary_session(
@@ -152,11 +164,14 @@ def _start_fresh_primary_session(
             session_provider=provider,
         )
     except Exception:
-        discard_unbound_provider_session(
-            provider,
-            session_id,
-            preexisting_ids=preexisting,
-        )
+        if not provider_session_is_published(
+            store, run_id, session_id, provider, role=role
+        ):
+            discard_unbound_provider_session(
+                provider,
+                session_id,
+                preexisting_ids=preexisting,
+            )
         raise
     binding = get_primary_binding(committed, role)
     bound_id = (
