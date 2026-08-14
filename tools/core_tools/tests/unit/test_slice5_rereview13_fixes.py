@@ -144,7 +144,7 @@ def test_drain_adopts_new_members_when_original_live_anchor_still_owns_group() -
             return [leader]
         return [leader, child]
 
-    def fake_signal(identity: ProcessIdentity, sig: int) -> bool:
+    def fake_signal(identity: ProcessIdentity, sig: int, *, timeout: float | None = None) -> bool:
         signaled.append(identity.pid)
         return True
 
@@ -420,7 +420,7 @@ def test_drain_discovers_or_fails_when_child_forks_after_first_snapshot() -> Non
         snapshots.append([identity.pid for identity in members])
         return members
 
-    def fake_signal(identity: ProcessIdentity, sig: int) -> bool:
+    def fake_signal(identity: ProcessIdentity, sig: int, *, timeout: float | None = None) -> bool:
         signaled.append(identity.pid)
         return True
 
@@ -474,7 +474,7 @@ def test_drain_never_succeeds_while_bounded_late_forks_keep_appearing() -> None:
         live_late.add(child.pid)
         return [leader, child]
 
-    def fake_signal(identity: ProcessIdentity, sig: int) -> bool:
+    def fake_signal(identity: ProcessIdentity, sig: int, *, timeout: float | None = None) -> bool:
         live_late.discard(identity.pid)
         return True
 

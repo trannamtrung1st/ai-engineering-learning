@@ -22,6 +22,7 @@ from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecov
 from top_down_planning.orchestrator.phases import PLANNING
 from top_down_planning.orchestrator.provider_turns import (
     PROVIDER_EVENT_PUMP_NAME,
+    LiteralBoundarySignal,
     _drain_provider_turn,
     _invoke_boundary_bounded,
     build_planner_turn_recovery,
@@ -383,7 +384,7 @@ def test_cursor_drain_abort_leaves_no_event_pump(tmp_path: Path) -> None:
             provider,
             session_id,
             allowed_signals=frozenset(),
-            on_boundary=lambda: "paused",
+            on_boundary=LiteralBoundarySignal("paused"),
         )
     assert result == "paused"
     assert _idle_or_pump_survivors() == []

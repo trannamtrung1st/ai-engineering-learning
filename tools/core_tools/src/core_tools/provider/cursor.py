@@ -119,19 +119,28 @@ def _windows_pipe_has_data(fd: int, timeout: float | None, *, proc: subprocess.P
         import ctypes
         from ctypes import wintypes
     except ImportError:
-        return True
+        return False
     handle = msvcrt.get_osfhandle(fd)
     kernel32 = ctypes.windll.kernel32
+    peek = kernel32.PeekNamedPipe
+    peek.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    peek.restype = wintypes.BOOL
     avail = wintypes.DWORD(0)
     deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
-    peek = kernel32.PeekNamedPipe
     while True:
         if proc.poll() is not None:
             return True
-        if peek(handle, None, 0, None, ctypes.byref(avail), None):
-            if int(avail.value) > 0:
-                return True
-        else:
+        peeked = peek(handle, None, 0, None, ctypes.byref(avail), None)
+        if not peeked:
+            return False
+        if int(avail.value) > 0:
             return True
         if deadline is not None and time.monotonic() >= deadline:
             return False
@@ -345,13 +354,57 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._stdout_buf.extend(chunk)
         return True
 
+    def _drain_stdout_to_eof(self) -> None:
+        fd = self._stdout_fd()
+        if fd is None:
+            self._stdout_eof = True
+            return
+        restore_flags: int | None = None
+        if sys.platform != "win32":
+            import fcntl
+
+            try:
+                restore_flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, restore_flags & ~os.O_NONBLOCK)
+            except OSError:
+                restore_flags = None
+        try:
+            while True:
+                try:
+                    chunk = os.read(fd, 65536)
+                except BlockingIOError:
+                    if self._proc.poll() is None:
+                        return
+                    time.sleep(0.001)
+                    continue
+                except (OSError, ValueError):
+                    self._stdout_eof = True
+                    return
+                if not chunk:
+                    self._stdout_eof = True
+                    return
+                self._stdout_buf.extend(chunk)
+        finally:
+            if restore_flags is not None:
+                import fcntl
+
+                try:
+                    fcntl.fcntl(fd, fcntl.F_SETFL, restore_flags)
+                except OSError:
+                    pass
+
     def _wait_for_complete_line(self, timeout: float | None) -> bool:
         if self._finished or b"\n" in self._stdout_buf:
             return True
-        if self._stdout_eof or self._proc.poll() is not None:
-            if self._stdout_buf:
+        if self._stdout_eof:
+            if self._stdout_buf and b"\n" not in self._stdout_buf:
                 self._stdout_buf.extend(b"\n")
             return True
+        if self._proc.poll() is not None:
+            self._drain_stdout_to_eof()
+            if self._stdout_buf and b"\n" not in self._stdout_buf:
+                self._stdout_buf.extend(b"\n")
+            return bool(self._stdout_buf) or self._stdout_eof
         deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
         while True:
             if b"\n" in self._stdout_buf:
@@ -793,15 +846,17 @@ class CursorProvider:
                     self._remove_session(session_id)
 
     def terminate_session(self, session_id: str, *, timeout: float = 2.0) -> None:
+        if timeout <= 0:
+            raise ValueError("terminate_session timeout must be positive")
         canonical_id = self.canonical_session_id(session_id)
-        deadline = time.monotonic() + max(0.01, timeout)
-        abort_budget = max(0.01, min(timeout, timeout / 2.0 if timeout > 0 else 0.01))
+        deadline = time.monotonic() + timeout
+        abort_budget = min(timeout, timeout / 2.0)
         try:
             self.abort_turn(canonical_id, timeout=abort_budget)
         except ProviderLifecycleTimeoutError:
             if time.monotonic() >= deadline:
                 raise
-        remaining = max(0.01, deadline - time.monotonic())
+        remaining = max(0.0, deadline - time.monotonic())
         try:
             self.wait_turn_settled(canonical_id, timeout=remaining)
         except ProviderTurnError as exc:

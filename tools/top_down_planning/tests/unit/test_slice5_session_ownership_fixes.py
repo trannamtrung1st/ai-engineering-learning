@@ -14,7 +14,7 @@ from core_tools.provider.errors import ProviderSessionError
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.session_lineage import SESSION_PROVIDER_ID_BOUND
 from top_down_planning.orchestrator.errors import ProviderRunError
-from top_down_planning.orchestrator.provider_turns import _drain_provider_turn
+from top_down_planning.orchestrator.provider_turns import LiteralBoundarySignal, _drain_provider_turn
 from top_down_planning.orchestrator.session_events import (
     end_primary_session_with_audit,
     end_reviewer_session_with_audit,
@@ -335,15 +335,12 @@ def test_primary_termination_rejects_reviewer_session(tmp_path: Path) -> None:
 def test_drain_aborts_after_event_without_hanging() -> None:
     provider = _BlockingStreamProvider(yield_first=True)
 
-    def on_boundary() -> str | None:
-        return "paused"
-
     started = time.monotonic()
     signal = _drain_provider_turn(
         provider,
         "sess-1",
         allowed_signals=frozenset(),
-        on_boundary=on_boundary,
+        on_boundary=LiteralBoundarySignal("paused"),
     )
     assert time.monotonic() - started < 1.0
     assert signal == "paused"
@@ -353,30 +350,24 @@ def test_drain_aborts_after_event_without_hanging() -> None:
 def test_boundary_callback_exception_reaches_drain_owner() -> None:
     provider = _BlockingStreamProvider()
 
-    def on_boundary() -> str | None:
-        raise RuntimeError("boundary failed")
-
     with pytest.raises(RuntimeError, match="boundary failed"):
         _drain_provider_turn(
             provider,
             "sess-1",
             allowed_signals=frozenset(),
-            on_boundary=on_boundary,
+            on_boundary=LiteralBoundarySignal(error="boundary failed"),
         )
 
 
 def test_blocking_boundary_callback_cannot_hang_join() -> None:
     provider = _BlockingStreamProvider()
 
-    def on_boundary() -> str | None:
-        return "paused"
-
     started = time.monotonic()
     _drain_provider_turn(
         provider,
         "sess-1",
         allowed_signals=frozenset(),
-        on_boundary=on_boundary,
+        on_boundary=LiteralBoundarySignal("paused"),
     )
     assert time.monotonic() - started < 1.0
     assert [
@@ -390,33 +381,23 @@ def test_blocking_boundary_callback_cannot_hang_join() -> None:
 def test_poller_abort_exception_reaches_drain_owner() -> None:
     provider = _BlockingStreamProvider(abort_error=RuntimeError("abort failed"))
 
-    def on_boundary() -> str | None:
-        return "paused"
-
     with pytest.raises(RuntimeError, match="abort failed"):
         _drain_provider_turn(
             provider,
             "sess-1",
             allowed_signals=frozenset(),
-            on_boundary=on_boundary,
+            on_boundary=LiteralBoundarySignal("paused"),
         )
 
 
 def test_normal_idle_boundary_aborts_and_stops_poller() -> None:
     provider = _BlockingStreamProvider()
-    calls = {"n": 0}
-
-    def on_boundary() -> str | None:
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return None
-        return "batch_closed"
 
     signal = _drain_provider_turn(
         provider,
         "sess-1",
         allowed_signals=frozenset(),
-        on_boundary=on_boundary,
+        on_boundary=LiteralBoundarySignal("batch_closed"),
     )
     assert signal == "batch_closed"
     assert "sess-1" in provider.aborted

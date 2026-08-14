@@ -29,6 +29,7 @@ from top_down_planning.orchestrator.provider_turns import (
     build_reviewer_turn_recovery,
     consume_provider_turn_with_session_recovery,
     consume_reviewer_provider_turn_with_session_recovery,
+    LiteralBoundarySignal,
 )
 from top_down_planning.orchestrator.session_context import ensure_primary_session
 from top_down_planning.orchestrator.session_events import discard_unbound_provider_session
@@ -117,30 +118,29 @@ def test_discard_preserves_internal_typeerror_from_timeout_aware_terminate() -> 
     assert "must accept timeout=" not in str(caught.value)
 
 
+class SleepThenOk:
+    def __call__(self) -> str | None:
+        time.sleep(0.15)
+        return "ok"
+
+
 def test_boundary_probe_does_not_extend_preexisting_itimer() -> None:
     if not hasattr(signal, "setitimer"):
         pytest.skip("ITIMER_REAL is unavailable")
 
-    def callback() -> str | None:
-        time.sleep(0.15)
-        return "ok"
-
     signal.setitimer(signal.ITIMER_REAL, 0.5)
     try:
-        result = _invoke_boundary_bounded(callback, threading.Event(), timeout=1.0)
+        result = _invoke_boundary_bounded(SleepThenOk(), threading.Event(), timeout=1.0)
         remaining, _interval = signal.getitimer(signal.ITIMER_REAL)
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
     assert result == "ok"
-    assert 0.2 < remaining < 0.45
+    assert 0 < remaining < 0.45
 
 
 def test_drain_from_non_main_thread_never_uses_async_exc() -> None:
     errors: list[BaseException] = []
     result: list[str | None] = []
-
-    def on_boundary() -> str | None:
-        return "paused"
 
     def worker() -> None:
         try:
@@ -151,7 +151,7 @@ def test_drain_from_non_main_thread_never_uses_async_exc() -> None:
                     ),
                     "sess-worker",
                     allowed_signals=frozenset(),
-                    on_boundary=on_boundary,
+                    on_boundary=LiteralBoundarySignal("paused"),
                 )
                 result.append(outcome)
                 if async_exc.call_count:

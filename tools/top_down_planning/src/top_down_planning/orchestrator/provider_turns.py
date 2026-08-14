@@ -10,6 +10,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from core_tools.provider import Provider
@@ -408,9 +409,10 @@ def _invoke_boundary_bounded(
 ) -> str | None:
     """Run a store-only boundary callback with a hard wall-clock bound.
 
-    TDP-owned store closures stay in-process. Picklable probes run in a spawn
-    worker that can be killed when they never return. Raw ``os.fork()`` is not
-    used from the application process.
+    Callbacks must be picklable (TDP-owned ``StoreBoundaryProbe`` or a
+    ``LiteralBoundarySignal``). Unserializable closures are rejected rather than
+    executed inline without a timeout. Spawn startup, poll, kill, and join share
+    one monotonic deadline.
     """
 
     if timeout <= 0:
@@ -418,8 +420,8 @@ def _invoke_boundary_bounded(
     _BOUNDARY_CANCEL.set(stop)
     try:
         pickle.dumps(callback, protocol=pickle.HIGHEST_PROTOCOL)
-    except Exception:
-        return callback()
+    except Exception as exc:
+        raise ProviderRunError("boundary probe must be serializable") from exc
     return _invoke_boundary_in_spawn(callback, timeout=timeout)
 
 
@@ -428,6 +430,7 @@ def _invoke_boundary_in_spawn(
     *,
     timeout: float,
 ) -> str | None:
+    deadline = time.monotonic() + timeout
     ctx = multiprocessing.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     proc = ctx.Process(
@@ -435,12 +438,18 @@ def _invoke_boundary_in_spawn(
         args=(callback, child_conn),
         name="tdp-boundary-spawn",
     )
-    proc.start()
-    child_conn.close()
     try:
-        if parent_conn.poll(timeout):
+        proc.start()
+        child_conn.close()
+        remaining = max(0.0, deadline - time.monotonic())
+        if remaining <= 0:
+            if proc.is_alive():
+                proc.kill()
+            proc.join(timeout=0.0)
+            raise ProviderRunError("boundary probe exceeded timeout")
+        if remaining > 0 and parent_conn.poll(remaining):
             kind, value = parent_conn.recv()
-            proc.join(timeout=1.0)
+            proc.join(timeout=max(0.0, deadline - time.monotonic()))
             if kind == "err":
                 if isinstance(value, BaseException):
                     raise value
@@ -448,14 +457,15 @@ def _invoke_boundary_in_spawn(
             if value is None or isinstance(value, str):
                 return value
             raise ProviderRunError("boundary probe returned a non-signal value")
-        proc.kill()
-        proc.join(timeout=1.0)
+        if proc.is_alive():
+            proc.kill()
+        proc.join(timeout=max(0.0, deadline - time.monotonic()))
         raise ProviderRunError("boundary probe exceeded timeout")
     finally:
         parent_conn.close()
         if proc.is_alive():
             proc.kill()
-            proc.join(timeout=1.0)
+            proc.join(timeout=max(0.0, deadline - time.monotonic()))
 
 
 def _probe_boundary(
@@ -1079,20 +1089,87 @@ def reviewer_turn_closure_ready(
     return decision is not None and decision != baseline_decision
 
 
+@dataclass(frozen=True)
+class LiteralBoundarySignal:
+    """Picklable drain-boundary result used by tests and static closures."""
+
+    signal: str | None = None
+    error: str | None = None
+
+    def __call__(self) -> str | None:
+        if self.error:
+            raise RuntimeError(self.error)
+        return self.signal
+
+
+def _file_store_root(store: RunStore) -> str:
+    root = getattr(store, "root", None)
+    if root is None:
+        raise ProviderRunError("boundary probe requires a file-backed run store")
+    return str(Path(root))
+
+
+@dataclass(frozen=True)
+class StoreBoundaryProbe:
+    """Picklable TDP-owned store probe reconstructed in a spawn worker."""
+
+    kind: str
+    store_root: str
+    run_id: str
+    loop_id: str | None = None
+    baseline_batches: int = 0
+    baseline_claims: int = 0
+    baseline_responds: int = 0
+    baseline_decision: str | None = None
+    baseline_actions: int = 0
+
+    def __call__(self) -> str | None:
+        from top_down_planning.persistence.file_store import FileRunStore
+
+        store = FileRunStore(Path(self.store_root))
+        if self.kind in {"producer", "producer_batch"}:
+            if production_batch_count(store, self.run_id) > self.baseline_batches:
+                return PRODUCER_BATCH_COMPLETE_SIGNAL
+            if self.kind == "producer_batch":
+                return None
+            if production_completion_claim_count(store, self.run_id) > self.baseline_claims:
+                return PRODUCER_COMPLETION_COMPLETE_SIGNAL
+            return None
+        if self.kind == "producer_completion":
+            if production_completion_claim_count(store, self.run_id) > self.baseline_claims:
+                return PRODUCER_COMPLETION_COMPLETE_SIGNAL
+            return None
+        if self.kind == "owner_finding":
+            loop_id = str(self.loop_id or "")
+            if owner_finding_action_count(store, self.run_id, loop_id) > self.baseline_actions:
+                return OWNER_FINDING_ACTION_COMPLETE_SIGNAL
+            return None
+        if self.kind == "reviewer":
+            loop_id = str(self.loop_id or "")
+            if reviewer_turn_closure_ready(
+                store,
+                self.run_id,
+                loop_id,
+                baseline_responds=self.baseline_responds,
+                baseline_decision=self.baseline_decision,
+            ):
+                return REVIEWER_DECISION_COMPLETE_SIGNAL
+            return None
+        raise ProviderRunError(f"unknown boundary probe kind {self.kind!r}")
+
+
 def build_producer_batch_boundary_observer(
     store: RunStore,
     run_id: str,
 ) -> Callable[[], str | None]:
     """Return a hook that signals batch completion when production apply persists a batch."""
 
-    baseline_batches = production_batch_count(store, run_id)
-
-    def observe() -> str | None:
-        if production_batch_count(store, run_id) > baseline_batches:
-            return PRODUCER_BATCH_COMPLETE_SIGNAL
-        return None
-
-    return observe
+    return StoreBoundaryProbe(
+        kind="producer_batch",
+        store_root=_file_store_root(store),
+        run_id=run_id,
+        baseline_batches=production_batch_count(store, run_id),
+    )
 
 
 def build_owner_finding_action_boundary_observer(
@@ -1102,14 +1179,13 @@ def build_owner_finding_action_boundary_observer(
 ) -> Callable[[], str | None]:
     """Return a hook that signals turn closure when owner record-actions persists."""
 
-    baseline_actions = owner_finding_action_count(store, run_id, loop_id)
-
-    def observe() -> str | None:
-        if owner_finding_action_count(store, run_id, loop_id) > baseline_actions:
-            return OWNER_FINDING_ACTION_COMPLETE_SIGNAL
-        return None
-
-    return observe
+    return StoreBoundaryProbe(
+        kind="owner_finding",
+        store_root=_file_store_root(store),
+        run_id=run_id,
+        loop_id=loop_id,
+        baseline_actions=owner_finding_action_count(store, run_id, loop_id),
+    )
 
 
 def build_producer_completion_boundary_observer(
@@ -1118,14 +1194,12 @@ def build_producer_completion_boundary_observer(
 ) -> Callable[[], str | None]:
     """Return a hook that signals turn closure when submit-completion persists."""
 
-    baseline_claims = production_completion_claim_count(store, run_id)
-
-    def observe() -> str | None:
-        if production_completion_claim_count(store, run_id) > baseline_claims:
-            return PRODUCER_COMPLETION_COMPLETE_SIGNAL
-        return None
-
-    return observe
+    return StoreBoundaryProbe(
+        kind="producer_completion",
+        store_root=_file_store_root(store),
+        run_id=run_id,
+        baseline_claims=production_completion_claim_count(store, run_id),
+    )
 
 
 def build_producer_turn_boundary_observer(
@@ -1134,16 +1208,13 @@ def build_producer_turn_boundary_observer(
 ) -> Callable[[], str | None]:
     """Return a hook that closes producer turns on batch apply or completion claim."""
 
-    batch_observer = build_producer_batch_boundary_observer(store, run_id)
-    completion_observer = build_producer_completion_boundary_observer(store, run_id)
-
-    def observe() -> str | None:
-        signal = batch_observer()
-        if signal is not None:
-            return signal
-        return completion_observer()
-
-    return observe
+    return StoreBoundaryProbe(
+        kind="producer",
+        store_root=_file_store_root(store),
+        run_id=run_id,
+        baseline_batches=production_batch_count(store, run_id),
+        baseline_claims=production_completion_claim_count(store, run_id),
+    )
 
 
 def build_reviewer_decision_boundary_observer(
@@ -1153,21 +1224,14 @@ def build_reviewer_decision_boundary_observer(
 ) -> Callable[[], str | None]:
     """Return a hook that signals turn closure when review respond persists."""
 
-    baseline_responds = review_respond_count(store, run_id, loop_id)
-    baseline_decision = orchestration_decision_from_store(store, run_id, loop_id)
-
-    def observe() -> str | None:
-        if reviewer_turn_closure_ready(
-            store,
-            run_id,
-            loop_id,
-            baseline_responds=baseline_responds,
-            baseline_decision=baseline_decision,
-        ):
-            return REVIEWER_DECISION_COMPLETE_SIGNAL
-        return None
-
-    return observe
+    return StoreBoundaryProbe(
+        kind="reviewer",
+        store_root=_file_store_root(store),
+        run_id=run_id,
+        loop_id=loop_id,
+        baseline_responds=review_respond_count(store, run_id, loop_id),
+        baseline_decision=orchestration_decision_from_store(store, run_id, loop_id),
+    )
 
 
 def consume_producer_provider_turn_with_session_recovery(

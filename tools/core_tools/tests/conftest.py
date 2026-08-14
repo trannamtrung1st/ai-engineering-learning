@@ -9,6 +9,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from core_tools.provider.cursor import _TrackedTurnProc
 from core_tools.provider.process_identity import ProcessIdentity
 
@@ -123,3 +125,40 @@ def reap_process_group(
             except OSError:
                 break
             time.sleep(0.05)
+
+
+def _python_descendant_pids(root_pid: int) -> dict[int, str]:
+    output = subprocess.check_output(["ps", "-axo", "pid=,ppid=,command="], text=True)
+    by_parent: dict[int, list[int]] = {}
+    commands: dict[int, str] = {}
+    for line in output.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) < 3:
+            continue
+        pid = int(parts[0])
+        ppid = int(parts[1])
+        commands[pid] = parts[2]
+        by_parent.setdefault(ppid, []).append(pid)
+    found: dict[int, str] = {}
+    stack = list(by_parent.get(root_pid, ()))
+    while stack:
+        pid = stack.pop()
+        cmd = commands.get(pid, "")
+        if "python" in cmd.lower():
+            found[pid] = cmd
+        stack.extend(by_parent.get(pid, ()))
+    return found
+
+
+@pytest.fixture(scope="session", autouse=True)
+def assert_no_leftover_python_descendants():
+    parent = os.getpid()
+    before = set(_python_descendant_pids(parent))
+    yield
+    leftover = {
+        pid: cmd
+        for pid, cmd in _python_descendant_pids(parent).items()
+        if pid not in before
+        and "multiprocessing.resource_tracker" not in cmd
+    }
+    assert leftover == {}, leftover

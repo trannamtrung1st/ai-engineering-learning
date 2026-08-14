@@ -464,7 +464,9 @@ def terminate_process_tree(
             "stop_requested": True,
         }
         return complete_bound_secondary_clean(proc, payload)
-    if proc.poll() is not None and process_group_state(proc.pid) is ProcessGroupState.GONE:
+    if proc.poll() is not None and process_group_state(
+        proc.pid, timeout=remaining()
+    ) is ProcessGroupState.GONE:
         return True
     return False
 

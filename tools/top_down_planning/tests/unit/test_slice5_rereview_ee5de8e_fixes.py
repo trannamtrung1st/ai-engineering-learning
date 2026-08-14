@@ -19,6 +19,7 @@ from top_down_planning.orchestrator.provider_turns import (
     BOUNDARY_POLL_THREAD_NAME,
     PROVIDER_ABORT_THREAD_NAME,
     PROVIDER_EVENT_PUMP_NAME,
+    LiteralBoundarySignal,
     _drain_provider_turn,
 )
 from top_down_planning.orchestrator.reviewer_session import begin_reviewer_review
@@ -842,7 +843,7 @@ def test_poll_finalizer_error_still_syncs_and_settles() -> None:
             provider,
             "sess-1",
             allowed_signals=frozenset(),
-            on_boundary=lambda: "paused",
+            on_boundary=LiteralBoundarySignal("paused"),
             sync_session_id=sync,
         )
     assert synced
@@ -865,7 +866,7 @@ def test_stream_error_and_poll_finalizer_error_retain_context() -> None:
             provider,
             "sess-1",
             allowed_signals=frozenset(),
-            on_boundary=lambda: None,
+            on_boundary=LiteralBoundarySignal(),
             sync_session_id=sync,
         )
     assert synced
@@ -917,9 +918,9 @@ def test_hanging_abort_is_bounded_on_event_idle_and_finalize() -> None:
 
     run_case(
         yield_event={"type": "assistant", "text": "hi"},
-        on_boundary=lambda: "paused",
+        on_boundary=LiteralBoundarySignal("paused"),
     )
-    run_case(yield_event=None, on_boundary=lambda: "paused")
+    run_case(yield_event=None, on_boundary=LiteralBoundarySignal("paused"))
 
 
 def test_event_pump_is_joined_and_does_not_accumulate() -> None:
@@ -937,7 +938,7 @@ def test_event_pump_is_joined_and_does_not_accumulate() -> None:
                     provider,
                     "sess-1",
                     allowed_signals=frozenset(),
-                    on_boundary=lambda: "paused",
+                    on_boundary=LiteralBoundarySignal("paused"),
                 )
             except (ProviderRunError, RuntimeError):
                 pass

@@ -19,6 +19,7 @@ from top_down_planning.orchestrator.provider_turns import (
     BOUNDARY_POLL_THREAD_NAME,
     PROVIDER_ABORT_THREAD_NAME,
     PROVIDER_EVENT_PUMP_NAME,
+    LiteralBoundarySignal,
     _drain_provider_turn,
 )
 from top_down_planning.orchestrator.reviewer_session import begin_reviewer_review
@@ -352,7 +353,7 @@ def test_hanging_abort_leaves_zero_abort_workers() -> None:
                     provider,
                     "sess-1",
                     allowed_signals=frozenset(),
-                    on_boundary=lambda: "paused",
+                    on_boundary=LiteralBoundarySignal("paused"),
                 )
             except Exception:
                 pass
@@ -362,26 +363,20 @@ def test_hanging_abort_leaves_zero_abort_workers() -> None:
 
 
 def test_blocked_boundary_callback_leaves_zero_poll_workers() -> None:
-    blocked = threading.Event()
-
-    def on_boundary() -> str | None:
-        blocked.wait(timeout=0.01)
-        return "paused"
-
     provider = _RecordingDrainProvider()
     with patch(
         "top_down_planning.orchestrator.provider_turns.ABORT_TURN_SECONDS",
         0.1,
     ), patch(
         "top_down_planning.orchestrator.provider_turns.BOUNDARY_POLL_JOIN_SECONDS",
-        0.1,
+        2.0,
     ):
         started = time.monotonic()
         _drain_provider_turn(
             provider,
             "sess-1",
             allowed_signals=frozenset(),
-            on_boundary=on_boundary,
+            on_boundary=LiteralBoundarySignal("paused"),
         )
         assert time.monotonic() - started < 2.0
     assert _live_named(BOUNDARY_POLL_THREAD_NAME) == []
@@ -403,7 +398,7 @@ def test_hanging_terminate_is_bounded_and_pump_quiesces() -> None:
                 provider,
                 "sess-1",
                 allowed_signals=frozenset(),
-                on_boundary=lambda: "paused",
+                on_boundary=LiteralBoundarySignal("paused"),
             )
         except Exception:
             pass
@@ -426,7 +421,7 @@ def test_stream_ignores_terminate_but_abort_still_quiesces_pump() -> None:
             provider,
             "sess-1",
             allowed_signals=frozenset(),
-            on_boundary=lambda: "paused",
+            on_boundary=LiteralBoundarySignal("paused"),
         )
         assert time.monotonic() - started < 2.0
     assert _live_named(PROVIDER_EVENT_PUMP_NAME) == []
@@ -439,15 +434,12 @@ def test_poll_error_and_pump_survivor_diagnostics_are_preserved() -> None:
         hang_abort=True,
     )
 
-    def on_boundary() -> str | None:
-        raise RuntimeError("poll boom")
-
     with patch(
         "top_down_planning.orchestrator.provider_turns.ABORT_TURN_SECONDS",
         0.1,
     ), patch(
         "top_down_planning.orchestrator.provider_turns.BOUNDARY_POLL_JOIN_SECONDS",
-        0.1,
+        2.0,
     ):
         started = time.monotonic()
         with pytest.raises(RuntimeError) as caught:
@@ -455,7 +447,7 @@ def test_poll_error_and_pump_survivor_diagnostics_are_preserved() -> None:
                 provider,
                 "sess-1",
                 allowed_signals=frozenset(),
-                on_boundary=on_boundary,
+                on_boundary=LiteralBoundarySignal(error="poll boom"),
             )
         assert time.monotonic() - started < 2.0
     combined = f"{caught.value} {getattr(caught.value, '__notes__', [])}"

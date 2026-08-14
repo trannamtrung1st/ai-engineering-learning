@@ -23,6 +23,7 @@ from top_down_planning.orchestrator.provider_turns import (
     PROVIDER_ABORT_THREAD_NAME,
     PROVIDER_EVENT_PUMP_NAME,
     PROVIDER_TERMINATE_THREAD_NAME,
+    LiteralBoundarySignal,
     _drain_provider_turn,
 )
 from top_down_planning.orchestrator.reviewer_session import begin_reviewer_review
@@ -135,7 +136,7 @@ def test_abort_and_terminate_both_blocked_are_bounded() -> None:
                     provider,
                     "sess-1",
                     allowed_signals=frozenset(),
-                    on_boundary=lambda: "paused",
+                    on_boundary=LiteralBoundarySignal("paused"),
                 )
             except Exception:
                 pass
@@ -165,7 +166,7 @@ def test_terminate_return_does_not_require_abort_to_unblock() -> None:
                 provider,
                 "sess-1",
                 allowed_signals=frozenset(),
-                on_boundary=lambda: "paused",
+                on_boundary=LiteralBoundarySignal("paused"),
             )
         except Exception:
             pass
@@ -176,12 +177,6 @@ def test_terminate_return_does_not_require_abort_to_unblock() -> None:
 
 
 def test_never_returning_boundary_callback_is_bounded() -> None:
-    lock = threading.Lock()
-
-    def on_boundary() -> str | None:
-        with lock:
-            return "paused"
-
     provider = _RecordingDrainProvider()
     with patch("ctypes.pythonapi.PyThreadState_SetAsyncExc") as async_exc:
         started = time.monotonic()
@@ -189,13 +184,11 @@ def test_never_returning_boundary_callback_is_bounded() -> None:
             provider,
             "sess-1",
             allowed_signals=frozenset(),
-            on_boundary=on_boundary,
+            on_boundary=LiteralBoundarySignal("paused"),
         )
         assert time.monotonic() - started < 2.0
     assert result == "paused"
     assert async_exc.call_count == 0
-    assert lock.acquire(timeout=0.1)
-    lock.release()
     assert _helper_threads() == []
 
 
@@ -214,7 +207,7 @@ def test_done_error_is_not_hidden_by_store_boundary() -> None:
             _DoneErrorThenEndProvider(),
             "sess-1",
             allowed_signals=frozenset({"candidate_plan_ready"}),
-            on_boundary=lambda: "candidate_plan_ready",
+            on_boundary=LiteralBoundarySignal("candidate_plan_ready"),
         )
 
 

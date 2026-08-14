@@ -316,10 +316,15 @@ def _identity_needs_no_signal(state: IdentityInspectState) -> bool:
     }
 
 
-def _signal_identity_via_pidfd(identity: ProcessIdentity, sig: int) -> bool:
+def _signal_identity_via_pidfd(
+    identity: ProcessIdentity,
+    sig: int,
+    *,
+    timeout: float | None = None,
+) -> bool:
     """Send *sig* through pidfd when *identity* still matches."""
 
-    state = inspect_process_identity(identity)
+    state = inspect_process_identity(identity, timeout=timeout)
     if _identity_needs_no_signal(state):
         return True
     if state is IdentityInspectState.UNVERIFIABLE:
@@ -329,7 +334,7 @@ def _signal_identity_via_pidfd(identity: ProcessIdentity, sig: int) -> bool:
     except OSError:
         return False
     try:
-        state = inspect_process_identity(identity)
+        state = inspect_process_identity(identity, timeout=timeout)
         if _identity_needs_no_signal(state):
             return True
         if state is IdentityInspectState.UNVERIFIABLE:
@@ -342,14 +347,19 @@ def _signal_identity_via_pidfd(identity: ProcessIdentity, sig: int) -> bool:
         os.close(fd)
 
 
-def _signal_identity(identity: ProcessIdentity, sig: int) -> bool:
-    state = inspect_process_identity(identity)
+def _signal_identity(
+    identity: ProcessIdentity,
+    sig: int,
+    *,
+    timeout: float | None = None,
+) -> bool:
+    state = inspect_process_identity(identity, timeout=timeout)
     if _identity_needs_no_signal(state):
         return True
     if state is IdentityInspectState.UNVERIFIABLE:
         return False
     if _pidfd_supported():
-        return _signal_identity_via_pidfd(identity, sig)
+        return _signal_identity_via_pidfd(identity, sig, timeout=timeout)
     return False
 
 
@@ -379,12 +389,19 @@ def _current_group_identities(
     run_id: str | None = None,
     timeout: float | None = None,
 ) -> list[ProcessIdentity] | None:
-    pids = list_process_group_pids(pgid, timeout=timeout)
+    deadline = _deadline_from_timeout(timeout)
+
+    def remaining() -> float | None:
+        if deadline is None:
+            return None
+        return _remaining_seconds(deadline, default=0.0)
+
+    pids = list_process_group_pids(pgid, timeout=remaining())
     if pids is None:
         return None
     identities: list[ProcessIdentity] = []
     for pid in pids:
-        identity = read_process_identity(pid, run_id=run_id, timeout=timeout)
+        identity = read_process_identity(pid, run_id=run_id, timeout=remaining())
         if identity is None:
             return None
         identities.append(identity)
@@ -478,7 +495,7 @@ def drain_owned_process_group(
         for sig in (signal.SIGTERM, signal.SIGKILL):
             if wait_budget() <= 0:
                 return not _identity_still_alive(leader_identity, timeout=wait_budget())
-            if not _signal_identity(leader_identity, sig):
+            if not _signal_identity(leader_identity, sig, timeout=wait_budget()):
                 return False
             if _wait_identities_dead([leader_identity], timeout=wait_budget()):
                 return True
@@ -520,7 +537,7 @@ def drain_owned_process_group(
             continue
 
         for identity in targets:
-            if not _signal_identity(identity, signal.SIGTERM):
+            if not _signal_identity(identity, signal.SIGTERM, timeout=wait_budget()):
                 return False
             try:
                 os.waitpid(identity.pid, os.WNOHANG)
@@ -543,7 +560,7 @@ def drain_owned_process_group(
             if _identity_still_alive(identity, timeout=wait_budget())
         ]
         for identity in survivors:
-            if not _signal_identity(identity, signal.SIGKILL):
+            if not _signal_identity(identity, signal.SIGKILL, timeout=wait_budget()):
                 return False
             try:
                 os.waitpid(identity.pid, os.WNOHANG)
@@ -763,20 +780,20 @@ def _terminate_linux_identity(
     *,
     timeout: float | None = None,
 ) -> TerminateIdentityResult:
-    state = inspect_process_identity(identity)
-    if state is IdentityInspectState.GONE:
-        return TerminateIdentityResult.ALREADY_GONE
-    if state is IdentityInspectState.IDENTITY_MISMATCH:
-        return TerminateIdentityResult.IDENTITY_MISMATCH
-    if state is IdentityInspectState.UNVERIFIABLE:
-        return TerminateIdentityResult.FAILED
-
     deadline = _deadline_from_timeout(timeout)
 
     def remaining() -> float | None:
         if deadline is None:
             return None
         return _remaining_seconds(deadline, default=0.0)
+
+    state = inspect_process_identity(identity, timeout=remaining())
+    if state is IdentityInspectState.GONE:
+        return TerminateIdentityResult.ALREADY_GONE
+    if state is IdentityInspectState.IDENTITY_MISMATCH:
+        return TerminateIdentityResult.IDENTITY_MISMATCH
+    if state is IdentityInspectState.UNVERIFIABLE:
+        return TerminateIdentityResult.FAILED
 
     captured = capture_process_group_identities(identity, timeout=remaining())
     if captured is None:
@@ -815,13 +832,17 @@ def terminate_verified_process_identity(
     if identity is None:
         return TerminateIdentityResult.FAILED
 
-    state = inspect_process_identity(identity)
+    state = inspect_process_identity(identity, timeout=timeout)
     if state is IdentityInspectState.UNVERIFIABLE:
         return TerminateIdentityResult.FAILED
     if state is IdentityInspectState.IDENTITY_MISMATCH:
         return TerminateIdentityResult.IDENTITY_MISMATCH
     if state is IdentityInspectState.GONE:
-        pgid = read_process_group_id(identity.pid) if pgid is None else pgid
+        pgid = (
+            read_process_group_id(identity.pid, timeout=timeout)
+            if pgid is None
+            else pgid
+        )
         if pgid is not None and member_identities:
             if drain_owned_process_group(
                 pgid=pgid,

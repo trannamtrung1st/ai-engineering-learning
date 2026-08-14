@@ -39,6 +39,7 @@ from top_down_planning.persistence.session_bindings import (
 )
 from core_tools.persistence import PersistenceError, RunNotFoundError
 from core_tools.provider import Provider
+from top_down_planning.orchestrator.errors import ProviderRunError
 from core_tools.provider.errors import ProviderReplacementIdentityError, ProviderSessionError
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
@@ -762,6 +763,15 @@ def commit_primary_provider_session_binding(
     expected_revision = int(run["revision"])
     phase = str(run.get("phase") or "")
     existing = get_primary_binding(run, role)
+    if session_provider is not None:
+        _reject_replacement_reuse_of_old_id(
+            session_provider,
+            store,
+            run_id,
+            resolved,
+            role=role,
+            generation=existing.generation if existing is not None else None,
+        )
     if (
         existing is not None
         and existing.provider_session_id == resolved
@@ -806,6 +816,15 @@ def commit_primary_provider_session_binding(
             provider_session_id=binding.provider_session_id,
             new_session_instance_id=binding.session_instance_id,
         )
+        if replaced is None and _unresolved_replacement_started(
+            store,
+            run_id,
+            role=role,
+            generation=binding.generation,
+        ):
+            raise ProviderRunError(
+                "replacement cannot be bound without recoverable old session identity"
+            )
         if replaced is not None:
             events.append(replaced)
     store.commit(
@@ -926,6 +945,36 @@ def _prior_generation_session_instance_id(
     return found
 
 
+def _unresolved_replacement_started(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    generation: int | None,
+    loop_id: str | None = None,
+) -> bool:
+    if generation is None:
+        return False
+    started = False
+    replaced = False
+    failed = False
+    for event in store.load_events(run_id):
+        if str(event.get("role") or "") != role:
+            continue
+        if int(event.get("generation") or 0) != int(generation):
+            continue
+        if loop_id is not None and str(event.get("loop_id") or "") != str(loop_id):
+            continue
+        event_type = str(event.get("type") or "")
+        if event_type == SESSION_REPLACEMENT_STARTED:
+            started = True
+        elif event_type == SESSION_REPLACED:
+            replaced = True
+        elif event_type == SESSION_REPLACEMENT_FAILED:
+            failed = True
+    return started and not replaced and not failed
+
+
 def _pending_replacement_success_payload(
     store: RunStore,
     run_id: str,
@@ -1007,6 +1056,16 @@ def _complete_replacement_if_durable(
         loop_id=loop_id,
     )
     if payload is None:
+        if _unresolved_replacement_started(
+            store,
+            run_id,
+            role=role,
+            generation=generation,
+            loop_id=loop_id,
+        ):
+            raise ProviderRunError(
+                "replacement cannot be bound without recoverable old session identity"
+            )
         return
     emit_session_replaced(
         store,
@@ -1306,6 +1365,16 @@ def commit_reviewer_loop_provider_session(
     payload["revision"] = int(expected_revision) + 1
     events: list[dict[str, Any]] = []
     committed_binding = loop.reviewer_binding
+    if session_provider is not None and committed_binding is not None:
+        _reject_replacement_reuse_of_old_id(
+            session_provider,
+            store,
+            run_id,
+            str(committed_binding.provider_session_id or ""),
+            role="reviewer",
+            generation=committed_binding.generation,
+            loop_id=loop.id,
+        )
     if (
         committed_binding is not None
         and committed_binding.provider_session_id
@@ -1334,6 +1403,16 @@ def commit_reviewer_loop_provider_session(
             new_session_instance_id=committed_binding.session_instance_id,
             loop_id=loop.id,
         )
+        if replaced is None and _unresolved_replacement_started(
+            store,
+            run_id,
+            role="reviewer",
+            generation=committed_binding.generation,
+            loop_id=loop.id,
+        ):
+            raise ProviderRunError(
+                "replacement cannot be bound without recoverable old session identity"
+            )
         if replaced is not None:
             events.append(replaced)
     store.commit(
