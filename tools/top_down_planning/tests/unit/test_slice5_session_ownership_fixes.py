@@ -102,7 +102,7 @@ class _BlockingStreamProvider:
         return
         yield
 
-    def abort_turn(self, session_id: str) -> None:
+    def abort_turn(self, session_id: str, *, timeout: float = 2.0) -> None:
         self.aborted.append(session_id)
         self.released.set()
         if self.abort_error is not None:

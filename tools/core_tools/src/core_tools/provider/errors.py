@@ -61,3 +61,7 @@ class ProviderTurnStalledError(ProviderTurnError):
 
 class ProviderTurnCleanupError(ProviderTurnError):
     """A provider turn completed but janitor process-group cleanup was not verified."""
+
+
+class ProviderLifecycleTimeoutError(ProviderSessionError):
+    """A provider abort or terminate call did not finish within its timeout."""

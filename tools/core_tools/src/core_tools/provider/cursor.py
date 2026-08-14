@@ -30,6 +30,7 @@ from core_tools.provider.errors import (
     ProviderTurnCleanupError,
     ProviderTurnError,
     ProviderTurnStalledError,
+    ProviderLifecycleTimeoutError,
 )
 from core_tools.provider.events import (
     format_manifest_prompt,
@@ -60,8 +61,10 @@ from core_tools.provider.session_janitor import (
     JanitorStatusOwner,
     read_bound_janitor_status,
 )
+from core_tools.provider.thread_stop import force_stop_thread
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
+DEFAULT_TURN_IDLE_TIMEOUT_SECONDS = 2.0
 _STDERR_TAIL_MAX_BYTES = 64 * 1024
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
@@ -656,13 +659,18 @@ class CursorProvider:
                 if not self._session_has_surviving_pids(session_id):
                     self._remove_session(session_id)
 
-    def terminate_session(self, session_id: str, timeout: float | None = None) -> None:
+    def terminate_session(self, session_id: str, *, timeout: float = 2.0) -> None:
         canonical_id = self.canonical_session_id(session_id)
-        self.abort_turn(canonical_id)
-        self.wait_turn_settled(
-            canonical_id,
-            timeout=30.0 if timeout is None else timeout,
-        )
+        abort_budget = max(0.01, min(timeout, timeout / 2.0 if timeout > 0 else 0.01))
+        self.abort_turn(canonical_id, timeout=abort_budget)
+        remaining = max(0.01, timeout - abort_budget)
+        try:
+            self.wait_turn_settled(canonical_id, timeout=remaining)
+        except ProviderTurnError as exc:
+            raise ProviderLifecycleTimeoutError(
+                str(exc),
+                session_id=canonical_id,
+            ) from exc
         records = self._terminate_tracked_turn_procs_for_session(canonical_id)
         surviving_pids = self._surviving_pids_for_session(canonical_id, records)
         if surviving_pids:
@@ -678,15 +686,17 @@ class CursorProvider:
         with self._session_registry_lock:
             self._remove_session(canonical_id)
 
-    def abort_turn(self, session_id: str, timeout: float | None = None) -> None:
+    def abort_turn(self, session_id: str, *, timeout: float = 2.0) -> None:
         """End the current in-flight turn without dropping the durable session.
 
         Marks the turn aborted and wakes ``stream_events`` waiters. Callers that
         need the collector thread to finish must invoke ``wait_turn_settled`` after
-        draining or closing the turn.
+        draining or closing the turn. *timeout* bounds any wait for tracked
+        process teardown associated with the abort.
         """
 
-        del timeout
+        if timeout <= 0:
+            raise ValueError("abort_turn timeout must be positive")
         canonical_id = self.canonical_session_id(session_id)
         with self._session_registry_lock:
             session = self._sessions.get(canonical_id)
@@ -1333,7 +1343,10 @@ class CursorProvider:
 
     def _turn_idle_timeout_seconds(self) -> float:
         provider_limits = (self._config.get("limits") or {}).get("provider") or {}
-        raw = provider_limits.get("turn_idle_timeout_seconds", 0)
+        raw = provider_limits.get(
+            "turn_idle_timeout_seconds",
+            DEFAULT_TURN_IDLE_TIMEOUT_SECONDS,
+        )
         try:
             timeout = float(raw)
         except (TypeError, ValueError):
@@ -1357,6 +1370,8 @@ class CursorProvider:
             try:
                 for line in stream:
                     line_queue.put(line)
+            except SystemExit:
+                return
             except Exception as exc:
                 errors.append(exc)
             finally:
@@ -1380,6 +1395,13 @@ class CursorProvider:
                     except Exception:
                         pass
                 thread.join(timeout=max(idle_timeout, 0.2))
+                if thread.is_alive():
+                    force_stop_thread(thread, timeout=max(idle_timeout, 0.2))
+                if thread.is_alive():
+                    raise ProviderTurnError(
+                        "cursor idle-stream producer failed to stop",
+                        session_id=session_id,
+                    )
                 raise ProviderTurnStalledError(
                     f"provider turn produced no stream output for {idle_timeout:g}s",
                     session_id=session_id,

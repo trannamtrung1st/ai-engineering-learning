@@ -1336,7 +1336,8 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                                 "type": "number",
                                 "description": (
                                     "Seconds without Cursor stream-json stdout before "
-                                    "the provider ends the turn. 0 disables idle timeout."
+                                    "the provider ends the turn. 0 disables idle timeout "
+                                    "and is an explicit opt-out; the default is finite."
                                 ),
                             },
                         },

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from top_down_planning.domain.reviews import ReviewLoop, is_mandatory_review_loop
@@ -15,6 +16,8 @@ from top_down_planning.orchestrator.capability import (
     rebind_reviewer_session_capability,
 )
 from top_down_planning.domain.session_lineage import (
+    SESSION_PROVIDER_ID_BOUND,
+    SESSION_REPLACEMENT_STARTED,
     session_provider_id_bound_payload,
 )
 from top_down_planning.orchestrator.session_lineage import emit_session_provider_id_bound
@@ -22,18 +25,24 @@ from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.review_commit import (
     review_record_revision,
-    save_review_with_expected_revision,
 )
 from top_down_planning.persistence.session_bindings import (
     get_primary_binding,
     review_record_for_persistence,
     update_primary_binding,
 )
-from core_tools.persistence import RunNotFoundError
+from core_tools.persistence import PersistenceError, RunNotFoundError
 from core_tools.provider import Provider
 from core_tools.provider.errors import ProviderSessionError
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
+DEFAULT_PROVIDER_LIFECYCLE_TIMEOUT_SECONDS = 2.0
+
+
+class PublicationState(str, Enum):
+    PUBLISHED = "published"
+    UNPUBLISHED = "unpublished"
+    UNKNOWN = "unknown"
 
 
 def _require_owned_provider_session(
@@ -98,7 +107,10 @@ def terminate_owned_session(
         role=role,
         kind=kind,
     )
-    provider.terminate_session(owned)
+    provider.terminate_session(
+        owned,
+        timeout=DEFAULT_PROVIDER_LIFECYCLE_TIMEOUT_SECONDS,
+    )
     return owned
 
 
@@ -210,6 +222,35 @@ def _assert_session_binding_before_persist(
     return resolved
 
 
+def provider_session_publication_state(
+    store: RunStore,
+    run_id: str,
+    session_id: str,
+    provider: Provider,
+    *,
+    role: str,
+    loop_id: str | None = None,
+) -> PublicationState:
+    canonical = provider.canonical_session_id(session_id)
+    try:
+        if role == "reviewer" and loop_id is not None:
+            loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+            binding = loop.reviewer_binding
+        else:
+            binding = get_primary_binding(store.load_run(run_id), role)
+    except Exception:
+        return PublicationState.UNKNOWN
+    if binding is None or not binding.provider_session_id:
+        return PublicationState.UNPUBLISHED
+    try:
+        bound = provider.canonical_session_id(binding.provider_session_id)
+    except Exception:
+        return PublicationState.UNKNOWN
+    if bound == canonical:
+        return PublicationState.PUBLISHED
+    return PublicationState.UNPUBLISHED
+
+
 def provider_session_is_published(
     store: RunStore,
     run_id: str,
@@ -219,18 +260,48 @@ def provider_session_is_published(
     role: str,
     loop_id: str | None = None,
 ) -> bool:
-    canonical = provider.canonical_session_id(session_id)
-    if role == "reviewer" and loop_id is not None:
-        try:
-            loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
-        except Exception:
-            return False
-        binding = loop.reviewer_binding
-    else:
-        binding = get_primary_binding(store.load_run(run_id), role)
-    if binding is None or not binding.provider_session_id:
-        return False
-    return provider.canonical_session_id(binding.provider_session_id) == canonical
+    return (
+        provider_session_publication_state(
+            store,
+            run_id,
+            session_id,
+            provider,
+            role=role,
+            loop_id=loop_id,
+        )
+        is PublicationState.PUBLISHED
+    )
+
+
+def discard_if_unpublished(
+    provider: Provider,
+    store: RunStore,
+    run_id: str,
+    session_id: str,
+    *,
+    preexisting_ids: set[str],
+    role: str,
+    loop_id: str | None = None,
+) -> None:
+    state = provider_session_publication_state(
+        store,
+        run_id,
+        session_id,
+        provider,
+        role=role,
+        loop_id=loop_id,
+    )
+    if state is PublicationState.PUBLISHED:
+        return
+    if state is PublicationState.UNKNOWN:
+        raise PersistenceError(
+            f"cannot discard provider session {session_id}: publication state unknown"
+        )
+    discard_unbound_provider_session(
+        provider,
+        session_id,
+        preexisting_ids=preexisting_ids,
+    )
 
 
 def validate_provider_session_binding(
@@ -271,16 +342,21 @@ def discard_unbound_provider_session(
     last_error: BaseException | None = None
     terminated = False
     for candidate in (canonical, session_id):
-        try:
             try:
                 provider.terminate_session(candidate, timeout=timeout)
+                terminated = True
+                break
             except TypeError:
-                provider.terminate_session(candidate)
-            terminated = True
-            break
-        except Exception as exc:
-            last_error = exc
-            continue
+                raise ProviderSessionError(
+                    (
+                        f"{type(provider).__name__}.terminate_session must accept "
+                        "timeout="
+                    ),
+                    session_id=canonical,
+                ) from None
+            except Exception as exc:
+                last_error = exc
+                continue
     remaining = {
         str(session["session_id"])
         for session in provider.list_active_sessions()
@@ -481,7 +557,10 @@ def end_primary_session_with_audit(
 
     teardown_error: str | None = None
     try:
-        provider.terminate_session(canonical_session_id)
+        provider.terminate_session(
+            canonical_session_id,
+            timeout=DEFAULT_PROVIDER_LIFECYCLE_TIMEOUT_SECONDS,
+        )
     except Exception as exc:
         teardown_error = str(exc)
 
@@ -571,7 +650,10 @@ def end_reviewer_session_with_audit(
 
     teardown_error: str | None = None
     try:
-        provider.terminate_session(canonical_session_id)
+        provider.terminate_session(
+            canonical_session_id,
+            timeout=DEFAULT_PROVIDER_LIFECYCLE_TIMEOUT_SECONDS,
+        )
     except Exception as exc:
         teardown_error = str(exc)
 
@@ -720,6 +802,82 @@ def commit_primary_provider_session_binding(
     return store.load_run(run_id)
 
 
+def _forbidden_replacement_provider_ids(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    generation: int | None,
+    loop_id: str | None = None,
+) -> set[str]:
+    if generation is None:
+        return set()
+    forbidden: set[str] = set()
+    for event in store.load_events(run_id):
+        if event.get("type") != SESSION_REPLACEMENT_STARTED:
+            continue
+        if str(event.get("role") or "") != role:
+            continue
+        if int(event.get("generation") or 0) != int(generation):
+            continue
+        if loop_id is not None and str(event.get("loop_id") or "") != str(loop_id):
+            continue
+        old = event.get("old_provider_session_id")
+        if isinstance(old, str) and old.strip():
+            forbidden.add(old.strip())
+    return forbidden
+
+
+def _reject_replacement_reuse_of_old_id(
+    provider: Provider,
+    store: RunStore,
+    run_id: str,
+    resolved: str,
+    *,
+    role: str,
+    generation: int | None,
+    loop_id: str | None = None,
+) -> None:
+    for forbidden in _forbidden_replacement_provider_ids(
+        store,
+        run_id,
+        role=role,
+        generation=generation,
+        loop_id=loop_id,
+    ):
+        if provider.canonical_session_id(forbidden) == provider.canonical_session_id(
+            resolved
+        ):
+            raise ProviderSessionError(
+                (
+                    f"replacement provider session {resolved} canonicalizes to "
+                    f"replaced id {forbidden}"
+                ),
+                session_id=resolved,
+            )
+
+
+def _has_session_provider_id_bound_event(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    provider_session_id: str,
+    loop_id: str | None = None,
+) -> bool:
+    for event in store.load_events(run_id):
+        if event.get("type") != SESSION_PROVIDER_ID_BOUND:
+            continue
+        if str(event.get("role") or "") != role:
+            continue
+        if str(event.get("provider_session_id") or "") != provider_session_id:
+            continue
+        if loop_id is not None and str(event.get("loop_id") or "") != str(loop_id):
+            continue
+        return True
+    return False
+
+
 def sync_persisted_session_id(
     provider: Provider,
     store: RunStore,
@@ -748,6 +906,14 @@ def sync_persisted_session_id(
     )
     run = store.load_run(run_id)
     existing = get_primary_binding(run, role)
+    _reject_replacement_reuse_of_old_id(
+        provider,
+        store,
+        run_id,
+        resolved,
+        role=role,
+        generation=existing.generation if existing is not None else None,
+    )
     current = existing.provider_session_id if existing is not None else None
     if current == resolved:
         return resolved
@@ -827,12 +993,30 @@ def sync_reviewer_loop_session_id(
     review = dict(store.load_review(run_id, loop_id))
     loop = ReviewLoop.from_dict(review)
     binding = loop.reviewer_binding
+    _reject_replacement_reuse_of_old_id(
+        provider,
+        store,
+        run_id,
+        resolved,
+        role="reviewer",
+        generation=binding.generation if binding is not None else None,
+        loop_id=loop_id,
+    )
     prior_provider_id = binding.provider_session_id if binding is not None else None
     if (
         prior_provider_id == resolved
         and binding is not None
         and binding.state == "bound"
     ):
+        if not _has_session_provider_id_bound_event(
+            store,
+            run_id,
+            role="reviewer",
+            provider_session_id=resolved,
+            loop_id=loop_id,
+        ):
+            _emit_reviewer_provider_id_bound(store, run_id, loop)
+        rebind_reviewer_session_capability(store, run_id, provider, loop_id=loop_id)
         return resolved
     if (
         prior_provider_id
@@ -840,8 +1024,6 @@ def sync_reviewer_loop_session_id(
         and not is_transient_provider_session_id(resolved)
         and resolved != prior_provider_id
     ):
-        from core_tools.provider.errors import ProviderSessionError
-
         raise ProviderSessionError(
             "reviewer session id mismatch during resume: "
             f"expected {prior_provider_id!r}, got {resolved!r}",
@@ -849,13 +1031,13 @@ def sync_reviewer_loop_session_id(
         )
 
     updated = loop.with_reviewer_provider_session_id(resolved, provider="cursor")
-    save_review_with_expected_revision(
+    commit_reviewer_loop_provider_session(
         store,
         run_id,
         updated,
         expected_revision=review_record_revision(review),
+        session_provider=provider,
     )
-    _emit_reviewer_provider_id_bound(store, run_id, updated)
     rebind_reviewer_session_capability(store, run_id, provider, loop_id=loop_id)
     return resolved
 

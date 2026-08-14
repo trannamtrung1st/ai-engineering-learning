@@ -253,9 +253,9 @@ def test_producer_turn_aborts_inflight_stream_when_batch_recorded(
     aborted_sessions: list[str] = []
 
     class _AbortTrackingProvider(StubProvider):
-        def abort_turn(self, session_id: str) -> None:
+        def abort_turn(self, session_id: str, *, timeout: float = 2.0) -> None:
             aborted_sessions.append(session_id)
-            super().abort_turn(session_id)
+            super().abort_turn(session_id, timeout=timeout)
 
     provider = _AbortTrackingProvider()
     run_id = "run-20260101T000201-000201"

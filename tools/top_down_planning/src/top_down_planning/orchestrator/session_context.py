@@ -14,10 +14,10 @@ from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.session_events import (
     active_provider_session_ids,
     commit_primary_provider_session_binding,
+    discard_if_unpublished,
     discard_unbound_provider_session,
     emit_primary_session_started,
     end_primary_session_with_audit,
-    provider_session_is_published,
     resume_primary_session_with_audit,
     validate_provider_session_binding,
 )
@@ -122,14 +122,14 @@ def rotate_primary_session(
         )
         return bound_id
     except Exception:
-        if not provider_session_is_published(
-            store, run_id, bound_id, provider, role=role
-        ):
-            discard_unbound_provider_session(
-                provider,
-                bound_id,
-                preexisting_ids=preexisting,
-            )
+        discard_if_unpublished(
+            provider,
+            store,
+            run_id,
+            bound_id,
+            preexisting_ids=preexisting,
+            role=role,
+        )
         raise
 
 
@@ -164,14 +164,14 @@ def _start_fresh_primary_session(
             session_provider=provider,
         )
     except Exception:
-        if not provider_session_is_published(
-            store, run_id, session_id, provider, role=role
-        ):
-            discard_unbound_provider_session(
-                provider,
-                session_id,
-                preexisting_ids=preexisting,
-            )
+        discard_if_unpublished(
+            provider,
+            store,
+            run_id,
+            session_id,
+            preexisting_ids=preexisting,
+            role=role,
+        )
         raise
     binding = get_primary_binding(committed, role)
     bound_id = (

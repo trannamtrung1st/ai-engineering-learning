@@ -1765,10 +1765,10 @@ class StallingAfterEventsProvider(StubProvider):
                 if self._active_abort_release is abort_release:
                     self._active_abort_release = None
 
-    def abort_turn(self, session_id: str) -> None:
+    def abort_turn(self, session_id: str, *, timeout: float = 2.0) -> None:
         if self._active_abort_release is not None:
             self._active_abort_release.set()
-        super().abort_turn(session_id)
+        super().abort_turn(session_id, timeout=timeout)
 
 
 def done_events(*, signal: str | None = None, text: str = "ok") -> list[dict]:

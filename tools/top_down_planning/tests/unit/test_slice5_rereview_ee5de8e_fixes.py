@@ -193,7 +193,7 @@ class _RecordingDrainProvider:
         return
         yield
 
-    def abort_turn(self, session_id: str, timeout: float | None = None) -> None:
+    def abort_turn(self, session_id: str, *, timeout: float = 2.0) -> None:
         self.aborted.append(session_id)
         self.woken.set()
         wait = 30.0 if timeout is None else timeout
@@ -207,7 +207,7 @@ class _RecordingDrainProvider:
     def wait_turn_settled(self, session_id: str, *, timeout: float = 30.0) -> None:
         self.settled.append(session_id)
 
-    def terminate_session(self, session_id: str, timeout: float | None = None) -> None:
+    def terminate_session(self, session_id: str, *, timeout: float = 2.0) -> None:
         self.terminated.append(session_id)
         self.woken.set()
         self.abort_gate.set()

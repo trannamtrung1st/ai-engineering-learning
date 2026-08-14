@@ -54,13 +54,19 @@ class Provider(Protocol):
     def list_active_sessions(self) -> list[dict[str, str]]:
         """Return sessions currently retained in the provider in-memory registry."""
 
-    def terminate_session(self, session_id: str) -> None:
-        """Terminate a provider session when orchestration no longer needs it."""
+    def terminate_session(self, session_id: str, *, timeout: float) -> None:
+        """Terminate a provider session within *timeout* seconds.
 
-    def abort_turn(self, session_id: str) -> None:
+        Implementations must return or raise a typed timeout/cleanup error
+        within the bound. ``abort_turn`` must make an in-flight
+        ``stream_events`` iterator become terminal within the same bound.
+        """
+
+    def abort_turn(self, session_id: str, *, timeout: float) -> None:
         """End the current in-flight turn without dropping the durable session.
 
-        Wakes ``stream_events`` waiters; pair with ``wait_turn_settled`` when the
+        Must return or raise within *timeout* seconds and wake
+        ``stream_events`` waiters. Pair with ``wait_turn_settled`` when the
         caller must block until the collector thread finishes.
         """
 

@@ -297,7 +297,7 @@ def test_cold_resume_preserves_producer_role(tmp_path: Path) -> None:
 
 def test_end_primary_session_with_audit_emits_failure_when_terminate_raises() -> None:
     class FailingProvider(StubProvider):
-        def terminate_session(self, session_id: str) -> None:
+        def terminate_session(self, session_id: str, *, timeout: float = 2.0) -> None:
             raise RuntimeError("terminate failed")
 
     provider = FailingProvider()

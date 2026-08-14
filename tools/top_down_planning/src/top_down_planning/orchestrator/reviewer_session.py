@@ -269,8 +269,7 @@ def begin_reviewer_review(
     from top_down_planning.orchestrator.session_events import (
         active_provider_session_ids,
         commit_reviewer_loop_provider_session,
-        discard_unbound_provider_session,
-        provider_session_is_published,
+        discard_if_unpublished,
     )
 
     loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
@@ -288,19 +287,15 @@ def begin_reviewer_review(
             session_provider=provider,
         )
     except Exception:
-        if not provider_session_is_published(
+        discard_if_unpublished(
+            provider,
             store,
             run_id,
             session_id,
-            provider,
+            preexisting_ids=preexisting,
             role="reviewer",
             loop_id=loop_id,
-        ):
-            discard_unbound_provider_session(
-                provider,
-                session_id,
-                preexisting_ids=preexisting,
-            )
+        )
         raise
     binding = committed.reviewer_binding
     bound_id = (

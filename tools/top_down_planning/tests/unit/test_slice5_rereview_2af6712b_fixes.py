@@ -80,13 +80,13 @@ class _LateErrorProvider:
         yield {"type": "done", "text": "ok"}
         raise ProviderTurnError("late provider failure", session_id=session_id)
 
-    def abort_turn(self, session_id: str, timeout: float | None = None) -> None:
+    def abort_turn(self, session_id: str, *, timeout: float = 2.0) -> None:
         return
 
     def wait_turn_settled(self, session_id: str, *, timeout: float = 30.0) -> None:
         return
 
-    def terminate_session(self, session_id: str, timeout: float | None = None) -> None:
+    def terminate_session(self, session_id: str, *, timeout: float = 2.0) -> None:
         return
 
     def canonical_session_id(self, session_id: str) -> str:
@@ -97,13 +97,13 @@ class _DoneErrorThenEndProvider:
     def stream_events(self, session_id: str):
         yield {"type": "done", "text": "provider boom", "is_error": True}
 
-    def abort_turn(self, session_id: str, timeout: float | None = None) -> None:
+    def abort_turn(self, session_id: str, *, timeout: float = 2.0) -> None:
         return
 
     def wait_turn_settled(self, session_id: str, *, timeout: float = 30.0) -> None:
         return
 
-    def terminate_session(self, session_id: str, timeout: float | None = None) -> None:
+    def terminate_session(self, session_id: str, *, timeout: float = 2.0) -> None:
         return
 
     def canonical_session_id(self, session_id: str) -> str:
@@ -111,8 +111,8 @@ class _DoneErrorThenEndProvider:
 
 
 class _HangDiscardStub(_ForcedIdStub):
-    def terminate_session(self, session_id: str, timeout: float | None = None) -> None:
-        threading.Event().wait(timeout=timeout or 30)
+    def terminate_session(self, session_id: str, *, timeout: float = 2.0) -> None:
+        threading.Event().wait(timeout=timeout)
 
 
 def test_abort_and_terminate_both_blocked_are_bounded() -> None:
@@ -322,17 +322,17 @@ def test_primary_replacement_failure_after_started_keeps_new_generation(
         append_event=lambda *_a, **_k: None,
         resume_request={"goal": "x"},
     )
-    from top_down_planning.orchestrator import session_recovery
+    real_commit = store.commit
 
-    real_started = session_recovery.emit_session_replacement_started
+    def commit_started_then_fail(run_id: str, spec: CommitSpec):
+        result = real_commit(run_id, spec)
+        if spec.events and any(
+            event.get("type") == SESSION_REPLACEMENT_STARTED for event in spec.events
+        ):
+            raise PersistenceError("audit after replacement_started")
+        return result
 
-    def started_then_fail(*args, **kwargs):
-        real_started(*args, **kwargs)
-        raise PersistenceError("audit after replacement_started")
-
-    with patch.object(
-        session_recovery, "emit_session_replacement_started", started_then_fail
-    ):
+    with patch.object(store, "commit", commit_started_then_fail):
         with pytest.raises(PersistenceError, match="audit after replacement_started"):
             replace_primary_session(
                 store,
@@ -376,12 +376,16 @@ def test_primary_replacement_does_not_map_cas_conflict_to_provider_unavailable(
         append_event=lambda *_a, **_k: None,
         resume_request={"goal": "x"},
     )
-    real_save = store.save_run
+    real_commit = store.commit
 
-    def conflict(run_id: str, run: dict, expected_revision: int) -> None:
-        raise PersistenceError("cas conflict")
+    def conflict(run_id: str, spec: CommitSpec):
+        if spec.events and any(
+            event.get("type") == SESSION_REPLACEMENT_STARTED for event in spec.events
+        ):
+            raise PersistenceError("cas conflict")
+        return real_commit(run_id, spec)
 
-    store.save_run = conflict  # type: ignore[method-assign]
+    store.commit = conflict  # type: ignore[method-assign]
     with pytest.raises(PersistenceError, match="cas conflict"):
         replace_primary_session(
             store,
@@ -395,7 +399,7 @@ def test_primary_replacement_does_not_map_cas_conflict_to_provider_unavailable(
             model=None,
             manifest={"goal": "x"},
         )
-    store.save_run = real_save  # type: ignore[method-assign]
+    store.commit = real_commit  # type: ignore[method-assign]
     run = store.load_run(run_id)
     assert run["status"] == "failed"
     assert run["stop"]["code"] == "state_integrity_failure"
@@ -569,17 +573,17 @@ def test_reviewer_replacement_failure_after_started_keeps_new_generation(
         scope={"kind": "whole_plan"},
         revise_at="blocker",
     )
-    from top_down_planning.orchestrator import session_recovery
+    real_commit = store.commit
 
-    real_started = session_recovery.emit_session_replacement_started
+    def commit_started_then_fail(run_id: str, spec: CommitSpec):
+        result = real_commit(run_id, spec)
+        if spec.events and any(
+            event.get("type") == SESSION_REPLACEMENT_STARTED for event in spec.events
+        ):
+            raise PersistenceError("reviewer audit after started")
+        return result
 
-    def started_then_fail(*args, **kwargs):
-        real_started(*args, **kwargs)
-        raise PersistenceError("reviewer audit after started")
-
-    with patch.object(
-        session_recovery, "emit_session_replacement_started", started_then_fail
-    ):
+    with patch.object(store, "commit", commit_started_then_fail):
         with pytest.raises(PersistenceError, match="reviewer audit after started"):
             replace_reviewer_session(
                 store,

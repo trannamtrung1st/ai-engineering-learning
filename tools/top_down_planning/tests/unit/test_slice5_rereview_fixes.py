@@ -141,10 +141,10 @@ def test_rotate_primary_session_aborts_when_old_session_teardown_fails(
             super().__init__()
             self.sticky_ids = set()
 
-        def terminate_session(self, session_id: str) -> None:
+        def terminate_session(self, session_id: str, *, timeout: float = 2.0) -> None:
             if self.canonical_session_id(session_id) in self.sticky_ids:
                 return
-            super().terminate_session(session_id)
+            super().terminate_session(session_id, timeout=timeout)
 
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T008001-008001"
