@@ -127,6 +127,12 @@ class JanitorOwnerState(Enum):
     TIMED_OUT = "timed_out"
     CLOSED = "closed"
     SAFE_FALLBACK_COMPLETE = "safe_fallback_complete"
+    FALLBACK_SURVIVORS = "fallback_survivors"
+    FALLBACK_UNVERIFIABLE = "fallback_unverifiable"
+
+
+def _status_drain_is_clean(status: dict[str, Any] | None) -> bool:
+    return isinstance(status, dict) and status.get("drain") == DrainResult.CLEAN.value
 
 
 class JanitorStatusOwner:
@@ -143,15 +149,23 @@ class JanitorStatusOwner:
 
     @property
     def reap_allowed(self) -> bool:
-        return self._state in {
+        return _status_drain_is_clean(self._status) and self._state in {
             JanitorOwnerState.TERMINAL,
             JanitorOwnerState.SAFE_FALLBACK_COMPLETE,
         }
 
     def mark_safe_fallback(self, status: dict[str, Any]) -> None:
         with self._lock:
+            if self.reap_allowed and _status_drain_is_clean(status):
+                self._done.notify_all()
+                return
             self._status = status
-            self._state = JanitorOwnerState.SAFE_FALLBACK_COMPLETE
+            if _status_drain_is_clean(status):
+                self._state = JanitorOwnerState.SAFE_FALLBACK_COMPLETE
+            elif status.get("drain") == DrainResult.SURVIVORS.value:
+                self._state = JanitorOwnerState.FALLBACK_SURVIVORS
+            else:
+                self._state = JanitorOwnerState.FALLBACK_UNVERIFIABLE
             self._done.notify_all()
 
     def close(self) -> None:
@@ -230,12 +244,16 @@ class JanitorStatusOwner:
             with self._lock:
                 self._reader_active = False
                 if outcome == "timeout":
-                    self._state = JanitorOwnerState.TIMED_OUT
-                    if self._closed:
+                    if self.reap_allowed:
                         close_fd = True
+                        result = self._status
                     else:
-                        self._fd = fd
-                    result = None
+                        self._state = JanitorOwnerState.TIMED_OUT
+                        if self._closed:
+                            close_fd = True
+                        else:
+                            self._fd = fd
+                        result = None
                 elif outcome == "terminal" and status is not None:
                     close_fd = True
                     if self._state is not JanitorOwnerState.SAFE_FALLBACK_COMPLETE:

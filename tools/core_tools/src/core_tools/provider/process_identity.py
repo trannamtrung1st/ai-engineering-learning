@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -497,34 +499,7 @@ def _request_janitor_stop(proc: subprocess.Popen[Any]) -> bool:
     return True
 
 
-def _fallback_kill_bound_janitor_group(
-    proc: subprocess.Popen[Any],
-    *,
-    pgid: int | None = None,
-) -> dict[str, Any]:
-    """SIGKILL the owned group while the bound leader is still unreaped."""
-
-    resolved = pgid
-    if resolved is None:
-        try:
-            resolved = os.getpgid(proc.pid)
-        except OSError:
-            resolved = proc.pid
-    if resolved is not None and resolved > 0:
-        try:
-            os.killpg(int(resolved), signal.SIGKILL)
-        except OSError:
-            pass
-        wait_process_group_gone(int(resolved), timeout=0.5)
-        members = list_process_group_pids(int(resolved))
-    else:
-        members = None
-    if members is None and resolved is not None:
-        drain = DrainResult.UNVERIFIABLE
-    elif not members or set(members) <= {proc.pid}:
-        drain = DrainResult.CLEAN
-    else:
-        drain = DrainResult.SURVIVORS
+def _fallback_status(drain: DrainResult) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "agent_code": -1,
         "drain": drain.value,
@@ -533,6 +508,49 @@ def _fallback_kill_bound_janitor_group(
     if drain is not DrainResult.CLEAN:
         payload["cleanup_error"] = "status_timeout_group_fallback"
     return payload
+
+
+def _fallback_kill_bound_janitor_group(
+    proc: subprocess.Popen[Any],
+    *,
+    pgid: int | None = None,
+    timeout: float = 0.5,
+) -> dict[str, Any]:
+    """SIGKILL the owned group while the bound leader is still unreaped."""
+
+    deadline = time.monotonic() + max(0.0, timeout)
+
+    def remaining() -> float:
+        return max(0.0, deadline - time.monotonic())
+
+    resolved = pgid
+    if resolved is None:
+        try:
+            resolved = os.getpgid(proc.pid)
+        except OSError:
+            resolved = proc.pid
+    if resolved is None or resolved <= 0:
+        return _fallback_status(DrainResult.UNVERIFIABLE)
+    try:
+        os.killpg(int(resolved), signal.SIGKILL)
+    except OSError as exc:
+        if getattr(exc, "errno", None) != errno.ESRCH:
+            return _fallback_status(DrainResult.UNVERIFIABLE)
+        members = list_process_group_pids(int(resolved), timeout=remaining())
+        if members is None:
+            return _fallback_status(DrainResult.UNVERIFIABLE)
+        if members:
+            return _fallback_status(DrainResult.SURVIVORS)
+        if is_pid_alive(proc.pid):
+            return _fallback_status(DrainResult.UNVERIFIABLE)
+        return _fallback_status(DrainResult.CLEAN)
+    wait_process_group_gone(int(resolved), timeout=remaining())
+    members = list_process_group_pids(int(resolved), timeout=remaining())
+    if members is None:
+        return _fallback_status(DrainResult.UNVERIFIABLE)
+    if any(pid != proc.pid for pid in members):
+        return _fallback_status(DrainResult.SURVIVORS)
+    return _fallback_status(DrainResult.CLEAN)
 
 
 def _terminate_via_bound_popen(
@@ -557,16 +575,22 @@ def _terminate_via_bound_popen(
             try:
                 proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
             except (OSError, subprocess.TimeoutExpired):
-                pass
+                return _fallback_status(DrainResult.UNVERIFIABLE)
             return status
         fallback = _fallback_kill_bound_janitor_group(proc, pgid=pgid)
         if isinstance(owner, JanitorStatusOwner):
             owner.mark_safe_fallback(fallback)
         setattr(proc, "_core_tools_janitor_status", fallback)
+        if fallback.get("drain") != DrainResult.CLEAN.value:
+            return fallback
         try:
             proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
         except (OSError, subprocess.TimeoutExpired):
-            pass
+            failed = _fallback_status(DrainResult.UNVERIFIABLE)
+            if isinstance(owner, JanitorStatusOwner):
+                owner.mark_safe_fallback(failed)
+            setattr(proc, "_core_tools_janitor_status", failed)
+            return failed
         return fallback
     if proc.poll() is not None:
         return cached if isinstance(cached, dict) else None

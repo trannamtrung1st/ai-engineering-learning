@@ -7,6 +7,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -170,7 +171,14 @@ def read_process_group_id(pid: int) -> int | None:
         return None
 
 
-def list_process_group_pids(pgid: int) -> list[int] | None:
+_DARWIN_PS_TIMEOUT_SECONDS = 2.0
+
+
+def list_process_group_pids(
+    pgid: int,
+    *,
+    timeout: float | None = None,
+) -> list[int] | None:
     """Return live PIDs in *pgid*, or ``None`` when membership cannot be verified."""
 
     if pgid <= 0:
@@ -178,7 +186,8 @@ def list_process_group_pids(pgid: int) -> list[int] | None:
     if sys.platform == "win32":
         return None
     if sys.platform == "darwin":
-        return _list_darwin_process_group_pids(pgid)
+        budget = _DARWIN_PS_TIMEOUT_SECONDS if timeout is None else timeout
+        return _list_darwin_process_group_pids(pgid, timeout=budget)
     if not _linux_proc_available():
         return None
     members: list[int] = []
@@ -206,15 +215,22 @@ def list_process_group_pids(pgid: int) -> list[int] | None:
     return members
 
 
-def _list_darwin_process_group_pids(pgid: int) -> list[int] | None:
+def _list_darwin_process_group_pids(
+    pgid: int,
+    *,
+    timeout: float,
+) -> list[int] | None:
+    if timeout <= 0:
+        return None
     try:
         result = subprocess.run(
             ["ps", "-axo", "pid=,pgid="],
             capture_output=True,
             text=True,
             check=False,
+            timeout=timeout,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
     if result.returncode != 0:
         return None
@@ -242,10 +258,14 @@ def _list_darwin_process_group_pids(pgid: int) -> list[int] | None:
     return members
 
 
-def process_group_state(pgid: int) -> ProcessGroupState:
+def process_group_state(
+    pgid: int,
+    *,
+    timeout: float | None = None,
+) -> ProcessGroupState:
     """Return whether *pgid* still has verifiably live members."""
 
-    members = list_process_group_pids(pgid)
+    members = list_process_group_pids(pgid, timeout=timeout)
     if members is None:
         return ProcessGroupState.UNVERIFIABLE
     if members:
@@ -266,17 +286,20 @@ def pgid_has_live_members(pgid: int) -> bool:
 def wait_process_group_gone(pgid: int, *, timeout: float) -> ProcessGroupState:
     """Wait until *pgid* has no verifiably live members or *timeout* elapses."""
 
-    deadline = timeout
+    end = time.monotonic() + max(0.0, timeout)
     interval = 0.05
-    while deadline > 0:
-        state = process_group_state(pgid)
-        if state is not ProcessGroupState.LIVE:
-            return state
-        import time
-
-        time.sleep(min(interval, deadline))
-        deadline -= interval
-    return process_group_state(pgid)
+    last = ProcessGroupState.UNVERIFIABLE
+    while True:
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return process_group_state(pgid, timeout=0.0)
+        last = process_group_state(pgid, timeout=remaining)
+        if last is not ProcessGroupState.LIVE:
+            return last
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return last
+        time.sleep(min(interval, remaining))
 
 
 def _wait_pid(pid: int, *, timeout: float) -> bool:
