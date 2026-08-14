@@ -349,22 +349,21 @@ def test_provider_turn_stalled_error_is_exported() -> None:
 
 
 def test_cursor_resume_rejects_unexpected_durable_session_id(tmp_path: Path) -> None:
-    stream_lines = [
-        json.dumps({"type": "system", "subtype": "init", "session_id": "chat-abc"}),
-        json.dumps(
+    turns = {"n": 0}
+
+    def fake_runner(argv: list[str], cwd: Path):
+        turns["n"] += 1
+        session_id = "chat-abc" if turns["n"] == 1 else "chat-xyz"
+        yield json.dumps({"type": "system", "subtype": "init", "session_id": session_id})
+        yield json.dumps(
             {
                 "type": "result",
                 "subtype": "success",
-                "session_id": "chat-xyz",
+                "session_id": session_id,
                 "is_error": False,
                 "result": "ok",
             }
-        ),
-    ]
-
-    def fake_runner(argv: list[str], cwd: Path):
-        for line in stream_lines:
-            yield line
+        )
 
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")

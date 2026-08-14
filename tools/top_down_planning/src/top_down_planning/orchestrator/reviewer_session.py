@@ -280,6 +280,7 @@ def begin_reviewer_review(
         store,
         run_id,
         loop.with_reviewer_provider_session_id(session_id),
+        session_provider=provider,
     )
     token = bind_reviewer_session_capability(
         store,

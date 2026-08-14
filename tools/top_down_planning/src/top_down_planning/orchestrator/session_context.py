@@ -92,6 +92,7 @@ def rotate_primary_session(
         phase_action_id=phase_action_id,
         activity=requested.activity,
         context_digest=requested.context_digest,
+        session_provider=provider,
     )
     return new_session_id
 
@@ -131,6 +132,7 @@ def _start_fresh_primary_session(
         phase_action_id=phase_action_id,
         activity=requested.activity,
         context_digest=requested.context_digest,
+        session_provider=provider,
     )
     return session_id
 

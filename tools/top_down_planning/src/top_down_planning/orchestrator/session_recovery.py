@@ -10,6 +10,7 @@ from typing import Any, Literal
 from core_tools.provider import Provider
 from core_tools.provider.errors import (
     ProviderError,
+    ProviderSessionError,
     ProviderSessionNotFoundError,
     ProviderTurnError,
     ProviderTurnStalledError,
@@ -45,6 +46,7 @@ from top_down_planning.orchestrator.session_events import (
     commit_reviewer_loop_provider_session,
     emit_primary_session_started,
     emit_reviewer_session_started,
+    terminate_owned_session,
 )
 from top_down_planning.orchestrator.session_lineage import (
     emit_session_replaced,
@@ -82,13 +84,28 @@ def recovery_reason_for_session_loss(exc: BaseException) -> str:
     return REASON_PROVIDER_SESSION_NOT_FOUND
 
 
-def _release_replaced_provider_session(provider: Provider, provider_session_id: str) -> None:
+def _release_replaced_provider_session(
+    provider: Provider,
+    provider_session_id: str,
+    *,
+    role: str,
+    kind: str,
+    expected_provider_session_id: str,
+) -> None:
     """Drop a replaced provider session from the in-memory adapter registry."""
 
-    canonical_id = provider.canonical_session_id(provider_session_id)
     try:
-        provider.terminate_session(canonical_id)
+        canonical_id = terminate_owned_session(
+            provider,
+            provider_session_id,
+            role=role,
+            kind=kind,
+            expected_provider_session_id=expected_provider_session_id,
+        )
+    except ProviderSessionError:
+        raise
     except Exception as exc:
+        canonical_id = provider.canonical_session_id(provider_session_id)
         raise ProviderRunError(
             f"cannot release replaced provider session {canonical_id}: {exc}"
         ) from exc
@@ -199,6 +216,20 @@ def replace_primary_session(
         binding = get_primary_binding(run, role)
         if binding is None:
             raise ProviderRunError(f"missing {role} session binding for replacement")
+        expected_id = binding.provider_session_id
+        if not expected_id:
+            raise ProviderRunError(f"missing {role} provider session id for replacement")
+        if provider.canonical_session_id(old_provider_session_id) != provider.canonical_session_id(
+            expected_id
+        ):
+            raise ProviderSessionError(
+                (
+                    f"refusing to replace {role} session "
+                    f"{provider.canonical_session_id(old_provider_session_id)}: "
+                    f"bound id is {provider.canonical_session_id(expected_id)}"
+                ),
+                session_id=old_provider_session_id,
+            )
 
         emit_session_resume_failed(
             store,
@@ -212,7 +243,13 @@ def replace_primary_session(
             phase_action_id=phase_action_id,
         )
 
-        _release_replaced_provider_session(provider, old_provider_session_id)
+        _release_replaced_provider_session(
+            provider,
+            old_provider_session_id,
+            role=role,
+            kind="primary",
+            expected_provider_session_id=expected_id,
+        )
 
         updated_sessions = bump_primary_binding_generation(
             dict(run.get("sessions") or {}),
@@ -289,6 +326,7 @@ def replace_primary_session(
                 phase_action_id=phase_action_id,
                 activity=activity,
                 context_digest=context_digest,
+                session_provider=provider,
             ),
             role,
         )
@@ -344,6 +382,20 @@ def replace_reviewer_session(
         binding = current_loop.reviewer_binding
         if binding is None:
             raise ProviderRunError("missing reviewer session binding for replacement")
+        expected_id = binding.provider_session_id
+        if not expected_id:
+            raise ProviderRunError("missing reviewer provider session id for replacement")
+        if provider.canonical_session_id(old_provider_session_id) != provider.canonical_session_id(
+            expected_id
+        ):
+            raise ProviderSessionError(
+                (
+                    "refusing to replace reviewer session "
+                    f"{provider.canonical_session_id(old_provider_session_id)}: "
+                    f"loop owns {provider.canonical_session_id(expected_id)}"
+                ),
+                session_id=old_provider_session_id,
+            )
 
         emit_session_resume_failed(
             store,
@@ -358,7 +410,13 @@ def replace_reviewer_session(
             loop_id=current_loop.id,
         )
 
-        _release_replaced_provider_session(provider, old_provider_session_id)
+        _release_replaced_provider_session(
+            provider,
+            old_provider_session_id,
+            role="reviewer",
+            kind="reviewer",
+            expected_provider_session_id=expected_id,
+        )
 
         updated_binding = binding.with_next_generation()
         updated_loop = replace(
@@ -433,6 +491,7 @@ def replace_reviewer_session(
             updated_loop.with_reviewer_provider_session_id(new_session_id),
             phase_action_id=phase_action_id,
             expected_revision=review_revision,
+            session_provider=provider,
         )
         committed_binding = committed_loop.reviewer_binding
         if committed_binding is None:

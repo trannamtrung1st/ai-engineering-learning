@@ -23,6 +23,7 @@ from core_tools.provider.cursor_session_errors import (
 from core_tools.provider.errors import (
     ProviderBinaryNotFoundError,
     ProviderSessionError,
+    ProviderSessionMismatchError,
     ProviderSessionNotFoundError,
     ProviderSessionTerminationError,
     ProviderTurnCleanupError,
@@ -422,6 +423,7 @@ class _CursorSession:
     turn_error: ProviderTurnError | None = None
     turn_remote_observed: bool = False
     collector_thread: threading.Thread | None = None
+    pinned_durable_id: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     condition: threading.Condition = field(init=False)
 
@@ -578,7 +580,16 @@ class CursorProvider:
 
     def canonical_session_id(self, session_id: str) -> str:
         with self._session_registry_lock:
-            return self._session_aliases.get(session_id, session_id)
+            seen: set[str] = set()
+            current = session_id
+            while True:
+                nxt = self._session_aliases.get(current)
+                if nxt is None or nxt == current:
+                    return current
+                if current in seen:
+                    return current
+                seen.add(current)
+                current = nxt
 
     def get_capabilities(self) -> dict[str, Any]:
         models: list[str] = []
@@ -1046,6 +1057,11 @@ class CursorProvider:
                 if session.turn_aborted:
                     return
                 session.turn_error = exc
+        except ProviderSessionMismatchError as exc:
+            with session.condition:
+                if session.turn_aborted:
+                    return
+                session.turn_error = exc
         except ProviderTurnError as exc:
             with session.condition:
                 if session.turn_aborted:
@@ -1090,6 +1106,8 @@ class CursorProvider:
                 session.turn_remote_observed = False
                 self._collect_turn_stream(session_id, session, argv)
                 return
+            except ProviderSessionMismatchError:
+                raise
             except ProviderTurnError as exc:
                 if isinstance(exc, (ProviderTurnStalledError, ProviderTurnCleanupError)):
                     raise exc
@@ -1130,8 +1148,10 @@ class CursorProvider:
         argv: list[str],
     ) -> None:
         provider_session_id: str | None = None
-        expected_durable_id: str | None = None
-        if not session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+        expected_durable_id: str | None = session.pinned_durable_id
+        if expected_durable_id is None and not session_id.startswith(
+            _CURSOR_TRANSIENT_SESSION_PREFIX
+        ):
             expected_durable_id = session_id
         self._set_collect_context(session_id, session.role)
         try:
@@ -1160,6 +1180,8 @@ class CursorProvider:
                 )
                 if observed_id is not None:
                     provider_session_id = observed_id
+                    expected_durable_id = observed_id
+                    session.pinned_durable_id = observed_id
                 if raw.get("type") == "error":
                     detail = str(raw.get("text") or raw.get("message") or raw)
                     classified = classify_cursor_session_failure(
@@ -1228,21 +1250,29 @@ class CursorProvider:
         if event_session_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
             return session_id, None
         session.turn_remote_observed = True
-        if expected_durable_id is not None:
-            if event_session_id != expected_durable_id:
-                raise ProviderTurnError(
+        pinned = session.pinned_durable_id or expected_durable_id
+        if pinned is not None:
+            if event_session_id != pinned:
+                raise ProviderSessionMismatchError(
                     "Cursor CLI resume returned unexpected session id "
-                    f"{event_session_id!r} (expected {expected_durable_id!r})",
+                    f"{event_session_id!r} (expected {pinned!r})",
                     session_id=session_id,
                 )
             return session_id, event_session_id
         session_id = self._maybe_migrate_session(session_id, event_session_id)
+        session.pinned_durable_id = event_session_id
         self._set_collect_context(session_id, session.role)
         return session_id, event_session_id
 
     def _maybe_migrate_session(self, current_id: str, provider_session_id: str) -> str:
         if current_id == provider_session_id:
             return current_id
+        if not current_id.startswith(_CURSOR_TRANSIENT_SESSION_PREFIX):
+            raise ProviderSessionMismatchError(
+                "Cursor CLI resume returned unexpected session id "
+                f"{provider_session_id!r} (expected {current_id!r})",
+                session_id=current_id,
+            )
 
         with self._session_registry_lock:
             current = self._sessions.get(current_id)

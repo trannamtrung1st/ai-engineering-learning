@@ -1087,6 +1087,11 @@ class ReviewLoopDriver:
                 replacement_token=turn_outcome.capability_token,
                 provider=self._provider,
             )
+            persisted = reviewer_loop_provider_session_id(
+                ReviewLoop.from_dict(self._store.load_review(self._run_id, loop_id))
+            )
+            if persisted:
+                session_id = persisted
         return release_reviewer_session_after_decision(
             self._append_event,
             self._provider,

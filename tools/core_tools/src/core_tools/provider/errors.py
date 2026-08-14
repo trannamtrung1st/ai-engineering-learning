@@ -51,6 +51,10 @@ class ProviderTurnError(ProviderError):
     """A provider turn failed during execution or parsing."""
 
 
+class ProviderSessionMismatchError(ProviderSessionError, ProviderTurnError):
+    """A durable provider session identity changed without explicit replacement."""
+
+
 class ProviderTurnStalledError(ProviderTurnError):
     """A provider turn produced no stream output within the configured idle window."""
 
