@@ -202,6 +202,13 @@ def test_sync_persisted_session_id_skips_transient_cursor_pending(tmp_path: Path
         def canonical_session_id(self, session_id: str) -> str:
             return session_id
 
+        def get_session_reference(self, session_id: str) -> dict:
+            return {
+                "role": "planner",
+                "kind": "primary",
+                "session_id": session_id,
+            }
+
     provider = _PendingProvider()
     resolved = sync_persisted_session_id(
         provider,

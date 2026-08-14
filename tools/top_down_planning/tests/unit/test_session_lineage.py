@@ -232,6 +232,11 @@ def test_sync_persisted_session_id_emits_lineage_event(tmp_path: Path) -> None:
 
     provider = MagicMock()
     provider.canonical_session_id.return_value = "cursor-planner-02"
+    provider.get_session_reference.return_value = {
+        "role": "planner",
+        "kind": "primary",
+        "session_id": "cursor-planner-02",
+    }
 
     sync_persisted_session_id(
         provider,

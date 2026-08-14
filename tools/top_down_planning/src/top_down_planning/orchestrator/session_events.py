@@ -169,20 +169,28 @@ def _assert_session_binding_before_persist(
         owner_role=owner_role,
         owner_loop_id=owner_loop_id,
     )
+    getter = getattr(session_provider, "get_session_reference", None)
+    if getter is None:
+        raise ProviderSessionError(
+            f"provider cannot prove ownership of session {resolved}",
+            session_id=resolved,
+        )
     reference = None
+    lookup_error: ProviderSessionError | None = None
     for candidate in (resolved, provider_session_id):
-        getter = getattr(session_provider, "get_session_reference", None)
-        if getter is None:
-            continue
         try:
             candidate_ref = getter(candidate)
-        except ProviderSessionError:
+        except ProviderSessionError as exc:
+            lookup_error = exc
             continue
         if isinstance(candidate_ref, dict):
             reference = candidate_ref
             break
     if reference is None:
-        return resolved
+        raise ProviderSessionError(
+            f"provider session {resolved} is not registered",
+            session_id=resolved,
+        ) from lookup_error
     reported_role = str(reference.get("role") or "")
     reported_kind = str(reference.get("kind") or "")
     if reported_role != owner_role or reported_kind != kind:
@@ -195,6 +203,56 @@ def _assert_session_binding_before_persist(
             session_id=resolved,
         )
     return resolved
+
+
+def validate_provider_session_binding(
+    session_provider: Provider | None,
+    store: RunStore,
+    run_id: str,
+    provider_session_id: str,
+    *,
+    owner_role: str,
+    kind: str,
+    owner_loop_id: str | None = None,
+) -> str:
+    """Canonicalize a candidate ID and require uniqueness plus role/kind proof."""
+
+    return _assert_session_binding_before_persist(
+        session_provider,
+        store,
+        run_id,
+        provider_session_id,
+        owner_role=owner_role,
+        kind=kind,
+        owner_loop_id=owner_loop_id,
+    )
+
+
+def discard_unbound_provider_session(
+    provider: Provider,
+    session_id: str,
+    *,
+    preexisting_ids: set[str],
+) -> None:
+    """Terminate a newly allocated session that failed bind validation."""
+
+    canonical = provider.canonical_session_id(session_id)
+    if canonical in preexisting_ids or session_id in preexisting_ids:
+        return
+    for candidate in (canonical, session_id):
+        try:
+            provider.terminate_session(candidate)
+            return
+        except Exception:
+            continue
+
+
+def active_provider_session_ids(provider: Provider) -> set[str]:
+    return {
+        str(session["session_id"])
+        for session in provider.list_active_sessions()
+        if isinstance(session, dict) and session.get("session_id")
+    }
 
 
 @dataclass(frozen=True)
@@ -548,7 +606,7 @@ def commit_primary_provider_session_binding(
     ``session_provider_id_bound`` lineage events when first persisted.
     """
 
-    _assert_session_binding_before_persist(
+    resolved = _assert_session_binding_before_persist(
         session_provider,
         store,
         run_id,
@@ -562,7 +620,7 @@ def commit_primary_provider_session_binding(
     existing = get_primary_binding(run, role)
     if (
         existing is not None
-        and existing.provider_session_id == provider_session_id
+        and existing.provider_session_id == resolved
         and existing.state in {"bound", "starting"}
     ):
         return run
@@ -572,7 +630,7 @@ def commit_primary_provider_session_binding(
     run["sessions"] = update_primary_binding(
         dict(run.get("sessions") or {}),
         role=role,
-        provider_session_id=provider_session_id,
+        provider_session_id=resolved,
         provider=provider,
         activity=activity,
         context_digest=context_digest,
@@ -788,7 +846,7 @@ def commit_reviewer_loop_provider_session(
 
     binding = loop.reviewer_binding
     if binding is not None and binding.provider_session_id:
-        _assert_session_binding_before_persist(
+        resolved = _assert_session_binding_before_persist(
             session_provider,
             store,
             run_id,
@@ -797,6 +855,11 @@ def commit_reviewer_loop_provider_session(
             kind="reviewer",
             owner_loop_id=loop.id,
         )
+        if resolved != str(binding.provider_session_id):
+            loop = loop.with_reviewer_provider_session_id(
+                resolved,
+                provider=binding.provider or "cursor",
+            )
 
     if expected_revision is None:
         try:

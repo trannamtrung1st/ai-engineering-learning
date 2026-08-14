@@ -139,6 +139,7 @@ def test_sync_persisted_session_id_rebinds_capability_for_durable_session(
     bind_provider_capability(provider, pending_token, store=store, run_id=run_id)
 
     durable_id = "durable-planner-session-01"
+    provider._ensure_durable_session(durable_id, role="planner", kind="primary")
     resolved = sync_persisted_session_id(
         provider,
         store,

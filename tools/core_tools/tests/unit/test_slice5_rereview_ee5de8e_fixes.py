@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from core_tools.provider.cursor import CursorProvider
-from core_tools.provider.errors import ProviderSessionMismatchError
+from core_tools.provider.errors import ProviderSessionError, ProviderSessionMismatchError
 from tests.conftest import tracked_turn_proc
 
 
@@ -95,3 +95,19 @@ def test_canonical_session_id_resolves_alias_chains_without_cycles(
     provider._session_aliases["loop-a"] = "loop-b"
     provider._session_aliases["loop-b"] = "loop-a"
     assert provider.canonical_session_id("loop-a") in {"loop-a", "loop-b"}
+
+
+def test_second_pending_session_reporting_same_durable_id_raises(
+    tmp_path: Path,
+) -> None:
+    durable = "cursor-durable-shared"
+    provider = _cursor(tmp_path, _session_lines(durable))
+    first = provider.start_primary_session("planner", {"goal": "a"})
+    list(provider.stream_events(first))
+    assert provider.canonical_session_id(first) == durable
+    second = provider.start_reviewer_session({"goal": "b"})
+    with pytest.raises((ProviderSessionError, ProviderSessionMismatchError)):
+        list(provider.stream_events(second))
+    assert provider.canonical_session_id(first) == durable
+    assert second in provider._sessions
+    assert provider._sessions[durable].role == "planner"

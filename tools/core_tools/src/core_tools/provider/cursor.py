@@ -22,6 +22,7 @@ from core_tools.provider.cursor_session_errors import (
 )
 from core_tools.provider.errors import (
     ProviderBinaryNotFoundError,
+    ProviderError,
     ProviderSessionError,
     ProviderSessionMismatchError,
     ProviderSessionNotFoundError,
@@ -420,7 +421,7 @@ class _CursorSession:
     turn_running: bool = False
     turn_complete: bool = False
     turn_aborted: bool = False
-    turn_error: ProviderTurnError | None = None
+    turn_error: ProviderError | None = None
     turn_remote_observed: bool = False
     collector_thread: threading.Thread | None = None
     pinned_durable_id: str | None = None
@@ -1062,6 +1063,11 @@ class CursorProvider:
                 if session.turn_aborted:
                     return
                 session.turn_error = exc
+        except ProviderSessionError as exc:
+            with session.condition:
+                if session.turn_aborted:
+                    return
+                session.turn_error = exc
         except ProviderTurnError as exc:
             with session.condition:
                 if session.turn_aborted:
@@ -1106,7 +1112,7 @@ class CursorProvider:
                 session.turn_remote_observed = False
                 self._collect_turn_stream(session_id, session, argv)
                 return
-            except ProviderSessionMismatchError:
+            except ProviderSessionError:
                 raise
             except ProviderTurnError as exc:
                 if isinstance(exc, (ProviderTurnStalledError, ProviderTurnCleanupError)):

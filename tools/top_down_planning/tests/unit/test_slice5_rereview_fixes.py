@@ -135,8 +135,16 @@ def test_rotate_primary_session_aborts_when_old_session_teardown_fails(
     tmp_path: Path,
 ) -> None:
     class StickyProvider(StubProvider):
+        sticky_ids: set[str]
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.sticky_ids = set()
+
         def terminate_session(self, session_id: str) -> None:
-            return
+            if self.canonical_session_id(session_id) in self.sticky_ids:
+                return
+            super().terminate_session(session_id)
 
     store = FileRunStore(tmp_path)
     run_id = "run-20260101T008001-008001"
@@ -149,6 +157,7 @@ def test_rotate_primary_session_aborts_when_old_session_teardown_fails(
     provider.script_turn(done_events(text="ok"))
     provider.script_turn(done_events(text="ok"))
     session_id = provider.start_primary_session("planner", {"goal": "x"})
+    provider.sticky_ids.add(session_id)
     _bind_planner(store, run_id, session_id=session_id)
     revision_before = int(store.load_run(run_id)["revision"])
     config = minimal_resolved_config()

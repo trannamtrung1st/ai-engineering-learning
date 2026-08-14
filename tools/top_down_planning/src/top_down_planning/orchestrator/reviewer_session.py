@@ -267,30 +267,47 @@ def begin_reviewer_review(
     """Start a reviewer session, persist its loop binding, and bind capability."""
 
     from top_down_planning.orchestrator.session_events import (
+        active_provider_session_ids,
         commit_reviewer_loop_provider_session,
+        discard_unbound_provider_session,
     )
 
     loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+    preexisting = active_provider_session_ids(provider)
     session_id = start_reviewer_review_session(
         provider,
         review_package,
         model=model,
     )
-    commit_reviewer_loop_provider_session(
-        store,
-        run_id,
-        loop.with_reviewer_provider_session_id(session_id),
-        session_provider=provider,
+    try:
+        committed = commit_reviewer_loop_provider_session(
+            store,
+            run_id,
+            loop.with_reviewer_provider_session_id(session_id),
+            session_provider=provider,
+        )
+    except Exception:
+        discard_unbound_provider_session(
+            provider,
+            session_id,
+            preexisting_ids=preexisting,
+        )
+        raise
+    binding = committed.reviewer_binding
+    bound_id = (
+        str(binding.provider_session_id)
+        if binding is not None and binding.provider_session_id
+        else session_id
     )
     token = bind_reviewer_session_capability(
         store,
         run_id,
         provider,
-        session_id=session_id,
+        session_id=bound_id,
         loop_id=loop_id,
         phase=phase,
     )
-    return session_id, token
+    return bound_id, token
 
 
 def resume_reviewer_session_with_package(

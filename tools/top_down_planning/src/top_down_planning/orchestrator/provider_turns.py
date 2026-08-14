@@ -216,28 +216,57 @@ def _finalize_phase_action_turn(
     return finalize_successful_phase_action_turn(store, run_id, phase_action_id)
 
 
-def _abort_provider_turn(provider: Provider, session_id: str) -> None:
-    """Stop an in-flight provider turn when orchestration closes the turn early."""
+def _run_named_helper(
+    *,
+    name: str,
+    fn: Callable[[], None],
+    timeout: float,
+    escalate: Callable[[], None] | None = None,
+) -> None:
+    """Run a provider lifecycle call until it returns or a bounded escalate finishes."""
 
     done = threading.Event()
     errors: list[BaseException] = []
 
     def run() -> None:
         try:
-            provider.abort_turn(session_id)
+            fn()
         except BaseException as exc:
             errors.append(exc)
         finally:
             done.set()
 
-    thread = threading.Thread(target=run, name="tdp-provider-abort", daemon=True)
+    thread = threading.Thread(target=run, name=name, daemon=True)
     thread.start()
-    if not done.wait(timeout=ABORT_TURN_SECONDS):
-        raise ProviderRunError(
-            f"provider abort_turn timed out for session {session_id}"
-        )
+    if not done.wait(timeout=timeout):
+        if escalate is not None:
+            try:
+                escalate()
+            except BaseException:
+                pass
+        thread.join(timeout=timeout)
+        if thread.is_alive():
+            raise ProviderRunError(f"{name} failed to stop")
+        raise ProviderRunError(f"{name} timed out")
+    thread.join(timeout=timeout)
+    if thread.is_alive():
+        raise ProviderRunError(f"{name} failed to stop")
     if errors:
         raise errors[0]
+
+
+def _abort_provider_turn(provider: Provider, session_id: str) -> None:
+    """Stop an in-flight provider turn when orchestration closes the turn early."""
+
+    def terminate() -> None:
+        provider.terminate_session(session_id)
+
+    _run_named_helper(
+        name=PROVIDER_ABORT_THREAD_NAME,
+        fn=lambda: provider.abort_turn(session_id),
+        timeout=ABORT_TURN_SECONDS,
+        escalate=terminate,
+    )
 
 
 def _wait_provider_turn_settled(provider: Provider, session_id: str) -> None:
@@ -283,6 +312,8 @@ def _session_binding_syncer(
 BOUNDARY_POLL_JOIN_SECONDS = 2.0
 ABORT_TURN_SECONDS = 2.0
 PROVIDER_EVENT_PUMP_NAME = "tdp-provider-event-pump"
+PROVIDER_ABORT_THREAD_NAME = "tdp-provider-abort"
+BOUNDARY_POLL_THREAD_NAME = "tdp-boundary-poll"
 
 
 @dataclass
@@ -291,47 +322,23 @@ class _BoundaryPollState:
     done: threading.Event
     thread: threading.Thread | None = None
     pump_thread: threading.Thread | None = None
+    on_boundary: Callable[[], str | None] | None = None
     signal: str | None = None
     error: BaseException | None = None
     heartbeat: float = field(default_factory=time.monotonic)
 
 
 def _start_boundary_poll(
-    provider: Provider,
-    session_id_holder: list[str],
     on_boundary: Callable[[], str | None],
 ) -> _BoundaryPollState:
-    """Poll store-driven turn boundaries while the provider stream is idle."""
+    """Track store-driven turn boundaries without a dedicated poller thread."""
 
-    state = _BoundaryPollState(stop=threading.Event(), done=threading.Event())
-
-    def poll() -> None:
-        try:
-            while not state.stop.is_set():
-                state.heartbeat = time.monotonic()
-                try:
-                    signal = on_boundary()
-                except BaseException as exc:
-                    state.error = exc
-                    try:
-                        _abort_provider_turn(provider, session_id_holder[0])
-                    except BaseException:
-                        pass
-                    return
-                if signal is not None:
-                    state.signal = signal
-                    try:
-                        _abort_provider_turn(provider, session_id_holder[0])
-                    except BaseException as exc:
-                        state.error = exc
-                    return
-                state.stop.wait(0.05)
-        finally:
-            state.done.set()
-
-    thread = threading.Thread(target=poll, daemon=True)
-    state.thread = thread
-    thread.start()
+    state = _BoundaryPollState(
+        stop=threading.Event(),
+        done=threading.Event(),
+        on_boundary=on_boundary,
+    )
+    state.done.set()
     return state
 
 
@@ -344,6 +351,16 @@ def _raise_poll_failure(poll_state: _BoundaryPollState | None) -> None:
         raise poll_state.error
 
 
+def _record_poll_error(poll_state: _BoundaryPollState, exc: BaseException) -> None:
+    if poll_state.error is None:
+        poll_state.error = exc
+        return
+    try:
+        poll_state.error.add_note(f"cleanup: {exc!r}")
+    except Exception:
+        pass
+
+
 def _finalize_boundary_poll(
     poll_state: _BoundaryPollState | None,
     provider: Provider,
@@ -352,33 +369,56 @@ def _finalize_boundary_poll(
     if poll_state is None:
         return
     poll_state.stop.set()
-    thread = poll_state.thread
-    if thread is not None:
-        thread.join(timeout=BOUNDARY_POLL_JOIN_SECONDS)
-        if thread.is_alive():
-            try:
-                _abort_provider_turn(provider, session_id)
-            except BaseException as exc:
-                if poll_state.error is None:
-                    poll_state.error = exc
-            thread.join(timeout=BOUNDARY_POLL_JOIN_SECONDS)
-            if thread.is_alive() and poll_state.error is None:
-                poll_state.error = ProviderRunError(
-                    "store-driven boundary poller failed to stop"
-                )
     pump = poll_state.pump_thread
     if pump is not None:
+        try:
+            _abort_provider_turn(provider, session_id)
+        except BaseException as exc:
+            _record_poll_error(poll_state, exc)
         pump.join(timeout=BOUNDARY_POLL_JOIN_SECONDS)
         if pump.is_alive():
             try:
-                provider.terminate_session(session_id)
+                _run_named_helper(
+                    name="tdp-provider-terminate",
+                    fn=lambda: provider.terminate_session(session_id),
+                    timeout=ABORT_TURN_SECONDS,
+                )
             except BaseException as exc:
-                if poll_state.error is None:
-                    poll_state.error = exc
+                _record_poll_error(poll_state, exc)
             pump.join(timeout=BOUNDARY_POLL_JOIN_SECONDS)
-            if pump.is_alive() and poll_state.error is None:
-                poll_state.error = ProviderRunError("provider event pump failed to stop")
+        if pump.is_alive():
+            _record_poll_error(
+                poll_state,
+                ProviderRunError("provider event pump failed to stop"),
+            )
     _raise_poll_failure(poll_state)
+
+
+def _probe_boundary(
+    poll_state: _BoundaryPollState,
+    provider: Provider,
+    session_id: str,
+) -> bool:
+    callback = poll_state.on_boundary
+    if callback is None or poll_state.signal is not None:
+        return False
+    try:
+        signal = callback()
+    except BaseException as exc:
+        poll_state.error = exc
+        try:
+            _abort_provider_turn(provider, session_id)
+        except BaseException as abort_exc:
+            _record_poll_error(poll_state, abort_exc)
+        return True
+    if signal is not None:
+        poll_state.signal = signal
+        try:
+            _abort_provider_turn(provider, session_id)
+        except BaseException as exc:
+            _record_poll_error(poll_state, exc)
+        return True
+    return False
 
 
 def _iter_events_with_boundary_poll(
@@ -410,18 +450,17 @@ def _iter_events_with_boundary_poll(
     )
     poll_state.pump_thread = pump_thread
     pump_thread.start()
-    stop_stream = False
     try:
         while True:
             _raise_poll_failure(poll_state)
             if poll_state.signal is not None:
                 return
-            if time.monotonic() - poll_state.heartbeat > BOUNDARY_POLL_JOIN_SECONDS:
-                stop_stream = True
-                raise ProviderRunError("store-driven boundary poller failed to stop")
+            poll_state.heartbeat = time.monotonic()
             try:
                 kind, payload = events.get(timeout=0.05)
             except queue.Empty:
+                if _probe_boundary(poll_state, provider, session_id):
+                    return
                 continue
             if kind == "event":
                 yield payload
@@ -431,11 +470,6 @@ def _iter_events_with_boundary_poll(
                 return
     finally:
         poll_state.stop.set()
-        if stop_stream:
-            try:
-                _abort_provider_turn(provider, session_id)
-            except BaseException:
-                pass
 
 
 def _drain_provider_turn(
@@ -461,11 +495,7 @@ def _drain_provider_turn(
     poll_state: _BoundaryPollState | None = None
 
     if on_boundary is not None:
-        poll_state = _start_boundary_poll(
-            provider,
-            session_id_holder,
-            on_boundary,
-        )
+        poll_state = _start_boundary_poll(on_boundary)
 
     body_error: BaseException | None = None
     try:

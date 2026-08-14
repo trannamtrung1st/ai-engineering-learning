@@ -15,7 +15,7 @@ import pytest
 from core_tools.provider.cursor import CursorProvider, _TrackedTurnProc
 from core_tools.provider.process_cleanup import ProcessGroupState, is_pid_alive, terminate_process_tree
 from core_tools.provider.process_identity import ProcessIdentity
-from core_tools.provider.session_janitor import janitor_command
+from core_tools.provider.session_janitor import JanitorStatusOwner, janitor_command
 
 
 def _provider(tmp_path: Path) -> CursorProvider:
@@ -45,14 +45,20 @@ def _wait_pid_file(path: Path, timeout: float = 2.0) -> int:
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="fork unavailable")
 def test_bound_stop_uses_control_pipe_not_killpg_after_reap(tmp_path: Path) -> None:
     script = "import time; time.sleep(60)\n"
+    status_r, status_w = os.pipe()
     proc = subprocess.Popen(
-        janitor_command([sys.executable, "-c", script]),
+        janitor_command([sys.executable, "-c", script], status_fd=status_w),
         stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
+        pass_fds=(status_w,),
         text=True,
     )
+    os.close(status_w)
+    owner = JanitorStatusOwner(status_r)
+    owner.bind(proc)
+    proc._core_tools_janitor_status_owner = owner
     try:
         with patch("core_tools.provider.process_identity.os.killpg") as killpg:
             assert terminate_process_tree(proc) is True

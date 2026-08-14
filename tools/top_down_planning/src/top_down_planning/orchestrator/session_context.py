@@ -12,10 +12,13 @@ from top_down_planning.domain.session_bindings import new_session_binding
 from top_down_planning.orchestrator.activity_context import session_continuation_decision
 from top_down_planning.orchestrator.errors import ProviderRunError
 from top_down_planning.orchestrator.session_events import (
+    active_provider_session_ids,
     commit_primary_provider_session_binding,
+    discard_unbound_provider_session,
     emit_primary_session_started,
     end_primary_session_with_audit,
     resume_primary_session_with_audit,
+    validate_provider_session_binding,
 )
 from top_down_planning.persistence.interface import RunStore
 from top_down_planning.persistence.session_bindings import (
@@ -42,6 +45,32 @@ def rotate_primary_session(
 ) -> str:
     """Terminate the old primary session, bump binding generation, and start fresh."""
 
+    fresh_manifest = (
+        {**manifest, **handoff_request} if handoff_request is not None else manifest
+    )
+    preexisting = active_provider_session_ids(provider)
+    new_session_id = provider.start_primary_session(
+        role,
+        fresh_manifest,
+        model=requested.model,
+    )
+    try:
+        bound_id = validate_provider_session_binding(
+            provider,
+            store,
+            run_id,
+            new_session_id,
+            owner_role=role,
+            kind="primary",
+        )
+    except Exception:
+        discard_unbound_provider_session(
+            provider,
+            new_session_id,
+            preexisting_ids=preexisting,
+        )
+        raise
+
     termination = end_primary_session_with_audit(
         append_event,
         provider,
@@ -50,6 +79,11 @@ def rotate_primary_session(
         session_id=old_provider_session_id,
     )
     if not termination.ended:
+        discard_unbound_provider_session(
+            provider,
+            bound_id,
+            preexisting_ids=preexisting,
+        )
         raise ProviderRunError(
             f"cannot rotate primary session {termination.session_id}: teardown failed"
         )
@@ -64,37 +98,27 @@ def rotate_primary_session(
     run["revision"] = expected_revision + 1
     run["sessions"] = updated_sessions
     store.save_run(run_id, run, expected_revision)
-
-    fresh_manifest = (
-        {**manifest, **handoff_request} if handoff_request is not None else manifest
-    )
-    new_session_id = provider.start_primary_session(
-        role,
-        fresh_manifest,
-        model=requested.model,
-    )
-    emit_primary_session_started(
-        append_event,
-        provider,
-        role=role,
-        phase=phase,
-        session_id=new_session_id,
-        activity=requested.activity,
-        context_digest=requested.context_digest,
-    )
-
     commit_primary_provider_session_binding(
         store,
         run_id,
         role=role,
-        provider_session_id=new_session_id,
+        provider_session_id=bound_id,
         provider="cursor",
         phase_action_id=phase_action_id,
         activity=requested.activity,
         context_digest=requested.context_digest,
         session_provider=provider,
     )
-    return new_session_id
+    emit_primary_session_started(
+        append_event,
+        provider,
+        role=role,
+        phase=phase,
+        session_id=bound_id,
+        activity=requested.activity,
+        context_digest=requested.context_digest,
+    )
+    return bound_id
 
 
 def _start_fresh_primary_session(
@@ -109,32 +133,47 @@ def _start_fresh_primary_session(
     append_event: Callable[..., None],
     phase_action_id: str | None = None,
 ) -> str:
+    preexisting = active_provider_session_ids(provider)
     session_id = provider.start_primary_session(
         role,
         manifest,
         model=requested.model,
+    )
+    try:
+        committed = commit_primary_provider_session_binding(
+            store,
+            run_id,
+            role=role,
+            provider_session_id=session_id,
+            provider="cursor",
+            phase_action_id=phase_action_id,
+            activity=requested.activity,
+            context_digest=requested.context_digest,
+            session_provider=provider,
+        )
+    except Exception:
+        discard_unbound_provider_session(
+            provider,
+            session_id,
+            preexisting_ids=preexisting,
+        )
+        raise
+    binding = get_primary_binding(committed, role)
+    bound_id = (
+        binding.provider_session_id
+        if binding is not None and binding.provider_session_id
+        else provider.canonical_session_id(session_id)
     )
     emit_primary_session_started(
         append_event,
         provider,
         role=role,
         phase=phase,
-        session_id=session_id,
+        session_id=bound_id,
         activity=requested.activity,
         context_digest=requested.context_digest,
     )
-    commit_primary_provider_session_binding(
-        store,
-        run_id,
-        role=role,
-        provider_session_id=session_id,
-        provider="cursor",
-        phase_action_id=phase_action_id,
-        activity=requested.activity,
-        context_digest=requested.context_digest,
-        session_provider=provider,
-    )
-    return session_id
+    return bound_id
 
 
 def ensure_primary_session(

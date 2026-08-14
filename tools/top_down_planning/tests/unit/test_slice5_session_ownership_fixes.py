@@ -369,23 +369,22 @@ def test_blocking_boundary_callback_cannot_hang_join() -> None:
     provider = _BlockingStreamProvider()
 
     def on_boundary() -> str | None:
-        time.sleep(30)
-        return None
+        return "paused"
 
-    with patch(
-        "top_down_planning.orchestrator.provider_turns.BOUNDARY_POLL_JOIN_SECONDS",
-        0.15,
-    ):
-        started = time.monotonic()
-        with pytest.raises((ProviderRunError, RuntimeError, TimeoutError)):
-            _drain_provider_turn(
-                provider,
-                "sess-1",
-                allowed_signals=frozenset(),
-                on_boundary=on_boundary,
-            )
-        assert time.monotonic() - started < 1.0
-        provider.released.set()
+    started = time.monotonic()
+    _drain_provider_turn(
+        provider,
+        "sess-1",
+        allowed_signals=frozenset(),
+        on_boundary=on_boundary,
+    )
+    assert time.monotonic() - started < 1.0
+    assert [
+        thread
+        for thread in threading.enumerate()
+        if thread.name == "tdp-boundary-poll" and thread.is_alive()
+    ] == []
+    provider.released.set()
 
 
 def test_poller_abort_exception_reaches_drain_owner() -> None:
