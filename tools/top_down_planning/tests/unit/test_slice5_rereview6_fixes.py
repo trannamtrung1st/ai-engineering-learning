@@ -61,10 +61,12 @@ def test_terminate_session_prunes_dead_tracked_pid_after_failed_kill(tmp_path: P
     provider._tracked_turn_procs[stale_pid] = tracked_turn_proc(session_id, "planner", stale_pid)
     alive = {stale_pid: True}
 
-    def fake_is_alive(pid: int) -> bool:
+    def fake_is_alive(pid: int, *, timeout=None) -> bool:
+        del timeout
         return alive.get(pid, False)
 
-    def fake_terminate(_identity, *, proc=None, pgid=None, member_identities=None):
+    def fake_terminate(_identity, *, proc=None, pgid=None, member_identities=None, timeout=None):
+        del timeout
         alive[stale_pid] = False
         return TerminateIdentityResult.FAILED
 
@@ -99,7 +101,8 @@ def test_stale_tracked_pid_not_retargeted_after_session_removal(tmp_path: Path) 
     assert stale_pid not in provider._tracked_turn_procs
     terminate_calls: list[int] = []
 
-    def record_terminate(identity, *, proc=None):
+    def record_terminate(identity, *, proc=None, pgid=None, member_identities=None, timeout=None):
+        del pgid, member_identities, timeout
         terminate_calls.append(identity.pid)
         return TerminateIdentityResult.TERMINATED
 
@@ -131,7 +134,8 @@ def test_teardown_reconciles_provider_registry_after_retry_success(tmp_path: Pat
 
     alive = {"111": True}
 
-    def fake_is_alive(pid: int) -> bool:
+    def fake_is_alive(pid: int, *, timeout=None) -> bool:
+        del timeout
         return alive.get(str(pid), False)
 
     def fake_terminate(pid: int) -> bool:
@@ -180,13 +184,13 @@ def test_teardown_reconciles_provider_registry_after_retry_success(tmp_path: Pat
                         ):
                             with patch(
                                 "top_down_planning.orchestrator.provider_teardown.process_identity_is_live",
-                                side_effect=lambda identity: alive.get(
+                                side_effect=lambda identity, timeout=None: alive.get(
                                     str(identity.pid), False
                                 ),
                             ):
                                 with patch(
                                     "core_tools.provider.cursor.process_identity_is_live",
-                                    side_effect=lambda identity: alive.get(
+                                    side_effect=lambda identity, timeout=None: alive.get(
                                         str(identity.pid), False
                                     ),
                                 ):

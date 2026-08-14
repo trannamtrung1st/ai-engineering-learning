@@ -163,7 +163,7 @@ def is_pid_alive(pid: int, *, timeout: float | None = None) -> bool:
     return inspect_pid_liveness(pid, timeout=timeout) is not PidInspectState.GONE
 
 
-def read_process_group_id(pid: int) -> int | None:
+def read_process_group_id(pid: int, *, timeout: float | None = None) -> int | None:
     """Return the process group ID for *pid*, or ``None`` when unavailable."""
 
     if pid <= 0:
@@ -175,7 +175,7 @@ def read_process_group_id(pid: int) -> int | None:
         if result.state is not PidInspectState.LIVE or result.stat is None:
             return None
         return result.stat.pgid
-    if not is_pid_alive(pid):
+    if not is_pid_alive(pid, timeout=timeout):
         return None
     try:
         return int(os.getpgid(pid))
@@ -409,23 +409,30 @@ def terminate_process_tree(
     )
 
     wait_s = 5.0 if timeout is None else max(0.0, timeout)
+    deadline = None if timeout is None else time.monotonic() + wait_s
+
+    def remaining() -> float | None:
+        if deadline is None:
+            return None
+        return max(0.0, deadline - time.monotonic())
+
     if sys.platform == "win32":
         if proc.poll() is not None:
             return True
         proc.terminate()
         try:
-            proc.wait(timeout=wait_s)
+            proc.wait(timeout=wait_s if deadline is None else remaining() or 0.0)
         except subprocess.TimeoutExpired:
             proc.kill()
             try:
-                proc.wait(timeout=wait_s)
+                proc.wait(timeout=wait_s if deadline is None else remaining() or 0.0)
             except subprocess.TimeoutExpired:
                 pass
         return proc.poll() is not None
 
     resolved_pgid = pgid
     if resolved_pgid is None and proc.poll() is None:
-        resolved_pgid = read_process_group_id(proc.pid)
+        resolved_pgid = read_process_group_id(proc.pid, timeout=remaining())
 
     identity = leader_identity
     if identity is None and proc.poll() is None:
@@ -435,7 +442,7 @@ def terminate_process_tree(
     if members is None and identity is not None and proc.poll() is None:
         members = capture_process_group_identities(identity)
 
-    status = _terminate_via_bound_popen(proc, pgid=resolved_pgid, timeout=timeout)
+    status = _terminate_via_bound_popen(proc, pgid=resolved_pgid, timeout=remaining())
     if isinstance(status, dict) and status.get("drain") == "clean":
         return True
 
@@ -446,7 +453,7 @@ def terminate_process_tree(
         pgid=resolved_pgid,
         leader_identity=identity,
         known_identities=members,
-        timeout=timeout,
+        timeout=remaining(),
     )
     if cleaned:
         from core_tools.provider.session_janitor import complete_bound_secondary_clean

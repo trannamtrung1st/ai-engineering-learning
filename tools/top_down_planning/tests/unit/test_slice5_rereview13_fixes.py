@@ -60,8 +60,8 @@ def test_drain_discovers_child_forked_after_first_group_snapshot(tmp_path: Path)
 
     original = identity_mod._current_group_identities
 
-    def wrapped(pgid_value: int, *, run_id: str | None = None):
-        members = original(pgid_value, run_id=run_id)
+    def wrapped(pgid_value: int, *, run_id: str | None = None, timeout: float | None = None):
+        members = original(pgid_value, run_id=run_id, timeout=timeout)
         if not first["seen"]:
             first["seen"] = True
             go_file.write_text("go", encoding="utf-8")
@@ -130,11 +130,11 @@ def test_teardown_fails_when_dead_leader_leaves_live_descendant(tmp_path: Path) 
         with patch.object(provider, "list_active_sessions", return_value=[]):
             with patch(
                 "top_down_planning.orchestrator.provider_teardown.is_pid_alive",
-                side_effect=lambda pid: pid == 5151,
+                side_effect=lambda pid, timeout=None: pid == 5151,
             ):
                 with patch(
                     "top_down_planning.orchestrator.provider_teardown.inspect_process_identity",
-                    side_effect=lambda identity: (
+                    side_effect=lambda identity, timeout=None: (
                         IdentityInspectState.LIVE_MATCH
                         if identity.pid == 5151
                         else IdentityInspectState.GONE
@@ -142,7 +142,7 @@ def test_teardown_fails_when_dead_leader_leaves_live_descendant(tmp_path: Path) 
                 ):
                     with patch(
                         "top_down_planning.orchestrator.provider_teardown.process_identity_is_live",
-                        side_effect=lambda identity: identity.pid == 5151,
+                        side_effect=lambda identity, timeout=None: identity.pid == 5151,
                     ):
                         with patch(
                             "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",

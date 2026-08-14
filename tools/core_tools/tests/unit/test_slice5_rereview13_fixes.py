@@ -68,7 +68,7 @@ def test_terminate_bound_process_fails_closed_when_dead_leader_has_no_member_sna
         ):
             with patch(
                 "core_tools.provider.process_identity._identity_still_alive",
-                side_effect=lambda identity: identity.pid == 5151,
+                side_effect=lambda identity, timeout=None: identity.pid == 5151,
             ):
                 with patch(
                     "core_tools.provider.process_identity.read_process_group_id",
@@ -138,7 +138,7 @@ def test_drain_adopts_new_members_when_original_live_anchor_still_owns_group() -
     rounds = {"n": 0}
     signaled: list[int] = []
 
-    def fake_current(pgid: int, *, run_id: str | None = None) -> list[ProcessIdentity]:
+    def fake_current(pgid: int, *, run_id: str | None = None, timeout: float | None = None) -> list[ProcessIdentity]:
         rounds["n"] += 1
         if rounds["n"] == 1:
             return [leader]
@@ -148,7 +148,7 @@ def test_drain_adopts_new_members_when_original_live_anchor_still_owns_group() -
         signaled.append(identity.pid)
         return True
 
-    def fake_state(pgid: int) -> ProcessGroupState:
+    def fake_state(pgid: int, *, timeout: float | None = None) -> ProcessGroupState:
         if child.pid in signaled:
             return ProcessGroupState.GONE
         return ProcessGroupState.LIVE
@@ -210,7 +210,7 @@ def test_failed_tree_drain_keeps_tracking_when_leader_is_dead(tmp_path: Path) ->
     with patch("core_tools.provider.cursor.is_pid_alive", return_value=False):
         with patch(
             "core_tools.provider.process_identity._identity_still_alive",
-            side_effect=lambda identity: identity.pid == 5151,
+            side_effect=lambda identity, timeout=None: identity.pid == 5151,
         ):
             with patch(
                 "core_tools.provider.cursor.terminate_verified_process_identity",
@@ -243,7 +243,7 @@ def test_prune_and_survival_detect_descendant_only_tree(tmp_path: Path) -> None:
     with patch("core_tools.provider.cursor.is_pid_alive", return_value=False):
         with patch(
             "core_tools.provider.process_identity._identity_still_alive",
-            side_effect=lambda identity: identity.pid == 5151,
+            side_effect=lambda identity, timeout=None: identity.pid == 5151,
         ):
             provider._prune_dead_tracked_pids_for_session(session_id)
             assert 4242 in provider._tracked_turn_procs
@@ -284,7 +284,7 @@ def test_terminate_session_raises_when_leader_dead_and_tree_unresolved(
     with patch("core_tools.provider.cursor.is_pid_alive", return_value=False):
         with patch(
             "core_tools.provider.process_identity._identity_still_alive",
-            side_effect=lambda identity: identity.pid == 5151,
+            side_effect=lambda identity, timeout=None: identity.pid == 5151,
         ):
             with patch(
                 "core_tools.provider.cursor.terminate_verified_process_identity",
@@ -411,7 +411,7 @@ def test_drain_discovers_or_fails_when_child_forks_after_first_snapshot() -> Non
     signaled: list[int] = []
     snapshots: list[list[int]] = []
 
-    def fake_current(pgid: int, *, run_id: str | None = None) -> list[ProcessIdentity]:
+    def fake_current(pgid: int, *, run_id: str | None = None, timeout: float | None = None) -> list[ProcessIdentity]:
         rounds["n"] += 1
         if rounds["n"] == 1:
             members = [leader]
@@ -424,7 +424,7 @@ def test_drain_discovers_or_fails_when_child_forks_after_first_snapshot() -> Non
         signaled.append(identity.pid)
         return True
 
-    def fake_state(pgid: int) -> ProcessGroupState:
+    def fake_state(pgid: int, *, timeout: float | None = None) -> ProcessGroupState:
         if late_child.pid in signaled:
             return ProcessGroupState.GONE
         return ProcessGroupState.LIVE
@@ -469,7 +469,7 @@ def test_drain_never_succeeds_while_bounded_late_forks_keep_appearing() -> None:
     leader = ProcessIdentity(pid=4242, start_time="leader")
     live_late: set[int] = set()
 
-    def fake_current(pgid: int, *, run_id: str | None = None) -> list[ProcessIdentity]:
+    def fake_current(pgid: int, *, run_id: str | None = None, timeout: float | None = None) -> list[ProcessIdentity]:
         child = ProcessIdentity(pid=5000 + len(live_late) + 1, start_time="late")
         live_late.add(child.pid)
         return [leader, child]

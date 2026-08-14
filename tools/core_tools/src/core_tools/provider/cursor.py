@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import select
 import shutil
 import subprocess
 import sys
@@ -251,6 +252,28 @@ class _SubprocessStdoutIterator(Iterator[str]):
 
     def __iter__(self) -> _SubprocessStdoutIterator:
         return self
+
+    def wait_readable(self, timeout: float) -> bool:
+        """Return True when stdout may have a line or the process has exited."""
+
+        if self._finished:
+            return True
+        if self._proc.poll() is not None:
+            return True
+        stdout = self._proc.stdout
+        if stdout is None:
+            return True
+        try:
+            fd = stdout.fileno()
+        except (OSError, ValueError):
+            return True
+        if sys.platform == "win32":
+            return True
+        try:
+            ready, _, _ = select.select([fd], [], [], max(0.0, timeout))
+        except (OSError, ValueError):
+            return True
+        return bool(ready)
 
     def __next__(self) -> str:
         if self._finished:
@@ -680,7 +703,10 @@ class CursorProvider:
             canonical_id,
             timeout=remaining,
         )
-        surviving_pids = self._surviving_pids_for_session(canonical_id, records)
+        remaining = max(0.0, deadline - time.monotonic())
+        surviving_pids = self._surviving_pids_for_session(
+            canonical_id, records, timeout=remaining
+        )
         if surviving_pids:
             raise ProviderSessionTerminationError(
                 (
@@ -722,7 +748,10 @@ class CursorProvider:
             canonical_id,
             timeout=remaining,
         )
-        surviving = self._surviving_pids_for_session(canonical_id, records)
+        remaining = max(0.0, deadline - time.monotonic())
+        surviving = self._surviving_pids_for_session(
+            canonical_id, records, timeout=remaining
+        )
         if surviving:
             raise ProviderLifecycleTimeoutError(
                 (
@@ -1383,6 +1412,30 @@ class CursorProvider:
         return max(0.0, timeout)
 
     @staticmethod
+    def _iter_subprocess_stdout_with_idle_timeout(
+        stream: _SubprocessStdoutIterator,
+        *,
+        idle_timeout: float,
+        on_idle: Callable[[], None],
+        session_id: str | None = None,
+    ) -> Iterator[str]:
+        while True:
+            if not stream.wait_readable(idle_timeout):
+                on_idle()
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+                raise ProviderTurnStalledError(
+                    f"provider turn produced no stream output for {idle_timeout:g}s",
+                    session_id=session_id,
+                )
+            try:
+                yield next(stream)
+            except StopIteration:
+                return
+
+    @staticmethod
     def _iter_stream_with_idle_timeout(
         stream: Iterator[str],
         *,
@@ -1392,12 +1445,24 @@ class CursorProvider:
     ) -> Iterator[str]:
         """Yield stdout lines, raising when no line arrives within *idle_timeout* seconds."""
 
+        if isinstance(stream, _SubprocessStdoutIterator):
+            yield from CursorProvider._iter_subprocess_stdout_with_idle_timeout(
+                stream,
+                idle_timeout=idle_timeout,
+                on_idle=on_idle,
+                session_id=session_id,
+            )
+            return
+
         line_queue: queue.Queue[str | None] = queue.Queue()
         errors: list[BaseException] = []
+        stopped = threading.Event()
 
         def produce() -> None:
             try:
                 for line in stream:
+                    if stopped.is_set():
+                        return
                     line_queue.put(line)
             except SystemExit:
                 return
@@ -1412,32 +1477,36 @@ class CursorProvider:
             name="cursor-idle-stream",
         )
         thread.start()
-        while True:
-            try:
-                line = line_queue.get(timeout=idle_timeout)
-            except queue.Empty:
-                on_idle()
-                closer = getattr(stream, "close", None)
-                if callable(closer):
-                    try:
-                        closer()
-                    except Exception:
-                        pass
-                thread.join(timeout=max(idle_timeout, 0.2))
-                if thread.is_alive():
-                    raise ProviderTurnError(
-                        "cursor idle-stream producer failed to stop",
+        try:
+            while True:
+                try:
+                    line = line_queue.get(timeout=idle_timeout)
+                except queue.Empty:
+                    on_idle()
+                    closer = getattr(stream, "close", None)
+                    if callable(closer):
+                        try:
+                            closer()
+                        except Exception:
+                            pass
+                    stopped.set()
+                    thread.join(timeout=max(idle_timeout, 0.2))
+                    if thread.is_alive():
+                        raise ProviderTurnError(
+                            "cursor idle-stream producer failed to stop",
+                            session_id=session_id,
+                        )
+                    raise ProviderTurnStalledError(
+                        f"provider turn produced no stream output for {idle_timeout:g}s",
                         session_id=session_id,
                     )
-                raise ProviderTurnStalledError(
-                    f"provider turn produced no stream output for {idle_timeout:g}s",
-                    session_id=session_id,
-                )
-            if line is None:
-                if errors:
-                    raise errors[0]
-                break
-            yield line
+                if line is None:
+                    if errors:
+                        raise errors[0]
+                    break
+                yield line
+        finally:
+            stopped.set()
 
     def _emit_provider_event(self, event: dict[str, Any]) -> None:
         if self._on_provider_event is not None:
@@ -1521,18 +1590,25 @@ class CursorProvider:
             return tracked_ids
 
     @staticmethod
-    def _tracked_tree_is_live(entry: _TrackedTurnProc) -> bool:
+    def _tracked_tree_is_live(
+        entry: _TrackedTurnProc,
+        *,
+        timeout: float | None = None,
+    ) -> bool:
         if entry.proc is not None and entry.proc.poll() is None:
             return True
-        if entry.identity is not None and process_identity_is_live(entry.identity):
+        if entry.identity is not None and process_identity_is_live(
+            entry.identity, timeout=timeout
+        ):
             return True
         if entry.member_identities:
             if any(
-                process_identity_is_live(identity) for identity in entry.member_identities
+                process_identity_is_live(identity, timeout=timeout)
+                for identity in entry.member_identities
             ):
                 return True
         if entry.pgid is not None:
-            state = process_group_state(entry.pgid)
+            state = process_group_state(entry.pgid, timeout=timeout)
             if state is ProcessGroupState.GONE:
                 entry.group_observed_gone = True
                 return False
@@ -1544,7 +1620,7 @@ class CursorProvider:
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )
-        return is_pid_alive(pid)
+        return is_pid_alive(pid, timeout=timeout)
 
     def _prune_dead_tracked_pids_for_session(self, session_id: str) -> None:
         tracked_ids = self._tracked_session_ids(session_id)
@@ -1565,6 +1641,8 @@ class CursorProvider:
         self,
         session_id: str,
         records: list[dict[str, Any]],
+        *,
+        timeout: float | None = None,
     ) -> tuple[int, ...]:
         tracked_ids = self._tracked_session_ids(session_id)
         surviving: set[int] = set()
@@ -1575,21 +1653,23 @@ class CursorProvider:
             if not identities:
                 continue
             for identity in identities:
-                if process_identity_is_live(identity):
+                if process_identity_is_live(identity, timeout=timeout):
                     surviving.add(identity.pid)
         with self._turn_proc_lock:
             for pid, entry in self._tracked_turn_procs.items():
                 if entry.session_id not in tracked_ids:
                     continue
-                if not self._tracked_tree_is_live(entry):
+                if not self._tracked_tree_is_live(entry, timeout=timeout):
                     continue
                 live_found = False
                 if entry.member_identities:
                     for identity in entry.member_identities:
-                        if process_identity_is_live(identity):
+                        if process_identity_is_live(identity, timeout=timeout):
                             surviving.add(identity.pid)
                             live_found = True
-                if entry.identity is not None and process_identity_is_live(entry.identity):
+                if entry.identity is not None and process_identity_is_live(
+                    entry.identity, timeout=timeout
+                ):
                     surviving.add(entry.identity.pid)
                     live_found = True
                 if not live_found:
@@ -1620,6 +1700,10 @@ class CursorProvider:
                     stream = iterator
                 else:
                     stream = runner(argv, cwd)
+                    if isinstance(stream, _SubprocessStdoutIterator):
+                        iterator = stream
+                        if active_proc[0] is None:
+                            active_proc[0] = stream._proc
 
                 def on_idle() -> None:
                     proc = active_proc[0]

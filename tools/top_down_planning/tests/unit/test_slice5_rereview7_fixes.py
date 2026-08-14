@@ -252,7 +252,8 @@ def test_teardown_reconciles_registry_after_orphan_retry_succeeds(tmp_path: Path
     alive = {"111": True}
     terminate_attempts: list[int] = []
 
-    def fake_is_alive(pid: int) -> bool:
+    def fake_is_alive(pid: int, *, timeout=None) -> bool:
+        del timeout
         return alive.get(str(pid), False)
 
     def fake_terminate(pid: int) -> bool:
@@ -345,13 +346,13 @@ def test_teardown_reconciles_registry_after_orphan_retry_succeeds(tmp_path: Path
                                 ):
                                     with patch(
                                         "top_down_planning.orchestrator.provider_teardown.process_identity_is_live",
-                                        side_effect=lambda identity: alive.get(
+                                        side_effect=lambda identity, timeout=None: alive.get(
                                             str(identity.pid), False
                                         ),
                                     ):
                                         with patch(
                                             "core_tools.provider.cursor.process_identity_is_live",
-                                            side_effect=lambda identity: alive.get(
+                                            side_effect=lambda identity, timeout=None: alive.get(
                                                 str(identity.pid), False
                                             ),
                                         ):

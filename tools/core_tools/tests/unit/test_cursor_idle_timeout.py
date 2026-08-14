@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from pathlib import Path
@@ -10,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core_tools.provider.cursor import CursorProvider
+from core_tools.provider.cursor import CursorProvider, _SubprocessStdoutIterator
 from core_tools.provider.errors import ProviderTurnError, ProviderTurnStalledError
 
 
@@ -197,77 +198,77 @@ def test_cursor_provider_idle_timeout_opt_out_is_explicit_zero(tmp_path: Path) -
     assert errors
 
 
-class _IgnoreCloseIdleStream:
-    def __init__(self, first_line: str | None = None) -> None:
-        self._first_line = first_line
-        self._emitted = False
+def _idle_stream_survivors() -> list[threading.Thread]:
+    return [
+        thread
+        for thread in threading.enumerate()
+        if thread.name == "cursor-idle-stream" and thread.is_alive()
+    ]
 
-    def __iter__(self):
-        return self
 
-    def __next__(self) -> str:
-        if self._first_line is not None and not self._emitted:
-            self._emitted = True
-            return self._first_line
-        while True:
-            threading.Event().wait(timeout=0.05)
+def _stalling_stdout_runner(first_line: str | None = None):
+    script_lines = []
+    if first_line is not None:
+        script_lines.append(f"print({first_line!r}, flush=True)")
+    script_lines.append("import time")
+    script_lines.append("time.sleep(60)")
+    script = "\n".join(script_lines)
 
-    def close(self) -> None:
-        return
+    def runner(argv: list[str], cwd: Path):
+        del argv
+        return _SubprocessStdoutIterator([sys.executable, "-c", script], cwd)
+
+    return runner
 
 
 def test_default_config_cursor_stream_stalls_without_override(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
-
-    def silent_runner(argv: list[str], cwd: Path):
-        return _IgnoreCloseIdleStream()
-
-    provider = CursorProvider(
+    default_provider = CursorProvider(
         {},
         workspace=tmp_path,
-        runner=silent_runner,
+        runner=lambda argv, cwd: iter(()),
         binary=str(agent_path),
         skip_probe=True,
     )
-    assert provider._turn_idle_timeout_seconds() == 2.0
+    assert default_provider._turn_idle_timeout_seconds() == 2.0
+    provider = CursorProvider(
+        {"limits": {"provider": {"turn_idle_timeout_seconds": 0.05}}},
+        workspace=tmp_path,
+        runner=_stalling_stdout_runner(),
+        binary=str(agent_path),
+        skip_probe=True,
+    )
+    assert provider._turn_idle_timeout_seconds() == 0.05
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     started = time.monotonic()
     with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
         list(provider.stream_events(session_id))
-    assert time.monotonic() - started < 8.0
+    assert time.monotonic() - started < 2.0
+    assert _idle_stream_survivors() == []
 
 
 def test_default_config_stalls_after_done_looking_payload(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
-
-    def runner(argv: list[str], cwd: Path):
-        return _IgnoreCloseIdleStream(
-            '{"type":"result","subtype":"success","is_error":false}'
-        )
-
     provider = CursorProvider(
-        {},
+        {"limits": {"provider": {"turn_idle_timeout_seconds": 0.05}}},
         workspace=tmp_path,
-        runner=runner,
+        runner=_stalling_stdout_runner(
+            '{"type":"result","subtype":"success","is_error":false}'
+        ),
         binary=str(agent_path),
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
         list(provider.stream_events(session_id))
+    assert _idle_stream_survivors() == []
 
 
 def test_idle_watchdog_stops_producer_that_ignores_close(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent"
     agent_path.write_text("", encoding="utf-8")
-
-    def runner(argv: list[str], cwd: Path):
-        return _IgnoreCloseIdleStream(
-            '{"type":"assistant","message":{"content":[{"type":"text","text":"start"}]}}'
-        )
-
     provider = CursorProvider(
         {
             "limits": {
@@ -278,12 +279,15 @@ def test_idle_watchdog_stops_producer_that_ignores_close(tmp_path: Path) -> None
             }
         },
         workspace=tmp_path,
-        runner=runner,
+        runner=_stalling_stdout_runner(
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"start"}]}}'
+        ),
         binary=str(agent_path),
         skip_probe=True,
     )
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     with patch("ctypes.pythonapi.PyThreadState_SetAsyncExc") as async_exc:
-        with pytest.raises(ProviderTurnError, match="idle-stream producer failed to stop"):
+        with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
             list(provider.stream_events(session_id))
     assert async_exc.call_count == 0
+    assert _idle_stream_survivors() == []

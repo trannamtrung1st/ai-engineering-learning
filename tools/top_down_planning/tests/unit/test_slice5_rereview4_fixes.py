@@ -113,7 +113,8 @@ def test_teardown_emits_session_ended_only_after_retry_success() -> None:
 
     alive = {"111": True}
 
-    def fake_is_alive(pid: int) -> bool:
+    def fake_is_alive(pid: int, *, timeout=None) -> bool:
+        del timeout
         return alive.get(str(pid), False)
 
     def mock_terminate_all_sessions() -> list[dict[str, object]]:

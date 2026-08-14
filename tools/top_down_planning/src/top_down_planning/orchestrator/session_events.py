@@ -21,6 +21,7 @@ from top_down_planning.domain.session_lineage import (
     SESSION_REPLACEMENT_FAILED,
     SESSION_REPLACEMENT_STARTED,
     session_provider_id_bound_payload,
+    session_replaced_payload,
 )
 from top_down_planning.orchestrator.session_lineage import (
     emit_session_provider_id_bound,
@@ -342,19 +343,21 @@ def discard_unbound_provider_session(
     """Terminate a newly allocated session that failed bind validation."""
 
     canonical = provider.canonical_session_id(session_id)
-    if canonical in preexisting_ids or session_id in preexisting_ids:
+    if canonical in preexisting_ids and session_id in preexisting_ids:
         return
     last_error: BaseException | None = None
     terminated = False
-    seen: set[str] = set()
-    for candidate in (canonical, session_id):
-        if candidate in seen:
+    targets: list[str] = []
+    for candidate in (session_id, canonical):
+        if candidate in preexisting_ids or candidate in targets:
             continue
-        seen.add(candidate)
+        targets.append(candidate)
+    if not targets:
+        return
+    for candidate in targets:
         try:
             provider.terminate_session(candidate, timeout=timeout)
             terminated = True
-            break
         except TypeError:
             raise
         except Exception as exc:
@@ -365,7 +368,7 @@ def discard_unbound_provider_session(
         for session in provider.list_active_sessions()
         if isinstance(session, dict) and session.get("session_id")
     }
-    still_active = canonical in remaining or session_id in remaining
+    still_active = any(target in remaining for target in targets)
     if still_active:
         raise ProviderSessionError(
             (
@@ -794,6 +797,16 @@ def commit_primary_provider_session_binding(
                 phase_action_id=phase_action_id,
             )
         )
+        replaced = _pending_replacement_success_payload(
+            store,
+            run_id,
+            role=role,
+            generation=binding.generation,
+            provider_session_id=binding.provider_session_id,
+            new_session_instance_id=binding.session_instance_id,
+        )
+        if replaced is not None:
+            events.append(replaced)
     store.commit(
         run_id,
         CommitSpec(
@@ -881,17 +894,18 @@ def _has_session_provider_id_bound_event(
     return False
 
 
-def _complete_replacement_if_durable(
+def _pending_replacement_success_payload(
     store: RunStore,
     run_id: str,
     *,
     role: str,
     generation: int | None,
     provider_session_id: str,
+    new_session_instance_id: str,
     loop_id: str | None = None,
-) -> None:
+) -> dict[str, Any] | None:
     if generation is None or is_transient_provider_session_id(provider_session_id):
-        return
+        return None
     started: dict[str, Any] | None = None
     replaced = False
     failed = False
@@ -910,21 +924,64 @@ def _complete_replacement_if_durable(
         elif event_type == SESSION_REPLACEMENT_FAILED:
             failed = True
     if started is None or replaced or failed:
-        return
+        return None
     run = store.load_run(run_id)
-    instance_id = str(started.get("session_instance_id") or "")
-    emit_session_replaced(
-        store,
-        run_id,
+    old_instance = str(
+        started.get("old_session_instance_id")
+        or started.get("session_instance_id")
+        or ""
+    )
+    new_instance = str(
+        started.get("new_session_instance_id") or new_session_instance_id
+    )
+    return session_replaced_payload(
+        run_id=run_id,
         phase=str(started.get("phase") or run.get("phase") or ""),
         role=role,
-        old_session_instance_id=instance_id,
-        new_session_instance_id=instance_id,
+        old_session_instance_id=old_instance,
+        new_session_instance_id=new_instance,
         generation=int(generation),
         reason=str(started.get("reason") or ""),
         old_provider_session_id=started.get("old_provider_session_id"),
         new_provider_session_id=provider_session_id,
         phase_action_id=started.get("phase_action_id"),
+        loop_id=loop_id,
+    )
+
+
+def _complete_replacement_if_durable(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    generation: int | None,
+    provider_session_id: str,
+    loop_id: str | None = None,
+    new_session_instance_id: str = "",
+) -> None:
+    payload = _pending_replacement_success_payload(
+        store,
+        run_id,
+        role=role,
+        generation=generation,
+        provider_session_id=provider_session_id,
+        new_session_instance_id=new_session_instance_id,
+        loop_id=loop_id,
+    )
+    if payload is None:
+        return
+    emit_session_replaced(
+        store,
+        run_id,
+        phase=str(payload.get("phase") or ""),
+        role=role,
+        old_session_instance_id=str(payload["old_session_instance_id"]),
+        new_session_instance_id=str(payload["new_session_instance_id"]),
+        generation=int(payload["generation"]),
+        reason=str(payload.get("reason") or ""),
+        old_provider_session_id=payload.get("old_provider_session_id"),
+        new_provider_session_id=payload.get("new_provider_session_id"),
+        phase_action_id=payload.get("phase_action_id"),
         loop_id=loop_id,
     )
 
@@ -974,6 +1031,9 @@ def sync_persisted_session_id(
             role=role,
             generation=generation,
             provider_session_id=resolved,
+            new_session_instance_id=(
+                existing.session_instance_id if existing is not None else ""
+            ),
         )
         return resolved
     if current and not is_transient_provider_session_id(current) and current != resolved:
@@ -998,6 +1058,9 @@ def sync_persisted_session_id(
         role=role,
         generation=generation,
         provider_session_id=resolved,
+        new_session_instance_id=(
+            existing.session_instance_id if existing is not None else ""
+        ),
     )
     return resolved
 
@@ -1090,6 +1153,9 @@ def sync_reviewer_loop_session_id(
             generation=binding.generation if binding is not None else None,
             provider_session_id=resolved,
             loop_id=loop_id,
+            new_session_instance_id=(
+                binding.session_instance_id if binding is not None else ""
+            ),
         )
         return resolved
     if (
@@ -1120,6 +1186,9 @@ def sync_reviewer_loop_session_id(
         generation=binding.generation if binding is not None else None,
         provider_session_id=resolved,
         loop_id=loop_id,
+        new_session_instance_id=(
+            binding.session_instance_id if binding is not None else ""
+        ),
     )
     return resolved
 
@@ -1218,6 +1287,17 @@ def commit_reviewer_loop_provider_session(
                 phase_action_id=phase_action_id,
             )
         )
+        replaced = _pending_replacement_success_payload(
+            store,
+            run_id,
+            role="reviewer",
+            generation=committed_binding.generation,
+            provider_session_id=committed_binding.provider_session_id,
+            new_session_instance_id=committed_binding.session_instance_id,
+            loop_id=loop.id,
+        )
+        if replaced is not None:
+            events.append(replaced)
     store.commit(
         run_id,
         CommitSpec(

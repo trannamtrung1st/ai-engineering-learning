@@ -281,7 +281,7 @@ def test_cursor_unregisters_only_after_status_fd_closed(tmp_path: Path) -> None:
     with patch.object(provider, "_unregister_tracked_turn_proc_by_pid", unregister):
         with patch(
             "core_tools.provider.cursor.terminate_verified_process_identity",
-            side_effect=lambda identity, proc=None, pgid=None, member_identities=None: (
+            side_effect=lambda identity, proc=None, pgid=None, member_identities=None, timeout=None: (
                 _secondary_success(proc)
             ),
         ):

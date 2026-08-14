@@ -383,6 +383,8 @@ def replace_primary_session(
                             reason=recovery_reason,
                             old_provider_session_id=old_provider_session_id,
                             phase_action_id=phase_action_id,
+                            old_session_instance_id=binding.session_instance_id,
+                            new_session_instance_id=new_binding.session_instance_id,
                         )
                     ],
                 ),
@@ -643,6 +645,8 @@ def replace_reviewer_session(
                             old_provider_session_id=old_provider_session_id,
                             phase_action_id=phase_action_id,
                             loop_id=loop.id,
+                            old_session_instance_id=binding.session_instance_id,
+                            new_session_instance_id=updated_binding.session_instance_id,
                         )
                     ],
                 ),

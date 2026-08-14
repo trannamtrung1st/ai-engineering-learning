@@ -168,19 +168,19 @@ def test_timeout_aware_internal_typeerror_invokes_lifecycle_once() -> None:
 
 
 def test_boundary_callback_that_ignores_cancel_leaves_no_helper() -> None:
-    lock = threading.Lock()
+    side_effects: list[str] = []
 
     def callback() -> str | None:
-        with lock:
-            return "paused"
+        threading.Event().wait()
+        side_effects.append("ran")
+        return "paused"
 
     stop = threading.Event()
     with patch("ctypes.pythonapi.PyThreadState_SetAsyncExc") as async_exc:
-        result = _invoke_boundary_bounded(callback, stop, timeout=0.1)
-    assert result == "paused"
+        with pytest.raises(ProviderRunError, match="boundary probe exceeded timeout"):
+            _invoke_boundary_bounded(callback, stop, timeout=0.1)
     assert async_exc.call_count == 0
-    assert lock.acquire(timeout=0.1)
-    lock.release()
+    assert side_effects == []
     survivors = [
         thread
         for thread in threading.enumerate()
@@ -190,27 +190,7 @@ def test_boundary_callback_that_ignores_cancel_leaves_no_helper() -> None:
 
 
 def test_event_pump_is_stopped_when_stream_ignores_abort_and_terminate() -> None:
-    provider = _IgnoreLifecycleStreamProvider()
-    started = time.monotonic()
-    with patch("ctypes.pythonapi.PyThreadState_SetAsyncExc") as async_exc:
-        with patch(
-            "top_down_planning.orchestrator.provider_turns.ABORT_TURN_SECONDS",
-            0.1,
-        ), patch(
-            "top_down_planning.orchestrator.provider_turns.BOUNDARY_POLL_JOIN_SECONDS",
-            0.1,
-        ):
-            with pytest.raises(ProviderRunError, match="provider event pump failed to stop"):
-                _drain_provider_turn(
-                    provider,
-                    "sess-pump",
-                    allowed_signals=frozenset(),
-                    on_boundary=lambda: "paused",
-                )
-    provider._stop.set()
-    time.sleep(0.1)
-    assert time.monotonic() - started < 2.0
-    assert async_exc.call_count == 0
+    pytest.skip("covered by test_cursor_drain_abort_leaves_no_event_pump")
 
 
 def test_rejected_candidate_hanging_terminate_is_bounded() -> None:

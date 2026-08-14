@@ -82,6 +82,8 @@ def session_replacement_started_payload(
     old_provider_session_id: str | None = None,
     phase_action_id: str | None = None,
     loop_id: str | None = None,
+    old_session_instance_id: str | None = None,
+    new_session_instance_id: str | None = None,
 ) -> dict[str, Any]:
     payload = _base_fields(
         run_id=run_id,
@@ -93,6 +95,10 @@ def session_replacement_started_payload(
     payload["session_instance_id"] = str(session_instance_id).strip()
     payload["generation"] = int(generation)
     payload["reason"] = str(reason).strip()
+    new_id = str(new_session_instance_id or session_instance_id).strip()
+    payload["new_session_instance_id"] = new_id
+    if old_session_instance_id is not None and str(old_session_instance_id).strip():
+        payload["old_session_instance_id"] = str(old_session_instance_id).strip()
     if old_provider_session_id is not None and str(old_provider_session_id).strip():
         payload["old_provider_session_id"] = str(old_provider_session_id).strip()
     if loop_id is not None and str(loop_id).strip():

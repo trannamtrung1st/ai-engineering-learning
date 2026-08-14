@@ -325,7 +325,12 @@ def test_bound_stop_uses_shared_janitor_parent_wait() -> None:
         return_value=True,
     ):
         _terminate_via_bound_popen(proc)
-    proc.wait.assert_called_with(timeout=JANITOR_PARENT_WAIT_SECONDS)
+    proc.wait.assert_called()
+    waited = proc.wait.call_args.kwargs.get("timeout")
+    if waited is None and proc.wait.call_args.args:
+        waited = proc.wait.call_args.args[0]
+    assert waited is not None
+    assert 0 < float(waited) <= JANITOR_PARENT_WAIT_SECONDS
 
 
 def test_drain_group_does_not_spawn_detached_kill_helper() -> None:

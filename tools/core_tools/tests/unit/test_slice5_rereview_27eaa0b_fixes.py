@@ -37,7 +37,7 @@ def test_abort_turn_timeout_tracks_caller_budget_not_fixed_drain_waits(
         except ProviderLifecycleTimeoutError:
             pass
         elapsed = time.monotonic() - started
-        assert elapsed < 2.0
+        assert elapsed <= 0.3 + 0.35
         proc.poll()
         if proc.poll() is None:
             proc.kill()

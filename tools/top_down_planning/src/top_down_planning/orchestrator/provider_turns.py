@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import pickle
 import queue
+import select
+import signal
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -51,6 +55,7 @@ from top_down_planning.orchestrator.run_transitions import generate_phase_action
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.orchestrator.session_lineage import emit_session_replacement_failed
 from top_down_planning.orchestrator.session_events import (
+    discard_unbound_provider_session,
     sync_persisted_session_id,
     sync_reviewer_loop_session_id,
 )
@@ -391,15 +396,142 @@ def _invoke_boundary_bounded(
     *,
     timeout: float,
 ) -> str | None:
-    """Run a store-only boundary callback on this thread.
+    """Run a store-only boundary callback with a hard wall-clock bound.
 
-    Callbacks must return promptly. TDP does not asynchronously inject exceptions
-    into other threads or commandeer process-global ``SIGALRM``.
+    Callbacks must be TDP-owned store probes. This helper does not inject
+    asynchronous exceptions or commandeer process-global ``SIGALRM``. On POSIX it
+    isolates the probe in a child process so a never-returning callback cannot
+    leak a worker in the caller.
     """
 
-    del timeout
+    if timeout <= 0:
+        raise ValueError("boundary probe timeout must be positive")
     _BOUNDARY_CANCEL.set(stop)
-    return callback()
+    if hasattr(os, "fork") and threading.active_count() == 1:
+        return _invoke_boundary_in_child(callback, timeout=timeout)
+    return _invoke_boundary_in_thread(callback, timeout=timeout)
+
+
+def _invoke_boundary_in_thread(
+    callback: Callable[[], str | None],
+    *,
+    timeout: float,
+) -> str | None:
+    box: list[str | None | BaseException] = []
+
+    def run() -> None:
+        try:
+            box.append(callback())
+        except BaseException as exc:
+            box.append(exc)
+
+    worker = threading.Thread(target=run, daemon=True, name=BOUNDARY_POLL_THREAD_NAME)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise ProviderRunError("boundary probe exceeded timeout")
+    if not box:
+        return None
+    outcome = box[0]
+    if isinstance(outcome, BaseException):
+        raise outcome
+    return outcome
+
+
+def _invoke_boundary_in_child(
+    callback: Callable[[], str | None],
+    *,
+    timeout: float,
+) -> str | None:
+    read_fd, write_fd = os.pipe()
+    try:
+        pid = os.fork()
+    except OSError:
+        os.close(read_fd)
+        os.close(write_fd)
+        return _invoke_boundary_in_thread(callback, timeout=timeout)
+    if pid == 0:
+        os.close(read_fd)
+        try:
+            payload = pickle.dumps(("ok", callback()), protocol=pickle.HIGHEST_PROTOCOL)
+        except BaseException as exc:
+            try:
+                payload = pickle.dumps(("err", exc), protocol=pickle.HIGHEST_PROTOCOL)
+            except Exception:
+                payload = pickle.dumps(
+                    ("err", ProviderRunError(f"boundary probe failed: {exc!r}")),
+                    protocol=pickle.HIGHEST_PROTOCOL,
+                )
+        try:
+            os.write(write_fd, payload)
+        except OSError:
+            pass
+        try:
+            os.close(write_fd)
+        except OSError:
+            pass
+        os._exit(0)
+    os.close(write_fd)
+    try:
+        deadline = time.monotonic() + timeout
+        chunks = bytearray()
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _kill_boundary_child(pid)
+                raise ProviderRunError("boundary probe exceeded timeout")
+            try:
+                ready, _, _ = select.select([read_fd], [], [], remaining)
+            except InterruptedError:
+                continue
+            if not ready:
+                _kill_boundary_child(pid)
+                raise ProviderRunError("boundary probe exceeded timeout")
+            try:
+                chunk = os.read(read_fd, 65536)
+            except OSError:
+                chunk = b""
+            if not chunk:
+                break
+            chunks.extend(chunk)
+            try:
+                kind, value = pickle.loads(bytes(chunks))
+            except Exception:
+                continue
+            _reap_boundary_child(pid)
+            if kind == "err":
+                if isinstance(value, BaseException):
+                    raise value
+                raise ProviderRunError(str(value))
+            if value is None or isinstance(value, str):
+                return value
+            raise ProviderRunError("boundary probe returned a non-signal value")
+        _reap_boundary_child(pid)
+        raise ProviderRunError("boundary probe exited without a result")
+    finally:
+        try:
+            os.close(read_fd)
+        except OSError:
+            pass
+
+
+def _kill_boundary_child(pid: int) -> None:
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except OSError:
+        pass
+    _reap_boundary_child(pid)
+
+
+def _reap_boundary_child(pid: int) -> None:
+    try:
+        os.waitpid(pid, 0)
+    except ChildProcessError:
+        pass
+    except OSError:
+        pass
 
 
 def _probe_boundary(
@@ -760,22 +892,39 @@ def _consume_provider_turn_with_session_recovery(
                 new_session_id,
                 "replacement_identity_conflict",
             )
+            cleanup_error: BaseException | None = None
             try:
-                provider.terminate_session(new_session_id, timeout=2.0)
-            except Exception:
-                pass
-            fail_session_recovery_exhausted(
-                store,
-                run_id,
-                phase=phase,
-                role=role,
-                phase_action_id=phase_action_id,
-                message=(
-                    "replacement provider session identity failed for "
-                    f"phase_action_id {phase_action_id}: {exc}"
-                ),
-                loop_id=loop_id,
-            )
+                discard_unbound_provider_session(
+                    provider,
+                    new_session_id,
+                    preexisting_ids={
+                        session_id,
+                        provider.canonical_session_id(session_id),
+                    },
+                    timeout=ABORT_TURN_SECONDS,
+                )
+            except BaseException as cleanup_exc:
+                cleanup_error = cleanup_exc
+            try:
+                fail_session_recovery_exhausted(
+                    store,
+                    run_id,
+                    phase=phase,
+                    role=role,
+                    phase_action_id=phase_action_id,
+                    message=(
+                        "replacement provider session identity failed for "
+                        f"phase_action_id {phase_action_id}: {exc}"
+                    ),
+                    loop_id=loop_id,
+                )
+            except SessionRecoveryExhausted as exhausted:
+                if cleanup_error is not None:
+                    try:
+                        exhausted.add_note(f"cleanup: {cleanup_error!r}")
+                    except Exception:
+                        pass
+                raise exhausted from exc
         except (ProviderSessionNotFoundError, ProviderTurnStalledError) as exc:
             fail_session_recovery_exhausted(
                 store,

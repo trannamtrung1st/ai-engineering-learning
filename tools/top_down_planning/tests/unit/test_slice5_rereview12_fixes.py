@@ -130,8 +130,8 @@ def test_drain_owned_process_group_discovers_late_fork(tmp_path: Path) -> None:
 
     original = identity_mod._current_group_identities
 
-    def wrapped(pgid_value: int, *, run_id: str | None = None):
-        members = original(pgid_value, run_id=run_id)
+    def wrapped(pgid_value: int, *, run_id: str | None = None, timeout: float | None = None):
+        members = original(pgid_value, run_id=run_id, timeout=timeout)
         if not first["seen"]:
             first["seen"] = True
             go_file.write_text("go", encoding="utf-8")

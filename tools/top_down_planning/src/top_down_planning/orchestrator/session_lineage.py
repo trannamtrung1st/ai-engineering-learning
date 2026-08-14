@@ -66,6 +66,8 @@ def emit_session_replacement_started(
     old_provider_session_id: str | None = None,
     phase_action_id: str | None = None,
     loop_id: str | None = None,
+    old_session_instance_id: str | None = None,
+    new_session_instance_id: str | None = None,
 ) -> None:
     append_session_lineage_event(
         store,
@@ -80,6 +82,8 @@ def emit_session_replacement_started(
             old_provider_session_id=old_provider_session_id,
             phase_action_id=phase_action_id,
             loop_id=loop_id,
+            old_session_instance_id=old_session_instance_id,
+            new_session_instance_id=new_session_instance_id,
         ),
     )
 

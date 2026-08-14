@@ -96,8 +96,12 @@ def test_lineage_payloads_include_required_fields() -> None:
         session_instance_id="tdp-session-b2",
         generation=2,
         reason="provider_session_not_found",
+        old_session_instance_id="tdp-session-a1",
+        new_session_instance_id="tdp-session-b2",
     )
     assert started["type"] == SESSION_REPLACEMENT_STARTED
+    assert started["old_session_instance_id"] == "tdp-session-a1"
+    assert started["new_session_instance_id"] == "tdp-session-b2"
 
     resume_failed = session_resume_failed_payload(
         run_id="run-1",
