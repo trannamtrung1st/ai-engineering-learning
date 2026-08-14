@@ -120,6 +120,15 @@ def decode_janitor_status(raw: bytes | str | None) -> dict[str, Any] | None:
     return payload
 
 
+class JanitorOwnerState(Enum):
+    PENDING = "pending"
+    TERMINAL = "terminal"
+    EOF_WITHOUT_STATUS = "eof_without_status"
+    TIMED_OUT = "timed_out"
+    CLOSED = "closed"
+    SAFE_FALLBACK_COMPLETE = "safe_fallback_complete"
+
+
 class JanitorStatusOwner:
     """Single-reader barrier for a bound janitor public-status FD."""
 
@@ -128,15 +137,34 @@ class JanitorStatusOwner:
         self._done = threading.Condition(self._lock)
         self._fd: int | None = fd
         self._status: dict[str, Any] | None = None
-        self._published = False
+        self._state = JanitorOwnerState.PENDING
+        self._reader_active = False
+        self._closed = False
+
+    @property
+    def reap_allowed(self) -> bool:
+        return self._state in {
+            JanitorOwnerState.TERMINAL,
+            JanitorOwnerState.SAFE_FALLBACK_COMPLETE,
+        }
+
+    def mark_safe_fallback(self, status: dict[str, Any]) -> None:
+        with self._lock:
+            self._status = status
+            self._state = JanitorOwnerState.SAFE_FALLBACK_COMPLETE
+            self._done.notify_all()
 
     def close(self) -> None:
         with self._lock:
-            fd = self._fd
-            self._fd = None
-            if not self._published:
-                self._published = True
-                self._done.notify_all()
+            already = self._closed
+            self._closed = True
+            if self._state is JanitorOwnerState.PENDING:
+                self._state = JanitorOwnerState.CLOSED
+            fd = None
+            if not already and not self._reader_active:
+                fd = self._fd
+                self._fd = None
+            self._done.notify_all()
         if fd is not None:
             try:
                 os.close(fd)
@@ -155,15 +183,21 @@ class JanitorStatusOwner:
         owner = self
 
         def poll(*args: object, **kwargs: object) -> int | None:
-            with owner._lock:
-                if not owner._published:
-                    return None
+            if not owner.reap_allowed:
+                return None
             return raw_poll(*args, **kwargs)
 
         def wait(timeout: float | None = None) -> int:
-            remaining = JANITOR_PARENT_WAIT_SECONDS if timeout is None else max(0.0, timeout)
-            owner.read(timeout=remaining)
-            return raw_wait(timeout=timeout)
+            budget = JANITOR_PARENT_WAIT_SECONDS if timeout is None else max(0.0, timeout)
+            deadline = time.monotonic() + budget
+            owner.read(timeout=max(0.0, deadline - time.monotonic()))
+            if not owner.reap_allowed:
+                raise subprocess.TimeoutExpired(
+                    getattr(proc, "args", None),
+                    timeout if timeout is not None else budget,
+                )
+            remaining = None if timeout is None else max(0.0, deadline - time.monotonic())
+            return raw_wait(timeout=remaining)
 
         proc.poll = poll
         proc.wait = wait
@@ -173,46 +207,88 @@ class JanitorStatusOwner:
 
     def read(self, *, timeout: float) -> dict[str, Any] | None:
         deadline = time.monotonic() + max(0.0, timeout)
-        with self._lock:
-            if self._published:
-                return self._status
-            fd = self._fd
-            if fd is not None:
-                self._fd = None
-            else:
-                remaining = max(0.0, deadline - time.monotonic())
-                if remaining <= 0:
+        while True:
+            with self._lock:
+                if self.reap_allowed:
                     return self._status
-                self._done.wait(timeout=remaining)
-                return self._status
-        status = _consume_status_fd(fd, timeout=max(0.0, deadline - time.monotonic()))
-        with self._lock:
-            self._status = status
-            self._published = True
-            self._done.notify_all()
-        return status
+                remaining = max(0.0, deadline - time.monotonic())
+                if self._reader_active:
+                    if remaining <= 0:
+                        return None
+                    self._done.wait(timeout=remaining)
+                    continue
+                fd = self._fd
+                if fd is None:
+                    return self._status if self.reap_allowed else None
+                self._fd = None
+                self._reader_active = True
+            outcome, status = _read_status_fd(
+                fd,
+                timeout=max(0.0, deadline - time.monotonic()),
+            )
+            close_fd = False
+            with self._lock:
+                self._reader_active = False
+                if outcome == "timeout":
+                    self._state = JanitorOwnerState.TIMED_OUT
+                    if self._closed:
+                        close_fd = True
+                    else:
+                        self._fd = fd
+                    result = None
+                elif outcome == "terminal" and status is not None:
+                    close_fd = True
+                    if self._state is not JanitorOwnerState.SAFE_FALLBACK_COMPLETE:
+                        self._status = status
+                        self._state = JanitorOwnerState.TERMINAL
+                    result = self._status
+                else:
+                    close_fd = True
+                    if self._state not in {
+                        JanitorOwnerState.TERMINAL,
+                        JanitorOwnerState.SAFE_FALLBACK_COMPLETE,
+                    }:
+                        self._state = JanitorOwnerState.EOF_WITHOUT_STATUS
+                    result = self._status
+                self._done.notify_all()
+            if close_fd:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            return result
 
 
-def _consume_status_fd(fd: int, *, timeout: float) -> dict[str, Any] | None:
+def _read_status_fd(fd: int, *, timeout: float) -> tuple[str, dict[str, Any] | None]:
     chunks: list[bytes] = []
     try:
         ready, _, _ = select.select([fd], [], [], max(0.0, timeout))
-        if ready:
-            while True:
-                data = os.read(fd, 4096)
-                if not data:
-                    break
-                chunks.append(data)
-                if b"\n" in data:
-                    break
+        if not ready:
+            return "timeout", None
+        while True:
+            data = os.read(fd, 4096)
+            if not data:
+                break
+            chunks.append(data)
+            if b"\n" in data:
+                break
     except OSError:
-        chunks = []
-    finally:
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-    return decode_janitor_status(b"".join(chunks)) if chunks else None
+        return "eof", None
+    if not chunks:
+        return "eof", None
+    decoded = decode_janitor_status(b"".join(chunks))
+    if decoded is None:
+        return "eof", None
+    return "terminal", decoded
+
+
+def _consume_status_fd(fd: int, *, timeout: float) -> dict[str, Any] | None:
+    outcome, status = _read_status_fd(fd, timeout=timeout)
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+    return status if outcome == "terminal" else None
 
 
 _STATUS_BIND_LOCK = threading.Lock()

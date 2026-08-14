@@ -19,6 +19,7 @@ from core_tools.provider.process_cleanup import (
     list_process_group_pids,
     process_group_state,
     read_process_group_id,
+    wait_process_group_gone,
 )
 from core_tools.provider.session_janitor import (
     DrainResult,
@@ -496,7 +497,49 @@ def _request_janitor_stop(proc: subprocess.Popen[Any]) -> bool:
     return True
 
 
-def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> dict[str, Any] | None:
+def _fallback_kill_bound_janitor_group(
+    proc: subprocess.Popen[Any],
+    *,
+    pgid: int | None = None,
+) -> dict[str, Any]:
+    """SIGKILL the owned group while the bound leader is still unreaped."""
+
+    resolved = pgid
+    if resolved is None:
+        try:
+            resolved = os.getpgid(proc.pid)
+        except OSError:
+            resolved = proc.pid
+    if resolved is not None and resolved > 0:
+        try:
+            os.killpg(int(resolved), signal.SIGKILL)
+        except OSError:
+            pass
+        wait_process_group_gone(int(resolved), timeout=0.5)
+        members = list_process_group_pids(int(resolved))
+    else:
+        members = None
+    if members is None and resolved is not None:
+        drain = DrainResult.UNVERIFIABLE
+    elif not members or set(members) <= {proc.pid}:
+        drain = DrainResult.CLEAN
+    else:
+        drain = DrainResult.SURVIVORS
+    payload: dict[str, Any] = {
+        "agent_code": -1,
+        "drain": drain.value,
+        "stop_requested": True,
+    }
+    if drain is not DrainResult.CLEAN:
+        payload["cleanup_error"] = "status_timeout_group_fallback"
+    return payload
+
+
+def _terminate_via_bound_popen(
+    proc: subprocess.Popen[Any],
+    *,
+    pgid: int | None = None,
+) -> dict[str, Any] | None:
     owner = getattr(proc, "_core_tools_janitor_status_owner", None)
     fd = getattr(proc, "_core_tools_janitor_status_fd", None)
     cached = getattr(proc, "_core_tools_janitor_status", None)
@@ -508,23 +551,23 @@ def _terminate_via_bound_popen(proc: subprocess.Popen[Any]) -> dict[str, Any] | 
     if janitor_bound:
         _request_janitor_stop(proc)
         status = read_bound_janitor_status(proc, timeout=JANITOR_PARENT_WAIT_SECONDS)
-        wait_timeout = (
-            JANITOR_PARENT_WAIT_SECONDS if isinstance(status, dict) else 0.2
-        )
-        try:
-            proc.wait(timeout=wait_timeout)
-        except subprocess.TimeoutExpired:
+        if isinstance(status, dict) and status.get("drain") == DrainResult.CLEAN.value:
+            if isinstance(owner, JanitorStatusOwner) and not owner.reap_allowed:
+                owner.mark_safe_fallback(status)
             try:
-                raw_kill = getattr(proc, "kill", None)
-                if raw_kill is not None:
-                    raw_kill()
-            except OSError:
-                return status
-            try:
-                proc.wait(timeout=2)
+                proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
             except (OSError, subprocess.TimeoutExpired):
                 pass
-        return status
+            return status
+        fallback = _fallback_kill_bound_janitor_group(proc, pgid=pgid)
+        if isinstance(owner, JanitorStatusOwner):
+            owner.mark_safe_fallback(fallback)
+        setattr(proc, "_core_tools_janitor_status", fallback)
+        try:
+            proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        return fallback
     if proc.poll() is not None:
         return cached if isinstance(cached, dict) else None
     status = None
@@ -556,7 +599,7 @@ def _terminate_bound_process(
     if identity is not None and proc.poll() is None and proc.pid != identity.pid:
         return TerminateIdentityResult.IDENTITY_MISMATCH
 
-    status = _terminate_via_bound_popen(proc)
+    status = _terminate_via_bound_popen(proc, pgid=pgid)
     if isinstance(status, dict) and status.get("drain") == DrainResult.CLEAN.value:
         return TerminateIdentityResult.TERMINATED
 

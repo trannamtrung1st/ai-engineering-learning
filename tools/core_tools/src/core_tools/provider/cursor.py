@@ -284,7 +284,14 @@ class _SubprocessStdoutIterator(Iterator[str]):
                     f"{stderr}"
                 )
             status = self._read_janitor_status()
-            return_code = self._proc.wait()
+            try:
+                return_code = self._proc.wait()
+            except subprocess.TimeoutExpired:
+                return_code = (
+                    self._proc.returncode
+                    if self._proc.returncode is not None
+                    else -1
+                )
             setattr(self._proc, "_core_tools_janitor_status", status)
             raise_for_cursor_cli_exit(return_code, status=status, stderr=stderr)
         finally:
