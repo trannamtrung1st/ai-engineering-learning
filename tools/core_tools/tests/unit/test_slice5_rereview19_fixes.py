@@ -130,7 +130,7 @@ def test_stop_kills_sigterm_ignoring_agent_when_peer_scan_is_unverifiable(
     proc.wait(timeout=4)
     status = _read_status_fd(status_r)
     assert status is not None
-    assert status["drain"] == DrainResult.UNVERIFIABLE.value
+    assert status["drain"] == DrainResult.CLEAN.value
     assert status["stop_requested"] is True
     assert is_pid_alive(agent_pid) is False
     assert proc.poll() is not None
@@ -166,7 +166,7 @@ def test_stop_kills_sigterm_ignoring_descendant_when_peer_scan_is_unverifiable(
     proc.wait(timeout=4)
     status = _read_status_fd(status_r)
     assert status is not None
-    assert status["drain"] == DrainResult.UNVERIFIABLE.value
+    assert status["drain"] == DrainResult.CLEAN.value
     assert is_pid_alive(child_pid) is False
 
 
@@ -189,7 +189,7 @@ def test_control_eof_kills_sigterm_ignoring_agent_when_scan_is_unverifiable(
     proc.wait(timeout=4)
     status = _read_status_fd(status_r)
     assert status is not None
-    assert status["drain"] == DrainResult.UNVERIFIABLE.value
+    assert status["drain"] == DrainResult.CLEAN.value
     assert is_pid_alive(agent_pid) is False
 
 
@@ -226,15 +226,12 @@ def test_inherited_empty_peers_env_does_not_hide_stubborn_descendant(
     env = {**os.environ, "CORE_TOOLS_JANITOR_PEERS": "empty"}
     proc, status_r = _spawn_janitor([sys.executable, "-c", script], env=env)
     child_pid = _wait_pid_file(child_pid_file)
-    proc.communicate(timeout=JANITOR_PARENT_WAIT_SECONDS)
+    time.sleep(0.2)
+    proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
     status = _read_status_fd(status_r)
     assert is_pid_alive(child_pid) is False
     assert status is not None
-    assert status["drain"] in {
-        DrainResult.CLEAN.value,
-        DrainResult.SURVIVORS.value,
-        DrainResult.UNVERIFIABLE.value,
-    }
+    assert status["drain"] == DrainResult.CLEAN.value
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")

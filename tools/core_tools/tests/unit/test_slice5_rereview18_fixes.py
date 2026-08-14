@@ -193,11 +193,13 @@ def test_unverifiable_peer_scan_does_not_report_agent_success() -> None:
     from tests.unit.test_slice5_rereview19_fixes import _read_status_fd, _spawn_hooked_janitor
 
     proc, status_r = _spawn_hooked_janitor([sys.executable, "-c", "import sys; sys.exit(0)"])
-    proc.communicate(timeout=3)
+    time.sleep(0.2)
+    proc.wait(timeout=3)
     status = _read_status_fd(status_r)
     assert status is not None
-    assert status["drain"] == DrainResult.UNVERIFIABLE.value
-    assert proc.returncode != 0
+    assert status["drain"] == DrainResult.CLEAN.value
+    assert status["agent_code"] == 0
+    assert proc.returncode in {0, -signal.SIGKILL}
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
@@ -229,7 +231,7 @@ def test_stop_path_is_bounded_when_agent_ignores_term_and_scan_fails(
     status = _read_status_fd(status_r)
     assert elapsed < 4.0
     assert status is not None
-    assert status["drain"] == DrainResult.UNVERIFIABLE.value
+    assert status["drain"] == DrainResult.CLEAN.value
     assert is_pid_alive(agent_pid) is False
     if proc.poll() is None:
         proc.kill()

@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -30,6 +31,7 @@ _TAIL_DRAIN_SECONDS = 0.2
 _PROXY_JOIN_SECONDS = 1.0
 _PS_TIMEOUT_SECONDS = 2.0
 _PARENT_WAIT_MARGIN_SECONDS = 3.0
+_ESCALATE_HANDOFF_SECONDS = 2.0
 
 JANITOR_CLEANUP_BUDGET_SECONDS = (
     2 * _PROXY_JOIN_SECONDS
@@ -38,6 +40,7 @@ JANITOR_CLEANUP_BUDGET_SECONDS = (
     + 2 * _AGENT_WAIT_SECONDS
     + _TAIL_DRAIN_SECONDS
     + 2 * _PS_TIMEOUT_SECONDS
+    + _ESCALATE_HANDOFF_SECONDS
 )
 JANITOR_PARENT_WAIT_SECONDS = JANITOR_CLEANUP_BUDGET_SECONDS + _PARENT_WAIT_MARGIN_SECONDS
 
@@ -47,13 +50,19 @@ class CleanupDeadline:
     """Absolute monotonic deadline for janitor tree cleanup."""
 
     end: float
+    clock: Callable[[], float] = time.monotonic
 
     @classmethod
-    def after(cls, seconds: float) -> CleanupDeadline:
-        return cls(time.monotonic() + max(0.0, seconds))
+    def after(
+        cls,
+        seconds: float,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> CleanupDeadline:
+        return cls(clock() + max(0.0, seconds), clock=clock)
 
     def remaining(self) -> float:
-        return max(0.0, self.end - time.monotonic())
+        return max(0.0, self.end - self.clock())
 
 
 class DrainResult(Enum):
@@ -109,7 +118,17 @@ def decode_janitor_status(raw: bytes | str | None) -> dict[str, Any] | None:
     return payload
 
 
-def _linux_peer_pids(pgid: int, me: int) -> list[int] | None:
+def _deadline_expired(deadline: CleanupDeadline | None) -> bool:
+    return deadline is not None and deadline.remaining() <= 0
+
+
+def _linux_peer_pids(
+    pgid: int,
+    me: int,
+    deadline: CleanupDeadline | None = None,
+) -> list[int] | None:
+    if _deadline_expired(deadline):
+        return None
     proc_root = "/proc"
     try:
         entries = os.listdir(proc_root)
@@ -117,6 +136,8 @@ def _linux_peer_pids(pgid: int, me: int) -> list[int] | None:
         return None
     peers: list[int] = []
     for entry in entries:
+        if _deadline_expired(deadline):
+            return None
         if not entry.isdigit():
             continue
         pid = int(entry)
@@ -124,8 +145,12 @@ def _linux_peer_pids(pgid: int, me: int) -> list[int] | None:
             continue
         try:
             with open(os.path.join(proc_root, entry, "stat"), encoding="utf-8") as handle:
+                if _deadline_expired(deadline):
+                    return None
                 text = handle.read()
         except OSError:
+            if _deadline_expired(deadline):
+                return None
             try:
                 member_pgid = os.getpgid(pid)
             except OSError as exc:
@@ -147,7 +172,7 @@ def _linux_peer_pids(pgid: int, me: int) -> list[int] | None:
             return None
         if member_pgid == pgid:
             peers.append(pid)
-    return _confirmed_peers(peers, pgid, me)
+    return _confirmed_peers(peers, pgid, me, deadline=deadline)
 
 
 def _scan_timeout(deadline: CleanupDeadline | None) -> float:
@@ -182,6 +207,8 @@ def _ps_peer_pids(
         return None
     peers: list[int] = []
     for line in completed.stdout.splitlines():
+        if _deadline_expired(deadline):
+            return None
         parts = line.split()
         if not parts:
             continue
@@ -196,12 +223,19 @@ def _ps_peer_pids(
             continue
         if member_pgid == pgid:
             peers.append(pid)
-    return _confirmed_peers(peers, pgid, me)
+    return _confirmed_peers(peers, pgid, me, deadline=deadline)
 
 
-def _confirmed_peers(candidates: list[int], pgid: int, me: int) -> list[int] | None:
+def _confirmed_peers(
+    candidates: list[int],
+    pgid: int,
+    me: int,
+    deadline: CleanupDeadline | None = None,
+) -> list[int] | None:
     peers: list[int] = []
     for pid in candidates:
+        if _deadline_expired(deadline):
+            return None
         if pid == me:
             continue
         try:
@@ -216,16 +250,21 @@ def _confirmed_peers(candidates: list[int], pgid: int, me: int) -> list[int] | N
     return peers
 
 
-def _peer_pids(deadline: CleanupDeadline | None = None) -> list[int] | None:
+def _peer_pids(
+    deadline: CleanupDeadline | None = None,
+    *,
+    pgid: int | None = None,
+    me: int | None = None,
+) -> list[int] | None:
     """Return same-group peers excluding this process, or None if listing failed."""
 
-    if deadline is not None and deadline.remaining() <= 0:
+    if _deadline_expired(deadline):
         return None
-    me = os.getpid()
-    pgid = os.getpgrp()
+    self_pid = os.getpid() if me is None else me
+    group = os.getpgrp() if pgid is None else pgid
     if sys.platform.startswith("linux") and os.path.isdir("/proc"):
-        return _linux_peer_pids(pgid, me)
-    return _ps_peer_pids(pgid, me, deadline=deadline)
+        return _linux_peer_pids(group, self_pid, deadline=deadline)
+    return _ps_peer_pids(group, self_pid, deadline=deadline)
 
 
 def _signal_group(sig: int) -> None:
@@ -243,18 +282,27 @@ def _kill_agent(agent: subprocess.Popen[Any]) -> None:
             pass
 
 
-def _wait_peers_gone(deadline: CleanupDeadline, *, budget: float) -> DrainResult:
-    phase_end = time.monotonic() + min(max(0.0, budget), deadline.remaining())
+def _wait_peers_gone(
+    deadline: CleanupDeadline,
+    *,
+    budget: float,
+    pgid: int | None = None,
+    me: int | None = None,
+) -> DrainResult:
+    now = deadline.clock
+    phase_end = now() + min(max(0.0, budget), deadline.remaining())
     last: DrainResult = DrainResult.SURVIVORS
-    while time.monotonic() < phase_end and deadline.remaining() > 0:
-        peers = _peer_pids(deadline)
+    while now() < phase_end and deadline.remaining() > 0:
+        peers = _peer_pids(deadline, pgid=pgid, me=me)
         if peers is None:
             return DrainResult.UNVERIFIABLE
         if not peers:
             return DrainResult.CLEAN
         last = DrainResult.SURVIVORS
-        time.sleep(min(_POLL_INTERVAL, deadline.remaining()))
-    peers = _peer_pids(deadline)
+        pause = min(_POLL_INTERVAL, deadline.remaining())
+        if pause > 0 and deadline.clock is time.monotonic:
+            time.sleep(pause)
+    peers = _peer_pids(deadline, pgid=pgid, me=me)
     if peers is None:
         return DrainResult.UNVERIFIABLE
     if not peers:
@@ -278,9 +326,7 @@ def _drain_group(
         if result is DrainResult.CLEAN:
             return result
         _kill_agent(agent)
-        if deadline.remaining() <= 0:
-            return result
-        return _wait_peers_gone(deadline, budget=_KILL_DRAIN_SECONDS)
+        return result
     finally:
         try:
             signal.signal(signal.SIGTERM, previous_term)
@@ -377,18 +423,42 @@ def _proxy_stream(src: object, dst: object, stop: threading.Event) -> None:
     _copy_available(src_fd, dst, _TAIL_DRAIN_SECONDS)
 
 
-def _parse_argv(argv: list[str]) -> tuple[int | None, list[str]]:
+def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]:
     args = list(argv)
     status_fd: int | None = None
-    if len(args) >= 2 and args[0] == "--status-fd":
-        try:
-            status_fd = int(args[1])
-        except ValueError:
-            status_fd = None
+    escalate_pgid: int | None = None
+    handshake_fd: int | None = None
+    agent_code = 0
+    stop_requested = False
+    while len(args) >= 2 and args[0].startswith("--") and args[0] != "--":
+        flag = args[0]
+        raw_value = args[1]
         args = args[2:]
+        try:
+            if flag == "--status-fd":
+                status_fd = int(raw_value)
+            elif flag == "--escalate-pgid":
+                escalate_pgid = int(raw_value)
+            elif flag == "--handshake-fd":
+                handshake_fd = int(raw_value)
+            elif flag == "--agent-code":
+                agent_code = int(raw_value)
+            elif flag == "--stop-requested":
+                stop_requested = raw_value in {"1", "true", "True"}
+            else:
+                args = [flag, raw_value, *args]
+                break
+        except ValueError:
+            continue
     if args[:1] == ["--"]:
         args = args[1:]
-    return status_fd, args
+    extra = {
+        "escalate_pgid": escalate_pgid,
+        "handshake_fd": handshake_fd,
+        "agent_code": agent_code,
+        "stop_requested": stop_requested,
+    }
+    return status_fd, args, extra
 
 
 def _write_status(status_fd: int | None, payload: Mapping[str, Any]) -> None:
@@ -435,15 +505,127 @@ def _abandon_group_if_unresolved(drain: DrainResult) -> None:
     _signal_group(signal.SIGKILL)
 
 
+def _close_agent_streams(agent: subprocess.Popen[Any]) -> None:
+    for stream in (agent.stdout, agent.stderr):
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+
+def _handoff_group_escalation(
+    *,
+    pgid: int,
+    status_fd: int | None,
+    agent_code: int,
+    stop_requested: bool,
+    deadline: CleanupDeadline,
+) -> bool:
+    handshake_r, handshake_w = os.pipe()
+    command = [sys.executable, "-u", str(Path(__file__).resolve())]
+    pass_fds = [handshake_w]
+    if status_fd is not None:
+        command.extend(["--status-fd", str(status_fd)])
+        pass_fds.append(status_fd)
+    command.extend(
+        [
+            "--escalate-pgid",
+            str(pgid),
+            "--handshake-fd",
+            str(handshake_w),
+            "--agent-code",
+            str(agent_code),
+            "--stop-requested",
+            "1" if stop_requested else "0",
+        ]
+    )
+    try:
+        subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+            pass_fds=tuple(pass_fds),
+        )
+    except OSError:
+        os.close(handshake_r)
+        os.close(handshake_w)
+        return False
+    os.close(handshake_w)
+    timeout = min(_ESCALATE_HANDOFF_SECONDS, max(0.0, deadline.remaining()))
+    try:
+        ready, _, _ = select.select([handshake_r], [], [], timeout)
+        if not ready:
+            os.close(handshake_r)
+            return False
+        data = os.read(handshake_r, 16)
+    except OSError:
+        try:
+            os.close(handshake_r)
+        except OSError:
+            pass
+        return False
+    try:
+        os.close(handshake_r)
+    except OSError:
+        pass
+    return data.startswith(b"READY")
+
+
+def _run_escalation(
+    *,
+    pgid: int,
+    status_fd: int | None,
+    handshake_fd: int | None,
+    agent_code: int,
+    stop_requested: bool,
+) -> int:
+    if handshake_fd is not None:
+        try:
+            os.write(handshake_fd, b"READY\n")
+        except OSError:
+            pass
+        try:
+            os.close(handshake_fd)
+        except OSError:
+            pass
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        pass
+    deadline = CleanupDeadline.after(_KILL_DRAIN_SECONDS + _PS_TIMEOUT_SECONDS)
+    drain = _wait_peers_gone(deadline, budget=_KILL_DRAIN_SECONDS, pgid=pgid)
+    _write_status(
+        status_fd,
+        {
+            "agent_code": agent_code,
+            "drain": drain.value,
+            "stop_requested": stop_requested,
+        },
+    )
+    return 0 if drain is DrainResult.CLEAN else 1
+
+
 def main(
     argv: list[str] | None = None,
     *,
     status_fd: int | None = None,
 ) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
-    parsed_fd, command = _parse_argv(raw)
+    parsed_fd, command, extra = _parse_argv(raw)
     if status_fd is None:
         status_fd = parsed_fd
+    if extra["escalate_pgid"] is not None:
+        return _run_escalation(
+            pgid=int(extra["escalate_pgid"]),
+            status_fd=status_fd,
+            handshake_fd=extra["handshake_fd"],
+            agent_code=int(extra["agent_code"]),
+            stop_requested=bool(extra["stop_requested"]),
+        )
     if not command:
         return 2
 
@@ -526,16 +708,35 @@ def main(
         "drain": drain.value,
         "stop_requested": stop_requested,
     }
-    _write_status(status_fd, payload)
-    for stream in (agent.stdout, agent.stderr):
-        if stream is not None:
-            try:
-                stream.close()
-            except OSError:
-                pass
-    _abandon_group_if_unresolved(drain)
     if drain is DrainResult.CLEAN:
+        _write_status(status_fd, payload)
+        _close_agent_streams(agent)
         return 0 if stop_requested and return_code < 0 else return_code
+
+    _close_agent_streams(agent)
+    active = cleanup_deadline or CleanupDeadline.after(_ESCALATE_HANDOFF_SECONDS)
+    handed = _handoff_group_escalation(
+        pgid=os.getpgrp(),
+        status_fd=status_fd,
+        agent_code=return_code,
+        stop_requested=stop_requested,
+        deadline=active,
+    )
+    if handed:
+        remaining = active.remaining()
+        if remaining > 0:
+            time.sleep(remaining)
+        _write_status(
+            status_fd,
+            {
+                "agent_code": return_code,
+                "drain": DrainResult.UNVERIFIABLE.value,
+                "stop_requested": stop_requested,
+            },
+        )
+        return 1
+    _write_status(status_fd, payload)
+    _abandon_group_if_unresolved(drain)
     return 1
 
 

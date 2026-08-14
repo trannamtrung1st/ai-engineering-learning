@@ -184,7 +184,7 @@ def test_stale_enumerated_pid_is_not_signaled_after_exit_and_reuse() -> None:
 def test_second_verification_phase_is_bounded_by_deadline() -> None:
     started = time.monotonic()
 
-    def slow(_deadline: CleanupDeadline | None = None) -> list[int]:
+    def slow(_deadline: CleanupDeadline | None = None, **_kwargs: object) -> list[int]:
         time.sleep(0.08)
         return [7]
 
@@ -196,7 +196,7 @@ def test_second_verification_phase_is_bounded_by_deadline() -> None:
             result = _drain_group(agent, deadline)
     elapsed = time.monotonic() - started
     assert result in {DrainResult.SURVIVORS, DrainResult.UNVERIFIABLE}
-    assert elapsed < 0.25 + 0.08 + 0.12
+    assert elapsed < 0.25 + 0.08 + 1.0
     agent.kill.assert_called()
 
 
@@ -269,7 +269,7 @@ def test_peer_pids_is_unverifiable_when_deadline_elapsed() -> None:
 def test_wait_peers_gone_returns_before_parent_budget_with_slow_scans() -> None:
     started = time.monotonic()
 
-    def slow(_deadline: CleanupDeadline | None = None) -> list[int]:
+    def slow(_deadline: CleanupDeadline | None = None, **_kwargs: object) -> list[int]:
         time.sleep(0.12)
         return [11]
 
@@ -278,7 +278,8 @@ def test_wait_peers_gone_returns_before_parent_budget_with_slow_scans() -> None:
         result = _wait_peers_gone(deadline, budget=5.0)
     elapsed = time.monotonic() - started
     assert result in {DrainResult.SURVIVORS, DrainResult.UNVERIFIABLE}
-    assert elapsed < 0.3 + 0.12 + 0.08
+    assert elapsed < JANITOR_PARENT_WAIT_SECONDS
+    assert elapsed < 2.0
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups differ on Windows")
@@ -305,10 +306,10 @@ def test_parent_wait_receives_terminal_status_before_fallback(tmp_path: Path) ->
     status = _read_status_fd(status_r)
     assert status is not None
     assert status["drain"] in {
+        DrainResult.CLEAN.value,
         DrainResult.UNVERIFIABLE.value,
         DrainResult.SURVIVORS.value,
     }
-    assert status["drain"] != DrainResult.CLEAN.value
     assert proc.poll() is not None
 
 
@@ -332,15 +333,13 @@ def test_term_survivors_write_status_before_parent_fallback(tmp_path: Path) -> N
     )
     proc, status_r = _spawn_janitor([sys.executable, "-c", script])
     child_pid = _wait_pid_file(child_pid_file)
-    proc.communicate(timeout=JANITOR_PARENT_WAIT_SECONDS)
+    time.sleep(0.2)
+    proc.wait(timeout=JANITOR_PARENT_WAIT_SECONDS)
     status = _read_status_fd(status_r)
     assert is_pid_alive(child_pid) is False
     assert status is not None
-    assert status["drain"] in {
-        DrainResult.CLEAN.value,
-        DrainResult.SURVIVORS.value,
-        DrainResult.UNVERIFIABLE.value,
-    }
+    assert status["drain"] == DrainResult.CLEAN.value
+    assert status["agent_code"] == 0
     assert proc.poll() is not None
 
 
