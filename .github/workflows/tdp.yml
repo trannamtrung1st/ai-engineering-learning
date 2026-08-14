@@ -89,4 +89,4 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e "tools/core_tools[dev]"
           cd tools/core_tools
-          python -m pytest tests/unit/test_process_cleanup.py tests/unit/test_slice5_rereview16_fixes.py tests/unit/test_slice5_rereview17_fixes.py tests/unit/test_slice5_rereview18_fixes.py tests/unit/test_slice5_rereview19_fixes.py tests/unit/test_slice5_rereview20_fixes.py tests/unit/test_slice5_rereview21_fixes.py
+          python -m pytest tests/unit/test_process_cleanup.py tests/unit/test_slice5_rereview16_fixes.py tests/unit/test_slice5_rereview17_fixes.py tests/unit/test_slice5_rereview18_fixes.py tests/unit/test_slice5_rereview19_fixes.py tests/unit/test_slice5_rereview20_fixes.py tests/unit/test_slice5_rereview21_fixes.py tests/unit/test_slice5_rereview22_fixes.py

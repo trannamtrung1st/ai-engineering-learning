@@ -9,6 +9,7 @@ import pytest
 
 from core_tools.provider import StubProvider
 from core_tools.provider.cursor import CursorProvider
+from core_tools.provider.process_cleanup import ProcessGroupState
 from core_tools.provider.process_identity import ProcessIdentity, TerminateIdentityResult, IdentityInspectState
 from top_down_planning.domain.models import Plan, PlanItem
 from top_down_planning.domain.run_ownership import RunOwnershipError, run_ownership
@@ -177,14 +178,34 @@ def test_teardown_reconciles_provider_registry_after_retry_success(tmp_path: Pat
                             "terminate_all_sessions",
                             side_effect=mock_terminate_all_sessions,
                         ):
-                            teardown_provider_sessions(
-                                provider,
-                                run_id="run-test",
-                                phase=PLANNING,
-                                append_event=append_event,
-                                emit_console=lambda _event: None,
-                                audit_cancel=True,
-                            )
+                            with patch(
+                                "top_down_planning.orchestrator.provider_teardown.process_identity_is_live",
+                                side_effect=lambda identity: alive.get(
+                                    str(identity.pid), False
+                                ),
+                            ):
+                                with patch(
+                                    "core_tools.provider.cursor.process_identity_is_live",
+                                    side_effect=lambda identity: alive.get(
+                                        str(identity.pid), False
+                                    ),
+                                ):
+                                    with patch(
+                                        "core_tools.provider.cursor.is_pid_alive",
+                                        side_effect=fake_is_alive,
+                                    ):
+                                        with patch(
+                                            "core_tools.provider.cursor.process_group_state",
+                                            return_value=ProcessGroupState.GONE,
+                                        ):
+                                            teardown_provider_sessions(
+                                                provider,
+                                                run_id="run-test",
+                                                phase=PLANNING,
+                                                append_event=append_event,
+                                                emit_console=lambda _event: None,
+                                                audit_cancel=True,
+                                            )
 
     assert provider.list_active_sessions() == []
     ended = [event_type for event_type, _fields in events if event_type == "planner_session_ended"]

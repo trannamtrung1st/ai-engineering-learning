@@ -280,8 +280,8 @@ class _SubprocessStdoutIterator(Iterator[str]):
                     f"[stderr truncated; showing last {_STDERR_TAIL_MAX_BYTES} bytes]\n"
                     f"{stderr}"
                 )
-            return_code = self._proc.wait()
             status = self._read_janitor_status()
+            return_code = self._proc.wait()
             setattr(self._proc, "_core_tools_janitor_status", status)
             raise_for_cursor_cli_exit(return_code, status=status, stderr=stderr)
         finally:

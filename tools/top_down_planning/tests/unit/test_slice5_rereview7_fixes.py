@@ -11,6 +11,7 @@ import pytest
 
 from core_tools.provider.cursor import CursorProvider
 from core_tools.provider.errors import ProviderTurnError
+from core_tools.provider.process_cleanup import ProcessGroupState
 from core_tools.provider.process_identity import (
     IdentityInspectState,
     ProcessIdentity,
@@ -342,15 +343,35 @@ def test_teardown_reconciles_registry_after_orphan_retry_succeeds(tmp_path: Path
                                     "terminate_all_sessions",
                                     side_effect=mock_terminate_all_sessions,
                                 ):
-                                    teardown_provider_sessions(
-                                        provider,
-                                        run_id=run_id,
-                                        phase=PLANNING,
-                                        append_event=append_event,
-                                        emit_console=lambda _event: None,
-                                        audit_cancel=True,
-                                        store=store,
-                                    )
+                                    with patch(
+                                        "top_down_planning.orchestrator.provider_teardown.process_identity_is_live",
+                                        side_effect=lambda identity: alive.get(
+                                            str(identity.pid), False
+                                        ),
+                                    ):
+                                        with patch(
+                                            "core_tools.provider.cursor.process_identity_is_live",
+                                            side_effect=lambda identity: alive.get(
+                                                str(identity.pid), False
+                                            ),
+                                        ):
+                                            with patch(
+                                                "core_tools.provider.cursor.is_pid_alive",
+                                                side_effect=fake_is_alive,
+                                            ):
+                                                with patch(
+                                                    "core_tools.provider.cursor.process_group_state",
+                                                    return_value=ProcessGroupState.GONE,
+                                                ):
+                                                    teardown_provider_sessions(
+                                                        provider,
+                                                        run_id=run_id,
+                                                        phase=PLANNING,
+                                                        append_event=append_event,
+                                                        emit_console=lambda _event: None,
+                                                        audit_cancel=True,
+                                                        store=store,
+                                                    )
 
     assert provider.list_active_sessions() == []
     assert "provider_session_teardown_failed" not in [

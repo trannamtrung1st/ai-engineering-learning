@@ -126,9 +126,12 @@ def _linux_peer_pids(
     pgid: int,
     me: int,
     deadline: CleanupDeadline | None = None,
+    exclude: set[int] | frozenset[int] | None = None,
 ) -> list[int] | None:
     if _deadline_expired(deadline):
         return None
+    skipped = set(exclude or ())
+    skipped.add(me)
     proc_root = "/proc"
     try:
         entries = os.listdir(proc_root)
@@ -141,7 +144,7 @@ def _linux_peer_pids(
         if not entry.isdigit():
             continue
         pid = int(entry)
-        if pid == me:
+        if pid in skipped:
             continue
         try:
             with open(os.path.join(proc_root, entry, "stat"), encoding="utf-8") as handle:
@@ -172,7 +175,7 @@ def _linux_peer_pids(
             return None
         if member_pgid == pgid:
             peers.append(pid)
-    return _confirmed_peers(peers, pgid, me, deadline=deadline)
+    return _confirmed_peers(peers, pgid, me, deadline=deadline, exclude=skipped)
 
 
 def _scan_timeout(deadline: CleanupDeadline | None) -> float:
@@ -188,10 +191,13 @@ def _ps_peer_pids(
     pgid: int,
     me: int,
     deadline: CleanupDeadline | None = None,
+    exclude: set[int] | frozenset[int] | None = None,
 ) -> list[int] | None:
     timeout = _scan_timeout(deadline)
     if timeout <= 0:
         return None
+    skipped = set(exclude or ())
+    skipped.add(me)
     try:
         completed = subprocess.run(
             ["ps", "-axo", "pid=,pgid="],
@@ -219,11 +225,11 @@ def _ps_peer_pids(
             member_pgid = int(parts[1])
         except ValueError:
             return None
-        if pid == me:
+        if pid in skipped:
             continue
         if member_pgid == pgid:
             peers.append(pid)
-    return _confirmed_peers(peers, pgid, me, deadline=deadline)
+    return _confirmed_peers(peers, pgid, me, deadline=deadline, exclude=skipped)
 
 
 def _confirmed_peers(
@@ -231,12 +237,15 @@ def _confirmed_peers(
     pgid: int,
     me: int,
     deadline: CleanupDeadline | None = None,
+    exclude: set[int] | frozenset[int] | None = None,
 ) -> list[int] | None:
+    skipped = set(exclude or ())
+    skipped.add(me)
     peers: list[int] = []
     for pid in candidates:
         if _deadline_expired(deadline):
             return None
-        if pid == me:
+        if pid in skipped:
             continue
         try:
             member_pgid = os.getpgid(pid)
@@ -255,6 +264,7 @@ def _peer_pids(
     *,
     pgid: int | None = None,
     me: int | None = None,
+    exclude: set[int] | frozenset[int] | None = None,
 ) -> list[int] | None:
     """Return same-group peers excluding this process, or None if listing failed."""
 
@@ -262,9 +272,11 @@ def _peer_pids(
         return None
     self_pid = os.getpid() if me is None else me
     group = os.getpgrp() if pgid is None else pgid
+    skipped = set(exclude or ())
+    skipped.add(self_pid)
     if sys.platform.startswith("linux") and os.path.isdir("/proc"):
-        return _linux_peer_pids(group, self_pid, deadline=deadline)
-    return _ps_peer_pids(group, self_pid, deadline=deadline)
+        return _linux_peer_pids(group, self_pid, deadline=deadline, exclude=skipped)
+    return _ps_peer_pids(group, self_pid, deadline=deadline, exclude=skipped)
 
 
 def _signal_group(sig: int) -> None:
@@ -288,12 +300,13 @@ def _wait_peers_gone(
     budget: float,
     pgid: int | None = None,
     me: int | None = None,
+    exclude: set[int] | frozenset[int] | None = None,
 ) -> DrainResult:
     now = deadline.clock
     phase_end = now() + min(max(0.0, budget), deadline.remaining())
     last: DrainResult = DrainResult.SURVIVORS
     while now() < phase_end and deadline.remaining() > 0:
-        peers = _peer_pids(deadline, pgid=pgid, me=me)
+        peers = _peer_pids(deadline, pgid=pgid, me=me, exclude=exclude)
         if peers is None:
             return DrainResult.UNVERIFIABLE
         if not peers:
@@ -302,7 +315,7 @@ def _wait_peers_gone(
         pause = min(_POLL_INTERVAL, deadline.remaining())
         if pause > 0 and deadline.clock is time.monotonic:
             time.sleep(pause)
-    peers = _peer_pids(deadline, pgid=pgid, me=me)
+    peers = _peer_pids(deadline, pgid=pgid, me=me, exclude=exclude)
     if peers is None:
         return DrainResult.UNVERIFIABLE
     if not peers:
@@ -428,6 +441,9 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
     status_fd: int | None = None
     escalate_pgid: int | None = None
     handshake_fd: int | None = None
+    go_fd: int | None = None
+    result_fd: int | None = None
+    leader_pid: int | None = None
     agent_code = 0
     stop_requested = False
     while len(args) >= 2 and args[0].startswith("--") and args[0] != "--":
@@ -441,6 +457,12 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
                 escalate_pgid = int(raw_value)
             elif flag == "--handshake-fd":
                 handshake_fd = int(raw_value)
+            elif flag == "--go-fd":
+                go_fd = int(raw_value)
+            elif flag == "--result-fd":
+                result_fd = int(raw_value)
+            elif flag == "--leader-pid":
+                leader_pid = int(raw_value)
             elif flag == "--agent-code":
                 agent_code = int(raw_value)
             elif flag == "--stop-requested":
@@ -455,6 +477,9 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
     extra = {
         "escalate_pgid": escalate_pgid,
         "handshake_fd": handshake_fd,
+        "go_fd": go_fd,
+        "result_fd": result_fd,
+        "leader_pid": leader_pid,
         "agent_code": agent_code,
         "stop_requested": stop_requested,
     }
@@ -514,6 +539,89 @@ def _close_agent_streams(agent: subprocess.Popen[Any]) -> None:
                 pass
 
 
+def _write_result(result_fd: int | None, payload: Mapping[str, Any]) -> None:
+    _write_status(result_fd, payload)
+
+
+def _close_fd(fd: int | None) -> None:
+    if fd is None:
+        return
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+
+
+def _reap_verifier(proc: subprocess.Popen[Any] | None) -> None:
+    if proc is None:
+        return
+    if proc.poll() is None:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=1.0)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def _await_go(go_fd: int | None, timeout: float) -> bool:
+    if go_fd is None:
+        return False
+    try:
+        ready, _, _ = select.select([go_fd], [], [], max(0.0, timeout))
+        if not ready:
+            return False
+        data = os.read(go_fd, 16)
+    except OSError:
+        return False
+    return data.startswith(b"GO")
+
+
+def _hold_ownership_anchor(deadline: CleanupDeadline) -> None:
+    remaining = deadline.remaining()
+    if remaining > 0:
+        time.sleep(remaining)
+    while True:
+        time.sleep(1.0)
+
+
+def _escalation_command(
+    *,
+    pgid: int,
+    status_fd: int | None,
+    handshake_fd: int,
+    go_fd: int,
+    result_fd: int,
+    agent_code: int,
+    stop_requested: bool,
+    leader_pid: int,
+) -> list[str]:
+    command = [sys.executable, "-u", str(Path(__file__).resolve())]
+    if status_fd is not None:
+        command.extend(["--status-fd", str(status_fd)])
+    command.extend(
+        [
+            "--escalate-pgid",
+            str(pgid),
+            "--handshake-fd",
+            str(handshake_fd),
+            "--go-fd",
+            str(go_fd),
+            "--result-fd",
+            str(result_fd),
+            "--agent-code",
+            str(agent_code),
+            "--stop-requested",
+            "1" if stop_requested else "0",
+            "--leader-pid",
+            str(leader_pid),
+        ]
+    )
+    return command
+
+
 def _handoff_group_escalation(
     *,
     pgid: int,
@@ -521,27 +629,29 @@ def _handoff_group_escalation(
     agent_code: int,
     stop_requested: bool,
     deadline: CleanupDeadline,
-) -> bool:
+    leader_pid: int | None = None,
+) -> DrainResult | None:
     handshake_r, handshake_w = os.pipe()
-    command = [sys.executable, "-u", str(Path(__file__).resolve())]
-    pass_fds = [handshake_w]
-    if status_fd is not None:
-        command.extend(["--status-fd", str(status_fd)])
-        pass_fds.append(status_fd)
-    command.extend(
-        [
-            "--escalate-pgid",
-            str(pgid),
-            "--handshake-fd",
-            str(handshake_w),
-            "--agent-code",
-            str(agent_code),
-            "--stop-requested",
-            "1" if stop_requested else "0",
-        ]
+    go_r, go_w = os.pipe()
+    result_r, result_w = os.pipe()
+    if leader_pid is None:
+        leader_pid = os.getpid()
+    command = _escalation_command(
+        pgid=pgid,
+        status_fd=status_fd,
+        handshake_fd=handshake_w,
+        go_fd=go_r,
+        result_fd=result_w,
+        agent_code=agent_code,
+        stop_requested=stop_requested,
+        leader_pid=leader_pid,
     )
+    pass_fds = [handshake_w, go_r, result_w]
+    if status_fd is not None:
+        pass_fds.append(status_fd)
+    proc: subprocess.Popen[Any] | None = None
     try:
-        subprocess.Popen(
+        proc = subprocess.Popen(
             command,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -551,28 +661,74 @@ def _handoff_group_escalation(
             pass_fds=tuple(pass_fds),
         )
     except OSError:
-        os.close(handshake_r)
-        os.close(handshake_w)
-        return False
-    os.close(handshake_w)
+        _close_fd(handshake_r)
+        _close_fd(handshake_w)
+        _close_fd(go_r)
+        _close_fd(go_w)
+        _close_fd(result_r)
+        _close_fd(result_w)
+        return None
+    _close_fd(handshake_w)
+    _close_fd(go_r)
+    _close_fd(result_w)
     timeout = min(_ESCALATE_HANDOFF_SECONDS, max(0.0, deadline.remaining()))
     try:
         ready, _, _ = select.select([handshake_r], [], [], timeout)
         if not ready:
-            os.close(handshake_r)
-            return False
+            _close_fd(go_w)
+            _close_fd(handshake_r)
+            _close_fd(result_r)
+            _reap_verifier(proc)
+            return None
         data = os.read(handshake_r, 16)
     except OSError:
-        try:
-            os.close(handshake_r)
-        except OSError:
-            pass
-        return False
+        _close_fd(go_w)
+        _close_fd(handshake_r)
+        _close_fd(result_r)
+        _reap_verifier(proc)
+        return None
+    _close_fd(handshake_r)
+    if not data.startswith(b"READY"):
+        _close_fd(go_w)
+        _close_fd(result_r)
+        _reap_verifier(proc)
+        return None
     try:
-        os.close(handshake_r)
+        os.write(go_w, b"GO\n")
     except OSError:
-        pass
-    return data.startswith(b"READY")
+        _close_fd(go_w)
+        _close_fd(result_r)
+        _reap_verifier(proc)
+        return None
+    _close_fd(go_w)
+    result_timeout = max(0.05, deadline.remaining())
+    try:
+        ready, _, _ = select.select([result_r], [], [], result_timeout)
+        payload = b""
+        if ready:
+            payload = os.read(result_r, 4096)
+    except OSError:
+        payload = b""
+    _close_fd(result_r)
+    if not payload:
+        _reap_verifier(proc)
+        return None
+    try:
+        decoded = json.loads(payload.splitlines()[-1].decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError, IndexError):
+        _reap_verifier(proc)
+        return None
+    if decoded.get("ok") is not True:
+        _reap_verifier(proc)
+        drain = decoded.get("drain")
+        if drain in {item.value for item in DrainResult}:
+            return DrainResult(drain)
+        return DrainResult.UNVERIFIABLE
+    drain = decoded.get("drain")
+    _reap_verifier(proc)
+    if drain in {item.value for item in DrainResult}:
+        return DrainResult(drain)
+    return DrainResult.UNVERIFIABLE
 
 
 def _run_escalation(
@@ -582,22 +738,44 @@ def _run_escalation(
     handshake_fd: int | None,
     agent_code: int,
     stop_requested: bool,
+    go_fd: int | None = None,
+    result_fd: int | None = None,
+    leader_pid: int | None = None,
+    go_timeout: float | None = None,
 ) -> int:
     if handshake_fd is not None:
         try:
             os.write(handshake_fd, b"READY\n")
         except OSError:
-            pass
-        try:
-            os.close(handshake_fd)
-        except OSError:
-            pass
+            _close_fd(handshake_fd)
+            _close_fd(go_fd)
+            _close_fd(result_fd)
+            return 0
+        _close_fd(handshake_fd)
+    timeout = _ESCALATE_HANDOFF_SECONDS if go_timeout is None else go_timeout
+    if not _await_go(go_fd, timeout):
+        _close_fd(go_fd)
+        _close_fd(result_fd)
+        return 0
+    _close_fd(go_fd)
     try:
         os.killpg(pgid, signal.SIGKILL)
-    except OSError:
-        pass
+    except OSError as exc:
+        error = "eperm" if getattr(exc, "errno", None) == errno.EPERM else "oserror"
+        _write_result(
+            result_fd,
+            {"ok": False, "error": error, "drain": DrainResult.UNVERIFIABLE.value},
+        )
+        _close_fd(result_fd)
+        return 1
+    exclude = {leader_pid} if leader_pid is not None else None
     deadline = CleanupDeadline.after(_KILL_DRAIN_SECONDS + _PS_TIMEOUT_SECONDS)
-    drain = _wait_peers_gone(deadline, budget=_KILL_DRAIN_SECONDS, pgid=pgid)
+    drain = _wait_peers_gone(
+        deadline,
+        budget=_KILL_DRAIN_SECONDS,
+        pgid=pgid,
+        exclude=exclude,
+    )
     _write_status(
         status_fd,
         {
@@ -606,6 +784,8 @@ def _run_escalation(
             "stop_requested": stop_requested,
         },
     )
+    _write_result(result_fd, {"ok": True, "drain": drain.value})
+    _close_fd(result_fd)
     return 0 if drain is DrainResult.CLEAN else 1
 
 
@@ -623,8 +803,11 @@ def main(
             pgid=int(extra["escalate_pgid"]),
             status_fd=status_fd,
             handshake_fd=extra["handshake_fd"],
+            go_fd=extra["go_fd"],
+            result_fd=extra["result_fd"],
             agent_code=int(extra["agent_code"]),
             stop_requested=bool(extra["stop_requested"]),
+            leader_pid=extra["leader_pid"],
         )
     if not command:
         return 2
@@ -721,22 +904,20 @@ def main(
         agent_code=return_code,
         stop_requested=stop_requested,
         deadline=active,
+        leader_pid=os.getpid(),
     )
-    if handed:
-        remaining = active.remaining()
-        if remaining > 0:
-            time.sleep(remaining)
+    if handed is DrainResult.CLEAN:
         _write_status(
             status_fd,
             {
                 "agent_code": return_code,
-                "drain": DrainResult.UNVERIFIABLE.value,
+                "drain": DrainResult.CLEAN.value,
                 "stop_requested": stop_requested,
             },
         )
-        return 1
-    _write_status(status_fd, payload)
-    _abandon_group_if_unresolved(drain)
+        return 0 if stop_requested and return_code < 0 else return_code
+    _abandon_group_if_unresolved(DrainResult.SURVIVORS)
+    _hold_ownership_anchor(active)
     return 1
 
 
