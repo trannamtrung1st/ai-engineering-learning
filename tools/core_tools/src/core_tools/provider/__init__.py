@@ -22,6 +22,7 @@ from core_tools.provider.errors import (
     ProviderTurnStalledError,
     ProviderLifecycleTimeoutError,
     ProviderReplacementIdentityError,
+    ProviderUnsupportedPlatformError,
 )
 from core_tools.provider.events import normalize_cursor_event
 from core_tools.provider.factory import create_provider
@@ -43,6 +44,7 @@ __all__ = [
     "ProviderTurnStalledError",
     "ProviderLifecycleTimeoutError",
     "ProviderReplacementIdentityError",
+    "ProviderUnsupportedPlatformError",
     "StubProvider",
     "build_agent_argv",
     "create_provider",

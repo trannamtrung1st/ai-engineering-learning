@@ -17,6 +17,7 @@ from core_tools.provider.errors import (
     ProviderLifecycleTimeoutError,
     ProviderTurnError,
     ProviderTurnStalledError,
+    ProviderUnsupportedPlatformError,
 )
 from core_tools.provider.process_cleanup import terminate_process_tree
 from core_tools.provider.process_identity import terminate_verified_process_identity
@@ -108,7 +109,7 @@ def test_bound_popen_then_drain_share_remaining_budget(tmp_path: Path) -> None:
 def test_windows_process_tree_termination_is_unsupported() -> None:
     proc = MagicMock()
     with patch("core_tools.provider.process_cleanup.sys.platform", "win32"):
-        with pytest.raises(NotImplementedError, match="POSIX"):
+        with pytest.raises(ProviderUnsupportedPlatformError, match="POSIX"):
             terminate_process_tree(proc, timeout=0.3)
 
 

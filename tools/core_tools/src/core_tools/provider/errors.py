@@ -11,6 +11,10 @@ class ProviderError(Exception):
         self.session_id = session_id
 
 
+class ProviderUnsupportedPlatformError(ProviderError):
+    """Cursor process trees and janitor ownership are POSIX-only."""
+
+
 class ProviderBinaryNotFoundError(ProviderError):
     """Cursor CLI binary is missing from PATH or configured path."""
 

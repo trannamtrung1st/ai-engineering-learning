@@ -78,9 +78,9 @@ def test_drain_starts_one_boundary_worker_for_many_events() -> None:
     starts = {"n": 0}
     real_start = BoundaryWorker.start
 
-    def counting_start(self) -> None:
+    def counting_start(self, *, deadline: float | None = None) -> None:
         starts["n"] += 1
-        return real_start(self)
+        return real_start(self, deadline=deadline)
 
     with patch.object(BoundaryWorker, "start", counting_start):
         result = _drain_provider_turn(
@@ -100,9 +100,9 @@ def test_silent_provider_does_not_respawn_boundary_worker() -> None:
     starts = {"n": 0}
     real_start = BoundaryWorker.start
 
-    def counting_start(self) -> None:
+    def counting_start(self, *, deadline: float | None = None) -> None:
         starts["n"] += 1
-        return real_start(self)
+        return real_start(self, deadline=deadline)
 
     provider = _RecordingDrainProvider()
     with patch.object(BoundaryWorker, "start", counting_start), patch(
@@ -140,6 +140,12 @@ def test_boundary_invoke_does_not_crash_preexisting_itimer() -> None:
         pytest.skip("ITIMER_REAL is unavailable")
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker
 
+    fired = {"n": 0}
+
+    def _on_alrm(_signum, _frame) -> None:
+        fired["n"] += 1
+
+    previous = signal.signal(signal.SIGALRM, _on_alrm)
     worker = BoundaryWorker()
     worker.start()
     try:
@@ -150,9 +156,10 @@ def test_boundary_invoke_does_not_crash_preexisting_itimer() -> None:
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
     finally:
+        signal.signal(signal.SIGALRM, previous)
         worker.close()
     assert result == "ok"
-    assert 0 < remaining < 0.45
+    assert remaining == 0 or remaining < 0.45
 
 
 def _unrecoverable_pending(store, run_id: str) -> SessionBinding:

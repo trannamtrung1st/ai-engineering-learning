@@ -89,15 +89,16 @@ class ProcessIdentity:
 def read_process_start_time(pid: int, *, timeout: float | None = None) -> str | None:
     """Return a platform-specific process start-time token for *pid*."""
 
-    if pid <= 0 or not is_pid_alive(pid, timeout=timeout):
+    from core_tools.provider.session_janitor import CleanupDeadline, _process_start_token
+
+    deadline = None if timeout is None else CleanupDeadline.after(timeout)
+    remaining = None if deadline is None else deadline.remaining()
+    if pid <= 0 or not is_pid_alive(pid, timeout=remaining):
         return None
     if sys.platform == "win32":
         return None
     if os.path.isdir("/proc"):
         return _read_linux_process_start_time(pid)
-    from core_tools.provider.session_janitor import CleanupDeadline, _process_start_token
-
-    deadline = None if timeout is None else CleanupDeadline.after(timeout)
     return _process_start_token(pid, deadline=deadline)
 
 
@@ -295,8 +296,9 @@ def _any_identities_still_alive(
     *,
     timeout: float | None = None,
 ) -> bool:
+    remaining = _remaining_fn(timeout)
     return any(
-        _identity_still_alive(identity, timeout=timeout) for identity in identities
+        _identity_still_alive(identity, timeout=remaining()) for identity in identities
     )
 
 

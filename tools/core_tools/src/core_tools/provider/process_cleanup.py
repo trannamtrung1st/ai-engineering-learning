@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from core_tools.provider.errors import ProviderUnsupportedPlatformError
+
 if TYPE_CHECKING:
     from core_tools.provider.process_identity import ProcessIdentity
 
@@ -417,7 +419,7 @@ def terminate_process_tree(
         return max(0.0, deadline - time.monotonic())
 
     if sys.platform == "win32":
-        raise NotImplementedError(
+        raise ProviderUnsupportedPlatformError(
             "process-tree termination is POSIX-only; Windows Cursor process "
             "trees are not supported"
         )

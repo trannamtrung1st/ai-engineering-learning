@@ -32,6 +32,7 @@ from core_tools.provider.errors import (
     ProviderTurnError,
     ProviderTurnStalledError,
     ProviderLifecycleTimeoutError,
+    ProviderUnsupportedPlatformError,
 )
 from core_tools.provider.events import (
     format_manifest_prompt,
@@ -48,6 +49,7 @@ from core_tools.provider.process_cleanup import (
 from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
+    _remaining_fn,
     capture_process_group_identities,
     process_identities_from_termination_record,
     process_identity_is_live,
@@ -648,6 +650,11 @@ class CursorProvider:
         extra_env: Mapping[str, str] | None = None,
         on_provider_event: ProviderEventCallback | None = None,
     ) -> None:
+        if sys.platform == "win32":
+            raise ProviderUnsupportedPlatformError(
+                "CursorProvider is POSIX-only; Windows process-tree ownership "
+                "is not supported"
+            )
         self._config = config
         provider_cfg = config.get("provider") or {}
         self._workspace = Path(workspace or Path.cwd()).resolve()
@@ -1764,20 +1771,21 @@ class CursorProvider:
         *,
         timeout: float | None = None,
     ) -> bool:
+        remaining = _remaining_fn(timeout)
         if entry.proc is not None and entry.proc.poll() is None:
             return True
         if entry.identity is not None and process_identity_is_live(
-            entry.identity, timeout=timeout
+            entry.identity, timeout=remaining()
         ):
             return True
         if entry.member_identities:
             if any(
-                process_identity_is_live(identity, timeout=timeout)
+                process_identity_is_live(identity, timeout=remaining())
                 for identity in entry.member_identities
             ):
                 return True
         if entry.pgid is not None:
-            state = process_group_state(entry.pgid, timeout=timeout)
+            state = process_group_state(entry.pgid, timeout=remaining())
             if state is ProcessGroupState.GONE:
                 entry.group_observed_gone = True
                 return False
@@ -1789,7 +1797,7 @@ class CursorProvider:
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )
-        return is_pid_alive(pid, timeout=timeout)
+        return is_pid_alive(pid, timeout=remaining())
 
     def _prune_dead_tracked_pids_for_session(self, session_id: str) -> None:
         tracked_ids = self._tracked_session_ids(session_id)
@@ -1815,6 +1823,7 @@ class CursorProvider:
     ) -> tuple[int, ...]:
         tracked_ids = self._tracked_session_ids(session_id)
         surviving: set[int] = set()
+        remaining = _remaining_fn(timeout)
         for record in records:
             if record.get("reason") != "termination_failed":
                 continue
@@ -1822,22 +1831,22 @@ class CursorProvider:
             if not identities:
                 continue
             for identity in identities:
-                if process_identity_is_live(identity, timeout=timeout):
+                if process_identity_is_live(identity, timeout=remaining()):
                     surviving.add(identity.pid)
         with self._turn_proc_lock:
             for pid, entry in self._tracked_turn_procs.items():
                 if entry.session_id not in tracked_ids:
                     continue
-                if not self._tracked_tree_is_live(entry, timeout=timeout):
+                if not self._tracked_tree_is_live(entry, timeout=remaining()):
                     continue
                 live_found = False
                 if entry.member_identities:
                     for identity in entry.member_identities:
-                        if process_identity_is_live(identity, timeout=timeout):
+                        if process_identity_is_live(identity, timeout=remaining()):
                             surviving.add(identity.pid)
                             live_found = True
                 if entry.identity is not None and process_identity_is_live(
-                    entry.identity, timeout=timeout
+                    entry.identity, timeout=remaining()
                 ):
                     surviving.add(entry.identity.pid)
                     live_found = True

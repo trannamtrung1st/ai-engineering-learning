@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from core_tools.provider.cursor import CursorProvider, _SubprocessStdoutIterator
+from core_tools.provider.errors import ProviderUnsupportedPlatformError
 from core_tools.provider.process_cleanup import terminate_process_tree
 from core_tools.provider.process_identity import (
     IdentityInspectState,
@@ -108,7 +109,7 @@ def test_two_long_json_records_plus_exit_are_both_parsed(tmp_path: Path) -> None
 
 def test_windows_process_tree_is_unsupported() -> None:
     with patch("core_tools.provider.process_cleanup.sys.platform", "win32"):
-        with pytest.raises(NotImplementedError, match="POSIX"):
+        with pytest.raises(ProviderUnsupportedPlatformError, match="POSIX"):
             terminate_process_tree(object(), timeout=0.1)  # type: ignore[arg-type]
 
 

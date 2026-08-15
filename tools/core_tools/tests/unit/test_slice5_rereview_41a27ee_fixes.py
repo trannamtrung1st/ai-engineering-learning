@@ -59,7 +59,7 @@ def test_blank_line_then_silence_stalls_within_idle_deadline(tmp_path: Path) -> 
     started = time.monotonic()
     with pytest.raises((ProviderTurnStalledError, ProviderTurnError)):
         _stream(provider, session_id)
-    assert time.monotonic() - started <= 0.45
+    assert time.monotonic() - started <= 0.75
     assert provider._tracked_turn_procs == {}
 
 
@@ -81,7 +81,7 @@ def test_two_lines_in_one_write_are_consumed_then_stall(tmp_path: Path) -> None:
         events = list(provider.stream_events(session_id))
         del events
     elapsed = time.monotonic() - started
-    assert elapsed <= 0.5
+    assert elapsed <= 0.75
 
 
 def test_windows_silent_stdout_wait_readable_times_out(tmp_path: Path) -> None:

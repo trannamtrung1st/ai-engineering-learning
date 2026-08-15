@@ -358,9 +358,11 @@ class BoundaryWorker:
         self._child_conn: Any | None = None
         self._pgid: int | None = None
 
-    def start(self) -> None:
+    def start(self, *, deadline: float | None = None) -> None:
         if self.proc is not None and self.proc.is_alive():
             return
+        if deadline is not None and deadline - time.monotonic() <= 0:
+            raise ProviderRunError("boundary probe exceeded timeout")
         ctx = multiprocessing.get_context("spawn")
         self.parent_conn, self._child_conn = ctx.Pipe(duplex=True)
         self.proc = ctx.Process(
@@ -372,31 +374,48 @@ class BoundaryWorker:
             self.proc.start()
             self._child_conn.close()
             self._child_conn = None
-            if self.proc.pid:
+            getpgid = getattr(os, "getpgid", None)
+            if getpgid is not None and self.proc.pid:
                 try:
-                    self._pgid = os.getpgid(self.proc.pid)
+                    self._pgid = getpgid(self.proc.pid)
                     _OWNED_BOUNDARY_PGIDS.add(self._pgid)
                 except OSError:
                     self._pgid = None
+            if deadline is not None and time.monotonic() >= deadline:
+                self.close(deadline=deadline)
+                raise ProviderRunError("boundary probe exceeded timeout")
         except BaseException:
-            self.close()
+            self.close(deadline=deadline)
             raise
 
-    def invoke(self, callback: Callable[[], str | None], *, timeout: float) -> str | None:
-        if timeout <= 0:
-            raise ValueError("boundary probe timeout must be positive")
+    def invoke(
+        self,
+        callback: Callable[[], str | None],
+        *,
+        timeout: float | None = None,
+        deadline: float | None = None,
+    ) -> str | None:
+        if deadline is None:
+            if timeout is None or timeout <= 0:
+                raise ValueError("boundary probe timeout must be positive")
+            deadline = time.monotonic() + timeout
         try:
             pickle.dumps(callback, protocol=pickle.HIGHEST_PROTOCOL)
         except Exception as exc:
             raise ProviderRunError("boundary probe must be serializable") from exc
-        if self.proc is None or not self.proc.is_alive() or self.parent_conn is None:
-            self.close()
-            self.start()
+        if time.monotonic() >= deadline:
+            self.close(deadline=deadline)
+            raise ProviderRunError("boundary probe exceeded timeout")
+        if self.proc is not None and not self.proc.is_alive():
+            raise ProviderRunError("boundary worker died")
+        if self.proc is None or self.parent_conn is None:
+            self.start(deadline=deadline)
         assert self.parent_conn is not None
-        deadline = time.monotonic() + timeout
         self.parent_conn.send(("run", callback))
-        remaining = max(0.0, deadline - time.monotonic())
-        if remaining > 0 and self.parent_conn.poll(remaining):
+        poll_budget = max(0.0, deadline - time.monotonic())
+        reap_reserve = min(0.05, poll_budget)
+        wait_for = max(0.0, poll_budget - reap_reserve)
+        if wait_for > 0 and self.parent_conn.poll(wait_for):
             kind, value = self.parent_conn.recv()
             if kind == "err":
                 if isinstance(value, BaseException):
@@ -405,6 +424,9 @@ class BoundaryWorker:
             if value is None or isinstance(value, str):
                 return value
             raise ProviderRunError("boundary probe returned a non-signal value")
+        if self.proc is not None and not self.proc.is_alive():
+            self.close(deadline=deadline)
+            raise ProviderRunError("boundary worker died")
         self.close(deadline=deadline)
         raise ProviderRunError("boundary probe exceeded timeout")
 
@@ -426,11 +448,13 @@ class BoundaryWorker:
             if proc is not None and proc.is_alive():
                 proc.kill()
             if proc is not None:
-                join_budget = 0.2 if deadline is None else max(0.05, deadline - time.monotonic())
+                join_budget = 0.2 if deadline is None else max(0.0, deadline - time.monotonic())
                 proc.join(timeout=join_budget)
                 if proc.is_alive():
                     proc.kill()
-                    proc.join(timeout=0.2)
+                    leftover = 0.2 if deadline is None else max(0.0, deadline - time.monotonic())
+                    if leftover > 0:
+                        proc.join(timeout=leftover)
         finally:
             if parent is not None:
                 try:
@@ -457,14 +481,6 @@ def _start_boundary_poll(
         on_boundary=on_boundary,
         worker=BoundaryWorker(),
     )
-    try:
-        assert state.worker is not None
-        state.worker.start()
-    except BaseException:
-        if state.worker is not None:
-            state.worker.close()
-            state.worker = None
-        raise
     state.done.set()
     return state
 
@@ -535,16 +551,18 @@ def _invoke_boundary_bounded(
     """
 
     _BOUNDARY_CANCEL.set(stop)
+    deadline = time.monotonic() + timeout
     owned = False
     if worker is None:
         worker = BoundaryWorker()
-        worker.start()
         owned = True
     try:
-        return worker.invoke(callback, timeout=timeout)
+        if worker.proc is None or not worker.proc.is_alive():
+            worker.start(deadline=deadline)
+        return worker.invoke(callback, deadline=deadline)
     finally:
         if owned:
-            worker.close()
+            worker.close(deadline=deadline)
 
 
 def _probe_boundary(
@@ -652,12 +670,11 @@ def _drain_provider_turn(
     accumulator = TurnTextAccumulator()
     poll_state: _BoundaryPollState | None = None
 
-    if on_boundary is not None:
-        poll_state = _start_boundary_poll(on_boundary)
-
     body_error: BaseException | None = None
     provider_failure: str | None = None
     try:
+        if on_boundary is not None:
+            poll_state = _start_boundary_poll(on_boundary)
         for event in _iter_events_with_boundary_poll(
             provider,
             active_session_id,
@@ -1184,18 +1201,20 @@ class LiteralBoundarySignal:
 
 
 def _file_store_root(store: RunStore) -> str:
-    root = getattr(store, "root", None)
-    if root is None:
-        raise ProviderRunError("boundary probe requires a file-backed run store")
-    return str(Path(root))
+    from top_down_planning.persistence.file_store import FileRunStore
+
+    if not isinstance(store, FileRunStore):
+        raise ProviderRunError("boundary probe requires FileRunStore")
+    return str(store.root)
 
 
 @dataclass(frozen=True)
 class StoreBoundaryProbe:
     """Picklable TDP-owned store probe reconstructed in a spawn worker.
 
-    Orchestration boundary probing requires a file-backed ``RunStore.root`` so
-    the per-turn worker can reconstruct ``FileRunStore`` out of process.
+    Boundary probes require a ``FileRunStore``. The per-turn worker reconstructs
+    that concrete store from ``store.root``; other ``RunStore`` implementations
+    are not supported for out-of-process probes.
     """
 
     kind: str
@@ -1293,8 +1312,8 @@ def build_producer_turn_boundary_observer(
 ) -> Callable[[], str | None]:
     """Return a hook that closes producer turns on batch apply or completion claim.
 
-    Requires a file-backed run store (``store.root``) because the per-turn
-    boundary worker reconstructs ``FileRunStore`` in a child process.
+    Requires ``FileRunStore`` because the per-turn boundary worker reconstructs
+    that concrete store in a child process from ``store.root``.
     """
 
     return StoreBoundaryProbe(

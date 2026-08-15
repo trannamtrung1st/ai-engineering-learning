@@ -818,13 +818,8 @@ def commit_primary_provider_session_binding(
             provider_session_id=binding.provider_session_id,
             new_session_instance_id=binding.session_instance_id,
         )
-        if replaced is None and _replacement_started_without_success(
-            store,
-            run_id,
-            role=role,
-            generation=binding.generation,
-        ):
-            _terminalize_unrecoverable_replacement(
+        if replaced is None:
+            _fail_closed_unrecoverable_or_already_terminal_replacement(
                 store,
                 run_id,
                 role=role,
@@ -980,18 +975,49 @@ def _unresolved_replacement_started(
     return started and not replaced and not failed
 
 
-def _replacement_started_without_success(
+def _fail_closed_unrecoverable_or_already_terminal_replacement(
     store: RunStore,
     run_id: str,
     *,
     role: str,
     generation: int | None,
     loop_id: str | None = None,
-) -> bool:
+) -> None:
+    if _unresolved_replacement_started(
+        store,
+        run_id,
+        role=role,
+        generation=generation,
+        loop_id=loop_id,
+    ):
+        _terminalize_unrecoverable_replacement(
+            store,
+            run_id,
+            role=role,
+            generation=generation,
+            loop_id=loop_id,
+        )
+    _raise_already_failed_replacement(
+        store,
+        run_id,
+        role=role,
+        generation=generation,
+        loop_id=loop_id,
+    )
+
+
+def _raise_already_failed_replacement(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    generation: int | None,
+    loop_id: str | None = None,
+) -> None:
     if generation is None:
-        return False
-    started = False
-    replaced = False
+        return
+    reason = ""
+    failed = False
     for event in store.load_events(run_id):
         if str(event.get("role") or "") != role:
             continue
@@ -999,12 +1025,17 @@ def _replacement_started_without_success(
             continue
         if loop_id is not None and str(event.get("loop_id") or "") != str(loop_id):
             continue
-        event_type = str(event.get("type") or "")
-        if event_type == SESSION_REPLACEMENT_STARTED:
-            started = True
-        elif event_type == SESSION_REPLACED:
-            replaced = True
-    return started and not replaced
+        if event.get("type") == SESSION_REPLACEMENT_FAILED:
+            failed = True
+            reason = str(event.get("reason") or "")
+    if not failed:
+        return
+    run = store.load_run(run_id)
+    stop = run.get("stop") or {}
+    if str(run.get("status") or "") == "failed" and stop.get("code") == "session_recovery_exhausted":
+        message = str(stop.get("message") or "session recovery exhausted")
+        raise SessionRecoveryExhausted(message)
+    raise ProviderRunError(f"replacement already failed ({reason or 'unknown'})")
 
 
 def _terminalize_unrecoverable_replacement(
@@ -1165,20 +1196,13 @@ def _complete_replacement_if_durable(
         loop_id=loop_id,
     )
     if payload is None:
-        if _replacement_started_without_success(
+        _fail_closed_unrecoverable_or_already_terminal_replacement(
             store,
             run_id,
             role=role,
             generation=generation,
             loop_id=loop_id,
-        ):
-            _terminalize_unrecoverable_replacement(
-                store,
-                run_id,
-                role=role,
-                generation=generation,
-                loop_id=loop_id,
-            )
+        )
         return
     emit_session_replaced(
         store,
@@ -1516,14 +1540,8 @@ def commit_reviewer_loop_provider_session(
             new_session_instance_id=committed_binding.session_instance_id,
             loop_id=loop.id,
         )
-        if replaced is None and _replacement_started_without_success(
-            store,
-            run_id,
-            role="reviewer",
-            generation=committed_binding.generation,
-            loop_id=loop.id,
-        ):
-            _terminalize_unrecoverable_replacement(
+        if replaced is None:
+            _fail_closed_unrecoverable_or_already_terminal_replacement(
                 store,
                 run_id,
                 role="reviewer",

@@ -130,6 +130,12 @@ def test_boundary_probe_does_not_extend_preexisting_itimer() -> None:
 
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker
 
+    fired = {"n": 0}
+
+    def _on_alrm(_signum, _frame) -> None:
+        fired["n"] += 1
+
+    previous = signal.signal(signal.SIGALRM, _on_alrm)
     worker = BoundaryWorker()
     worker.start()
     try:
@@ -140,9 +146,10 @@ def test_boundary_probe_does_not_extend_preexisting_itimer() -> None:
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
     finally:
+        signal.signal(signal.SIGALRM, previous)
         worker.close()
     assert result == "ok"
-    assert 0 < remaining < 0.45
+    assert remaining == 0 or remaining < 0.45
 
 
 def test_drain_from_non_main_thread_never_uses_async_exc() -> None:

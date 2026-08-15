@@ -117,7 +117,7 @@ Agent session lifecycle: `[session:start]` on `planner_session_started` / `produ
 
 **Command interrupted without ownership** (interrupt before ownership is acquired, or after ownership was released without cancelling the run): the run record is unchanged, no run-cancel notification is sent, and `--stream-json` reports `{"cancelled": false, "command_interrupted": true, "reason": "command interrupted by user", ...}` with exit 130.
 
-Cross-process resume ownership uses POSIX `fcntl` flock on `.resume.lock.d/.owner.lock`. Windows Python is not supported for multi-process resume locking.
+Cross-process resume ownership uses POSIX `fcntl` flock on `.resume.lock.d/.owner.lock`. Windows Python is not supported for multi-process resume locking. `CursorProvider` also fails fast on Windows with `ProviderUnsupportedPlatformError`.
 
 Each `RunEngine.continue_run` scans for and kills orphan agents for the run before spawning provider sessions (including every `tdp resume` step and each `--until` continuation on `tdp run`). `CursorProvider` does not retry turns after cancel teardown.
 
