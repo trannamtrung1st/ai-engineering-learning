@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import multiprocessing
 import os
 import pickle
 import queue
+import socket
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -306,11 +308,25 @@ PROVIDER_TERMINATE_THREAD_NAME = "tdp-provider-terminate"
 BOUNDARY_POLL_THREAD_NAME = "tdp-boundary-poll"
 BOUNDARY_WORKER_NAME = "tdp-boundary-worker"
 BOUNDARY_WORKER_CLEANUP_SECONDS = 0.2
-_OWNED_BOUNDARY_PGIDS: set[int] = set()
+_OWNED_BOUNDARY_WORKERS: dict[int, "BoundaryWorker"] = {}
+_UNREAPED_BOUNDARY_WORKERS: dict[int, "BoundaryWorker"] = {}
 _BOUNDARY_CANCEL: ContextVar[threading.Event | None] = ContextVar(
     "tdp_boundary_cancel",
     default=None,
 )
+
+_WORKER_BOOTSTRAP = (
+    "import sys\n"
+    "from multiprocessing.connection import Connection\n"
+    "from top_down_planning.orchestrator.provider_turns import _boundary_worker_loop\n"
+    "_boundary_worker_loop(Connection(int(sys.argv[1])))\n"
+)
+
+
+def unreaped_boundary_workers() -> tuple["BoundaryWorker", ...]:
+    """Workers whose close() could not prove reap; still owned for retry."""
+
+    return tuple(_UNREAPED_BOUNDARY_WORKERS.values())
 
 
 def boundary_cancel_event() -> threading.Event | None:
@@ -369,16 +385,12 @@ class BoundaryWorker:
         self._start_cancel = threading.Event()
         self._boot_thread: threading.Thread | None = None
 
-    def _record_pgid(self, proc: Any | None = None) -> None:
-        getpgid = getattr(os, "getpgid", None)
+    def _record_pid(self, proc: Any | None = None) -> None:
         target = proc if proc is not None else self.proc
-        if getpgid is None or target is None or not target.pid:
+        pid = getattr(target, "pid", None)
+        if not pid:
             return
-        try:
-            self._pgid = getpgid(target.pid)
-            _OWNED_BOUNDARY_PGIDS.add(self._pgid)
-        except OSError:
-            self._pgid = None
+        _OWNED_BOUNDARY_WORKERS[pid] = self
 
     def _ipc(self, operation: Callable[[], Any]) -> Any:
         try:
@@ -387,8 +399,18 @@ class BoundaryWorker:
             raise ProviderRunError("boundary worker died") from exc
 
     @staticmethod
+    def _proc_alive(proc: Any) -> bool:
+        if proc is None:
+            return False
+        poll = getattr(proc, "poll", None)
+        if callable(poll):
+            return poll() is None
+        is_alive = getattr(proc, "is_alive", None)
+        return bool(is_alive()) if callable(is_alive) else False
+
+    @staticmethod
     def _reap_local_proc(proc: Any, *, timeout: float) -> None:
-        if proc is None or getattr(proc, "ident", None) is None:
+        if proc is None:
             return
         deadline = time.monotonic() + max(0.0, timeout)
 
@@ -396,15 +418,19 @@ class BoundaryWorker:
             return max(0.0, deadline - time.monotonic())
 
         try:
-            if proc.is_alive():
+            if BoundaryWorker._proc_alive(proc):
                 proc.kill()
         except Exception:
             pass
         try:
-            proc.join(timeout=remaining())
+            wait = getattr(proc, "wait", None)
+            if callable(wait):
+                wait(timeout=remaining())
+            else:
+                proc.join(timeout=remaining())
         except Exception:
             pass
-        if proc.is_alive():
+        if BoundaryWorker._proc_alive(proc):
             try:
                 proc.kill()
             except Exception:
@@ -412,85 +438,65 @@ class BoundaryWorker:
             leftover = remaining()
             if leftover > 0:
                 try:
-                    proc.join(timeout=leftover)
+                    wait = getattr(proc, "wait", None)
+                    if callable(wait):
+                        wait(timeout=leftover)
+                    else:
+                        proc.join(timeout=leftover)
                 except Exception:
                     pass
         waitpid = getattr(os, "waitpid", None)
-        if waitpid is not None and getattr(proc, "pid", None):
+        pid = getattr(proc, "pid", None)
+        if waitpid is not None and pid:
             try:
-                waitpid(proc.pid, os.WNOHANG)
+                waitpid(pid, os.WNOHANG)
             except (ChildProcessError, OSError):
                 pass
 
     def start(self, *, deadline: float | None = None) -> None:
-        if self.proc is not None and self.proc.is_alive():
+        if self._proc_alive(self.proc):
             return
         if deadline is not None and deadline - time.monotonic() <= 0:
             raise ProviderRunError("boundary probe exceeded timeout")
         self._start_cancel.clear()
-        ctx = multiprocessing.get_context("spawn")
-        self.parent_conn, self._child_conn = ctx.Pipe(duplex=True)
-        proc = ctx.Process(
-            target=_boundary_worker_loop,
-            args=(self._child_conn,),
-            name=BOUNDARY_WORKER_NAME,
+        parent_sock, child_sock = socket.socketpair()
+        child_fd = child_sock.fileno()
+        env = os.environ.copy()
+        env["TDP_BOUNDARY_WORKER"] = "1"
+        src_root = str(Path(__file__).resolve().parents[2])
+        pythonpath = [src_root]
+        pythonpath.extend(path for path in sys.path if path and path not in pythonpath)
+        env["PYTHONPATH"] = os.pathsep.join(pythonpath)
+        self.proc = subprocess.Popen(
+            [sys.executable, "-c", _WORKER_BOOTSTRAP, str(child_fd)],
+            pass_fds=(child_fd,),
+            close_fds=True,
+            start_new_session=True,
+            env=env,
         )
-        self.proc = proc
-        errors: list[BaseException] = []
-        ready = threading.Event()
+        child_sock.close()
+        parent_fd = parent_sock.detach()
+        from multiprocessing.connection import Connection
 
-        def boot() -> None:
-            local_proc = proc
-            try:
-                local_proc.start()
-                if self._start_cancel.is_set():
-                    self._reap_local_proc(
-                        local_proc, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS
-                    )
-                    return
-                child = self._child_conn
-                if child is not None:
-                    child.close()
-                    self._child_conn = None
-                self._record_pgid(local_proc)
-                parent = self.parent_conn
-                if parent is None:
-                    if self._start_cancel.is_set():
-                        self._reap_local_proc(
-                            local_proc, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS
-                        )
-                    return
-                wait = 5.0 if deadline is None else max(0.0, deadline - time.monotonic())
-                if wait > 0 and parent.poll(wait):
-                    kind, _value = parent.recv()
-                    if kind == "ready" and not self._start_cancel.is_set():
-                        ready.set()
-                        return
-                if self._start_cancel.is_set() or not ready.is_set():
-                    self._reap_local_proc(
-                        local_proc, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS
-                    )
-            except BaseException as exc:
-                errors.append(exc)
-                self._reap_local_proc(local_proc, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
-
-        thread = threading.Thread(target=boot, name="tdp-boundary-start", daemon=True)
-        self._boot_thread = thread
-        thread.start()
+        self.parent_conn = Connection(parent_fd)
+        self._record_pid(self.proc)
         wait = (
             BOUNDARY_POLL_JOIN_SECONDS
             if deadline is None
             else max(0.0, deadline - time.monotonic())
         )
-        thread.join(timeout=wait)
-        if errors:
-            self._start_cancel.set()
-            raise errors[0]
-        if not ready.is_set():
-            self._start_cancel.set()
-            raise ProviderRunError("boundary probe exceeded timeout")
-        if self.proc is None or not self.proc.is_alive() or self.parent_conn is None:
-            raise ProviderRunError("boundary worker died")
+        parent = self.parent_conn
+        try:
+            if wait > 0 and parent.poll(wait):
+                kind, _value = parent.recv()
+                if kind == "ready" and not self._start_cancel.is_set():
+                    return
+        except _WORKER_IPC_ERRORS as exc:
+            self.close(cleanup_timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            raise ProviderRunError("boundary worker died") from exc
+        self._start_cancel.set()
+        self.close(cleanup_timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+        raise ProviderRunError("boundary probe exceeded timeout")
 
     def invoke(
         self,
@@ -509,7 +515,7 @@ class BoundaryWorker:
             raise ProviderRunError("boundary probe must be serializable") from exc
         if time.monotonic() >= deadline:
             raise ProviderRunError("boundary probe exceeded timeout")
-        if self.proc is not None and not self.proc.is_alive():
+        if self.proc is not None and not self._proc_alive(self.proc):
             raise ProviderRunError("boundary worker died")
         if self.proc is None or self.parent_conn is None:
             self.start(deadline=deadline)
@@ -531,7 +537,7 @@ class BoundaryWorker:
             if "boundary worker died" in str(exc):
                 self.close(cleanup_timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
             raise
-        if self.proc is not None and not self.proc.is_alive():
+        if self.proc is not None and not self._proc_alive(self.proc):
             self.close(cleanup_timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
             raise ProviderRunError("boundary worker died")
         self.close(cleanup_timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
@@ -564,9 +570,9 @@ class BoundaryWorker:
         proc = self.proc
         parent = self.parent_conn
         child = self._child_conn
-        pgid = self._pgid
+        pid = getattr(proc, "pid", None)
         starting = boot is not None and boot.is_alive()
-        started = proc is not None and getattr(proc, "ident", None) is not None
+        started = proc is not None and pid is not None
         try:
             if parent is not None:
                 try:
@@ -575,14 +581,18 @@ class BoundaryWorker:
                     pass
             if started:
                 self._reap_local_proc(proc, timeout=remaining())
-            if starting or (started and proc.is_alive()):
+            if starting or (started and self._proc_alive(proc)):
+                _UNREAPED_BOUNDARY_WORKERS[id(self)] = self
                 raise ProviderRunError("boundary worker failed to stop")
         finally:
             starting = boot is not None and boot.is_alive()
-            unreaped = started and proc is not None and proc.is_alive()
+            unreaped = started and self._proc_alive(proc)
             if starting or unreaped:
-                pass
+                _UNREAPED_BOUNDARY_WORKERS[id(self)] = self
             else:
+                _UNREAPED_BOUNDARY_WORKERS.pop(id(self), None)
+                if pid is not None:
+                    _OWNED_BOUNDARY_WORKERS.pop(pid, None)
                 self.proc = None
                 self.parent_conn = None
                 self._child_conn = None
@@ -598,8 +608,6 @@ class BoundaryWorker:
                         child.close()
                     except Exception:
                         pass
-                if pgid is not None:
-                    _OWNED_BOUNDARY_PGIDS.discard(pgid)
 
 
 def _start_boundary_poll(
@@ -613,16 +621,6 @@ def _start_boundary_poll(
         on_boundary=on_boundary,
         worker=BoundaryWorker(),
     )
-    assert state.worker is not None
-    try:
-        state.worker.start(deadline=time.monotonic() + BOUNDARY_POLL_JOIN_SECONDS)
-    except BaseException:
-        try:
-            state.worker.close(cleanup_timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
-        except ProviderRunError:
-            pass
-        raise
-    state.done.set()
     return state
 
 
@@ -653,12 +651,12 @@ def _finalize_boundary_poll(
     if poll_state is None:
         return
     poll_state.stop.set()
+    try:
+        _abort_provider_turn(provider, session_id)
+    except BaseException as exc:
+        _record_poll_error(poll_state, exc)
     pump = poll_state.pump_thread
     if pump is not None:
-        try:
-            _abort_provider_turn(provider, session_id)
-        except BaseException as exc:
-            _record_poll_error(poll_state, exc)
         pump.join(timeout=BOUNDARY_POLL_JOIN_SECONDS)
         if pump.is_alive():
             try:
@@ -677,6 +675,7 @@ def _finalize_boundary_poll(
             worker.close()
         except BaseException as exc:
             poll_state.worker = worker
+            _UNREAPED_BOUNDARY_WORKERS[id(worker)] = worker
             _record_poll_error(poll_state, exc)
             _raise_poll_failure(poll_state)
             return
@@ -713,7 +712,8 @@ def _invoke_boundary_bounded(
             try:
                 worker.close(cleanup_timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
             except ProviderRunError:
-                pass
+                _UNREAPED_BOUNDARY_WORKERS[id(worker)] = worker
+                raise
 
 
 def _probe_boundary(
@@ -826,6 +826,11 @@ def _drain_provider_turn(
     try:
         if on_boundary is not None:
             poll_state = _start_boundary_poll(on_boundary)
+            assert poll_state.worker is not None
+            poll_state.worker.start(
+                deadline=time.monotonic() + BOUNDARY_POLL_JOIN_SECONDS
+            )
+            poll_state.done.set()
         for event in _iter_events_with_boundary_poll(
             provider,
             active_session_id,

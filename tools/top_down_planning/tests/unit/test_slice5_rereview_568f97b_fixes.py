@@ -102,7 +102,7 @@ def test_dead_boundary_worker_raises_typed_error() -> None:
     worker.start()
     assert worker.proc is not None
     worker.proc.kill()
-    worker.proc.join(timeout=2.0)
+    worker.proc.wait(timeout=2.0)
 
     with pytest.raises(ProviderRunError, match="boundary worker died"):
         worker.invoke(LiteralBoundarySignal(), timeout=1.0)

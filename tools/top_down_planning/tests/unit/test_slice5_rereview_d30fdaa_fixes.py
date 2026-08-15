@@ -62,42 +62,36 @@ class _HangStartProvider:
 
 
 def test_late_process_start_after_timeout_is_killed_and_joined() -> None:
-    release = threading.Event()
-    real_start = multiprocessing.process.BaseProcess.start
-
-    def delayed_start(self) -> None:
-        release.wait(timeout=2.0)
-        real_start(self)
-
-    with patch("multiprocessing.process.BaseProcess.start", delayed_start):
+    hang_bootstrap = "import time; time.sleep(60)\n"
+    with patch(
+        "top_down_planning.orchestrator.provider_turns._WORKER_BOOTSTRAP",
+        hang_bootstrap,
+    ):
         with pytest.raises(ProviderRunError, match="exceeded timeout|failed to stop"):
             _invoke_boundary_bounded(
                 LiteralBoundarySignal(),
                 threading.Event(),
                 timeout=0.15,
             )
-        release.set()
         _wait_boundary_gone()
 
 
 def test_blocked_startup_retains_process_owner() -> None:
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker
 
-    release = threading.Event()
-
-    def blocked_start(self) -> None:
-        del self
-        release.wait(timeout=5.0)
-
+    hang_bootstrap = "import time; time.sleep(60)\n"
     worker = BoundaryWorker()
     try:
-        with patch("multiprocessing.process.BaseProcess.start", blocked_start):
+        with patch(
+            "top_down_planning.orchestrator.provider_turns._WORKER_BOOTSTRAP",
+            hang_bootstrap,
+        ):
             with pytest.raises(ProviderRunError):
                 worker.start(deadline=time.monotonic() + 0.1)
-            assert worker.proc is not None
-            assert _boundary_start_threads()
+        # start() reaps a killable unready child; leftover owner is only for
+        # close() failure, which this path does not simulate.
+        assert worker.proc is None
     finally:
-        release.set()
         worker.close(cleanup_timeout=1.0)
         _wait_boundary_gone()
 
@@ -148,8 +142,8 @@ def test_close_cleanup_timeout_is_one_absolute_deadline() -> None:
     with patch(
         "top_down_planning.orchestrator.provider_turns.time.monotonic",
         fake_monotonic,
-    ), patch.object(type(proc), "is_alive", return_value=True), patch.object(
-        type(proc), "join", side_effect=recording_join
+    ), patch.object(type(proc), "poll", return_value=None), patch.object(
+        type(proc), "wait", side_effect=recording_join
     ), patch.object(type(proc), "kill", return_value=None):
         with pytest.raises(ProviderRunError, match="failed to stop"):
             worker.close(cleanup_timeout=0.2)

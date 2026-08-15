@@ -42,6 +42,7 @@ from core_tools.provider.events import (
 from core_tools.provider.process_cleanup import (
     ProcessGroupState,
     is_pid_alive,
+    list_process_group_pids,
     process_group_state,
     read_process_group_id,
     terminate_process_tree,
@@ -50,6 +51,7 @@ from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
     _remaining_fn,
+    capture_process_group_identities,
     process_identities_from_termination_record,
     process_identity_is_live,
     process_identity_token,
@@ -66,6 +68,7 @@ from core_tools.provider.session_janitor import (
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 DEFAULT_TURN_IDLE_TIMEOUT_SECONDS = 2.0
+DEFAULT_TURN_TREE_CLEANUP_SECONDS = 2.0
 _STDERR_TAIL_MAX_BYTES = 64 * 1024
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
@@ -1592,10 +1595,16 @@ class CursorProvider:
         idle_timeout: float,
         on_idle: Callable[[], None],
         session_id: str | None = None,
+        deadline: float | None = None,
     ) -> Iterator[str]:
         while True:
+            remaining = (
+                idle_timeout
+                if deadline is None
+                else max(0.0, deadline - time.monotonic())
+            )
             try:
-                line = stream.read_nonempty_line(idle_timeout)
+                line = stream.read_nonempty_line(remaining)
             except StopIteration:
                 return
             if line is None:
@@ -1608,6 +1617,8 @@ class CursorProvider:
                     f"provider turn produced no stream output for {idle_timeout:g}s",
                     session_id=session_id,
                 )
+            if deadline is not None:
+                deadline = time.monotonic() + idle_timeout
             yield line
 
     @staticmethod
@@ -1617,6 +1628,7 @@ class CursorProvider:
         idle_timeout: float,
         on_idle: Callable[[], None],
         session_id: str | None = None,
+        deadline: float | None = None,
     ) -> Iterator[str]:
         """Yield stdout lines, raising when no line arrives within *idle_timeout* seconds."""
 
@@ -1626,6 +1638,7 @@ class CursorProvider:
                 idle_timeout=idle_timeout,
                 on_idle=on_idle,
                 session_id=session_id,
+                deadline=deadline,
             )
             return
 
@@ -1654,8 +1667,13 @@ class CursorProvider:
         thread.start()
         try:
             while True:
+                wait = (
+                    idle_timeout
+                    if deadline is None
+                    else max(0.0, deadline - time.monotonic())
+                )
                 try:
-                    line = line_queue.get(timeout=idle_timeout)
+                    line = line_queue.get(timeout=wait)
                 except queue.Empty:
                     on_idle()
                     closer = getattr(stream, "close", None)
@@ -1679,6 +1697,8 @@ class CursorProvider:
                     if errors:
                         raise errors[0]
                     break
+                if deadline is not None:
+                    deadline = time.monotonic() + idle_timeout
                 yield line
         finally:
             stopped.set()
@@ -1754,6 +1774,28 @@ class CursorProvider:
                 pgid=pgid,
                 member_identities=None,
             )
+        thread = threading.Thread(
+            target=self._snapshot_tracked_group,
+            args=(proc.pid,),
+            kwargs={"timeout": DEFAULT_TURN_TREE_CLEANUP_SECONDS},
+            daemon=True,
+            name="cursor-group-snapshot",
+        )
+        thread.start()
+
+    def _snapshot_tracked_group(self, pid: int, *, timeout: float | None = None) -> None:
+        with self._turn_proc_lock:
+            entry = self._tracked_turn_procs.get(pid)
+        if entry is None or entry.identity is None:
+            return
+        captured = capture_process_group_identities(entry.identity, timeout=timeout)
+        if not captured:
+            return
+        with self._turn_proc_lock:
+            current = self._tracked_turn_procs.get(pid)
+            if current is None:
+                return
+            current.member_identities = tuple(captured)
 
     def _unregister_tracked_turn_proc(self, proc: subprocess.Popen[str] | None) -> None:
         if proc is None:
@@ -1859,8 +1901,18 @@ class CursorProvider:
                 ):
                     surviving.add(entry.identity.pid)
                     live_found = True
-                if not live_found:
-                    surviving.add(pid)
+                if not live_found and entry.pgid is not None:
+                    members = list_process_group_pids(
+                        entry.pgid, timeout=remaining()
+                    )
+                    if members:
+                        for member_pid in members:
+                            if process_identity_is_live(
+                                ProcessIdentity(pid=member_pid, start_time=""),
+                                timeout=remaining(),
+                            ) or is_pid_alive(member_pid, timeout=remaining()):
+                                surviving.add(member_pid)
+                                live_found = True
         return tuple(sorted(surviving))
 
     def _remove_session(self, canonical_id: str) -> None:
@@ -1877,6 +1929,9 @@ class CursorProvider:
             iterator: _SubprocessStdoutIterator | None = None
             stream: Iterator[str] | None = None
             teardown_deadline: list[float | None] = [None]
+            detect_deadline = (
+                time.monotonic() + idle_timeout if idle_timeout > 0 else None
+            )
             try:
                 if runner is default_process_runner:
                     iterator = _SubprocessStdoutIterator(
@@ -1895,7 +1950,9 @@ class CursorProvider:
 
                 def on_idle() -> None:
                     proc = active_proc[0]
-                    teardown_deadline[0] = time.monotonic() + idle_timeout
+                    teardown_deadline[0] = (
+                        time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
+                    )
                     if proc is None:
                         return
                     tracked = self._tracked_turn_procs.get(proc.pid)
@@ -1913,6 +1970,23 @@ class CursorProvider:
                     )
                     if iterator is not None:
                         iterator.close()
+                    if proc.pid in self._tracked_turn_procs:
+                        live = self._tracked_tree_is_live(
+                            self._tracked_turn_procs[proc.pid],
+                            timeout=max(0.0, teardown_deadline[0] - time.monotonic()),
+                        )
+                        if not live:
+                            self._unregister_tracked_turn_proc(proc)
+
+                if active_proc[0] is not None:
+                    self._register_tracked_turn_proc(
+                        active_proc[0],
+                        timeout=(
+                            None
+                            if detect_deadline is None
+                            else max(0.0, detect_deadline - time.monotonic())
+                        ),
+                    )
 
                 if idle_timeout > 0:
                     context = self._get_collect_context()
@@ -1922,12 +1996,7 @@ class CursorProvider:
                         idle_timeout=idle_timeout,
                         on_idle=on_idle,
                         session_id=stalled_session_id,
-                    )
-
-                if active_proc[0] is not None:
-                    self._register_tracked_turn_proc(
-                        active_proc[0],
-                        timeout=idle_timeout if idle_timeout > 0 else None,
+                        deadline=detect_deadline,
                     )
 
                 assert stream is not None
@@ -1953,11 +2022,7 @@ class CursorProvider:
                                 if tracked is not None and tracked.member_identities is not None
                                 else None
                             ),
-                            timeout=(
-                                None
-                                if teardown_deadline[0] is None
-                                else max(0.0, teardown_deadline[0] - time.monotonic())
-                            ),
+                            timeout=DEFAULT_TURN_TREE_CLEANUP_SECONDS,
                         )
                         if tree_clean or (
                             tracked is not None and tracked.group_observed_gone

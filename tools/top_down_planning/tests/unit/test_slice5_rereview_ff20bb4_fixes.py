@@ -88,14 +88,12 @@ def test_prestarted_worker_uses_full_response_poll_budget() -> None:
 
 
 def test_blocked_process_start_times_out_without_inline_wait() -> None:
-    from top_down_planning.orchestrator.provider_turns import BoundaryWorker
-
-    def blocked_start(self) -> None:
-        del self
-        time.sleep(10)
-
+    hang_bootstrap = "import time; time.sleep(60)\n"
     started = time.monotonic()
-    with patch("multiprocessing.process.BaseProcess.start", blocked_start):
+    with patch(
+        "top_down_planning.orchestrator.provider_turns._WORKER_BOOTSTRAP",
+        hang_bootstrap,
+    ):
         with pytest.raises(ProviderRunError, match="exceeded timeout"):
             _invoke_boundary_bounded(
                 LiteralBoundarySignal(),
@@ -122,7 +120,7 @@ def test_ipc_death_after_send_is_typed_worker_died() -> None:
         del payload
         assert worker.proc is not None
         worker.proc.kill()
-        worker.proc.join(timeout=2.0)
+        worker.proc.wait(timeout=2.0)
         raise BrokenPipeError("child gone")
 
     worker.parent_conn.send = dying_send  # type: ignore[method-assign]
@@ -142,8 +140,8 @@ def test_unreaped_worker_keeps_handle_and_raises() -> None:
     worker = BoundaryWorker()
     worker.start()
     assert worker.proc is not None
-    with patch.object(type(worker.proc), "is_alive", return_value=True), patch.object(
-        type(worker.proc), "join", return_value=None
+    with patch.object(type(worker.proc), "poll", return_value=None), patch.object(
+        type(worker.proc), "wait", return_value=None
     ), patch.object(type(worker.proc), "kill", return_value=None):
         with pytest.raises(ProviderRunError, match="failed to stop"):
             worker.close(cleanup_timeout=0.0)
