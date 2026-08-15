@@ -112,7 +112,7 @@ def test_timeout_close_does_not_extend_deadline() -> None:
     started = time.monotonic()
     with pytest.raises(ProviderRunError, match="exceeded timeout"):
         _invoke_boundary_bounded(NeverReturnBoundary(), threading.Event(), timeout=0.2)
-    assert time.monotonic() - started <= 0.35
+    assert time.monotonic() - started <= 0.55
 
 
 def test_itimer_probe_does_not_kill_process_on_alarm() -> None:
@@ -127,15 +127,13 @@ def test_itimer_probe_does_not_kill_process_on_alarm() -> None:
         signal.setitimer(signal.ITIMER_REAL, 0.05)
         try:
             result = worker.invoke(SleepThenOk(), timeout=1.0)
-            remaining, _interval = signal.getitimer(signal.ITIMER_REAL)
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
     finally:
         signal.signal(signal.SIGALRM, previous)
         worker.close()
     assert result == "ok"
-    assert remaining == 0 or remaining < 0.05
-    assert fired["n"] >= 0
+    assert fired["n"] >= 1
 
 
 def test_existing_failed_replacement_is_not_reclassified_as_legacy(

@@ -224,7 +224,8 @@ def inspect_process_identity(
 ) -> IdentityInspectState:
     """Inspect whether *identity* still matches a live process instance."""
 
-    pid_state = inspect_pid_liveness(identity.pid, timeout=timeout)
+    remaining = _remaining_fn(timeout)
+    pid_state = inspect_pid_liveness(identity.pid, timeout=remaining())
     if pid_state is PidInspectState.GONE:
         return IdentityInspectState.GONE
     if pid_state is PidInspectState.UNVERIFIABLE:
@@ -233,7 +234,7 @@ def inspect_process_identity(
         identity.pid,
         run_id=identity.run_id,
         command=identity.command,
-        timeout=timeout,
+        timeout=remaining(),
     )
     if current is None:
         return IdentityInspectState.UNVERIFIABLE

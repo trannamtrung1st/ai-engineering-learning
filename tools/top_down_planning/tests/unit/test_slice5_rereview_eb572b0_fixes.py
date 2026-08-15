@@ -149,17 +149,16 @@ def test_boundary_invoke_does_not_crash_preexisting_itimer() -> None:
     worker = BoundaryWorker()
     worker.start()
     try:
-        signal.setitimer(signal.ITIMER_REAL, 0.5)
+        signal.setitimer(signal.ITIMER_REAL, 0.05)
         try:
             result = worker.invoke(SleepThenOk(), timeout=1.0)
-            remaining, _interval = signal.getitimer(signal.ITIMER_REAL)
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
     finally:
         signal.signal(signal.SIGALRM, previous)
         worker.close()
     assert result == "ok"
-    assert remaining == 0 or remaining < 0.45
+    assert fired["n"] >= 1
 
 
 def _unrecoverable_pending(store, run_id: str) -> SessionBinding:

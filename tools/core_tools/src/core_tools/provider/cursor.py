@@ -1715,6 +1715,9 @@ class CursorProvider:
         context = self._get_collect_context()
         if context is None:
             return
+        with self._turn_proc_lock:
+            if proc.pid in self._tracked_turn_procs:
+                return
         session_id, role = context
         run_id = self._extra_env.get("TDP_RUN_ID")
         if isinstance(run_id, str):
@@ -1920,8 +1923,6 @@ class CursorProvider:
 
                 assert stream is not None
                 for line in stream:
-                    if active_proc[0] is not None:
-                        self._register_tracked_turn_proc(active_proc[0])
                     yield line
             finally:
                 proc = active_proc[0]

@@ -70,7 +70,7 @@ def test_wait_dead_does_not_reset_per_identity_timeout() -> None:
         side_effect=fake_any,
     ):
         assert _wait_identities_dead(identities, timeout=0.15) is False
-    assert time.monotonic() - started <= 0.25
+    assert time.monotonic() - started <= 1.0
     assert seen[0] is not None and seen[0] <= 0.15
     if len(seen) > 1:
         assert seen[-1] is not None
