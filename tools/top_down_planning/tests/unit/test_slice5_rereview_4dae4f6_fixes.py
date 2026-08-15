@@ -17,7 +17,7 @@ from top_down_planning.domain.session_lineage import (
     SESSION_REPLACEMENT_FAILED,
     SESSION_REPLACEMENT_STARTED,
 )
-from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryPaused
+from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryExhausted, SessionRecoveryPaused
 from top_down_planning.orchestrator.provider_turns import (
     _invoke_boundary_bounded,
     build_producer_turn_boundary_observer,
@@ -251,7 +251,7 @@ def test_unrecoverable_old_format_replacement_cannot_bind_without_terminal(
     assert payload is None
     durable = "cursor-durable-unrecoverable"
     provider._ensure_durable_session(durable, role="planner", kind="primary")
-    with pytest.raises(ProviderRunError, match="recoverable old session identity"):
+    with pytest.raises(SessionRecoveryExhausted, match="recoverable old session identity"):
         commit_primary_provider_session_binding(
             store,
             run_id,
@@ -261,7 +261,9 @@ def test_unrecoverable_old_format_replacement_cannot_bind_without_terminal(
             session_provider=provider,
         )
     assert _lineage(store, run_id, SESSION_REPLACED) == []
-    assert _lineage(store, run_id, SESSION_REPLACEMENT_FAILED) == []
+    failed = _lineage(store, run_id, SESSION_REPLACEMENT_FAILED)
+    assert len(failed) == 1
+    assert failed[0]["reason"] == "legacy_identity_unrecoverable"
     binding = get_primary_binding(store.load_run(run_id), "planner")
     assert binding is not None
     assert binding.provider_session_id == pending_id

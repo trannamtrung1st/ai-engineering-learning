@@ -417,18 +417,10 @@ def terminate_process_tree(
         return max(0.0, deadline - time.monotonic())
 
     if sys.platform == "win32":
-        if proc.poll() is not None:
-            return True
-        proc.terminate()
-        try:
-            proc.wait(timeout=wait_s if deadline is None else remaining() or 0.0)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            try:
-                proc.wait(timeout=wait_s if deadline is None else remaining() or 0.0)
-            except subprocess.TimeoutExpired:
-                pass
-        return proc.poll() is not None
+        raise NotImplementedError(
+            "process-tree termination is POSIX-only; Windows Cursor process "
+            "trees are not supported"
+        )
 
     resolved_pgid = pgid
     if resolved_pgid is None and proc.poll() is None:

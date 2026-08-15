@@ -198,7 +198,8 @@ def test_terminate_verified_inspect_receives_timeout() -> None:
     ):
         terminate_verified_process_identity(identity, timeout=0.25)
     assert timeouts
-    assert timeouts[0] == 0.25
+    assert timeouts[0] is not None
+    assert timeouts[0] <= 0.25
 
 
 def test_group_identity_reads_share_one_deadline() -> None:

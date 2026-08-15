@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import os
 import pickle
 import queue
 import threading
@@ -303,6 +304,8 @@ PROVIDER_EVENT_PUMP_NAME = "tdp-provider-event-pump"
 PROVIDER_ABORT_THREAD_NAME = "tdp-provider-abort"
 PROVIDER_TERMINATE_THREAD_NAME = "tdp-provider-terminate"
 BOUNDARY_POLL_THREAD_NAME = "tdp-boundary-poll"
+BOUNDARY_WORKER_NAME = "tdp-boundary-worker"
+_OWNED_BOUNDARY_PGIDS: set[int] = set()
 _BOUNDARY_CANCEL: ContextVar[threading.Event | None] = ContextVar(
     "tdp_boundary_cancel",
     default=None,
@@ -321,22 +324,147 @@ class _BoundaryPollState:
     done: threading.Event
     thread: threading.Thread | None = None
     pump_thread: threading.Thread | None = None
+    worker: Any | None = None
     on_boundary: Callable[[], str | None] | None = None
     signal: str | None = None
     error: BaseException | None = None
     heartbeat: float = field(default_factory=time.monotonic)
 
 
+def _boundary_worker_loop(conn: Any) -> None:
+    while True:
+        try:
+            message = conn.recv()
+        except EOFError:
+            return
+        if not message or message[0] == "stop":
+            return
+        callback = message[1]
+        try:
+            conn.send(("ok", callback()))
+        except BaseException as exc:
+            try:
+                conn.send(("err", exc))
+            except Exception:
+                conn.send(("err", ProviderRunError(f"boundary probe failed: {exc!r}")))
+
+
+class BoundaryWorker:
+    """One spawn process reused for every store probe in a provider turn."""
+
+    def __init__(self) -> None:
+        self.proc: Any | None = None
+        self.parent_conn: Any | None = None
+        self._child_conn: Any | None = None
+        self._pgid: int | None = None
+
+    def start(self) -> None:
+        if self.proc is not None and self.proc.is_alive():
+            return
+        ctx = multiprocessing.get_context("spawn")
+        self.parent_conn, self._child_conn = ctx.Pipe(duplex=True)
+        self.proc = ctx.Process(
+            target=_boundary_worker_loop,
+            args=(self._child_conn,),
+            name=BOUNDARY_WORKER_NAME,
+        )
+        try:
+            self.proc.start()
+            self._child_conn.close()
+            self._child_conn = None
+            if self.proc.pid:
+                try:
+                    self._pgid = os.getpgid(self.proc.pid)
+                    _OWNED_BOUNDARY_PGIDS.add(self._pgid)
+                except OSError:
+                    self._pgid = None
+        except BaseException:
+            self.close()
+            raise
+
+    def invoke(self, callback: Callable[[], str | None], *, timeout: float) -> str | None:
+        if timeout <= 0:
+            raise ValueError("boundary probe timeout must be positive")
+        try:
+            pickle.dumps(callback, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as exc:
+            raise ProviderRunError("boundary probe must be serializable") from exc
+        if self.proc is None or not self.proc.is_alive() or self.parent_conn is None:
+            self.close()
+            self.start()
+        assert self.parent_conn is not None
+        deadline = time.monotonic() + timeout
+        self.parent_conn.send(("run", callback))
+        remaining = max(0.0, deadline - time.monotonic())
+        if remaining > 0 and self.parent_conn.poll(remaining):
+            kind, value = self.parent_conn.recv()
+            if kind == "err":
+                if isinstance(value, BaseException):
+                    raise value
+                raise ProviderRunError(str(value))
+            if value is None or isinstance(value, str):
+                return value
+            raise ProviderRunError("boundary probe returned a non-signal value")
+        self.close(deadline=deadline)
+        raise ProviderRunError("boundary probe exceeded timeout")
+
+    def close(self, *, deadline: float | None = None) -> None:
+        proc = self.proc
+        parent = self.parent_conn
+        child = self._child_conn
+        pgid = self._pgid
+        self.proc = None
+        self.parent_conn = None
+        self._child_conn = None
+        self._pgid = None
+        try:
+            if parent is not None:
+                try:
+                    parent.send(("stop", None))
+                except Exception:
+                    pass
+            if proc is not None and proc.is_alive():
+                proc.kill()
+            if proc is not None:
+                join_budget = 0.2 if deadline is None else max(0.05, deadline - time.monotonic())
+                proc.join(timeout=join_budget)
+                if proc.is_alive():
+                    proc.kill()
+                    proc.join(timeout=0.2)
+        finally:
+            if parent is not None:
+                try:
+                    parent.close()
+                except Exception:
+                    pass
+            if child is not None:
+                try:
+                    child.close()
+                except Exception:
+                    pass
+            if pgid is not None:
+                _OWNED_BOUNDARY_PGIDS.discard(pgid)
+
+
 def _start_boundary_poll(
     on_boundary: Callable[[], str | None],
 ) -> _BoundaryPollState:
-    """Track store-driven turn boundaries without a dedicated poller thread."""
+    """Track store-driven turn boundaries with one owned worker process."""
 
     state = _BoundaryPollState(
         stop=threading.Event(),
         done=threading.Event(),
         on_boundary=on_boundary,
+        worker=BoundaryWorker(),
     )
+    try:
+        assert state.worker is not None
+        state.worker.start()
+    except BaseException:
+        if state.worker is not None:
+            state.worker.close()
+            state.worker = None
+        raise
     state.done.set()
     return state
 
@@ -386,19 +514,11 @@ def _finalize_boundary_poll(
                 poll_state,
                 ProviderRunError("provider event pump failed to stop"),
             )
+    worker = poll_state.worker
+    poll_state.worker = None
+    if worker is not None:
+        worker.close()
     _raise_poll_failure(poll_state)
-
-
-def _boundary_spawn_entry(callback: Callable[[], str | None], conn: Any) -> None:
-    try:
-        conn.send(("ok", callback()))
-    except BaseException as exc:
-        try:
-            conn.send(("err", exc))
-        except Exception:
-            conn.send(("err", ProviderRunError(f"boundary probe failed: {exc!r}")))
-    finally:
-        conn.close()
 
 
 def _invoke_boundary_bounded(
@@ -406,66 +526,25 @@ def _invoke_boundary_bounded(
     stop: threading.Event,
     *,
     timeout: float,
+    worker: BoundaryWorker | None = None,
 ) -> str | None:
     """Run a store-only boundary callback with a hard wall-clock bound.
 
-    Callbacks must be picklable (TDP-owned ``StoreBoundaryProbe`` or a
-    ``LiteralBoundarySignal``). Unserializable closures are rejected rather than
-    executed inline without a timeout. Spawn startup, poll, kill, and join share
-    one monotonic deadline.
+    Drain owns one ``BoundaryWorker`` for the turn. Standalone callers get a
+    one-shot worker that is killed and reaped before this function returns.
     """
 
-    if timeout <= 0:
-        raise ValueError("boundary probe timeout must be positive")
     _BOUNDARY_CANCEL.set(stop)
+    owned = False
+    if worker is None:
+        worker = BoundaryWorker()
+        worker.start()
+        owned = True
     try:
-        pickle.dumps(callback, protocol=pickle.HIGHEST_PROTOCOL)
-    except Exception as exc:
-        raise ProviderRunError("boundary probe must be serializable") from exc
-    return _invoke_boundary_in_spawn(callback, timeout=timeout)
-
-
-def _invoke_boundary_in_spawn(
-    callback: Callable[[], str | None],
-    *,
-    timeout: float,
-) -> str | None:
-    deadline = time.monotonic() + timeout
-    ctx = multiprocessing.get_context("spawn")
-    parent_conn, child_conn = ctx.Pipe(duplex=False)
-    proc = ctx.Process(
-        target=_boundary_spawn_entry,
-        args=(callback, child_conn),
-        name="tdp-boundary-spawn",
-    )
-    try:
-        proc.start()
-        child_conn.close()
-        remaining = max(0.0, deadline - time.monotonic())
-        if remaining <= 0:
-            if proc.is_alive():
-                proc.kill()
-            proc.join(timeout=0.0)
-            raise ProviderRunError("boundary probe exceeded timeout")
-        if remaining > 0 and parent_conn.poll(remaining):
-            kind, value = parent_conn.recv()
-            proc.join(timeout=max(0.0, deadline - time.monotonic()))
-            if kind == "err":
-                if isinstance(value, BaseException):
-                    raise value
-                raise ProviderRunError(str(value))
-            if value is None or isinstance(value, str):
-                return value
-            raise ProviderRunError("boundary probe returned a non-signal value")
-        if proc.is_alive():
-            proc.kill()
-        proc.join(timeout=max(0.0, deadline - time.monotonic()))
-        raise ProviderRunError("boundary probe exceeded timeout")
+        return worker.invoke(callback, timeout=timeout)
     finally:
-        parent_conn.close()
-        if proc.is_alive():
-            proc.kill()
-            proc.join(timeout=max(0.0, deadline - time.monotonic()))
+        if owned:
+            worker.close()
 
 
 def _probe_boundary(
@@ -481,6 +560,7 @@ def _probe_boundary(
             callback,
             poll_state.stop,
             timeout=BOUNDARY_POLL_JOIN_SECONDS,
+            worker=poll_state.worker,
         )
     except BaseException as exc:
         poll_state.error = exc
@@ -603,6 +683,7 @@ def _drain_provider_turn(
                     on_boundary,
                     poll_state.stop if poll_state is not None else threading.Event(),
                     timeout=BOUNDARY_POLL_JOIN_SECONDS,
+                    worker=poll_state.worker if poll_state is not None else None,
                 )
                 if implicit_signal is not None:
                     _abort_provider_turn(provider, active_session_id)
@@ -1111,7 +1192,11 @@ def _file_store_root(store: RunStore) -> str:
 
 @dataclass(frozen=True)
 class StoreBoundaryProbe:
-    """Picklable TDP-owned store probe reconstructed in a spawn worker."""
+    """Picklable TDP-owned store probe reconstructed in a spawn worker.
+
+    Orchestration boundary probing requires a file-backed ``RunStore.root`` so
+    the per-turn worker can reconstruct ``FileRunStore`` out of process.
+    """
 
     kind: str
     store_root: str
@@ -1206,7 +1291,11 @@ def build_producer_turn_boundary_observer(
     store: RunStore,
     run_id: str,
 ) -> Callable[[], str | None]:
-    """Return a hook that closes producer turns on batch apply or completion claim."""
+    """Return a hook that closes producer turns on batch apply or completion claim.
+
+    Requires a file-backed run store (``store.root``) because the per-turn
+    boundary worker reconstructs ``FileRunStore`` in a child process.
+    """
 
     return StoreBoundaryProbe(
         kind="producer",

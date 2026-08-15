@@ -16,6 +16,7 @@ from top_down_planning.orchestrator.capability import (
     rebind_reviewer_session_capability,
 )
 from top_down_planning.domain.session_lineage import (
+    REASON_LEGACY_IDENTITY_UNRECOVERABLE,
     SESSION_PROVIDER_ID_BOUND,
     SESSION_REPLACED,
     SESSION_REPLACEMENT_FAILED,
@@ -26,6 +27,7 @@ from top_down_planning.domain.session_lineage import (
 from top_down_planning.orchestrator.session_lineage import (
     emit_session_provider_id_bound,
     emit_session_replaced,
+    emit_session_replacement_failed,
 )
 from top_down_planning.persistence.commit import CommitSpec
 from top_down_planning.persistence.interface import RunStore
@@ -39,7 +41,7 @@ from top_down_planning.persistence.session_bindings import (
 )
 from core_tools.persistence import PersistenceError, RunNotFoundError
 from core_tools.provider import Provider
-from top_down_planning.orchestrator.errors import ProviderRunError
+from top_down_planning.orchestrator.errors import ProviderRunError, SessionRecoveryExhausted
 from core_tools.provider.errors import ProviderReplacementIdentityError, ProviderSessionError
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
@@ -816,14 +818,17 @@ def commit_primary_provider_session_binding(
             provider_session_id=binding.provider_session_id,
             new_session_instance_id=binding.session_instance_id,
         )
-        if replaced is None and _unresolved_replacement_started(
+        if replaced is None and _replacement_started_without_success(
             store,
             run_id,
             role=role,
             generation=binding.generation,
         ):
-            raise ProviderRunError(
-                "replacement cannot be bound without recoverable old session identity"
+            _terminalize_unrecoverable_replacement(
+                store,
+                run_id,
+                role=role,
+                generation=binding.generation,
             )
         if replaced is not None:
             events.append(replaced)
@@ -975,6 +980,110 @@ def _unresolved_replacement_started(
     return started and not replaced and not failed
 
 
+def _replacement_started_without_success(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    generation: int | None,
+    loop_id: str | None = None,
+) -> bool:
+    if generation is None:
+        return False
+    started = False
+    replaced = False
+    for event in store.load_events(run_id):
+        if str(event.get("role") or "") != role:
+            continue
+        if int(event.get("generation") or 0) != int(generation):
+            continue
+        if loop_id is not None and str(event.get("loop_id") or "") != str(loop_id):
+            continue
+        event_type = str(event.get("type") or "")
+        if event_type == SESSION_REPLACEMENT_STARTED:
+            started = True
+        elif event_type == SESSION_REPLACED:
+            replaced = True
+    return started and not replaced
+
+
+def _terminalize_unrecoverable_replacement(
+    store: RunStore,
+    run_id: str,
+    *,
+    role: str,
+    generation: int | None,
+    loop_id: str | None = None,
+) -> None:
+    from top_down_planning.orchestrator.session_recovery_enforcement import (
+        fail_session_recovery_exhausted,
+    )
+
+    run = store.load_run(run_id)
+    phase = str(run.get("phase") or "")
+    phase_action_id = "legacy-identity-unrecoverable"
+    session_instance_id = ""
+    for event in store.load_events(run_id):
+        if str(event.get("role") or "") != role:
+            continue
+        if generation is not None and int(event.get("generation") or 0) != int(generation):
+            continue
+        if loop_id is not None and str(event.get("loop_id") or "") != str(loop_id):
+            continue
+        if event.get("type") == SESSION_REPLACEMENT_STARTED:
+            session_instance_id = str(event.get("session_instance_id") or session_instance_id)
+            action = event.get("phase_action_id")
+            if isinstance(action, str) and action.strip():
+                phase_action_id = action.strip()
+    if not session_instance_id:
+        if role == "reviewer" and loop_id is not None:
+            from top_down_planning.domain.reviews import ReviewLoop
+
+            loop = ReviewLoop.from_dict(store.load_review(run_id, loop_id))
+            binding = loop.reviewer_binding
+            if binding is not None:
+                session_instance_id = binding.session_instance_id
+                generation = binding.generation
+        else:
+            binding = get_primary_binding(run, role)
+            if binding is not None:
+                session_instance_id = binding.session_instance_id
+                generation = binding.generation
+    already_failed = False
+    for event in store.load_events(run_id):
+        if event.get("type") != SESSION_REPLACEMENT_FAILED:
+            continue
+        if str(event.get("role") or "") != role:
+            continue
+        if generation is not None and int(event.get("generation") or 0) != int(generation):
+            continue
+        if loop_id is not None and str(event.get("loop_id") or "") != str(loop_id):
+            continue
+        already_failed = True
+        break
+    if not already_failed and session_instance_id and generation is not None:
+        emit_session_replacement_failed(
+            store,
+            run_id,
+            phase=phase,
+            role=role,
+            session_instance_id=session_instance_id,
+            generation=int(generation),
+            reason=REASON_LEGACY_IDENTITY_UNRECOVERABLE,
+            phase_action_id=phase_action_id,
+            loop_id=loop_id,
+        )
+    fail_session_recovery_exhausted(
+        store,
+        run_id,
+        phase=phase or "planning",
+        role=role,
+        phase_action_id=phase_action_id,
+        message="replacement cannot be bound without recoverable old session identity",
+        loop_id=loop_id,
+    )
+
+
 def _pending_replacement_success_payload(
     store: RunStore,
     run_id: str,
@@ -1056,15 +1165,19 @@ def _complete_replacement_if_durable(
         loop_id=loop_id,
     )
     if payload is None:
-        if _unresolved_replacement_started(
+        if _replacement_started_without_success(
             store,
             run_id,
             role=role,
             generation=generation,
             loop_id=loop_id,
         ):
-            raise ProviderRunError(
-                "replacement cannot be bound without recoverable old session identity"
+            _terminalize_unrecoverable_replacement(
+                store,
+                run_id,
+                role=role,
+                generation=generation,
+                loop_id=loop_id,
             )
         return
     emit_session_replaced(
@@ -1403,15 +1516,19 @@ def commit_reviewer_loop_provider_session(
             new_session_instance_id=committed_binding.session_instance_id,
             loop_id=loop.id,
         )
-        if replaced is None and _unresolved_replacement_started(
+        if replaced is None and _replacement_started_without_success(
             store,
             run_id,
             role="reviewer",
             generation=committed_binding.generation,
             loop_id=loop.id,
         ):
-            raise ProviderRunError(
-                "replacement cannot be bound without recoverable old session identity"
+            _terminalize_unrecoverable_replacement(
+                store,
+                run_id,
+                role="reviewer",
+                generation=committed_binding.generation,
+                loop_id=loop.id,
             )
         if replaced is not None:
             events.append(replaced)

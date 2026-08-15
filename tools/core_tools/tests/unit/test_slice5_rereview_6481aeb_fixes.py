@@ -105,30 +105,11 @@ def test_bound_popen_then_drain_share_remaining_budget(tmp_path: Path) -> None:
         reap_process_group(proc, extra_pids=(_child_pid,))
 
 
-def test_windows_terminate_then_kill_shares_one_deadline() -> None:
-    waits: list[float | None] = []
+def test_windows_process_tree_termination_is_unsupported() -> None:
     proc = MagicMock()
-    proc.poll.side_effect = [None, None, None, 1]
-
-    def wait(*, timeout=None):
-        waits.append(timeout)
-        time.sleep(min(0.12, timeout or 0.0))
-        raise subprocess.TimeoutExpired(cmd="proc", timeout=timeout)
-
-    proc.wait.side_effect = wait
-    proc.terminate.return_value = None
-    proc.kill.return_value = None
-    timeout = 0.3
-    started = time.monotonic()
     with patch("core_tools.provider.process_cleanup.sys.platform", "win32"):
-        terminate_process_tree(proc, timeout=timeout)
-    elapsed = time.monotonic() - started
-    assert elapsed <= timeout + 0.2
-    assert len(waits) == 2
-    assert waits[0] is not None and waits[1] is not None
-    assert waits[0] <= timeout
-    assert waits[1] < waits[0]
-    assert waits[1] <= timeout - 0.05
+        with pytest.raises(NotImplementedError, match="POSIX"):
+            terminate_process_tree(proc, timeout=0.3)
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Darwin ps inspection only")

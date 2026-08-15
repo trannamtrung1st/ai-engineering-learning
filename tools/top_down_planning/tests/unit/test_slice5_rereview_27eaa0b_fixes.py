@@ -128,12 +128,19 @@ def test_boundary_probe_does_not_extend_preexisting_itimer() -> None:
     if not hasattr(signal, "setitimer"):
         pytest.skip("ITIMER_REAL is unavailable")
 
-    signal.setitimer(signal.ITIMER_REAL, 0.5)
+    from top_down_planning.orchestrator.provider_turns import BoundaryWorker
+
+    worker = BoundaryWorker()
+    worker.start()
     try:
-        result = _invoke_boundary_bounded(SleepThenOk(), threading.Event(), timeout=1.0)
-        remaining, _interval = signal.getitimer(signal.ITIMER_REAL)
+        signal.setitimer(signal.ITIMER_REAL, 0.5)
+        try:
+            result = worker.invoke(SleepThenOk(), timeout=1.0)
+            remaining, _interval = signal.getitimer(signal.ITIMER_REAL)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
+        worker.close()
     assert result == "ok"
     assert 0 < remaining < 0.45
 

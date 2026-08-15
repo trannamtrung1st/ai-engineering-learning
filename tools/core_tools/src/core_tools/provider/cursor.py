@@ -417,6 +417,8 @@ class _SubprocessStdoutIterator(Iterator[str]):
                     continue
                 return b"\n" in self._stdout_buf
             if self._stdout_eof or self._proc.poll() is not None:
+                if self._proc.poll() is not None and not self._stdout_eof:
+                    self._drain_stdout_to_eof()
                 if self._stdout_buf and b"\n" not in self._stdout_buf:
                     self._stdout_buf.extend(b"\n")
                 return True

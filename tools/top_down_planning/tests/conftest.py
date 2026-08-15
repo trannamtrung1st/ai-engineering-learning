@@ -9,6 +9,7 @@ import sys
 from contextlib import ExitStack
 from dataclasses import dataclass
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -63,7 +64,10 @@ def suppress_desktop_notifications():
 
 
 def _python_descendant_pids(root_pid: int) -> dict[int, str]:
-    output = subprocess.check_output(["ps", "-axo", "pid=,ppid=,command="], text=True)
+    output = subprocess.check_output(
+        ["ps", "-axww", "-o", "pid=,ppid=,command="],
+        text=True,
+    )
     by_parent: dict[int, list[int]] = {}
     commands: dict[int, str] = {}
     for line in output.splitlines():
@@ -78,11 +82,25 @@ def _python_descendant_pids(root_pid: int) -> dict[int, str]:
     stack = list(by_parent.get(root_pid, ()))
     while stack:
         pid = stack.pop()
-        cmd = commands.get(pid, "")
+        cmd = _process_command(pid) or commands.get(pid, "")
         if "python" in cmd.lower():
             found[pid] = cmd
         stack.extend(by_parent.get(pid, ()))
     return found
+
+
+def _process_command(pid: int) -> str:
+    proc_cmd = Path(f"/proc/{pid}/cmdline")
+    if proc_cmd.exists():
+        try:
+            return proc_cmd.read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+        except OSError:
+            return ""
+    return ""
+
+
+def _is_pytest_infrastructure(cmd: str) -> bool:
+    return "resource_tracker" in cmd.lower()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -93,8 +111,7 @@ def assert_no_leftover_python_descendants():
     leftover = {
         pid: cmd
         for pid, cmd in _python_descendant_pids(parent).items()
-        if pid not in before
-        and "multiprocessing.resource_tracker" not in cmd
+        if pid not in before and not _is_pytest_infrastructure(cmd)
     }
     assert leftover == {}, leftover
 

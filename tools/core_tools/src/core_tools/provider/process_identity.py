@@ -65,6 +65,17 @@ def _remaining_seconds(deadline: float | None, *, default: float = _DEFAULT_WAIT
     return max(0.0, deadline - time.monotonic())
 
 
+def _remaining_fn(timeout: float | None):
+    deadline = _deadline_from_timeout(timeout)
+
+    def remaining() -> float | None:
+        if deadline is None:
+            return None
+        return _remaining_seconds(deadline, default=0.0)
+
+    return remaining
+
+
 @dataclass(frozen=True)
 class ProcessIdentity:
     """Stable identity for a live OS process instance."""
@@ -324,7 +335,8 @@ def _signal_identity_via_pidfd(
 ) -> bool:
     """Send *sig* through pidfd when *identity* still matches."""
 
-    state = inspect_process_identity(identity, timeout=timeout)
+    remaining = _remaining_fn(timeout)
+    state = inspect_process_identity(identity, timeout=remaining())
     if _identity_needs_no_signal(state):
         return True
     if state is IdentityInspectState.UNVERIFIABLE:
@@ -334,7 +346,7 @@ def _signal_identity_via_pidfd(
     except OSError:
         return False
     try:
-        state = inspect_process_identity(identity, timeout=timeout)
+        state = inspect_process_identity(identity, timeout=remaining())
         if _identity_needs_no_signal(state):
             return True
         if state is IdentityInspectState.UNVERIFIABLE:
@@ -353,13 +365,14 @@ def _signal_identity(
     *,
     timeout: float | None = None,
 ) -> bool:
-    state = inspect_process_identity(identity, timeout=timeout)
+    remaining = _remaining_fn(timeout)
+    state = inspect_process_identity(identity, timeout=remaining())
     if _identity_needs_no_signal(state):
         return True
     if state is IdentityInspectState.UNVERIFIABLE:
         return False
     if _pidfd_supported():
-        return _signal_identity_via_pidfd(identity, sig, timeout=timeout)
+        return _signal_identity_via_pidfd(identity, sig, timeout=remaining())
     return False
 
 
@@ -370,15 +383,16 @@ def _group_still_ours(
     *,
     timeout: float | None = None,
 ) -> bool:
+    remaining = _remaining_fn(timeout)
     if leader_identity is not None and _identity_still_alive(
-        leader_identity, timeout=timeout
+        leader_identity, timeout=remaining()
     ):
-        if read_process_group_id(leader_identity.pid, timeout=timeout) == pgid:
+        if read_process_group_id(leader_identity.pid, timeout=remaining()) == pgid:
             return True
     for pid, start_time in known_tokens:
         anchor = ProcessIdentity(pid=pid, start_time=start_time)
-        if _identity_still_alive(anchor, timeout=timeout):
-            if read_process_group_id(anchor.pid, timeout=timeout) == pgid:
+        if _identity_still_alive(anchor, timeout=remaining()):
+            if read_process_group_id(anchor.pid, timeout=remaining()) == pgid:
                 return True
     return False
 
@@ -416,15 +430,16 @@ def _select_owned_targets(
     leader_identity: ProcessIdentity | None,
     timeout: float | None = None,
 ) -> list[ProcessIdentity] | None:
+    remaining = _remaining_fn(timeout)
     live_current = [
         identity
         for identity in current_identities
-        if _identity_still_alive(identity, timeout=timeout)
+        if _identity_still_alive(identity, timeout=remaining())
     ]
     if not live_current:
         return []
 
-    if not _group_still_ours(pgid, leader_identity, known_tokens, timeout=timeout):
+    if not _group_still_ours(pgid, leader_identity, known_tokens, timeout=remaining()):
         return None
 
     targets: list[ProcessIdentity] = []
@@ -832,14 +847,15 @@ def terminate_verified_process_identity(
     if identity is None:
         return TerminateIdentityResult.FAILED
 
-    state = inspect_process_identity(identity, timeout=timeout)
+    remaining = _remaining_fn(timeout)
+    state = inspect_process_identity(identity, timeout=remaining())
     if state is IdentityInspectState.UNVERIFIABLE:
         return TerminateIdentityResult.FAILED
     if state is IdentityInspectState.IDENTITY_MISMATCH:
         return TerminateIdentityResult.IDENTITY_MISMATCH
     if state is IdentityInspectState.GONE:
         pgid = (
-            read_process_group_id(identity.pid, timeout=timeout)
+            read_process_group_id(identity.pid, timeout=remaining())
             if pgid is None
             else pgid
         )
@@ -848,7 +864,7 @@ def terminate_verified_process_identity(
                 pgid=pgid,
                 leader_identity=identity,
                 known_identities=member_identities,
-                timeout=timeout,
+                timeout=remaining(),
             ):
                 return TerminateIdentityResult.TERMINATED
             return TerminateIdentityResult.FAILED
@@ -857,7 +873,7 @@ def terminate_verified_process_identity(
     if not _pidfd_supported():
         return TerminateIdentityResult.FAILED
 
-    return _terminate_linux_identity(identity, timeout=timeout)
+    return _terminate_linux_identity(identity, timeout=remaining())
 
 
 __all__ = [
