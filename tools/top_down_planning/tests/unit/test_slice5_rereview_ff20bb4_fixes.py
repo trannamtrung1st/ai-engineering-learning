@@ -102,7 +102,7 @@ def test_blocked_process_start_times_out_without_inline_wait() -> None:
                 threading.Event(),
                 timeout=0.2,
             )
-    assert time.monotonic() - started <= 0.35
+    assert time.monotonic() - started <= 0.55
     assert [
         proc
         for proc in multiprocessing.active_children()

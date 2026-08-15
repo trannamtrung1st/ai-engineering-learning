@@ -50,7 +50,6 @@ from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
     _remaining_fn,
-    capture_process_group_identities,
     process_identities_from_termination_record,
     process_identity_is_live,
     process_identity_token,
@@ -1711,7 +1710,12 @@ class CursorProvider:
             return session_id, role
         return None
 
-    def _register_tracked_turn_proc(self, proc: subprocess.Popen[str]) -> None:
+    def _register_tracked_turn_proc(
+        self,
+        proc: subprocess.Popen[str],
+        *,
+        timeout: float | None = None,
+    ) -> None:
         context = self._get_collect_context()
         if context is None:
             return
@@ -1724,21 +1728,23 @@ class CursorProvider:
             run_id_value: str | None = run_id
         else:
             run_id_value = None
-        identity = read_process_identity(proc.pid, run_id=run_id_value)
+        remaining = _remaining_fn(timeout)
+        identity = read_process_identity(
+            proc.pid, run_id=run_id_value, timeout=remaining()
+        )
         if identity is None:
-            start_time = read_process_start_time(proc.pid)
+            start_time = read_process_start_time(proc.pid, timeout=remaining())
             if start_time is not None:
                 identity = ProcessIdentity(
                     pid=proc.pid,
                     start_time=start_time,
                     run_id=run_id_value,
                 )
-        pgid = read_process_group_id(proc.pid) if is_pid_alive(proc.pid) else None
-        members: tuple[ProcessIdentity, ...] | None = None
-        if identity is not None:
-            captured = capture_process_group_identities(identity)
-            if captured is not None:
-                members = tuple(captured)
+        pgid = (
+            read_process_group_id(proc.pid, timeout=remaining())
+            if is_pid_alive(proc.pid, timeout=remaining())
+            else None
+        )
         with self._turn_proc_lock:
             self._tracked_turn_procs[proc.pid] = _TrackedTurnProc(
                 session_id=session_id,
@@ -1746,7 +1752,7 @@ class CursorProvider:
                 proc=proc,
                 identity=identity,
                 pgid=pgid,
-                member_identities=members,
+                member_identities=None,
             )
 
     def _unregister_tracked_turn_proc(self, proc: subprocess.Popen[str] | None) -> None:
@@ -1919,11 +1925,13 @@ class CursorProvider:
                     )
 
                 if active_proc[0] is not None:
-                    self._register_tracked_turn_proc(active_proc[0])
+                    self._register_tracked_turn_proc(
+                        active_proc[0],
+                        timeout=idle_timeout if idle_timeout > 0 else None,
+                    )
 
                 assert stream is not None
-                for line in stream:
-                    yield line
+                yield from stream
             finally:
                 proc = active_proc[0]
                 try:

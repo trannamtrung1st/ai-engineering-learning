@@ -31,23 +31,27 @@ def _idle_config() -> dict:
 def test_sequential_identity_scans_share_one_aggregate_deadline() -> None:
     identities = [ProcessIdentity(pid=index, start_time="1") for index in range(10)]
     seen: list[float | None] = []
+    clock = {"t": 0.0}
+
+    def fake_monotonic() -> float:
+        return clock["t"]
 
     def fake_alive(identity, timeout=None):
         del identity
         seen.append(timeout)
         if timeout is not None and timeout <= 0:
             return False
-        time.sleep(0.03)
+        clock["t"] += 0.03
         return False
 
-    started = time.monotonic()
     with patch(
+        "core_tools.provider.process_identity.time.monotonic",
+        fake_monotonic,
+    ), patch(
         "core_tools.provider.process_identity._identity_still_alive",
         side_effect=fake_alive,
     ):
         assert _any_identities_still_alive(identities, timeout=0.2) is False
-    elapsed = time.monotonic() - started
-    assert elapsed <= 0.28
     assert seen[0] is not None and seen[0] <= 0.2
     assert seen[-1] is not None
     assert seen[-1] < seen[0]
