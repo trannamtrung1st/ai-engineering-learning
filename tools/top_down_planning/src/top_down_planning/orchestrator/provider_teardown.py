@@ -353,6 +353,11 @@ def teardown_provider_sessions(
     deferred_error: BaseException | None = None
 
     try:
+        from top_down_planning.orchestrator.provider_turns import (
+            reap_unreaped_boundary_workers,
+        )
+
+        reap_unreaped_boundary_workers()
         termination_records = provider.terminate_all_sessions()
         terminated_pids, failed_identities, unresolved_pids = (
             _partition_agent_termination_records(termination_records)

@@ -21,6 +21,7 @@ from core_tools.provider.errors import (
     ProviderReplacementIdentityError,
     ProviderSessionNotFoundError,
     ProviderTurnStalledError,
+    ProviderUnsupportedPlatformError,
 )
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.capability import (
@@ -310,6 +311,7 @@ BOUNDARY_WORKER_NAME = "tdp-boundary-worker"
 BOUNDARY_WORKER_CLEANUP_SECONDS = 0.2
 _OWNED_BOUNDARY_WORKERS: dict[int, "BoundaryWorker"] = {}
 _UNREAPED_BOUNDARY_WORKERS: dict[int, "BoundaryWorker"] = {}
+_BOUNDARY_WORKER_LOCK = threading.Lock()
 _BOUNDARY_CANCEL: ContextVar[threading.Event | None] = ContextVar(
     "tdp_boundary_cancel",
     default=None,
@@ -323,10 +325,38 @@ _WORKER_BOOTSTRAP = (
 )
 
 
+def owned_boundary_workers() -> tuple["BoundaryWorker", ...]:
+    """Live tracked boundary workers keyed by exact worker PID."""
+
+    with _BOUNDARY_WORKER_LOCK:
+        return tuple(_OWNED_BOUNDARY_WORKERS.values())
+
+
 def unreaped_boundary_workers() -> tuple["BoundaryWorker", ...]:
     """Workers whose close() could not prove reap; still owned for retry."""
 
-    return tuple(_UNREAPED_BOUNDARY_WORKERS.values())
+    with _BOUNDARY_WORKER_LOCK:
+        return tuple(_UNREAPED_BOUNDARY_WORKERS.values())
+
+
+def reap_unreaped_boundary_workers(*, timeout: float | None = None) -> None:
+    """Retry close() for every unreaped worker until drained or timeout."""
+
+    budget = (
+        BOUNDARY_WORKER_CLEANUP_SECONDS if timeout is None else max(0.0, timeout)
+    )
+    deadline = time.monotonic() + budget
+    with _BOUNDARY_WORKER_LOCK:
+        pending = list(_UNREAPED_BOUNDARY_WORKERS.values())
+    errors: list[BaseException] = []
+    for worker in pending:
+        leftover = max(0.0, deadline - time.monotonic())
+        try:
+            worker.close(cleanup_timeout=leftover)
+        except BaseException as exc:
+            errors.append(exc)
+    if unreaped_boundary_workers() or errors:
+        raise ProviderRunError("boundary worker failed to stop")
 
 
 def boundary_cancel_event() -> threading.Event | None:
@@ -375,7 +405,15 @@ _WORKER_IPC_ERRORS = (BrokenPipeError, EOFError, OSError, ConnectionError)
 
 
 class BoundaryWorker:
-    """One spawn process reused for every store probe in a provider turn."""
+    """One spawn process reused for every store probe in a provider turn.
+
+    OS process construction (``_popen``) is not interruptible. The public
+    *deadline* bounds the READY handshake after construction returns; a
+    late-returning constructor is still reaped if that deadline has expired.
+    Store-driven boundary polling is POSIX-only.
+    """
+
+    _popen = staticmethod(subprocess.Popen)
 
     def __init__(self) -> None:
         self.proc: Any | None = None
@@ -390,7 +428,18 @@ class BoundaryWorker:
         pid = getattr(target, "pid", None)
         if not pid:
             return
-        _OWNED_BOUNDARY_WORKERS[pid] = self
+        with _BOUNDARY_WORKER_LOCK:
+            _OWNED_BOUNDARY_WORKERS[pid] = self
+
+    def _mark_unreaped(self) -> None:
+        with _BOUNDARY_WORKER_LOCK:
+            _UNREAPED_BOUNDARY_WORKERS[id(self)] = self
+
+    def _clear_ownership(self, pid: int | None) -> None:
+        with _BOUNDARY_WORKER_LOCK:
+            _UNREAPED_BOUNDARY_WORKERS.pop(id(self), None)
+            if pid is not None:
+                _OWNED_BOUNDARY_WORKERS.pop(pid, None)
 
     def _ipc(self, operation: Callable[[], Any]) -> Any:
         try:
@@ -454,6 +503,10 @@ class BoundaryWorker:
                 pass
 
     def start(self, *, deadline: float | None = None) -> None:
+        if sys.platform == "win32":
+            raise ProviderUnsupportedPlatformError(
+                "store-driven boundary polling is POSIX-only"
+            )
         if self._proc_alive(self.proc):
             return
         if deadline is not None and deadline - time.monotonic() <= 0:
@@ -467,19 +520,32 @@ class BoundaryWorker:
         pythonpath = [src_root]
         pythonpath.extend(path for path in sys.path if path and path not in pythonpath)
         env["PYTHONPATH"] = os.pathsep.join(pythonpath)
-        self.proc = subprocess.Popen(
-            [sys.executable, "-c", _WORKER_BOOTSTRAP, str(child_fd)],
-            pass_fds=(child_fd,),
-            close_fds=True,
-            start_new_session=True,
-            env=env,
-        )
+        try:
+            self.proc = type(self)._popen(
+                [sys.executable, "-c", _WORKER_BOOTSTRAP, str(child_fd)],
+                pass_fds=(child_fd,),
+                close_fds=True,
+                start_new_session=True,
+                env=env,
+            )
+        except ProviderUnsupportedPlatformError:
+            child_sock.close()
+            parent_sock.close()
+            raise
+        except OSError as exc:
+            child_sock.close()
+            parent_sock.close()
+            raise ProviderRunError("boundary worker died") from exc
         child_sock.close()
         parent_fd = parent_sock.detach()
         from multiprocessing.connection import Connection
 
         self.parent_conn = Connection(parent_fd)
         self._record_pid(self.proc)
+        if deadline is not None and time.monotonic() >= deadline:
+            self._start_cancel.set()
+            self.close(cleanup_timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            raise ProviderRunError("boundary probe exceeded timeout")
         wait = (
             BOUNDARY_POLL_JOIN_SECONDS
             if deadline is None
@@ -582,17 +648,15 @@ class BoundaryWorker:
             if started:
                 self._reap_local_proc(proc, timeout=remaining())
             if starting or (started and self._proc_alive(proc)):
-                _UNREAPED_BOUNDARY_WORKERS[id(self)] = self
+                self._mark_unreaped()
                 raise ProviderRunError("boundary worker failed to stop")
         finally:
             starting = boot is not None and boot.is_alive()
             unreaped = started and self._proc_alive(proc)
             if starting or unreaped:
-                _UNREAPED_BOUNDARY_WORKERS[id(self)] = self
+                self._mark_unreaped()
             else:
-                _UNREAPED_BOUNDARY_WORKERS.pop(id(self), None)
-                if pid is not None:
-                    _OWNED_BOUNDARY_WORKERS.pop(pid, None)
+                self._clear_ownership(pid)
                 self.proc = None
                 self.parent_conn = None
                 self._child_conn = None
@@ -675,8 +739,14 @@ def _finalize_boundary_poll(
             worker.close()
         except BaseException as exc:
             poll_state.worker = worker
-            _UNREAPED_BOUNDARY_WORKERS[id(worker)] = worker
+            worker._mark_unreaped()
             _record_poll_error(poll_state, exc)
+            try:
+                reap_unreaped_boundary_workers(
+                    timeout=BOUNDARY_WORKER_CLEANUP_SECONDS
+                )
+            except BaseException as sweep_exc:
+                _record_poll_error(poll_state, sweep_exc)
             _raise_poll_failure(poll_state)
             return
     poll_state.worker = None
@@ -712,7 +782,7 @@ def _invoke_boundary_bounded(
             try:
                 worker.close(cleanup_timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
             except ProviderRunError:
-                _UNREAPED_BOUNDARY_WORKERS[id(worker)] = worker
+                worker._mark_unreaped()
                 raise
 
 

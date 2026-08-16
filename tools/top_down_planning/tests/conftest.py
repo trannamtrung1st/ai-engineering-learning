@@ -114,6 +114,24 @@ def assert_no_leftover_python_descendants():
         if pid not in before and not _is_pytest_infrastructure(cmd)
     }
     assert leftover == {}, leftover
+    from top_down_planning.orchestrator.provider_turns import (
+        BoundaryWorker,
+        owned_boundary_workers,
+        reap_unreaped_boundary_workers,
+        unreaped_boundary_workers,
+    )
+
+    try:
+        reap_unreaped_boundary_workers(timeout=0.5)
+    except Exception:
+        pass
+    live = [
+        worker
+        for worker in owned_boundary_workers()
+        if BoundaryWorker._proc_alive(worker.proc)
+    ]
+    assert live == [], live
+    assert unreaped_boundary_workers() == ()
 
 
 @pytest.fixture

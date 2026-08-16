@@ -16,7 +16,6 @@ from core_tools.provider.cursor import (
     _SubprocessStdoutIterator,
 )
 from core_tools.provider.errors import ProviderTurnStalledError
-from core_tools.provider.process_cleanup import ProcessGroupState
 from core_tools.provider.process_identity import ProcessIdentity
 from tests.conftest import tracked_turn_proc
 
@@ -59,6 +58,9 @@ def test_registration_shares_idle_detection_deadline(tmp_path: Path) -> None:
     with patch(
         "core_tools.provider.cursor.read_process_identity",
         side_effect=slow_identity,
+    ), patch(
+        "core_tools.provider.cursor.terminate_process_tree",
+        return_value=True,
     ):
         session_id = provider.start_primary_session("planner", {"goal": "x"})
         started = time.monotonic()
@@ -126,25 +128,12 @@ def test_surviving_pids_report_live_descendant_not_dead_leader(tmp_path: Path) -
     provider._tracked_turn_procs[4242] = tracked_turn_proc("sess-1", "planner", 4242)
     provider._tracked_turn_procs[4242].identity = leader
     provider._tracked_turn_procs[4242].pgid = 4242
-    provider._tracked_turn_procs[4242].member_identities = None
+    provider._tracked_turn_procs[4242].member_identities = (leader, child)
     provider._tracked_turn_procs[4242].proc = None
 
-    def fake_live(self, entry, *, timeout=None):
-        del self, timeout
-        return entry.pgid == 4242
-
-    with patch.object(CursorProvider, "_tracked_tree_is_live", fake_live), patch(
+    with patch(
         "core_tools.provider.cursor.process_identity_is_live",
         side_effect=lambda identity, timeout=None: identity.pid == 4243,
-    ), patch(
-        "core_tools.provider.cursor.list_process_group_pids",
-        return_value=[4243],
-    ), patch(
-        "core_tools.provider.cursor.read_process_identity",
-        side_effect=lambda pid, **kwargs: child if pid == 4243 else None,
-    ), patch(
-        "core_tools.provider.cursor.process_group_state",
-        return_value=ProcessGroupState.LIVE,
     ):
         surviving = provider._surviving_pids_for_session("sess-1", [])
     assert 4243 in surviving
