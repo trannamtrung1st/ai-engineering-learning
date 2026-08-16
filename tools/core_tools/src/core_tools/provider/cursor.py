@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -59,6 +60,7 @@ from core_tools.provider.process_identity import (
     inspect_process_identity,
     IdentityInspectState,
     GroupLineageState,
+    PROVIDER_OWNER_ENV_VAR,
     process_identities_from_termination_record,
     process_identity_is_live,
     process_identity_token,
@@ -731,6 +733,7 @@ class _TrackedTurnProc:
     member_identities: tuple[ProcessIdentity, ...] | None = None
     group_observed_gone: bool = False
     generation: int = 0
+    owner_id: str | None = None
 
 
 class CursorProvider:
@@ -1875,11 +1878,13 @@ class CursorProvider:
             if existing is not None:
                 self._tracked_turn_procs.pop(proc.pid, None)
             session_id, role = context
+            owner_id = getattr(self._collect_context, "owner_id", None)
             self._tracked_turn_procs[proc.pid] = _TrackedTurnProc(
                 session_id=session_id,
                 role=role,
                 proc=proc,
                 generation=id(proc),
+                owner_id=owner_id if isinstance(owner_id, str) else None,
             )
         if timeout == 0:
             return
@@ -1897,12 +1902,22 @@ class CursorProvider:
             return
         run_id = self._extra_env.get("TDP_RUN_ID")
         run_id_value: str | None = run_id if isinstance(run_id, str) else None
+        owner_id = entry.owner_id or self._extra_env.get(PROVIDER_OWNER_ENV_VAR)
+        owner_value: str | None = owner_id if isinstance(owner_id, str) else None
         remaining = _remaining_fn(timeout)
         identity = entry.identity
         if identity is None:
             identity = read_process_identity(
                 proc.pid, run_id=run_id_value, timeout=remaining()
             )
+            if identity is not None and owner_value:
+                identity = ProcessIdentity(
+                    pid=identity.pid,
+                    start_time=identity.start_time,
+                    run_id=identity.run_id or run_id_value,
+                    command=identity.command,
+                    owner_id=owner_value,
+                )
             if identity is None:
                 start_time = read_process_start_time(proc.pid, timeout=remaining())
                 if start_time is not None:
@@ -1910,6 +1925,7 @@ class CursorProvider:
                         pid=proc.pid,
                         start_time=start_time,
                         run_id=run_id_value,
+                        owner_id=owner_value,
                     )
         pgid = entry.pgid
         if pgid is None:
@@ -2031,9 +2047,13 @@ class CursorProvider:
                 expected_run_id = (
                     entry.identity.run_id if entry.identity is not None else None
                 )
+                expected_owner_id = entry.owner_id
+                if expected_owner_id is None and entry.identity is not None:
+                    expected_owner_id = entry.identity.owner_id
                 lineage = current_process_group_lineage(
                     entry.pgid,
                     expected_run_id=expected_run_id,
+                    expected_owner_id=expected_owner_id,
                     timeout=remaining(),
                 )
                 if lineage is GroupLineageState.FOREIGN:
@@ -2108,12 +2128,16 @@ class CursorProvider:
             stream: Iterator[str] | None = None
             teardown_deadline: list[float | None] = [None]
             detect_deadline: float | None = None
+            owner_id = uuid.uuid4().hex
+            self._collect_context.owner_id = owner_id
+            turn_env = dict(self._subprocess_env or os.environ)
+            turn_env[PROVIDER_OWNER_ENV_VAR] = owner_id
             try:
                 if runner is default_process_runner:
                     iterator = _SubprocessStdoutIterator(
                         argv,
                         cwd,
-                        env=self._subprocess_env,
+                        env=turn_env,
                         active_proc=active_proc,
                         ready_timeout=self._agent_start_timeout_seconds(),
                     )

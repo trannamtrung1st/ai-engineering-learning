@@ -73,6 +73,18 @@ class DrainResult(Enum):
     SURVIVORS = "survivors"
 
 
+def drain_result_if_proxies_live(
+    drain: DrainResult,
+    *,
+    proxies_done: bool,
+) -> DrainResult:
+    """CLEAN requires stdout and stderr proxy threads to have finished."""
+
+    if drain is DrainResult.CLEAN and not proxies_done:
+        return DrainResult.SURVIVORS
+    return drain
+
+
 class ControlEvent(Enum):
     TIMEOUT = "timeout"
     STOP = "stop"
@@ -685,7 +697,13 @@ def _leader_still_owns_group(
 
 def _signal_group(sig: int) -> None:
     try:
-        os.killpg(os.getpgrp(), sig)
+        pgid = os.getpgrp()
+        try:
+            if os.getpgid(os.getppid()) == pgid:
+                return
+        except OSError:
+            pass
+        os.killpg(pgid, sig)
     except OSError:
         pass
 
@@ -1485,6 +1503,12 @@ def main(
     drain = drain_once()
     return_code = _wait_agent(agent, cleanup_deadline)
     join_proxies(bound=min(_PROXY_JOIN_SECONDS, 0.2))
+    drain = drain_result_if_proxies_live(
+        drain,
+        proxies_done=(
+            not stdout_thread.is_alive() and not stderr_thread.is_alive()
+        ),
+    )
     if observed == 0:
         return_code = 0
     if return_code is None:

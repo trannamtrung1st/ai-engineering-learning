@@ -95,6 +95,7 @@ def test_ok_ready_token_returns_helper() -> None:
         "os.pipe", return_value=(3, 4)
     ):
         assert worker._popen_via_constructor_helper(7, env={}, deadline=None) is helper
+    worker._clear_ownership(helper.pid)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX boundary worker")
@@ -192,5 +193,6 @@ def test_identity_is_attached_before_ready_wait() -> None:
         "os.close"
     ), patch("os.set_inheritable"), patch("os.pipe", return_value=(3, 4)):
         worker._popen_via_constructor_helper(7, env={}, deadline=None)
+    worker._clear_ownership(helper.pid)
     assert order[:3] == ["spawn", "identity", "select"]
     assert getattr(helper, "_tdp_spawn_identity") is not None

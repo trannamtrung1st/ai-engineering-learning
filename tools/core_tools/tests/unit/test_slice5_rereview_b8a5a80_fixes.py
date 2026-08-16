@@ -57,10 +57,13 @@ def test_zero_budget_still_drains_buffered_final_line(tmp_path: Path) -> None:
         f"sys.stdout.write({init!r} + '\\n' + {payload!r})\n"
         "sys.stdout.flush()\n"
     )
+    iterator_holder: dict[str, _SubprocessStdoutIterator] = {}
 
     def runner(argv: list[str], cwd: Path):
         del argv
-        return _SubprocessStdoutIterator([sys.executable, "-c", script], cwd)
+        iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], cwd)
+        iterator_holder["it"] = iterator
+        return iterator
 
     def consume_budget(pid, run_id=None, command=None, timeout=None):
         del pid, run_id, command
@@ -69,15 +72,28 @@ def test_zero_budget_still_drains_buffered_final_line(tmp_path: Path) -> None:
         return ProcessIdentity(pid=1, start_time="1")
 
     provider = _provider(tmp_path, runner)
-    with patch(
-        "core_tools.provider.cursor.read_process_identity",
-        side_effect=consume_budget,
-    ), patch(
-        "core_tools.provider.cursor.terminate_process_tree",
-        return_value=True,
-    ):
-        session_id = provider.start_primary_session("planner", {"goal": "x"})
-        events = list(provider.stream_events(session_id))
+    try:
+        with patch(
+            "core_tools.provider.cursor.read_process_identity",
+            side_effect=consume_budget,
+        ), patch(
+            "core_tools.provider.cursor.terminate_process_tree",
+            return_value=True,
+        ):
+            session_id = provider.start_primary_session("planner", {"goal": "x"})
+            events = list(provider.stream_events(session_id))
+    finally:
+        iterator = iterator_holder.get("it")
+        proc = getattr(iterator, "_proc", None) if iterator is not None else None
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                pass
     texts = [str(event.get("text") or "") for event in events]
     assert any("tail" in text for text in texts)
 

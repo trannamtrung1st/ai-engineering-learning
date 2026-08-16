@@ -476,6 +476,7 @@ class BoundaryWorker:
         if not pid:
             return
         with _BOUNDARY_WORKER_LOCK:
+            _PENDING_BOUNDARY_SPAWNS.pop(id(self), None)
             _OWNED_BOUNDARY_WORKERS[pid] = self
 
     def _mark_unreaped(self) -> None:
@@ -758,9 +759,6 @@ class BoundaryWorker:
                         os.close(spawn_child_fd)
                     except OSError:
                         pass
-                with _BOUNDARY_WORKER_LOCK:
-                    if self.proc is None:
-                        _PENDING_BOUNDARY_SPAWNS.pop(id(self), None)
             try:
                 from core_tools.provider.process_identity import read_process_identity
 
@@ -775,6 +773,11 @@ class BoundaryWorker:
             _close_pipe("r")
             _close_pipe("w")
             raise
+
+        def _drop_pending() -> None:
+            with _BOUNDARY_WORKER_LOCK:
+                _PENDING_BOUNDARY_SPAWNS.pop(id(self), None)
+
         _close_pipe("w")
         late = (
             self._start_cancel.is_set()
@@ -783,6 +786,7 @@ class BoundaryWorker:
         if late:
             _close_pipe("r")
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            _drop_pending()
             self._launch_error = ProviderRunError("boundary probe exceeded timeout")
             return None
         leftover = (
@@ -791,6 +795,7 @@ class BoundaryWorker:
         read_fd = pipes.get("r")
         if read_fd is None:
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            _drop_pending()
             self._launch_error = ProviderRunError("boundary worker died")
             return None
         try:
@@ -800,6 +805,7 @@ class BoundaryWorker:
         if not ready:
             _close_pipe("r")
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            _drop_pending()
             self._launch_error = ProviderRunError("boundary probe exceeded timeout")
             return None
         try:
@@ -807,11 +813,13 @@ class BoundaryWorker:
         except OSError:
             _close_pipe("r")
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            _drop_pending()
             self._launch_error = ProviderRunError("boundary worker died")
             return None
         _close_pipe("r")
         if token.split(b"\n", 1)[0] != b"OK":
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            _drop_pending()
             self._launch_error = ProviderRunError("boundary worker died")
             return None
         return helper

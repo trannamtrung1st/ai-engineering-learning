@@ -88,6 +88,9 @@ def _remaining_fn(timeout: float | None):
     return remaining
 
 
+PROVIDER_OWNER_ENV_VAR = "TDP_PROVIDER_OWNER_ID"
+
+
 @dataclass(frozen=True)
 class ProcessIdentity:
     """Stable identity for a live OS process instance."""
@@ -96,6 +99,7 @@ class ProcessIdentity:
     start_time: str
     run_id: str | None = None
     command: str | None = None
+    owner_id: str | None = None
 
 
 def read_process_start_time(pid: int, *, timeout: float | None = None) -> str | None:
@@ -138,6 +142,7 @@ def read_process_identity(
         start_time=start_time,
         run_id=run_id,
         command=command,
+        owner_id=None,
     )
 
 
@@ -446,45 +451,106 @@ def _group_still_ours(
     return False
 
 
-def read_process_run_id(pid: int, *, timeout: float | None = None) -> str | None:
-    """Return ``TDP_RUN_ID`` from *pid*'s environment, or ``None`` if unknown."""
-
-    del timeout
-    if pid <= 0:
-        return None
+def _tdp_env_from_linux(pid: int) -> dict[str, str]:
     environ_path = f"/proc/{pid}/environ"
     try:
         with open(environ_path, "rb") as handle:
             payload = handle.read()
     except OSError:
-        return None
-    prefix = f"{_RUN_ID_ENV_VAR}=".encode("ascii")
+        return {}
+    env: dict[str, str] = {}
     for part in payload.split(b"\0"):
-        if part.startswith(prefix):
-            try:
-                return part[len(prefix) :].decode("utf-8") or None
-            except UnicodeDecodeError:
-                return None
-    return None
+        if b"=" not in part:
+            continue
+        key, value = part.split(b"=", 1)
+        try:
+            decoded_key = key.decode("ascii")
+        except UnicodeDecodeError:
+            continue
+        if not decoded_key.startswith("TDP_"):
+            continue
+        env[decoded_key] = value.decode("utf-8", "replace")
+    return env
+
+
+def _tdp_env_from_ps(pid: int) -> dict[str, str]:
+    try:
+        result = subprocess.run(
+            ["ps", "eww", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return {}
+    if result.returncode != 0:
+        return {}
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    if not lines:
+        return {}
+    env: dict[str, str] = {}
+    for token in lines[-1].split():
+        if "=" not in token:
+            continue
+        key, _, value = token.partition("=")
+        if key.startswith("TDP_"):
+            env[key] = value
+    return env
+
+
+def _tdp_env_for_pid(pid: int) -> dict[str, str]:
+    if pid <= 0:
+        return {}
+    if os.path.isdir("/proc"):
+        return _tdp_env_from_linux(pid)
+    return _tdp_env_from_ps(pid)
+
+
+def read_process_run_id(pid: int, *, timeout: float | None = None) -> str | None:
+    """Return ``TDP_RUN_ID`` from *pid*'s environment, or ``None`` if unknown."""
+
+    del timeout
+    value = _tdp_env_for_pid(pid).get(_RUN_ID_ENV_VAR)
+    return value or None
+
+
+def read_process_owner_id(pid: int, *, timeout: float | None = None) -> str | None:
+    """Return ``TDP_PROVIDER_OWNER_ID`` from *pid*'s environment, if present."""
+
+    del timeout
+    value = _tdp_env_for_pid(pid).get(PROVIDER_OWNER_ENV_VAR)
+    return value or None
 
 
 def current_process_group_lineage(
     pgid: int,
     *,
     expected_run_id: str | None,
+    expected_owner_id: str | None = None,
     timeout: float | None = None,
 ) -> GroupLineageState:
-    """Classify current PGID members against *expected_run_id*."""
+    """Classify current PGID members against owner/run lineage tokens."""
 
     current = _current_group_identities(pgid, run_id=None, timeout=timeout)
     if not current:
         return GroupLineageState.UNRESOLVED
-    if not expected_run_id:
-        return GroupLineageState.UNRESOLVED
+    owners: list[str | None] = []
     run_ids: list[str | None] = []
     for identity in current:
-        run_id = identity.run_id or read_process_run_id(identity.pid, timeout=timeout)
-        run_ids.append(run_id)
+        owners.append(
+            identity.owner_id or read_process_owner_id(identity.pid, timeout=timeout)
+        )
+        run_ids.append(
+            identity.run_id or read_process_run_id(identity.pid, timeout=timeout)
+        )
+    if expected_owner_id:
+        if any(owner == expected_owner_id for owner in owners):
+            return GroupLineageState.OWNED
+        if all(owner is not None and owner != expected_owner_id for owner in owners):
+            return GroupLineageState.FOREIGN
+        return GroupLineageState.UNRESOLVED
+    if not expected_run_id:
+        return GroupLineageState.UNRESOLVED
     if any(run_id == expected_run_id for run_id in run_ids):
         return GroupLineageState.OWNED
     if all(run_id is not None and run_id != expected_run_id for run_id in run_ids):
