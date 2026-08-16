@@ -601,8 +601,12 @@ def posix_spawn_session_leader(
         (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0),
     ]
     restored: list[tuple[int, bool]] = []
+    marked: set[int] = set()
 
     def _mark_inheritable(fd: int) -> None:
+        if fd in marked:
+            return
+        marked.add(fd)
         try:
             previous = os.get_inheritable(fd)
         except OSError:

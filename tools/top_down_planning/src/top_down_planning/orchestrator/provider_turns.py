@@ -313,6 +313,7 @@ BOUNDARY_WORKER_NAME = "tdp-boundary-worker"
 BOUNDARY_WORKER_CLEANUP_SECONDS = 0.2
 _OWNED_BOUNDARY_WORKERS: dict[int, "BoundaryWorker"] = {}
 _UNREAPED_BOUNDARY_WORKERS: dict[int, "BoundaryWorker"] = {}
+_PENDING_BOUNDARY_SPAWNS: dict[int, "BoundaryWorker"] = {}
 _BOUNDARY_WORKER_LOCK = threading.Lock()
 _BOUNDARY_CANCEL: ContextVar[threading.Event | None] = ContextVar(
     "tdp_boundary_cancel",
@@ -354,6 +355,13 @@ def unreaped_boundary_workers() -> tuple["BoundaryWorker", ...]:
 
     with _BOUNDARY_WORKER_LOCK:
         return tuple(_UNREAPED_BOUNDARY_WORKERS.values())
+
+
+def pending_boundary_spawns() -> tuple["BoundaryWorker", ...]:
+    """Workers blocked in pre-publication constructor spawn."""
+
+    with _BOUNDARY_WORKER_LOCK:
+        return tuple(_PENDING_BOUNDARY_SPAWNS.values())
 
 
 def reap_unreaped_boundary_workers(*, timeout: float | None = None) -> None:
@@ -477,11 +485,15 @@ class BoundaryWorker:
     def _clear_ownership(self, pid: int | None) -> None:
         with _BOUNDARY_WORKER_LOCK:
             _UNREAPED_BOUNDARY_WORKERS.pop(id(self), None)
+            _PENDING_BOUNDARY_SPAWNS.pop(id(self), None)
             if pid is not None:
                 _OWNED_BOUNDARY_WORKERS.pop(pid, None)
             for key, worker in list(_OWNED_BOUNDARY_WORKERS.items()):
                 if worker is self:
                     _OWNED_BOUNDARY_WORKERS.pop(key, None)
+            for key, worker in list(_PENDING_BOUNDARY_SPAWNS.items()):
+                if worker is self:
+                    _PENDING_BOUNDARY_SPAWNS.pop(key, None)
 
     def _ipc(self, operation: Callable[[], Any]) -> Any:
         try:
@@ -726,12 +738,29 @@ class BoundaryWorker:
 
         try:
             os.set_inheritable(result_r, False)
-            helper = posix_spawn_session_leader(
-                [sys.executable, "-c", _CONSTRUCTOR_HELPER, str(child_fd)],
-                env=env,
-                stdout_fd=result_w,
-                inherit_fds=(child_fd, result_w),
-            )
+            spawn_child_fd = child_fd
+            try:
+                spawn_child_fd = os.dup(child_fd)
+            except OSError:
+                spawn_child_fd = child_fd
+            with _BOUNDARY_WORKER_LOCK:
+                _PENDING_BOUNDARY_SPAWNS[id(self)] = self
+            try:
+                helper = posix_spawn_session_leader(
+                    [sys.executable, "-c", _CONSTRUCTOR_HELPER, str(spawn_child_fd)],
+                    env=env,
+                    stdout_fd=result_w,
+                    inherit_fds=(spawn_child_fd, result_w),
+                )
+            finally:
+                if spawn_child_fd != child_fd:
+                    try:
+                        os.close(spawn_child_fd)
+                    except OSError:
+                        pass
+                with _BOUNDARY_WORKER_LOCK:
+                    if self.proc is None:
+                        _PENDING_BOUNDARY_SPAWNS.pop(id(self), None)
             try:
                 from core_tools.provider.process_identity import read_process_identity
 
@@ -741,6 +770,8 @@ class BoundaryWorker:
             except Exception:
                 pass
         except BaseException:
+            with _BOUNDARY_WORKER_LOCK:
+                _PENDING_BOUNDARY_SPAWNS.pop(id(self), None)
             _close_pipe("r")
             _close_pipe("w")
             raise
@@ -908,9 +939,6 @@ class BoundaryWorker:
             if deadline is not None
             else BOUNDARY_WORKER_CLEANUP_SECONDS
         )
-        boot = self._boot_thread
-        if boot is not None and boot.is_alive():
-            join_budget = max(join_budget or 0.0, self.remaining_startup_seconds())
         cleanup_deadline = time.monotonic() + max(0.0, join_budget or 0.0)
 
         def remaining() -> float:
@@ -942,16 +970,22 @@ class BoundaryWorker:
         finally:
             launching = boot is not None and boot.is_alive()
             unreaped = started and (launching or self._proc_alive(proc))
-            for sock in (self._parent_sock, self._child_sock):
+            socks = [self._parent_sock]
+            if not launching:
+                socks.append(self._child_sock)
+            for sock in socks:
                 if sock is not None:
                     try:
                         sock.close()
                     except Exception:
                         pass
             self._parent_sock = None
-            self._child_sock = None
+            if not launching:
+                self._child_sock = None
             if unreaped:
                 self._mark_unreaped()
+            elif launching and not started:
+                pass
             else:
                 self._clear_ownership(pid)
                 self.proc = None

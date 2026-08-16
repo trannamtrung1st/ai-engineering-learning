@@ -50,6 +50,17 @@ class IdentityInspectState(Enum):
     ZOMBIE = "zombie"
 
 
+class GroupLineageState(Enum):
+    """Whether current PGID members still belong to the tracked run."""
+
+    OWNED = "owned"
+    FOREIGN = "foreign"
+    UNRESOLVED = "unresolved"
+
+
+_RUN_ID_ENV_VAR = "TDP_RUN_ID"
+
+
 _MAX_DRAIN_ROUNDS = 10
 _DEFAULT_WAIT_SECONDS = 5.0
 
@@ -433,6 +444,52 @@ def _group_still_ours(
             if read_process_group_id(anchor.pid, timeout=remaining()) == pgid:
                 return True
     return False
+
+
+def read_process_run_id(pid: int, *, timeout: float | None = None) -> str | None:
+    """Return ``TDP_RUN_ID`` from *pid*'s environment, or ``None`` if unknown."""
+
+    del timeout
+    if pid <= 0:
+        return None
+    environ_path = f"/proc/{pid}/environ"
+    try:
+        with open(environ_path, "rb") as handle:
+            payload = handle.read()
+    except OSError:
+        return None
+    prefix = f"{_RUN_ID_ENV_VAR}=".encode("ascii")
+    for part in payload.split(b"\0"):
+        if part.startswith(prefix):
+            try:
+                return part[len(prefix) :].decode("utf-8") or None
+            except UnicodeDecodeError:
+                return None
+    return None
+
+
+def current_process_group_lineage(
+    pgid: int,
+    *,
+    expected_run_id: str | None,
+    timeout: float | None = None,
+) -> GroupLineageState:
+    """Classify current PGID members against *expected_run_id*."""
+
+    current = _current_group_identities(pgid, run_id=None, timeout=timeout)
+    if not current:
+        return GroupLineageState.UNRESOLVED
+    if not expected_run_id:
+        return GroupLineageState.UNRESOLVED
+    run_ids: list[str | None] = []
+    for identity in current:
+        run_id = identity.run_id or read_process_run_id(identity.pid, timeout=timeout)
+        run_ids.append(run_id)
+    if any(run_id == expected_run_id for run_id in run_ids):
+        return GroupLineageState.OWNED
+    if all(run_id is not None and run_id != expected_run_id for run_id in run_ids):
+        return GroupLineageState.FOREIGN
+    return GroupLineageState.UNRESOLVED
 
 
 def _current_group_identities(

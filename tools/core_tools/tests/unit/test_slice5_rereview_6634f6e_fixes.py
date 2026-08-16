@@ -141,9 +141,11 @@ def test_reused_pgid_with_mismatched_identities_is_not_owned(tmp_path: Path) -> 
 
 
 def test_late_child_gone_identities_with_live_group_are_not_pinned(tmp_path: Path) -> None:
+    from core_tools.provider.process_identity import GroupLineageState
+
     provider = _provider(tmp_path, runner=lambda argv, cwd: iter(()), idle=0.0)
     session_id = provider.start_primary_session("planner", {"goal": "x"})
-    leader = ProcessIdentity(pid=4242, start_time="100")
+    leader = ProcessIdentity(pid=4242, start_time="100", run_id="run-owned")
     provider._tracked_turn_procs[4242] = tracked_turn_proc(session_id, "planner", 4242)
     entry = provider._tracked_turn_procs[4242]
     entry.identity = leader
@@ -160,6 +162,9 @@ def test_late_child_gone_identities_with_live_group_are_not_pinned(tmp_path: Pat
     ), patch(
         "core_tools.provider.cursor.inspect_process_identity",
         return_value=IdentityInspectState.GONE,
+    ), patch(
+        "core_tools.provider.cursor.current_process_group_lineage",
+        return_value=GroupLineageState.FOREIGN,
     ):
         assert provider._tracked_tree_is_live(entry) is False
 

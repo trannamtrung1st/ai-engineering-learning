@@ -55,8 +55,10 @@ from core_tools.provider.process_identity import (
     TerminateIdentityResult,
     _remaining_fn,
     capture_process_group_identities,
+    current_process_group_lineage,
     inspect_process_identity,
     IdentityInspectState,
+    GroupLineageState,
     process_identities_from_termination_record,
     process_identity_is_live,
     process_identity_token,
@@ -2026,7 +2028,17 @@ class CursorProvider:
                     state is IdentityInspectState.IDENTITY_MISMATCH for state in states
                 ):
                     return False
-                return False
+                expected_run_id = (
+                    entry.identity.run_id if entry.identity is not None else None
+                )
+                lineage = current_process_group_lineage(
+                    entry.pgid,
+                    expected_run_id=expected_run_id,
+                    timeout=remaining(),
+                )
+                if lineage is GroupLineageState.FOREIGN:
+                    return False
+                return True
             return True
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
@@ -2186,12 +2198,25 @@ class CursorProvider:
                     yield first
                     proc = active_proc[0]
                     if proc is not None:
-                        self._enrich_tracked_turn_proc(
-                            proc,
-                            timeout=max(
-                                0.05, min(0.5, self._agent_start_timeout_seconds())
-                            ),
+                        enrich_proc = proc
+                        enrich_timeout = max(
+                            0.05, min(0.5, self._agent_start_timeout_seconds())
                         )
+
+                        def _enrich_async() -> None:
+                            try:
+                                self._enrich_tracked_turn_proc(
+                                    enrich_proc,
+                                    timeout=enrich_timeout,
+                                )
+                            except Exception:
+                                return
+
+                        threading.Thread(
+                            target=_enrich_async,
+                            daemon=True,
+                            name="cursor-turn-enrich",
+                        ).start()
                     yield from lines
 
                 yield from _observe()
