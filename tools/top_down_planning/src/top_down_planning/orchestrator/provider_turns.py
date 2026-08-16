@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import pickle
 import queue
+import select
 import socket
 import subprocess
 import sys
@@ -323,6 +324,19 @@ _WORKER_BOOTSTRAP = (
     "from top_down_planning.orchestrator.provider_turns import _boundary_worker_loop\n"
     "_boundary_worker_loop(Connection(int(sys.argv[1])))\n"
 )
+_CONSTRUCTOR_HELPER = (
+    "import os, subprocess, sys\n"
+    "child_fd = int(sys.argv[1])\n"
+    "boot = os.environ.pop('TDP_BOUNDARY_BOOTSTRAP', '')\n"
+    "argv = [sys.executable, '-c', boot, str(child_fd)]\n"
+    "proc = subprocess.Popen(\n"
+    "    argv, pass_fds=(child_fd,), close_fds=True, start_new_session=False,\n"
+    "    env=os.environ.copy(),\n"
+    ")\n"
+    "os.close(child_fd)\n"
+    "os.write(1, b'OK\\n')\n"
+    "raise SystemExit(proc.wait() or 0)\n"
+)
 
 
 def owned_boundary_workers() -> tuple["BoundaryWorker", ...]:
@@ -346,6 +360,7 @@ def reap_unreaped_boundary_workers(*, timeout: float | None = None) -> None:
         BOUNDARY_WORKER_CLEANUP_SECONDS if timeout is None else max(0.0, timeout)
     )
     deadline = time.monotonic() + budget
+    notes: list[str] = []
     while unreaped_boundary_workers() and time.monotonic() < deadline:
         with _BOUNDARY_WORKER_LOCK:
             pending = list(_UNREAPED_BOUNDARY_WORKERS.values())
@@ -360,10 +375,16 @@ def reap_unreaped_boundary_workers(*, timeout: float | None = None) -> None:
             attempt = min(slice_t, leftover) if slice_t > 0 else leftover
             try:
                 worker.close(cleanup_timeout=attempt)
+            except Exception as exc:
+                notes.append(repr(exc))
+    if unreaped_boundary_workers():
+        error = ProviderRunError("boundary worker failed to stop")
+        for note in notes:
+            try:
+                error.add_note(note)
             except Exception:
                 pass
-    if unreaped_boundary_workers():
-        raise ProviderRunError("boundary worker failed to stop")
+        raise error
 
 
 def boundary_cancel_event() -> threading.Event | None:
@@ -434,6 +455,8 @@ class BoundaryWorker:
         self._launch_error: BaseException | None = None
         self._spawn_lock = threading.Lock()
         self._spawn_deadline: float | None = None
+        self._parent_sock: socket.socket | None = None
+        self._child_sock: socket.socket | None = None
 
     def _record_pid(self, proc: Any | None = None) -> None:
         target = proc if proc is not None else self.proc
@@ -483,7 +506,10 @@ class BoundaryWorker:
 
         try:
             if BoundaryWorker._proc_alive(proc):
-                proc.kill()
+                try:
+                    os.killpg(proc.pid, 9)
+                except OSError:
+                    proc.kill()
         except Exception:
             pass
         try:
@@ -541,6 +567,9 @@ class BoundaryWorker:
         self._ready = False
         self._launch_error = None
         self._spawn_deadline = deadline
+        parent_sock, child_sock = socket.socketpair()
+        self._parent_sock = parent_sock
+        self._child_sock = child_sock
         self._boot_thread = threading.Thread(
             target=self._spawn,
             args=(deadline,),
@@ -558,8 +587,8 @@ class BoundaryWorker:
         return max(0.0, deadline - time.monotonic())
 
     def _spawn(self, deadline: float | None) -> None:
-        parent_sock: socket.socket | None = None
-        child_sock: socket.socket | None = None
+        parent_sock = self._parent_sock
+        child_sock = self._child_sock
         proc: Any | None = None
         try:
             if self._start_cancel.is_set():
@@ -567,22 +596,30 @@ class BoundaryWorker:
             if deadline is not None and time.monotonic() >= deadline:
                 self._launch_error = ProviderRunError("boundary probe exceeded timeout")
                 return
-            parent_sock, child_sock = socket.socketpair()
+            if parent_sock is None or child_sock is None:
+                self._launch_error = ProviderRunError("boundary worker died")
+                return
             child_fd = child_sock.fileno()
             env = os.environ.copy()
             env["TDP_BOUNDARY_WORKER"] = "1"
+            env["TDP_BOUNDARY_BOOTSTRAP"] = _WORKER_BOOTSTRAP
             src_root = str(Path(__file__).resolve().parents[2])
             pythonpath = [src_root]
             pythonpath.extend(path for path in sys.path if path and path not in pythonpath)
             env["PYTHONPATH"] = os.pathsep.join(pythonpath)
             argv = [sys.executable, "-c", _WORKER_BOOTSTRAP, str(child_fd)]
-            proc = type(self)._popen(
-                argv,
-                pass_fds=(child_fd,),
-                close_fds=True,
-                start_new_session=True,
-                env=env,
-            )
+            popen_kwargs = {
+                "pass_fds": (child_fd,),
+                "close_fds": True,
+                "start_new_session": True,
+                "env": env,
+            }
+            if type(self)._popen is subprocess.Popen:
+                proc = self._popen_via_constructor_helper(
+                    child_fd, env=env, deadline=deadline
+                )
+            else:
+                proc = type(self)._popen(argv, **popen_kwargs)
         except ProviderUnsupportedPlatformError as exc:
             self._launch_error = exc
             return
@@ -599,17 +636,20 @@ class BoundaryWorker:
                     child_sock.close()
                 except Exception:
                     pass
-        assert parent_sock is not None
+                self._child_sock = None
+        if parent_sock is None:
+            return
         with self._spawn_lock:
             late = deadline is not None and time.monotonic() >= deadline
-            if self._start_cancel.is_set() or late:
+            if self._start_cancel.is_set() or late or proc is None:
                 if proc is not None:
                     self._reap_local_proc(proc, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
                 try:
                     parent_sock.close()
                 except Exception:
                     pass
-                if late:
+                self._parent_sock = None
+                if late and self._launch_error is None:
                     self._launch_error = ProviderRunError(
                         "boundary probe exceeded timeout"
                     )
@@ -619,6 +659,48 @@ class BoundaryWorker:
             from multiprocessing.connection import Connection
 
             self.parent_conn = Connection(parent_sock.detach())
+            self._parent_sock = None
+
+    def _popen_via_constructor_helper(
+        self,
+        child_fd: int,
+        *,
+        env: dict[str, str],
+        deadline: float | None,
+    ) -> Any | None:
+        result_r, result_w = os.pipe()
+        helper = subprocess.Popen(
+            [sys.executable, "-c", _CONSTRUCTOR_HELPER, str(child_fd)],
+            stdin=subprocess.DEVNULL,
+            stdout=result_w,
+            stderr=subprocess.DEVNULL,
+            pass_fds=(child_fd, result_w),
+            close_fds=True,
+            start_new_session=True,
+            env=env,
+        )
+        os.close(result_w)
+        leftover = (
+            5.0 if deadline is None else max(0.0, deadline - time.monotonic())
+        )
+        try:
+            ready, _, _ = select.select([result_r], [], [], leftover)
+        except (OSError, ValueError):
+            ready = []
+        if not ready:
+            os.close(result_r)
+            self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            self._launch_error = ProviderRunError("boundary probe exceeded timeout")
+            return None
+        try:
+            os.read(result_r, 16)
+        except OSError:
+            os.close(result_r)
+            self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            self._launch_error = ProviderRunError("boundary worker died")
+            return None
+        os.close(result_r)
+        return helper
 
     def _wait_spawn(self, deadline: float | None) -> None:
         boot = self._boot_thread
@@ -769,13 +851,23 @@ class BoundaryWorker:
                     pass
             if started:
                 self._reap_local_proc(proc, timeout=remaining())
-            if launching or (started and self._proc_alive(proc)):
+            if started and (launching or self._proc_alive(proc)):
                 self._mark_unreaped()
                 raise ProviderRunError("boundary worker failed to stop")
+            if launching and not started:
+                raise ProviderRunError("boundary probe exceeded timeout")
         finally:
             launching = boot is not None and boot.is_alive()
-            unreaped = started and self._proc_alive(proc)
-            if launching or unreaped:
+            unreaped = started and (launching or self._proc_alive(proc))
+            for sock in (self._parent_sock, self._child_sock):
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
+            self._parent_sock = None
+            self._child_sock = None
+            if unreaped:
                 self._mark_unreaped()
             else:
                 self._clear_ownership(pid)

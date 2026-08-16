@@ -24,7 +24,9 @@ from core_tools.provider.errors import (
     ProviderTurnStalledError,
 )
 from core_tools.provider.process_cleanup import (
+    PidInspectState,
     ProcessGroupState,
+    inspect_pid_liveness,
     is_pid_alive,
     is_pid_reaped,
     terminate_pid_tree,
@@ -264,8 +266,7 @@ def test_idle_timeout_kills_sigterm_ignoring_descendant(tmp_path: Path) -> None:
     gone_deadline = time.monotonic() + 5.0
     while time.monotonic() < gone_deadline and live(child_pid):
         time.sleep(0.05)
-    assert live(child_pid) is False
-    assert is_pid_reaped(child_pid) or not live(child_pid)
+    assert inspect_pid_liveness(child_pid) is PidInspectState.GONE
 
 
 def test_live_pgid_without_identity_or_janitor_is_not_owned(tmp_path: Path) -> None:
@@ -286,7 +287,7 @@ def test_live_pgid_without_identity_or_janitor_is_not_owned(tmp_path: Path) -> N
         "core_tools.provider.cursor.process_group_state",
         return_value=ProcessGroupState.LIVE,
     ):
-        assert provider._tracked_tree_is_live(entry) is False
+        assert provider._tracked_tree_is_live(entry) is True
 
 
 def test_janitor_anchor_keeps_late_child_tree_live(tmp_path: Path) -> None:

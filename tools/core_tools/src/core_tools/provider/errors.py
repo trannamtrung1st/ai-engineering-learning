@@ -59,6 +59,10 @@ class ProviderSessionMismatchError(ProviderSessionError, ProviderTurnError):
     """A durable provider session identity changed without explicit replacement."""
 
 
+class ProviderTurnStartupError(ProviderTurnError):
+    """The provider agent child was not spawned within the start deadline."""
+
+
 class ProviderTurnStalledError(ProviderTurnError):
     """A provider turn produced no stream output within the configured idle window."""
 

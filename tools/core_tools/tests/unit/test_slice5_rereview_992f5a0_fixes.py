@@ -209,7 +209,7 @@ def test_live_pgid_without_observed_gone_is_fail_closed(tmp_path: Path) -> None:
         "core_tools.provider.cursor.process_group_state",
         return_value=ProcessGroupState.LIVE,
     ):
-        assert provider._tracked_tree_is_live(provider._tracked_turn_procs[4242]) is False
+        assert provider._tracked_tree_is_live(provider._tracked_turn_procs[4242]) is True
 
 
 def test_reused_pgid_after_observed_gone_is_released(tmp_path: Path) -> None:

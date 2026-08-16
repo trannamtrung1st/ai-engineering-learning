@@ -283,7 +283,11 @@ def _session_surviving_pids(
         if not identities:
             continue
         for identity in identities:
-            if process_identity_is_live(identity) or _pid_still_present(identity.pid):
+            if inspect_process_identity(identity) in {
+                IdentityInspectState.LIVE_MATCH,
+                IdentityInspectState.ZOMBIE,
+                IdentityInspectState.UNVERIFIABLE,
+            }:
                 pids.add(identity.pid)
     return sorted(pids)
 

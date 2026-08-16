@@ -31,6 +31,7 @@ from core_tools.provider.errors import (
     ProviderTurnCleanupError,
     ProviderTurnError,
     ProviderTurnStalledError,
+    ProviderTurnStartupError,
     ProviderStreamRecordTooLargeError,
     ProviderLifecycleTimeoutError,
     ProviderUnsupportedPlatformError,
@@ -41,7 +42,9 @@ from core_tools.provider.events import (
     normalize_cursor_event,
 )
 from core_tools.provider.process_cleanup import (
+    PidInspectState,
     ProcessGroupState,
+    inspect_pid_liveness,
     is_pid_alive,
     read_process_group_id,
     process_group_state,
@@ -68,6 +71,7 @@ from core_tools.provider.session_janitor import (
 
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 DEFAULT_TURN_IDLE_TIMEOUT_SECONDS = 2.0
+DEFAULT_AGENT_START_TIMEOUT_SECONDS = 5.0
 DEFAULT_TURN_TREE_CLEANUP_SECONDS = 2.0
 MAX_STREAM_JSON_RECORD_BYTES = 256 * 1024
 _MAX_IDLE_RESCUE_BYTES = MAX_STREAM_JSON_RECORD_BYTES
@@ -251,29 +255,38 @@ class _SubprocessStdoutIterator(Iterator[str]):
         fd = getattr(self, "_started_read_fd", None)
         if fd is None or getattr(self, "_agent_started", True):
             return
-        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        budget = (
+            DEFAULT_AGENT_START_TIMEOUT_SECONDS
+            if timeout is None
+            else max(0.0, timeout)
+        )
+        deadline = time.monotonic() + budget
+
+        def _fail() -> None:
+            self._close_started_fd()
+            raise ProviderTurnStartupError("provider agent failed to start")
+
         while True:
-            if self._proc.poll() is not None:
-                self._close_started_fd()
-                self._agent_started = True
-                return
-            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
-            if remaining is not None and remaining <= 0:
-                self._close_started_fd()
-                self._agent_started = True
-                return
+            remaining = max(0.0, deadline - time.monotonic())
+            if remaining <= 0:
+                _fail()
+            pid = getattr(self._proc, "pid", None)
+            if pid:
+                state = inspect_pid_liveness(pid, timeout=min(0.05, remaining))
+                if state is PidInspectState.GONE:
+                    _fail()
             try:
-                ready, _, _ = select.select([fd], [], [], remaining)
+                ready, _, _ = select.select([fd], [], [], min(0.05, remaining))
             except (OSError, ValueError):
-                self._close_started_fd()
-                self._agent_started = True
-                return
+                _fail()
             if not ready:
                 continue
             try:
-                os.read(fd, 8)
+                data = os.read(fd, 8)
             except OSError:
-                pass
+                _fail()
+            if not data:
+                _fail()
             self._close_started_fd()
             self._agent_started = True
             return
@@ -1449,6 +1462,7 @@ class CursorProvider:
                     exc,
                     (
                         ProviderTurnStalledError,
+                        ProviderTurnStartupError,
                         ProviderTurnCleanupError,
                         ProviderStreamRecordTooLargeError,
                     ),
@@ -1674,6 +1688,18 @@ class CursorProvider:
             timeout = float(raw)
         except (TypeError, ValueError):
             return 0.0
+        return max(0.0, timeout)
+
+    def _agent_start_timeout_seconds(self) -> float:
+        provider_limits = (self._config.get("limits") or {}).get("provider") or {}
+        raw = provider_limits.get(
+            "agent_start_timeout_seconds",
+            DEFAULT_AGENT_START_TIMEOUT_SECONDS,
+        )
+        try:
+            timeout = float(raw)
+        except (TypeError, ValueError):
+            return DEFAULT_AGENT_START_TIMEOUT_SECONDS
         return max(0.0, timeout)
 
     @staticmethod
@@ -1966,7 +1992,7 @@ class CursorProvider:
                 return True
             if entry.group_observed_gone:
                 return False
-            return False
+            return True
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )
@@ -2051,7 +2077,24 @@ class CursorProvider:
                         if active_proc[0] is None:
                             active_proc[0] = stream._proc
                 if iterator is not None:
-                    iterator.wait_agent_started()
+                    try:
+                        iterator.wait_agent_started(
+                            timeout=self._agent_start_timeout_seconds()
+                        )
+                    except ProviderTurnStartupError:
+                        proc = active_proc[0]
+                        if proc is not None:
+                            tracked = self._tracked_turn_procs.get(proc.pid)
+                            terminate_process_tree(
+                                proc,
+                                pgid=tracked.pgid if tracked is not None else None,
+                                leader_identity=(
+                                    tracked.identity if tracked is not None else None
+                                ),
+                                timeout=DEFAULT_TURN_TREE_CLEANUP_SECONDS,
+                            )
+                        iterator.close()
+                        raise
                 if idle_timeout > 0:
                     detect_deadline = time.monotonic() + idle_timeout
 

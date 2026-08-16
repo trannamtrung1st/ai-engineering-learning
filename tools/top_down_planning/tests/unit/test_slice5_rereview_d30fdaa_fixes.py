@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import multiprocessing
 import threading
 import time
 from unittest.mock import patch
@@ -17,22 +16,15 @@ from top_down_planning.orchestrator.provider_turns import (
     _finalize_boundary_poll,
     _invoke_boundary_bounded,
     owned_boundary_workers,
+    unreaped_boundary_workers,
 )
 
 
-def _boundary_start_threads() -> list[threading.Thread]:
+def _boundary_popen_threads() -> list[threading.Thread]:
     return [
         thread
         for thread in threading.enumerate()
-        if thread.name == "tdp-boundary-start" and thread.is_alive()
-    ]
-
-
-def _boundary_children() -> list[multiprocessing.Process]:
-    return [
-        proc
-        for proc in multiprocessing.active_children()
-        if "tdp-boundary" in (proc.name or "")
+        if thread.name == "tdp-boundary-popen" and thread.is_alive()
     ]
 
 
@@ -40,14 +32,15 @@ def _wait_boundary_gone(*, timeout: float = 2.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if (
-            not _boundary_start_threads()
+            not _boundary_popen_threads()
             and not owned_boundary_workers()
+            and not unreaped_boundary_workers()
         ):
             return
         time.sleep(0.02)
     pytest.fail(
-        f"leftover start threads={_boundary_start_threads()!r} "
-        f"owned={owned_boundary_workers()!r}"
+        f"leftover popen threads={_boundary_popen_threads()!r} "
+        f"owned={owned_boundary_workers()!r} unreaped={unreaped_boundary_workers()!r}"
     )
 
 
@@ -177,7 +170,9 @@ def test_unserializable_callback_creates_no_worker() -> None:
         with pytest.raises(ProviderRunError, match="serializable"):
             _invoke_boundary_bounded(nested, threading.Event(), timeout=0.4)
     assert starts["n"] == 0
-    assert _boundary_children() == []
+    assert owned_boundary_workers() == ()
+    assert unreaped_boundary_workers() == ()
+    assert _boundary_popen_threads() == []
 
 
 def test_invoke_docstring_separates_response_and_cleanup_budgets() -> None:

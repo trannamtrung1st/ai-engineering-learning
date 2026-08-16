@@ -94,7 +94,7 @@ def test_late_descendant_keeps_tracked_tree_unresolved(tmp_path: Path) -> None:
         ):
             assert provider._tracked_tree_is_live(
                 provider._tracked_turn_procs[4242]
-            ) is False
+            ) is True
 
 
 def test_group_reuse_after_gone_is_not_owned(tmp_path: Path) -> None:

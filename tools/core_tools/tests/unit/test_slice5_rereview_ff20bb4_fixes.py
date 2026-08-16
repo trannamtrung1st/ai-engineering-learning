@@ -62,21 +62,26 @@ def test_inspect_identity_passes_remaining_budget_to_read() -> None:
 def test_wait_dead_records_shrinking_timeouts_without_wall_clock_slack() -> None:
     identities = [ProcessIdentity(pid=index, start_time="1") for index in range(4)]
     seen: list[float | None] = []
+    clock = {"t": 0.0}
 
-    def fake_any(targets, timeout=None):
-        del targets
+    def fake_mono() -> float:
+        return clock["t"]
+
+    def fake_any(identity, timeout=None):
+        del identity
         seen.append(timeout)
+        clock["t"] += 0.04
         return True
 
     with patch(
-        "core_tools.provider.process_identity._any_identities_still_alive",
+        "core_tools.provider.process_identity._identity_still_present",
         side_effect=fake_any,
     ), patch(
         "core_tools.provider.process_identity.time.sleep",
         return_value=None,
     ), patch(
         "core_tools.provider.process_identity.time.monotonic",
-        side_effect=[0.0, 0.0, 0.04, 0.04, 0.08, 0.08, 0.12, 0.12, 0.16, 0.16, 0.20],
+        side_effect=fake_mono,
     ):
         assert _wait_identities_dead(identities, timeout=0.15) is False
     assert seen

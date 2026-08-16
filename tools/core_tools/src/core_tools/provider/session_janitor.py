@@ -695,19 +695,6 @@ def _kill_agent(agent: subprocess.Popen[Any]) -> None:
             pass
 
 
-def _kill_group_peers(deadline: CleanupDeadline | None = None) -> None:
-    """SIGKILL same-group descendants without signaling this janitor."""
-
-    peers = _peer_pids(deadline)
-    if not peers:
-        return
-    for pid in peers:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except OSError:
-            pass
-
-
 def _reap_zombie_children() -> None:
     if not hasattr(os, "waitpid"):
         return
@@ -720,23 +707,43 @@ def _reap_zombie_children() -> None:
             return
 
 
-def _close_inherited_stdio_write_ends() -> None:
+def _close_inherited_stdout() -> None:
     """Let the parent observe stdout EOF while group cleanup continues."""
 
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.flush()
-        except Exception:
-            pass
+    try:
+        sys.stdout.flush()
+    except Exception:
+        pass
     try:
         devnull = os.open(os.devnull, os.O_WRONLY)
     except OSError:
         return
     try:
         os.dup2(devnull, 1)
+    finally:
+        if devnull != 1:
+            try:
+                os.close(devnull)
+            except OSError:
+                pass
+
+
+def _close_inherited_stdio_write_ends() -> None:
+    """Close inherited stdout/stderr write ends after stream proxies finish."""
+
+    _close_inherited_stdout()
+    try:
+        sys.stderr.flush()
+    except Exception:
+        pass
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        return
+    try:
         os.dup2(devnull, 2)
     finally:
-        if devnull not in {1, 2}:
+        if devnull != 2:
             try:
                 os.close(devnull)
             except OSError:
@@ -790,7 +797,6 @@ def _drain_group(
         if result is DrainResult.CLEAN:
             return result
         _kill_agent(agent)
-        _kill_group_peers(deadline)
         _reap_zombie_children()
         return _wait_peers_gone(deadline, budget=_KILL_DRAIN_SECONDS)
     finally:
@@ -851,7 +857,12 @@ def _copy_available(src_fd: int, dst: object, timeout: float) -> None:
             flush()
 
 
-def _proxy_stream(src: object, dst: object, stop: threading.Event) -> None:
+def _proxy_stream(
+    src: object,
+    dst: object,
+    stop: threading.Event,
+    on_eof: Callable[[], None] | None = None,
+) -> None:
     fileno = getattr(src, "fileno", None)
     if fileno is None:
         return
@@ -887,6 +898,8 @@ def _proxy_stream(src: object, dst: object, stop: threading.Event) -> None:
         except OSError:
             break
     _copy_available(src_fd, dst, _TAIL_DRAIN_SECONDS)
+    if on_eof is not None:
+        on_eof()
 
 
 def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]:
@@ -1013,7 +1026,7 @@ def _close_fd(fd: int | None) -> None:
         pass
 
 
-def _reap_verifier(proc: subprocess.Popen[Any] | None) -> None:
+def _reap_verifier(proc: subprocess.Popen[Any] | None, *, timeout: float = 0.0) -> None:
     if proc is None:
         return
     if proc.poll() is None:
@@ -1024,8 +1037,15 @@ def _reap_verifier(proc: subprocess.Popen[Any] | None) -> None:
                 proc.kill()
             except OSError:
                 pass
+    leftover = max(0.0, timeout)
+    if leftover <= 0:
+        try:
+            proc.poll()
+        except OSError:
+            pass
+        return
     try:
-        proc.wait(timeout=1.0)
+        proc.wait(timeout=leftover)
     except (OSError, subprocess.TimeoutExpired):
         pass
 
@@ -1146,30 +1166,30 @@ def _handoff_group_escalation(
             _close_fd(go_w)
             _close_fd(handshake_r)
             _close_fd(result_r)
-            _reap_verifier(proc)
+            _reap_verifier(proc, timeout=max(0.0, deadline.remaining()))
             return None
         data = os.read(handshake_r, 16)
     except OSError:
         _close_fd(go_w)
         _close_fd(handshake_r)
         _close_fd(result_r)
-        _reap_verifier(proc)
+        _reap_verifier(proc, timeout=max(0.0, deadline.remaining()))
         return None
     _close_fd(handshake_r)
     if not data.startswith(b"READY"):
         _close_fd(go_w)
         _close_fd(result_r)
-        _reap_verifier(proc)
+        _reap_verifier(proc, timeout=max(0.0, deadline.remaining()))
         return None
     try:
         os.write(go_w, b"GO\n")
     except OSError:
         _close_fd(go_w)
         _close_fd(result_r)
-        _reap_verifier(proc)
+        _reap_verifier(proc, timeout=max(0.0, deadline.remaining()))
         return None
     _close_fd(go_w)
-    result_timeout = max(0.05, deadline.remaining())
+    result_timeout = max(0.0, deadline.remaining())
     try:
         ready, _, _ = select.select([result_r], [], [], result_timeout)
         payload = b""
@@ -1179,21 +1199,21 @@ def _handoff_group_escalation(
         payload = b""
     _close_fd(result_r)
     if not payload:
-        _reap_verifier(proc)
+        _reap_verifier(proc, timeout=max(0.0, deadline.remaining()))
         return None
     try:
         decoded = json.loads(payload.splitlines()[-1].decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError, IndexError):
-        _reap_verifier(proc)
+        _reap_verifier(proc, timeout=max(0.0, deadline.remaining()))
         return None
     if decoded.get("ok") is not True:
-        _reap_verifier(proc)
+        _reap_verifier(proc, timeout=max(0.0, deadline.remaining()))
         drain = decoded.get("drain")
         if drain in {item.value for item in DrainResult}:
             return DrainResult(drain)
         return DrainResult.UNVERIFIABLE
     drain = decoded.get("drain")
-    _reap_verifier(proc)
+    _reap_verifier(proc, timeout=max(0.0, deadline.remaining()))
     if drain in {item.value for item in DrainResult}:
         return DrainResult(drain)
     return DrainResult.UNVERIFIABLE
@@ -1360,6 +1380,7 @@ def main(
     stdout_thread = threading.Thread(
         target=_proxy_stream,
         args=(agent.stdout, stdout_dst, stop_copy),
+        kwargs={"on_eof": _close_inherited_stdout},
         daemon=True,
     )
     stderr_thread = threading.Thread(
@@ -1377,8 +1398,9 @@ def main(
             break
 
     cleanup_deadline = CleanupDeadline.after(JANITOR_CLEANUP_BUDGET_SECONDS)
-    stop_copy.set()
     stdout_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
+    _close_inherited_stdout()
+    stop_copy.set()
     stderr_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
     _close_inherited_stdio_write_ends()
     observed = agent.poll()

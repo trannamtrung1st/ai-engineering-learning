@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import multiprocessing
 import subprocess
 import sys
 import threading
@@ -23,11 +22,11 @@ from top_down_planning.orchestrator.provider_turns import (
 )
 
 
-def _boundary_start_threads() -> list[threading.Thread]:
+def _boundary_popen_threads() -> list[threading.Thread]:
     return [
         thread
         for thread in threading.enumerate()
-        if thread.name == "tdp-boundary-start" and thread.is_alive()
+        if thread.name == "tdp-boundary-popen" and thread.is_alive()
     ]
 
 
@@ -53,7 +52,7 @@ def test_never_returning_process_start_is_not_used() -> None:
         with patch.object(BoundaryWorker, "_popen", staticmethod(hang_ready)):
             with pytest.raises(ProviderRunError, match="exceeded timeout"):
                 worker.start(deadline=time.monotonic() + 0.05)
-        assert _boundary_start_threads() == []
+        assert _boundary_popen_threads() == []
         assert [
             item.name
             for item in threading.enumerate()

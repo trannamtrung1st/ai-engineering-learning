@@ -62,15 +62,15 @@ def test_wait_dead_does_not_reset_per_identity_timeout() -> None:
     identities = [ProcessIdentity(pid=index, start_time="1") for index in range(4)]
     seen: list[float | None] = []
 
-    def fake_any(targets, timeout=None):
-        del targets
+    def fake_any(identity, timeout=None):
+        del identity
         seen.append(timeout)
         time.sleep(0.04)
         return True
 
     started = time.monotonic()
     with patch(
-        "core_tools.provider.process_identity._any_identities_still_alive",
+        "core_tools.provider.process_identity._identity_still_present",
         side_effect=fake_any,
     ):
         assert _wait_identities_dead(identities, timeout=0.15) is False
