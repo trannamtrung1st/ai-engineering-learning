@@ -461,6 +461,7 @@ class BoundaryWorker:
         self._spawn_deadline: float | None = None
         self._parent_sock: socket.socket | None = None
         self._child_sock: socket.socket | None = None
+        self._pending_spawn_fds: list[int] = []
 
     def _record_pid(self, proc: Any | None = None) -> None:
         target = proc if proc is not None else self.proc
@@ -510,7 +511,7 @@ class BoundaryWorker:
 
         try:
             identity = getattr(proc, "_tdp_spawn_identity", None)
-            signal_group = True
+            signal_group = identity is not None
             if identity is not None:
                 from core_tools.provider.process_identity import (
                     IdentityInspectState,
@@ -581,6 +582,18 @@ class BoundaryWorker:
             raise ProviderRunError("boundary worker died")
         if deadline is not None and deadline - time.monotonic() <= 0:
             raise ProviderRunError("boundary probe exceeded timeout")
+        foreign = [
+            thread
+            for thread in threading.enumerate()
+            if thread.name == "tdp-boundary-popen"
+            and thread.is_alive()
+            and thread is not self._boot_thread
+        ]
+        if foreign:
+            self._launch_error = ProviderRunError("boundary probe exceeded timeout")
+            if wait_ready:
+                raise self._launch_error
+            return
         self._start_cancel.clear()
         self._ready = False
         self._launch_error = None
@@ -696,6 +709,7 @@ class BoundaryWorker:
     ) -> Any | None:
         result_r, result_w = os.pipe()
         helper = None
+        self._pending_spawn_fds = [result_r, result_w]
         try:
             os.set_inheritable(result_r, False)
             helper = posix_spawn_session_leader(
@@ -704,11 +718,21 @@ class BoundaryWorker:
                 stdout_fd=result_w,
                 inherit_fds=(child_fd, result_w),
             )
+            try:
+                from core_tools.provider.process_identity import read_process_identity
+
+                ident = read_process_identity(helper.pid, timeout=0.05)
+                if ident is not None:
+                    setattr(helper, "_tdp_spawn_identity", ident)
+            except Exception:
+                pass
         except BaseException:
             os.close(result_r)
             os.close(result_w)
+            self._pending_spawn_fds = []
             raise
         os.close(result_w)
+        self._pending_spawn_fds = [result_r]
         leftover = (
             5.0 if deadline is None else max(0.0, deadline - time.monotonic())
         )
@@ -718,17 +742,24 @@ class BoundaryWorker:
             ready = []
         if not ready:
             os.close(result_r)
+            self._pending_spawn_fds = []
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
             self._launch_error = ProviderRunError("boundary probe exceeded timeout")
             return None
         try:
-            os.read(result_r, 16)
+            token = os.read(result_r, 16)
         except OSError:
             os.close(result_r)
+            self._pending_spawn_fds = []
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
             self._launch_error = ProviderRunError("boundary worker died")
             return None
         os.close(result_r)
+        self._pending_spawn_fds = []
+        if not token.startswith(b"OK"):
+            self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            self._launch_error = ProviderRunError("boundary worker died")
+            return None
         return helper
 
     def _wait_spawn(self, deadline: float | None) -> None:
@@ -896,6 +927,12 @@ class BoundaryWorker:
                         pass
             self._parent_sock = None
             self._child_sock = None
+            for fd in self._pending_spawn_fds:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            self._pending_spawn_fds = []
             if unreaped:
                 self._mark_unreaped()
             else:
@@ -905,7 +942,8 @@ class BoundaryWorker:
                 self._child_conn = None
                 self._pgid = None
                 self._ready = False
-                self._boot_thread = None
+                if not launching:
+                    self._boot_thread = None
                 if parent is not None:
                     try:
                         parent.close()

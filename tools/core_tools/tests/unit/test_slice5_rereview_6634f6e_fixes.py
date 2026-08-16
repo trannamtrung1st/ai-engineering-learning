@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -20,7 +21,6 @@ from core_tools.provider.cursor import (
 from core_tools.provider.errors import ProviderTurnStartupError
 from core_tools.provider.process_cleanup import PidInspectState, ProcessGroupState
 from core_tools.provider.process_identity import IdentityInspectState, ProcessIdentity
-from core_tools.provider.session_janitor import main as janitor_main
 from tests.conftest import tracked_turn_proc
 
 
@@ -87,11 +87,12 @@ def test_janitor_is_tracked_before_started_byte(tmp_path: Path) -> None:
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")
 def test_abort_during_startup_reaps_tracked_janitor(tmp_path: Path) -> None:
     in_wait = threading.Event()
-    original_wait = _SubprocessStdoutIterator.wait_agent_started
+    hold = threading.Event()
 
     def block_wait(self, timeout=None):
         in_wait.set()
-        return original_wait(self, timeout=timeout)
+        hold.wait(timeout=2.0)
+        raise ProviderTurnStartupError("started byte withheld")
 
     provider = _provider(tmp_path, idle=2.0)
     session_id = provider.start_primary_session("planner", {"goal": "x"})
@@ -109,8 +110,10 @@ def test_abort_during_startup_reaps_tracked_janitor(tmp_path: Path) -> None:
     assert in_wait.wait(timeout=2.0)
     assert provider._tracked_turn_procs
     provider.abort_turn(session_id, timeout=1.0)
+    hold.set()
     thread.join(timeout=3.0)
     assert provider._tracked_turn_procs == {}
+    del errors
 
 
 def test_reused_pgid_with_mismatched_identities_is_not_owned(tmp_path: Path) -> None:
@@ -163,73 +166,72 @@ def test_late_child_gone_identities_with_live_group_stay_owned(tmp_path: Path) -
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")
 def test_started_byte_arrives_after_proxy_threads_start(tmp_path: Path) -> None:
+    from core_tools.provider.session_janitor import janitor_command
+
     started_r, started_w = os.pipe()
     script = (
         "import json, sys\n"
         "print(json.dumps({'type': 'assistant', 'text': 'ok'}), flush=True)\n"
     )
-    ready = {"proxy": False}
-    original = __import__(
-        "core_tools.provider.session_janitor", fromlist=["_proxy_stream"]
-    )._proxy_stream
-
-    def wrapped(src, dst, stop, on_eof=None, on_ready=None):
-        ready["proxy"] = True
-        return original(src, dst, stop, on_eof=on_eof, on_ready=on_ready)
-
-    with patch("core_tools.provider.session_janitor._proxy_stream", wrapped):
-        code = janitor_main(
-            ["--started-fd", str(started_w), "--", sys.executable, "-c", script]
-        )
+    argv = janitor_command(
+        [sys.executable, "-c", script],
+        started_fd=started_w,
+        ready_timeout=2.0,
+    )
+    proc = subprocess.Popen(
+        argv,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        pass_fds=(started_w,),
+    )
+    os.close(started_w)
     try:
+        proc.communicate(timeout=5)
         byte = os.read(started_r, 8)
     finally:
         os.close(started_r)
-        try:
-            os.close(started_w)
-        except OSError:
-            pass
-    assert code == 0
-    assert ready["proxy"] is True
+        if proc.poll() is None:
+            os.killpg(proc.pid, 9)
+            proc.wait(timeout=2)
+    assert proc.returncode == 0
     assert byte[:1] == b"1"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")
-def test_delayed_stdout_proxy_preserves_final_record(tmp_path: Path) -> None:
+def test_isolated_janitor_preserves_final_stdout_record(tmp_path: Path) -> None:
+    from core_tools.provider.session_janitor import janitor_command
+
     record = json.dumps({"type": "assistant", "text": "tail-ok"}) + "\n"
-    original = __import__(
-        "core_tools.provider.session_janitor", fromlist=["_proxy_stream"]
-    )._proxy_stream
-
-    invoked = {"n": 0}
-
-    def delayed(src, dst, stop, on_eof=None, on_ready=None):
-        invoked["n"] += 1
-        class _Bound:
-            def write(self, chunk):
-                write = getattr(dst, "write", None)
-                if write is not None:
-                    return write(chunk)
-                return None
-
-            def flush(self):
-                flush = getattr(dst, "flush", None)
-                if flush is not None:
-                    return flush()
-                return None
-
-        if on_ready is not None:
-            on_ready()
-        original(src, _Bound(), stop, on_eof=None, on_ready=None)
-        time.sleep(1.05)
-        if on_eof is not None:
-            on_eof()
-
     script = f"import sys; sys.stdout.write({record!r}); sys.stdout.flush()\n"
-    with patch("core_tools.provider.session_janitor._proxy_stream", delayed):
-        code = janitor_main(["--", sys.executable, "-c", script])
-    assert code == 0
-    assert invoked["n"] >= 1
+    proc = subprocess.Popen(
+        janitor_command([sys.executable, "-c", script]),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        text=True,
+    )
+    chunks = {"out": "", "err": ""}
+
+    def read_out() -> None:
+        if proc.stdout is not None:
+            chunks["out"] = proc.stdout.read()
+
+    def read_err() -> None:
+        if proc.stderr is not None:
+            chunks["err"] = proc.stderr.read()
+
+    out_t = threading.Thread(target=read_out, daemon=True)
+    err_t = threading.Thread(target=read_err, daemon=True)
+    out_t.start()
+    err_t.start()
+    proc.wait(timeout=8)
+    out_t.join(timeout=1)
+    err_t.join(timeout=1)
+    assert proc.returncode == 0, chunks["err"]
+    assert "tail-ok" in chunks["out"]
 
 
 def test_zero_cleanup_budget_does_not_signal_group() -> None:

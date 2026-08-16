@@ -184,6 +184,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
         *,
         env: Mapping[str, str] | None = None,
         active_proc: list[subprocess.Popen[str] | None] | None = None,
+        ready_timeout: float | None = None,
     ) -> None:
         popen_kwargs: dict[str, Any] = {
             "cwd": str(cwd),
@@ -207,7 +208,14 @@ class _SubprocessStdoutIterator(Iterator[str]):
             popen_kwargs["stdin"] = subprocess.PIPE
             popen_kwargs["pass_fds"] = (status_w, started_w)
             spawn_argv = janitor_command(
-                argv, status_fd=status_w, started_fd=started_w
+                argv,
+                status_fd=status_w,
+                started_fd=started_w,
+                ready_timeout=(
+                    DEFAULT_AGENT_START_TIMEOUT_SECONDS
+                    if ready_timeout is None
+                    else max(0.0, ready_timeout)
+                ),
             )
 
         try:
@@ -2004,11 +2012,22 @@ class CursorProvider:
                     inspect_process_identity(identity, timeout=remaining())
                     for identity in anchors
                 ]
-                if states and all(
+                if any(
+                    state
+                    in {
+                        IdentityInspectState.LIVE_MATCH,
+                        IdentityInspectState.ZOMBIE,
+                        IdentityInspectState.UNVERIFIABLE,
+                    }
+                    for state in states
+                ):
+                    return True
+                if any(
                     state is IdentityInspectState.IDENTITY_MISMATCH for state in states
                 ):
                     return False
-            return True
+                return True
+            return False
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )
@@ -2084,6 +2103,7 @@ class CursorProvider:
                         cwd,
                         env=self._subprocess_env,
                         active_proc=active_proc,
+                        ready_timeout=self._agent_start_timeout_seconds(),
                     )
                     stream = iterator
                 else:
@@ -2145,7 +2165,10 @@ class CursorProvider:
                             self._unregister_tracked_turn_proc(proc)
 
                 if active_proc[0] is not None:
-                    self._enrich_tracked_turn_proc(active_proc[0], timeout=0)
+                    self._enrich_tracked_turn_proc(
+                        active_proc[0],
+                        timeout=max(0.05, min(0.5, self._agent_start_timeout_seconds())),
+                    )
 
                 if idle_timeout > 0:
                     context = self._get_collect_context()

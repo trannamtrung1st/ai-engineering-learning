@@ -85,6 +85,7 @@ def janitor_command(
     *,
     status_fd: int | None = None,
     started_fd: int | None = None,
+    ready_timeout: float | None = None,
 ) -> list[str]:
     """Return argv that runs *agent_argv* under this session-leader janitor."""
 
@@ -93,6 +94,8 @@ def janitor_command(
         command.extend(["--status-fd", str(status_fd)])
     if started_fd is not None:
         command.extend(["--started-fd", str(started_fd)])
+    if ready_timeout is not None:
+        command.extend(["--ready-timeout", f"{max(0.0, ready_timeout):.6f}"])
     command.append("--")
     command.extend(agent_argv)
     return command
@@ -918,6 +921,7 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
     agent_code = 0
     stop_requested = False
     cleanup_budget: float | None = None
+    ready_timeout: float | None = None
     while len(args) >= 2 and args[0].startswith("--") and args[0] != "--":
         flag = args[0]
         raw_value = args[1]
@@ -945,6 +949,8 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
                 stop_requested = raw_value in {"1", "true", "True"}
             elif flag == "--cleanup-budget":
                 cleanup_budget = float(raw_value)
+            elif flag == "--ready-timeout":
+                ready_timeout = float(raw_value)
             else:
                 args = [flag, raw_value, *args]
                 break
@@ -963,6 +969,7 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
         "agent_code": agent_code,
         "stop_requested": stop_requested,
         "cleanup_budget": cleanup_budget,
+        "ready_timeout": ready_timeout,
     }
     return status_fd, args, extra
 
@@ -1047,11 +1054,17 @@ def _reap_verifier(proc: subprocess.Popen[Any] | None, *, timeout: float = 0.0) 
     leftover = max(0.0, timeout)
     waitpid = getattr(os, "waitpid", None)
     pid = getattr(proc, "pid", None)
-    if waitpid is not None and pid:
+    deadline = time.monotonic() + leftover
+    while waitpid is not None and pid:
         try:
-            waitpid(pid, os.WNOHANG)
+            waited, _status = waitpid(pid, os.WNOHANG)
         except (ChildProcessError, OSError):
-            pass
+            break
+        if waited:
+            break
+        if leftover <= 0 or time.monotonic() >= deadline:
+            break
+        time.sleep(0.01)
     if leftover <= 0:
         try:
             proc.poll()
@@ -1064,17 +1077,25 @@ def _reap_verifier(proc: subprocess.Popen[Any] | None, *, timeout: float = 0.0) 
         pass
 
 
-def _await_go(go_fd: int | None, timeout: float) -> bool:
+def _await_go(go_fd: int | None, timeout: float) -> tuple[bool, float | None]:
     if go_fd is None:
-        return False
+        return False, None
     try:
         ready, _, _ = select.select([go_fd], [], [], max(0.0, timeout))
         if not ready:
-            return False
-        data = os.read(go_fd, 16)
+            return False, None
+        data = os.read(go_fd, 32)
     except OSError:
-        return False
-    return data.startswith(b"GO")
+        return False, None
+    if not data.startswith(b"GO"):
+        return False, None
+    parts = data.split()
+    if len(parts) < 2:
+        return True, None
+    try:
+        return True, max(0.0, float(parts[1]))
+    except ValueError:
+        return True, None
 
 
 def _hold_ownership_anchor(deadline: CleanupDeadline) -> None:
@@ -1200,7 +1221,7 @@ def _handoff_group_escalation(
         _reap_verifier(proc, timeout=max(0.0, deadline.remaining()))
         return None
     try:
-        os.write(go_w, b"GO\n")
+        os.write(go_w, f"GO {max(0.0, deadline.remaining()):.6f}\n".encode())
     except OSError:
         _close_fd(go_w)
         _close_fd(result_r)
@@ -1261,11 +1282,14 @@ def _run_escalation(
             return 0
         _close_fd(handshake_fd)
     timeout = _ESCALATE_HANDOFF_SECONDS if go_timeout is None else go_timeout
-    if not _await_go(go_fd, timeout):
+    go_ok, go_remaining = _await_go(go_fd, timeout)
+    if not go_ok:
         _close_fd(go_fd)
         _close_fd(result_fd)
         return 0
     _close_fd(go_fd)
+    if go_remaining is not None:
+        cleanup_budget = go_remaining
 
     def publish_failure(cleanup_error: str, *, error: str) -> int:
         payload = {
@@ -1417,7 +1441,11 @@ def main(
     )
     stdout_thread.start()
     stderr_thread.start()
-    ready_deadline = time.monotonic() + 1.0
+    ready_deadline = time.monotonic() + (
+        float(extra["ready_timeout"])
+        if extra.get("ready_timeout") is not None
+        else 1.0
+    )
     stdout_ok = stdout_ready.wait(timeout=max(0.0, ready_deadline - time.monotonic()))
     stderr_ok = stderr_ready.wait(timeout=max(0.0, ready_deadline - time.monotonic()))
     started_fd = extra.get("started_fd")
@@ -1455,11 +1483,6 @@ def main(
     drain = drain_once()
     return_code = _wait_agent(agent, cleanup_deadline)
     join_proxies(bound=min(_PROXY_JOIN_SECONDS, 0.2))
-    if stdout_thread.is_alive() or stderr_thread.is_alive():
-        stop_copy.set()
-        stdout_thread.join(timeout=min(0.05, max(0.0, cleanup_deadline.remaining())))
-        stderr_thread.join(timeout=min(0.05, max(0.0, cleanup_deadline.remaining())))
-        _close_inherited_stdio_write_ends()
     if observed == 0:
         return_code = 0
     if return_code is None:

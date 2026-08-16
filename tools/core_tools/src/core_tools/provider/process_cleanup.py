@@ -547,8 +547,8 @@ class SpawnedSession:
         try:
             waited, status = os.waitpid(self.pid, os.WNOHANG)
         except ChildProcessError:
-            self.returncode = 0
-            return 0
+            self.returncode = -1
+            return -1
         if waited == 0:
             return None
         self.returncode = os.waitstatus_to_exitcode(status)
@@ -592,6 +592,10 @@ def posix_spawn_session_leader(
         raise OSError("posix_spawn is required")
     command = [str(part) for part in argv]
     environment = dict(os.environ if env is None else env)
+    keep = {0, 1, 2}
+    if stdout_fd is not None:
+        keep.add(int(stdout_fd))
+    keep.update(int(fd) for fd in inherit_fds)
     actions: list[tuple[Any, ...]] = [
         (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),
         (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0),
@@ -609,6 +613,15 @@ def posix_spawn_session_leader(
             os.set_inheritable(int(fd), True)
         except OSError:
             pass
+    for fd in _open_fds():
+        if fd in keep:
+            continue
+        try:
+            inheritable = os.get_inheritable(fd)
+        except OSError:
+            continue
+        if inheritable:
+            actions.append((os.POSIX_SPAWN_CLOSE, fd))
     try:
         pid = spawn(
             command[0],
@@ -617,17 +630,25 @@ def posix_spawn_session_leader(
             file_actions=tuple(actions),
             setsid=True,
         )
-    except TypeError:
-        try:
-            pid = spawn(
-                command[0],
-                command,
-                environment,
-                file_actions=tuple(actions),
-            )
-        except TypeError:
-            pid = spawn(command[0], command, environment)
+    except TypeError as exc:
+        raise OSError("posix_spawn must support setsid and file_actions") from exc
     return SpawnedSession(pid)
+
+
+def _open_fds() -> list[int]:
+    for path in ("/dev/fd", "/proc/self/fd"):
+        try:
+            names = os.listdir(path)
+        except OSError:
+            continue
+        fds: list[int] = []
+        for name in names:
+            try:
+                fds.append(int(name))
+            except ValueError:
+                continue
+        return fds
+    return []
 
 
 __all__ = [

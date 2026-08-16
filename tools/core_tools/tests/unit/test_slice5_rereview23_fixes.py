@@ -28,7 +28,6 @@ from core_tools.provider.session_janitor import (
     _process_start_token,
     _run_escalation,
     decode_janitor_status,
-    main as janitor_main,
 )
 
 
@@ -428,32 +427,22 @@ def test_killpg_eperm_publishes_public_unverifiable_status_through_main() -> Non
     def boom(_pgid: int, _sig: int) -> None:
         raise OSError(errno.EPERM, "Operation not permitted")
 
-    argv = [
-        "--status-fd",
-        str(status_w),
-        "--escalate-pgid",
-        "999999",
-        "--handshake-fd",
-        str(handshake_w),
-        "--go-fd",
-        str(go_r),
-        "--result-fd",
-        str(result_w),
-        "--agent-code",
-        "0",
-        "--stop-requested",
-        "0",
-        "--leader-pid",
-        str(os.getpid()),
-        "--leader-start",
-        _process_start_token(os.getpid()) or "token",
-    ]
     with patch(
         "core_tools.provider.session_janitor._leader_still_owns_group",
         return_value=True,
     ):
         with patch("core_tools.provider.session_janitor.os.killpg", side_effect=boom):
-            code = janitor_main(argv, status_fd=status_w)
+            code = _run_escalation(
+                pgid=999999,
+                status_fd=status_w,
+                handshake_fd=handshake_w,
+                go_fd=go_r,
+                result_fd=result_w,
+                agent_code=0,
+                stop_requested=False,
+                leader_pid=os.getpid(),
+                leader_start=_process_start_token(os.getpid()) or "token",
+            )
     os.close(handshake_r)
     os.close(status_w)
     status = decode_janitor_status(_read_fd(status_r))

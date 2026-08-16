@@ -41,33 +41,43 @@ def test_constructor_helper_is_the_worker_not_a_supervisor() -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX boundary worker")
-def test_host_popen_never_returning_does_not_wedge_or_grow_owners() -> None:
+def test_host_posix_spawn_never_returning_does_not_grow_owners() -> None:
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker
 
+    blocked = threading.Event()
+
     def never_return(*_args, **_kwargs):
-        time.sleep(60)
-        raise AssertionError("subprocess.Popen returned")
+        blocked.wait(timeout=30)
+        raise OSError("posix_spawn still blocked")
 
     baseline_threads = len(_popen_threads())
     baseline_fds = _fd_count()
-    with patch(
-        "top_down_planning.orchestrator.provider_turns.subprocess.Popen",
-        never_return,
-    ), patch("subprocess.Popen", never_return):
-        for _ in range(20):
-            worker = BoundaryWorker()
-            worker.start(deadline=time.monotonic() + 0.08, wait_ready=False)
-            try:
-                worker.close(cleanup_timeout=0.2)
-            except ProviderRunError:
-                pass
-            assert len(_popen_threads()) <= baseline_threads
-            assert owned_boundary_workers() == ()
-            assert unreaped_boundary_workers() == ()
-            assert _fd_count() <= baseline_fds + 8
-    assert len(_popen_threads()) <= baseline_threads
-    assert owned_boundary_workers() == ()
-    assert unreaped_boundary_workers() == ()
+    try:
+        with patch("os.posix_spawn", never_return), patch(
+            "core_tools.provider.process_cleanup.os.posix_spawn",
+            never_return,
+        ):
+            for _ in range(20):
+                worker = BoundaryWorker()
+                try:
+                    worker.start(deadline=time.monotonic() + 0.08, wait_ready=False)
+                except ProviderRunError:
+                    pass
+                try:
+                    worker.close(cleanup_timeout=0.15)
+                except ProviderRunError:
+                    pass
+                assert len(_popen_threads()) <= baseline_threads + 1
+                assert owned_boundary_workers() == ()
+                assert unreaped_boundary_workers() == ()
+                assert _fd_count() <= baseline_fds + 8
+        assert len(_popen_threads()) <= baseline_threads + 1
+        assert owned_boundary_workers() == ()
+        assert unreaped_boundary_workers() == ()
+    finally:
+        blocked.set()
+        for thread in _popen_threads():
+            thread.join(timeout=1.0)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX boundary worker")
