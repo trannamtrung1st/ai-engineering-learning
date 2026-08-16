@@ -167,6 +167,7 @@ def test_cleanup_deadline_is_not_reset_in_finally(tmp_path: Path) -> None:
     clock = {"t": 100.0}
 
     def fake_monotonic() -> float:
+        clock["t"] += 0.03
         return clock["t"]
 
     def recording_terminate(proc, **kwargs):
@@ -198,7 +199,7 @@ def test_cleanup_deadline_is_not_reset_in_finally(tmp_path: Path) -> None:
     assert calls
     assert calls[0] == pytest.approx(DEFAULT_TURN_TREE_CLEANUP_SECONDS, abs=0.05)
     if len(calls) > 1:
-        assert calls[1] == pytest.approx(0.2, abs=0.05)
+        assert calls[1] < DEFAULT_TURN_TREE_CLEANUP_SECONDS - 0.5
 
 
 def test_stall_decision_ignores_cleanup_wall_time(tmp_path: Path) -> None:

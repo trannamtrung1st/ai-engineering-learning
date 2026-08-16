@@ -8,7 +8,13 @@ from typing import Any
 
 from core_tools.observability import ConsoleEvent
 from core_tools.provider import Provider
-from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
+from core_tools.provider.process_cleanup import (
+    PidInspectState,
+    inspect_pid_liveness,
+    is_pid_alive,
+    is_pid_reaped,
+    terminate_pid_tree,
+)
 from core_tools.provider.process_identity import (
     IdentityInspectState,
     ProcessIdentity,
@@ -37,6 +43,12 @@ AppendEvent = Callable[..., None]
 EmitConsole = Callable[[ConsoleEvent], None]
 
 _PRIMARY_ROLES = frozenset({"planner", "producer"})
+
+
+def _pid_still_present(pid: int) -> bool:
+    if is_pid_alive(pid):
+        return True
+    return inspect_pid_liveness(pid) is PidInspectState.ZOMBIE
 
 
 @dataclass(frozen=True)
@@ -184,6 +196,9 @@ def _retry_terminate_pids(
     read_environ = read_pid_environ or default_read_pid_environ
     for pid in pids:
         if not is_pid_alive(pid):
+            if is_pid_reaped(pid):
+                continue
+            unresolved.append(pid)
             continue
         if run_id is not None:
             match = classify_pid_run_agent(run_id, pid, read_environ=read_environ)
@@ -398,9 +413,12 @@ def teardown_provider_sessions(
             verified_terminated.extend(orphan_retry.terminated)
             stale_reconciled.extend(orphan_retry.stale_reconciled)
             survivors = sorted(
-                set(survivors)
-                | set(orphan_retry.failed)
-                | set(orphan_retry.unresolved)
+                (
+                    set(survivors)
+                    | set(orphan_retry.failed)
+                    | set(orphan_retry.unresolved)
+                )
+                - set(verified_terminated)
             )
             remaining_scan = scan_orphan_agents(
                 run_id,
@@ -421,7 +439,7 @@ def teardown_provider_sessions(
             reconcile(reconcile_pids)
 
         for pid in survivors:
-            if is_pid_alive(pid):
+            if _pid_still_present(pid):
                 append_event(
                     "agent_orphan_cleanup_failed",
                     pid=pid,
@@ -469,7 +487,7 @@ def teardown_provider_sessions(
                 pass
 
     verified_terminated = sorted(set(verified_terminated))
-    alive_survivors = tuple(pid for pid in survivors if is_pid_alive(pid))
+    alive_survivors = tuple(pid for pid in survivors if _pid_still_present(pid))
     remaining_active = provider.list_active_sessions()
     if alive_survivors:
         raise ProviderTeardownError(
@@ -528,12 +546,12 @@ def verify_run_agent_survivors(
         {
             int(pid)
             for pid in cleanup.failed_pids
-            if is_pid_alive(pid)
+            if _pid_still_present(pid)
         }
         | {
             int(pid)
             for pid in known_surviving_pids
-            if is_pid_alive(pid)
+            if _pid_still_present(pid)
         }
     )
     remaining_scan = scan_orphan_agents(
@@ -542,10 +560,10 @@ def verify_run_agent_survivors(
         terminated_pids=verified_terminated,
     )
     for pid in remaining_scan.unverifiable_pids:
-        if is_pid_alive(pid) and pid not in survivors:
+        if _pid_still_present(pid) and pid not in survivors:
             survivors.append(pid)
     for identity in remaining_scan.kill_candidates:
-        if is_pid_alive(identity.pid) and identity.pid not in survivors:
+        if _pid_still_present(identity.pid) and identity.pid not in survivors:
             survivors.append(identity.pid)
     return TeardownVerificationResult(
         terminated_pids=tuple(verified_terminated),

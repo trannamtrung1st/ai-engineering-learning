@@ -78,9 +78,9 @@ def test_drain_starts_one_boundary_worker_for_many_events() -> None:
     starts = {"n": 0}
     real_start = BoundaryWorker.start
 
-    def counting_start(self, *, deadline: float | None = None) -> None:
+    def counting_start(self, *, deadline: float | None = None, wait_ready: bool = True, **kwargs) -> None:
         starts["n"] += 1
-        return real_start(self, deadline=deadline)
+        return real_start(self, deadline=deadline, wait_ready=wait_ready, **kwargs)
 
     with patch.object(BoundaryWorker, "start", counting_start):
         result = _drain_provider_turn(
@@ -100,9 +100,9 @@ def test_silent_provider_does_not_respawn_boundary_worker() -> None:
     starts = {"n": 0}
     real_start = BoundaryWorker.start
 
-    def counting_start(self, *, deadline: float | None = None) -> None:
+    def counting_start(self, *, deadline: float | None = None, wait_ready: bool = True, **kwargs) -> None:
         starts["n"] += 1
-        return real_start(self, deadline=deadline)
+        return real_start(self, deadline=deadline, wait_ready=wait_ready, **kwargs)
 
     provider = _RecordingDrainProvider()
     with patch.object(BoundaryWorker, "start", counting_start), patch(

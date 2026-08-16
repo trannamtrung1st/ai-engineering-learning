@@ -376,9 +376,6 @@ def test_cursor_drain_abort_leaves_no_event_pump(tmp_path: Path) -> None:
     with patch(
         "top_down_planning.orchestrator.provider_turns.ABORT_TURN_SECONDS",
         0.4,
-    ), patch(
-        "top_down_planning.orchestrator.provider_turns.BOUNDARY_POLL_JOIN_SECONDS",
-        0.4,
     ):
         result = _drain_provider_turn(
             provider,

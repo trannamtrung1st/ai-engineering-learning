@@ -466,7 +466,7 @@ def terminate_process_tree(
         }
         while True:
             try:
-                pid, _status = os.waitpid(-1, os.WNOHANG)
+                pid, _status = os.waitpid(proc.pid, os.WNOHANG)
             except (ChildProcessError, OSError):
                 break
             if pid == 0:
@@ -474,7 +474,7 @@ def terminate_process_tree(
         return complete_bound_secondary_clean(proc, payload)
     while True:
         try:
-            pid, _status = os.waitpid(-1, os.WNOHANG)
+            pid, _status = os.waitpid(proc.pid, os.WNOHANG)
         except (ChildProcessError, OSError):
             break
         if pid == 0:

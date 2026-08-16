@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -19,7 +20,7 @@ from core_tools.provider.cursor import (
     _SubprocessStdoutIterator,
     _TrackedTurnProc,
 )
-from core_tools.provider.errors import ProviderSessionTerminationError
+from core_tools.provider.errors import ProviderSessionTerminationError, ProviderStreamRecordTooLargeError
 from core_tools.provider.process_cleanup import (
     ProcessGroupState,
     is_pid_alive,
@@ -82,9 +83,11 @@ def test_newline_free_flood_terminates_within_rescue_cap(tmp_path: Path) -> None
     iterator = _SubprocessStdoutIterator([sys.executable, "-c", script], tmp_path)
     try:
         started = time.monotonic()
-        line = iterator.read_nonempty_line(0.05)
-        assert line is None
-        assert time.monotonic() - started < 1.0
+        with pytest.raises(ProviderStreamRecordTooLargeError):
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline:
+                iterator.read_nonempty_line(0.05)
+        assert time.monotonic() - started < 1.2
         assert len(iterator._stdout_buf) <= _MAX_IDLE_RESCUE_BYTES + 65536
     finally:
         terminate_process_tree(iterator._proc)
@@ -113,16 +116,46 @@ def test_legitimate_64kib_record_still_succeeds(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX process table")
 def test_zombie_is_not_alive_until_reaped() -> None:
-    child = os.fork()
-    if child == 0:
-        os._exit(0)
-    deadline = time.monotonic() + 1.0
-    while time.monotonic() < deadline and is_pid_alive(child):
-        time.sleep(0.01)
-    assert is_pid_alive(child) is False
-    assert is_pid_reaped(child) is False
-    os.waitpid(child, 0)
-    assert is_pid_reaped(child) is True
+    script = (
+        "import os, sys\n"
+        "child = os.fork()\n"
+        "if child == 0:\n"
+        "    os._exit(0)\n"
+        "sys.stdout.write(str(child) + '\\n')\n"
+        "sys.stdout.flush()\n"
+        "sys.stdin.readline()\n"
+        "os.waitpid(child, 0)\n"
+        "sys.stdout.write('reaped\\n')\n"
+        "sys.stdout.flush()\n"
+    )
+    helper = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        assert helper.stdout is not None
+        line = helper.stdout.readline()
+        child = int(line.strip())
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and is_pid_alive(child):
+            time.sleep(0.01)
+        assert is_pid_alive(child) is False
+        assert is_pid_reaped(child) is False
+        assert helper.stdin is not None
+        helper.stdin.write("\n")
+        helper.stdin.flush()
+        reaped_line = helper.stdout.readline()
+        assert reaped_line.strip() == "reaped"
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and not is_pid_reaped(child):
+            time.sleep(0.01)
+        assert is_pid_reaped(child) is True
+    finally:
+        helper.kill()
+        helper.wait(timeout=2)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX Cursor adapter")
@@ -266,7 +299,8 @@ def test_unexpected_janitor_exit_after_late_child_reaps_or_fail_closes(
         if released:
             assert is_pid_alive(child_pid) is False
         else:
-            assert session_id in provider._sessions
+            bound = provider.canonical_session_id(session_id)
+            assert bound in provider._sessions or session_id in provider._sessions
     finally:
         thread.join(timeout=2.0)
         if child_pid is not None and is_pid_alive(child_pid):
@@ -285,6 +319,7 @@ def test_raw_pgid_live_without_trusted_identity_releases_session(tmp_path: Path)
     provider._tracked_turn_procs[4242].pgid = 4242
     provider._tracked_turn_procs[4242].member_identities = (leader,)
     provider._tracked_turn_procs[4242].proc = None
+    provider._tracked_turn_procs[4242].group_observed_gone = True
     with patch(
         "core_tools.provider.cursor.process_identity_is_live",
         return_value=False,

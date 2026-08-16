@@ -172,13 +172,6 @@ def assert_no_leftover_python_descendants():
     parent = os.getpid()
     before = set(_python_descendant_pids(parent))
     yield
-    while True:
-        try:
-            pid, _status = os.waitpid(-1, os.WNOHANG)
-        except (ChildProcessError, OSError):
-            break
-        if pid == 0:
-            break
     leftover = {
         pid: cmd
         for pid, cmd in _python_descendant_pids(parent).items()

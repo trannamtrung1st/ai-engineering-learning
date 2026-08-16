@@ -47,6 +47,7 @@ class IdentityInspectState(Enum):
     GONE = "gone"
     IDENTITY_MISMATCH = "identity_mismatch"
     UNVERIFIABLE = "unverifiable"
+    ZOMBIE = "zombie"
 
 
 _MAX_DRAIN_ROUNDS = 10
@@ -229,7 +230,7 @@ def inspect_process_identity(
     if pid_state is PidInspectState.GONE:
         return IdentityInspectState.GONE
     if pid_state is PidInspectState.ZOMBIE:
-        return IdentityInspectState.GONE
+        return IdentityInspectState.ZOMBIE
     if pid_state is PidInspectState.UNVERIFIABLE:
         return IdentityInspectState.UNVERIFIABLE
     current = read_process_identity(
@@ -642,9 +643,23 @@ def _fallback_kill_bound_janitor_group(
         try:
             resolved = os.getpgid(proc.pid)
         except OSError:
-            resolved = proc.pid
+            return _fallback_status(DrainResult.UNVERIFIABLE)
     if resolved is None or resolved <= 0:
         return _fallback_status(DrainResult.UNVERIFIABLE)
+    raw_poll = getattr(proc, "_core_tools_raw_poll", proc.poll)
+    try:
+        leader_exited = raw_poll() is not None if callable(raw_poll) else True
+    except Exception:
+        leader_exited = True
+    if leader_exited:
+        members = list_process_group_pids(int(resolved), timeout=remaining())
+        if members is None:
+            return _fallback_status(DrainResult.UNVERIFIABLE)
+        if any(pid != proc.pid for pid in members):
+            return _fallback_status(DrainResult.UNVERIFIABLE)
+        if is_pid_alive(proc.pid, timeout=remaining()):
+            return _fallback_status(DrainResult.UNVERIFIABLE)
+        return _fallback_status(DrainResult.CLEAN)
     try:
         os.killpg(int(resolved), signal.SIGKILL)
     except OSError as exc:

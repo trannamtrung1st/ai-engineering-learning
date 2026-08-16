@@ -1345,9 +1345,9 @@ def main(
 
     cleanup_deadline = CleanupDeadline.after(JANITOR_CLEANUP_BUDGET_SECONDS)
     stop_copy.set()
-    stdout_thread.join(timeout=min(0.02, max(0.0, cleanup_deadline.remaining())))
-    _close_inherited_stdio_write_ends()
+    stdout_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
     stderr_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
+    _close_inherited_stdio_write_ends()
     observed = agent.poll()
     drain = drain_once()
     return_code = _wait_agent(agent, cleanup_deadline)

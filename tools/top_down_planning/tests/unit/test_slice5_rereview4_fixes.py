@@ -154,19 +154,25 @@ def test_teardown_emits_session_ended_only_after_retry_success() -> None:
                         "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",
                         side_effect=fake_terminate_verified,
                     ):
-                        with patch.object(
-                            provider,
-                            "terminate_all_sessions",
-                            side_effect=mock_terminate_all_sessions,
+                        with patch(
+                            "top_down_planning.orchestrator.provider_teardown.process_identity_is_live",
+                            side_effect=lambda identity, timeout=None: alive.get(
+                                str(identity.pid), False
+                            ),
                         ):
-                            terminated = teardown_provider_sessions(
+                            with patch.object(
                                 provider,
-                                run_id="run-test",
-                                phase=PLANNING,
-                                append_event=append_event,
-                                emit_console=lambda _event: None,
-                                audit_cancel=True,
-                            )
+                                "terminate_all_sessions",
+                                side_effect=mock_terminate_all_sessions,
+                            ):
+                                terminated = teardown_provider_sessions(
+                                    provider,
+                                    run_id="run-test",
+                                    phase=PLANNING,
+                                    append_event=append_event,
+                                    emit_console=lambda _event: None,
+                                    audit_cancel=True,
+                                )
 
     assert terminated == [111]
     ended = [event_type for event_type, _fields in events if event_type == "planner_session_ended"]

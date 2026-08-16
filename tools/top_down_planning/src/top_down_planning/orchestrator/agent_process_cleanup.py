@@ -12,7 +12,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from core_tools.provider.process_cleanup import is_pid_alive, terminate_pid_tree
+from core_tools.provider.process_cleanup import (
+    PidInspectState,
+    inspect_pid_liveness,
+    is_pid_alive,
+    is_pid_reaped,
+    terminate_pid_tree,
+)
 from core_tools.provider.process_identity import (
     ProcessIdentity,
     TerminateIdentityResult,
@@ -32,6 +38,12 @@ ListLivePids = Callable[[], list[int]]
 
 _AGENT_CMD_MARKERS = ("--output-format", "stream-json")
 _RUN_ID_PATTERN = re.compile(rf"(?:^|\s){re.escape(RUN_ID_ENV_VAR)}=([^\s]+)")
+
+
+def _pid_still_present(pid: int) -> bool:
+    if is_pid_alive(pid):
+        return True
+    return inspect_pid_liveness(pid) is PidInspectState.ZOMBIE
 
 
 class PidRunAgentMatch(Enum):
@@ -205,7 +217,7 @@ def classify_pid_run_agent(
     """Classify whether *pid* is the same run agent, a reused PID, or unverifiable."""
 
     read_env = read_environ or default_read_pid_environ
-    if not is_pid_alive(pid):
+    if not is_pid_alive(pid) and is_pid_reaped(pid):
         return PidRunAgentMatch.CONFIRMED_DIFFERENT
     environ = read_env(pid)
     env_run_id = str(environ.get(RUN_ID_ENV_VAR) or "").strip()
@@ -280,6 +292,9 @@ def scan_orphan_agents(
             return
         seen.add(pid)
         if not is_pid_alive(pid):
+            if is_pid_reaped(pid):
+                return
+            unverifiable.append(pid)
             return
         match = classify_pid_run_agent(run_id, pid, read_environ=read_environ)
         if match == PidRunAgentMatch.UNVERIFIABLE:
@@ -371,6 +386,9 @@ def kill_orphan_agents(
     stale_reconciled: list[int] = []
     for pid in orphan_pids:
         if not is_pid_alive(pid):
+            if is_pid_reaped(pid):
+                continue
+            failed.append(pid)
             continue
         identity = _build_kill_candidate_identity(
             run_id,
@@ -429,7 +447,7 @@ def kill_orphan_agents(
         pid = identity.pid
         if pid in cleaned or pid in failed or pid in stale_reconciled:
             continue
-        if is_pid_alive(pid):
+        if _pid_still_present(pid):
             failed.append(pid)
     return OrphanCleanupResult(
         cleaned_pids=tuple(sorted(set(cleaned))),
@@ -463,12 +481,12 @@ def finalize_user_cancel(
             {
                 int(pid)
                 for pid in cleanup.failed_pids
-                if is_pid_alive(pid)
+                if _pid_still_present(pid)
             }
             | {
                 int(pid)
                 for pid in known_surviving_pids
-                if is_pid_alive(pid)
+                if _pid_still_present(pid)
             }
         )
         remaining = scan_orphan_agent_pids(
@@ -477,7 +495,7 @@ def finalize_user_cancel(
             terminated_pids=verified_terminated,
         )
         for pid in remaining:
-            if is_pid_alive(pid) and pid not in surviving_pids:
+            if _pid_still_present(pid) and pid not in surviving_pids:
                 surviving_pids.append(pid)
         surviving_pids = sorted(set(surviving_pids))
         cleanup_complete = not surviving_pids

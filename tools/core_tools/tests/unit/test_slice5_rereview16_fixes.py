@@ -238,7 +238,7 @@ def test_live_group_without_observed_gone_stays_unresolved(tmp_path: Path) -> No
         ):
             assert provider._tracked_tree_is_live(
                 provider._tracked_turn_procs[4242]
-            ) is False
+            ) is True
 
 
 def test_unrelated_unreadable_proc_does_not_poison_target_group(monkeypatch) -> None:

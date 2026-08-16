@@ -68,7 +68,7 @@ def test_zero_budget_drains_all_readable_bytes(tmp_path: Path, size: int) -> Non
     payload = _assistant(blob)
     script = (
         "import sys, time\n"
-        f"sys.stdout.write({_system_init('chat-drain')!r} + '\\n' + {payload!r})\n"
+        f"sys.stdout.write({_system_init('chat-drain')!r} + '\\n' + {payload!r} + '\\n')\n"
         "sys.stdout.flush()\n"
         "time.sleep(60)\n"
     )
@@ -118,7 +118,7 @@ def test_zero_budget_preserves_multiple_buffered_lines(tmp_path: Path) -> None:
     lines = [_system_init("chat-multi"), _assistant("one"), _assistant("two")]
     script = (
         "import sys, time\n"
-        f"sys.stdout.write({repr(chr(10).join(lines))})\n"
+        f"sys.stdout.write({repr(chr(10).join(lines))} + '\\n')\n"
         "sys.stdout.flush()\n"
         "time.sleep(60)\n"
     )
@@ -219,6 +219,7 @@ def test_live_pgid_without_trusted_identity_is_consistent_across_teardown_apis(
     provider._tracked_turn_procs[4242].pgid = 4242
     provider._tracked_turn_procs[4242].member_identities = (leader,)
     provider._tracked_turn_procs[4242].proc = None
+    provider._tracked_turn_procs[4242].group_observed_gone = True
 
     with patch(
         "core_tools.provider.cursor.process_identity_is_live",

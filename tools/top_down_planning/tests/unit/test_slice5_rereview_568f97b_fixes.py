@@ -78,8 +78,8 @@ def test_standalone_invoke_includes_startup_in_timeout() -> None:
 def test_drain_startup_failure_still_settles_provider_turn() -> None:
     provider = _RecordingDrainProvider(yield_event={"type": "assistant", "text": "x"})
 
-    def boom(self, *, deadline: float | None = None) -> None:
-        del self, deadline
+    def boom(self, *, deadline: float | None = None, wait_ready: bool = True, **kwargs) -> None:
+        del self, deadline, wait_ready, kwargs
         raise RuntimeError("worker start failed")
 
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker

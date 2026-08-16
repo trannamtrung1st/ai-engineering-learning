@@ -31,6 +31,7 @@ from core_tools.provider.errors import (
     ProviderTurnCleanupError,
     ProviderTurnError,
     ProviderTurnStalledError,
+    ProviderStreamRecordTooLargeError,
     ProviderLifecycleTimeoutError,
     ProviderUnsupportedPlatformError,
 )
@@ -409,45 +410,37 @@ class _SubprocessStdoutIterator(Iterator[str]):
             if self._stdout_buf and b"\n" not in self._stdout_buf:
                 self._stdout_buf.extend(b"\n")
             return bool(self._stdout_buf) or self._stdout_eof
-        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        idle_window = None if timeout is None else max(0.0, timeout)
+        idle_deadline = None if idle_window is None else time.monotonic() + idle_window
         while True:
             if b"\n" in self._stdout_buf:
                 return True
             if len(self._stdout_buf) >= _MAX_IDLE_RESCUE_BYTES:
-                return False
-            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
-            if deadline is not None and remaining <= 0:
-                while b"\n" not in self._stdout_buf and not self._stdout_eof:
-                    if len(self._stdout_buf) >= _MAX_IDLE_RESCUE_BYTES:
-                        return False
-                    if not self._fill_stdout_buffer(0.0):
-                        break
+                raise ProviderStreamRecordTooLargeError(
+                    f"stream-json record exceeded {_MAX_IDLE_RESCUE_BYTES} bytes"
+                )
+            remaining = (
+                None if idle_deadline is None else max(0.0, idle_deadline - time.monotonic())
+            )
+            got = self._fill_stdout_buffer(remaining)
+            if got:
                 if self._proc.poll() is not None and not self._stdout_eof:
                     self._drain_stdout_to_eof()
                 if self._stdout_eof or self._proc.poll() is not None:
                     if self._stdout_buf and b"\n" not in self._stdout_buf:
                         self._stdout_buf.extend(b"\n")
-                    return bool(self._stdout_buf) or self._stdout_eof
-                if b"\n" in self._stdout_buf:
                     return True
-                if (
-                    timeout == 0.0
-                    and self._stdout_buf
-                    and len(self._stdout_buf) < _MAX_IDLE_RESCUE_BYTES
-                ):
-                    self._stdout_buf.extend(b"\n")
-                    return True
+                if idle_deadline is not None and idle_window is not None:
+                    idle_deadline = time.monotonic() + idle_window
+                continue
+            if idle_deadline is None:
+                continue
+            if remaining <= 0:
+                if len(self._stdout_buf) >= _MAX_IDLE_RESCUE_BYTES:
+                    raise ProviderStreamRecordTooLargeError(
+                        f"stream-json record exceeded {_MAX_IDLE_RESCUE_BYTES} bytes"
+                    )
                 return False
-            if not self._fill_stdout_buffer(remaining):
-                if deadline is None:
-                    continue
-                return b"\n" in self._stdout_buf
-            if self._stdout_eof or self._proc.poll() is not None:
-                if self._proc.poll() is not None and not self._stdout_eof:
-                    self._drain_stdout_to_eof()
-                if self._stdout_buf and b"\n" not in self._stdout_buf:
-                    self._stdout_buf.extend(b"\n")
-                return True
 
     def __next__(self) -> str:
         if self._finished:
@@ -1910,7 +1903,7 @@ class CursorProvider:
                 return True
             if entry.group_observed_gone:
                 return False
-            return False
+            return True
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )
@@ -2050,13 +2043,6 @@ class CursorProvider:
                         first = next(lines)
                     except StopIteration:
                         return
-                    if (
-                        active_proc[0] is not None
-                        and teardown_deadline[0] is None
-                    ):
-                        teardown_deadline[0] = (
-                            time.monotonic() + DEFAULT_TURN_TREE_CLEANUP_SECONDS
-                        )
                     yield first
                     yield from lines
 

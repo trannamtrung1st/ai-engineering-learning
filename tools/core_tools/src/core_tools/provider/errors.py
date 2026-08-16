@@ -63,6 +63,10 @@ class ProviderTurnStalledError(ProviderTurnError):
     """A provider turn produced no stream output within the configured idle window."""
 
 
+class ProviderStreamRecordTooLargeError(ProviderTurnError):
+    """A stream-json record exceeded the bounded line-assembly limit."""
+
+
 class ProviderTurnCleanupError(ProviderTurnError):
     """A provider turn completed but janitor process-group cleanup was not verified."""
 

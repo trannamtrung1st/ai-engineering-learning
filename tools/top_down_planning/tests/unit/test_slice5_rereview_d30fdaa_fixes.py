@@ -161,9 +161,9 @@ def test_unserializable_callback_creates_no_worker() -> None:
     starts = {"n": 0}
     real_start = BoundaryWorker.start
 
-    def counting_start(self, *, deadline: float | None = None) -> None:
+    def counting_start(self, *, deadline: float | None = None, wait_ready: bool = True, **kwargs) -> None:
         starts["n"] += 1
-        return real_start(self, deadline=deadline)
+        return real_start(self, deadline=deadline, wait_ready=wait_ready, **kwargs)
 
     def nested() -> str | None:
         threading.Event().wait()
