@@ -140,7 +140,7 @@ def test_reused_pgid_with_mismatched_identities_is_not_owned(tmp_path: Path) -> 
         assert provider._tracked_tree_is_live(entry) is False
 
 
-def test_late_child_gone_identities_with_live_group_stay_owned(tmp_path: Path) -> None:
+def test_late_child_gone_identities_with_live_group_are_not_pinned(tmp_path: Path) -> None:
     provider = _provider(tmp_path, runner=lambda argv, cwd: iter(()), idle=0.0)
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     leader = ProcessIdentity(pid=4242, start_time="100")
@@ -161,7 +161,7 @@ def test_late_child_gone_identities_with_live_group_stay_owned(tmp_path: Path) -
         "core_tools.provider.cursor.inspect_process_identity",
         return_value=IdentityInspectState.GONE,
     ):
-        assert provider._tracked_tree_is_live(entry) is True
+        assert provider._tracked_tree_is_live(entry) is False
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")

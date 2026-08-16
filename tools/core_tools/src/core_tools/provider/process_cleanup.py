@@ -600,19 +600,26 @@ def posix_spawn_session_leader(
         (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),
         (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0),
     ]
-    if stdout_fd is not None:
-        actions.insert(1, (os.POSIX_SPAWN_DUP2, int(stdout_fd), 1))
+    restored: list[tuple[int, bool]] = []
+
+    def _mark_inheritable(fd: int) -> None:
         try:
-            os.set_inheritable(int(stdout_fd), True)
+            previous = os.get_inheritable(fd)
+        except OSError:
+            return
+        restored.append((fd, previous))
+        try:
+            os.set_inheritable(fd, True)
         except OSError:
             pass
+
+    if stdout_fd is not None:
+        actions.insert(1, (os.POSIX_SPAWN_DUP2, int(stdout_fd), 1))
+        _mark_inheritable(int(stdout_fd))
     else:
         actions.insert(1, (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0))
     for fd in inherit_fds:
-        try:
-            os.set_inheritable(int(fd), True)
-        except OSError:
-            pass
+        _mark_inheritable(int(fd))
     for fd in _open_fds():
         if fd in keep:
             continue
@@ -632,6 +639,12 @@ def posix_spawn_session_leader(
         )
     except TypeError as exc:
         raise OSError("posix_spawn must support setsid and file_actions") from exc
+    finally:
+        for fd, previous in restored:
+            try:
+                os.set_inheritable(fd, previous)
+            except OSError:
+                pass
     return SpawnedSession(pid)
 
 

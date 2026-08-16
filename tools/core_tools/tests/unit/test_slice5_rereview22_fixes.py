@@ -331,6 +331,7 @@ def _escalation_argv(
     stop_requested: bool,
     leader_pid: int,
     leader_start: str | None = None,
+    cleanup_budget: float | None = None,
 ) -> list[str]:
     argv = [
         "--escalate-pgid",
@@ -350,4 +351,8 @@ def _escalation_argv(
     ]
     if status_fd is not None:
         argv = ["--status-fd", str(status_fd), *argv]
+    if leader_start:
+        argv.extend(["--leader-start", leader_start])
+    if cleanup_budget is not None:
+        argv.extend(["--cleanup-budget", f"{max(0.0, cleanup_budget):.6f}"])
     return argv

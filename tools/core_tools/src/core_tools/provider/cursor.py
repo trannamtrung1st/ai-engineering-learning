@@ -2026,8 +2026,8 @@ class CursorProvider:
                     state is IdentityInspectState.IDENTITY_MISMATCH for state in states
                 ):
                     return False
-                return True
-            return False
+                return False
+            return True
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )
@@ -2164,12 +2164,6 @@ class CursorProvider:
                         if not live:
                             self._unregister_tracked_turn_proc(proc)
 
-                if active_proc[0] is not None:
-                    self._enrich_tracked_turn_proc(
-                        active_proc[0],
-                        timeout=max(0.05, min(0.5, self._agent_start_timeout_seconds())),
-                    )
-
                 if idle_timeout > 0:
                     context = self._get_collect_context()
                     stalled_session_id = context[0] if context is not None else None
@@ -2190,6 +2184,14 @@ class CursorProvider:
                     except StopIteration:
                         return
                     yield first
+                    proc = active_proc[0]
+                    if proc is not None:
+                        self._enrich_tracked_turn_proc(
+                            proc,
+                            timeout=max(
+                                0.05, min(0.5, self._agent_start_timeout_seconds())
+                            ),
+                        )
                     yield from lines
 
                 yield from _observe()

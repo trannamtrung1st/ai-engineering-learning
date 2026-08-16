@@ -1052,9 +1052,9 @@ def _reap_verifier(proc: subprocess.Popen[Any] | None, *, timeout: float = 0.0) 
             except OSError:
                 pass
     leftover = max(0.0, timeout)
+    deadline = time.monotonic() + leftover
     waitpid = getattr(os, "waitpid", None)
     pid = getattr(proc, "pid", None)
-    deadline = time.monotonic() + leftover
     while waitpid is not None and pid:
         try:
             waited, _status = waitpid(pid, os.WNOHANG)
@@ -1062,17 +1062,19 @@ def _reap_verifier(proc: subprocess.Popen[Any] | None, *, timeout: float = 0.0) 
             break
         if waited:
             break
-        if leftover <= 0 or time.monotonic() >= deadline:
+        remaining = max(0.0, deadline - time.monotonic())
+        if remaining <= 0:
             break
-        time.sleep(0.01)
-    if leftover <= 0:
+        time.sleep(min(0.01, remaining))
+    remaining = max(0.0, deadline - time.monotonic())
+    if remaining <= 0:
         try:
             proc.poll()
         except OSError:
             pass
         return
     try:
-        proc.wait(timeout=leftover)
+        proc.wait(timeout=remaining)
     except (OSError, subprocess.TimeoutExpired):
         pass
 

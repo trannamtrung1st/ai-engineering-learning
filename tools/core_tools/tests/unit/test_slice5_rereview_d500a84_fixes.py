@@ -95,6 +95,27 @@ def test_posix_spawn_typeerror_fails_closed_without_dropping_setsid() -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX spawn")
+def test_posix_spawn_restores_caller_inheritable_flags() -> None:
+    extra_r, extra_w = os.pipe()
+    os.set_inheritable(extra_w, False)
+
+    def fake_spawn(path, argv, env, **kwargs):
+        assert os.get_inheritable(extra_w) is True
+        return 1
+
+    try:
+        with patch("core_tools.provider.process_cleanup.os.posix_spawn", fake_spawn):
+            posix_spawn_session_leader(
+                [sys.executable, "-c", "pass"],
+                inherit_fds=(extra_w,),
+            )
+        assert os.get_inheritable(extra_w) is False
+    finally:
+        os.close(extra_r)
+        os.close(extra_w)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX spawn")
 def test_posix_spawn_closes_non_whitelisted_inheritable_fds() -> None:
     extra_r, extra_w = os.pipe()
     os.set_inheritable(extra_w, True)
@@ -191,7 +212,7 @@ def test_leader_mismatch_with_live_late_member_stays_owned(tmp_path: Path) -> No
         assert provider._tracked_tree_is_live(entry) is True
 
 
-def test_live_pgid_without_identity_anchors_is_not_owned(tmp_path: Path) -> None:
+def test_live_pgid_without_identity_anchors_stays_unresolved(tmp_path: Path) -> None:
     provider = _provider(tmp_path, runner=lambda argv, cwd: iter(()), idle=0.0)
     session_id = provider.start_primary_session("planner", {"goal": "x"})
     provider._tracked_turn_procs[4242] = tracked_turn_proc(session_id, "planner", 4242)
@@ -208,7 +229,7 @@ def test_live_pgid_without_identity_anchors_is_not_owned(tmp_path: Path) -> None
         "core_tools.provider.cursor.process_group_state",
         return_value=ProcessGroupState.LIVE,
     ):
-        assert provider._tracked_tree_is_live(entry) is False
+        assert provider._tracked_tree_is_live(entry) is True
 
 
 def test_wrap_runner_passes_configured_agent_start_timeout(tmp_path: Path) -> None:

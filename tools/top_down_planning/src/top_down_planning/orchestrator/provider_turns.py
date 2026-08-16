@@ -461,7 +461,6 @@ class BoundaryWorker:
         self._spawn_deadline: float | None = None
         self._parent_sock: socket.socket | None = None
         self._child_sock: socket.socket | None = None
-        self._pending_spawn_fds: list[int] = []
 
     def _record_pid(self, proc: Any | None = None) -> None:
         target = proc if proc is not None else self.proc
@@ -511,32 +510,37 @@ class BoundaryWorker:
 
         try:
             identity = getattr(proc, "_tdp_spawn_identity", None)
-            signal_group = identity is not None
+            signal_group = False
             if identity is not None:
                 from core_tools.provider.process_identity import (
                     IdentityInspectState,
                     inspect_process_identity,
                 )
 
-                if (
-                    inspect_process_identity(identity, timeout=0.0)
-                    is IdentityInspectState.IDENTITY_MISMATCH
-                ):
-                    signal_group = False
+                auth_budget = min(0.05, remaining())
+                state = inspect_process_identity(identity, timeout=auth_budget)
+                if state in {
+                    IdentityInspectState.LIVE_MATCH,
+                    IdentityInspectState.ZOMBIE,
+                }:
+                    signal_group = True
             if signal_group:
                 try:
                     os.killpg(proc.pid, 9)
                 except OSError:
                     if BoundaryWorker._proc_alive(proc):
                         proc.kill()
+            elif BoundaryWorker._proc_alive(proc):
+                proc.kill()
         except Exception:
             pass
+        leftover = remaining()
         try:
             wait = getattr(proc, "wait", None)
             if callable(wait):
-                wait(timeout=remaining())
+                wait(timeout=leftover)
             else:
-                proc.join(timeout=remaining())
+                proc.join(timeout=leftover)
         except Exception:
             pass
         if BoundaryWorker._proc_alive(proc):
@@ -582,18 +586,6 @@ class BoundaryWorker:
             raise ProviderRunError("boundary worker died")
         if deadline is not None and deadline - time.monotonic() <= 0:
             raise ProviderRunError("boundary probe exceeded timeout")
-        foreign = [
-            thread
-            for thread in threading.enumerate()
-            if thread.name == "tdp-boundary-popen"
-            and thread.is_alive()
-            and thread is not self._boot_thread
-        ]
-        if foreign:
-            self._launch_error = ProviderRunError("boundary probe exceeded timeout")
-            if wait_ready:
-                raise self._launch_error
-            return
         self._start_cancel.clear()
         self._ready = False
         self._launch_error = None
@@ -651,6 +643,17 @@ class BoundaryWorker:
                 )
             else:
                 proc = type(self)._popen(argv, **popen_kwargs)
+                if proc is not None and getattr(proc, "_tdp_spawn_identity", None) is None:
+                    try:
+                        from core_tools.provider.process_identity import (
+                            read_process_identity,
+                        )
+
+                        ident = read_process_identity(proc.pid, timeout=0.05)
+                        if ident is not None:
+                            setattr(proc, "_tdp_spawn_identity", ident)
+                    except Exception:
+                        pass
         except ProviderUnsupportedPlatformError as exc:
             self._launch_error = exc
             return
@@ -709,7 +712,18 @@ class BoundaryWorker:
     ) -> Any | None:
         result_r, result_w = os.pipe()
         helper = None
-        self._pending_spawn_fds = [result_r, result_w]
+        pipes = {"r": result_r, "w": result_w, "gen": id(self)}
+
+        def _close_pipe(key: str) -> None:
+            fd = pipes.get(key)
+            if fd is None:
+                return
+            pipes[key] = None
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
         try:
             os.set_inheritable(result_r, False)
             helper = posix_spawn_session_leader(
@@ -727,36 +741,45 @@ class BoundaryWorker:
             except Exception:
                 pass
         except BaseException:
-            os.close(result_r)
-            os.close(result_w)
-            self._pending_spawn_fds = []
+            _close_pipe("r")
+            _close_pipe("w")
             raise
-        os.close(result_w)
-        self._pending_spawn_fds = [result_r]
+        _close_pipe("w")
+        late = (
+            self._start_cancel.is_set()
+            or (deadline is not None and time.monotonic() >= deadline)
+        )
+        if late:
+            _close_pipe("r")
+            self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            self._launch_error = ProviderRunError("boundary probe exceeded timeout")
+            return None
         leftover = (
             5.0 if deadline is None else max(0.0, deadline - time.monotonic())
         )
+        read_fd = pipes.get("r")
+        if read_fd is None:
+            self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
+            self._launch_error = ProviderRunError("boundary worker died")
+            return None
         try:
-            ready, _, _ = select.select([result_r], [], [], leftover)
+            ready, _, _ = select.select([read_fd], [], [], leftover)
         except (OSError, ValueError):
             ready = []
         if not ready:
-            os.close(result_r)
-            self._pending_spawn_fds = []
+            _close_pipe("r")
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
             self._launch_error = ProviderRunError("boundary probe exceeded timeout")
             return None
         try:
-            token = os.read(result_r, 16)
+            token = os.read(read_fd, 16)
         except OSError:
-            os.close(result_r)
-            self._pending_spawn_fds = []
+            _close_pipe("r")
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
             self._launch_error = ProviderRunError("boundary worker died")
             return None
-        os.close(result_r)
-        self._pending_spawn_fds = []
-        if not token.startswith(b"OK"):
+        _close_pipe("r")
+        if token.split(b"\n", 1)[0] != b"OK":
             self._reap_local_proc(helper, timeout=BOUNDARY_WORKER_CLEANUP_SECONDS)
             self._launch_error = ProviderRunError("boundary worker died")
             return None
@@ -927,12 +950,6 @@ class BoundaryWorker:
                         pass
             self._parent_sock = None
             self._child_sock = None
-            for fd in self._pending_spawn_fds:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-            self._pending_spawn_fds = []
             if unreaped:
                 self._mark_unreaped()
             else:

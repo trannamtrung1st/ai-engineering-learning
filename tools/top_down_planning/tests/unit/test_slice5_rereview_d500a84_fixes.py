@@ -98,6 +98,24 @@ def test_ok_ready_token_returns_helper() -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX boundary worker")
+def test_okgarbage_ready_token_is_worker_death() -> None:
+    worker = BoundaryWorker()
+    helper = _FakeHelper()
+    reaped: list[object] = []
+    with patch(
+        "top_down_planning.orchestrator.provider_turns.posix_spawn_session_leader",
+        lambda *_a, **_k: helper,
+    ), patch.object(worker, "_reap_local_proc", lambda proc, *, timeout: reaped.append(proc)), patch(
+        "select.select", return_value=([3], [], [])
+    ), patch("os.read", return_value=b"OKgarbage"), patch("os.close"), patch(
+        "os.set_inheritable"
+    ), patch("os.pipe", return_value=(3, 4)):
+        result = worker._popen_via_constructor_helper(7, env={}, deadline=time.monotonic() + 1)
+    assert result is None
+    assert reaped == [helper]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX boundary worker")
 def test_reap_does_not_killpg_on_identity_mismatch() -> None:
     worker = BoundaryWorker()
     helper = _FakeHelper()
@@ -118,6 +136,30 @@ def test_reap_does_not_killpg_on_identity_mismatch() -> None:
     ), patch("os.killpg", side_effect=lambda pgid, sig: signaled.append((pgid, sig))):
         worker._reap_local_proc(helper, timeout=0.05)
     assert signaled == []
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX boundary worker")
+def test_reap_does_not_killpg_when_identity_unverifiable() -> None:
+    worker = BoundaryWorker()
+    helper = _FakeHelper()
+    from core_tools.provider.process_identity import (
+        IdentityInspectState,
+        ProcessIdentity,
+    )
+
+    setattr(
+        helper,
+        "_tdp_spawn_identity",
+        ProcessIdentity(pid=4242, start_time="100"),
+    )
+    signaled: list[tuple[int, int]] = []
+    with patch(
+        "core_tools.provider.process_identity.inspect_process_identity",
+        return_value=IdentityInspectState.UNVERIFIABLE,
+    ), patch("os.killpg", side_effect=lambda pgid, sig: signaled.append((pgid, sig))):
+        worker._reap_local_proc(helper, timeout=0.05)
+    assert signaled == []
+    assert helper.killed is True
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX boundary worker")

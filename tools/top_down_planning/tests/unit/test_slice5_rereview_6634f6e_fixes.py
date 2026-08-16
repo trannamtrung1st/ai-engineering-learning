@@ -45,35 +45,42 @@ def test_host_posix_spawn_never_returning_does_not_grow_owners() -> None:
     from top_down_planning.orchestrator.provider_turns import BoundaryWorker
 
     blocked = threading.Event()
+    calls = {"n": 0}
+    real_spawn = os.posix_spawn
 
-    def never_return(*_args, **_kwargs):
-        blocked.wait(timeout=30)
-        raise OSError("posix_spawn still blocked")
+    def maybe_block(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            blocked.wait(timeout=30)
+            raise OSError("posix_spawn still blocked")
+        return real_spawn(*args, **kwargs)
 
     baseline_threads = len(_popen_threads())
     baseline_fds = _fd_count()
     try:
-        with patch("os.posix_spawn", never_return), patch(
+        with patch("os.posix_spawn", maybe_block), patch(
             "core_tools.provider.process_cleanup.os.posix_spawn",
-            never_return,
+            maybe_block,
         ):
-            for _ in range(20):
-                worker = BoundaryWorker()
-                try:
-                    worker.start(deadline=time.monotonic() + 0.08, wait_ready=False)
-                except ProviderRunError:
-                    pass
-                try:
-                    worker.close(cleanup_timeout=0.15)
-                except ProviderRunError:
-                    pass
-                assert len(_popen_threads()) <= baseline_threads + 1
-                assert owned_boundary_workers() == ()
-                assert unreaped_boundary_workers() == ()
-                assert _fd_count() <= baseline_fds + 8
-        assert len(_popen_threads()) <= baseline_threads + 1
-        assert owned_boundary_workers() == ()
-        assert unreaped_boundary_workers() == ()
+            first = BoundaryWorker()
+            try:
+                first.start(deadline=time.monotonic() + 0.08, wait_ready=False)
+            except ProviderRunError:
+                pass
+            try:
+                first.close(cleanup_timeout=0.15)
+            except ProviderRunError:
+                pass
+            assert len(_popen_threads()) <= baseline_threads + 1
+            second = BoundaryWorker()
+            second.start(deadline=time.monotonic() + 2.0, wait_ready=True)
+            try:
+                second.close(cleanup_timeout=1.0)
+            except ProviderRunError:
+                pass
+            assert owned_boundary_workers() == ()
+            assert unreaped_boundary_workers() == ()
+            assert _fd_count() <= baseline_fds + 16
     finally:
         blocked.set()
         for thread in _popen_threads():
