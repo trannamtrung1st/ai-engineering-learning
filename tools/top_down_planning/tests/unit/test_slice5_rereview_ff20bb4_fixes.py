@@ -92,7 +92,7 @@ def test_blocked_process_start_times_out_without_inline_wait() -> None:
     hang_bootstrap = "import time; time.sleep(60)\n"
     started = time.monotonic()
     with patch(
-        "top_down_planning.orchestrator.provider_turns._WORKER_BOOTSTRAP",
+        "top_down_planning.orchestrator.provider_turns._CONSTRUCTOR_HELPER",
         hang_bootstrap,
     ):
         with pytest.raises(ProviderRunError, match="exceeded timeout"):

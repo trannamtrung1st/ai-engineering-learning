@@ -148,7 +148,11 @@ def test_teardown_emits_session_ended_only_after_retry_success() -> None:
             ):
                 with patch(
                     "top_down_planning.orchestrator.provider_teardown.inspect_process_identity",
-                    return_value=IdentityInspectState.LIVE_MATCH,
+                    side_effect=lambda identity, timeout=None: (
+                        IdentityInspectState.LIVE_MATCH
+                        if alive.get(str(identity.pid), False)
+                        else IdentityInspectState.GONE
+                    ),
                 ):
                     with patch(
                         "top_down_planning.orchestrator.provider_teardown.terminate_verified_process_identity",

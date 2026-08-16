@@ -24,6 +24,7 @@ from core_tools.provider.errors import (
     ProviderTurnStalledError,
     ProviderUnsupportedPlatformError,
 )
+from core_tools.provider.process_cleanup import posix_spawn_session_leader
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.capability import (
     bind_provider_capability,
@@ -325,17 +326,19 @@ _WORKER_BOOTSTRAP = (
     "_boundary_worker_loop(Connection(int(sys.argv[1])))\n"
 )
 _CONSTRUCTOR_HELPER = (
-    "import os, subprocess, sys\n"
+    "import os, sys\n"
+    "from multiprocessing.connection import Connection\n"
+    "from top_down_planning.orchestrator.provider_turns import _boundary_worker_loop\n"
     "child_fd = int(sys.argv[1])\n"
-    "boot = os.environ.pop('TDP_BOUNDARY_BOOTSTRAP', '')\n"
-    "argv = [sys.executable, '-c', boot, str(child_fd)]\n"
-    "proc = subprocess.Popen(\n"
-    "    argv, pass_fds=(child_fd,), close_fds=True, start_new_session=False,\n"
-    "    env=os.environ.copy(),\n"
-    ")\n"
-    "os.close(child_fd)\n"
-    "os.write(1, b'OK\\n')\n"
-    "raise SystemExit(proc.wait() or 0)\n"
+    "try:\n"
+    "    os.write(1, b'OK\\n')\n"
+    "except OSError:\n"
+    "    os._exit(1)\n"
+    "devnull = os.open(os.devnull, os.O_WRONLY)\n"
+    "os.dup2(devnull, 1)\n"
+    "if devnull != 1:\n"
+    "    os.close(devnull)\n"
+    "_boundary_worker_loop(Connection(child_fd))\n"
 )
 
 
@@ -430,6 +433,7 @@ def _boundary_worker_loop(conn: Any) -> None:
 
 
 _WORKER_IPC_ERRORS = (BrokenPipeError, EOFError, OSError, ConnectionError)
+_REAL_POPEN = subprocess.Popen
 
 
 class BoundaryWorker:
@@ -442,7 +446,7 @@ class BoundaryWorker:
     deadline is rejected and reaped. Store-driven boundary polling is POSIX-only.
     """
 
-    _popen = staticmethod(subprocess.Popen)
+    _popen = staticmethod(_REAL_POPEN)
 
     def __init__(self) -> None:
         self.proc: Any | None = None
@@ -505,11 +509,25 @@ class BoundaryWorker:
             return max(0.0, deadline - time.monotonic())
 
         try:
-            if BoundaryWorker._proc_alive(proc):
+            identity = getattr(proc, "_tdp_spawn_identity", None)
+            signal_group = True
+            if identity is not None:
+                from core_tools.provider.process_identity import (
+                    IdentityInspectState,
+                    inspect_process_identity,
+                )
+
+                if (
+                    inspect_process_identity(identity, timeout=0.0)
+                    is IdentityInspectState.IDENTITY_MISMATCH
+                ):
+                    signal_group = False
+            if signal_group:
                 try:
                     os.killpg(proc.pid, 9)
                 except OSError:
-                    proc.kill()
+                    if BoundaryWorker._proc_alive(proc):
+                        proc.kill()
         except Exception:
             pass
         try:
@@ -614,7 +632,7 @@ class BoundaryWorker:
                 "start_new_session": True,
                 "env": env,
             }
-            if type(self)._popen is subprocess.Popen:
+            if type(self)._popen is _REAL_POPEN:
                 proc = self._popen_via_constructor_helper(
                     child_fd, env=env, deadline=deadline
                 )
@@ -655,6 +673,14 @@ class BoundaryWorker:
                     )
                 return
             self.proc = proc
+            try:
+                from core_tools.provider.process_identity import read_process_identity
+
+                ident = read_process_identity(proc.pid, timeout=0.05)
+                if ident is not None:
+                    setattr(proc, "_tdp_spawn_identity", ident)
+            except Exception:
+                pass
             self._record_pid(proc)
             from multiprocessing.connection import Connection
 
@@ -669,16 +695,19 @@ class BoundaryWorker:
         deadline: float | None,
     ) -> Any | None:
         result_r, result_w = os.pipe()
-        helper = subprocess.Popen(
-            [sys.executable, "-c", _CONSTRUCTOR_HELPER, str(child_fd)],
-            stdin=subprocess.DEVNULL,
-            stdout=result_w,
-            stderr=subprocess.DEVNULL,
-            pass_fds=(child_fd, result_w),
-            close_fds=True,
-            start_new_session=True,
-            env=env,
-        )
+        helper = None
+        try:
+            os.set_inheritable(result_r, False)
+            helper = posix_spawn_session_leader(
+                [sys.executable, "-c", _CONSTRUCTOR_HELPER, str(child_fd)],
+                env=env,
+                stdout_fd=result_w,
+                inherit_fds=(child_fd, result_w),
+            )
+        except BaseException:
+            os.close(result_r)
+            os.close(result_w)
+            raise
         os.close(result_w)
         leftover = (
             5.0 if deadline is None else max(0.0, deadline - time.monotonic())

@@ -1,0 +1,288 @@
+"""Slice 5 rereview 6634f6e: startup ownership, handshake readiness, PGID lineage."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import threading
+import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from core_tools.provider.cursor import (
+    CursorProvider,
+    _SubprocessStdoutIterator,
+    default_process_runner,
+)
+from core_tools.provider.errors import ProviderTurnStartupError
+from core_tools.provider.process_cleanup import PidInspectState, ProcessGroupState
+from core_tools.provider.process_identity import IdentityInspectState, ProcessIdentity
+from core_tools.provider.session_janitor import main as janitor_main
+from tests.conftest import tracked_turn_proc
+
+
+def _idle_config(idle: float) -> dict:
+    return {
+        "limits": {
+            "provider": {
+                "turn_idle_timeout_seconds": idle,
+                "max_retries_per_call": 0,
+                "agent_start_timeout_seconds": 2.0,
+            }
+        }
+    }
+
+
+def _provider(tmp_path: Path, runner=None, idle: float = 0.08) -> CursorProvider:
+    agent = tmp_path / "agent"
+    agent.write_text("", encoding="utf-8")
+    return CursorProvider(
+        _idle_config(idle),
+        workspace=tmp_path,
+        runner=runner or default_process_runner,
+        binary=str(agent),
+        skip_probe=True,
+    )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")
+def test_janitor_is_tracked_before_started_byte(tmp_path: Path) -> None:
+    in_wait = threading.Event()
+    release = threading.Event()
+    seen: dict[str, object] = {}
+    original_wait = _SubprocessStdoutIterator.wait_agent_started
+
+    def block_wait(self, timeout=None):
+        seen["started"] = bool(getattr(self, "_agent_started", False))
+        seen["pid"] = getattr(self._proc, "pid", None)
+        in_wait.set()
+        release.wait(timeout=2.0)
+        return original_wait(self, timeout=timeout)
+
+    provider = _provider(tmp_path)
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    errors: list[BaseException] = []
+
+    def consume() -> None:
+        try:
+            with patch.object(_SubprocessStdoutIterator, "wait_agent_started", block_wait):
+                list(provider.stream_events(session_id))
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=consume)
+    thread.start()
+    assert in_wait.wait(timeout=2.0)
+    tracked = dict(provider._tracked_turn_procs)
+    release.set()
+    thread.join(timeout=3.0)
+    assert seen["started"] is False
+    assert seen["pid"] in tracked
+    del errors
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")
+def test_abort_during_startup_reaps_tracked_janitor(tmp_path: Path) -> None:
+    in_wait = threading.Event()
+    original_wait = _SubprocessStdoutIterator.wait_agent_started
+
+    def block_wait(self, timeout=None):
+        in_wait.set()
+        return original_wait(self, timeout=timeout)
+
+    provider = _provider(tmp_path, idle=2.0)
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    errors: list[BaseException] = []
+
+    def consume() -> None:
+        try:
+            with patch.object(_SubprocessStdoutIterator, "wait_agent_started", block_wait):
+                list(provider.stream_events(session_id))
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=consume)
+    thread.start()
+    assert in_wait.wait(timeout=2.0)
+    assert provider._tracked_turn_procs
+    provider.abort_turn(session_id, timeout=1.0)
+    thread.join(timeout=3.0)
+    assert provider._tracked_turn_procs == {}
+
+
+def test_reused_pgid_with_mismatched_identities_is_not_owned(tmp_path: Path) -> None:
+    provider = _provider(tmp_path, runner=lambda argv, cwd: iter(()), idle=0.0)
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    leader = ProcessIdentity(pid=4242, start_time="100")
+    provider._tracked_turn_procs[4242] = tracked_turn_proc(session_id, "planner", 4242)
+    entry = provider._tracked_turn_procs[4242]
+    entry.identity = leader
+    entry.member_identities = (leader,)
+    entry.pgid = 4242
+    entry.proc = None
+    entry.group_observed_gone = False
+    with patch(
+        "core_tools.provider.cursor.process_identity_is_live",
+        return_value=False,
+    ), patch(
+        "core_tools.provider.cursor.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
+        "core_tools.provider.cursor.inspect_process_identity",
+        return_value=IdentityInspectState.IDENTITY_MISMATCH,
+    ):
+        assert provider._tracked_tree_is_live(entry) is False
+
+
+def test_late_child_gone_identities_with_live_group_stay_owned(tmp_path: Path) -> None:
+    provider = _provider(tmp_path, runner=lambda argv, cwd: iter(()), idle=0.0)
+    session_id = provider.start_primary_session("planner", {"goal": "x"})
+    leader = ProcessIdentity(pid=4242, start_time="100")
+    provider._tracked_turn_procs[4242] = tracked_turn_proc(session_id, "planner", 4242)
+    entry = provider._tracked_turn_procs[4242]
+    entry.identity = leader
+    entry.member_identities = (leader,)
+    entry.pgid = 4242
+    entry.proc = None
+    entry.group_observed_gone = False
+    with patch(
+        "core_tools.provider.cursor.process_identity_is_live",
+        return_value=False,
+    ), patch(
+        "core_tools.provider.cursor.process_group_state",
+        return_value=ProcessGroupState.LIVE,
+    ), patch(
+        "core_tools.provider.cursor.inspect_process_identity",
+        return_value=IdentityInspectState.GONE,
+    ):
+        assert provider._tracked_tree_is_live(entry) is True
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")
+def test_started_byte_arrives_after_proxy_threads_start(tmp_path: Path) -> None:
+    started_r, started_w = os.pipe()
+    script = (
+        "import json, sys\n"
+        "print(json.dumps({'type': 'assistant', 'text': 'ok'}), flush=True)\n"
+    )
+    ready = {"proxy": False}
+    original = __import__(
+        "core_tools.provider.session_janitor", fromlist=["_proxy_stream"]
+    )._proxy_stream
+
+    def wrapped(src, dst, stop, on_eof=None, on_ready=None):
+        ready["proxy"] = True
+        return original(src, dst, stop, on_eof=on_eof, on_ready=on_ready)
+
+    with patch("core_tools.provider.session_janitor._proxy_stream", wrapped):
+        code = janitor_main(
+            ["--started-fd", str(started_w), "--", sys.executable, "-c", script]
+        )
+    try:
+        byte = os.read(started_r, 8)
+    finally:
+        os.close(started_r)
+        try:
+            os.close(started_w)
+        except OSError:
+            pass
+    assert code == 0
+    assert ready["proxy"] is True
+    assert byte[:1] == b"1"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX janitor")
+def test_delayed_stdout_proxy_preserves_final_record(tmp_path: Path) -> None:
+    record = json.dumps({"type": "assistant", "text": "tail-ok"}) + "\n"
+    original = __import__(
+        "core_tools.provider.session_janitor", fromlist=["_proxy_stream"]
+    )._proxy_stream
+
+    invoked = {"n": 0}
+
+    def delayed(src, dst, stop, on_eof=None, on_ready=None):
+        invoked["n"] += 1
+        class _Bound:
+            def write(self, chunk):
+                write = getattr(dst, "write", None)
+                if write is not None:
+                    return write(chunk)
+                return None
+
+            def flush(self):
+                flush = getattr(dst, "flush", None)
+                if flush is not None:
+                    return flush()
+                return None
+
+        if on_ready is not None:
+            on_ready()
+        original(src, _Bound(), stop, on_eof=None, on_ready=None)
+        time.sleep(1.05)
+        if on_eof is not None:
+            on_eof()
+
+    script = f"import sys; sys.stdout.write({record!r}); sys.stdout.flush()\n"
+    with patch("core_tools.provider.session_janitor._proxy_stream", delayed):
+        code = janitor_main(["--", sys.executable, "-c", script])
+    assert code == 0
+    assert invoked["n"] >= 1
+
+
+def test_zero_cleanup_budget_does_not_signal_group() -> None:
+    from core_tools.provider.session_janitor import _run_escalation
+
+    signaled: list[tuple[int, int]] = []
+    go_r, go_w = os.pipe()
+    result_r, result_w = os.pipe()
+    os.write(go_w, b"GO\n")
+    os.close(go_w)
+
+    def fake_killpg(pgid, sig):
+        signaled.append((pgid, sig))
+
+    try:
+        with patch("core_tools.provider.session_janitor.os.killpg", side_effect=fake_killpg):
+            assert (
+                _run_escalation(
+                    pgid=4242,
+                    status_fd=None,
+                    handshake_fd=None,
+                    go_fd=go_r,
+                    result_fd=result_w,
+                    agent_code=0,
+                    stop_requested=False,
+                    leader_pid=1,
+                    cleanup_budget=0.0,
+                )
+                == 0
+            )
+    finally:
+        for fd in (go_r, result_r, result_w):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+    assert signaled == []
+
+
+def test_wait_agent_started_select_error_is_startup_failure() -> None:
+    iterator = _SubprocessStdoutIterator.__new__(_SubprocessStdoutIterator)
+    iterator._started_read_fd = 3
+    iterator._agent_started = False
+    iterator._proc = MagicMock()
+    iterator._proc.poll.return_value = None
+    iterator._proc.pid = os.getpid()
+    with patch(
+        "core_tools.provider.cursor.select.select",
+        side_effect=OSError("bad fd"),
+    ), patch(
+        "core_tools.provider.cursor.inspect_pid_liveness",
+        return_value=PidInspectState.LIVE,
+    ):
+        with pytest.raises(ProviderTurnStartupError):
+            iterator.wait_agent_started(timeout=0.2)
+    iterator._started_read_fd = None

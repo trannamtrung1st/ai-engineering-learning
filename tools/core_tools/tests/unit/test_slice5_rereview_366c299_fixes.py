@@ -61,18 +61,28 @@ def test_registration_shares_idle_detection_deadline(tmp_path: Path) -> None:
         stalled_at.setdefault("t", time.monotonic())
         return True
 
+    handshake_done = {}
+    original_wait = _SubprocessStdoutIterator.wait_agent_started
+
+    def wait_then_idle(self, timeout=None):
+        original_wait(self, timeout=timeout)
+        handshake_done["t"] = time.monotonic()
+
     with patch(
         "core_tools.provider.cursor.read_process_identity",
         side_effect=slow_identity,
     ), patch(
         "core_tools.provider.cursor.terminate_process_tree",
         side_effect=mark_stall,
+    ), patch.object(
+        _SubprocessStdoutIterator,
+        "wait_agent_started",
+        wait_then_idle,
     ):
         session_id = provider.start_primary_session("planner", {"goal": "x"})
-        started = time.monotonic()
         with pytest.raises(ProviderTurnStalledError):
             list(provider.stream_events(session_id))
-        assert stalled_at["t"] - started < idle + 0.08
+        assert stalled_at["t"] - handshake_done["t"] < idle + 0.08
     assert provider._tracked_turn_procs == {}
 
 

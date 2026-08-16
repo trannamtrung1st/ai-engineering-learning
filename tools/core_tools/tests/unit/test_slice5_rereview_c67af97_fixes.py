@@ -32,6 +32,7 @@ from core_tools.provider.process_cleanup import (
     terminate_pid_tree,
 )
 from core_tools.provider.process_identity import (
+    IdentityInspectState,
     ProcessIdentity,
     drain_owned_process_group,
     read_process_identity,
@@ -286,8 +287,11 @@ def test_live_pgid_without_identity_or_janitor_is_not_owned(tmp_path: Path) -> N
     ), patch(
         "core_tools.provider.cursor.process_group_state",
         return_value=ProcessGroupState.LIVE,
+    ), patch(
+        "core_tools.provider.cursor.inspect_process_identity",
+        return_value=IdentityInspectState.IDENTITY_MISMATCH,
     ):
-        assert provider._tracked_tree_is_live(entry) is True
+        assert provider._tracked_tree_is_live(entry) is False
 
 
 def test_janitor_anchor_keeps_late_child_tree_live(tmp_path: Path) -> None:

@@ -55,6 +55,8 @@ from core_tools.provider.process_identity import (
     TerminateIdentityResult,
     _remaining_fn,
     capture_process_group_identities,
+    inspect_process_identity,
+    IdentityInspectState,
     process_identities_from_termination_record,
     process_identity_is_live,
     process_identity_token,
@@ -1992,6 +1994,20 @@ class CursorProvider:
                 return True
             if entry.group_observed_gone:
                 return False
+            anchors: list[ProcessIdentity] = []
+            if entry.identity is not None:
+                anchors.append(entry.identity)
+            if entry.member_identities:
+                anchors.extend(entry.member_identities)
+            if anchors:
+                states = [
+                    inspect_process_identity(identity, timeout=remaining())
+                    for identity in anchors
+                ]
+                if states and all(
+                    state is IdentityInspectState.IDENTITY_MISMATCH for state in states
+                ):
+                    return False
             return True
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
@@ -2077,6 +2093,9 @@ class CursorProvider:
                         if active_proc[0] is None:
                             active_proc[0] = stream._proc
                 if iterator is not None:
+                    proc = active_proc[0]
+                    if proc is not None:
+                        self._register_tracked_turn_proc(proc, timeout=0)
                     try:
                         iterator.wait_agent_started(
                             timeout=self._agent_start_timeout_seconds()
@@ -2126,7 +2145,7 @@ class CursorProvider:
                             self._unregister_tracked_turn_proc(proc)
 
                 if active_proc[0] is not None:
-                    self._register_tracked_turn_proc(active_proc[0], timeout=0)
+                    self._enrich_tracked_turn_proc(active_proc[0], timeout=0)
 
                 if idle_timeout > 0:
                     context = self._get_collect_context()

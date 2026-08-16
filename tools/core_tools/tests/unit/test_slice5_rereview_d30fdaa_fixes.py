@@ -52,12 +52,31 @@ def test_slow_group_capture_does_not_extend_idle_timeout(tmp_path: Path) -> None
         "core_tools.provider.process_identity.capture_process_group_identities",
         side_effect=slow_capture,
     ):
-        session_id = provider.start_primary_session("planner", {"goal": "x"})
-        started = time.monotonic()
-        with pytest.raises(ProviderTurnStalledError):
-            list(provider.stream_events(session_id))
-        elapsed = time.monotonic() - started
-    assert elapsed < idle + 0.1
+        handshake_done: dict[str, float] = {}
+        original_wait = _SubprocessStdoutIterator.wait_agent_started
+
+        def wait_then_idle(self, timeout=None):
+            original_wait(self, timeout=timeout)
+            handshake_done["t"] = time.monotonic()
+
+        stalled_at: dict[str, float] = {}
+
+        def mark_stall(*args, **kwargs):
+            stalled_at.setdefault("t", time.monotonic())
+            return True
+
+        with patch.object(
+            _SubprocessStdoutIterator,
+            "wait_agent_started",
+            wait_then_idle,
+        ), patch(
+            "core_tools.provider.cursor.terminate_process_tree",
+            side_effect=mark_stall,
+        ):
+            session_id = provider.start_primary_session("planner", {"goal": "x"})
+            with pytest.raises(ProviderTurnStalledError):
+                list(provider.stream_events(session_id))
+            assert stalled_at["t"] - handshake_done["t"] < idle + 0.1
 
 
 def test_aggregate_identity_deadline_shrinks_without_wall_clock() -> None:

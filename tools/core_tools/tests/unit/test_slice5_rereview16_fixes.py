@@ -22,7 +22,7 @@ from core_tools.provider.process_cleanup import (
     process_group_state,
     terminate_process_tree,
 )
-from core_tools.provider.process_identity import ProcessIdentity
+from core_tools.provider.process_identity import IdentityInspectState, ProcessIdentity
 from core_tools.provider.session_janitor import janitor_command
 def _provider(tmp_path: Path) -> CursorProvider:
     agent_path = tmp_path / "agent"
@@ -236,9 +236,13 @@ def test_live_group_without_observed_gone_stays_unresolved(tmp_path: Path) -> No
             "core_tools.provider.cursor.process_group_state",
             return_value=ProcessGroupState.LIVE,
         ):
-            assert provider._tracked_tree_is_live(
-                provider._tracked_turn_procs[4242]
-            ) is False
+            with patch(
+                "core_tools.provider.cursor.inspect_process_identity",
+                return_value=IdentityInspectState.IDENTITY_MISMATCH,
+            ):
+                assert provider._tracked_tree_is_live(
+                    provider._tracked_turn_procs[4242]
+                ) is False
 
 
 def test_unrelated_unreadable_proc_does_not_poison_target_group(monkeypatch) -> None:

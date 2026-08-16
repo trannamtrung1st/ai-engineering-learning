@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -533,6 +534,102 @@ def terminate_process_tree(
     return False
 
 
+class SpawnedSession:
+    """Minimal POSIX session-leader handle returned by ``posix_spawn``."""
+
+    def __init__(self, pid: int) -> None:
+        self.pid = pid
+        self.returncode: int | None = None
+
+    def poll(self) -> int | None:
+        if self.returncode is not None:
+            return self.returncode
+        try:
+            waited, status = os.waitpid(self.pid, os.WNOHANG)
+        except ChildProcessError:
+            self.returncode = 0
+            return 0
+        if waited == 0:
+            return None
+        self.returncode = os.waitstatus_to_exitcode(status)
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        if timeout is None:
+            if self.returncode is not None:
+                return self.returncode
+            _waited, status = os.waitpid(self.pid, 0)
+            self.returncode = os.waitstatus_to_exitcode(status)
+            return self.returncode
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            code = self.poll()
+            if code is not None:
+                return code
+            leftover = deadline - time.monotonic()
+            if leftover <= 0:
+                raise subprocess.TimeoutExpired(["spawned-session"], timeout)
+            time.sleep(min(0.01, leftover))
+
+    def kill(self) -> None:
+        os.kill(self.pid, signal.SIGKILL)
+
+    def terminate(self) -> None:
+        os.kill(self.pid, signal.SIGTERM)
+
+
+def posix_spawn_session_leader(
+    argv: Sequence[str],
+    *,
+    env: Mapping[str, str] | None = None,
+    stdout_fd: int | None = None,
+    inherit_fds: Sequence[int] = (),
+) -> SpawnedSession:
+    """Create a new session without blocking in ``subprocess.Popen``."""
+
+    spawn = getattr(os, "posix_spawn", None)
+    if spawn is None:
+        raise OSError("posix_spawn is required")
+    command = [str(part) for part in argv]
+    environment = dict(os.environ if env is None else env)
+    actions: list[tuple[Any, ...]] = [
+        (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),
+        (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0),
+    ]
+    if stdout_fd is not None:
+        actions.insert(1, (os.POSIX_SPAWN_DUP2, int(stdout_fd), 1))
+        try:
+            os.set_inheritable(int(stdout_fd), True)
+        except OSError:
+            pass
+    else:
+        actions.insert(1, (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0))
+    for fd in inherit_fds:
+        try:
+            os.set_inheritable(int(fd), True)
+        except OSError:
+            pass
+    try:
+        pid = spawn(
+            command[0],
+            command,
+            environment,
+            file_actions=tuple(actions),
+            setsid=True,
+        )
+    except TypeError:
+        try:
+            pid = spawn(
+                command[0],
+                command,
+                environment,
+                file_actions=tuple(actions),
+            )
+        except TypeError:
+            pid = spawn(command[0], command, environment)
+    return SpawnedSession(pid)
+
+
 __all__ = [
     "LinuxProcStat",
     "PidInspectResult",
@@ -548,4 +645,6 @@ __all__ = [
     "terminate_pid_tree",
     "terminate_process_tree",
     "wait_process_group_gone",
+    "SpawnedSession",
+    "posix_spawn_session_leader",
 ]

@@ -862,6 +862,7 @@ def _proxy_stream(
     dst: object,
     stop: threading.Event,
     on_eof: Callable[[], None] | None = None,
+    on_ready: Callable[[], None] | None = None,
 ) -> None:
     fileno = getattr(src, "fileno", None)
     if fileno is None:
@@ -878,6 +879,8 @@ def _proxy_stream(
         os.set_blocking(src_fd, False)
     except OSError:
         return
+    if on_ready is not None:
+        on_ready()
     while not stop.is_set():
         try:
             ready, _, _ = select.select([src_fd], [], [], _POLL_INTERVAL)
@@ -914,6 +917,7 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
     leader_start: str | None = None
     agent_code = 0
     stop_requested = False
+    cleanup_budget: float | None = None
     while len(args) >= 2 and args[0].startswith("--") and args[0] != "--":
         flag = args[0]
         raw_value = args[1]
@@ -939,6 +943,8 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
                 agent_code = int(raw_value)
             elif flag == "--stop-requested":
                 stop_requested = raw_value in {"1", "true", "True"}
+            elif flag == "--cleanup-budget":
+                cleanup_budget = float(raw_value)
             else:
                 args = [flag, raw_value, *args]
                 break
@@ -956,6 +962,7 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
         "leader_start": leader_start,
         "agent_code": agent_code,
         "stop_requested": stop_requested,
+        "cleanup_budget": cleanup_budget,
     }
     return status_fd, args, extra
 
@@ -1038,6 +1045,13 @@ def _reap_verifier(proc: subprocess.Popen[Any] | None, *, timeout: float = 0.0) 
             except OSError:
                 pass
     leftover = max(0.0, timeout)
+    waitpid = getattr(os, "waitpid", None)
+    pid = getattr(proc, "pid", None)
+    if waitpid is not None and pid:
+        try:
+            waitpid(pid, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            pass
     if leftover <= 0:
         try:
             proc.poll()
@@ -1082,6 +1096,7 @@ def _escalation_command(
     stop_requested: bool,
     leader_pid: int,
     leader_start: str | None = None,
+    cleanup_budget: float | None = None,
 ) -> list[str]:
     command = [sys.executable, "-u", str(Path(__file__).resolve())]
     if status_fd is not None:
@@ -1104,6 +1119,8 @@ def _escalation_command(
             str(leader_pid),
             "--leader-start",
             leader_start or "",
+            "--cleanup-budget",
+            f"{max(0.0, cleanup_budget if cleanup_budget is not None else 0.0):.6f}",
         ]
     )
     return command
@@ -1133,6 +1150,7 @@ def _handoff_group_escalation(
         stop_requested=stop_requested,
         leader_pid=leader_pid,
         leader_start=_process_start_token(leader_pid, deadline=deadline),
+        cleanup_budget=max(0.0, deadline.remaining()),
     )
     pass_fds = [handshake_w, go_r, result_w]
     if status_fd is not None:
@@ -1231,6 +1249,7 @@ def _run_escalation(
     leader_pid: int | None = None,
     leader_start: str | None = None,
     go_timeout: float | None = None,
+    cleanup_budget: float | None = None,
 ) -> int:
     if handshake_fd is not None:
         try:
@@ -1267,7 +1286,15 @@ def _run_escalation(
         _close_fd(result_fd)
         return 1
 
-    auth_deadline = CleanupDeadline.after(_PS_TIMEOUT_SECONDS)
+    if cleanup_budget is not None and cleanup_budget <= 0:
+        _close_fd(result_fd)
+        return 0
+    auth_budget = _PS_TIMEOUT_SECONDS
+    drain_budget = _KILL_DRAIN_SECONDS
+    if cleanup_budget is not None:
+        auth_budget = min(auth_budget, max(0.0, cleanup_budget))
+        drain_budget = min(drain_budget, max(0.0, cleanup_budget))
+    auth_deadline = CleanupDeadline.after(auth_budget)
     if not _leader_still_owns_group(
         pgid,
         leader_pid,
@@ -1283,10 +1310,10 @@ def _run_escalation(
         error = "eperm" if getattr(exc, "errno", None) == errno.EPERM else "oserror"
         return publish_failure("verifier_signal_failed", error=error)
     exclude = {leader_pid} if leader_pid is not None else None
-    deadline = CleanupDeadline.after(_KILL_DRAIN_SECONDS + _PS_TIMEOUT_SECONDS)
+    deadline = CleanupDeadline.after(drain_budget)
     drain = _wait_peers_gone(
         deadline,
-        budget=_KILL_DRAIN_SECONDS,
+        budget=drain_budget,
         pgid=pgid,
         exclude=exclude,
     )
@@ -1323,6 +1350,7 @@ def main(
             stop_requested=bool(extra["stop_requested"]),
             leader_pid=extra["leader_pid"],
             leader_start=extra.get("leader_start"),
+            cleanup_budget=extra.get("cleanup_budget"),
         )
     if not command:
         return 2
@@ -1338,18 +1366,12 @@ def main(
         bufsize=0,
         close_fds=True,
     )
-    started_fd = extra.get("started_fd")
-    if started_fd is not None:
-        try:
-            os.write(int(started_fd), b"1")
-        except OSError:
-            pass
-        _close_fd(int(started_fd))
     drain_lock = threading.Lock()
     drained: DrainResult | None = None
     stop_requested = False
     stop_copy = threading.Event()
     cleanup_deadline: CleanupDeadline | None = None
+    stdout_ready = threading.Event()
 
     def drain_once() -> DrainResult:
         nonlocal drained
@@ -1380,16 +1402,33 @@ def main(
     stdout_thread = threading.Thread(
         target=_proxy_stream,
         args=(agent.stdout, stdout_dst, stop_copy),
-        kwargs={"on_eof": _close_inherited_stdout},
+        kwargs={
+            "on_eof": _close_inherited_stdout,
+            "on_ready": stdout_ready.set,
+        },
         daemon=True,
     )
+    stderr_ready = threading.Event()
     stderr_thread = threading.Thread(
         target=_proxy_stream,
         args=(agent.stderr, stderr_dst, stop_copy),
+        kwargs={"on_ready": stderr_ready.set},
         daemon=True,
     )
     stdout_thread.start()
     stderr_thread.start()
+    ready_deadline = time.monotonic() + 1.0
+    stdout_ok = stdout_ready.wait(timeout=max(0.0, ready_deadline - time.monotonic()))
+    stderr_ok = stderr_ready.wait(timeout=max(0.0, ready_deadline - time.monotonic()))
+    started_fd = extra.get("started_fd")
+    if started_fd is not None and stdout_ok and stderr_ok:
+        try:
+            os.write(int(started_fd), b"1")
+        except OSError:
+            pass
+        _close_fd(int(started_fd))
+    elif started_fd is not None:
+        _close_fd(int(started_fd))
 
     while agent.poll() is None and not stop_requested:
         event = _poll_control(_POLL_INTERVAL)
@@ -1398,14 +1437,29 @@ def main(
             break
 
     cleanup_deadline = CleanupDeadline.after(JANITOR_CLEANUP_BUDGET_SECONDS)
-    stdout_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
-    _close_inherited_stdout()
-    stop_copy.set()
-    stderr_thread.join(timeout=min(_PROXY_JOIN_SECONDS, max(0.0, cleanup_deadline.remaining())))
-    _close_inherited_stdio_write_ends()
+
+    def join_proxies(*, bound: float) -> None:
+        stdout_thread.join(timeout=min(bound, max(0.0, cleanup_deadline.remaining())))
+        stderr_thread.join(timeout=min(bound, max(0.0, cleanup_deadline.remaining())))
+        if stdout_thread.is_alive() or stderr_thread.is_alive():
+            stop_copy.set()
+            leftover = min(0.05, max(0.0, cleanup_deadline.remaining()))
+            stdout_thread.join(timeout=leftover)
+            stderr_thread.join(timeout=leftover)
+        if not stdout_thread.is_alive() and not stderr_thread.is_alive():
+            _close_inherited_stdio_write_ends()
+        elif not stdout_thread.is_alive():
+            _close_inherited_stdout()
+
     observed = agent.poll()
     drain = drain_once()
     return_code = _wait_agent(agent, cleanup_deadline)
+    join_proxies(bound=min(_PROXY_JOIN_SECONDS, 0.2))
+    if stdout_thread.is_alive() or stderr_thread.is_alive():
+        stop_copy.set()
+        stdout_thread.join(timeout=min(0.05, max(0.0, cleanup_deadline.remaining())))
+        stderr_thread.join(timeout=min(0.05, max(0.0, cleanup_deadline.remaining())))
+        _close_inherited_stdio_write_ends()
     if observed == 0:
         return_code = 0
     if return_code is None:

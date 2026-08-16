@@ -61,7 +61,7 @@ class _HangStartProvider:
 def test_late_process_start_after_timeout_is_killed_and_joined() -> None:
     hang_bootstrap = "import time; time.sleep(60)\n"
     with patch(
-        "top_down_planning.orchestrator.provider_turns._WORKER_BOOTSTRAP",
+        "top_down_planning.orchestrator.provider_turns._CONSTRUCTOR_HELPER",
         hang_bootstrap,
     ):
         with pytest.raises(ProviderRunError, match="exceeded timeout|failed to stop"):
@@ -80,7 +80,7 @@ def test_blocked_startup_retains_process_owner() -> None:
     worker = BoundaryWorker()
     try:
         with patch(
-            "top_down_planning.orchestrator.provider_turns._WORKER_BOOTSTRAP",
+            "top_down_planning.orchestrator.provider_turns._CONSTRUCTOR_HELPER",
             hang_bootstrap,
         ):
             with pytest.raises(ProviderRunError):
