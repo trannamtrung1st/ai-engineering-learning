@@ -306,6 +306,24 @@ def _any_identities_still_alive(
     )
 
 
+def _identity_still_present(
+    identity: ProcessIdentity,
+    *,
+    timeout: float | None = None,
+) -> bool:
+    return inspect_process_identity(identity, timeout=timeout) in {
+        IdentityInspectState.LIVE_MATCH,
+        IdentityInspectState.UNVERIFIABLE,
+        IdentityInspectState.ZOMBIE,
+    }
+
+
+def _reap_identity(identity: ProcessIdentity) -> None:
+    from core_tools.provider.process_cleanup import reap_owned_pid
+
+    reap_owned_pid(identity.pid, timeout=0.0)
+
+
 def _wait_identities_dead(
     identities: list[ProcessIdentity],
     *,
@@ -317,19 +335,33 @@ def _wait_identities_dead(
         return max(0.0, deadline - time.monotonic())
 
     if remaining() <= 0:
-        return not _any_identities_still_alive(identities, timeout=0.0)
+        for identity in identities:
+            _reap_identity(identity)
+        return not any(
+            _identity_still_present(identity, timeout=0.0) for identity in identities
+        )
     interval = 0.05
     while remaining() > 0:
-        if not _any_identities_still_alive(identities, timeout=remaining()):
+        for identity in identities:
+            _reap_identity(identity)
+        if not any(
+            _identity_still_present(identity, timeout=remaining())
+            for identity in identities
+        ):
             return True
         time.sleep(min(interval, remaining()))
-    return not _any_identities_still_alive(identities, timeout=0.0)
+    for identity in identities:
+        _reap_identity(identity)
+    return not any(
+        _identity_still_present(identity, timeout=0.0) for identity in identities
+    )
 
 
 def _identity_needs_no_signal(state: IdentityInspectState) -> bool:
     return state in {
         IdentityInspectState.GONE,
         IdentityInspectState.IDENTITY_MISMATCH,
+        IdentityInspectState.ZOMBIE,
     }
 
 
@@ -420,9 +452,17 @@ def _current_group_identities(
     if pids is None:
         return None
     identities: list[ProcessIdentity] = []
+    from core_tools.provider.process_cleanup import (
+        PidInspectState,
+        inspect_pid_liveness,
+    )
+
     for pid in pids:
         identity = read_process_identity(pid, run_id=run_id, timeout=remaining())
         if identity is None:
+            state = inspect_pid_liveness(pid, timeout=remaining())
+            if state in {PidInspectState.ZOMBIE, PidInspectState.GONE}:
+                continue
             return None
         identities.append(identity)
     return identities
@@ -442,8 +482,14 @@ def _select_owned_targets(
         for identity in current_identities
         if _identity_still_alive(identity, timeout=remaining())
     ]
+    zombie_current = [
+        identity
+        for identity in current_identities
+        if inspect_process_identity(identity, timeout=remaining())
+        is IdentityInspectState.ZOMBIE
+    ]
     if not live_current:
-        return []
+        return list(zombie_current)
 
     if not _group_still_ours(pgid, leader_identity, known_tokens, timeout=remaining()):
         return None
@@ -456,6 +502,7 @@ def _select_owned_targets(
             continue
         known_tokens.add(token)
         targets.append(identity)
+    targets.extend(zombie_current)
     return targets
 
 
@@ -524,10 +571,17 @@ def drain_owned_process_group(
 
     known_tokens = _known_tokens(leader_identity, known_identities)
     run_id = leader_identity.run_id if leader_identity is not None else None
+    known_list: list[ProcessIdentity] = []
+    if leader_identity is not None:
+        known_list.append(leader_identity)
+    if known_identities:
+        known_list.extend(known_identities)
 
     for _round in range(_MAX_DRAIN_ROUNDS):
         if wait_budget() <= 0:
             return process_group_state(resolved_pgid, timeout=0.0) is ProcessGroupState.GONE
+        for identity in known_list:
+            _reap_identity(identity)
         state = process_group_state(resolved_pgid, timeout=wait_budget())
         if state is ProcessGroupState.UNVERIFIABLE:
             return False
@@ -550,6 +604,8 @@ def drain_owned_process_group(
         if targets is None:
             return False
         if not targets:
+            for identity in current:
+                _reap_identity(identity)
             state = process_group_state(resolved_pgid, timeout=wait_budget())
             if state is ProcessGroupState.GONE:
                 return True

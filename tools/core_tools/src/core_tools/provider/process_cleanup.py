@@ -327,26 +327,33 @@ def wait_process_group_gone(pgid: int, *, timeout: float) -> ProcessGroupState:
         time.sleep(min(interval, remaining))
 
 
-def _wait_pid(pid: int, *, timeout: float) -> bool:
-    deadline = timeout
-    interval = 0.05
-    while deadline > 0 and not is_pid_reaped(pid):
+def reap_owned_pid(pid: int, *, timeout: float = 5.0) -> bool:
+    """Exact-waitpid a direct child until it is gone. Never uses waitpid(-1)."""
+
+    if pid <= 0:
+        return True
+    deadline = time.monotonic() + max(0.0, timeout)
+    while time.monotonic() < deadline:
         try:
-            waited_pid, _status = os.waitpid(pid, os.WNOHANG)
-            if waited_pid == pid:
+            waited, _status = os.waitpid(pid, os.WNOHANG)
+            if waited == pid:
                 return True
         except ChildProcessError:
             return is_pid_reaped(pid)
         except OSError:
             break
-        time.sleep(min(interval, deadline))
-        deadline -= interval
-    if not is_pid_reaped(pid):
-        try:
-            os.waitpid(pid, os.WNOHANG)
-        except (ChildProcessError, OSError):
-            pass
+        if is_pid_reaped(pid):
+            return True
+        time.sleep(0.01)
+    try:
+        os.waitpid(pid, os.WNOHANG)
+    except (ChildProcessError, OSError):
+        pass
     return is_pid_reaped(pid)
+
+
+def _wait_pid(pid: int, *, timeout: float) -> bool:
+    return reap_owned_pid(pid, timeout=timeout)
 
 
 def terminate_pid_tree(
@@ -393,11 +400,41 @@ def terminate_pid_tree(
         captured = capture_process_group_identities(identity)
         members = captured
 
-    return drain_owned_process_group(
+    drained = drain_owned_process_group(
         pgid=resolved_pgid,
         leader_identity=identity,
         known_identities=members,
     )
+    if not drained:
+        try:
+            waited, _status = os.waitpid(pid, os.WNOHANG)
+            if waited == 0:
+                os.kill(pid, signal.SIGKILL)
+        except ChildProcessError:
+            pass
+        except OSError:
+            pass
+    reap_owned_pid(pid, timeout=5)
+    known: list[ProcessIdentity] = []
+    if identity is not None:
+        known.append(identity)
+    if members:
+        for member in members:
+            reap_owned_pid(member.pid, timeout=1)
+            known.append(member)
+    from core_tools.provider.process_identity import inspect_process_identity, IdentityInspectState
+
+    def still_ours(item: ProcessIdentity) -> bool:
+        state = inspect_process_identity(item, timeout=0.0)
+        return state in {
+            IdentityInspectState.LIVE_MATCH,
+            IdentityInspectState.UNVERIFIABLE,
+            IdentityInspectState.ZOMBIE,
+        }
+
+    if known:
+        return not any(still_ours(item) for item in known)
+    return bool(drained)
 
 
 def terminate_process_tree(

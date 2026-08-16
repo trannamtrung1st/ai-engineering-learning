@@ -69,7 +69,8 @@ from core_tools.provider.session_janitor import (
 _CURSOR_TRANSIENT_SESSION_PREFIX = "cursor-pending-"
 DEFAULT_TURN_IDLE_TIMEOUT_SECONDS = 2.0
 DEFAULT_TURN_TREE_CLEANUP_SECONDS = 2.0
-_MAX_IDLE_RESCUE_BYTES = 256 * 1024
+MAX_STREAM_JSON_RECORD_BYTES = 256 * 1024
+_MAX_IDLE_RESCUE_BYTES = MAX_STREAM_JSON_RECORD_BYTES
 _STDERR_TAIL_MAX_BYTES = 64 * 1024
 
 ProcessRunner = Callable[[list[str], Path], Iterator[str]]
@@ -189,26 +190,37 @@ class _SubprocessStdoutIterator(Iterator[str]):
         spawn_argv = list(argv)
         status_r: int | None = None
         status_w: int | None = None
+        started_r: int | None = None
+        started_w: int | None = None
         if sys.platform != "win32":
             from core_tools.provider.session_janitor import janitor_command
 
             status_r, status_w = os.pipe()
+            started_r, started_w = os.pipe()
             popen_kwargs["start_new_session"] = True
             popen_kwargs["stdin"] = subprocess.PIPE
-            popen_kwargs["pass_fds"] = (status_w,)
-            spawn_argv = janitor_command(argv, status_fd=status_w)
+            popen_kwargs["pass_fds"] = (status_w, started_w)
+            spawn_argv = janitor_command(
+                argv, status_fd=status_w, started_fd=started_w
+            )
 
         try:
             self._proc = subprocess.Popen(spawn_argv, **popen_kwargs)
         except OSError as exc:
-            if status_r is not None:
-                os.close(status_r)
-            if status_w is not None:
-                os.close(status_w)
+            for fd in (status_r, status_w, started_r, started_w):
+                if fd is not None:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
             raise ProviderTurnError(f"failed to start Cursor CLI: {exc}") from exc
         if status_w is not None:
             os.close(status_w)
+        if started_w is not None:
+            os.close(started_w)
         self._status_read_fd = status_r
+        self._started_read_fd = started_r
+        self._agent_started = started_r is None
         if self._proc is not None and status_r is not None:
             owner = JanitorStatusOwner(status_r)
             owner.bind(self._proc)
@@ -233,6 +245,49 @@ class _SubprocessStdoutIterator(Iterator[str]):
         self._stdout_buf = bytearray()
         self._stdout_eof = False
 
+    def wait_agent_started(self, timeout: float | None = None) -> None:
+        """Block until the janitor reports the real agent child was spawned."""
+
+        fd = getattr(self, "_started_read_fd", None)
+        if fd is None or getattr(self, "_agent_started", True):
+            return
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        while True:
+            if self._proc.poll() is not None:
+                self._close_started_fd()
+                self._agent_started = True
+                return
+            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+            if remaining is not None and remaining <= 0:
+                self._close_started_fd()
+                self._agent_started = True
+                return
+            try:
+                ready, _, _ = select.select([fd], [], [], remaining)
+            except (OSError, ValueError):
+                self._close_started_fd()
+                self._agent_started = True
+                return
+            if not ready:
+                continue
+            try:
+                os.read(fd, 8)
+            except OSError:
+                pass
+            self._close_started_fd()
+            self._agent_started = True
+            return
+
+    def _close_started_fd(self) -> None:
+        fd = getattr(self, "_started_read_fd", None)
+        self._started_read_fd = None
+        if fd is None:
+            return
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
     def _close_status_fd(self) -> None:
         self._status_read_fd = None
         proc = getattr(self, "_proc", None)
@@ -255,6 +310,7 @@ class _SubprocessStdoutIterator(Iterator[str]):
         """Idempotently close status, stdio, and thread resources."""
 
         self._close_status_fd()
+        self._close_started_fd()
         self._finished = True
         proc = getattr(self, "_proc", None)
         if proc is not None:
@@ -1389,7 +1445,14 @@ class CursorProvider:
             except ProviderSessionError:
                 raise
             except ProviderTurnError as exc:
-                if isinstance(exc, (ProviderTurnStalledError, ProviderTurnCleanupError)):
+                if isinstance(
+                    exc,
+                    (
+                        ProviderTurnStalledError,
+                        ProviderTurnCleanupError,
+                        ProviderStreamRecordTooLargeError,
+                    ),
+                ):
                     raise exc
                 classified = reclassify_provider_turn_error(exc, session_id=session_id)
                 if isinstance(classified, ProviderSessionNotFoundError):
@@ -1903,7 +1966,7 @@ class CursorProvider:
                 return True
             if entry.group_observed_gone:
                 return False
-            return True
+            return False
         pid = entry.proc.pid if entry.proc is not None else (
             entry.identity.pid if entry.identity is not None else 0
         )
@@ -1987,6 +2050,8 @@ class CursorProvider:
                         iterator = stream
                         if active_proc[0] is None:
                             active_proc[0] = stream._proc
+                if iterator is not None:
+                    iterator.wait_agent_started()
                 if idle_timeout > 0:
                     detect_deadline = time.monotonic() + idle_timeout
 
@@ -2004,11 +2069,7 @@ class CursorProvider:
                         proc,
                         pgid=tracked.pgid if tracked is not None else None,
                         leader_identity=tracked.identity if tracked is not None else None,
-                        member_identities=(
-                            list(tracked.member_identities)
-                            if tracked is not None and tracked.member_identities is not None
-                            else None
-                        ),
+                        member_identities=None,
                         timeout=remaining,
                     )
                     if iterator is not None:

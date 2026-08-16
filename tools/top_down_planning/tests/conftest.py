@@ -113,19 +113,29 @@ def assert_no_leftover_python_descendants():
         for pid, cmd in _python_descendant_pids(parent).items()
         if pid not in before and not _is_pytest_infrastructure(cmd)
     }
-    assert leftover == {}, leftover
     from top_down_planning.orchestrator.provider_turns import (
         owned_boundary_workers,
         reap_unreaped_boundary_workers,
         unreaped_boundary_workers,
     )
 
+    sweep_error: BaseException | None = None
     try:
         reap_unreaped_boundary_workers(timeout=0.5)
     except Exception as exc:
-        raise AssertionError(f"boundary worker sweep failed: {exc!r}") from exc
-    assert owned_boundary_workers() == ()
-    assert unreaped_boundary_workers() == ()
+        sweep_error = exc
+    owned = owned_boundary_workers()
+    unreaped = unreaped_boundary_workers()
+    problems = []
+    if leftover:
+        problems.append(f"python descendants: {leftover}")
+    if sweep_error is not None:
+        problems.append(f"boundary worker sweep failed: {sweep_error!r}")
+    if owned:
+        problems.append(f"owned boundary workers: {owned}")
+    if unreaped:
+        problems.append(f"unreaped boundary workers: {unreaped}")
+    assert not problems, "; ".join(problems)
 
 
 @pytest.fixture

@@ -15,6 +15,7 @@ from core_tools.provider.cursor import CursorProvider, default_process_runner
 from core_tools.provider.process_cleanup import (
     ProcessGroupState,
     is_pid_alive,
+    is_pid_reaped,
     process_group_state,
     terminate_pid_tree,
     terminate_process_tree,
@@ -114,14 +115,10 @@ def test_terminate_pid_tree_returns_true_when_process_dies() -> None:
         start_new_session=sys.platform != "win32",
     )
     try:
-        from core_tools.provider.process_identity import _pidfd_supported
-
         cleaned = terminate_pid_tree(proc.pid)
-        if _pidfd_supported():
-            assert cleaned is True
-            assert not is_pid_alive(proc.pid)
-        else:
-            assert cleaned is False
+        assert cleaned is True
+        assert not is_pid_alive(proc.pid)
+        assert is_pid_reaped(proc.pid)
     finally:
         if is_pid_alive(proc.pid):
             proc.kill()

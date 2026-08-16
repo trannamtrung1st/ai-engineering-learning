@@ -21,6 +21,7 @@ from top_down_planning.orchestrator.provider_turns import (
     _invoke_boundary_bounded,
     build_producer_turn_boundary_observer,
     build_reviewer_decision_boundary_observer,
+    owned_boundary_workers,
 )
 from top_down_planning.persistence import FileRunStore
 from tests.unit.test_slice5_rereview_ee5de8e_fixes import _create_run, _save_reviewer_loop
@@ -101,11 +102,7 @@ def test_blocked_process_start_times_out_without_inline_wait() -> None:
                 timeout=0.2,
             )
     assert time.monotonic() - started <= 0.55
-    assert [
-        proc
-        for proc in multiprocessing.active_children()
-        if "tdp-boundary" in (proc.name or "")
-    ] == []
+    assert owned_boundary_workers() == ()
 
 
 def test_ipc_death_after_send_is_typed_worker_died() -> None:

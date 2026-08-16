@@ -16,6 +16,7 @@ from top_down_planning.orchestrator.provider_turns import (
     _BoundaryPollState,
     _finalize_boundary_poll,
     _invoke_boundary_bounded,
+    owned_boundary_workers,
 )
 
 
@@ -38,12 +39,15 @@ def _boundary_children() -> list[multiprocessing.Process]:
 def _wait_boundary_gone(*, timeout: float = 2.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not _boundary_start_threads() and not _boundary_children():
+        if (
+            not _boundary_start_threads()
+            and not owned_boundary_workers()
+        ):
             return
         time.sleep(0.02)
     pytest.fail(
         f"leftover start threads={_boundary_start_threads()!r} "
-        f"children={_boundary_children()!r}"
+        f"owned={owned_boundary_workers()!r}"
     )
 
 

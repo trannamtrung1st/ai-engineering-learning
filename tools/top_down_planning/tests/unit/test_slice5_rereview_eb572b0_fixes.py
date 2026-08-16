@@ -24,6 +24,7 @@ from top_down_planning.orchestrator.provider_turns import (
     _drain_provider_turn,
     _invoke_boundary_bounded,
     build_producer_turn_boundary_observer,
+    owned_boundary_workers,
 )
 from top_down_planning.domain.reviews import ReviewLoop
 from top_down_planning.orchestrator.session_events import (
@@ -128,11 +129,7 @@ def test_blocked_boundary_worker_is_reaped_before_return() -> None:
     with pytest.raises(ProviderRunError, match="exceeded timeout"):
         _invoke_boundary_bounded(NeverReturnBoundary(), threading.Event(), timeout=0.4)
     assert time.monotonic() - started <= 1.5
-    assert [
-        proc
-        for proc in multiprocessing.active_children()
-        if "tdp-boundary" in (proc.name or "")
-    ] == []
+    assert owned_boundary_workers() == ()
 
 
 def test_boundary_invoke_does_not_crash_preexisting_itimer() -> None:

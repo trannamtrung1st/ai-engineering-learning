@@ -283,7 +283,7 @@ def _session_surviving_pids(
         if not identities:
             continue
         for identity in identities:
-            if process_identity_is_live(identity):
+            if process_identity_is_live(identity) or _pid_still_present(identity.pid):
                 pids.add(identity.pid)
     return sorted(pids)
 
@@ -369,12 +369,15 @@ def teardown_provider_sessions(
     stale_reconciled: list[int] = []
     sweep_error: BaseException | None = None
 
+    control_error: BaseException | None = None
     try:
         from top_down_planning.orchestrator.provider_turns import (
             reap_unreaped_boundary_workers,
         )
 
         reap_unreaped_boundary_workers()
+    except (KeyboardInterrupt, SystemExit) as exc:
+        control_error = exc
     except BaseException as exc:
         sweep_error = exc
 
@@ -475,6 +478,9 @@ def teardown_provider_sessions(
                 )
             )
     except BaseException as exc:
+        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            if control_error is None:
+                control_error = exc
         deferred_error = exc
 
     if sweep_error is not None:
@@ -489,6 +495,8 @@ def teardown_provider_sessions(
     verified_terminated = sorted(set(verified_terminated))
     alive_survivors = tuple(pid for pid in survivors if _pid_still_present(pid))
     remaining_active = provider.list_active_sessions()
+    if control_error is not None:
+        raise control_error
     if alive_survivors:
         raise ProviderTeardownError(
             f"provider teardown left surviving agent processes: {list(alive_survivors)}",

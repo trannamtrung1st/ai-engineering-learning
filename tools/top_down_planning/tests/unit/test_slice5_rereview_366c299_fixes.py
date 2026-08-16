@@ -18,6 +18,7 @@ from top_down_planning.orchestrator.provider_turns import (
     LiteralBoundarySignal,
     _drain_provider_turn,
     _invoke_boundary_bounded,
+    owned_boundary_workers,
     unreaped_boundary_workers,
 )
 
@@ -58,11 +59,7 @@ def test_never_returning_process_start_is_not_used() -> None:
             for item in threading.enumerate()
             if item.name == "tdp-boundary-popen"
         ] == []
-        assert [
-            proc
-            for proc in multiprocessing.active_children()
-            if "tdp-boundary" in (proc.name or "")
-        ] == []
+        assert owned_boundary_workers() == ()
     finally:
         worker.close(cleanup_timeout=0.2)
         from top_down_planning.orchestrator.provider_turns import (

@@ -360,7 +360,7 @@ def reap_unreaped_boundary_workers(*, timeout: float | None = None) -> None:
             attempt = min(slice_t, leftover) if slice_t > 0 else leftover
             try:
                 worker.close(cleanup_timeout=attempt)
-            except (ProviderRunError, OSError):
+            except Exception:
                 pass
     if unreaped_boundary_workers():
         raise ProviderRunError("boundary worker failed to stop")
@@ -414,11 +414,11 @@ _WORKER_IPC_ERRORS = (BrokenPipeError, EOFError, OSError, ConnectionError)
 class BoundaryWorker:
     """One spawn process reused for every store probe in a provider turn.
 
-    ``start(wait_ready=True)`` constructs the child on the caller, then waits
-    for READY so a hung handshake can kill the owned process. ``start(wait_ready=False)``
-    launches construction on an owned non-daemon thread and returns immediately so
-    the event pump is not blocked by ``Popen``. A constructor that returns after
-    the deadline is rejected and reaped. Store-driven boundary polling is POSIX-only.
+    ``start()`` always constructs the child on a daemon boot thread so a hung
+    ``Popen`` cannot pin interpreter shutdown. ``wait_ready=True`` joins that
+    thread until READY or the deadline; ``wait_ready=False`` returns immediately
+    so the event pump is not blocked. A constructor that returns after the
+    deadline is rejected and reaped. Store-driven boundary polling is POSIX-only.
     """
 
     _popen = staticmethod(subprocess.Popen)
@@ -433,6 +433,7 @@ class BoundaryWorker:
         self._boot_thread: threading.Thread | None = None
         self._launch_error: BaseException | None = None
         self._spawn_lock = threading.Lock()
+        self._spawn_deadline: float | None = None
 
     def _record_pid(self, proc: Any | None = None) -> None:
         target = proc if proc is not None else self.proc
@@ -539,19 +540,22 @@ class BoundaryWorker:
         self._start_cancel.clear()
         self._ready = False
         self._launch_error = None
-        if wait_ready:
-            self._spawn(deadline)
-            if self._launch_error is not None:
-                raise self._launch_error
-            self._await_ready(deadline)
-            return
+        self._spawn_deadline = deadline
         self._boot_thread = threading.Thread(
             target=self._spawn,
             args=(deadline,),
             name="tdp-boundary-popen",
-            daemon=False,
+            daemon=True,
         )
         self._boot_thread.start()
+        if wait_ready:
+            self._await_ready(deadline)
+
+    def remaining_startup_seconds(self) -> float:
+        deadline = self._spawn_deadline
+        if deadline is None:
+            return 0.0
+        return max(0.0, deadline - time.monotonic())
 
     def _spawn(self, deadline: float | None) -> None:
         parent_sock: socket.socket | None = None
@@ -739,6 +743,9 @@ class BoundaryWorker:
             if deadline is not None
             else BOUNDARY_WORKER_CLEANUP_SECONDS
         )
+        boot = self._boot_thread
+        if boot is not None and boot.is_alive():
+            join_budget = max(join_budget or 0.0, self.remaining_startup_seconds())
         cleanup_deadline = time.monotonic() + max(0.0, join_budget or 0.0)
 
         def remaining() -> float:
@@ -851,7 +858,13 @@ def _finalize_boundary_poll(
             )
     worker = poll_state.worker
     if worker is not None:
-        cleanup_deadline = time.monotonic() + BOUNDARY_WORKER_CLEANUP_SECONDS
+        leftover_start = 0.0
+        remaining_startup = getattr(worker, "remaining_startup_seconds", None)
+        if callable(remaining_startup):
+            leftover_start = remaining_startup()
+        cleanup_deadline = time.monotonic() + max(
+            BOUNDARY_WORKER_CLEANUP_SECONDS, leftover_start
+        )
         try:
             worker.close(
                 cleanup_timeout=max(0.0, cleanup_deadline - time.monotonic())

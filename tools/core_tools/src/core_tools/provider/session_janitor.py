@@ -80,12 +80,19 @@ class ControlEvent(Enum):
     ERROR = "error"
 
 
-def janitor_command(agent_argv: list[str], *, status_fd: int | None = None) -> list[str]:
+def janitor_command(
+    agent_argv: list[str],
+    *,
+    status_fd: int | None = None,
+    started_fd: int | None = None,
+) -> list[str]:
     """Return argv that runs *agent_argv* under this session-leader janitor."""
 
     command = [sys.executable, "-u", str(Path(__file__).resolve())]
     if status_fd is not None:
         command.extend(["--status-fd", str(status_fd)])
+    if started_fd is not None:
+        command.extend(["--started-fd", str(started_fd)])
     command.append("--")
     command.extend(agent_argv)
     return command
@@ -688,6 +695,19 @@ def _kill_agent(agent: subprocess.Popen[Any]) -> None:
             pass
 
 
+def _kill_group_peers(deadline: CleanupDeadline | None = None) -> None:
+    """SIGKILL same-group descendants without signaling this janitor."""
+
+    peers = _peer_pids(deadline)
+    if not peers:
+        return
+    for pid in peers:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
 def _reap_zombie_children() -> None:
     if not hasattr(os, "waitpid"):
         return
@@ -770,7 +790,9 @@ def _drain_group(
         if result is DrainResult.CLEAN:
             return result
         _kill_agent(agent)
-        return result
+        _kill_group_peers(deadline)
+        _reap_zombie_children()
+        return _wait_peers_gone(deadline, budget=_KILL_DRAIN_SECONDS)
     finally:
         try:
             signal.signal(signal.SIGTERM, previous_term)
@@ -870,6 +892,7 @@ def _proxy_stream(src: object, dst: object, stop: threading.Event) -> None:
 def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]:
     args = list(argv)
     status_fd: int | None = None
+    started_fd: int | None = None
     escalate_pgid: int | None = None
     handshake_fd: int | None = None
     go_fd: int | None = None
@@ -885,6 +908,8 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
         try:
             if flag == "--status-fd":
                 status_fd = int(raw_value)
+            elif flag == "--started-fd":
+                started_fd = int(raw_value)
             elif flag == "--escalate-pgid":
                 escalate_pgid = int(raw_value)
             elif flag == "--handshake-fd":
@@ -910,6 +935,7 @@ def _parse_argv(argv: list[str]) -> tuple[int | None, list[str], dict[str, Any]]
         args = args[1:]
     extra = {
         "escalate_pgid": escalate_pgid,
+        "started_fd": started_fd,
         "handshake_fd": handshake_fd,
         "go_fd": go_fd,
         "result_fd": result_fd,
@@ -1292,6 +1318,13 @@ def main(
         bufsize=0,
         close_fds=True,
     )
+    started_fd = extra.get("started_fd")
+    if started_fd is not None:
+        try:
+            os.write(int(started_fd), b"1")
+        except OSError:
+            pass
+        _close_fd(int(started_fd))
     drain_lock = threading.Lock()
     drained: DrainResult | None = None
     stop_requested = False

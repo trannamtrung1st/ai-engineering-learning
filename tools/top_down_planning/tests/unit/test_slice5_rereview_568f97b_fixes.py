@@ -22,6 +22,7 @@ from top_down_planning.orchestrator.provider_turns import (
     _drain_provider_turn,
     _invoke_boundary_bounded,
     build_producer_turn_boundary_observer,
+    owned_boundary_workers,
 )
 from top_down_planning.orchestrator.session_events import commit_primary_provider_session_binding
 from top_down_planning.orchestrator.session_lineage import emit_session_replacement_failed
@@ -68,11 +69,7 @@ def test_standalone_invoke_includes_startup_in_timeout() -> None:
                 timeout=0.2,
             )
     assert time.monotonic() - started <= 0.45
-    assert [
-        proc
-        for proc in multiprocessing.active_children()
-        if "tdp-boundary" in (proc.name or "")
-    ] == []
+    assert owned_boundary_workers() == ()
 
 
 def test_drain_startup_failure_still_settles_provider_turn() -> None:
